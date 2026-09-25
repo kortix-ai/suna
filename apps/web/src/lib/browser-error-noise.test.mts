@@ -686,7 +686,7 @@ test('does NOT suppress a real compaction mutation failure (network / 5xx)', () 
 // `void` fire-and-forget → `onunhandledrejection`). The model name varies, so
 // the match is a REGEX anchored on the EXACT API wording
 // `Model "…" is not available for this account` (the same template across all
-// four emitting routes — `r4.ts:3045`, `channel-bindings.ts:288`, `r7.ts:2811`,
+// four emitting routes — `models.ts`, `channel-bindings.ts:288`, `r7.ts:2811`,
 // `sessions.ts:741`), with the canonical `ApiError: ` / `Unhandled promise
 // rejection: ` wrappers, so a longer real error that merely mentions the
 // phrase is never matched.
@@ -2154,7 +2154,7 @@ const WEBPACK_RUNTIME_FRAME = {
 };
 const APP_CHUNK_FRAME = {
   filename:
-    'app:///_next/static/chunks/app/(app)/projects/[id]/not-found-c7f03e853940d826.js?dpl=dpl_GnR22QKUwZLPkRykUCM8KBxZmy8o',
+    'app:///_next/static/chunks/app/[locale]/(app)/projects/[id]/not-found-c7f03e853940d826.js?dpl=dpl_GnR22QKUwZLPkRykUCM8KBxZmy8o',
   function: '81761',
 };
 

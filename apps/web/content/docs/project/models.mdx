@@ -36,7 +36,7 @@ Turning the flag off is a fully supported path. The project then runs
 
 A model id has one of three shapes:
 
-- **Managed** — a bare id, like `claude-opus-5.5` or `deepseek-v4.1-flash`.
+- **Managed** — a bare id, like `kimi-k3` or `deepseek-v4.1-flash`.
   Kortix supplies the credentials. Cloud accounts pay with Kortix credits.
 - **BYOK** — a `provider/model` id, like `anthropic/claude-opus-4-8`. You
   supply the key. Your provider account pays.
@@ -54,17 +54,15 @@ data retention, and never falls back to another provider.
 
 | Model | Id |
 | --- | --- |
-| Claude Opus 5.5 | `claude-opus-5.5` |
-| GPT-6 Sol | `gpt-6-sol` |
-| GPT-6 Luna | `gpt-6-luna` |
 | Kimi K3 2.8T | `kimi-k3` |
 | DeepSeek V4.1 Flash (platform default) | `deepseek-v4.1-flash` |
 | GLM 5.3 Flash | `glm-5.3-flash` |
 
-A ChatGPT plan adds `codex/gpt-6-astra`, `codex/gpt-6-sol`, and
-`codex/gpt-6-luna` (plus the GPT-5.x models). A BYOK key offers its
-provider's whole catalog, for example `anthropic/claude-opus-5-5` with an
-Anthropic key. The picker shows the newest model of each family by default.
+Kortix does not offer OpenAI or Anthropic models as managed models. Use them
+through a BYOK key or a ChatGPT plan. A ChatGPT plan adds `codex/gpt-6-astra`,
+`codex/gpt-6-sol`, and `codex/gpt-6-luna` (plus the GPT-5.x models). A BYOK
+key offers its provider's whole catalog, for example
+`anthropic/claude-opus-5-5` with an Anthropic key. The picker shows the newest model of each family by default.
 
 ## Disable providers or models
 
@@ -184,6 +182,19 @@ For a new session, the selection is sent with the first prompt.
 - Deleting the last selected key leaves an empty pool. The session settings
   still show that provider so you can reset it.
 - A failed read shows **Try again**. It never appears as an inherited selection.
+
+### Sessions that name only a model
+
+The CLI, the SDK, and Teams and Slack name a model but no keys. When that model
+runs only on pooled keys, the session gets every key its creator may use for
+that provider, up to ten, so they rotate. The agent must be allowed the key's
+name in its `secrets`. Changing a running session to such a model does the
+same when the session has no selection for that provider. A selection made on
+purpose, an empty one included, is left alone.
+
+Your own keys and ChatGPT connections count only in a session that is private
+to you and acts on your behalf. In a shared session only keys shared with the
+whole project count: a Teams channel or group chat, a Slack channel.
 
 On a rate limit before output starts, the gateway tries another selected key.
 It never replays a partial answer across keys. If every key is rate-limited,

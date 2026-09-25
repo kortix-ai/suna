@@ -23,7 +23,7 @@ export interface PageTab {
  * All known page tabs. A page with no entry point is deleted, not kept here
  * (COR-156). Entry points: Review (drawer), Browser (a preview card or tool
  * link), Files (the drawer's `files` route), and project Settings / Schedules
- * / Secrets (sub-pages). Memory has none: re-add an entry or delete it.
+ * / Secrets / Members (sub-pages). Memory has none: re-add an entry or delete it.
  */
 export const PAGE_TABS: Record<string, PageTab> = {
   'page:memory':            { id: 'page:memory',            label: 'Memory' },
@@ -33,6 +33,7 @@ export const PAGE_TABS: Record<string, PageTab> = {
   'page:review':            { id: 'page:review',            label: 'Review' },
   'page:files-nav':         { id: 'page:files-nav',         label: 'Files' },
   'page:settings':          { id: 'page:settings',          label: 'Settings' },
+  'page:members':           { id: 'page:members',           label: 'Members' },
 };
 
 // ---------------------------------------------------------------------------

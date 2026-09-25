@@ -5,6 +5,8 @@
  * as the single source of truth for messages.
  *
  * Sends messages via fire-and-forget promptAsync with agent/model/variant.
+ * A send with files goes through the server prompt inbox
+ * (`createSessionPrompt`) with the upload handles (COR-185).
  */
 
 import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
@@ -60,7 +62,9 @@ import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 
 import { clearOptimistic, useSyncStore } from '@/lib/opencode/sync-store';
 import { reconcileLiveSession, useSessionSync } from '@/lib/opencode/session-sync';
-import { compactionTurnInfo, groupMessagesIntoTurns, resolveWorkingTurn } from '@kortix/sdk';
+import { compactionTurnInfo, createSessionPrompt, groupMessagesIntoTurns, resolveWorkingTurn } from '@kortix/sdk';
+import * as Crypto from 'expo-crypto';
+import { promptParts } from '@/lib/session/prompt-parts';
 import type { Turn, QuestionRequest, MessageWithParts, PermissionRequest } from '@/lib/opencode/types';
 import {
   reuseStableTurns,
@@ -86,9 +90,15 @@ import {
   turnTopGap,
 } from '@/lib/session/auto-scroll';
 import { mintWireMessageId } from '@/lib/session/wire-message-id';
-import { useFailedSendStore, useFailedSends } from '@/lib/session/failed-sends';
+import { sendIdsFor, useFailedSendStore, useFailedSends, type SendIds } from '@/lib/session/failed-sends';
+import { optimisticUserParts } from '@/lib/session/optimistic-parts';
 import { draftKey } from '@/lib/session/composer-draft';
-import { interruptedTurnIds, rewindHiddenMessageIds, webSpace } from '@/lib/session/user-message';
+import {
+  buildSessionRefsBlock,
+  interruptedTurnIds,
+  rewindHiddenMessageIds,
+  webSpace,
+} from '@/lib/session/user-message';
 import {
   hasCompactionTurn as findCompactionTurn,
   isSuppressedFailedCompaction,
@@ -128,7 +138,12 @@ import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 
-import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
+import {
+  SessionChatInput,
+  type PromptOptions,
+  type SendAttachments,
+  type TrackedMention,
+} from './SessionChatInput';
 import { SandboxHealthPill } from './SandboxHealthPill';
 import { LiveUpdatesPausedPill } from './LiveUpdatesPausedPill';
 import { useLiveUpdates } from '@/hooks/useLiveUpdates';
@@ -153,6 +168,8 @@ interface SessionPageProps {
   sessionId: string;
   /** The session's project: its model catalog is the thread's model list. */
   projectId?: string;
+  /** The project session row's id: a send with files posts to its prompt inbox (COR-185). */
+  projectSessionId?: string;
   onBack: () => void;
   onOpenDrawer?: () => void;
   /** Opens the session actions sheet (floating chrome's `···`). */
@@ -241,7 +258,7 @@ function flatModelFromCatalog(model: PickerModel, entry: PickerCatalogModel): Fl
   };
 }
 
-function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -514,8 +531,17 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   // ── Send / Stop handlers (defined early so queue drain logic can reference them) ──
 
   const handleSend = useCallback(
-    async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
-      if (!sandboxUrl) return;
+    async (
+      text: string,
+      options: PromptOptions,
+      mentions?: TrackedMention[],
+      attachments?: SendAttachments,
+      /** A retry's ids (`FailedSend`): the same prompt keeps the same ids. */
+      retryIds?: Partial<SendIds>,
+    ) => {
+      // No early return on a missing `sandboxUrl`: the composer has already
+      // cleared its draft and files, so a dropped send would lose them. The
+      // files path does not need the sandbox; the text path fails visibly.
 
       // Clear the tracked input text so it isn't saved when a question appears
       inputTextRef.current = '';
@@ -527,20 +553,28 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       let finalText = text;
       const sessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value);
       if (sessionMentions && sessionMentions.length > 0) {
-        const refs = sessionMentions
-          .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
-          .join('\n');
-        finalText = `${text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
+        const block = buildSessionRefsBlock(
+          sessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })),
+        );
+        finalText = `${text}\n\n${block}`;
       }
 
       // Optimistic user message
       // Wire-format id: the thread sorts messages by id as a string, so the
       // optimistic message must sort after the real ones already present.
-      const messageId = mintWireMessageId({
-        nowMs: Date.now(),
-        knownMessageIds: (useSyncStore.getState().messages[sessionId] ?? EMPTY_MESSAGES).map((m) => m.info.id),
-      });
-      const partId = `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      // A retry reuses the failed attempt's ids: the prompt inbox dedupes on
+      // `clientMessageId`, so a prompt that already landed does not run twice.
+      const { clientMessageId, messageId } = sendIdsFor(retryIds, () => ({
+        clientMessageId: Crypto.randomUUID(),
+        messageId: mintWireMessageId({
+          nowMs: Date.now(),
+          knownMessageIds: (useSyncStore.getState().messages[sessionId] ?? EMPTY_MESSAGES).map((m) => m.info.id),
+        }),
+      }));
+      // The text part (none for an image-only send), then one part per picked
+      // file with its device URI: the bubble shows the local thumbnail until
+      // the server echo replaces the message.
+      const optimisticParts = optimisticUserParts(finalText, attachments?.files ?? [], Date.now());
 
       useSyncStore.getState().addOptimisticMessage(sessionId, {
         info: {
@@ -549,7 +583,7 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
           sessionID: sessionId,
           time: { created: Date.now() },
         },
-        parts: [{ type: 'text', id: partId, text: finalText }],
+        parts: optimisticParts,
       });
       useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
       void playSound('send');
@@ -567,8 +601,53 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       // optimistic, so a refetch keeps it instead of swapping it out.
       const markFailed = () => {
         clearOptimistic([messageId]);
-        useFailedSendStore.getState().markFailed(sessionId, messageId, { text, options, mentions });
+        useFailedSendStore.getState().markFailed(sessionId, messageId, {
+          text,
+          options,
+          mentions,
+          fileParts: attachments?.fileParts,
+          localFiles: attachments?.files,
+          clientMessageId,
+          messageId,
+        });
       };
+
+      // With files: the server prompt inbox, carrying the upload handles. The
+      // optimistic message's id is the prompt's `messageId`, so the echo
+      // replaces the bubble.
+      if (attachments?.fileParts.length) {
+        try {
+          if (!projectId || !projectSessionId) throw new Error('No project session to send files to');
+          await createSessionPrompt(projectId, projectSessionId, {
+            clientMessageId,
+            messageId,
+            parts: promptParts(finalText, attachments.fileParts),
+            overrides: {
+              agent: options.agent ?? null,
+              model: options.model ?? null,
+              variant: options.variant ?? null,
+            },
+            clientSentAtMs: Date.now(),
+          });
+          log.log('[SessionPage] Prompt with files accepted');
+        } catch (err: any) {
+          log.error('[SessionPage] Prompt with files failed:', err?.message || err);
+          userSentRef.current = false;
+          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+          markFailed();
+        }
+        return;
+      }
+
+      // The sandbox is still waking: keep the message as a failed send the
+      // user can try again, never drop it silently.
+      if (!sandboxUrl) {
+        log.error('[SessionPage] Prompt not sent: no sandbox URL yet');
+        userSentRef.current = false;
+        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        markFailed();
+        return;
+      }
 
       try {
         const token = await getAuthToken();
@@ -597,18 +676,30 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
         markFailed();
       }
     },
-    [sandboxUrl, sessionId],
+    [sandboxUrl, sessionId, projectId, projectSessionId],
   );
 
   // "Try again" on a failed send: the failed copy leaves the thread and the
-  // same text, options and mentions go out as a new send.
+  // same text, options and mentions go out again under the same ids.
   const failedSends = useFailedSends(sessionId);
   const handleRetrySend = useCallback(
     (messageId: string) => {
       const failed = useFailedSendStore.getState().take(sessionId, messageId);
       if (!failed) return;
       useSyncStore.getState().removeMessage(sessionId, messageId);
-      void handleSend(failed.text, failed.options as PromptOptions, failed.mentions as TrackedMention[] | undefined);
+      const mentions = failed.mentions as TrackedMention[] | undefined;
+      if (failed.fileParts?.length) {
+        // Re-posts the same upload handles; nothing uploads again.
+        void handleSend(
+          failed.text,
+          failed.options as PromptOptions,
+          mentions,
+          { fileParts: failed.fileParts, files: failed.localFiles ?? [] },
+          failed,
+        );
+        return;
+      }
+      void handleSend(failed.text, failed.options as PromptOptions, mentions, undefined, failed);
     },
     [sessionId, handleSend],
   );
@@ -1936,6 +2027,8 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
             sessions={allSessions}
             currentSessionId={sessionId}
             sandboxUrl={sandboxUrl}
+            projectId={projectId}
+            canAttach={Boolean(projectId && projectSessionId)}
             onEnqueue={handleEnqueue}
             commands={commands}
             onCommand={handleCommand}

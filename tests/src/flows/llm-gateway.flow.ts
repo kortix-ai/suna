@@ -599,28 +599,30 @@ flow('GW-MANAGED-1', {
   });
 
   let managed: string[] = [];
-  await ctx.step('the picker offers Claude Opus 5.5, GPT-6 Sol and GPT-6 Luna as image-capable managed models', async () => {
+  await ctx.step('the picker offers Kimi K3, DeepSeek V4.1 Flash and GLM 5.3 Flash as image-capable managed models, and no OpenAI or Anthropic model', async () => {
     const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
     picker.status(200);
     const models = picker.json<{ models: Record<string, { name?: string; attachment?: boolean; enabled?: boolean }> }>()
       .models;
     managed = Object.keys(models).filter((id) => !id.includes('/'));
     for (const [id, name] of [
-      ['claude-opus-5.5', 'Claude Opus 5.5'],
-      ['gpt-6-sol', 'GPT-6 Sol'],
-      ['gpt-6-luna', 'GPT-6 Luna'],
+      ['kimi-k3', 'Kimi K3 2.8T'],
+      ['deepseek-v4.1-flash', 'DeepSeek V4.1 Flash'],
+      ['glm-5.3-flash', 'GLM 5.3 Flash'],
     ] as const) {
       const model = models[id];
       if (!model || model.name !== name || model.attachment !== true || model.enabled === false) {
         throw new Error(`picker does not offer ${id} as an enabled image-capable managed model: ${JSON.stringify(model)}`);
       }
     }
+    const vendor = managed.filter((id) => /^(gpt|claude|o\d)/.test(id));
+    if (vendor.length > 0) throw new Error(`picker offers OpenAI or Anthropic models as managed: ${vendor.join(', ')}`);
   });
 
   // An upstream 429 is capacity, not configuration: the route exists and the
   // key is accepted. On the first preview run of this flow (2026-09-23),
   // glm-5.3-flash answered 429 "temporarily rate-limited upstream" from its
-  // shared pool while the other five managed models answered. A throttled
+  // shared pool while the other managed models answered. A throttled
   // model is retried, then logged; every other outcome fails.
   await ctx.step('every managed model the picker offers answers a text-and-image request, or is throttled upstream', async () => {
     const gateway = new Client(ctx.env.gatewayUrl).withBearer(key, 'PROJECT_GATEWAY_KEY');

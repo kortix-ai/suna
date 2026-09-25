@@ -1,4 +1,4 @@
-import { getFileCategory, getLanguageFromExt } from '@/features/file-viewer/file-content-renderer';
+import { getFileCategory, getLanguageFromExt } from '@/features/file-viewer/preview-policy';
 import { languageFor } from '@/features/session/action-panel/easy/file-viewer';
 import { fileIconFor } from '@/lib/utils/file-utils';
 import { TreeStructureIcon } from '@phosphor-icons/react';

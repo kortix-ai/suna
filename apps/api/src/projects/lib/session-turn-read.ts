@@ -2,7 +2,7 @@
  * Server truth about the turns a session is running RIGHT NOW.
  *
  * Extracted verbatim from `GET /:projectId/sessions/:sessionId/turn`
- * (`routes/r8.ts`) so a second reader — the session-open bundle — answers from
+ * (`routes/session-runtime.ts`) so a second reader — the session-open bundle — answers from
  * the SAME code rather than a second copy of this reasoning. Two projections of
  * one lifecycle authority is exactly how a client ends up holding two
  * disagreeing answers to "is this session working?".

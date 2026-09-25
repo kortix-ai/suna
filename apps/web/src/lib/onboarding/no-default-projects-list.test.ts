@@ -19,7 +19,7 @@ import { join } from 'node:path';
 
 const ALLOWED: Record<string, string> = {
   // The door itself: no single obvious project → the selector.
-  'app/(app)/projects/start/page.tsx': 'the landing door hands off to the selector',
+  'app/[locale]/(app)/projects/start/page.tsx': 'the landing door hands off to the selector',
   // `/new` → desktop Close: the user leaves the create form for the selector.
   'features/workspace/new/new-workspace-page.tsx': 'explicit exit from the create form',
 };

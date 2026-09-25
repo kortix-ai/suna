@@ -23,11 +23,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { HighlightedCode } from '@/components/markdown/code';
-import { DocMarkdown } from '@/components/markdown/doc-markdown';
-import {
-  MarkdownFrontmatterCard,
-  parseFrontmatter,
-} from '@/components/markdown/markdown-frontmatter';
+import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
@@ -321,18 +317,10 @@ function FileBody({
     // the raw file, markdown reads the block as prose: the opening `---` is a
     // thematic break and the closing `---` is a setext underline, so an agent
     // definition rendered as a stray horizontal rule followed by its entire
-    // metadata as one giant bold heading. Same split, same card as the chat's
-    // inline preview (`MarkdownWithFrontmatter`), so both panes agree on what
-    // an agent file looks like.
-    const { frontmatter, body } = parseFrontmatter(content);
-    return (
-      <div className="p-6">
-        {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-        {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
-            escaped text rather than becoming live DOM. */}
-        <DocMarkdown content={body} allowHtml={false} />
-      </div>
-    );
+    // metadata as one giant bold heading. `MarkdownWithFrontmatter` splits it
+    // off and renders the body as a document (embedded markup stays text), the
+    // same component the chat's inline preview uses.
+    return <MarkdownWithFrontmatter content={content} className="p-6" />;
   }
 
   // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a

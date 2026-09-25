@@ -37,13 +37,12 @@ import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Loading from '@/components/ui/loading';
-import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
+import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { safeHttpUrl } from '@/lib/safe-url';
-import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
@@ -84,22 +83,18 @@ const DocxRenderer = lazy(() =>
 const PptxRenderer = lazy(() =>
   import('./pptx-renderer').then((m) => ({ default: m.PptxRenderer })),
 );
+// The whole file viewer (CodeMirror, diffs, HTML preview). Show rows render in
+// every transcript — the marketing home demo included — and most never reach
+// the generic-file branch below.
+const FileContentRenderer = lazy(() =>
+  import('@/features/files/components/file-content-renderer').then((m) => ({
+    default: m.FileContentRenderer,
+  })),
+);
 
 // ── Extension regexes + type resolution (pure, unit-tested sibling module) ──
 
-export {
-  getShowFileCategory,
-  resolveShowType,
-  SHOW_AUDIO_EXT_RE,
-  SHOW_CSV_EXT_RE,
-  SHOW_DOCX_EXT_RE,
-  SHOW_HTML_EXT_RE,
-  SHOW_IMAGE_EXT_RE,
-  SHOW_PDF_EXT_RE,
-  SHOW_PPTX_EXT_RE,
-  SHOW_VIDEO_EXT_RE,
-  SHOW_XLSX_EXT_RE,
-} from './show-type-utils';
+export { getShowFileCategory, resolveShowType } from './show-type-utils';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -649,7 +644,12 @@ export function ShowContentRenderer({
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={mediaH}>
             {framed(
-              <PdfRenderer url={blobUrl} fileName={fileName} className="h-full" {...viewerChrome} />,
+              <PdfRenderer
+                url={blobUrl}
+                fileName={fileName}
+                className="h-full"
+                {...viewerChrome}
+              />,
             )}
           </div>
         </Suspense>
@@ -822,18 +822,20 @@ export function ShowContentRenderer({
     return (
       <div className={mediaH}>
         {alwaysFramed(
-          <FileContentRenderer
-            filePath={sandboxPath!}
-            showHeader={false}
-            // A show is a presentation of the file, not a place to edit it —
-            // same read-only CodeMirror the file explorer's preview modal and
-            // the public share view mount. Without this the card mounted a
-            // live editor whose edits went nowhere.
-            readOnly
-            className="h-full"
-            errorFallback={fileErrorFallback}
-            onStatusChange={onStatusChange}
-          />,
+          <Suspense fallback={<RendererFallback className="h-full" />}>
+            <FileContentRenderer
+              filePath={sandboxPath!}
+              showHeader={false}
+              // A show is a presentation of the file, not a place to edit it —
+              // same read-only CodeMirror the file explorer's preview modal and
+              // the public share view mount. Without this the card mounted a
+              // live editor whose edits went nowhere.
+              readOnly
+              className="h-full"
+              errorFallback={fileErrorFallback}
+              onStatusChange={onStatusChange}
+            />
+          </Suspense>,
         )}
       </div>
     );
@@ -863,7 +865,7 @@ export function ShowContentRenderer({
     return (
       <div data-scrollable={scrollableAttr} className={textWrap}>
         {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-        <UnifiedMarkdown content={body} />
+        <UnifiedMarkdown content={body} trust="agent" />
       </div>
     );
   }
@@ -874,7 +876,7 @@ export function ShowContentRenderer({
   if (isText && content) {
     return (
       <div data-scrollable={scrollableAttr} className={textWrap}>
-        <UnifiedMarkdown content={content} />
+        <UnifiedMarkdown content={content} trust="agent" />
       </div>
     );
   }
@@ -903,7 +905,7 @@ export function ShowContentRenderer({
             title={title || tI18nComplete.raw('textfbe19644d843')}
             className="w-full border-0 bg-white"
             style={frameStyle}
-            sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
+            sandbox={framePolicy('document', htmlBlobUrl).sandbox}
           />
         )}
       </div>
@@ -936,7 +938,7 @@ export function ShowContentRenderer({
           data-scrollable={scrollableAttr}
           className={fill ? undefined : 'max-h-96 overflow-auto'}
         >
-          <UnifiedMarkdown content={content} />
+          <UnifiedMarkdown content={content} trust="agent" />
         </div>
       )}
       {path && !content && (

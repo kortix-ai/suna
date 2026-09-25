@@ -1,15 +1,10 @@
-import {
-  normalizeLanguage,
-  shikiWasmAvailable,
-} from '@/components/markdown/unified-markdown-utils';
+import { normalizeLanguage } from '@/components/markdown/unified-markdown-utils';
 import { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT, type CodeThemeName } from '@/lib/code-theme';
 import { cn } from '@/lib/utils';
-import {
-  codeToHtml,
-  getSingletonHighlighter,
-  type Highlighter,
-  type ShikiTransformer,
-} from 'shiki';
+import { createHighlighterCore, type HighlighterCore, type ShikiTransformer } from 'shiki/core';
+import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
+import { bundledLanguages } from 'shiki/langs';
+import { bundledThemes } from 'shiki/themes';
 
 // ─── Shiki highlighting ──────────────────────────────────────────────────────
 // One engine, one palette. Every code surface in the app renders under the same
@@ -19,76 +14,41 @@ export { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT, type CodeThemeName };
 
 const SHIKI_MAX_LENGTH = 50_000;
 
-// Pre-loaded at init; anything else lazy-loads on first use. `text` lets no-hint
-// fences flow through Shiki so they render on the same colour as every other
-// block — which under `min-dark` is its purple base (#b392f0), not a neutral
-// grey. That is the theme's own default, not a bug here.
-// Keep this list to languages AI agents emit often — rare grammars still load
-// on demand via `ensureLangLoaded`, so a missing entry here is not "unsupported".
-//
-// Exported because it is the target set `normalizeLanguage`'s alias table has to
-// land on: `highlightSync` gates on `loadedLangs.has(lang)`, which is seeded from
-// this list verbatim. An alias pointing anywhere else still highlights, but only
-// after the async round trip — i.e. with the plain→colour flash this preload
-// exists to prevent. A unit test pins that invariant.
+/**
+ * Grammars the highlighter loads when it is first created — the handful AI
+ * agents emit most. Every other grammar Shiki bundles loads on demand
+ * (`ensureLangLoaded`), one chunk per language, the first time a block uses it.
+ *
+ * This list used to hold ~58 grammars loaded at MODULE INIT: opening any page
+ * that imported the markdown renderer fetched 57 grammar chunks (~500 KB
+ * brotli) whether or not it showed a single code block. Now nothing loads
+ * until the first block asks for a highlight.
+ */
 export const PRELOAD_LANGS = [
-  // plain / config
-  'text',
   'json',
-  'jsonc',
   'yaml',
-  'toml',
-  'ini',
-  'dotenv',
-  'xml',
   'diff',
-  // web
-  'html',
-  'css',
-  'scss',
-  'less',
+  'bash',
+  'python',
   'javascript',
   'typescript',
-  'jsx',
   'tsx',
-  'vue',
-  'svelte',
-  'astro',
   'markdown',
-  'mdx',
-  // backend / systems
-  'python',
-  'ruby',
-  'go',
-  'rust',
-  'java',
-  'kotlin',
-  'swift',
-  'c',
-  'cpp',
-  'csharp',
-  'php',
-  'sql',
-  'lua',
-  'r',
-  'dart',
-  'elixir',
-  // shell / ops / data
-  'bash',
-  'powershell',
-  'dockerfile',
-  'nginx',
-  'makefile',
-  'hcl',
-  'terraform',
-  'graphql',
-  'prisma',
-  'proto',
-  // diagrams
-  'mermaid',
-  'txt',
-  'text',
 ];
+
+/**
+ * Hints that are plain text. Shiki's core highlights these without a grammar,
+ * so they never wait for a load.
+ */
+const PLAIN_LANGS = new Set(['text', 'txt', 'plain', 'plaintext']);
+
+/**
+ * Grammar ids `normalizeLanguage` may resolve to: plain text, or any grammar
+ * Shiki bundles (loadable on demand). A hint outside this set renders plain.
+ */
+export function isKnownLanguage(lang: string): boolean {
+  return PLAIN_LANGS.has(lang) || lang in bundledLanguages;
+}
 
 // Strip Shiki's wrapper background/tabindex and any per-token font-weight/style —
 // forcing a uniform weight keeps highlighted DOM the same width as plain text, so
@@ -111,46 +71,51 @@ const shikiTransformers: ShikiTransformer[] = [
   },
 ];
 
-// Singleton highlighter — kicked off at module init so the grammar is usually
-// ready by first render, letting us highlight synchronously (no plain→colour flash).
+// Singleton highlighter, created on the FIRST highlight request — not at module
+// init — with the JavaScript regex engine. The Oniguruma engine needs a
+// WebAssembly module (a separate ~230 KB gzip fetch plus compile) and fails
+// outright where WebAssembly is blocked; the JavaScript engine produces the
+// same HTML for every grammar in PRELOAD_LANGS and the previous preload set
+// (checked token for token when this changed) and needs neither.
 //
-// Shiki's oniguruma engine compiles to WebAssembly, so skip the eager init
-// entirely (and never leave a rejecting promise) when WebAssembly is unavailable
-// — otherwise the rejection fires `onunhandledrejection` → Sentry on every page
-// load for visitors whose browser blocks/disables WebAssembly. highlightAsync
-// treats a null highlighter as "no highlighting available" and renders plain
-// code. See Better Stack 1604d50a (`WebAssembly is not defined`).
-let highlighterReady: Highlighter | null = null;
-const loadedLangs = new Set<string>(PRELOAD_LANGS.map((l) => l.toLowerCase()));
+// `forgiving: true`: a grammar pattern the JavaScript engine cannot translate
+// is skipped instead of failing the whole grammar, so a rare language degrades
+// to partial colour rather than to plain text.
+let highlighterReady: HighlighterCore | null = null;
+let highlighterPromise: Promise<HighlighterCore | null> | null = null;
+const loadedLangs = new Set<string>();
 const langLoadPromises = new Map<string, Promise<void>>();
 
-const highlighterPromise: Promise<Highlighter | null> = shikiWasmAvailable()
-  ? getSingletonHighlighter({
-      themes: [SHIKI_THEME_DARK, SHIKI_THEME_LIGHT],
-      langs: PRELOAD_LANGS,
+function loadHighlighter(): Promise<HighlighterCore | null> {
+  if (highlighterPromise) return highlighterPromise;
+  highlighterPromise = createHighlighterCore({
+    themes: [bundledThemes[SHIKI_THEME_DARK](), bundledThemes[SHIKI_THEME_LIGHT]()],
+    langs: PRELOAD_LANGS.map((lang) => bundledLanguages[lang as keyof typeof bundledLanguages]()),
+    engine: createJavaScriptRegexEngine({ forgiving: true }),
+  })
+    .then((h) => {
+      for (const lang of PRELOAD_LANGS) loadedLangs.add(lang);
+      highlighterReady = h;
+      return h;
     })
-      .then((h) => {
-        highlighterReady = h;
-        return h;
-      })
-      .catch((err) => {
-        console.warn('[markdown-code] Shiki highlighter init failed:', err);
-        return null;
-      })
-  : Promise.resolve(null);
+    .catch((err) => {
+      console.warn('[markdown-code] Shiki highlighter init failed:', err);
+      return null;
+    });
+  return highlighterPromise;
+}
 
-function ensureLangLoaded(h: Highlighter, lang: string): Promise<void> {
-  if (loadedLangs.has(lang)) return Promise.resolve();
+function ensureLangLoaded(h: HighlighterCore, lang: string): Promise<void> {
+  if (PLAIN_LANGS.has(lang) || loadedLangs.has(lang)) return Promise.resolve();
   const existing = langLoadPromises.get(lang);
   if (existing) return existing;
+  const importer = bundledLanguages[lang as keyof typeof bundledLanguages];
+  if (!importer) return Promise.reject(new Error(`no bundled grammar for "${lang}"`));
   const p = h
-    .loadLanguage(lang as never)
+    .loadLanguage(importer())
     .then(() => {
       loadedLangs.add(lang);
     })
-    .catch((err) =>
-      console.warn(`[markdown-code] failed to load Shiki lang "${lang}":`, err?.message || err),
-    )
     .finally(() => {
       langLoadPromises.delete(lang);
     });
@@ -167,23 +132,49 @@ function clampCode(code: string, unbounded?: boolean): string {
     : code;
 }
 
-// Bounded cache keyed by (lang, theme, content signature). Survives the component
-// remounts Streamdown triggers per token, so repeat highlights are free.
+// Bounded cache keyed by (lang, theme, content hash). Survives remounts, so a
+// block that re-renders with the same text never re-tokenizes.
 const shikiCache = new Map<string, string>();
 const shikiPending = new Map<string, Promise<string | null>>();
-const SHIKI_CACHE_MAX = 64;
+const SHIKI_CACHE_MAX = 128;
+
+/**
+ * 53-bit string hash (cyrb53). The key used to be head(100) + tail(100) +
+ * length, which served one snippet another snippet's HTML whenever an edit
+ * stayed inside the middle and kept the length.
+ */
+function hashCode(value: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
 
 function shikiKey(code: string, lang: string, theme: string): string {
-  const sig = code.length <= 200 ? code : code.slice(0, 100) + code.slice(-100) + code.length;
-  return `${lang}:${theme}:${sig}`;
+  return `${lang}:${theme}:${code.length}:${hashCode(code)}`;
 }
 
 function cacheHtml(key: string, html: string) {
+  shikiCache.delete(key);
   shikiCache.set(key, html);
   if (shikiCache.size > SHIKI_CACHE_MAX) {
     const oldest = shikiCache.keys().next().value;
     if (oldest !== undefined) shikiCache.delete(oldest);
   }
+}
+
+function render(h: HighlighterCore, code: string, lang: string, theme: CodeThemeName, unbounded?: boolean) {
+  return h.codeToHtml(clampCode(code, unbounded), {
+    lang: PLAIN_LANGS.has(lang) ? 'text' : lang,
+    theme,
+    transformers: shikiTransformers,
+  });
 }
 
 export function highlightSync(
@@ -196,13 +187,14 @@ export function highlightSync(
   const key = shikiKey(code, lang, theme);
   const cached = shikiCache.get(key);
   if (cached) return cached;
-  if (!highlighterReady || !loadedLangs.has(lang)) return null;
+  if (!highlighterReady) {
+    // First request: start the (lazy) highlighter so the async path is warm.
+    void loadHighlighter();
+    return null;
+  }
+  if (!PLAIN_LANGS.has(lang) && !loadedLangs.has(lang)) return null;
   try {
-    const html = highlighterReady.codeToHtml(clampCode(code, opts?.unbounded), {
-      lang,
-      theme,
-      transformers: shikiTransformers,
-    });
+    const html = render(highlighterReady, code, lang, theme, opts?.unbounded);
     cacheHtml(key, html);
     return html;
   } catch {
@@ -223,28 +215,25 @@ export function highlightAsync(
   const inflight = shikiPending.get(key);
   if (inflight) return inflight;
 
-  const p = highlighterPromise
+  const p = loadHighlighter()
     .then(async (h) => {
       if (!h) return null;
-      await ensureLangLoaded(h, lang);
-      return h.codeToHtml(clampCode(code, opts?.unbounded), {
-        lang,
-        theme,
-        transformers: shikiTransformers,
-      });
+      try {
+        await ensureLangLoaded(h, lang);
+      } catch (err) {
+        // Unknown hint or a grammar chunk that failed to load: plain text is
+        // the honest rendering. Not cached, so a later mount can retry.
+        console.warn(
+          `[markdown-code] failed to load Shiki lang "${lang}":`,
+          (err as Error)?.message || err,
+        );
+        return null;
+      }
+      return render(h, code, lang, theme, opts?.unbounded);
     })
-    // Both palette halves are bundled theme names, so the one-off highlighter
-    // this falls back to resolves them by name with nothing pre-registered.
-    .catch(() =>
-      codeToHtml(clampCode(code, opts?.unbounded), {
-        lang,
-        theme,
-        transformers: shikiTransformers,
-      }),
-    )
     .then((html) => {
-      // null = the highlighter isn't available (yet) — don't negative-cache
-      // it, so a later call can retry once the highlighter is up.
+      // null = the highlighter or grammar isn't available (yet) — don't
+      // negative-cache it, so a later call can retry.
       if (html !== null) cacheHtml(key, html);
       shikiPending.delete(key);
       return html;

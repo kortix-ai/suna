@@ -14,7 +14,7 @@
 //     transcript shows an assistant reply under that message, the turn ran and
 //     re-sending it would run the user's message a second time.
 //
-// Same mocking caveat as the sibling engine.ts test files: `mock.module` is
+// Same mocking caveat as the sibling session-lifecycle test files: `mock.module` is
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -22,7 +22,7 @@ import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes }
 import type { SessionLifecycleCommandRow } from '../store';
 import { drizzle } from 'drizzle-orm/pg-proxy';
 import type { SQL } from 'drizzle-orm';
-import { mintWireMessageId, wireIdTime } from '../../wire-message-id';
+import { isWireIdAheadOf, mintWireMessageId, wireIdTime } from '../../wire-message-id';
 
 const SESSION_ID = 'sess-inbox-delivery-1';
 const ACCOUNT_ID = 'acct-1';
@@ -308,7 +308,7 @@ mock.module('../store', () => ({
       };
     }
   },
-  requeueUnlandedPrompt: async (commandId: string, reason: string) => {
+  requeueUnlandedPrompt: async ({ commandId }: { commandId: string }, reason: string) => {
     unlandedRequeues.push({ commandId, reason });
     simulatedInFlightCommands.delete(commandId);
     if (unlandedBudgetLeft <= 0) return { requeued: false, refusals: 2 };
@@ -316,12 +316,12 @@ mock.module('../store', () => ({
     return { requeued: true, refusals: 2 - unlandedBudgetLeft };
   },
   MAX_LANDING_RETRIES: 2,
-  markInboxDeliveryStarted: async (commandId: string) => { deliveryStarts.push(commandId); },
-  requeueUnverifiedRedelivery: async (commandId: string, availableAt: Date) => {
+  markInboxDeliveryStarted: async ({ commandId }: { commandId: string }) => { deliveryStarts.push(commandId); },
+  requeueUnverifiedRedelivery: async ({ commandId }: { commandId: string }, availableAt: Date) => {
     unverifiedRequeues.push({ commandId, availableAt });
     simulatedInFlightCommands.delete(commandId);
   },
-  requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
+  requeueForAdmission: async ({ commandId }: { commandId: string }, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
     if (completeDuringRequeue) boxRow = { status: 'active', metadata: { activeTurns: {} } };
     simulatedInFlightCommands.delete(commandId);
@@ -342,7 +342,7 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async (
-    commandId: string,
+    { commandId }: { commandId: string },
     message: string,
     options?: { retryable?: boolean },
   ) => {
@@ -351,10 +351,10 @@ mock.module('../store', () => ({
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
-  markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
+  markCommandForwarded: async ({ commandId }: { commandId: string }, sessionId: string, wireMessageId: string) => {
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
   },
-  markCommandSucceeded: async (commandId: string, result: unknown) => {
+  markCommandSucceeded: async ({ commandId }: { commandId: string }, result: unknown) => {
     events.push('command-succeeded');
     succeededCalls.push({ commandId, result });
   },
@@ -373,7 +373,7 @@ mock.module('../../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
 
-// The wake path now converges the box before every delivery (engine.ts
+// The wake path now converges the box before every delivery (continue-session.ts
 // `continueSession`): it reads the service key and ingress and calls
 // `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
 // the wire, not about the sync (see continue-session-env-sync.test.ts).
@@ -406,7 +406,8 @@ mock.module('../runtime-prompt-file', () => ({
   },
 }));
 
-const { drainSessionLifecycleQueue, executeQueuedContinue } = await import('../engine');
+const { drainSessionLifecycleQueue } = await import('../drain');
+const { executeQueuedContinue } = await import('../queued-continue');
 
 /** Every `redeliveredMessageId` the drain persisted, read out of the jsonb
  *  merge parameter the UPDATE bound. */
@@ -1375,6 +1376,42 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(wireIdTime(sent)!).toBeGreaterThan(firstDelivered);
   });
 
+  // `kortix sessions send` ≤ 2026-09 minted the HIGH 12 hex digits of the id
+  // clock: ~40 days ahead of every id OpenCode writes. POST stamps such a row
+  // `remintOnDelivery`; the drain must then place it against the transcript and
+  // must never let the far-future value act as a floor.
+  const CLI_HIGH_BITS_ID = `msg_${((BigInt(NOW_MS) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli03`;
+
+  test('a far-future CLI id goes out re-placed just above the transcript, not ~40 days ahead', async () => {
+    transcript = [{ info: { id: OPENCODE_MINTED_ID, role: 'assistant', parentID: 'msg_other' } }];
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: { ...baseRow().payload, wireMessageId: CLI_HIGH_BITS_ID, remintOnDelivery: true },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    const sent = capturedBodies[0].messageID as string;
+    expect(sent).not.toBe(CLI_HIGH_BITS_ID);
+    expect(isWireIdAheadOf(sent, NOW_MS)).toBe(false);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(OPENCODE_MINTED_ID)!);
+  });
+
+  test('a far-future id on an earlier row does not veto the lift above the transcript', async () => {
+    deliveredFloor = wireIdTime(CLI_HIGH_BITS_ID);
+    transcript = [{ info: { id: OPENCODE_MINTED_ID, role: 'assistant', parentID: 'msg_other' } }];
+
+    const outcome = await executeQueuedContinue(
+      baseRow({ result: { admission_reason: 'older_prompt_pending' } }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    const sent = capturedBodies[0].messageID as string;
+    expect(isWireIdAheadOf(sent, NOW_MS)).toBe(false);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(OPENCODE_MINTED_ID)!);
+  });
+
   test('a STOPPED box holds no turn, so an idle send still keeps its id', async () => {
     // Authority dies with the runtime — the same predicate `GET .../turn`
     // serves from. Re-minting here would spend a transcript read on every send
@@ -1485,7 +1522,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       { commandId: 'cmd-2', reason: 'older_prompt_pending' },
     ]);
     // AND THE DELIVERY PATH KICKS NOTHING. Promotion belongs to the turn-end
-    // relay (`routes/r4.ts`), which is the only place that knows the answer is
+    // relay (`routes/turn-stream.ts`), which is the only place that knows the answer is
     // finished. Promoting on accepted delivery instead made the next row due
     // while this turn was still running — the merge that let two queued
     // messages share one answer — and it was a lost wake besides: the row was
@@ -1565,7 +1602,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     expect(promotionCalls).toEqual([]);
 
     // B and C go out on the turn-end relay's targeted drain, one per turn —
-    // `routes/r4.ts` awaits `promoteNextInboxRow` and kicks exactly this.
+    // `routes/turn-stream.ts` awaits `promoteNextInboxRow` and kicks exactly this.
     await drainSessionLifecycleQueue({ idempotencyKey: 'queue-b' });
     await drainSessionLifecycleQueue({ idempotencyKey: 'queue-c' });
 

@@ -8,7 +8,7 @@
  * no-op, so the two paths can race freely.
  */
 
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
@@ -18,6 +18,11 @@ import { preserveEstablishedRuntime } from '../runtime-identity';
 import { settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-lifecycle';
 import { requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
+import {
+  STOPPED_SANDBOX_CLEARED_KEYS,
+  transitionSandbox,
+  transitionSession,
+} from '../session-lifecycle/status-transitions';
 import type { StopReason } from '../stop-reason';
 
 /** Merge keys into a jsonb metadata column without clobbering siblings. */
@@ -181,6 +186,7 @@ export async function clearPendingStopObservation(sandboxId: string): Promise<vo
     );
 }
 
+
 export interface StoppedStateWrite {
   sandboxId: string;
   sessionId: string;
@@ -253,44 +259,29 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
     stoppedAt: now.toISOString(),
   };
   await db.transaction(async (tx) => {
-    await tx
-      .update(sessionSandboxes)
-      .set({
-        status: 'stopped',
-        updatedAt: now,
-        // A committed stop cancels any in-flight wake. If provider.start()
-        // resolves after this transaction, its fenced completion write loses
-        // and the resume path stops the provider again. This makes an explicit
-        // user stop win both orderings of the start/stop race.
-        //
-        // `patch` always carries stopReason + stoppedAt, so this is never an
-        // empty merge. The same statement drops wake fences and every turn
-        // authority record. A provider webhook can win the idle-stop race
-        // before the reaper clears an unknown turn. A stopped sandbox cannot
-        // retain authority that a later resume could misread. Still a MERGE,
-        // never a whole-object assign — a concurrent writer's lastAliveAt lives
-        // in this column too.
-        //
-        // `pendingStopObservedAtMs` goes with them: a box that is parked, woken,
-        // and given a new turn must earn its confirmation again from scratch, or
-        // the stale marker parks it on the first transient stopped read.
-        metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-          - 'runtimeWakeStartedAt'
-          - 'runtimeWakeId'
-          - 'runtimeWakeLeaseExpiresAt'
-          - 'runtimeWakeProviderStatus'
-          - 'runtimeWakeCleanupId'
-          - 'runtimeWakeCleanupLeaseExpiresAt'
-          - 'activeTurn'
-          - 'activeTurns'
-          - 'pendingStopObservedAtMs'
-          - 'lifecycleStopClaim') || ${JSON.stringify(patch)}::jsonb`,
-      })
-      .where(eq(sessionSandboxes.sandboxId, write.sandboxId));
-    await tx
-      .update(projectSessions)
-      .set({ status: 'stopped', updatedAt: now })
-      .where(eq(projectSessions.sessionId, write.sessionId));
+    // A committed stop cancels any in-flight wake. If provider.start()
+    // resolves after this transaction, its fenced completion write loses and
+    // the resume path stops the provider again. This makes an explicit user
+    // stop win both orderings of the start/stop race.
+    //
+    // The same statement drops wake fences and every turn authority record. A
+    // provider webhook can win the idle-stop race before the reaper clears an
+    // unknown turn. A stopped sandbox cannot retain authority that a later
+    // resume could misread. `pendingStopObservedAtMs` goes with them: a box
+    // that is parked, woken, and given a new turn must earn its confirmation
+    // again from scratch, or the stale marker parks it on the first transient
+    // stopped read.
+    //
+    // The archived row of a deleted session is not a live row and stays
+    // archived (see SANDBOX_TRANSITIONS.stop).
+    await transitionSandbox(
+      'stop',
+      write.sandboxId,
+      { at: now, metadata: { strip: STOPPED_SANDBOX_CLEARED_KEYS, merge: patch } },
+      tx,
+    );
+    // A `failed` session keeps its park (see SESSION_TRANSITIONS.stop).
+    await transitionSession('stop', write.sessionId, { at: now }, tx);
     // A turn that was in flight when the box parked ended because the runtime
     // went away — that is precisely what `end_reason = 'runtime_gone'` records.
     // Keyed by sandbox, not by token: the statement above just deleted the

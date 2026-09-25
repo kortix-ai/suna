@@ -2,18 +2,20 @@ import { describe, test, expect, beforeEach } from 'bun:test';
 import {
   createMockCreditAccount,
   createMockStripeClient,
+  fakeWallet,
   mockRegistry,
   registerGlobalMocks,
+  registerWalletMock,
   resetMockRegistry,
 } from './mocks';
 
 // Register global mocks once
 registerGlobalMocks();
+registerWalletMock();
 
 // ─── Track calls ──────────────────────────────────────────────────────────────
 
 let updateCreditAccountCalls: any[] = [];
-let insertLedgerCalls: any[] = [];
 let cancelSubscriptionCalls: string[] = [];
 
 // Deletion repository state
@@ -25,7 +27,6 @@ let scheduledDeletionRequests: any[] = [];
 
 beforeEach(() => {
   updateCreditAccountCalls = [];
-  insertLedgerCalls = [];
   cancelSubscriptionCalls = [];
 
   activeDeletionRequest = null;
@@ -46,12 +47,6 @@ beforeEach(() => {
   mockRegistry.getCreditAccount = async () => createMockCreditAccount();
   mockRegistry.updateCreditAccount = async (id: string, data: any) => {
     updateCreditAccountCalls.push({ accountId: id, data });
-  };
-
-  // Transaction repo defaults
-  mockRegistry.insertLedgerEntry = async (data: any) => {
-    insertLedgerCalls.push(data);
-    return { id: 'ledger_test', ...data };
   };
 
   // Account deletion repo defaults
@@ -129,6 +124,30 @@ describe('requestAccountDeletion', () => {
       expect(err.message).toContain('already exists');
     }
   });
+
+  test('a concurrent duplicate (unique violation on insert) answers like the pre-check', async () => {
+    // Drizzle wraps the PostgresError; the SQLSTATE sits on `cause`.
+    mockRegistry.createDeletionRequest = async () => {
+      throw Object.assign(new Error('Failed query: insert into account_deletion_requests'), {
+        cause: { code: '23505', constraint_name: 'uniq_account_deletion_requests_pending' },
+      });
+    };
+
+    const err: any = await requestAccountDeletion('acc_test_123', 'user_123').catch((e) => e);
+    expect(err?.name).toBe('BillingError');
+    expect(err.statusCode).toBe(400);
+    expect(err.message).toContain('already exists');
+  });
+
+  test('any other insert failure propagates unchanged', async () => {
+    const boom = Object.assign(new Error('connection reset'), { code: 'ECONNRESET' });
+    mockRegistry.createDeletionRequest = async () => {
+      throw boom;
+    };
+
+    const err = await requestAccountDeletion('acc_test_123', 'user_123').catch((e) => e);
+    expect(err).toBe(boom);
+  });
 });
 
 describe('getAccountDeletionStatus', () => {
@@ -195,23 +214,14 @@ describe('deleteAccountImmediately', () => {
     expect(cancelSubscriptionCalls[0]).toBe('sub_test_123');
   });
 
-  test('zeroes credit balance', async () => {
+  test('forfeits the credit balance, then closes the account row', async () => {
     await deleteAccountImmediately('acc_test_123');
 
+    // The forfeiture row and the emptied buckets are pinned against real
+    // PostgreSQL in tests/migration/wallet-ledger.test.ts.
+    expect(fakeWallet.calls.forfeit).toEqual(['acc_test_123']);
     const update = updateCreditAccountCalls[0];
-    expect(update.data.balance).toBe('0');
-    expect(update.data.expiringCredits).toBe('0');
-    expect(update.data.nonExpiringCredits).toBe('0');
-    expect(update.data.dailyCreditsBalance).toBe('0');
-  });
-
-  test('creates forfeiture ledger entry', async () => {
-    await deleteAccountImmediately('acc_test_123');
-
-    expect(insertLedgerCalls.length).toBe(1);
-    expect(Number(insertLedgerCalls[0].amount)).toBeLessThan(0);
-    expect(insertLedgerCalls[0].type).toBe('forfeiture');
-    expect(insertLedgerCalls[0].balanceAfter).toBe('0');
+    expect(update.data).toMatchObject({ tier: 'free', stripeSubscriptionStatus: 'canceled', paymentStatus: 'deleted' });
   });
 
   test('marks deletion request as completed if exists', async () => {

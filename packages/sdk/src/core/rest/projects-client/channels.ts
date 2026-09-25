@@ -28,6 +28,41 @@ export function bindTeamsIdentity(token: string): Promise<ChatIdentityBindResult
   return bindChatIdentity('teams', token);
 }
 
+/** Which chat account a Slack or Teams login link would link. Read-only. */
+export interface ChatIdentityPreview {
+  service: 'slack' | 'teams';
+  /** The Slack workspace or Teams team name, when known. */
+  workspaceName: string | null;
+  /** The Slack or Teams user id carried by the link. */
+  chatUserId: string;
+  /** That user's display name, when the platform returns one. */
+  chatUserName: string | null;
+}
+
+async function previewChatIdentity(
+  service: 'slack' | 'teams',
+  token: string,
+): Promise<ChatIdentityPreview> {
+  return unwrap(
+    await backendApi.post<ChatIdentityPreview>(
+      `/channels/${service}/identity/preview`,
+      { token },
+      { showErrors: false },
+    ),
+    'This link is invalid or has expired',
+  );
+}
+
+/** The Slack account a `/kortix login` link would link, before binding it. */
+export function previewSlackIdentity(token: string): Promise<ChatIdentityPreview> {
+  return previewChatIdentity('slack', token);
+}
+
+/** The Teams account a login link would link, before binding it. */
+export function previewTeamsIdentity(token: string): Promise<ChatIdentityPreview> {
+  return previewChatIdentity('teams', token);
+}
+
 export interface SlackInstallation {
   workspaceId: string;
   workspaceName: string | null;

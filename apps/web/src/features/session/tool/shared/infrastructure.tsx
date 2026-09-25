@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { DiffStat, STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
+import { framePolicy, serviceFrameContent } from '@/features/file-viewer/preview-policy';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { isEmptyShowPart } from '@/features/session/session-activity-groups';
@@ -25,9 +26,9 @@ import {
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { useTranslations } from '@/i18n/use-translations';
 import { looksLikeMarkdown } from '@/lib/markdown-detect';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
-import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata, getActiveSessionContext } from '@/lib/utils/session-context';
@@ -46,7 +47,6 @@ import {
   SidebarSimpleIcon as PanelRight,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { stripBashMetadata } from '@kortix/shared/tool-output';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
@@ -196,6 +196,8 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
     navigationEnabled,
     proxy,
     previewUrl,
+    /** A static file the agent wrote (`document`) or a server it runs (`app`). */
+    frameContent: serviceFrameContent(proxy?.port),
     isLoading,
     hasError,
     refreshKey,
@@ -317,7 +319,16 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
 
 export function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
   const fill = useContext(ToolSurfaceContext) === 'panel';
-  const { previewUrl, displayLabel, isLoading, hasError, refreshKey, onLoad, onError } = preview;
+  const {
+    previewUrl,
+    frameContent,
+    displayLabel,
+    isLoading,
+    hasError,
+    refreshKey,
+    onLoad,
+    onError,
+  } = preview;
   const linkOnlyPreview = prefersPreviewLink(previewUrl);
   const tHardcodedUi = useTranslations('hardcodedUi');
 
@@ -345,7 +356,9 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
           src={previewUrl}
           title={displayLabel}
           className="bg-secondary absolute inset-0 h-full w-full border-0"
-          sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
+          // The agent chose what this frame shows; `framePolicy` decides its
+          // sandbox and origin (see `FrameContent`).
+          sandbox={framePolicy(frameContent, previewUrl).sandbox}
           onLoad={onLoad}
           onError={onError}
         />
@@ -707,7 +720,7 @@ export function ToolOutputFallback({
   return (
     <ToolOutputCard copyText={output}>
       <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
-        <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+        <UnifiedMarkdown content={output} trust="untrusted" isStreaming={isStreaming} />
       </div>
     </ToolOutputCard>
   );
@@ -794,7 +807,7 @@ export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; ma
     <ToolOutputCard copyText={output}>
       {isMarkdown ? (
         <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
-          <UnifiedMarkdown content={text} />
+          <UnifiedMarkdown content={text} trust="untrusted" />
         </div>
       ) : (
         <pre className="text-muted-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
@@ -1634,7 +1647,7 @@ export function ToolCodeCard({
  * `parseFrontmatter` so the `---` fences do not become a stray rule and a giant
  * heading. Content with none passes through unchanged.
  *
- * `allowHtml={false}`: this reads as a stored file, not chat prose.
+ * `variant="document"`: this reads as a stored file, not chat prose.
  */
 export function ToolMarkdownCard({ code, className }: { code: string; className?: string }) {
   const indent = useToolIndent();
@@ -1651,7 +1664,7 @@ export function ToolMarkdownCard({ code, className }: { code: string; className?
             className={cn('max-h-96 overflow-auto', pad, 'pr-11', MD_FLUSH_CLASSES)}
           >
             {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-            <UnifiedMarkdown content={body} isStreaming={false} allowHtml={false} />
+            <UnifiedMarkdown content={body} trust="agent" variant="document" isStreaming={false} />
           </div>
         </CopyOverlay>
       </div>

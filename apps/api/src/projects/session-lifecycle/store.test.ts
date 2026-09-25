@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { buildContinueSessionCommandValues, createSessionCommandPayload, withRemintedWireId } from './store';
+import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
+import {
+  LIFECYCLE_RUNNING_RECLAIM_GRACE_MS,
+  buildContinueSessionCommandValues,
+  buildCreateSessionCommandValues,
+  createSessionCommandPayload,
+  withRemintedWireId,
+} from './store';
 import type { CreateSessionCommand } from './types';
 
 const BASE: CreateSessionCommand = {
@@ -69,4 +76,45 @@ test('durable prompt payload preserves its presentation placement', () => {
     text: 'follow up', placement: 'transcript',
   });
   expect(values.payload.placement).toBe('transcript');
+});
+
+describe('buildCreateSessionCommandValues — inline create claims are reclaimable', () => {
+  const NOW = new Date('2026-09-24T12:00:00.000Z');
+  const command: CreateSessionCommand = {
+    ...BASE,
+    project: { projectId: 'p', accountId: 'a' } as CreateSessionCommand['project'],
+    idempotencyKey: 'create:key-1',
+  };
+
+  // The drain reclaims `status='running' AND locked_until <= now - grace`. A
+  // NULL lock never satisfies that predicate, so an inline claim with no lock
+  // answered `pending` for ever once its process died.
+  test('an inline (running) claim carries a lock owner and an expiry', () => {
+    const values = buildCreateSessionCommandValues(command, { initialStatus: 'running' }, NOW);
+    expect(values.status).toBe('running');
+    expect(values.lockedBy).toStartWith('session-lifecycle-inline:');
+    expect(values.lockedUntil?.getTime()).toBe(NOW.getTime() + LIFECYCLE_CLAIM_LOCK_MS);
+  });
+
+  test('each inline claim has its own lock owner, the fencing token of its writes', () => {
+    const first = buildCreateSessionCommandValues(command, { initialStatus: 'running' }, NOW);
+    const second = buildCreateSessionCommandValues(command, { initialStatus: 'running' }, NOW);
+    expect(first.lockedBy).not.toBe(second.lockedBy);
+  });
+
+  test('the lock expires into the reclaim window, like a drained claim', () => {
+    const values = buildCreateSessionCommandValues(command, { initialStatus: 'running' }, NOW);
+    const reclaimAt = new Date(
+      NOW.getTime() + LIFECYCLE_CLAIM_LOCK_MS + LIFECYCLE_RUNNING_RECLAIM_GRACE_MS,
+    );
+    const staleRunningBefore = reclaimAt.getTime() - LIFECYCLE_RUNNING_RECLAIM_GRACE_MS;
+    expect(values.lockedUntil!.getTime() <= staleRunningBefore).toBe(true);
+  });
+
+  test('a queued claim stays unlocked, so the drain takes it immediately', () => {
+    const values = buildCreateSessionCommandValues(command, { initialStatus: 'queued' }, NOW);
+    expect(values.status).toBe('queued');
+    expect('lockedBy' in values).toBe(false);
+    expect('lockedUntil' in values).toBe(false);
+  });
 });

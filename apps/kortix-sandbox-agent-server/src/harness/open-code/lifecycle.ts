@@ -1224,34 +1224,17 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   'deepseek-v4.1-flash': {
     name: 'DeepSeek V4.1 Flash', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.2, output: 0.6, cache_read: 0.006 },
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.15, output: 0.6, cache_read: 0.0359375 },
   },
   'glm-5.3-flash': {
     name: 'GLM 5.3 Flash', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.15, output: 0.5, cache_read: 0.05 },
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.1, output: 0.35, cache_read: 0.02 },
   },
   'kimi-k3': {
     name: 'Kimi K3 2.8T', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 2.5, output: 10.95, cache_read: 0.25 },
-  },
-  // The pinned endpoints ignore a client temperature (OpenRouter drops it; with
-  // require_parameters no endpoint matches), so none is advertised.
-  'claude-opus-5.5': {
-    name: 'Claude Opus 5.5', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: false,
-    limit: { context: 1_000_000, output: 128_000 }, cost: { input: 4.4, output: 22, cache_read: 0.22 },
-  },
-  'gpt-6-sol': {
-    name: 'GPT-6 Sol', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: false,
-    limit: { context: 1_050_000, output: 128_000 }, cost: { input: 2.2, output: 11, cache_read: 0.22 },
-  },
-  'gpt-6-luna': {
-    name: 'GPT-6 Luna', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: false,
-    limit: { context: 1_050_000, output: 128_000 }, cost: { input: 0.11, output: 0.55, cache_read: 0.011 },
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 2.5, output: 14, cache_read: 0.29 },
   },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',

@@ -5,7 +5,7 @@ import { validateAccountToken } from '../../../repositories/account-tokens';
 import { isAccountToken, isKortixToken } from '../../../shared/crypto';
 import { config, getToolCost } from '../../../config';
 import { deductToolCredits } from '../../services/billing';
-import { grantCredits } from '../../../billing/services/credits';
+import { wallet } from '../../../billing/wallet';
 import { dollarsToCents, refundActorSpend, reserveActorSpend } from '../../services/member-spend';
 import { type ActorContext } from '../../../shared/actor-context';
 import { getTraceHeaders } from '../../../lib/request-context';
@@ -23,7 +23,7 @@ export { matchAllowedRoute };
  *
  * The in-sandbox `KORTIX_TOKEN` — the credential every built-in tool presents
  * to this proxy — is the FIRST shape: a session-scoped PAT auto-minted at
- * session create (projects/routes/r3.ts). This resolver only ever consulted
+ * session create (projects/routes/project-credentials.ts). This resolver only ever consulted
  * the second table, so every built-in tool call answered
  * `401 Invalid Kortix token in x-api-key` while the same token authenticated
  * fine on every other route. Try the right validator for the prefix; never
@@ -274,13 +274,14 @@ export async function reserveToolProxyCredits(
   }
 
   const actorReservedCents = await reserveActorCost(actor, creditReservation.cost, () =>
-    grantCredits(
+    wallet.grant({
       accountId,
-      creditReservation.cost,
-      'tool_reservation_refund',
-      `Tool reservation refund after member cap: ${billingToolName}`,
-      false,
-    ),
+      amount: creditReservation.cost,
+      kind: 'tool_reservation_refund',
+      description: `Tool reservation refund after member cap: ${billingToolName}`,
+      expiring: false,
+      key: null,
+    }),
   );
 
   return {
@@ -319,13 +320,14 @@ export async function refundToolReservation(
 ): Promise<void> {
   if (!reservation) return;
   if (reservation.cost > 0) {
-    await grantCredits(
-      reservation.accountId,
-      reservation.cost,
-      'tool_reservation_refund',
+    await wallet.grant({
+      accountId: reservation.accountId,
+      amount: reservation.cost,
+      kind: 'tool_reservation_refund',
       description,
-      false,
-    );
+      expiring: false,
+      key: null,
+    });
   }
   if (reservation.actor && (reservation.actorReservedCents ?? 0) > 0) {
     await refundActorSpend(

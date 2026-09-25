@@ -34,7 +34,9 @@ function cellTextAligns(html: string, tag: 'th' | 'td'): (string | undefined)[] 
 
 describe('UnifiedMarkdown table cells', () => {
   test('th carries whitespace-nowrap and break-normal', () => {
-    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={TABLE_MD} />));
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={TABLE_MD} />),
+    );
     const classes = cellClasses(html, 'th');
 
     expect(classes.length).toBeGreaterThan(0);
@@ -45,7 +47,9 @@ describe('UnifiedMarkdown table cells', () => {
   });
 
   test('td carries break-normal', () => {
-    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={TABLE_MD} />));
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={TABLE_MD} />),
+    );
     const classes = cellClasses(html, 'td');
 
     expect(classes.length).toBeGreaterThan(0);
@@ -55,14 +59,18 @@ describe('UnifiedMarkdown table cells', () => {
   });
 
   test('th forwards alignment through sanitize for :---: and ---: columns', () => {
-    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={ALIGN_TABLE_MD} />));
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={ALIGN_TABLE_MD} />),
+    );
     const aligns = cellTextAligns(html, 'th');
 
     expect(aligns).toEqual(['center', 'right']);
   });
 
   test('td forwards alignment through sanitize for :---: and ---: columns', () => {
-    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={ALIGN_TABLE_MD} />));
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={ALIGN_TABLE_MD} />),
+    );
     const aligns = cellTextAligns(html, 'td');
 
     expect(aligns).toEqual(['center', 'right']);
@@ -70,7 +78,7 @@ describe('UnifiedMarkdown table cells', () => {
 
   test('th keeps whitespace-nowrap and break-normal when a raw HTML class conflicts', () => {
     const html = renderToStaticMarkup(
-      withIntl(<UnifiedMarkdown content={CONFLICTING_CLASS_TABLE_HTML} />),
+      withIntl(<UnifiedMarkdown trust="agent" content={CONFLICTING_CLASS_TABLE_HTML} />),
     );
     const classes = cellClasses(html, 'th');
 
@@ -83,7 +91,7 @@ describe('UnifiedMarkdown table cells', () => {
 
   test('td keeps break-normal when a raw HTML class conflicts', () => {
     const html = renderToStaticMarkup(
-      withIntl(<UnifiedMarkdown content={CONFLICTING_CLASS_TABLE_HTML} />),
+      withIntl(<UnifiedMarkdown trust="agent" content={CONFLICTING_CLASS_TABLE_HTML} />),
     );
     const classes = cellClasses(html, 'td');
 
@@ -94,7 +102,9 @@ describe('UnifiedMarkdown table cells', () => {
   });
 
   test('does not leak the react-markdown node prop onto th/td', () => {
-    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={TABLE_MD} />));
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={TABLE_MD} />),
+    );
 
     expect(html).not.toContain('node=');
   });
@@ -119,7 +129,7 @@ function numberedList(count: number, start = 1): string {
 describe('UnifiedMarkdown ordered-list marker gutter', () => {
   test('a single-digit list keeps the pl-6 gutter', () => {
     const tag = orderedListTag(
-      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={numberedList(9)} />)),
+      renderToStaticMarkup(withIntl(<UnifiedMarkdown trust="agent" content={numberedList(9)} />)),
     );
 
     expect(tag).toContain('padding-inline-start:calc(var(--spacing) * 6 + 0ch)');
@@ -127,7 +137,7 @@ describe('UnifiedMarkdown ordered-list marker gutter', () => {
 
   test('a ten-item list widens the gutter by one digit', () => {
     const tag = orderedListTag(
-      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={numberedList(10)} />)),
+      renderToStaticMarkup(withIntl(<UnifiedMarkdown trust="agent" content={numberedList(10)} />)),
     );
 
     expect(tag).toContain('padding-inline-start:calc(var(--spacing) * 6 + 1ch)');
@@ -135,7 +145,7 @@ describe('UnifiedMarkdown ordered-list marker gutter', () => {
 
   test('markers render with tabular digits', () => {
     const tag = orderedListTag(
-      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={numberedList(10)} />)),
+      renderToStaticMarkup(withIntl(<UnifiedMarkdown trust="agent" content={numberedList(10)} />)),
     );
 
     expect(tag).toContain('marker:tabular-nums');
@@ -144,7 +154,9 @@ describe('UnifiedMarkdown ordered-list marker gutter', () => {
 
   test('forwards the start ordinal and sizes the gutter from it', () => {
     const tag = orderedListTag(
-      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={numberedList(3, 98)} />)),
+      renderToStaticMarkup(
+        withIntl(<UnifiedMarkdown trust="agent" content={numberedList(3, 98)} />),
+      ),
     );
 
     expect(tag).toContain('start="98"');
@@ -196,7 +208,7 @@ function visibleText(html: string): string {
 describe('UnifiedMarkdown code fence inside a list', () => {
   test('renders the snippet, not a stringified React element', () => {
     const text = visibleText(
-      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={FENCE_IN_LIST_MD} />)),
+      renderToStaticMarkup(withIntl(<UnifiedMarkdown trust="agent" content={FENCE_IN_LIST_MD} />)),
     );
 
     expect(text).not.toContain('[object Object]');
@@ -205,13 +217,17 @@ describe('UnifiedMarkdown code fence inside a list', () => {
   });
 
   test('does not inject clickable-path chrome into the fence body', () => {
-    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={FENCE_IN_LIST_MD} />));
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={FENCE_IN_LIST_MD} />),
+    );
 
     expect(html).not.toContain('Click to preview');
   });
 
   test('still makes a path in list prose clickable', () => {
-    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={PATH_IN_LIST_MD} />));
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={PATH_IN_LIST_MD} />),
+    );
 
     expect(html).toContain('docs/readme.md — Click to preview');
   });
@@ -230,14 +246,18 @@ const INCOMPLETE_LINK_MD = '[Connect Outlook](streamdown:incomplete-link)';
 
 describe('UnifiedMarkdown — a link whose URL is still streaming', () => {
   test('shows the label, never "[blocked]"', () => {
-    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={INCOMPLETE_LINK_MD} />));
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={INCOMPLETE_LINK_MD} />),
+    );
 
     expect(visibleText(html)).toBe('Connect Outlook');
     expect(html).not.toContain('Blocked URL');
   });
 
   test('is not a link yet: no anchor, no placeholder href', () => {
-    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={INCOMPLETE_LINK_MD} />));
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={INCOMPLETE_LINK_MD} />),
+    );
 
     expect(html).not.toContain('<a');
     expect(html).not.toContain('streamdown:');
@@ -245,7 +265,7 @@ describe('UnifiedMarkdown — a link whose URL is still streaming', () => {
 
   test('a disallowed protocol stays blocked', () => {
     const html = renderToStaticMarkup(
-      withIntl(<UnifiedMarkdown content="[run](javascript:alert(1))" />),
+      withIntl(<UnifiedMarkdown trust="agent" content="[run](javascript:alert(1))" />),
     );
 
     expect(html).not.toContain('javascript:');
@@ -322,7 +342,10 @@ describe('UnifiedMarkdown — a setup link while it streams', () => {
   const render = (through: string) =>
     renderToStaticMarkup(
       withIntl(
-        <UnifiedMarkdown content={remend(prepareMarkdownSource(streamedPrefix(through), true))} />,
+        <UnifiedMarkdown
+          trust="agent"
+          content={remend(prepareMarkdownSource(streamedPrefix(through), true))}
+        />,
       ),
     );
 
@@ -384,7 +407,9 @@ const REFERENCE_MD = [
 
 describe('UnifiedMarkdown — reference-style links', () => {
   test('resolve to their definitions, never "[blocked]"', () => {
-    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={REFERENCE_MD} />));
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={REFERENCE_MD} />),
+    );
 
     expect(html).toContain('href="https://kortix.com/docs"');
     expect(html).toContain('href="https://kortix.com/changelog"');
@@ -394,10 +419,176 @@ describe('UnifiedMarkdown — reference-style links', () => {
 
   test('the definitions themselves never render', () => {
     const text = visibleText(
-      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={REFERENCE_MD} />)),
+      renderToStaticMarkup(withIntl(<UnifiedMarkdown trust="agent" content={REFERENCE_MD} />)),
     );
 
     expect(text).not.toContain('[1]');
     expect(text).not.toContain('https://kortix.com/docs');
+  });
+});
+
+// ─── Raw HTML from content no Kortix user wrote ─────────────────────────────
+// Scraped pages, connector tool output and public share transcripts all reach
+// this renderer with raw HTML enabled. The sanitizer keeps structure and text,
+// never presentation: an inline `style` or a class name from the content could
+// place an element over the app (`position:fixed`, `fixed inset-0 z-50`).
+// KaTeX and code highlighting still render: they run after the sanitizer.
+// ────────────────────────────────────────────────────────────────────────────
+
+const OVERLAY_HTML = [
+  '<div style="position:fixed;inset:0;z-index:2147483647" class="fixed inset-0 z-50">',
+  '<a href="https://example.invalid/login">Sign in</a>',
+  '</div>',
+  '<span style="position:fixed;top:0" class="fixed top-0">banner</span>',
+  '<section style="position:fixed" class="fixed">section</section>',
+].join('\n');
+
+describe('UnifiedMarkdown — raw HTML presentation attributes', () => {
+  test('drops inline style from raw HTML elements', () => {
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="untrusted" content={OVERLAY_HTML} />),
+    );
+
+    expect(html).toContain('Sign in');
+    expect(html).toContain('banner');
+    expect(html).not.toContain('position:fixed');
+    expect(html).not.toContain('z-index');
+  });
+
+  test('drops class names from raw HTML elements', () => {
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="untrusted" content={OVERLAY_HTML} />),
+    );
+    const classTokens = [...html.matchAll(/class="([^"]*)"/g)].flatMap((m) => m[1].split(/\s+/));
+
+    expect(classTokens).not.toContain('fixed');
+    expect(classTokens).not.toContain('inset-0');
+    expect(classTokens).not.toContain('z-50');
+  });
+
+  test('still renders inline and display math', () => {
+    const html = renderToStaticMarkup(
+      withIntl(
+        <UnifiedMarkdown trust="agent" content={'Inline $x^2$ here.\n\n$$\n\\frac{a}{b}\n$$\n'} />,
+      ),
+    );
+
+    expect(html).toContain('class="katex"');
+    expect(html).toContain('class="katex-display"');
+  });
+
+  test('keeps the fence language for code highlighting', () => {
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={'```ts\nconst a = 1;\n```\n'} />),
+    );
+
+    // The label is derived from the `language-ts` class the sanitizer kept.
+    // The code text itself may already be split into highlight spans.
+    expect(html).toContain('>typescript</span>');
+  });
+});
+
+// ─── Trust levels ───────────────────────────────────────────────────────────
+// Every caller names who wrote the text. `markdown-policy.test.ts` pins the
+// table; these cases prove the renderer applies each rule to real markup.
+// ────────────────────────────────────────────────────────────────────────────
+
+const IMAGE_MD = '![chart](https://images.example.com/chart.png)\n';
+const SETUP_LINK_MD = '[Add your key](http://localhost:3000/secret-intake/ksl_7f3a91c2b4)\n';
+const SETUP_LINK_CODE_MD = '`/secret-intake/ksl_7f3a91c2b4`\n';
+const RAW_HTML_MD = 'Before <kbd>Ctrl</kbd> after\n';
+
+function renderAs(
+  content: string,
+  trust: 'trusted' | 'agent' | 'untrusted',
+  variant?: 'message' | 'document',
+): string {
+  return renderToStaticMarkup(
+    withIntl(<UnifiedMarkdown content={content} trust={trust} variant={variant} />),
+  );
+}
+
+describe('UnifiedMarkdown — remote images by trust', () => {
+  test('trusted and agent text load a remote image', () => {
+    for (const trust of ['trusted', 'agent'] as const) {
+      const html = renderAs(IMAGE_MD, trust);
+      expect(html).toContain('<img');
+      expect(html).toContain('https://images.example.com/chart.png');
+    }
+  });
+
+  test('untrusted text shows a load button instead of the image', () => {
+    const html = renderAs(IMAGE_MD, 'untrusted');
+
+    expect(html).not.toContain('<img');
+    expect(html).toContain('chart');
+    expect(html).toContain('images.example.com');
+  });
+
+  test('untrusted raw HTML images wait for a click too', () => {
+    const html = renderAs(
+      '<p><img src="https://images.example.com/beacon.gif" alt="b"></p>\n',
+      'untrusted',
+    );
+
+    expect(html).not.toContain('<img');
+  });
+});
+
+describe('UnifiedMarkdown — setup links by trust', () => {
+  test('agent text turns a setup link into the in-app card', () => {
+    const html = renderAs(SETUP_LINK_MD, 'agent');
+
+    expect(html).toContain('data-testid="outcome-card-external"');
+    expect(html).not.toContain('href="http://localhost:3000/secret-intake/');
+  });
+
+  test('agent text turns a backticked setup link into the card', () => {
+    expect(renderAs(SETUP_LINK_CODE_MD, 'agent')).toContain('data-testid="outcome-card-external"');
+  });
+
+  test('trusted and untrusted text keep a setup link a plain link', () => {
+    for (const trust of ['trusted', 'untrusted'] as const) {
+      const html = renderAs(SETUP_LINK_MD, trust);
+      expect(html).not.toContain('outcome-card-external');
+      expect(html).toContain('href="http://localhost:3000/secret-intake/ksl_7f3a91c2b4"');
+      expect(html).toContain('Add your key');
+      expect(renderAs(SETUP_LINK_CODE_MD, trust)).not.toContain('outcome-card-external');
+    }
+  });
+});
+
+describe('UnifiedMarkdown — document variant', () => {
+  test('a message parses embedded HTML at every trust level', () => {
+    for (const trust of ['trusted', 'agent', 'untrusted'] as const) {
+      const html = renderAs(RAW_HTML_MD, trust);
+      expect(html).toContain('<kbd>Ctrl</kbd>');
+    }
+  });
+
+  test('a document does not parse embedded HTML: tags drop, text stays', () => {
+    const html = renderAs(RAW_HTML_MD, 'agent', 'document');
+
+    expect(html).not.toContain('<kbd>');
+    expect(html).toContain('Before Ctrl after');
+  });
+
+  test('a document keeps tables, fences in lists and ordered-list starts', () => {
+    const table = renderAs(TABLE_MD, 'agent', 'document');
+    expect(table).toContain('<table');
+    expect(table).not.toContain('node=');
+
+    expect(renderAs(FENCE_IN_LIST_MD, 'agent', 'document')).not.toContain('[object Object]');
+
+    const list = renderAs('8. a\n9. b\n10. c\n', 'agent', 'document');
+    expect(/<ol\b[^>]*>/.exec(list)?.[0] ?? '').toContain('start="8"');
+  });
+
+  test('a document never turns the streaming link placeholder into an anchor', () => {
+    const html = renderAs('[Connect Outlook](streamdown:incomplete-link)', 'agent', 'document');
+
+    expect(html).toContain('Connect Outlook');
+    expect(html).not.toContain('<a');
+    expect(html).not.toContain('streamdown:');
   });
 });

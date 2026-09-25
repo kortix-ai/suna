@@ -8,6 +8,8 @@ mock.module('../../../config', () => ({
   config: {
     FRONTEND_URL: 'https://app.test',
     SLACK_REQUIRE_USER_IDENTITY: true,
+    // The login-link signing key is derived from this; signing refuses without it.
+    API_KEY_SECRET: 'test-api-key-secret',
   },
 }));
 mock.module('../../../shared/db', () => ({ db: {}, hasDatabase: () => true }));
@@ -28,7 +30,10 @@ mock.module('../selection', () => ({
   listProjectAgents: async () => [],
   isValidModelId: () => true,
 }));
-mock.module('../model-gate', () => ({ channelModelContext: async () => null }));
+mock.module('../model-gate', () => ({
+  channelModelContext: async () => null,
+  projectModelContext: async () => null,
+}));
 mock.module('../participants', () => ({
   conversationPolicyLabel: () => 'Owner approval',
   normalizeConversationPolicy: () => 'owner_approval',

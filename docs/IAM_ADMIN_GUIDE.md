@@ -66,9 +66,9 @@ this target?** Five concepts cover the whole system:
 6. **Per-resource grants** — if the target is a *scoped* agent/skill, the caller must be
    one of its assignees (owners/admins bypass).
 7. **Agent-grant fold** — if the caller is an agent session, the verdict is intersected
-   with the agent's `kortix_permissions` grant. With the project flag
-   `agent_principal` on, steps 4–5 evaluate the AGENT's ceiling role instead of
-   the launcher's role, and the HUMAN_ONLY actions are removed (section 8).
+   with the agent's `kortix_permissions` grant. For an agent session, steps 4–5
+   evaluate the AGENT's ceiling role, not the launcher's role, and the HUMAN_ONLY
+   actions are removed (section 8).
 
 ### Caching and revocation
 
@@ -513,18 +513,8 @@ Humans are half the picture. Kortix agents act with **contained**, auditable aut
 
 ### The containment model
 
-Two models exist. The project feature flag **`agent_principal`** (Settings →
-Feature flags, default **off**) selects one per project.
-
-**Flag off (the default today): the launcher caps the agent.**
-
-```
-effective = launching user's project role
-          ∩ the agent's kortix_permissions
-          ∩ the session token's project scope
-```
-
-**Flag on: the agent is the acting principal.**
+**The agent is the acting principal.** This is standard behavior, not a mode a
+project selects.
 
 ```
 effective = the agent's kortix_permissions        (kortix.yaml, source of truth)
@@ -534,8 +524,8 @@ effective = the agent's kortix_permissions        (kortix.yaml, source of truth)
           ∩ the session token's project scope
 ```
 
-With the flag on, the launcher's role is **not** an input. The launcher
-contributes two things only:
+The launcher's role is **not** an input. The launcher contributes two things
+only:
 
 1. **"May run this agent"** — the agent object grant (Customize → the agent →
    People, or the Access hub). It is closed by default and is checked at every
@@ -549,8 +539,15 @@ contributes two things only:
    never reach personal resources.
 
 `project.read` is always granted inside the agent's own project. A project
-with no `agents:` map (ungoverned) keeps the flag-off model until it declares
-agents.
+with no `agents:` map (ungoverned) has no governed agent, so nothing here
+applies until it declares agents.
+
+**Escape hatch.** One project can be put back on the old launcher-caps-the-agent
+model for a single release with
+`PATCH /v1/projects/:id/features {"feature":"agent_principal","enabled":false}`.
+It is a support lever for a migrating project, not a product setting: it is not
+listed on **Settings → Feature flags**, and the switch is removed in the
+release after this one.
 
 - The **`kortix_permissions` grant** (Kortix permissions) is declared per agent in
   the project manifest (`kortix.yaml`). `kortix_cli` is its deprecated spelling:
@@ -576,7 +573,7 @@ agents.
   *none* of that dimension. An agent absent from an adopted `agents:` map gets nothing
   at all. Grants are read from the **default branch** — an agent can propose widening
   its own powers in a change request, but the change only takes effect after a
-  caller with merge authority merges it. With `agent_principal` on, an agent-session
+  caller with merge authority merges it. An agent-session
   credential cannot merge a change request whose diff touches `kortix.yaml`
   `agents.*` or `triggers` (`403 CR_AGENT_GOVERNANCE_CHANGE`); a human with
   `project.gitops.merge` merges it.

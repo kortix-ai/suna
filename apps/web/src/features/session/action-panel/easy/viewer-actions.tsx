@@ -57,6 +57,7 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { downloadFile } from '@/features/files/api/runtime-files';
+import { PublicShareLinkConfirm } from '@/components/projects/public-share-link-confirm';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
@@ -295,6 +296,7 @@ export function ViewerActions({
           </DropdownMenu>
         )}
         {downloadButton}
+        <PublicShareLinkConfirm confirmation={share.confirmation} />
       </span>
     );
   }
@@ -380,6 +382,7 @@ export function ViewerActions({
     <span className={cn('flex shrink-0 items-center gap-1', className)}>
       {split}
       {downloadButton}
+      <PublicShareLinkConfirm confirmation={share.confirmation} />
     </span>
   );
 }

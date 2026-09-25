@@ -88,7 +88,43 @@ export async function serveFixtureRepoLocally(
       REQUEST_METHOD: req.method!, CONTENT_TYPE: req.headers['content-type'] ?? '',
       REMOTE_USER: 'ke2e', REMOTE_ADDR: '127.0.0.1' } });
     const chunks: Buffer[] = [];
-    req.pipe(child.stdin);
+    // Answer only after BOTH the request body has ended and git has exited.
+    // `git receive-pack` can exit before the proxy's chunked body is fully
+    // read (the terminator arrives late under load). Answering then lets the
+    // API's fetch reuse this keep-alive socket while the server is still
+    // parsing the old body: the next request fails parsing with a bare 400
+    // before this handler ever runs (GH-17 / AGP-10 flakes, 2026-09-23).
+    let requestEnded = false;
+    let childClosed = false;
+    let answered = false;
+    let answer: () => void = () => {};
+    const answerWhenDone = () => {
+      if (answered || !requestEnded || !childClosed) return;
+      answered = true;
+      answer();
+    };
+    // Forward the body by hand rather than `req.pipe(child.stdin)`: once git
+    // exits early, pipe() detaches, and Bun's node:http then never emits
+    // 'end' for the rest of the body. An explicit 'data' listener keeps the
+    // request flowing and discards what git no longer reads.
+    let stdinOpen = true;
+    child.stdin.on('error', () => {});
+    child.stdin.on('close', () => {
+      stdinOpen = false;
+      req.resume();
+    });
+    req.on('data', (chunk: Buffer) => {
+      if (!stdinOpen) return;
+      if (!child.stdin.write(chunk)) {
+        req.pause();
+        child.stdin.once('drain', () => req.resume());
+      }
+    });
+    req.on('end', () => {
+      requestEnded = true;
+      if (stdinOpen) child.stdin.end();
+      answerWhenDone();
+    });
     child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
     // git http-backend explains every refusal on STDERR. Discarding it is
     // why three CI failures of this flow (2026-09-21 run 35625012282,
@@ -101,8 +137,17 @@ export async function serveFixtureRepoLocally(
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
-    child.on('error', () => { res.writeHead(502); res.end(); });
+    child.on('error', () => {
+      if (answered) return;
+      answered = true;
+      res.writeHead(502);
+      res.end();
+    });
     child.on('close', () => {
+      childClosed = true;
+      answerWhenDone();
+    });
+    answer = () => {
       const body = Buffer.concat(chunks);
       const split = body.indexOf('\r\n\r\n');
       if (split < 0) {
@@ -122,7 +167,7 @@ export async function serveFixtureRepoLocally(
         console.error(`[${label}] http-backend answered ${res.statusCode} for ${req.method} ${req.url}${stderr ? ` — stderr: ${stderr.trim()}` : ''}`);
       }
       res.end(body.subarray(split + 4));
-    });
+    };
   });
   await new Promise<void>((resolve) => localGitServer.listen(0, '127.0.0.1', resolve));
   const port = (localGitServer.address() as import('node:net').AddressInfo).port;

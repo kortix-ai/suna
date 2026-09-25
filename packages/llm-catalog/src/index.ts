@@ -1,4 +1,4 @@
-import catalogJson from './catalog.generated.json' with { type: 'json' };
+import providerEnvJson from './provider-env.generated.json' with { type: 'json' };
 
 export {
   DEFAULT_ENABLEMENT_WINDOW_MONTHS,
@@ -428,14 +428,31 @@ export interface Catalog {
   providers: CatalogProvider[];
 }
 
-export const CATALOG = catalogJson as Catalog;
+// The bundled models.dev snapshot (~7.6 MB of JSON) and its one reader live in
+// `catalog-data.ts`, never in this module: browser bundles import this entry
+// for small helpers, and a bundler can drop `catalog-data.ts` only when this
+// file does not import the JSON itself (catalog-isolation.test.ts).
+export { CATALOG, catalogModelForWireModel } from './catalog-data';
+
+/**
+ * `{ id, env }` for every provider in `CATALOG`, in the same order — the only
+ * catalog fields `providerAuthRequirement` reads. ~8 KB instead of the ~7.6 MB
+ * snapshot, for browser code that needs provider credentials but no models.
+ * Regenerated together with the snapshot; catalog-isolation.test.ts checks
+ * that the two agree.
+ */
+export const CATALOG_PROVIDER_ENV = providerEnvJson as ReadonlyArray<{ id: string; env: string[] }>;
 
 export interface ManagedModel {
   id: string;
   name: string;
-  // OpenAI-compatible upstream model ID.
+  // OpenRouter model ID. OpenRouter is the fallback upstream when
+  // `morphModelId` is set, and the only upstream otherwise.
   upstreamModelId: string;
   transport: 'openrouter';
+  // Morph model ID. When set, Morph's OpenAI-compatible API is the primary
+  // upstream and `pricing` holds Morph's list prices.
+  morphModelId?: string;
   // Omit this to keep the model grouped under Kortix in the picker.
   providerBrand?: string;
   // Catalog lookup hint. Managed pricing below is the routing authority.
@@ -459,7 +476,7 @@ export interface ManagedModel {
   vision: boolean;
   // A conservative OpenCode output ceiling inside the upstream context window.
   limit: { context: number; output: number };
-  // OpenRouter endpoint pin and privacy constraints.
+  // OpenRouter provider routing: the allowed endpoint pool and privacy constraints.
   openrouterProvider?: Record<string, unknown>;
 }
 
@@ -483,72 +500,54 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
   return candidates;
 }
 
-// Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>` so the
-// picker shows Kortix while the gateway routes through ZDR OpenRouter endpoints.
+// Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>`, so the
+// picker shows Kortix whichever upstream serves the request.
+//
+// Morph direct is the primary upstream. When a Morph dispatch fails (HTTP error
+// or network error before output), the gateway sends the same request to the
+// OpenRouter pool. Each pool lists only endpoints that, on 2026-09-24, were in
+// OpenRouter's ZDR feed, had a CONFIRMED US datacenter (US headquarters plus US
+// datacenters in /api/v1/providers, or a `/us` endpoint tag), and answered pinned
+// text and image probes. US headquarters alone does not qualify. `allow_fallbacks: true` lets OpenRouter move between pool members;
+// `only` keeps it inside the pool. `max_price` (USD per 1M tokens) excludes premium
+// tiers. packages/llm-catalog/README.md records the probe results.
 // Vision is explicit per model so the picker and runtime reject image input for text-only models.
+const OPENROUTER_POOL_PRIVACY = { allow_fallbacks: true, zdr: true, data_collection: 'deny' } as const;
+
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', upstreamModelId: 'deepseek/deepseek-v4.1-flash',
-    transport: 'openrouter', pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
-    pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.006, outputPerMillion: 0.6 },
+    transport: 'openrouter', morphModelId: 'morph-dsv41flash', pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
+    // Morph publishes no DeepSeek V4.1 Flash cached rate; this is its DeepSeek V4 Flash rate.
+    pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.0359375, outputPerMillion: 0.6 },
     tier: 'balanced', vision: true, limit: { context: 1_048_576, output: 16_384 },
-    openrouterProvider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+    openrouterProvider: {
+      only: ['morph', 'coreweave/fp8'],
+      ...OPENROUTER_POOL_PRIVACY,
+      max_price: { prompt: 0.3, completion: 1.2 },
+    },
   },
   {
     id: 'glm-5.3-flash', name: 'GLM 5.3 Flash', upstreamModelId: 'z-ai/glm-5.3-flash',
-    transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
-    pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
+    transport: 'openrouter', morphModelId: 'morph-glm53flash', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+    pricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
     tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
-      only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny',
+      only: ['morph', 'decart/fp4', 'coreweave/nvfp4', 'sail-research/us'],
+      ...OPENROUTER_POOL_PRIVACY,
+      max_price: { prompt: 0.15, completion: 0.5 },
     },
   },
   {
     id: 'kimi-k3', name: 'Kimi K3 2.8T', upstreamModelId: 'moonshotai/kimi-k3',
-    transport: 'openrouter', pricingRef: 'openrouter/moonshotai/kimi-k3',
-    pricing: { inputPerMillion: 2.5, cachedInputPerMillion: 0.25, outputPerMillion: 10.95 },
+    transport: 'openrouter', morphModelId: 'morph-kimik3', pricingRef: 'openrouter/moonshotai/kimi-k3',
+    pricing: { inputPerMillion: 2.5, cachedInputPerMillion: 0.29, outputPerMillion: 14 },
     tier: 'flagship', vision: true, limit: { context: 1_048_576, output: 16_384 },
-    openrouterProvider: { only: ['wafer'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
-  },
-  // Released 2026-09-22. Each pin is the model's US endpoint in OpenRouter's ZDR
-  // feed, and each rate is that endpoint's price, not the vendor list price
-  // (Azure US and Bedrock US add 10%). On 2026-09-23 every pin answered a text,
-  // an image and a tool-call request with the deployment key. After the first
-  // 272,000 prompt tokens, GPT-6 bills its higher tier.
-  {
-    id: 'claude-opus-5.5', name: 'Claude Opus 5.5', upstreamModelId: 'anthropic/claude-opus-5.5',
-    transport: 'openrouter', pricingRef: 'openrouter/anthropic/claude-opus-5.5',
-    pricing: { inputPerMillion: 4.4, cachedInputPerMillion: 0.22, cacheWritePerMillion: 5.5, outputPerMillion: 22 },
-    tier: 'flagship', vision: true, limit: { context: 1_000_000, output: 128_000 },
     openrouterProvider: {
-      only: ['amazon-bedrock/us-east-1'], allow_fallbacks: false, zdr: true, data_collection: 'deny',
+      only: ['morph', 'fireworks/us'],
+      ...OPENROUTER_POOL_PRIVACY,
+      max_price: { prompt: 3.3, completion: 16.5 },
     },
-  },
-  {
-    id: 'gpt-6-sol', name: 'GPT-6 Sol', upstreamModelId: 'openai/gpt-6-sol',
-    transport: 'openrouter', pricingRef: 'openrouter/openai/gpt-6-sol',
-    pricing: {
-      inputPerMillion: 2.2, cachedInputPerMillion: 0.22, cacheWritePerMillion: 2.75, outputPerMillion: 11,
-      contextOver200k: {
-        contextThreshold: 272_000, inputPerMillion: 4.4, cachedInputPerMillion: 0.44,
-        cacheWritePerMillion: 5.5, outputPerMillion: 16.5,
-      },
-    },
-    tier: 'balanced', vision: true, limit: { context: 1_050_000, output: 128_000 },
-    openrouterProvider: { only: ['azure/us'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
-  },
-  {
-    id: 'gpt-6-luna', name: 'GPT-6 Luna', upstreamModelId: 'openai/gpt-6-luna',
-    transport: 'openrouter', pricingRef: 'openrouter/openai/gpt-6-luna',
-    pricing: {
-      inputPerMillion: 0.11, cachedInputPerMillion: 0.011, cacheWritePerMillion: 0.1375, outputPerMillion: 0.55,
-      contextOver200k: {
-        contextThreshold: 272_000, inputPerMillion: 0.22, cachedInputPerMillion: 0.022,
-        cacheWritePerMillion: 0.275, outputPerMillion: 0.825,
-      },
-    },
-    tier: 'fast', vision: true, limit: { context: 1_050_000, output: 128_000 },
-    openrouterProvider: { only: ['azure/us'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
   },
 ];
 
@@ -570,69 +569,6 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
 
 /** Concrete Kortix-managed default used when no account or project default exists. */
 export const PLATFORM_DEFAULT_MODEL_ID = 'deepseek-v4.1-flash';
-
-function modelsByWireId(catalog: Catalog): Map<string, CatalogModel> {
-  const byId = new Map<string, CatalogModel>();
-  for (const provider of catalog.providers) {
-    for (const model of provider.models) byId.set(`${provider.id}/${model.id}`, model);
-  }
-  return byId;
-}
-
-/**
- * Resolve a gateway WIRE model id to its full `CatalogModel` — the capability
- * record `generationControlCapabilities`/`clampGenerationConfig` gate against.
- * The CANONICAL wire-id → model resolver: it stitches together the three id
- * shapes a gateway request can carry, so a caller never has to string-split
- * `<provider>/<model>` or special-case managed slugs itself.
- *
- *   - `codex/<id>`      → the genuine OpenAI catalog entry (`openai/<id>`).
- *   - `<provider>/<id>` → that provider's catalog entry (BYOK models).
- *   - bare `<id>`       → a managed slug, resolved via its `pricingRef` (the
- *                         model's real models.dev id) so e.g. `claude-opus-4.8`
- *                         gets Claude's real `reasoning_options`/`limit` instead
- *                         of a permissive fallback; a synthesized minimal record
- *                         (reasoning/tool_call/temperature all true) when the
- *                         managed slug has no models.dev entry to borrow from.
- *
- * `catalog` defaults to the bundled static `CATALOG`. apps/api passes the LIVE
- * models.dev snapshot instead (its own thin wrapper of the same name) so the
- * host-side generation-controls clamp sees fresh capabilities; the standalone
- * gateway transport, which has no runtime snapshot, uses the bundled catalog.
- */
-export function catalogModelForWireModel(
-  wireModel: string,
-  catalog: Catalog = CATALOG,
-): CatalogModel | undefined {
-  if (wireModel.startsWith('codex/')) {
-    return modelsByWireId(catalog).get(`openai/${wireModel.slice('codex/'.length)}`);
-  }
-  const slash = wireModel.indexOf('/');
-  if (slash > 0) {
-    const providerId = wireModel.slice(0, slash);
-    const modelId = wireModel.slice(slash + 1);
-    return catalog.providers
-      .find((provider) => provider.id === providerId)
-      ?.models.find((model) => model.id === modelId);
-  }
-  const managed = getManagedModel(wireModel);
-  if (managed) {
-    const catalogById = modelsByWireId(catalog);
-    const byPricingRef = pricingRefLookupCandidates(managed.pricingRef)
-      .map((ref) => catalogById.get(ref))
-      .find((entry): entry is CatalogModel => entry !== undefined);
-    if (byPricingRef) return byPricingRef;
-    return {
-      id: managed.id,
-      name: managed.name,
-      reasoning: true,
-      tool_call: true,
-      temperature: true,
-      limit: managed.limit,
-    };
-  }
-  return undefined;
-}
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   'kortix',

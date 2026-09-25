@@ -9,6 +9,7 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash } from 'node:crypto';
+import { requestClientIp } from '../shared/client-ip';
 import { connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type Context, Hono, type Next } from 'hono';
@@ -21,6 +22,7 @@ import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbo
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
+import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
 import { watchConnectorCompletion } from './connector-completion-watch';
 import { composioConfigured } from '../connectors/composio';
@@ -42,10 +44,9 @@ const setupLinksPublicApp = new Hono();
 const TOKEN_LIKE_REGEX = /^ksl_[A-Za-z0-9_-]{8,512}$/;
 const setupLinkLimiter = new TokenBucketRateLimiter('setup_link');
 
+// Trusted-proxy rule: the leftmost X-Forwarded-For entry is caller-written.
 function clientIp(c: Context) {
-  return c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-    || c.req.header('x-real-ip')
-    || 'unknown';
+  return requestClientIp(c);
 }
 
 function createSetupLinkRateLimitMiddleware() {
@@ -63,7 +64,7 @@ function createSetupLinkRateLimitMiddleware() {
       key,
       { limit: 30, windowMs: 60_000 },
       {
-        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'setup_link',
         resourceId,
         metadata: { limiter: 'setup_link' },

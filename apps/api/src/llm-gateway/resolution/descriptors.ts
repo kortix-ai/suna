@@ -8,6 +8,9 @@ import {
   type CodexCredential,
 } from '../credentials/codex';
 import type { ManagedModel } from '../models/managed-models';
+import { isAwsRegion } from './aws-region';
+
+export { isAwsRegion };
 
 // Default region for a project's BYOK Bedrock connection when it hasn't set
 // its own AWS_REGION secret. us-east-1 is Bedrock's broadest-availability
@@ -22,8 +25,14 @@ const DEFAULT_BEDROCK_BYOK_REGION = 'us-east-1';
  */
 export function bedrockByokBaseUrl(region: string | null | undefined): string {
   const trimmed = region?.trim();
+  if (trimmed && !isAwsRegion(trimmed)) {
+    // The region becomes part of the endpoint host. Only an AWS region name
+    // may reach it, so the credential is only ever sent to amazonaws.com.
+    throw new Error('AWS_REGION is not a valid AWS region name');
+  }
   return `https://bedrock-runtime.${trimmed || DEFAULT_BEDROCK_BYOK_REGION}.amazonaws.com`;
 }
+
 
 // Bedrock cross-region ("global") inference profiles prepend a geography code
 // to the base model id so a single logical model can route across multiple
@@ -147,6 +156,23 @@ function managedPricing(managed: ManagedModel): UpstreamDescriptor['pricing'] | 
   return livePricing(managed.pricingRef.slice(0, slash), managed.pricingRef.slice(slash + 1));
 }
 
+function morphManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
+  if (!managed.morphModelId || !config.MORPH_API_KEY) return null;
+  return {
+    provider: 'morph',
+    kind: 'openai-compat',
+    baseUrl: config.MORPH_API_URL,
+    apiKey: config.MORPH_API_KEY,
+    billingMode: 'credits',
+    markup: llmPriceMarkup(),
+    resolvedModel: managed.morphModelId,
+    // Morph reports no per-request cost, so its list prices bill the request.
+    pricing: managedPricing(managed),
+    failover: true,
+    publicProvider: 'kortix',
+  };
+}
+
 function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.OPENROUTER_API_KEY) return null;
   return {
@@ -157,18 +183,28 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.upstreamModelId,
+    // OpenRouter reports `usage.cost` for the endpoint that served the request;
+    // the gateway bills that. This table applies only when the cost is absent.
     pricing: managedPricing(managed),
     bodyExtras: {
       provider: {
-        ...managed.openrouterProvider,
         allow_fallbacks: false,
+        ...managed.openrouterProvider,
         zdr: true,
         data_collection: 'deny',
       },
     },
+    failover: true,
+    publicProvider: 'kortix',
   };
 }
 
+/**
+ * Upstreams for a managed model, in dispatch order: Morph direct first, then
+ * the OpenRouter endpoint pool. Every candidate sets `failover`, so the gateway
+ * sends a request that fails on Morph (HTTP error or network error before any
+ * output) to OpenRouter. Users see only the Kortix model either way.
+ */
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   // CLOUD-ONLY gate, defense-in-depth: RUNTIME_MANAGED_MODELS is already empty
   // on a deployment with KORTIX_MANAGED_PROVIDER_ENABLED off (managed-models.ts),
@@ -176,8 +212,9 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   // guard here too so no managed credential is read if some future caller
   // reaches this directly.
   if (!config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
-  const d = openRouterManagedDescriptor(managed);
-  return d ? [d] : [];
+  return [morphManagedDescriptor(managed), openRouterManagedDescriptor(managed)].filter(
+    (descriptor): descriptor is UpstreamDescriptor => descriptor !== null,
+  );
 }
 
 export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
@@ -186,7 +223,7 @@ export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
 
 /**
  * Whether THIS deployment can actually reach `managed` — i.e. its transport's
- * credential is configured (OPENROUTER_API_KEY) and the
+ * credential is configured (MORPH_API_KEY or OPENROUTER_API_KEY) and the
  * managed provider is on.
  *
  * The served catalog reads this so a model that would fail resolution is never

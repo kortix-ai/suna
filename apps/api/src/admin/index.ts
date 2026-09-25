@@ -7,8 +7,7 @@
  *
  * Scope (v1): the safe accounts console — list accounts (filterable by tier,
  * payment status, paid-only, and subscription presence), account members,
- * credit ledger, and grant/debit credits (reusing the billing grantCredits
- * service). Stripe customer id/email are still returned as null (no join yet);
+ * credit ledger, and grant/debit credits (through the billing wallet). Stripe customer id/email are still returned as null (no join yet);
  * the legacy env/exec/schema endpoints are intentionally NOT restored.
  */
 import { qualifiedColumn } from '../shared/sql-qualified-column';
@@ -744,6 +743,12 @@ adminApp.openapi(
   },
 );
 
+/** The buckets an admin credit route echoes back; no credit row reads as empty. */
+async function adminBalance(accountId: string) {
+  const { wallet } = await import('../billing/wallet');
+  return (await wallet.balance(accountId)) ?? { balance: 0, expiring: 0, nonExpiring: 0, daily: 0 };
+}
+
 // ── Grant credits ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
@@ -783,10 +788,16 @@ adminApp.openapi(
     const isExpiring = body.isExpiring !== false;
     if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
 
-    const { grantCredits, getBalance } = await import('../billing/services/credits');
-    await grantCredits(accountId, amount, 'admin_grant', `${description} (by admin ${actorUserId ?? 'unknown'})`, isExpiring);
-    const balance = await getBalance(accountId);
-    return c.json({ ok: true, balance });
+    const { wallet } = await import('../billing/wallet');
+    await wallet.grant({
+      accountId,
+      amount,
+      kind: 'admin_grant',
+      description: `${description} (by admin ${actorUserId ?? 'unknown'})`,
+      expiring: isExpiring,
+      key: null,
+    });
+    return c.json({ ok: true, balance: await adminBalance(accountId) });
   } catch (e: any) {
     return c.json({ error: adminErrorMessage(e) }, 500);
   }
@@ -830,10 +841,18 @@ adminApp.openapi(
     const description = String(body.description || 'Admin credit debit');
     if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
 
-    const { grantCredits, getBalance } = await import('../billing/services/credits');
-    await grantCredits(accountId, -Math.abs(amount), 'admin_debit', `${description} (by admin ${actorUserId ?? 'unknown'})`, false);
-    const balance = await getBalance(accountId);
-    return c.json({ ok: true, balance });
+    const { wallet } = await import('../billing/wallet');
+    // A negative grant of its own kind: an operator correction is not
+    // customer usage, and it is not refused by the admission floor.
+    await wallet.grant({
+      accountId,
+      amount: -Math.abs(amount),
+      kind: 'admin_debit',
+      description: `${description} (by admin ${actorUserId ?? 'unknown'})`,
+      expiring: false,
+      key: null,
+    });
+    return c.json({ ok: true, balance: await adminBalance(accountId) });
   } catch (e: any) {
     return c.json({ error: adminErrorMessage(e) }, 500);
   }
@@ -1359,6 +1378,74 @@ adminApp.openapi(
       }
 
       return c.json({ ok: true, enabled: body.enabled });
+    } catch (e: any) {
+      return c.json({ error: adminErrorMessage(e) }, 500);
+    }
+  },
+);
+
+// ── Mark an account's SSO domain verified (operator) ────────────────────────
+// The self-serve path is DNS (`POST /accounts/:id/iam/sso/provider/verify-domain`).
+// An operator can record the same fact after proving domain control another way
+// (a support ticket from the domain's mail, a signed order form), or withdraw it.
+// A verified domain makes the IdP's asserted emails trusted outside the account
+// and turns on `enforce_sso`, so the change is audited on the account.
+adminApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/api/accounts/{id}/sso-domain-verification',
+    tags: ['admin'],
+    summary: "Mark the account's SSO primary domain verified or unverified",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: { content: { 'application/json': { schema: z.object({ verified: z.boolean() }) } } },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), primary_domain: z.string(), domain_verified: z.boolean() }),
+        'Updated domain verification',
+      ),
+      404: json(z.record(z.string(), z.any()), 'No SSO provider'),
+      409: json(z.record(z.string(), z.any()), 'Domain verified by another account'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const body = c.req.valid('json') as { verified: boolean };
+      const { domainVerifiedByOtherAccount, getSsoProvider, isSsoDomainVerified, setSsoDomainVerified } =
+        await import('../repositories/sso');
+      const before = await getSsoProvider(accountId);
+      if (!before) return c.json({ error: 'no SSO provider configured' }, 404);
+      if (body.verified && (await domainVerifiedByOtherAccount(accountId, before.primaryDomain))) {
+        return c.json(
+          { error: `${before.primaryDomain} is already verified by another account`, code: 'sso_domain_claimed' },
+          409,
+        );
+      }
+      const after = await setSsoDomainVerified(accountId, body.verified);
+      if (!after) return c.json({ error: 'no SSO provider configured' }, 404);
+      try {
+        const { recordAuditEvent } = await import('../shared/audit');
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: 'admin.account.sso_domain.set',
+          resourceType: 'sso_provider',
+          resourceId: after.ssoProviderId,
+          before: { primary_domain: before.primaryDomain, domain_verified: isSsoDomainVerified(before) },
+          after: { primary_domain: after.primaryDomain, domain_verified: isSsoDomainVerified(after), method: 'operator' },
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the change */
+      }
+      return c.json({ ok: true, primary_domain: after.primaryDomain, domain_verified: isSsoDomainVerified(after) });
     } catch (e: any) {
       return c.json({ error: adminErrorMessage(e) }, 500);
     }

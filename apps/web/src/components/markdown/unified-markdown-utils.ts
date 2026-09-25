@@ -8,29 +8,6 @@ import { prepareMarkdownForKatex } from '@kortix/shared/markdown-math';
 // so they can be unit-tested without pulling in React / Shiki / Streamdown.
 
 /**
- * Is the WebAssembly runtime Shiki needs available in this context?
- *
- * Shiki's oniguruma grammar engine compiles to WebAssembly. Some browsers /
- * contexts block or disable WebAssembly entirely — privacy browsers (Brave with
- * aggressive shields, LibreWolf, Tor Browser in high-security mode), hardened /
- * sandboxed WebViews, enterprise-policy-locked browsers, and scrapers/bots with
- * spoofed Chrome UAs running on runtimes without WebAssembly. In those contexts
- * eagerly kicking off `getSingletonHighlighter()` at module init leaves a
- * promise that rejects with `ReferenceError: WebAssembly is not defined` (V8) /
- * `Can't find variable: WebAssembly` (WebKit). Because the singleton starts
- * before any code block renders, the rejection has no consumer attached yet and
- * fires `onunhandledrejection` → Sentry → Better Stack.
- *
- * Gate the highlighter on this check so such visitors degrade to plain
- * (un-highlighted) code instead of paging on every page load.
- *
- * See Better Stack 1604d50a (`WebAssembly is not defined`).
- */
-export function shikiWasmAvailable(): boolean {
-  return typeof WebAssembly !== 'undefined';
-}
-
-/**
  * The text Streamdown parses: KaTeX delimiters normalised, system tags removed,
  * bare URLs linked.
  *
@@ -76,6 +53,34 @@ export function isInternalUrl(href: string | undefined): boolean {
   if (href.startsWith('http://') || href.startsWith('https://')) return false;
   if (href.includes('://')) return false;
   return href.startsWith('/') || href.startsWith('#');
+}
+
+/** Base for resolving a relative image URL when there is no window (server render, tests). */
+const NO_WINDOW_PAGE_URL = 'https://page.invalid/';
+
+/**
+ * The host a markdown image would be fetched from, when that host is not this
+ * app. `null` for a same-origin or relative source, for `data:` and `blob:`,
+ * and for a source the sandbox proxy rewrote (`proxiedSrc !== src`): that is
+ * the session's own file served through the API, not a third party.
+ *
+ * The URL is resolved against the page exactly as the browser will fetch it,
+ * so protocol-relative (`//host`), backslash (`\\host`), padded and
+ * mixed-case forms are classified by where they actually point. Anything that
+ * resolves off this origin is remote; a source that does not parse is too.
+ */
+export function remoteImageHost(src: string, proxiedSrc: string = src): string | null {
+  if (proxiedSrc !== src) return null;
+  const page = typeof window !== 'undefined' ? window.location.href : NO_WINDOW_PAGE_URL;
+  let url: URL;
+  try {
+    url = new URL(src, page);
+  } catch {
+    return src.trim().slice(0, 64) || null;
+  }
+  if (url.protocol === 'data:' || url.protocol === 'blob:') return null;
+  if (url.origin === new URL(page).origin) return null;
+  return url.host || url.protocol;
 }
 
 /**

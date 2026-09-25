@@ -146,6 +146,12 @@ export interface InboundAuditScope {
   correlationId: string | null;
   /** Account id from `?account_id=` / `?accountId=`; the only query value read. */
   queryAccountId: string | null;
+  /**
+   * Actions of the events `recordAuditEvent` wrote during this request. A
+   * successful request whose own action is among them is already on record:
+   * the handler's event is its row.
+   */
+  recordedActions: Set<string>;
   emitted: boolean;
 }
 
@@ -198,6 +204,7 @@ export function attachInboundAuditScope(init: InboundAuditScopeInit): InboundAud
     correlationId: headers?.get('x-correlation-id') || headers?.get('idempotency-key') || null,
     queryAccountId:
       init.url?.searchParams.get('account_id') || init.url?.searchParams.get('accountId') || null,
+    recordedActions: new Set(),
     emitted: false,
   };
   const store = getRequestContext() as ContextWithScope | undefined;

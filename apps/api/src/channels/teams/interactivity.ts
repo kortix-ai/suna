@@ -1,8 +1,13 @@
-import { labelForModelRef } from '../../llm-gateway/models/picker';
-import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
-import { setChannelAgent, setChannelModel } from '../slack/selection';
-import { resolveConversationProject, setConversationProject, teamsChannelCtx } from './binding';
+import { setChannelAgent } from '../slack/selection';
+import { setConversationProject, teamsChannelCtx } from './binding';
+import {
+  MANAGED_TEAMS_INBOUND,
+  conversationProjectFor,
+  inboundAllowsTeamsProject,
+  teamsSessionInScope,
+  type TeamsInbound,
+} from './inbound';
 import { consumePendingTeamsPickerMessage } from './auth-resume';
 import { REVIEW_FEEDBACK_INPUT, TEAMS_FORM_VERB, TEAMS_STOP_VERB, buildNoticeCard } from './cards';
 import {
@@ -14,6 +19,7 @@ import {
 import { decideTeamsThreadJoin } from './participants';
 import { createOrJoinTeamsConversationSession } from './session';
 import { stopTeamsTurn } from './stop';
+import { applyTeamsModelChoice } from './model-choice';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
 export interface TeamsInvokeResponse {
@@ -37,9 +43,20 @@ function parseAction(activity: TeamsActivity): { verb: string; data: Record<stri
   return { verb, data: value?.action?.data ?? {} };
 }
 
-export async function handleAdaptiveCardAction(activity: TeamsActivity): Promise<TeamsInvokeResponse> {
+const OTHER_PROJECT_NOTICE = 'This bot is connected to a different Kortix project.';
+
+export async function handleAdaptiveCardAction(
+  activity: TeamsActivity,
+  inbound: TeamsInbound = MANAGED_TEAMS_INBOUND,
+): Promise<TeamsInvokeResponse> {
   const action = parseAction(activity);
   if (!action) return cardResponse(buildNoticeCard("This action isn't available."));
+
+  // Card data is part of the activity body. A per-project bot's body is only as
+  // trustworthy as its admin, so any project it names must be that project.
+  if (typeof action.data.projectId === 'string' && !inboundAllowsTeamsProject(inbound, action.data.projectId)) {
+    return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
+  }
 
   switch (action.verb) {
     case 'teams_request_access':
@@ -47,19 +64,19 @@ export async function handleAdaptiveCardAction(activity: TeamsActivity): Promise
     case 'teams_thread_join':
       return handleThreadJoin(activity, action.data);
     case 'teams_set_model':
-      return handleSetModel(activity, action.data);
+      return handleSetModel(activity, action.data, inbound);
     case 'teams_set_agent':
-      return handleSetAgent(activity, action.data);
+      return handleSetAgent(activity, action.data, inbound);
     case 'teams_pick_project':
-      return handlePickProject(activity, action.data);
+      return handlePickProject(activity, action.data, inbound);
     case 'teams_answer':
-      return handleAnswer(activity, action.data);
+      return handleAnswer(activity, action.data, inbound);
     case TEAMS_FORM_VERB:
-      return handleForm(activity, action.data);
+      return handleForm(activity, action.data, inbound);
     case TEAMS_STOP_VERB:
-      return handleStop(activity, action.data);
+      return handleStop(activity, action.data, inbound);
     case 'teams_review':
-      return handleReview(activity, action.data);
+      return handleReview(activity, action.data, inbound);
     default:
       return cardResponse(buildNoticeCard("This action isn't available anymore."));
   }
@@ -72,21 +89,38 @@ function convoOf(activity: TeamsActivity): { tenantId: string; conversationId: s
   return { tenantId, conversationId };
 }
 
+/** A per-project bot configures only conversations that run its own project. */
+async function conversationInScope(
+  inbound: TeamsInbound,
+  convo: { tenantId: string; conversationId: string },
+): Promise<boolean> {
+  if (inbound.kind === 'managed') return true;
+  return (await conversationProjectFor(inbound, convo.tenantId, convo.conversationId)) === inbound.projectId;
+}
+
+/**
+ * A model card's button or its dropdown's Use button. It used to store any
+ * model it was sent with no check at all; it now runs the same check and key
+ * selection as `/model` (model-choice.ts), as the person who pressed it.
+ */
 async function handleSetModel(
   activity: TeamsActivity,
   data: Record<string, unknown>,
+  inbound: TeamsInbound,
 ): Promise<TeamsInvokeResponse> {
   const convo = convoOf(activity);
   if (!convo) return cardResponse(buildNoticeCard("I couldn't update the model."));
+  if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
   const model = typeof data.model === 'string' ? data.model : '';
-  const ctx = teamsChannelCtx(convo.tenantId, convo.conversationId);
-  if (!model) {
-    await setChannelModel(ctx, null);
-    return cardResponse(buildNoticeCard('Model reset to the project default.', '✅'));
-  }
-  const stored = toOpencodeModelRef(model);
-  await setChannelModel(ctx, stored);
-  return cardResponse(buildNoticeCard(`Model set to ${labelForModelRef(stored)}.`, '✅'));
+  return cardResponse(
+    await applyTeamsModelChoice(
+      activity,
+      convo.tenantId,
+      convo.conversationId,
+      model,
+      inbound.kind === 'managed' ? undefined : inbound.projectId,
+    ),
+  );
 }
 
 /**
@@ -101,9 +135,12 @@ async function handleSetModel(
 async function handleStop(
   activity: TeamsActivity,
   data: Record<string, unknown>,
+  inbound: TeamsInbound,
 ): Promise<TeamsInvokeResponse> {
   const sessionId = typeof data.sessionId === 'string' ? data.sessionId : '';
-  if (!sessionId) return cardResponse(buildNoticeCard('That run is no longer available.'));
+  if (!sessionId || !(await teamsSessionInScope(inbound, sessionId))) {
+    return cardResponse(buildNoticeCard('That run is no longer available.'));
+  }
   const outcome = await stopTeamsTurn({
     sessionId,
     teamsUserId: teamsUserId(activity) ?? '',
@@ -125,9 +162,11 @@ async function handleStop(
 async function handleSetAgent(
   activity: TeamsActivity,
   data: Record<string, unknown>,
+  inbound: TeamsInbound,
 ): Promise<TeamsInvokeResponse> {
   const convo = convoOf(activity);
   if (!convo) return cardResponse(buildNoticeCard("I couldn't update the agent."));
+  if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
   const agent = typeof data.agent === 'string' ? data.agent : '';
   const ctx = teamsChannelCtx(convo.tenantId, convo.conversationId);
   if (!agent) {
@@ -144,6 +183,7 @@ async function handleSetAgent(
 async function handlePickProject(
   activity: TeamsActivity,
   data: Record<string, unknown>,
+  inbound: TeamsInbound,
 ): Promise<TeamsInvokeResponse> {
   const convo = convoOf(activity);
   const projectId = typeof data.projectId === 'string' ? data.projectId : null;
@@ -161,6 +201,7 @@ async function handlePickProject(
         tenantId: convo.tenantId,
         conversationId: convo.conversationId,
         activity: parked,
+        ownThreadsOnly: inbound.kind === 'project',
       }).catch((err) => console.error('[teams-webhook] picker replay failed', err));
       return cardResponse(buildNoticeCard('This conversation now runs the selected project — on it.', '✅'));
     }
@@ -171,12 +212,13 @@ async function handlePickProject(
 async function handleAnswer(
   activity: TeamsActivity,
   data: Record<string, unknown>,
+  inbound: TeamsInbound,
 ): Promise<TeamsInvokeResponse> {
   const convo = convoOf(activity);
   const answer = typeof data.answer === 'string' ? data.answer : '';
   if (!convo || !answer) return cardResponse(buildNoticeCard("I couldn't record that answer."));
 
-  const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
+  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
   if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
 
   // The question travels on the action (cards.ts), because the tap REPLACES the
@@ -197,6 +239,7 @@ async function handleAnswer(
     tenantId: convo.tenantId,
     conversationId: convo.conversationId,
     activity: synthetic,
+    ownThreadsOnly: inbound.kind === 'project',
   }).catch((err) => console.error('[teams-webhook] answer follow-up failed', err));
 
   return cardResponse(
@@ -217,6 +260,7 @@ async function handleAnswer(
 async function handleForm(
   activity: TeamsActivity,
   data: Record<string, unknown>,
+  inbound: TeamsInbound,
 ): Promise<TeamsInvokeResponse> {
   const convo = convoOf(activity);
   if (!convo) return cardResponse(buildNoticeCard("I couldn't record that."));
@@ -233,7 +277,7 @@ async function handleForm(
     return cardResponse(buildNoticeCard('Nothing was filled in — open the form again and add at least one answer.'));
   }
 
-  const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
+  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
   if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
 
   // Every form here is one the agent posted — the `question` tool's, or its own
@@ -251,6 +295,7 @@ async function handleForm(
     tenantId: convo.tenantId,
     conversationId: convo.conversationId,
     activity: synthetic,
+    ownThreadsOnly: inbound.kind === 'project',
   }).catch((err) => console.error('[teams-webhook] form follow-up failed', err));
 
   return cardResponse(
@@ -270,6 +315,7 @@ const VERDICT_MAP: Record<string, 'approve' | 'reject' | 'changes'> = {
 async function handleReview(
   activity: TeamsActivity,
   data: Record<string, unknown>,
+  inbound: TeamsInbound,
 ): Promise<TeamsInvokeResponse> {
   const convo = convoOf(activity);
   const reviewItemId = typeof data.reviewItemId === 'string' ? data.reviewItemId : null;
@@ -277,7 +323,7 @@ async function handleReview(
   const uid = teamsUserId(activity);
   if (!convo || !reviewItemId || !verdict) return cardResponse(buildNoticeCard("I couldn't apply that decision."));
 
-  const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
+  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
   if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
 
   const item = await getReviewItemById(reviewItemId, projectId);
@@ -332,6 +378,7 @@ async function handleReview(
     tenantId: convo.tenantId,
     conversationId: convo.conversationId,
     activity: synthetic,
+    ownThreadsOnly: inbound.kind === 'project',
   }).catch((err) => console.error('[teams-webhook] review resume failed', err));
 
   const ack =

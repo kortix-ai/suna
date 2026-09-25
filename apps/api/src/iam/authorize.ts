@@ -30,6 +30,7 @@
  * It reads NONE of project_members, project_group_grants, iam_policies,
  * iam_resource_grants or account_members.account_role.
  */
+import { timeStage } from '../lib/server-timing';
 import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
@@ -41,6 +42,7 @@ import {
   serviceAccounts,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { retryTransientDatabaseRead } from '../shared/database-errors';
 import { isImpersonatingAccount, isImpersonationBlockedAccount } from '../shared/impersonation';
 import { ttlMemo } from '../shared/ttl-memo';
@@ -164,7 +166,12 @@ const AGENT_GRANT_EXEMPT_ACTIONS: ReadonlySet<string> = new Set([
  *   9  object grants
  *  10  the agent-session grant intersection
  */
-export async function authorize(actor: Actor, action: string, obj: Obj = { type: 'account' }): Promise<Verdict> {
+export function authorize(actor: Actor, action: string, obj: Obj = { type: 'account' }): Promise<Verdict> {
+  // `Server-Timing: iam` — every capability decision on the request path.
+  return timeStage('iam', () => authorizeDecision(actor, action, obj));
+}
+
+async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promise<Verdict> {
   // 1. ACT-AS. Above everything, and above the principal memo in particular:
   // `resolvePrincipal` is a TTL memo shared across requests, so widening the
   // actor inside it would cache "owner" and serve it to this operator's own
@@ -345,7 +352,11 @@ export async function listAccessible(
   return listAccessibleProjects(actor, action);
 }
 
-async function listAccessibleProjects(actor: Actor, action: string): Promise<Accessible> {
+function listAccessibleProjects(actor: Actor, action: string): Promise<Accessible> {
+  return timeStage('iam', () => listAccessibleProjectsUntimed(actor, action));
+}
+
+async function listAccessibleProjectsUntimed(actor: Actor, action: string): Promise<Accessible> {
   // Same short-circuit as authorize, for the same cache reason. Without it the
   // operator sees an empty project list inside an account whose every project
   // they can already open by id — a confusing half-state, not a narrower one.
@@ -811,6 +822,16 @@ interface ObjectGrantPrincipal {
  * grant taking effect on every replica at once — the same rule the legacy
  * `loadProjectResourceGrants` memo already applies (#6535).
  */
+/**
+ * `role_assignments.account_id` equals the account that owns `projectId`. A
+ * project-scoped row written in another account grants nothing here; new ones
+ * are refused at write time (`assertProjectInAccount`, and the
+ * `role_assignments_project_account_guard` trigger).
+ */
+function projectAccountMatches(projectId: string) {
+  return sql`${qualifiedColumn(roleAssignments.accountId)} = (select p.account_id from kortix.projects p where p.project_id = ${projectId}::uuid)`;
+}
+
 const loadObjectGrants = ttlMemo({
   ttlMs: TTL_MS,
   keyFn: (projectId: string, objectType: string) => `${projectId}|${objectType}`,
@@ -826,6 +847,8 @@ const loadObjectGrants = ttlMemo({
         and(
           eq(roleAssignments.scopeType, 'project'),
           eq(roleAssignments.scopeId, projectId),
+          // Only rows written in the project's own account count.
+          projectAccountMatches(projectId),
           eq(roleAssignments.objectType, objectType),
           or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, sql`now()`)),
         ),

@@ -14,9 +14,9 @@ import { reasoningEffort as explicitReasoningEffort } from '../transports/route-
  * This is the ONE function that merges these defaults into the wire body —
  * every client (opencode sessions, the SDK, direct /v1/chat/completions and,
  * via the Anthropic-messages ingress's shared pipeline, /v1/messages) gets
- * them this same way. But it is called MORE THAN ONCE per turn: `handler.ts`
- * does NOT bake defaults into the body up front — `runFailover` (failover.ts)
- * calls this fresh for EACH candidate it dispatches to, via
+ * them this same way. But it is called MORE THAN ONCE per turn: the handler
+ * does NOT bake defaults into the body up front — `dispatch` (dispatch.ts)
+ * calls this fresh for EACH attempt, via
  * `ModelRoutePlan.generationDefaultsForModel`, so a turn that fails over
  * from the primary model to a fallback with different capabilities gets the
  * FALLBACK's own defaults, not the primary's stale ones. `buildAiSdkArgs`
@@ -30,7 +30,7 @@ import { reasoningEffort as explicitReasoningEffort } from '../transports/route-
  * `limit.output`) happen BEFORE this, PER CANDIDATE — see
  * `@kortix/llm-catalog`'s `clampGenerationConfig`, run by the host each time
  * it builds a candidate's defaults (apps/api's routing/resolve-route.ts's
- * `generationDefaultsFor`, invoked once per failover candidate via
+ * `generationDefaultsFor`, invoked once per attempted model via
  * `generationDefaultsForModel`). This function trusts its input.
  */
 export function applyGenerationDefaults(

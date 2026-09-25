@@ -17,7 +17,7 @@
 // This test pins it by capturing the access object postPrompt forwards, so a
 // regression that re-aims the binding at the target session fails here.
 //
-// Same mocking caveat as the sibling engine.ts test files: `mock.module` is
+// Same mocking caveat as the sibling session-lifecycle test files: `mock.module` is
 // process-global in bun:test, so run this file on its own.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
@@ -139,7 +139,7 @@ mock.module('../store', () => ({
   },
 }));
 
-const { continueSession } = await import('../engine');
+const { continueSession } = await import('../continue-session');
 
 beforeEach(() => {
   sessionRow = null;

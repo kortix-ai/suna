@@ -17,7 +17,7 @@ import {
   ShieldIcon as Shield,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { useCallback, useState } from 'react';
 import { ACCORDION, type AccordionIcon } from './content';
 

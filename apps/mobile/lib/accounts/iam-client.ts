@@ -138,11 +138,6 @@ export interface CreatedAuditWebhook extends AuditWebhook {
 
 // ── Member IAM detail ─────────────────────────────────────────────────────────
 
-export interface MemberGroupSummary {
-  group_id: string;
-  name: string;
-  added_at: string;
-}
 export interface MemberProjectAccess {
   project_id: string;
   project_name: string;
@@ -150,10 +145,6 @@ export interface MemberProjectAccess {
   sources: Array<'implicit' | 'direct' | 'group'>;
 }
 
-export async function listMemberGroups(accountId: string, userId: string) {
-  const res = await apiFetch<{ groups: MemberGroupSummary[] }>(`${iam(accountId)}/members/${encodeURIComponent(userId)}/groups`);
-  return res.groups;
-}
 export async function listMemberProjectAccess(accountId: string, userId: string) {
   const res = await apiFetch<{ projects: MemberProjectAccess[] }>(`${iam(accountId)}/members/${encodeURIComponent(userId)}/project-access`);
   return res.projects;

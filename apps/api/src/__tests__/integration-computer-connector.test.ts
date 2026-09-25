@@ -361,7 +361,7 @@ describe('grouped Computers connector profiles — real DB', () => {
     expect(result).toEqual({
       ok: false,
       kind: 'no_machine',
-      message: 'No machines are assigned to this Computers connector profile.',
+      message: 'No machines are assigned to this Computer Tunnel connector profile.',
     });
   });
 

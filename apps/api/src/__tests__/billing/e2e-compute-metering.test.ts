@@ -16,11 +16,12 @@ import {
   mockRegistry,
   registerGlobalMocks,
   resetMockRegistry,
-  registerCreditsMock,
+  registerWalletMock,
+  fakeWallet,
 } from './mocks';
 
 registerGlobalMocks();
-registerCreditsMock();
+registerWalletMock();
 
 // ─── Mock the compute-sessions + yolo repos used by compute-metering ─────────
 
@@ -145,42 +146,28 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
   getComputeUsageSince: async () => ({ totalCostUsd: 0, sessionCount: 0 }),
 }));
 
-// Compute settles through its own module (billing/services/settle-credits),
-// which exists precisely so this stub cannot delete an export that nine other
-// test files' partial `credits` factories rely on.
-mock.module('../../billing/services/settle-credits', () => ({
-  settleCredits: async (
-    accountId: string,
-    amount: number,
-    description: string,
-    ledgerType = 'usage',
-  ) => {
-    debitCalls.push({ accountId, amount, description, ledgerType });
+function scriptWallet() {
+  // Compute SETTLES through the wallet: the seconds are already consumed. An
+  // admission debit here would refuse a drained wallet and lose the record.
+  fakeWallet.wallet.debit = async () => {
+    throw new Error('compute metering must SETTLE, never take an admission debit');
+  };
+  fakeWallet.wallet.settle = async (input) => {
+    debitCalls.push({
+      accountId: input.accountId,
+      amount: input.amount,
+      description: input.description,
+      ledgerType: input.kind,
+    });
     if (holdFirstDebit && debitCalls.length === 1) {
       signalFirstDebitStarted?.();
       await new Promise<void>((resolve) => {
         releaseFirstDebit = resolve;
       });
     }
-    return { success: true, cost: amount, newBalance: 0, overdraft: false, transactionId: 'tx_test' };
-  },
-}));
-
-// The credits module keeps its ORIGINAL stub surface — compute metering no
-// longer calls into it, and a `deductCredits` here would be an admission, which
-// settling already-consumed seconds must never take.
-mock.module('../../billing/services/credits', () => ({
-  calculateTokenCost: () => 0,
-  getBalance: async () => ({ balance: 0, expiring: 0, nonExpiring: 0, daily: 0 }),
-  getCreditSummary: async () => ({ total: 0, daily: 0, monthly: 0, extra: 0, canRun: true }),
-  deductCredits: async () => {
-    throw new Error('compute metering must SETTLE, never take an admission deduct');
-  },
-  deductForLlmUsage: async () => ({ success: true, cost: 0, newBalance: 0, transactionId: null }),
-  refreshDailyCredits: async () => null,
-  grantCredits: async () => undefined,
-  resetExpiringCredits: async () => undefined,
-}));
+    return { amount: input.amount, balance: 0, overdraft: false, transactionId: 'tx_test', replayed: false };
+  };
+}
 
 const {
   startComputeSession,
@@ -204,6 +191,7 @@ beforeEach(() => {
     signalFirstDebitStarted = resolve;
   });
   resetMockRegistry();
+  scriptWallet();
   // Default to a per-seat account so metering engages.
   mockRegistry.getCreditAccount = async () =>
     createMockCreditAccount({ billingModel: 'per_seat', balance: '100.0000' });

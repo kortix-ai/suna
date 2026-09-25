@@ -22,7 +22,7 @@
  *   - project webhooks (/v1/webhooks/*): unsigned/foreign → 400/401/403/404.
  *
  * Spec IDs authored here: SEC-4, SEC-A, SEC-B, SEC-C, SEC-D, SEC-E, SEC-F,
- * SEC-G, SEC-H, SEC-I, SEC-J.
+ * SEC-G, SEC-H, SEC-I, SEC-J, SEC-K.
  */
 import { flow } from '../core/flow';
 
@@ -729,3 +729,169 @@ flow(
     });
   },
 );
+
+// ─── SEC-K: client roles cannot reach privileged database surfaces ───────────
+//
+// Supabase PostgREST accepts the public anon key and every user's own JWT. The
+// 2026-09-24 incident: both could call SECURITY DEFINER functions and the
+// wallet RPCs (mint/drain credits on any account) and read `kortix` tables.
+// Migration 20260924194804787_client_role_lockdown revokes those grants, and
+// 20260925013304428_wallet_private_schema moves the wallet functions into the
+// private `kortix_wallet` schema. This
+// flow calls PostgREST directly, as the anon key and as a real user, and
+// requires a permission refusal. GET runs the RPC in a read-only transaction,
+// so a regression cannot write anything.
+const PRIVILEGED_RPCS: Array<[string, Record<string, string>]> = [
+  ['atomic_add_credits', { p_account_id: NIL_UUID, p_amount: '0' }],
+  [
+    'atomic_use_credits',
+    {
+      p_account_id: NIL_UUID,
+      p_amount: '0',
+      p_description: 'sec-k',
+      p_ledger_type: 'sec-k',
+    },
+  ],
+  ['atomic_settle_credits', { p_account_id: NIL_UUID }],
+  [
+    'atomic_reset_expiring_credits',
+    { p_account_id: NIL_UUID, p_new_credits: '0' },
+  ],
+  [
+    'atomic_daily_credit_refresh',
+    {
+      p_account_id: NIL_UUID,
+      p_credit_amount: '0',
+      p_tier: 'sec-k',
+      p_processed_by: 'sec-k',
+    },
+  ],
+];
+
+// The complete argument set of each private wallet function (none has
+// defaults). With a partial set PostgREST answers 404 PGRST202 before it checks
+// privileges, which would say nothing about reachability. The amounts are 0 and
+// the account is the nil uuid, so even a regression that let the call through
+// could move no credit.
+const WALLET_FUNCTIONS: Array<[string, Record<string, unknown>]> = [
+  [
+    'grant_credits',
+    {
+      p_account_id: NIL_UUID,
+      p_amount: 0,
+      p_is_expiring: false,
+      p_description: 'sec-k',
+      p_expires_at: null,
+      p_type: null,
+      p_stripe_event_id: null,
+      p_idempotency_key: null,
+    },
+  ],
+  [
+    'debit_credits',
+    {
+      p_account_id: NIL_UUID,
+      p_amount: 0,
+      p_enforce_floor: true,
+      p_description: 'sec-k',
+      p_ledger_type: 'sec-k',
+      p_idempotency_key: null,
+    },
+  ],
+  [
+    'reset_expiring_credits',
+    {
+      p_account_id: NIL_UUID,
+      p_new_credits: 0,
+      p_description: 'sec-k',
+      p_stripe_event_id: null,
+    },
+  ],
+];
+
+flow('SEC-K', { domain: 'security', routes: [] }, async (ctx) => {
+  const base = ctx.env.supabaseUrl;
+  const anonKey = ctx.env.supabaseAnonKey;
+  if (!anonKey) throw new Error('SEC-K: KE2E_SUPABASE_ANON_KEY is required');
+  const owner = ctx.P.OWNER.auth;
+  if (owner.mode !== 'bearer')
+    throw new Error('SEC-K: OWNER must authenticate with a bearer JWT');
+  const callers: Array<[string, string]> = [
+    ['anon key', anonKey],
+    ['user JWT', owner.token],
+  ];
+
+  const refused = (status: number, body: string) =>
+    [401, 403].includes(status) && body.includes('42501');
+
+  for (const [who, bearer] of callers) {
+    await ctx.step(
+      `${who}: every wallet RPC is refused with 42501 permission denied`,
+      async () => {
+        for (const [fn, args] of PRIVILEGED_RPCS) {
+          const url = `${base}/rest/v1/rpc/${fn}?${new URLSearchParams(args)}`;
+          const res = await fetch(url, {
+            headers: { apikey: anonKey, authorization: `Bearer ${bearer}` },
+          });
+          const body = await res.text();
+          // 404 PGRST202 = the function does not exist in this database: nothing to reach.
+          if (res.status === 404 && body.includes('PGRST202')) continue;
+          if (!refused(res.status, body)) {
+            throw new Error(
+              `SEC-K: ${who} reached rpc/${fn}: ${res.status} ${body.slice(0, 200)}`,
+            );
+          }
+        }
+      },
+    );
+
+    await ctx.step(
+      `${who}: the private kortix_wallet functions are not reachable`,
+      async () => {
+        for (const [fn, args] of WALLET_FUNCTIONS) {
+          const res = await fetch(`${base}/rest/v1/rpc/${fn}`, {
+            method: 'POST',
+            headers: {
+              apikey: anonKey,
+              authorization: `Bearer ${bearer}`,
+              'content-profile': 'kortix_wallet',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify(args),
+          });
+          const body = await res.text();
+          // 406 PGRST106 = schema not exposed; 401/403 42501 = exposed but no grant.
+          const ok =
+            (res.status === 406 && body.includes('PGRST106')) ||
+            refused(res.status, body);
+          if (!ok)
+            throw new Error(
+              `SEC-K: ${who} reached kortix_wallet.${fn}: ${res.status} ${body.slice(0, 200)}`,
+            );
+        }
+      },
+    );
+
+    await ctx.step(`${who}: the kortix schema is not readable`, async () => {
+      const res = await fetch(
+        `${base}/rest/v1/accounts?select=account_id&limit=1`,
+        {
+          headers: {
+            apikey: anonKey,
+            authorization: `Bearer ${bearer}`,
+            'accept-profile': 'kortix',
+          },
+        },
+      );
+      const body = await res.text();
+      // 406 PGRST106 = schema not exposed; 401/403 42501 = exposed but no grant.
+      const ok =
+        (res.status === 406 && body.includes('PGRST106')) ||
+        refused(res.status, body);
+      if (!ok)
+        throw new Error(
+          `SEC-K: ${who} read kortix.accounts: ${res.status} ${body.slice(0, 200)}`,
+        );
+    });
+  }
+});

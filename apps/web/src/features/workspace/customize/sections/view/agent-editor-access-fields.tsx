@@ -94,19 +94,24 @@ export function GrantChip({ value }: { value: AgentGrantSetV2 | undefined }) {
 export function GrantHeaderTrailing({
   value,
   tab,
+  href,
   label,
 }: {
   value: AgentGrantSetV2 | undefined;
-  tab: 'skills' | 'connectors' | 'secrets';
+  tab?: 'skills' | 'connectors' | 'secrets';
+  /** A project page that is NOT a Customize tab — Apps lives at
+   *  `/projects/<id>/apps`, so it cannot be named by `tab`. */
+  href?: (projectId: string) => string;
   label: string;
 }) {
   const projectId = useKortixRouteProjectId();
+  const target = projectId ? (href ? href(projectId) : tab ? capabilityTabHref(projectId, tab) : null) : null;
   return (
     <div className="flex items-center gap-2">
       <GrantChip value={value} />
-      {projectId ? (
+      {target ? (
         <Button asChild variant="ghost" size="sm" className="gap-1 px-2">
-          <Link href={capabilityTabHref(projectId, tab)} prefetch>
+          <Link href={target} prefetch>
             {label}
             <ArrowRightIcon className="size-3.5 shrink-0" />
           </Link>

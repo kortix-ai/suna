@@ -27,7 +27,7 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
  * Forwarding mid-turn was tried (`4ee30a9c3b`) to remove the gap between
  * queued messages. It bought that merge. The gap it was removing is gone by
  * other means: `promoteNextInboxRow` is AWAITED on the daemon's own
- * `session.idle` relay (`routes/r4.ts`, "THE TURN ENDED — the session's next
+ * `session.idle` relay (`routes/turn-stream.ts`, "THE TURN ENDED — the session's next
  * queued prompt is admissible NOW"), and the backoff below is now a 2s-capped
  * fallback rather than the 30s ceiling that produced the measured dead air.
  * A queued message therefore goes out on the turn-end event, not on a clock.

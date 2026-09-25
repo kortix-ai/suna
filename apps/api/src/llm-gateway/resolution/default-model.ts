@@ -177,7 +177,7 @@ export async function resolveDefaultModelForPrincipal(
  * whenever it can pin down WHY there's no upstream — the right shape for an
  * actual generation request, where the caller wants the specific reason
  * surfaced. This function answers a narrower yes/no question for every READ/
- * defaults/picker/servability caller in this file (and r4.ts's PUT), so every
+ * defaults/picker/servability caller in this file (and routes/models.ts's PUT), so every
  * one of those typed reasons collapses to "not servable" here — exactly the
  * old return-`[]` behavior these callers were built against, restored. A
  * passive "what's the default" read must never fail just because a provider
@@ -192,6 +192,12 @@ export async function isModelServableForAccount(params: {
   model: string;
   sessionId?: string;
   providerSecretPools?: Record<string, string[]>;
+  /**
+   * Whose personal keys the probe may use, as the gateway will for the
+   * session this is for. Absent = `userId` (legacy). `null` = none: a shared
+   * session, which reaches only keys shared with the whole project.
+   */
+  personalUserId?: string | null;
 }): Promise<boolean> {
   if (params.model === 'auto' || params.model === 'kortix/auto') return false;
   // Accept either the opencode ref (`kortix/<id>`) or the bare wire id — the
@@ -205,6 +211,7 @@ export async function isModelServableForAccount(params: {
         projectId: params.projectId,
         freeModelsOnly: params.freeModelsOnly,
         ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+        ...(params.personalUserId !== undefined ? { personalUserId: params.personalUserId } : {}),
       },
       wire,
       { providerSecretPools: params.providerSecretPools, probe: true },
@@ -236,6 +243,7 @@ export async function resolveEffectiveModel(params: {
   freeModelsOnly: boolean;
   sessionId?: string;
   providerSecretPools?: Record<string, string[]>;
+  personalUserId?: string | null;
 }): Promise<{ model: string | null; source: ModelSource }> {
   if (params.explicit) {
     const servable = await isModelServableForAccount({
@@ -246,6 +254,7 @@ export async function resolveEffectiveModel(params: {
       model: params.explicit,
       sessionId: params.sessionId,
       providerSecretPools: params.providerSecretPools,
+      ...(params.personalUserId !== undefined ? { personalUserId: params.personalUserId } : {}),
     });
     if (servable) return { model: toWireModel(params.explicit), source: 'explicit' };
   }
@@ -261,6 +270,8 @@ export async function resolveEffectiveModel(params: {
   // UI's "resolved" model reflects what the gateway will actually serve rather
   // than a dead ref: first try any OTHER BYOK provider the project has
   // connected (connectedByokFallback), then finally the bare platform default.
+  // The same personal scope as the explicit check above: a default reached
+  // only through one person's keys is not a default for a shared session.
   const kept = await degradeUnservableDefault(
     chain.model,
     { hasProject: true },
@@ -273,8 +284,13 @@ export async function resolveEffectiveModel(params: {
         model: chain.model as string,
         sessionId: params.sessionId,
         providerSecretPools: params.providerSecretPools,
+        ...(params.personalUserId !== undefined ? { personalUserId: params.personalUserId } : {}),
       }),
-    () => connectedByokFallback(params.projectId, params.userId),
+    () =>
+      connectedByokFallback(
+        params.projectId,
+        (params.personalUserId === undefined ? params.userId : params.personalUserId) ?? undefined,
+      ),
   );
   if (!kept) return { model: null, source: 'platform' };
   // kept === chain.model means the originally-configured default WAS servable

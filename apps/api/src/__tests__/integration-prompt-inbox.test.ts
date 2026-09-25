@@ -41,6 +41,7 @@ import {
   requeueForAdmission,
   requeueUnverifiedRedelivery,
 } from '../projects/session-lifecycle/store';
+import type { CommandLease } from '../projects/session-lifecycle/command-lease';
 import { db } from '../shared/db';
 import { promptState } from '../projects/lib/session-prompt-view';
 
@@ -81,6 +82,19 @@ async function enqueue(
        WHERE command_id = ${row.commandId}::uuid`);
   }
   return row;
+}
+
+/**
+ * Claim `row` the way the drain does and return the lease its writes name.
+ * The writes that end a claim apply only to a `running` row under the same
+ * `locked_by`.
+ */
+async function hold(row: { commandId: string }, worker = 'prompt-inbox-it'): Promise<CommandLease> {
+  await db.execute(sql`
+    UPDATE kortix.session_lifecycle_commands
+       SET status = 'running', locked_by = ${worker}
+     WHERE command_id = ${row.commandId}::uuid`);
+  return { commandId: row.commandId, lockedBy: worker };
 }
 
 async function readRow(commandId: string): Promise<Record<string, unknown>> {
@@ -217,7 +231,7 @@ describe('requeueForAdmission against real Postgres', () => {
          SET status = 'running', attempts = 3, locked_by = 'worker-1'
        WHERE command_id = ${row.commandId}::uuid`);
 
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date(Date.now() + 2_000));
+    await requeueForAdmission({ commandId: row.commandId, lockedBy: 'worker-1' }, 'older_prompt_pending', new Date(Date.now() + 2_000));
 
     const after = await readRow(row.commandId);
     expect(after.status).toBe('queued');
@@ -237,9 +251,9 @@ describe('requeueForAdmission against real Postgres', () => {
     // on every refusal. `admissionBackoffMs` reads this counter to widen the
     // gap so a long turn costs a handful of claims instead of one per second.
     const row = await enqueue('q_refusals');
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
     expect((await readRow(row.commandId)).result).toEqual({
       admission_reason: 'older_prompt_pending',
       admission_refusals: 3,
@@ -253,7 +267,7 @@ describe('requeueForAdmission against real Postgres', () => {
     // OpenCode reads as already answered — the prompt is accepted and silently
     // never runs.
     const row = await enqueue('q_promote_marker');
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
     const promoted = await retryInboxPrompt(SESSION_ID, row.commandId);
     expect(promoted).not.toBeNull();
 
@@ -265,9 +279,9 @@ describe('requeueForAdmission against real Postgres', () => {
 
   test('an unverifiable redelivery waits, counts its failures, and keeps admission refusals', async () => {
     const row = await enqueue('q_unverified');
-    await requeueForAdmission(row.commandId, 'turn_active', new Date());
-    await requeueUnverifiedRedelivery(row.commandId, new Date(Date.now() + 5_000));
-    await requeueUnverifiedRedelivery(row.commandId, new Date(Date.now() + 10_000));
+    await requeueForAdmission(await hold(row), 'turn_active', new Date());
+    await requeueUnverifiedRedelivery(await hold(row), new Date(Date.now() + 5_000));
+    await requeueUnverifiedRedelivery(await hold(row), new Date(Date.now() + 10_000));
 
     const read = await readRow(row.commandId);
     expect(read.status).toBe('queued');
@@ -287,7 +301,7 @@ describe('requeueForAdmission against real Postgres', () => {
     // A concurrent writer can already have reset `attempts`; `GREATEST(...,0)`
     // is what stops a negative count, which the dead-letter budget compares on.
     const row = await enqueue('q_floor');
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
     expect((await readRow(row.commandId)).attempts).toBe(0);
   });
 
@@ -297,7 +311,7 @@ describe('requeueForAdmission against real Postgres', () => {
       UPDATE kortix.session_lifecycle_commands
          SET result = '{"kept": true}'::jsonb
        WHERE command_id = ${row.commandId}::uuid`);
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
     expect((await readRow(row.commandId)).result).toEqual({
       kept: true,
       admission_reason: 'older_prompt_pending',
@@ -577,7 +591,7 @@ describe('requeueAbandonedPrompt against real rows', () => {
     // composer, and invisible to the sweep — no retry, no remove, nothing that
     // could ever close it.
     const row = await enqueue('q_exhausted_forwarded');
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     await db.execute(sql`
       UPDATE kortix.session_lifecycle_commands
          SET payload = payload || '{"redeliveries":3}'::jsonb
@@ -719,7 +733,7 @@ describe('holding the queue — what the Stop button now writes', () => {
 describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
   async function forward(clientMessageId: string, wireMessageId = WIRE_ID) {
     const row = await enqueue(clientMessageId, { wireMessageId });
-    await markCommandForwarded(row.commandId, SESSION_ID, wireMessageId);
+    await markCommandForwarded(await hold(row), SESSION_ID, wireMessageId);
     return row;
   }
 
@@ -947,7 +961,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
 
     // The delivery lands anyway — nothing can recall a POST — and it comes back
     // held rather than as an ordinary forwarded row.
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     expect((await readRow(row.commandId)).result).toMatchObject({
       status: 'forwarded',
       stop_paused: true,
@@ -974,7 +988,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect(
       (await readRow(row.commandId)).payload as Record<string, unknown>,
     ).not.toHaveProperty('stopPausedOnDelivery');
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     const after = (await readRow(row.commandId)).result as Record<string, unknown>;
     expect(after.status).toBe('forwarded');
     expect(after.stop_paused).toBeUndefined();
@@ -1019,7 +1033,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('pending_delivery');
     expect((await readRow(row.commandId)).payload).toMatchObject({ consumedOnDelivery: true });
 
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     const after = await readRow(row.commandId);
     // DELIVERED, not `forwarded`: a turn has the message, so the composer must
     // not keep showing it as a pending queue row for the length of that turn.
@@ -1042,7 +1056,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     await holdInboxPrompts(SESSION_ID, true);
     expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('pending_delivery');
 
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     const after = await readRow(row.commandId);
     expect(after.result).toMatchObject({ status: 'delivered' });
     expect((after.result as Record<string, unknown>).stop_paused).toBeUndefined();
@@ -1065,14 +1079,14 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
          SET status = 'running'
        WHERE command_id = ${row.commandId}::uuid`);
     await holdInboxPrompts(SESSION_ID, true);
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     expect((await readRow(row.commandId)).payload as Record<string, unknown>).not.toHaveProperty(
       'stopPausedOnDelivery',
     );
 
     // The user sends the row again; the second delivery is an ordinary one.
     await releaseInboxHold(SESSION_ID);
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     const after = (await readRow(row.commandId)).result as Record<string, unknown>;
     expect(after.status).toBe('forwarded');
     expect(after.stop_paused).toBeUndefined();
@@ -1098,7 +1112,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
 
     // And "send now" on a stop-paused row is the other advertised way out of a
     // Stop, so it needs the same fresh key.
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     await holdInboxPrompts(SESSION_ID, true);
     await retryInboxPrompt(SESSION_ID, row.commandId);
     expect((await readRow(row.commandId)).payload).toMatchObject({ deliveryAttempt: 2 });
@@ -1186,7 +1200,7 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
 
   test('a browser prompt that dead-letters leaves the session running', async () => {
     const mine = await enqueue('q_dead');
-    await markCommandFailed(mine.commandId, 'delivery outcome: failed', {
+    await markCommandFailed(await hold(mine), 'delivery outcome: failed', {
       retryable: false,
       attempts: 5,
       sessionId: SESSION_ID,
@@ -1203,7 +1217,7 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     // sessions, so the next fire of a `session_mode: "reuse"` trigger creates a
     // fresh one instead of re-aiming at a wedged session.
     const automation = await enqueueAutomationPrompt('trigger prompt');
-    await markCommandFailed(automation.commandId, 'delivery outcome: failed', {
+    await markCommandFailed(await hold(automation), 'delivery outcome: failed', {
       retryable: false,
       attempts: 5,
       sessionId: SESSION_ID,
@@ -1245,12 +1259,12 @@ test('a retry claim resets delivery evidence and stays waiting until admitted', 
   });
   const [first] = await claim();
   expect(promptState(first).state).toBe('queued');
-  await markInboxDeliveryStarted(row.commandId);
+  await markInboxDeliveryStarted(first);
   expect(promptState((await listInboxPrompts(SESSION_ID, 200))[0]).state).toBe('delivering');
-  await requeueForAdmission(row.commandId, 'turn_active', new Date());
+  await requeueForAdmission(first, 'turn_active', new Date());
   const [retry] = await claim();
   expect(promptState(retry)).toEqual({ state: 'waiting', reason: 'turn_active' });
   expect(retry.result).not.toHaveProperty('delivery_started_at');
-  await markInboxDeliveryStarted(row.commandId);
+  await markInboxDeliveryStarted(retry);
   expect(promptState((await listInboxPrompts(SESSION_ID, 200))[0]).state).toBe('delivering');
 });
