@@ -151,18 +151,18 @@ export async function resolveExternalIdFromHostLabel(label: string): Promise<str
  * service key it finds is cached as a side-effect for `resolveServiceKey`.
  */
 /**
- * The one query behind `loadSandbox`, exported so its rendered SQL is pinned by
- * a test (`backend-load-sandbox-sql.test.ts`).
+ * The one query behind `loadSandbox`. Its behavior on real rows is proven in
+ * `__tests__/integration-correlated-subquery-isolation.test.ts`.
  *
  * The session's agent comes from a typed LEFT JOIN — never a raw `sql`
  * subquery. INC-2026-09-15: the subquery that used to live here rendered its
  * correlation unqualified (`where "session_id" = "session_id"`, true for every
  * row), so every proxied request got the agent of the first tuple of
- * `project_sessions` — another customer's `chief-of-staff` — and agent-less
+ * `project_sessions` — an agent of another customer — and agent-less
  * prompts re-pointed session tokens at it. `project_sessions.session_id` is the
  * primary key, so the join never multiplies rows.
  */
-export function sandboxRecordQuery(condition: SQL) {
+function sandboxRecordQuery(condition: SQL) {
   return db
     .select({
       sandboxId: sessionSandboxes.sandboxId,

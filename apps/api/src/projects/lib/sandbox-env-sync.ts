@@ -30,6 +30,7 @@ import { resolveSessionNetworkBoundary } from './network-secret-boundary';
 import { resolveSessionPersonalOwner } from './personal-resources';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
+import { hasConfigReleaseCapability } from './session-config-release';
 
 /** Resolve the LLM gateway URL used by every supported remote provider. */
 export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): string {
@@ -819,9 +820,24 @@ export const propagateProjectSecretsToActiveSandboxes = createCoalescedRunner<
   },
 });
 
+/**
+ * Re-push ONE session's secrets into its own sandbox — what an agent session
+ * gets from `POST /secrets/sync`. It is the same per-session work the
+ * pre-prompt env sync does on every prompt, so it grants the agent nothing new;
+ * it only lets the agent pull a just-changed secret or grant mid-turn. It never
+ * touches another session's box: the project-wide fan-out stays a person's
+ * action (d649d08932, finding F6). Not coalesced — one box, one push.
+ */
+export function syncSessionSecretsToSandbox(
+  projectId: string,
+  sessionId: string,
+): Promise<ProjectSecretPropagationResult> {
+  return runProjectSecretPropagation(projectId, { sessionId });
+}
+
 async function runProjectSecretPropagation(
   projectId: string,
-  opts?: { refreshModels?: boolean },
+  opts?: { refreshModels?: boolean; sessionId?: string },
 ): Promise<ProjectSecretPropagationResult> {
   const report: ProjectSecretPropagationResult = {
     ok: true,
@@ -842,11 +858,21 @@ async function runProjectSecretPropagation(
         metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
+      .where(
+        and(
+          eq(sessionSandboxes.projectId, projectId),
+          eq(sessionSandboxes.status, 'active'),
+          ...(opts?.sessionId ? [eq(sessionSandboxes.sessionId, opts.sessionId)] : []),
+        ),
+      );
     // INSTANCE SCOPE (shared local DB — ../instance-scope.ts): a box another
     // API instance provisioned must not receive THIS instance's env (its
     // `KORTIX_URL`-derived gateway URL). No-op when KORTIX_INSTANCE_ID is unset.
-    const rows = allRows.filter((r) => sandboxBelongsToThisInstance(r.metadata));
+    // A session-scoped sync re-checks the session in code too: the guarantee
+    // that it never reaches another session's box must not rest on one WHERE.
+    const rows = allRows
+      .filter((r) => sandboxBelongsToThisInstance(r.metadata))
+      .filter((r) => !opts?.sessionId || r.sessionId === opts.sessionId);
 
     report.active_sandboxes = rows.length;
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
@@ -1148,6 +1174,45 @@ function nonActiveSandboxSkip(
   return { applied: false, reason: `sandbox row is '${status}', not active` };
 }
 
+/**
+ * Is a config release ACTUALLY governing this box? `true`, `false`, or `null`
+ * when health did not answer.
+ *
+ * Such a box receives compiled governance inside its config release
+ * (docs/specs/config-releases.md, "Capability gate"). A separate
+ * `KORTIX_COMPILED_AGENT_CONFIG` push through `/kortix/env` would restart
+ * OpenCode on governance that does not match the release it runs — and the box
+ * drops it anyway (`releaseGovernanceActive`, daemon `harness/open-code/control.ts`).
+ *
+ * This reads the box's STATE (`config.release_id`), not the binary's
+ * `config.release.v1` capability. The capability is compiled in and is present
+ * whatever the project chose, so gating on it withheld the push from every box
+ * that runs NO release — `config_releases` off for the project, or a release
+ * chain that stepped down to the image default. Those boxes are exactly the
+ * pre-release case the push exists for. `releaseGovernanceActive` is the same
+ * `running.release_id !== null` the daemon applies on its own side.
+ */
+export async function daemonHasConfigReleases(
+  baseUrl: string,
+  headers: Record<string, string>,
+  fetchImpl: (url: string, init?: RequestInit) => Promise<Response> = (url, init) => fetch(url, init),
+): Promise<boolean | null> {
+  try {
+    const res = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/kortix/health`, {
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { capabilities?: unknown; config?: unknown };
+    // An old daemon has neither the capability nor a `config` block.
+    if (!hasConfigReleaseCapability(body.capabilities)) return false;
+    const config = (body.config ?? null) as { release_id?: unknown } | null;
+    return typeof config?.release_id === 'string' && config.release_id.length > 0;
+  } catch {
+    return null;
+  }
+}
+
 export async function pushSessionAgentConfigToSandbox(input: {
   projectId: string;
   sessionId: string;
@@ -1226,6 +1291,21 @@ export async function pushSessionAgentConfigToSandbox(input: {
       port: SANDBOX_SERVICE_PORT,
       transport: 'http',
     });
+    // Capability gate. A daemon with config releases gets governance from its
+    // release; `null` (health did not answer) is not permission to push.
+    const releases = await daemonHasConfigReleases(url, {
+      ...(headers as Record<string, string>),
+      Authorization: `Bearer ${serviceKey}`,
+    });
+    if (releases !== false) {
+      return {
+        applied: false,
+        reason:
+          releases === true
+            ? 'the daemon receives compiled governance in its config release'
+            : 'could not read the daemon capabilities',
+      };
+    }
     // The daemon call blocks until its verified reload either promotes the new
     // runtime or keeps the old one. This phase therefore names the whole
     // apply-and-validate boundary instead of inventing sub-phases we cannot see.

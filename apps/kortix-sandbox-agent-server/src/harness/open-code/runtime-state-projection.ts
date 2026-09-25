@@ -133,6 +133,18 @@ function unknownSection<T>(reason: string, empty: T): Known<T> {
 }
 
 /**
+ * The OpenCode frames that move the catalog (agents, commands, tools, MCP): the
+ * four ways the roster can change. The store invalidates its catalog on them
+ * and boot re-pushes the projection on the same set.
+ */
+export const CATALOG_MOVING_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'server.instance.disposed',
+  'mcp.tools.changed',
+  'global.disposed',
+  'plugin.added',
+])
+
+/**
  * Build, cache and incrementally maintain the projection.
  *
  * One instance per daemon (see {@link configureRuntimeState}). Concurrent
@@ -176,13 +188,7 @@ export class RuntimeStateStore {
     const props = (event.properties ?? {}) as Record<string, unknown>
     const doc = this.doc
 
-    // Catalog invalidation. These are the four ways the roster can move.
-    if (
-      type === 'server.instance.disposed' ||
-      type === 'mcp.tools.changed' ||
-      type === 'global.disposed' ||
-      type === 'plugin.added'
-    ) {
+    if (CATALOG_MOVING_EVENT_TYPES.has(type)) {
       this.invalidate('catalog', type)
       return true
     }
@@ -440,10 +446,6 @@ export class RuntimeStateStore {
       }
     })()
     return this.versionProbe
-  }
-
-  __docForTests(): RuntimeStateDoc | null {
-    return this.doc
   }
 }
 

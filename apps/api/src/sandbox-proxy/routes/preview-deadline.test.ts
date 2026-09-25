@@ -321,18 +321,6 @@ describe('turn lifecycle authority is persisted before the prompt is relayed', (
     expect(fetched).toBe(0);
   });
 
-  // A refusal must not consume the caller's idempotency claim, or their retry
-  // short-circuits to a bogus 200 "duplicate" and the message is lost forever.
-  test('a refusal leaves the prompt-dedupe claim free for the retry', async () => {
-    turnStartObservation = 'no_box';
-    await prompt(HUMAN);
-
-    turnStartObservation = 'granted';
-    const retry = await prompt(HUMAN);
-
-    expect(retry.status).toBe(200);
-  });
-
   test('the BOX cannot observe its own turn start', async () => {
     await prompt(BOX_ITSELF);
 

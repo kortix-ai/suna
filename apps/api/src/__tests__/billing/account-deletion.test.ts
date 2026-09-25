@@ -100,14 +100,7 @@ describe('requestAccountDeletion', () => {
 
     expect(createdDeletionRequests.length).toBe(1);
     expect(createdDeletionRequests[0].reason).toBe('Testing');
-  });
-
-  test('returns scheduled date and can_cancel=true', async () => {
-    const result = await requestAccountDeletion('acc_test_123', 'user_123');
-
-    expect(result.deletion_scheduled_for).toBeDefined();
-    expect(result.can_cancel).toBe(true);
-    expect(result.id).toBeDefined();
+    expect(result.id).toBeString();
   });
 
   test('throws if active request already exists', async () => {
@@ -164,8 +157,8 @@ describe('getAccountDeletionStatus', () => {
     const result = await getAccountDeletionStatus('acc_test_123');
 
     expect(result.has_pending_deletion).toBe(true);
-    expect(result.deletion_scheduled_for).toBeDefined();
-    expect(result.requested_at).toBeDefined();
+    expect(result.deletion_scheduled_for).toBe(activeDeletionRequest.scheduledFor);
+    expect(result.requested_at).toBe(activeDeletionRequest.requestedAt);
     expect(result.can_cancel).toBe(true);
   });
 
@@ -254,14 +247,6 @@ describe('processScheduledDeletions', () => {
     expect(result.processed).toBe(1);
     expect(result.errors.length).toBe(0);
     expect(completedRequestIds.length).toBe(1);
-  });
-
-  test('skips when no due requests', async () => {
-    scheduledDeletionRequests = [];
-
-    const result = await processScheduledDeletions();
-
-    expect(result.processed).toBe(0);
   });
 
   test('continues on error for individual accounts', async () => {

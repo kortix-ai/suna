@@ -143,7 +143,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   // instead of ~8 sequential round-trips.
   const [credits, isAdmin, entitlements, autoTopup, instances, memberCount, usageThisPeriod, activeSessions] =
     await Promise.all([
-      getCreditSummary(accountId, account),
+      getCreditSummary(account),
       isPlatformAdmin(accountId),
       // Entitlements must honor the self-serve enterprise DEMO flag, not just the
       // billing tier — otherwise flipping the demo on never surfaces the SSO/SCIM
@@ -212,7 +212,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   const provider = (sub?.provider ?? 'stripe') as AccountStateResponse['subscription']['provider'];
 
   // The SAME state machine the billing gate admits on (billing-state.ts).
-  // `credits.canRun` is a bare wallet-floor check and disagrees with the gate
+  // A bare wallet-floor check (the old `credits.canRun`) disagreed with the gate
   // for an active per-seat subscription (which is not wallet-gated) — that
   // divergence is what made the session page tell a paying Team account with a
   // $0.0099 wallet "Your team isn't on a plan yet". can_run must answer the

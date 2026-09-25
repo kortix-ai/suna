@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { PUBLIC_SHARE_BLOCKED_PORTS } from '../shared/session-public-shares';
 import { SESSION_DATA_PORTS, carriesSessionData } from './session-data-ports';
@@ -9,18 +7,22 @@ describe('carriesSessionData', () => {
     expect(carriesSessionData(8000)).toBe(true);
   });
 
-  test('opencode 4096 is gated — THE LEAK', () => {
-    // Daytona's routeIngress is a pass-through, so a client-addressed :4096 stays
-    // :4096. Gating on 8000 alone let a sandbox token reach ANOTHER end-user's
-    // conversation there, because ownership alone cannot separate end-users when
-    // every KaaB session shares one created_by.
-    expect(carriesSessionData(4096)).toBe(true);
+  // Daytona's routeIngress is a pass-through, so a client-addressed :4096 stays
+  // :4096. Gating on 8000 alone let a sandbox token reach ANOTHER end-user's
+  // conversation there, because ownership alone cannot separate end-users when
+  // every KaaB session shares one created_by. The daemon's verified reload
+  // boots the replacement opencode on the idle half of the pair, so 4097 can be
+  // the live port. Literal rows: iterating the shared constant would pass when
+  // someone removed 4097 from it.
+  test.each([4096, 4097])('opencode %p is gated — THE LEAK', (port) => {
+    expect(carriesSessionData(port)).toBe(true);
   });
 
   test('ordinary user ports are NOT gated — dev servers must stay reachable', () => {
     // Over-gating would break the product: a user's own app on :3000 has nothing
-    // to do with session visibility.
-    for (const port of [3000, 5173, 8080, 80, 443]) {
+    // to do with session visibility. 3211 (the static-file listener) has its own
+    // session gate and is deliberately not session data.
+    for (const port of [3000, 5173, 8080, 80, 443, 3211]) {
       expect(carriesSessionData(port)).toBe(false);
     }
   });
@@ -35,22 +37,5 @@ describe('carriesSessionData', () => {
   });
 });
 
-describe('no auth guard keys on a bare port number', () => {
-  test('preview.ts has no `=== 8000` gate left', () => {
-    // Strix caught the first cut of this fix: the HTTP proxy was updated and the
-    // WebSocket resolver in the SAME FILE still keyed on 8000, so the PTY/opencode
-    // WS leg stayed ungated on Daytona. Three call sites had to change, not one.
-    //
-    // A literal port comparison in an authorization decision is the shape of that
-    // bug, so it is banned here rather than left to the next reviewer to notice.
-    const source = readFileSync(
-      join(import.meta.dir, 'routes', 'preview.ts'),
-      'utf8',
-    );
-    const offenders = source
-      .split('\n')
-      .map((line, i) => [i + 1, line] as const)
-      .filter(([, line]) => /(?:upstreamPort|effectivePort)\s*===\s*8000/.test(line));
-    expect(offenders).toEqual([]);
-  });
-});
+// The gates that consume this are proven at the route, port by port, in
+// __tests__/e2e-preview-proxy.test.ts ("per-session gate on session-data ports").

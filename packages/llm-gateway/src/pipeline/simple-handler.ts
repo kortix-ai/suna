@@ -65,7 +65,7 @@ export interface HandlerRuntime {
   imageWindow?: ImageWindowOptions;
 }
 
-export function streamErrorTraceStatus(error: SseErrorFrame): number {
+function streamErrorTraceStatus(error: SseErrorFrame): number {
   if (error.code === 'client_aborted') return 499;
   if (
     typeof error.code === 'number' &&
@@ -623,6 +623,8 @@ export async function handleChatCompletions(
       relayStream({
         upstreamBody: upstream.body,
         requestId: id,
+        upstreamProvider: served.provider,
+        upstreamModel: served.resolvedModel ?? routedModel,
         logger,
         signal: req.signal,
         settle,

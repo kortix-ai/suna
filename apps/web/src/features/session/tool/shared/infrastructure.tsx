@@ -9,6 +9,12 @@ import {
 } from '@/components/markdown/markdown-frontmatter';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { DiffStat, STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
@@ -43,6 +49,7 @@ import {
   CaretRightIcon,
   CheckIcon as Check,
   WarningCircleIcon as CircleAlert,
+  DotsThreeIcon,
   GlobeIcon as Globe,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
@@ -212,7 +219,15 @@ export type ServicePreviewState = ReturnType<typeof useServicePreview>;
 
 // Single home for the preview controls (refresh / open externally / open as tab)
 // so they never render twice around the same iframe.
-export function ServicePreviewActions({ preview }: { preview: ServicePreviewState }) {
+export function ServicePreviewActions({
+  preview,
+  compact = false,
+}: {
+  preview: ServicePreviewState;
+  /** Fold Refresh and Open in browser into one ⋯ menu, leaving Preview as the
+   *  only visible action (the inline carousel header needs the room). */
+  compact?: boolean;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const {
     navigationEnabled,
@@ -223,6 +238,55 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
     navigateToPreviewTab,
     openInBrowser,
   } = preview;
+
+  const previewButton = (
+    <Hint
+      label={tHardcodedUi.raw('componentsSessionToolRenderers.line5032JsxTextOpenAsTab')}
+      side="top"
+    >
+      <Button
+        type="button"
+        onClick={navigateToPreviewTab}
+        size="xs"
+        disabled={!navigationEnabled || !proxy}
+      >
+        {tHardcodedUi.raw('i18nComplete.text324b134f57c7')}
+      </Button>
+    </Hint>
+  );
+
+  if (compact) {
+    return (
+      <div className="flex shrink-0 items-center gap-1">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              type="button"
+              aria-label={tHardcodedUi.raw('i18nComplete.textf8d46c2570e7')}
+              className="active:scale-[0.96]"
+            >
+              <DotsThreeIcon className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-40">
+            <DropdownMenuItem onSelect={handleRefresh}>
+              <ArrowClockwiseIcon className={cn(isLoading && 'animate-spinner-spin')} />
+              {tHardcodedUi.raw('i18nComplete.text0e9161011702')}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!navigationEnabled || !previewUrl} onSelect={openInBrowser}>
+              <ArrowSquareOutIcon />
+              {tHardcodedUi.raw(
+                'autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929',
+              )}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {previewButton}
+      </div>
+    );
+  }
 
   return (
     <div className="flex shrink-0 items-center gap-1">
@@ -248,19 +312,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
           <ArrowSquareOutIcon className="size-4.5" />
         </Button>
       </Hint>
-      <Hint
-        label={tHardcodedUi.raw('componentsSessionToolRenderers.line5032JsxTextOpenAsTab')}
-        side="top"
-      >
-        <Button
-          type="button"
-          onClick={navigateToPreviewTab}
-          size="xs"
-          disabled={!navigationEnabled || !proxy}
-        >
-          {tHardcodedUi.raw('i18nComplete.text324b134f57c7')}
-        </Button>
-      </Hint>
+      {previewButton}
     </div>
   );
 }
@@ -315,7 +367,16 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
   );
 }
 
-export function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
+export function ServicePreviewViewport({
+  preview,
+  slotHeight = false,
+}: {
+  preview: ServicePreviewState;
+  /** Take the inline carousel's fixed 420px slot instead of a 16:9 box, so a
+   *  port slide is exactly as tall as an image or PDF slide: no gap under the
+   *  frame, and no height jump when switching items. */
+  slotHeight?: boolean;
+}) {
   const fill = useContext(ToolSurfaceContext) === 'panel';
   const {
     previewUrl,
@@ -334,7 +395,7 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
     <div
       className={cn(
         'bg-secondary relative w-full overflow-hidden',
-        fill ? 'h-full' : 'aspect-video',
+        fill ? 'h-full' : slotHeight ? 'h-[420px]' : 'aspect-video',
       )}
     >
       {(isLoading || !previewUrl) && !linkOnlyPreview && (
@@ -629,6 +690,7 @@ export {
   type ToolOutcome,
 } from './tool-outcome';
 
+import { SidebarToggle as PanelRight } from '@/features/icon/icons/sidebar-toggle';
 import {
   cleanErrorMessage,
   formatJsonFailureOutput,
@@ -636,7 +698,6 @@ import {
   parseJsonFailure,
   type ToolOutcome,
 } from './tool-outcome';
-import { SidebarToggle as PanelRight } from '@/features/icon/icons/sidebar-toggle';
 
 export function JsonFailureOutputCard({
   failure,
