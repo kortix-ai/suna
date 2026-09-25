@@ -25,6 +25,7 @@ import {
   resultFromExistingCommand,
 } from './store';
 import { crossAccountIdempotencyResult } from './idempotency-guard';
+import { withCommandLeaseHeartbeat } from './command-lease';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -189,22 +190,33 @@ export async function createSession(
     };
   }
 
+  // The create can take a while: a provider create, then a first prompt
+  // delivered into the new session. The lease is renewed for as long as it
+  // runs, so the drain never reclaims a row this request still holds.
+  return withCommandLeaseHeartbeat(claimed.row, () => runInlineCreate(command, claimed.row));
+}
+
+/** The inline create, under the lease `claimCreateSessionCommand` returned. */
+async function runInlineCreate(
+  command: CreateSessionCommand,
+  row: SessionLifecycleCommandRow,
+): Promise<SessionLifecycleResult> {
   const result = await executeCreateSession({
     ...command,
-    attachmentSourceCommandId: claimed.row.commandId,
-    createCommandId: claimed.row.commandId,
+    attachmentSourceCommandId: row.commandId,
+    createCommandId: row.commandId,
   });
   if (result.status === 'created' && result.sessionId) {
     const postCreate = await applyPostCreateActions({
       projectId: command.project.projectId,
       sessionId: result.sessionId,
       actions: command.postCreate,
-      commandId: claimed.row.commandId,
+      commandId: row.commandId,
     });
     if (!postCreate.ok) {
-      await markCommandFailed(claimed.row.commandId, postCreate.error, {
+      await markCommandFailed(row, postCreate.error, {
         retryable: true,
-        attempts: claimed.row.attempts + 1,
+        attempts: row.attempts + 1,
         sessionId: result.sessionId,
         result: {
           status: 'created',
@@ -215,7 +227,7 @@ export async function createSession(
       });
       return {
         status: 'failed',
-        commandId: claimed.row.commandId,
+        commandId: row.commandId,
         sessionId: result.sessionId,
         row: result.row,
         retryable: true,
@@ -223,7 +235,7 @@ export async function createSession(
       };
     }
     await markCommandSucceeded(
-      claimed.row.commandId,
+      row,
       {
         status: 'created',
         session_id: result.sessionId,
@@ -231,7 +243,7 @@ export async function createSession(
       },
       result.sessionId,
     );
-    return { ...result, commandId: claimed.row.commandId };
+    return { ...result, commandId: row.commandId };
   }
 
   const message = String(result.error?.body?.error ?? result.reason ?? 'Failed to create session');
@@ -240,14 +252,14 @@ export async function createSession(
   // command row queued for the drainer as well, and the caller (told by the
   // guide that a 429/503 is worth retrying) retries with a fresh key: two billed
   // sandboxes for one intent, both running initial_prompt.
-  await markCommandFailed(claimed.row.commandId, message, {
+  await markCommandFailed(row, message, {
     retryable: mayRequeueFailedCreate({
       answeredSynchronously: true,
       errorIsRetryable: result.retryable ?? false,
     }),
-    attempts: claimed.row.attempts + 1,
+    attempts: row.attempts + 1,
   });
-  return { ...result, commandId: claimed.row.commandId };
+  return { ...result, commandId: row.commandId };
 }
 
 export async function executeQueuedCreate(

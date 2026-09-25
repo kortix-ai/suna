@@ -3,6 +3,7 @@
  * belong to another API instance, and run one lane per session.
  */
 
+import { randomUUID } from 'node:crypto';
 import { logger } from '../../lib/logger';
 import {
   currentInstanceId,
@@ -19,6 +20,7 @@ import {
   requeueForAdmission,
 } from './store';
 import { INBOX_ORDER_BACKOFF_MS } from './inbox-admission';
+import { withCommandLeaseHeartbeat } from './command-lease';
 import { claimDueSessionInboxSiblings } from './inbox-rows';
 import { compareInboxSendOrder } from './inbox-order';
 import type { QueuedCreateSessionPayload } from './types';
@@ -55,7 +57,8 @@ async function drainSessionLifecycleQueueTick(
     availableBefore?: Date;
   } = {},
 ): Promise<{ claimed: number; succeeded: number; failed: number; queued: number; released: number }> {
-  const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${Date.now()}`;
+  // Unique per drain: the lock owner is every claimed row's fencing token.
+  const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${randomUUID()}`;
   // COALESCE a burst before claiming. A targeted kick fires per POST, and the
   // composer sends a burst's POSTs concurrently — their arrival order is the
   // network's. Claiming instantly let the first arrival's batch close before
@@ -104,7 +107,7 @@ async function drainSessionLifecycleQueueTick(
       const metadata = metadataBySession.get(row.sessionId);
       if (metadata === undefined || sandboxBelongsToThisInstance(metadata)) continue;
       const owner = sandboxInstanceId(metadata);
-      await releaseCommandToOwningInstance(row.commandId, { availableAt, owner }).catch((err) => {
+      await releaseCommandToOwningInstance(row, { availableAt, owner }).catch((err) => {
         logger.warn('[session-lifecycle] instance-scope release failed; lock expiry will reclaim', {
           commandId: row.commandId,
           error: err instanceof Error ? err.message : String(err),
@@ -139,7 +142,12 @@ async function drainSessionLifecycleQueueTick(
     else lanes.set(lane, [row]);
   }
 
-  const runRow = async (row: SessionLifecycleCommandRow): Promise<void> => {
+  // Every claimed row runs under its lease: the lock is renewed while the row
+  // is in hand, and every write that ends the claim names the lease.
+  const runRow = (row: SessionLifecycleCommandRow): Promise<void> =>
+    withCommandLeaseHeartbeat(row, () => runClaimedRow(row));
+
+  async function runClaimedRow(row: SessionLifecycleCommandRow): Promise<void> {
     if (row.commandType === 'continue_session') {
       // Contained per row. Every row in this batch is CLAIMED (`running`), and
       // one throw escaping the loop would leave the rest of them there — a
@@ -147,7 +155,7 @@ async function drainSessionLifecycleQueueTick(
       // every later prompt of the same session behind it.
       const outcome = await executeQueuedContinue(row).catch(async (err) => {
         await markCommandFailed(
-          row.commandId,
+          row,
           `drain failed: ${err instanceof Error ? err.message : String(err)}`,
           { retryable: true, attempts: row.attempts, sessionId: row.sessionId },
         ).catch(() => undefined);
@@ -157,7 +165,7 @@ async function drainSessionLifecycleQueueTick(
       return;
     }
     if (row.commandType !== 'create_session') {
-      await markCommandFailed(row.commandId, `Unsupported command type: ${row.commandType}`, {
+      await markCommandFailed(row, `Unsupported command type: ${row.commandType}`, {
         retryable: false,
         attempts: row.attempts,
       });
@@ -174,7 +182,7 @@ async function drainSessionLifecycleQueueTick(
         commandId: row.commandId,
       });
       if (!postCreate.ok) {
-        await markCommandFailed(row.commandId, postCreate.error, {
+        await markCommandFailed(row, postCreate.error, {
           retryable: true,
           attempts: row.attempts,
           sessionId: result.sessionId,
@@ -189,7 +197,7 @@ async function drainSessionLifecycleQueueTick(
         return;
       }
       await markCommandSucceeded(
-        row.commandId,
+        row,
         { status: 'created', session_id: result.sessionId, source: row.source },
         result.sessionId,
       );
@@ -199,11 +207,11 @@ async function drainSessionLifecycleQueueTick(
         result.error?.body?.error ?? result.reason ?? 'Failed to create queued session',
       );
       const retryable = result.retryable ?? isRetryableCreateError(result.error?.status);
-      await markCommandFailed(row.commandId, message, { retryable, attempts: row.attempts });
+      await markCommandFailed(row, message, { retryable, attempts: row.attempts });
       if (retryable) out.queued += 1;
       else out.failed += 1;
     }
-  };
+  }
 
   await Promise.all(
     [...lanes.values()].map(async (lane) => {
@@ -230,7 +238,7 @@ async function drainSessionLifecycleQueueTick(
         // rejects the head as if another delivery were already on the wire.
         for (const sibling of batch.slice(1)) {
           await requeueForAdmission(
-            sibling.commandId,
+            sibling,
             'older_prompt_pending',
             new Date(Date.now() + INBOX_ORDER_BACKOFF_MS),
           );

@@ -3,12 +3,13 @@
  * writers of the session lifecycle.
  *
  * Every case drives a SHIPPED writer against real rows and reads the rows
- * back. The cases pin two things:
+ * back. The cases pin three things:
  *   - the transitions a live session makes (stop, park, lose, recover,
  *     restart claim) and the metadata each one leaves behind;
  *   - the guards each write holds: a deleted session is not revived, an
  *     archived row stays archived, a `failed` park survives a later stop, and a
- *     metadata key a concurrent writer added is never reverted.
+ *     metadata key a concurrent writer added is never reverted;
+ *   - the park holds no transaction and no row lock across `provider.stop()`.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { sessionSandboxes } from '@kortix/db';
@@ -17,11 +18,14 @@ import * as realProviders from '../platform/providers';
 import { db } from '../shared/db';
 
 let providerStops = 0;
+/** What the provider stop does besides counting. Reset after each park case. */
+let onProviderStop: () => Promise<void> = async () => {};
 mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
     stop: async () => {
       providerStops += 1;
+      await onProviderStop();
     },
   }),
 }));
@@ -55,6 +59,8 @@ async function fixture(input: {
   sandboxStatus: string;
   sessionMetadata?: Row;
   sandboxMetadata?: Row;
+  /** A first provisioning has no provider box yet. */
+  withoutExternalId?: true;
 }): Promise<Fixture> {
   const sessionId = crypto.randomUUID();
   const externalId = `sbx_transition_${sessionId.slice(0, 8)}`;
@@ -71,7 +77,8 @@ async function fixture(input: {
        updated_at)
     values
       (${sessionId}::uuid, ${sessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,
-       ${externalId}, 'daytona', ${input.sandboxStatus}::kortix.session_sandbox_status,
+       ${input.withoutExternalId ? null : externalId}, 'daytona',
+       ${input.sandboxStatus}::kortix.session_sandbox_status,
        ${JSON.stringify(input.sandboxMetadata ?? {})}::jsonb,
        -- The API writes updated_at from a JS Date (millisecond precision), and
        -- the park CAS compares it to one.
@@ -282,6 +289,108 @@ describe('park (parkEstablishedRuntime)', () => {
     expect(session.status).toBe('running');
     expect(sandbox.status).toBe('active');
   });
+
+  test('holds no row lock while the provider stops the box', async () => {
+    const f = await fixture({ sessionStatus: 'running', sandboxStatus: 'active' });
+    let concurrentWrite = 'not attempted' as string;
+    onProviderStop = async () => {
+      // Another writer of this row, bounded by a lock timeout: it lands only
+      // when no open transaction holds the row.
+      try {
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`set local lock_timeout = '1s'`);
+          await tx.execute(sql`
+            update kortix.session_sandboxes
+               set metadata = coalesce(metadata, '{}'::jsonb) || '{"lastAliveAt":"during-stop"}'::jsonb
+             where sandbox_id = ${f.sandboxId}::uuid`);
+        });
+        concurrentWrite = 'landed';
+      } catch (err) {
+        concurrentWrite = err instanceof Error ? err.message : String(err);
+      }
+    };
+    try {
+      const parked = await parkEstablishedRuntime(
+        await sandboxRow(f),
+        'integration_test',
+        'runtime_boot_failed',
+      );
+      expect(parked?.status).toBe('stopped');
+    } finally {
+      onProviderStop = async () => {};
+    }
+    expect(concurrentWrite).toBe('landed');
+    const { sandbox } = await read(f);
+    expect(sandbox.metadata.lastAliveAt).toBe('during-stop');
+    expect(sandbox.metadata).not.toHaveProperty('lifecycleStopClaim');
+  });
+
+  test('a failed provider stop leaves the runtime active and releases the claim', async () => {
+    const f = await fixture({ sessionStatus: 'running', sandboxStatus: 'active' });
+    onProviderStop = async () => {
+      throw new Error('provider unavailable');
+    };
+    try {
+      expect(
+        await parkEstablishedRuntime(await sandboxRow(f), 'integration_test', 'runtime_boot_failed'),
+      ).toBeNull();
+    } finally {
+      onProviderStop = async () => {};
+    }
+    const { session, sandbox } = await read(f);
+    expect(session.status).toBe('running');
+    expect(sandbox.status).toBe('active');
+    expect(sandbox.metadata).not.toHaveProperty('lifecycleStopClaim');
+    expect(sandbox.metadata).not.toHaveProperty('stopReason');
+  });
+
+  test('a new prompt and a restart refuse the row while the stop is in flight', async () => {
+    const f = await fixture({ sessionStatus: 'running', sandboxStatus: 'active' });
+    let restartClaimed = null as boolean | null;
+    let claimDuringStop = undefined as Record<string, unknown> | undefined;
+    onProviderStop = async () => {
+      claimDuringStop = (await read(f)).sandbox.metadata.lifecycleStopClaim as
+        | Record<string, unknown>
+        | undefined;
+      const startedAt = new Date();
+      restartClaimed = await claimInPlaceRestart({
+        sandboxId: f.sandboxId,
+        externalId: f.externalId,
+        claim: {
+          id: crypto.randomUUID(),
+          startedAt,
+          leaseExpiresAt: new Date(startedAt.getTime() + 240_000),
+        },
+      });
+    };
+    try {
+      await parkEstablishedRuntime(await sandboxRow(f), 'integration_test', 'runtime_boot_failed');
+    } finally {
+      onProviderStop = async () => {};
+    }
+    // The claim `beginSandboxTurn` refuses a prompt on.
+    expect(claimDuringStop).toMatchObject({ token: expect.any(String) });
+    expect(restartClaimed).toBe(false);
+    expect((await read(f)).sandbox.status).toBe('stopped');
+  });
+
+  test('drops turn authority and wake fences with the runtime', async () => {
+    const f = await fixture({
+      sessionStatus: 'running',
+      sandboxStatus: 'active',
+      sandboxMetadata: {
+        activeTurns: { t1: { token: 't1', state: 'active' } },
+        runtimeWakeId: 'wake-old',
+        lastAliveAt: '2026-09-25T10:00:00.000Z',
+      },
+    });
+    await parkEstablishedRuntime(await sandboxRow(f), 'integration_test', 'runtime_boot_failed');
+    const { sandbox } = await read(f);
+    expect(sandbox.status).toBe('stopped');
+    expect(sandbox.metadata).not.toHaveProperty('activeTurns');
+    expect(sandbox.metadata).not.toHaveProperty('runtimeWakeId');
+    expect(sandbox.metadata.lastAliveAt).toBe('2026-09-25T10:00:00.000Z');
+  });
 });
 
 describe('in-place recovery (claim, then accept)', () => {
@@ -357,6 +466,65 @@ describe('in-place restart claim', () => {
     });
     expect(await claimFor(f)).toBe(false);
     expect((await read(f)).sandbox.status).toBe('archived');
+  });
+
+  test('never claims a row under a live stop claim, and claims it once the claim lapses', async () => {
+    const f = await fixture({
+      sessionStatus: 'running',
+      sandboxStatus: 'active',
+      sandboxMetadata: { lifecycleStopClaim: { token: 'stop-1', claimedAtMs: Date.now() } },
+    });
+    expect(await claimFor(f)).toBe(false);
+    expect((await read(f)).sandbox.status).toBe('active');
+    await concurrentMetadataWrite(f, { lifecycleStopClaim: { token: 'stop-1', claimedAtMs: 0 } });
+    expect(await claimFor(f)).toBe(true);
+  });
+});
+
+describe('first provisioning (session-sandbox writers)', () => {
+  test('a failed create attempt never revives the archived row of a deleted session', async () => {
+    const f = await fixture({
+      sessionStatus: 'stopped',
+      sandboxStatus: 'archived',
+      sessionMetadata: { deletedAt: '2026-09-25T10:00:00.000Z' },
+    });
+    expect(await transitionSandbox('reprovision', f.sandboxId)).toBeNull();
+    expect(await transitionSandbox('failProvisioning', f.sandboxId)).toBeNull();
+    expect(await transitionSession('fail', f.sessionId, { error: 'create failed' })).toBe(false);
+    const { session, sandbox } = await read(f);
+    expect(sandbox.status).toBe('archived');
+    expect(session.status).toBe('stopped');
+    expect(session.error).toBeNull();
+  });
+
+  test('the last attempt writes `error`, and a failover takes the row back to provisioning', async () => {
+    const f = await fixture({
+      sessionStatus: 'provisioning',
+      sandboxStatus: 'provisioning',
+      withoutExternalId: true,
+    });
+    expect(await transitionSandbox('failProvisioning', f.sandboxId)).not.toBeNull();
+    // The final failure record lands on the row the last attempt marked.
+    expect(await transitionSandbox('failProvisioning', f.sandboxId)).not.toBeNull();
+    const failedOver = await transitionSandbox('reprovision', f.sandboxId, {
+      columns: { provider: 'e2b' },
+    });
+    expect(failedOver?.status).toBe('provisioning');
+    expect(failedOver?.provider).toBe('e2b');
+  });
+
+  test('`provisioned` flips only a session still being provisioned, and sets its URL', async () => {
+    const f = await fixture({ sessionStatus: 'provisioning', sandboxStatus: 'active' });
+    expect(
+      await transitionSession('provisioned', f.sessionId, { sandboxUrl: 'https://box.test' }),
+    ).toBe(true);
+    const [session] = rows(
+      await db.execute(sql`
+        select status, sandbox_url from kortix.project_sessions where session_id = ${f.sessionId}`),
+    );
+    expect(session).toEqual({ status: 'running', sandbox_url: 'https://box.test' });
+    const stopped = await fixture({ sessionStatus: 'stopped', sandboxStatus: 'active' });
+    expect(await transitionSession('provisioned', stopped.sessionId)).toBe(false);
   });
 });
 

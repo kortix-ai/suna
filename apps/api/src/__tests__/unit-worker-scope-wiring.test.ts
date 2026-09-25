@@ -58,6 +58,8 @@ const NOT_WORKERS: Record<string, string> = {
   'projects/lib/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
   'projects/provider-transition/provider-transition-service.ts': 'renews a lease inside the provider-transition tick',
   'projects/routes/session-stream.ts': 'heartbeat on one open session stream',
+  'projects/session-lifecycle/command-lease.ts':
+    'renews the lock of one claimed command while its drain lane or inline create runs',
   'projects/session-lifecycle/worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
   'router/config/model-pricing.ts': 'refreshes the in-memory model pricing',
   'sandbox-proxy/preview-state-page.ts': 'browser JavaScript inside an HTML string',
