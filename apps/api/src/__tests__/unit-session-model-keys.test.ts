@@ -56,9 +56,28 @@ mock.module('../secrets/provider-key-selection', () => ({
 /** Stored selections, as `sessionId/providerId`. */
 let selections = new Set<string>();
 const selectionQueries: unknown[][] = [];
+/** Rows the change stored. */
+let stored: Array<{ sessionId: string; providerId: string; secretIds: string[] }> = [];
+/** A selection another request stores between the check and the write. */
+let concurrentSelection: string | null = null;
 const dialect = new PgDialect();
 mock.module('../shared/db', () => ({
   db: {
+    insert: (table: unknown) => ({
+      values: (row: { sessionId: string; providerId: string; secretIds: string[] }) => ({
+        onConflictDoNothing: () => ({
+          returning: async () => {
+            if (table !== sessionProviderSecretPools) throw new Error('unexpected table');
+            if (concurrentSelection) selections.add(concurrentSelection);
+            const id = `${row.sessionId}/${row.providerId}`;
+            if (selections.has(id)) return [];
+            selections.add(id);
+            stored.push(row);
+            return [{ sessionId: row.sessionId }];
+          },
+        }),
+      }),
+    }),
     select: () => ({
       from: (table: unknown) => ({
         where: (condition: SQL) => ({
@@ -74,11 +93,11 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { checkSessionModelChange, sessionHasProviderSelection } = await import('../projects/lib/session-model-keys');
+const { admitSessionModelChange } = await import('../projects/lib/session-model-keys');
 
 let callerMaySelect = true;
-const change = (over: Partial<Parameters<typeof checkSessionModelChange>[0]> = {}) =>
-  checkSessionModelChange({
+const change = (over: Partial<Parameters<typeof admitSessionModelChange>[0]> = {}) =>
+  admitSessionModelChange({
     accountId: 'acct',
     projectId: 'proj',
     sessionId: 'sess',
@@ -98,10 +117,12 @@ beforeEach(() => {
   projectKeys = [PROJECT_KEY];
   selections = new Set();
   selectionQueries.length = 0;
+  stored = [];
+  concurrentSelection = null;
   callerMaySelect = true;
 });
 
-describe('checkSessionModelChange — checked as the gateway runs the session', () => {
+describe('admitSessionModelChange — checked as the gateway runs the session', () => {
   test('a shared session never counts the owner`s own ChatGPT connection; it selects the project`s', async () => {
     const result = await change();
     expect(probes[0]).toMatchObject({ userId: OWNER, sessionId: 'sess', personalUserId: null });
@@ -127,6 +148,7 @@ describe('checkSessionModelChange — checked as the gateway runs the session', 
       selected: { providerId: 'anthropic', secretIds: [PROJECT_KEY, OWNER_KEY] },
     });
     // A manager changing it gets keys shared with the project, never the owner's.
+    selections = new Set();
     expect(await change({ caller: OTHER, model: 'anthropic/claude-opus-4-8' })).toEqual({
       servable: true,
       selected: { providerId: 'anthropic', secretIds: [PROJECT_KEY] },
@@ -163,12 +185,31 @@ describe('checkSessionModelChange — checked as the gateway runs the session', 
   });
 });
 
-describe('sessionHasProviderSelection', () => {
-  test('asks for exactly this session and provider', async () => {
-    selections.add('sess/codex');
-    expect(await sessionHasProviderSelection('sess', 'codex')).toBe(true);
-    expect(await sessionHasProviderSelection('sess', 'anthropic')).toBe(false);
-    expect(await sessionHasProviderSelection('other-sess', 'codex')).toBe(false);
-    expect(selectionQueries).toEqual([['sess', 'codex'], ['sess', 'anthropic'], ['other-sess', 'codex']]);
+describe('admitSessionModelChange — stores the selection it makes', () => {
+  test('a selected pool is stored for exactly this session and provider', async () => {
+    expect(await change()).toEqual({ servable: true, selected: { providerId: 'codex', secretIds: [PROJECT_KEY] } });
+    expect(stored).toEqual([{ sessionId: 'sess', providerId: 'codex', secretIds: [PROJECT_KEY] }]);
+  });
+
+  test('nothing is stored when no selection is made or the model stays refused', async () => {
+    gatewayPersonal = OWNER;
+    await change();
+    projectKeys = [];
+    gatewayPersonal = null;
+    await change();
+    callerMaySelect = false;
+    projectKeys = [PROJECT_KEY];
+    await change();
+    await change({ mayPool: false });
+    expect(stored).toEqual([]);
+  });
+
+  test('a selection another request stores first wins: the model is judged with it, nothing is overwritten', async () => {
+    concurrentSelection = 'sess/codex';
+    expect(await change()).toEqual({ servable: false, selected: null });
+    expect(stored).toEqual([]);
+    // The last probe asks as the session is stored, not with the keys this change chose.
+    expect(probes.at(-1)).not.toHaveProperty('providerSecretPools');
+    expect(probes).toHaveLength(3);
   });
 });

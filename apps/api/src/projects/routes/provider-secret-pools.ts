@@ -7,7 +7,7 @@ import { requireFeatureFlag } from '../../feature-flags/gate';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv } from '../../iam/agent-scope';
-import { MAX_KEYS_PER_PROVIDER, providerEnvVarOf, sessionUsableKeys } from '../../secrets/provider-key-selection';
+import { MAX_KEYS_PER_PROVIDER, mayUseProviderKeys, providerEnvVarOf } from '../../secrets/provider-key-selection';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { mayChangeSessionModel } from '../lib/session-model-change';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
@@ -19,28 +19,6 @@ import { resolveSessionPersonalOwner } from '../lib/personal-resources';
 const Params = z.object({ projectId: z.string().uuid(), sessionId: z.string().uuid(), providerId: z.string().min(1).max(100) });
 const Pool = z.object({ provider_id: z.string(), configured: z.boolean(), secret_ids: z.array(z.string()) });
 const Input = z.object({ secret_ids: z.array(z.string().uuid()).max(MAX_KEYS_PER_PROVIDER).nullable() }).strict();
-
-/**
- * Can the session use every one of these keys when it runs? The gateway serves
- * a session's selection as its owner, with the session's personal user's
- * member grants (`resolveSessionPersonalOwner`, spec 2026-09-22 §2.3): keys
- * shared with the whole project always, a key granted to one member only in
- * that member's private session. `personalUserId` null is a shared session:
- * project-wide keys only. A selection the gateway would not use is refused,
- * not stored.
- */
-async function sessionMayUseSecrets(input: {
-  accountId: string; projectId: string; providerId: string; ids: string[];
-  ownerId: string; personalUserId: string | null;
-}): Promise<boolean> {
-  const envVar = providerEnvVarOf(input.providerId);
-  if (!envVar) return false;
-  const keys = await sessionUsableKeys({
-    accountId: input.accountId, projectId: input.projectId, providerId: input.providerId, envVar, ids: input.ids,
-    userId: input.ownerId, grantUserId: input.personalUserId,
-  });
-  return keys.length === input.ids.length;
-}
 
 /**
  * May the caller select these keys for a session? Its agent must be granted
@@ -69,11 +47,11 @@ export async function validateProviderSecretPool(input: {
     return { status: 409, error: 'Agent grant unavailable' };
   }
   if (!agentMayUseEnv(grant, envVar)) return { status: 403, error: 'Agent cannot use this provider secret' };
-  const keys = await sessionUsableKeys({
-    accountId: input.accountId, projectId: input.projectId, providerId: input.providerId, envVar, ids: input.ids,
+  const usable = await mayUseProviderKeys({
+    accountId: input.accountId, projectId: input.projectId, providerId: input.providerId, ids: input.ids,
     userId: input.userId, grantUserId: input.userId,
   });
-  return keys.length === input.ids.length ? null : { status: 403, error: 'Secret unavailable or not granted' };
+  return usable ? null : { status: 403, error: 'Secret unavailable or not granted' };
 }
 
 projectsApp.openapi(createRoute({
@@ -153,13 +131,18 @@ projectsApp.openapi(createRoute({
   });
   if (invalid) return c.json({ error: invalid.error }, invalid.status);
   if (ids.length) {
-    // The caller may use these keys; may the session? It runs with its own
-    // personal user, which a shared session does not have.
+    // The caller may use these keys; may the session? The gateway serves its
+    // selection as its owner, with the member grants of its personal user
+    // (spec 2026-09-22 §2.3): a shared session has none, so it reaches only
+    // keys shared with the whole project. A selection the gateway would not
+    // use is refused, not stored.
     const ownerId = visible.row.createdBy!;
     const personalUserId = await resolveSessionPersonalOwner({
       projectId, accountId: loaded.row.accountId, sessionId, legacyUserId: ownerId,
     }).catch(() => null);
-    if (!(await sessionMayUseSecrets({ accountId: loaded.row.accountId, projectId, providerId, ids, ownerId, personalUserId }))) {
+    if (!(await mayUseProviderKeys({
+      accountId: loaded.row.accountId, projectId, providerId, ids, userId: ownerId, grantUserId: personalUserId,
+    }))) {
       return c.json(personalUserId === null
         ? {
             error: 'This session is shared, so it can use only keys shared with the whole project',

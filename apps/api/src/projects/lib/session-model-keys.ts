@@ -1,5 +1,7 @@
 /**
- * May a live session switch to `model`, and which pooled keys does it select?
+ * May a live session switch to `model`? When only pooled keys reach it, the
+ * session selects them here: this module checks for an existing selection,
+ * selects the keys and stores them.
  *
  * Checked in the personal-key scope the gateway uses for that session
  * (`resolveSessionPersonalOwner`, spec 2026-09-22 §2.3). `PUT
@@ -21,7 +23,7 @@ import { db } from '../../shared/db';
 import { resolveSessionPersonalOwner } from './personal-resources';
 
 /** Does the session have a selection for the provider? An empty one counts. */
-export async function sessionHasProviderSelection(sessionId: string, providerId: string): Promise<boolean> {
+async function hasProviderSelection(sessionId: string, providerId: string): Promise<boolean> {
   const [existing] = await db
     .select({ sessionId: sessionProviderSecretPools.sessionId })
     .from(sessionProviderSecretPools)
@@ -32,11 +34,17 @@ export async function sessionHasProviderSelection(sessionId: string, providerId:
 
 export interface SessionModelChange {
   servable: boolean;
-  /** Keys to store as the session's selection for the provider; null when none. */
+  /** The keys stored as the session's selection for the provider; null when none were stored. */
   selected: { providerId: string; secretIds: string[] } | null;
 }
 
-export async function checkSessionModelChange(input: {
+/**
+ * Decides whether the session may switch to `model`. When the model needs
+ * pooled keys and the session has no selection for its provider, stores the
+ * selection that makes it servable. A selection another request stores first
+ * wins: the model is then judged with that selection.
+ */
+export async function admitSessionModelChange(input: {
   accountId: string;
   projectId: string;
   sessionId: string;
@@ -70,7 +78,7 @@ export async function checkSessionModelChange(input: {
   if (!input.mayPool) return { servable: false, selected: null };
 
   const provider = providerKeyOf(input.model);
-  if (!provider || (await sessionHasProviderSelection(input.sessionId, provider.providerId))) {
+  if (!provider || (await hasProviderSelection(input.sessionId, provider.providerId))) {
     return { servable: false, selected: null };
   }
   // The session's own scope, and personal keys only when the owner makes the
@@ -90,5 +98,14 @@ export async function checkSessionModelChange(input: {
     ...probe,
     providerSecretPools: { [selected.providerId]: selected.secretIds },
   });
-  return { servable, selected: servable ? selected : null };
+  if (!servable) return { servable: false, selected: null };
+  const stored = await db
+    .insert(sessionProviderSecretPools)
+    .values({ sessionId: input.sessionId, providerId: selected.providerId, secretIds: selected.secretIds })
+    .onConflictDoNothing({ target: [sessionProviderSecretPools.sessionId, sessionProviderSecretPools.providerId] })
+    .returning({ sessionId: sessionProviderSecretPools.sessionId });
+  if (stored.length) return { servable: true, selected };
+  // Another request stored a selection first. It stays; the model is judged
+  // with it, as a later request would be.
+  return { servable: await isModelServableForAccount(probe), selected: null };
 }

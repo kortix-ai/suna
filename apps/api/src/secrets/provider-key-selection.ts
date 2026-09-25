@@ -8,6 +8,7 @@
  * model — the CLI, the SDK, a chat channel — gets every key it may use for
  * that model's provider, so they rotate.
  */
+import { CODEX_AUTH_SECRET_NAME } from '../llm-gateway/models/codex-models';
 import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';
 import { toWireModel } from '../llm-gateway/resolution/effective';
 import { listUsableGatewaySecrets, type UsableGatewaySecret } from './account-resource';
@@ -17,7 +18,7 @@ export const MAX_KEYS_PER_PROVIDER = 10;
 
 /** The key name the gateway reads for a provider's pooled keys. Null for an unknown provider. */
 export function providerEnvVarOf(providerId: string): string | null {
-  return providerId === 'codex' ? 'CODEX_AUTH_JSON' : (resolveCatalogUpstream(providerId)?.envVar ?? null);
+  return providerId === 'codex' ? CODEX_AUTH_SECRET_NAME : (resolveCatalogUpstream(providerId)?.envVar ?? null);
 }
 
 /** The provider whose keys pay for a model, and the key name the gateway reads. Null for a Kortix model. */
@@ -29,31 +30,48 @@ export function providerKeyOf(model: string): { providerId: string; envVar: stri
   return envVar ? { providerId, envVar } : null;
 }
 
-/**
- * The provider's pooled keys that `userId` may use in this project, oldest
- * first: every key needs `userId` to read the project, as the gateway requires
- * of the user a session runs as. A key granted to one member counts only for
- * `grantUserId`; null counts no member grant (spec 2026-09-22 §2.3). `ids`
- * limits the answer to those keys.
- */
-export async function sessionUsableKeys(input: {
+/** Who asks: `userId` must read the project; member grants count only for `grantUserId`. */
+interface KeyScope {
   accountId: string;
   projectId: string;
   userId: string;
+  /**
+   * Whose member-granted keys count: the person a private session acts for,
+   * or null in a shared one — keys shared with the whole project only (spec
+   * 2026-09-22 §2.3).
+   */
   grantUserId: string | null;
-  providerId: string;
-  envVar: string;
-  ids?: string[];
-}): Promise<UsableGatewaySecret[]> {
-  const keys = await listUsableGatewaySecrets({
+}
+
+/**
+ * The provider's pooled keys `userId` may use in this project, oldest first:
+ * active, stored under the key name the gateway reads for the provider, and
+ * usable by `userId` as the gateway requires of the user a session runs as.
+ * `ids` limits the answer to those keys. None for an unknown provider.
+ */
+async function providerKeys(input: KeyScope & { providerId: string; ids?: string[] }): Promise<UsableGatewaySecret[]> {
+  const name = providerEnvVarOf(input.providerId);
+  if (!name) return [];
+  return listUsableGatewaySecrets({
     accountId: input.accountId,
     projectId: input.projectId,
     userId: input.userId,
     grantUserId: input.grantUserId,
     providerId: input.providerId,
+    name,
     ids: input.ids,
   });
-  return keys.filter((key) => key.name === input.envVar);
+}
+
+/**
+ * May `userId`, with `grantUserId`'s member grants, use every one of these
+ * keys for the provider? False for an unknown provider, or when any id is not
+ * one of its usable keys. True for no ids.
+ */
+export async function mayUseProviderKeys(input: KeyScope & { providerId: string; ids: string[] }): Promise<boolean> {
+  if (!input.ids.length) return true;
+  const ids = [...new Set(input.ids)];
+  return (await providerKeys({ ...input, ids })).length === ids.length;
 }
 
 export interface ProviderKeySelection {
@@ -65,26 +83,13 @@ export interface ProviderKeySelection {
 
 /**
  * Every pooled key `userId` may use for the model's provider in this project,
- * oldest first, at most MAX_KEYS_PER_PROVIDER. `grantUserId` is whose
- * member-granted keys count: the person a private session acts for, or null
- * in a shared one (spec 2026-09-22 §2.3). Null when there is none to select.
+ * oldest first, at most MAX_KEYS_PER_PROVIDER. Null when there is none to
+ * select.
  */
-export async function usableProviderKeys(input: {
-  accountId: string;
-  projectId: string;
-  userId: string;
-  grantUserId: string | null;
-  model: string;
-}): Promise<ProviderKeySelection | null> {
+export async function usableProviderKeys(input: KeyScope & { model: string }): Promise<ProviderKeySelection | null> {
   const provider = providerKeyOf(input.model);
   if (!provider) return null;
-  const keys = (await sessionUsableKeys({
-    accountId: input.accountId,
-    projectId: input.projectId,
-    userId: input.userId,
-    grantUserId: input.grantUserId,
-    ...provider,
-  })).slice(0, MAX_KEYS_PER_PROVIDER);
+  const keys = (await providerKeys({ ...input, providerId: provider.providerId })).slice(0, MAX_KEYS_PER_PROVIDER);
   if (!keys.length) return null;
   return { ...provider, secretIds: keys.map((key) => key.secretId), labels: keys.map((key) => key.label) };
 }
