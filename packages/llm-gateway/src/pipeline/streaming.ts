@@ -92,7 +92,8 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
         }
       }
       output += line;
-      previousDataLineEnding = complete ? (line.endsWith('\r\n') ? '\r\n' : '\n') : '';
+      if (complete) previousDataLineEnding = line.endsWith('\r\n') ? '\r\n' : '\n';
+      else if (line === '\n' || line === '\r\n' || line.startsWith('data:')) previousDataLineEnding = '';
       start = end + 1;
     }
     controller.enqueue(encoder.encode(options.rewriteLines ? options.rewriteLines(output) : output));

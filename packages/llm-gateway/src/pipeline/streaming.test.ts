@@ -48,6 +48,17 @@ describe('relayStream', () => {
     expect(warnings).toEqual([]);
   });
 
+  test('repairs consecutive JSON events across an SSE comment', async () => {
+    const text = 'data: {"choices":[{"delta":{"content":"a"}}]}\n: keep-alive\ndata: {"choices":[{"delta":{"content":"b"}}]}\n\n';
+    const output = await new Response(relayStream({
+      upstreamBody: new ReadableStream({ start(controller) { controller.enqueue(encoder.encode(text)); controller.close(); } }),
+      requestId: 'req_comment',
+      logger: { warn() {}, error() {} },
+      settle: async () => {},
+    })).text();
+    expect(output).toBe(text.replace('\ndata: {"choices":[{"delta":{"content":"b"}}]}', '\n\ndata: {"choices":[{"delta":{"content":"b"}}]}'));
+  });
+
   test('terminates a complete final event when the provider closes without a newline', async () => {
     const text = 'data: {"choices":[{"delta":{"content":"answer"}}]}';
     const warnings: unknown[] = [];
