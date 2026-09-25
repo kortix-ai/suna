@@ -13,9 +13,22 @@
  * for its provider, so they rotate — when the session has no selection for
  * that provider yet. One made on purpose, an empty one included, stays.
  */
+import { sessionProviderSecretPools } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { providerKeyOf, usableProviderKeys } from '../../secrets/provider-key-selection';
+import { db } from '../../shared/db';
 import { resolveSessionPersonalOwner } from './personal-resources';
+
+/** Does the session have a selection for the provider? An empty one counts. */
+export async function sessionHasProviderSelection(sessionId: string, providerId: string): Promise<boolean> {
+  const [existing] = await db
+    .select({ sessionId: sessionProviderSecretPools.sessionId })
+    .from(sessionProviderSecretPools)
+    .where(and(eq(sessionProviderSecretPools.sessionId, sessionId), eq(sessionProviderSecretPools.providerId, providerId)))
+    .limit(1);
+  return Boolean(existing);
+}
 
 export interface SessionModelChange {
   servable: boolean;
@@ -35,8 +48,6 @@ export async function checkSessionModelChange(input: {
   model: string;
   /** Pooled keys may be selected: the project's flag is on and a human owns the session. */
   mayPool: boolean;
-  /** Does the session already have a selection for this provider? */
-  hasSelection: (providerId: string) => Promise<boolean>;
   /** The route's check that the caller may select these keys (agent grant, the caller's own access). */
   callerMaySelect: (providerId: string, secretIds: string[]) => Promise<boolean>;
 }): Promise<SessionModelChange> {
@@ -59,7 +70,9 @@ export async function checkSessionModelChange(input: {
   if (!input.mayPool) return { servable: false, selected: null };
 
   const provider = providerKeyOf(input.model);
-  if (!provider || (await input.hasSelection(provider.providerId))) return { servable: false, selected: null };
+  if (!provider || (await sessionHasProviderSelection(input.sessionId, provider.providerId))) {
+    return { servable: false, selected: null };
+  }
   // The session's own scope, and personal keys only when the owner makes the
   // change: another person, a manager, never selects the owner's own keys.
   const selection = await usableProviderKeys({

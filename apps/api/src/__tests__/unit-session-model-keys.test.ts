@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import { sessionProviderSecretPools } from '@kortix/db';
 
 // PUT /sessions/:id/model (projects/lib/session-model-keys.ts). The check used
 // the owner's own keys: on dev (2026-09-25) a session shared with the project
@@ -50,9 +53,29 @@ mock.module('../secrets/provider-key-selection', () => ({
   },
 }));
 
-const { checkSessionModelChange } = await import('../projects/lib/session-model-keys');
+/** Stored selections, as `sessionId/providerId`. */
+let selections = new Set<string>();
+const selectionQueries: unknown[][] = [];
+const dialect = new PgDialect();
+mock.module('../shared/db', () => ({
+  db: {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: (condition: SQL) => ({
+          limit: async () => {
+            if (table !== sessionProviderSecretPools) throw new Error('unexpected table');
+            const [sessionId, providerId] = dialect.sqlToQuery(condition).params as string[];
+            selectionQueries.push([sessionId, providerId]);
+            return selections.has(`${sessionId}/${providerId}`) ? [{ sessionId }] : [];
+          },
+        }),
+      }),
+    }),
+  },
+}));
 
-let hasSelection = false;
+const { checkSessionModelChange, sessionHasProviderSelection } = await import('../projects/lib/session-model-keys');
+
 let callerMaySelect = true;
 const change = (over: Partial<Parameters<typeof checkSessionModelChange>[0]> = {}) =>
   checkSessionModelChange({
@@ -64,7 +87,6 @@ const change = (over: Partial<Parameters<typeof checkSessionModelChange>[0]> = {
     freeModelsOnly: false,
     model: 'codex/gpt-6-astra',
     mayPool: true,
-    hasSelection: async () => hasSelection,
     callerMaySelect: async () => callerMaySelect,
     ...over,
   });
@@ -74,7 +96,8 @@ beforeEach(() => {
   probes.length = 0;
   keyQueries.length = 0;
   projectKeys = [PROJECT_KEY];
-  hasSelection = false;
+  selections = new Set();
+  selectionQueries.length = 0;
   callerMaySelect = true;
 });
 
@@ -117,9 +140,16 @@ describe('checkSessionModelChange — checked as the gateway runs the session', 
   });
 
   test('a selection made on purpose stays: no new selection, the model is refused', async () => {
-    hasSelection = true;
+    selections.add('sess/codex');
     expect(await change()).toEqual({ servable: false, selected: null });
+    expect(selectionQueries).toEqual([['sess', 'codex']]);
     expect(keyQueries).toHaveLength(0);
+  });
+
+  test('a selection for another provider or another session does not count', async () => {
+    selections = new Set(['sess/anthropic', 'other-sess/codex']);
+    expect(await change()).toEqual({ servable: true, selected: { providerId: 'codex', secretIds: [PROJECT_KEY] } });
+    expect(selectionQueries).toEqual([['sess', 'codex']]);
   });
 
   test('without pooled keys (flag off, or a machine-owned session) nothing is selected', async () => {
@@ -130,5 +160,15 @@ describe('checkSessionModelChange — checked as the gateway runs the session', 
   test('a model no key pays for (a Kortix model) is only checked', async () => {
     expect(await change({ model: 'glm-5.3-flash' })).toEqual({ servable: false, selected: null });
     expect(probes).toHaveLength(1);
+  });
+});
+
+describe('sessionHasProviderSelection', () => {
+  test('asks for exactly this session and provider', async () => {
+    selections.add('sess/codex');
+    expect(await sessionHasProviderSelection('sess', 'codex')).toBe(true);
+    expect(await sessionHasProviderSelection('sess', 'anthropic')).toBe(false);
+    expect(await sessionHasProviderSelection('other-sess', 'codex')).toBe(false);
+    expect(selectionQueries).toEqual([['sess', 'codex'], ['sess', 'anthropic'], ['other-sess', 'codex']]);
   });
 });

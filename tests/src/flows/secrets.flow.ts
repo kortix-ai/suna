@@ -178,6 +178,14 @@ flow(
       }, { params: poolParams })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
       (await owner.get(poolPath, { params: poolParams })).status(200).body().has('$.configured', true).has('$.secret_ids', ids);
     });
+    await ctx.step('an explicit empty selection stays: a model change refuses the model and keeps it', async () => {
+      (await owner.put(poolPath, { secret_ids: [] }, { params: poolParams })).status(200).body().has('$.configured', true);
+      (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params: poolParams })).status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
+      (await owner.get(poolPath, { params: poolParams })).status(200).body().has('$.configured', true).has('$.secret_ids', []);
+      (await owner.put(poolPath, { secret_ids: ids }, { params: poolParams })).status(200).body().has('$.secret_ids', ids);
+    });
     await ctx.step('a shared session uses only keys shared with the whole project', async () => {
       await team.grantProjectRole(project.id, member.userId!, 'member');
       const memberSession = await createDatabaseSession(ctx.env, {

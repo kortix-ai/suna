@@ -92,6 +92,8 @@ export async function listUsableGatewaySecrets(input: {
   userId: string;
   grantUserId?: string | null;
   providerId?: string;
+  /** Only these keys. */
+  ids?: string[];
 }): Promise<UsableGatewaySecret[]> {
   const grantUserId = input.grantUserId === undefined ? input.userId : input.grantUserId;
   if (!(await memberMayReadProject(input.accountId, input.projectId, input.userId))) return [];
@@ -114,6 +116,7 @@ export async function listUsableGatewaySecrets(input: {
       eq(accountSecretResources.consumer, 'llm_gateway'),
       eq(accountSecretResources.active, true),
       ...(input.providerId ? [eq(accountSecretResources.providerId, input.providerId)] : []),
+      ...(input.ids ? [inArray(accountSecretResources.secretId, input.ids)] : []),
     ))
     .orderBy(asc(accountSecretResources.createdAt), asc(accountSecretResources.secretId));
   const seen = new Set<string>();

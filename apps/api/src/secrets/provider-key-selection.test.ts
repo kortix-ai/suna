@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-// The pooled keys a session runs a model on when its caller names only the
-// model (secrets/provider-key-selection.ts): session create and model change
-// fall back to it, and the chat channels select with it.
+// The pooled keys a session may run on (secrets/provider-key-selection.ts).
+// The pool routes check a selection with sessionUsableKeys. Session create and
+// model change fall back to usableProviderKeys, and the chat channels select
+// with it.
 
 mock.module('../llm-gateway/models/provider-registry', () => ({
   resolveCatalogUpstream: (id: string) => (id === 'anthropic' ? { envVar: 'ANTHROPIC_API_KEY' } : null),
@@ -10,20 +11,54 @@ mock.module('../llm-gateway/models/provider-registry', () => ({
 
 const queries: Array<Record<string, unknown>> = [];
 let rows: Array<{ secretId: string; providerId: string; name: string; label: string; accessMode: string }> = [];
-mock.module('../secrets/account-resource', () => ({
+mock.module('./account-resource', () => ({
   listUsableGatewaySecrets: async (input: Record<string, unknown>) => {
     queries.push(input);
     return rows.filter((row) => row.providerId === input.providerId);
   },
 }));
 
-const { MAX_KEYS_PER_PROVIDER, providerKeyOf, usableProviderKeys } = await import('../secrets/provider-key-selection');
+const { MAX_KEYS_PER_PROVIDER, providerEnvVarOf, providerKeyOf, sessionUsableKeys, usableProviderKeys } = await import('./provider-key-selection');
 
 const input = { accountId: 'acct', projectId: 'proj', userId: 'ivan', grantUserId: 'ivan' };
 
 beforeEach(() => {
   queries.length = 0;
   rows = [];
+});
+
+describe('providerEnvVarOf', () => {
+  test('ChatGPT connections are CODEX_AUTH_JSON; a catalog provider reads its own key; an unknown one none', () => {
+    expect(providerEnvVarOf('codex')).toBe('CODEX_AUTH_JSON');
+    expect(providerEnvVarOf('anthropic')).toBe('ANTHROPIC_API_KEY');
+    expect(providerEnvVarOf('unknown')).toBeNull();
+  });
+});
+
+describe('sessionUsableKeys', () => {
+  const key = (secretId: string, name = 'ANTHROPIC_API_KEY') =>
+    ({ secretId, providerId: 'anthropic', name, label: secretId, accessMode: 'project' });
+
+  test('asks for the named keys as one member, with one member`s grants', async () => {
+    rows = [key('k1'), key('k2')];
+    const keys = await sessionUsableKeys({
+      accountId: 'acct', projectId: 'proj', userId: 'owner', grantUserId: null,
+      providerId: 'anthropic', envVar: 'ANTHROPIC_API_KEY', ids: ['k1', 'k2'],
+    });
+    expect(keys.map((k) => k.secretId)).toEqual(['k1', 'k2']);
+    expect(queries[0]).toEqual({
+      accountId: 'acct', projectId: 'proj', userId: 'owner', grantUserId: null, providerId: 'anthropic', ids: ['k1', 'k2'],
+    });
+  });
+
+  test('only keys stored under the provider`s key name', async () => {
+    rows = [key('k1'), key('k2', 'OTHER_KEY')];
+    const keys = await sessionUsableKeys({
+      accountId: 'acct', projectId: 'proj', userId: 'ivan', grantUserId: 'ivan',
+      providerId: 'anthropic', envVar: 'ANTHROPIC_API_KEY',
+    });
+    expect(keys.map((k) => k.secretId)).toEqual(['k1']);
+  });
 });
 
 describe('providerKeyOf', () => {

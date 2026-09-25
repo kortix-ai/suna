@@ -660,14 +660,6 @@ projectsApp.openapi(
           resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
           !visible.ownerIsMachine &&
           Boolean(visible.row.createdBy),
-        hasSelection: async (providerId) => {
-          const [existing] = await db
-            .select({ sessionId: sessionProviderSecretPools.sessionId })
-            .from(sessionProviderSecretPools)
-            .where(and(eq(sessionProviderSecretPools.sessionId, sessionId), eq(sessionProviderSecretPools.providerId, providerId)))
-            .limit(1);
-          return Boolean(existing);
-        },
         callerMaySelect: async (providerId, secretIds) =>
           !(await validateProviderSecretPool({
             accountId: loaded.row.accountId,
