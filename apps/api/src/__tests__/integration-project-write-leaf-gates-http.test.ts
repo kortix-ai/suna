@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
+import { insertIntoView } from './helpers/compat-views';
 
 // The model-defaults routes 404 `llm_gateway_disabled` BEFORE their leaf gate
 // when the gateway is unavailable, so the leaf would never be measured. The
@@ -46,11 +47,11 @@ beforeAll(async () => {
     // before the leaf gate when the project has the gateway off.
     metadata: { experimental: { agentmail_email: true, teams: true, llm_gateway: true } },
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);

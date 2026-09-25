@@ -27,6 +27,7 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projectSessions, projects } from '@kortix/db';
+import { insertIntoView } from './helpers/compat-views';
 
 // The project row below opts into the gateway, but the operator master switch
 // (config.LLM_GATEWAY_ENABLED, default off) wins over any project override, and
@@ -67,11 +68,11 @@ beforeAll(async () => {
     // so this suite measures the ROLE gate and not the feature flag.
     metadata: { experimental: { llm_gateway: true } },
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);

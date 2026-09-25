@@ -21,6 +21,34 @@ linked, not inlined.
 
 ## Register
 
+### A live-schema check that ignores indexes and constraints passes a crippled table (2026-09-25)
+
+**Rule:** Verify a live environment against a freshly migrated database for
+index DEFINITIONS and constraint definitions, not only tables and columns. A
+faked baseline copies the ledger, not the objects. **Trigger surface:** faking
+or re-baselining an environment, or triaging a slow query on prod only.
+**Incident:** prod `credit_ledger` (2.7M rows) had 4 of its 15 indexes, and
+`account_memberships` had no primary key. `verify-live-schema.ts` reported OK
+because it compared tables and columns only. Account-scoped ledger reads ran
+2.0 s mean (4,804 calls); prod-only because dev/staging ran the real baseline.
+**Enforcer:** `verify-live-schema.ts` now fails on missing index/constraint
+definitions (waivers with evidence in `verify-live-schema-waivers.ts`), PR #7635.
+
+### A declared index is not a built index; kortix.ts is checked against the migrated catalog (2026-09-25)
+
+**Rule:** Every index, unique constraint, table and view in `kortix.ts` must
+exist in a freshly migrated database, and the reverse. Declaring an index in
+`kortix.ts` builds nothing: build it in a `.concurrent.ts` migration in the
+same PR. Declare a compatibility view with `.view(...).existing()`, never as a
+table. **Trigger surface:** any edit to `packages/db/src/schema/kortix.ts` or
+an index migration. **Near-miss:** `kortix.ts` declared
+`uniq_sandbox_compute_sessions_one_open` from 2026-07-16; no migration built
+it until 2026-09-24, so compute metering's de-duplication could never fire.
+Eight RBAC compatibility views were declared as tables. Found by a codebase
+audit. **Enforcer:** `packages/db/scripts/schema-contract.ts` in the
+`shadow-db` job of `db-migrations.yml`; exceptions only on
+`schema-contract-sql-only.ts`, which can only shrink.
+
 ### A cancelled controller does not stop detached work on a reused remote host (2026-09-24)
 
 **Rule:** Before a controller launches work on a reused remote host, stop the

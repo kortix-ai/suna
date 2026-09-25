@@ -42,15 +42,18 @@
  *                     Stored in `idempotency_key`. Used by debit, settle, and
  *                     grant.
  *
- * The SQL functions enforce `request` keys for debits and settlements under the
- * account row lock. `atomic_add_credits` only looks back one hour for a request
- * key, so `grant` checks the whole ledger in the same statement.
+ * The SQL functions check a key against the whole ledger before they write, and
+ * a unique index on `credit_ledger.idempotency_key` refuses a second row that a
+ * concurrent write under the same key slipped past that check.
  *
  * ── Storage ──────────────────────────────────────────────────────────────────
  *
- * The arithmetic lives in the `public.atomic_*` SQL functions. The wallet calls
- * them over the API's own PostgreSQL connection with named arguments, so an
- * overload added later can never re-bind a call by arity.
+ * The arithmetic lives in the SQL functions of the private `kortix_wallet`
+ * schema (`grant_credits`, `debit_credits`, `reset_expiring_credits`), which
+ * no client role can reach. The wallet calls them over the API's own
+ * PostgreSQL connection with named arguments, so an overload added later can
+ * never re-bind a call by arity. `debit` and `settle` are one function; the
+ * balance floor is its `p_enforce_floor` argument.
  */
 import { creditAccounts, creditLedger } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
@@ -157,28 +160,22 @@ async function grant(input: GrantInput): Promise<GrantResult> {
   // An event key is also recorded as the row's idempotency key, namespaced by
   // account — the shape every event-keyed grant row has always had.
   const idempotencyKey = event ? `grant:${input.accountId}:${event}` : request;
-  const add = sql`public.atomic_add_credits(
-    p_account_id => ${input.accountId}::uuid,
-    p_amount => ${input.amount}::numeric,
-    p_is_expiring => ${input.expiring}::boolean,
-    p_description => ${input.description}::text,
-    p_expires_at => ${input.expiresAt ?? null}::timestamptz,
-    p_type => ${input.kind}::text,
-    p_stripe_event_id => ${event}::text,
-    p_idempotency_key => ${idempotencyKey}::text
-  )`;
-  const query = request
-    ? sql`CASE WHEN EXISTS (SELECT 1 FROM kortix.credit_ledger WHERE idempotency_key = ${request}::text)
-        THEN jsonb_build_object('success', true, 'duplicate_prevented', true)
-        ELSE ${add} END`
-    : add;
 
   try {
-    const result = await callWalletFunction(query);
+    const result = await callWalletFunction(sql`kortix_wallet.grant_credits(
+      p_account_id => ${input.accountId}::uuid,
+      p_amount => ${input.amount}::numeric,
+      p_is_expiring => ${input.expiring}::boolean,
+      p_description => ${input.description}::text,
+      p_expires_at => ${input.expiresAt ?? null}::timestamptz,
+      p_type => ${input.kind}::text,
+      p_stripe_event_id => ${event}::text,
+      p_idempotency_key => ${idempotencyKey}::text
+    )`);
     return { replayed: result.duplicate_prevented === true, ledgerId: result.ledger_id ?? null };
   } catch (error) {
-    // Two concurrent grants under one event key: the loser's insert hits the
-    // UNIQUE constraint. The grant landed once, which is the contract.
+    // Two concurrent grants under one key: the loser's insert hits a UNIQUE
+    // constraint. The grant landed once, which is the contract.
     if (isDuplicateCreditGrantError(error)) return { replayed: true, ledgerId: null };
     throw error;
   }
@@ -192,9 +189,10 @@ async function debit(input: DebitInput): Promise<DebitResult> {
 
   let result: RpcResult;
   try {
-    result = await callWalletFunction(sql`public.atomic_use_credits(
+    result = await callWalletFunction(sql`kortix_wallet.debit_credits(
       p_account_id => ${input.accountId}::uuid,
       p_amount => ${input.amount}::numeric,
+      p_enforce_floor => true,
       p_description => ${input.description}::text,
       p_ledger_type => ${input.kind}::text,
       p_idempotency_key => ${requestId(input.key)}::text
@@ -226,9 +224,10 @@ async function settle(input: SettleInput): Promise<SettleResult> {
 
   let result: RpcResult;
   try {
-    result = await callWalletFunction(sql`public.atomic_settle_credits(
+    result = await callWalletFunction(sql`kortix_wallet.debit_credits(
       p_account_id => ${input.accountId}::uuid,
       p_amount => ${input.amount}::numeric,
+      p_enforce_floor => false,
       p_description => ${input.description}::text,
       p_ledger_type => ${input.kind}::text,
       p_idempotency_key => ${requestId(input.key)}::text
@@ -279,7 +278,7 @@ async function reset(input: ResetInput): Promise<void> {
   try {
     // A missing credit row returns `success: false` and writes nothing; a
     // reset has nothing to renew there, so that is not an error.
-    await callWalletFunction(sql`public.atomic_reset_expiring_credits(
+    await callWalletFunction(sql`kortix_wallet.reset_expiring_credits(
       p_account_id => ${input.accountId}::uuid,
       p_new_credits => ${input.amount}::numeric,
       p_description => ${input.description}::text,

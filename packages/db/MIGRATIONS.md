@@ -122,6 +122,28 @@ Target a specific DB (secrets never go through the shell): the adapter reads `DA
 2. Fill in the TODOs — **one statement per `pgm.sql()` call** (see the file's own comments for why).
 3. Run `pnpm --filter @kortix/db lint`, review, commit, PR.
 
+**Adding an index to an existing table (declared AND built):**
+
+`kortix.ts` must declare every index the migrations build (the schema contract
+below fails otherwise), and the build must be CONCURRENTLY. Do both:
+
+1. Declare the index in the table's config in `kortix.ts` (`index(...)` or `uniqueIndex(...)`, with an explicit name).
+2. `pnpm migrate:generate widget_name_index` — this updates the snapshot and writes a plain `CREATE INDEX` into `migrations/<ts>_widget_name_index.sql`.
+3. Delete that `.sql` file. `pnpm migrate:create widget_name_index --concurrent` and put the same statement in it as `create index concurrently if not exists …`.
+4. Commit the `.concurrent.ts` file and the snapshot. `schema-sync` stays green because the snapshot already has the index; the contract passes because the migration builds it.
+
+**The schema contract (`scripts/schema-contract.ts`):** after the `shadow-db`
+job applies every migration to an empty PostgreSQL, it compares `kortix.ts`
+with that catalog: every declared relation (as a table or as a view), column,
+index (name, relation, uniqueness, validity) and unique constraint must exist,
+and every relation, column, index and unique constraint in the `kortix` schema
+must be declared. Run it locally against any freshly migrated database:
+`DATABASE_URL=<url> bun scripts/schema-contract.ts`. The only exceptions are
+on `scripts/schema-contract-sql-only.ts`: legacy objects and non-unique indexes
+that predate the contract. That list only shrinks; a unique index can never
+be on it. It exists because `kortix.ts` once declared eight compatibility
+views as tables and indexes that no migration built, and nothing noticed.
+
 **Rules (not suggestions):**
 
 - Never edit a migration that has been applied anywhere. Not even a typo. Write a new one. (Tracking is by name — there's no checksum to catch you. Discipline matters. The `immutability` CI job enforces this at PR time.)
@@ -391,7 +413,7 @@ mode we've actually hit:
 | `squawk` | Deterministic Postgres locking/downtime rules (new migrations only) — see `.squawk.toml` | Non-concurrent index ops, unvalidated constraints, missing timeout headers, ACCESS EXCLUSIVE type changes, ... |
 | `immutability` | Already-merged migration files are never modified | Silent schema drift between environments that ran the file at different times |
 | `sequence` | New migrations sort after every already-merged migration | The historical `_journal`/`pgmigrations` ordering-dedupe incident |
-| `shadow-db` | Every migration applies cleanly to a genuinely fresh Postgres | "The files don't reproduce reality" (a prior baseline built 71/93 tables) |
+| `shadow-db` | Every migration applies cleanly to a genuinely fresh Postgres, and `kortix.ts` declares exactly what it built (`scripts/schema-contract.ts`) | "The files don't reproduce reality" (a prior baseline built 71/93 tables); a declared index that was never built (`uniq_sandbox_compute_sessions_one_open`, 2026-07-16 → 2026-09-24); views declared as tables |
 | `schema-sync` | `kortix.ts` and the committed migrations agree (drizzle-kit generate must produce zero diff) | `kortix.ts` silently drifting from the real schema — see the note below, this job used to be a silent no-op |
 
 **A subtlety worth knowing:** before 2026-07-16, `schema-sync` always reported
@@ -430,11 +452,61 @@ If you applied a change by hand (emergency only):
 
 ---
 
+## Verify a live database
+
+`scripts/verify-live-schema.ts` answers "does this environment contain what the
+migrations build?". It compares a freshly migrated database (canonical) with a
+live one, in the `kortix` schema, and fails on anything the live database
+lacks:
+
+- tables, columns and enum values;
+- index **definitions** (a renamed index with the same definition passes; an
+  `INVALID` index fails);
+- `PRIMARY KEY` / `UNIQUE` / `FOREIGN KEY` / `CHECK` definitions (a constraint
+  that is `NOT VALID` on live but valid on canonical fails).
+
+Extra objects on the live database are printed and never fail. Definitions are
+compared without schema qualification, object names, casts or parentheses, so
+PostgreSQL 15 (dev, staging, prod) and 16 (CI) renderings compare equal. Known,
+deliberate gaps are listed with their evidence in
+`scripts/verify-live-schema-waivers.ts`; that list only shrinks. The output also
+lists migrations the live database has not applied yet: objects those create
+show as missing until the next deploy runs them.
+
+It is how the 2026-09-25 prod gap was found: prod's `credit_ledger` had 4 of 15
+indexes, `account_memberships` had no primary key, and 8 other constraints were
+absent, all because prod's baseline was faked (the `20260925023833525` …
+`20260925023837104` migrations close it).
+
+Run it read-only against any environment. The live connection runs catalog
+queries only, inside `BEGIN READ ONLY`:
+
+```bash
+# 1. A throwaway canonical database (PostgreSQL 15 or 16).
+docker run -d --name kortix-canonical -e POSTGRES_PASSWORD=postgres -p 55439:5432 postgres:16-alpine
+export CANONICAL_DB_URL=postgres://postgres:postgres@localhost:55439/postgres
+psql "$CANONICAL_DB_URL" -v ON_ERROR_STOP=1 -f packages/db/scripts/test-prereqs.sql
+DATABASE_URL="$CANONICAL_DB_URL" pnpm --filter @kortix/db migrate
+
+# 2. The environment to check (dev | staging | prod). Bare env: see the dotenvx-secrets skill.
+export LIVE_DB_URL="$(env -i PATH="$PATH" HOME="$HOME" npx -y @dotenvx/dotenvx get DATABASE_URL -f apps/api/.env.prod)"
+
+# 3. Compare. Exit 0 = nothing missing, 1 = drift, 2 = usage or connection error.
+cd packages/db && bun scripts/verify-live-schema.ts
+```
+
+The nightly `DB Drift Sentinel` (`.github/workflows/db-drift.yml`,
+`prod-presence`) runs the same comparison against prod, and the deploy-prod
+`verify-schema` job runs it before the ECS roll when the
+`ENABLE_PROD_SCHEMA_GATE` repository variable is `true`.
+
+---
+
 ## Re-baselining / onboarding an existing environment
 
 To put an existing DB (whose schema already matches the baseline) onto this system:
 
-1. Confirm the env's live schema matches the baseline (diff it).
+1. Confirm the env's live schema matches the baseline: run [`verify-live-schema.ts`](#verify-a-live-database) against it.
 2. `pnpm migrate:fake --target=<env>` — creates `kortix_migrations.pgmigrations` and marks the baseline applied without running it.
 3. `pnpm migrate:status --target=<env>` → "Up to date".
 
@@ -486,8 +558,9 @@ it previously silently produced nothing.
 
 ## Known gaps / cleanup backlog
 
-- **`kortix.ts` adoption:** ~22 tables exist in the DB (e.g. `provider_events`, `executions`, `gateway_*`) captured by the baseline but not yet modelled in `kortix.ts`. Until adopted, they're baseline-managed (hand-written migrations), not drizzle-generated.
-- ~~**Duplicate function overloads:** `public.atomic_use_credits` and `atomic_grant_renewal_credits` each have a stale extra overload~~ — DONE in `20260730012238065_credit_use_credits_single_overload.sql`. `atomic_use_credits` is now a single 4-parameter function with defaults on `p_description`/`p_ledger_type`, so arities 2–4 all resolve to it; the dead 7-argument `atomic_grant_renewal_credits` overload is gone. `tests/migration/credit-rpc-overloads.test.ts` fails if any `public.atomic_*` function ever regains two overloads with overlapping callable arity. It spins up its own Postgres (Docker) and runs in the `db-suites` lane of `pnpm test` (core CI lane); run it alone with `pnpm test -- --db-only credit-rpc-overloads`. **Note `packages/db/drizzle/0000_bootstrap.sql` still defines only the OLD 5-argument `atomic_use_credits`** — that is fine (bootstrap runs before the baseline and this migration corrects it), but do not treat the bootstrap file as the current shape.
+- **`kortix.ts` adoption:** the objects `kortix.ts` does not declare are listed, with a reason, in `scripts/schema-contract-sql-only.ts` (1 legacy table, 3 compatibility views, 21 legacy columns, 62 non-unique indexes). The schema contract keeps the list from growing.
+- **Wallet functions:** the credit arithmetic lives in the private schema `kortix_wallet` (`grant_credits`, `debit_credits`, `reset_expiring_credits`; `20260925013304428_wallet_private_schema.sql`). `public.atomic_add_credits` / `atomic_use_credits` / `atomic_settle_credits` / `atomic_reset_expiring_credits` remain one release as wrappers for pre-rollout API images. Their drop is parked in `migrations-pending/drop_public_wallet_wrappers.sql.pending` with its preconditions.
+- ~~**Duplicate function overloads:** `public.atomic_use_credits` and `atomic_grant_renewal_credits` each have a stale extra overload~~ — DONE in `20260730012238065_credit_use_credits_single_overload.sql`. `atomic_use_credits` is now a single 4-parameter function with defaults on `p_description`/`p_ledger_type`, so arities 2–4 all resolve to it; the dead 7-argument `atomic_grant_renewal_credits` overload is gone. `tests/migration/credit-rpc-overloads.test.ts` fails if any `public.atomic_*` or `kortix_wallet` function ever regains two overloads with overlapping callable arity. It spins up its own Postgres (Docker) and runs in the `db-suites` lane of `pnpm test` (the `core` CI lane, which a PR gets only with the `test` or `preview` label); run it alone with `pnpm test -- --db-only credit-rpc-overloads` when touching a wallet function. **Note `packages/db/drizzle/0000_bootstrap.sql` still defines only the OLD 5-argument `atomic_use_credits`** — that is fine (bootstrap runs before the baseline and this migration corrects it), but do not treat the bootstrap file as the current shape.
 - **Legacy trackers:** `supabase_migrations.schema_migrations`, `drizzle.__drizzle_migrations`, `kortix.api_schema_migrations` are dead. Drop after prod is also cut over.
 - **No repo-wide git pre-push hook** wires `pnpm --filter @kortix/db lint` automatically yet — it's a documented, not enforced, local step (CI is the real gate).
 
