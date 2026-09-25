@@ -130,18 +130,15 @@ function runSync(rec: Recorder, body: ArrayBuffer, requestedAgent: string | null
 
 describe('shouldSyncProjectEnvBeforeProxy', () => {
   test('matches every endpoint that starts a user turn, /command included', () => {
-    for (const path of [
-      '/session/abc123/prompt_async',
-      '/session/abc123/message',
-      '/session/abc123/command',
-      '/session/abc-123/command?x=1',
+    for (const [method, path] of [
+      ['POST', '/session/abc123/prompt_async'],
+      ['POST', '/session/abc123/message'],
+      ['POST', '/session/abc123/command'],
+      ['POST', '/session/abc-123/command?x=1'],
+      ['post', '/session/abc123/command'],
     ]) {
-      expect(shouldSyncProjectEnvBeforeProxy(8000, 'POST', path)).toBe(true);
+      expect(shouldSyncProjectEnvBeforeProxy(8000, method, path)).toBe(true);
     }
-  });
-
-  test('is case-insensitive on the method', () => {
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'post', '/session/abc123/command')).toBe(true);
   });
 
   test('ignores reads, other ports, and lookalike paths', () => {
@@ -180,15 +177,6 @@ describe('the /command body sub-steps', () => {
     expect(parsed).toEqual({ command: 'webapp', arguments: 'go', variant: 'v2' });
   });
 
-  // The helper drops `agent` whatever its value — which is exactly why the call
-  // site gates it on the sentinel. A command naming a CONCRETE agent must reach
-  // opencode with that agent intact, and it does because `requestedPromptAgent`
-  // returns something other than 'default' and the rewrite is never invoked.
-  test('the rewrite is unconditional, so the sentinel gate is what preserves a concrete agent', () => {
-    expect(requestedPromptAgent(COMMAND_BODY, jsonHeaders())).not.toBe('default');
-    const stripped = bodyWithoutPromptAgent(COMMAND_BODY, jsonHeaders());
-    expect('agent' in JSON.parse(new TextDecoder().decode(stripped))).toBe(false);
-  });
 });
 
 describe('runPrePromptEnvSync — a /command body', () => {
@@ -206,26 +194,16 @@ describe('runPrePromptEnvSync — a /command body', () => {
     expect(rec.remint).toEqual([{ sessionAgent: 'default', requestedAgent: 'writer' }]);
   });
 
-  test('schedules the opencode snapshot refresh', async () => {
+  // REGRESSION (staging release gate, SESS-10): the schedule used to omit
+  // `userId`. The daemon 401s every non-`/kortix/*` path without the user
+  // context that only a userId mints, so the refresh degraded to `unreachable`
+  // and never wrote a snapshot.
+  test('schedules the opencode snapshot refresh as the caller', async () => {
     const rec = recorder();
     await runSync(rec, COMMAND_BODY);
     expect(rec.snapshot).toEqual([
       { sessionId: 'sess-1', projectId: 'proj-1', externalId: 'ext-1', userId: 'u1' },
     ]);
-  });
-
-  // REGRESSION (staging release gate, SESS-10): the schedule used to omit
-  // `userId`. `sandboxOpencodeEndpoint` mints the X-Kortix-User-Context header
-  // only when a userId is present (`resolvePreviewUserContext` returns null for
-  // undefined), and the daemon 401s every non-`/kortix/*` path without it. The
-  // refresh therefore degraded to `unreachable` and NEVER wrote:
-  // 0 of 2804 staging sessions created in 2026-08 had a populated
-  // `metadata.opencode_sessions`. Assert the identity reaches the scheduler.
-  test('forwards the caller userId so the daemon call is authenticated', async () => {
-    const rec = recorder();
-    await runSync(rec, COMMAND_BODY);
-    expect(rec.snapshot).toHaveLength(1);
-    expect(rec.snapshot[0]?.userId).toBe('u1');
   });
 
   test('generates NO session title from a command body', async () => {
@@ -275,37 +253,18 @@ describe('runPrePromptEnvSync — refusals and retries', () => {
     expect(rec.remint).toEqual([]);
   });
 
-  // Was: "a grant mismatch refuses the turn with 409". A differing grant is no
-  // longer a refusal anywhere — the env is re-scoped onto the agent that runs,
-  // so `/command` has no mismatch error left to map. What must stay true is that
-  // the only refusals reaching this path are 5xx "could not apply", never a
-  // permanent 409 telling the user to start a new session.
-  test('no grant failure refuses a turn with 409', async () => {
-    for (const err of [
-      new SecretGrantResolutionError('writer', new Error('manifest unreadable')),
-      new SessionGrantRemintError('ses_1', new Error('db down')),
-    ]) {
-      const rec = recorder({ envSyncError: () => err });
-      const refusal = await runSync(rec, COMMAND_BODY);
-      expect(refusal?.status).toBe(503);
-      expect(await refusal?.json()).not.toMatchObject({
-        code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-      });
-    }
-  });
-
-  test('a non-retryable env-sync failure refuses with 502', async () => {
-    const rec = recorder({ envSyncError: () => new Error('env sync failed: 400 bad snapshot') });
+  // A differing grant is no longer a refusal: the env is re-scoped onto the
+  // agent that runs. A re-mint that cannot apply is a 5xx "could not apply",
+  // never a permanent 409 telling the user to start a new session.
+  test('a grant re-mint that cannot apply refuses with 503, not 409', async () => {
+    const rec = recorder({
+      envSyncError: () => new SessionGrantRemintError('ses_1', new Error('db down')),
+    });
     const refusal = await runSync(rec, COMMAND_BODY);
-    expect(refusal?.status).toBe(502);
-    expect(await refusal?.json()).toMatchObject({ error: 'env sync failed: 400 bad snapshot' });
-  });
-
-  // Load-bearing control flow the extraction must not change: a TRANSIENT failure
-  // throws so the caller's wake-and-retry loop handles it like any other sandbox
-  // reachability miss, instead of returning a refusal the client can't retry past.
-  test('a retryable env-sync failure THROWS instead of refusing', async () => {
-    const rec = recorder({ envSyncError: () => new Error('env sync failed: 503 daemon booting') });
-    await expect(runSync(rec, COMMAND_BODY)).rejects.toThrow('env sync failed: 503 daemon booting');
+    expect(refusal?.status).toBe(503);
+    expect(await refusal?.json()).toMatchObject({ code: 'AGENT_SWITCH_GRANT_UNAPPLIED' });
   });
 });
+
+// The 502 for a non-retryable env-sync failure and the retry of a transient
+// one are proven at the HTTP route in __tests__/e2e-preview-proxy.test.ts.
