@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 /**
  * Who may continue a Teams session — the Teams twin of the Slack join
@@ -50,7 +51,9 @@ mock.module('../channels/teams-api', () => ({
     return 'card-1';
   },
 }));
-mock.module('../channels/teams/identity', () => ({ lookupTeamsIdentity: async () => identity }));
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({  lookupChatIdentity: async () => identity }),
+);
 
 const { ensureTeamsThreadParticipant, decideTeamsThreadJoin, policyFromMetadata, normalizeConversationPolicy } = await import(
   '../channels/teams/participants'
