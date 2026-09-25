@@ -28,6 +28,7 @@ const SESSION_ID = crypto.randomUUID();
 const SANDBOX_ID = crypto.randomUUID();
 const OPENCODE_SESSION = 'ses_strand_root';
 const BOX_URL = 'http://strand-box.test';
+const BOX_ORIGIN = new URL(BOX_URL).origin;
 
 const T = 1_800_000_000_000;
 const wireId = (ms: number, tail: string) =>
@@ -160,7 +161,17 @@ beforeAll(async () => {
     init?: RequestInit,
   ) => {
     const url = String(input instanceof Request ? input.url : input);
-    if (!url.startsWith(BOX_URL)) return ORIGINAL_FETCH(input, init);
+    // Compare the parsed origin, not a string prefix: `startsWith(BOX_URL)`
+    // also matches an attacker-controlled host such as
+    // `http://strand-box.test.evil.example` (CodeQL: incomplete URL substring
+    // sanitization). A URL that fails to parse is never the box either.
+    let origin: string | null;
+    try {
+      origin = new URL(url).origin;
+    } catch {
+      origin = null;
+    }
+    if (origin !== BOX_ORIGIN) return ORIGINAL_FETCH(input, init);
     if ((init?.method ?? 'GET') === 'DELETE') {
       deletedMessages.push(decodeURIComponent(new URL(url).pathname.split('/').pop() ?? ''));
       return new Response(null, { status: 200 });
