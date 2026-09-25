@@ -124,7 +124,16 @@
     },
     "plugins": [
       "expo-router",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/sounds/kortix/kortix_complete.wav",
+            "./assets/sounds/kortix/kortix_attention.wav",
+            "./assets/sounds/kortix/kortix_error.wav"
+          ]
+        }
+      ],
       [
         "expo-navigation-bar",
         {

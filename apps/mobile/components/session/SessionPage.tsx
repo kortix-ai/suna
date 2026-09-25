@@ -56,6 +56,7 @@ import type { SubAgentRelation } from '@/lib/session/sub-agents';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { playSound } from '@/lib/sounds';
+import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 
@@ -627,6 +628,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             clientSentAtMs: Date.now(),
           });
           log.log('[SessionPage] Prompt with files accepted');
+          void requestPushPermissionOnce();
         } catch (err: any) {
           log.error('[SessionPage] Prompt with files failed:', err?.message || err);
           userSentRef.current = false;
@@ -665,6 +667,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           markFailed();
         } else {
           log.log('[SessionPage] Prompt sent (async)');
+          // The first send asks for notification permission, once per install.
+          void requestPushPermissionOnce();
         }
       } catch (err: any) {
         log.error('[SessionPage] Prompt error:', err?.message || err);

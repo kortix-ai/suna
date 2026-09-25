@@ -29,6 +29,7 @@ import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
 import { ToastProvider } from '@/components/kortix/toast-provider';
 import { OfflineBanner } from '@/components/kortix/OfflineBanner';
 import { SessionEndedDialog } from '@/components/kortix/SessionEndedDialog';
+import { PushNotificationsBridge } from '@/components/notifications/PushNotificationsBridge';
 import { reportUnauthorized } from '@/lib/auth/session-expiry-monitor';
 import {
   GlobalUpgradeSheet,
@@ -542,6 +543,7 @@ export default function RootLayout() {
                                 <PortalHost />
                                 <OfflineBanner />
                                 <SessionEndedDialog />
+                                <PushNotificationsBridge />
                               </ThemeProvider>
                             </BottomSheetModalProvider>
                             {/* Above every bottom sheet: dropdowns opened from inside a sheet. */}

@@ -44,6 +44,8 @@ import {
   type ParamListBase,
 } from 'expo-router/react-navigation';
 import { useAuthContext } from '@/contexts';
+import { requestPushPermissionOnce } from '@/lib/notifications/registration';
+import { usePushStore } from '@/stores/push-store';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { useLastProjectStore } from '@/stores/last-project-store';
 import {
@@ -867,6 +869,8 @@ export function ProjectScreen() {
         // The session holds the prompt now: drop the home's saved draft
         // (COR-143). Cancel hands the text back through `takeInitialDraft`.
         clearComposerDraftIfSent(draftKey({ kind: 'project', projectId }), text);
+        // The first send asks for notification permission, once per install.
+        void requestPushPermissionOnce();
         return true;
       } catch (err: any) {
         if (showUpgradeForError(err)) return false;
@@ -1099,6 +1103,25 @@ export function ProjectScreen() {
   });
   const shownSessionIdRef = useRef(shownSessionId);
   shownSessionIdRef.current = shownSessionId;
+
+  // Push (components/notifications/PushNotificationsBridge): the session on
+  // screen suppresses its own notification banner while this project is on top.
+  useEffect(() => {
+    usePushStore.getState().setViewingSessionId(isFocused ? shownSessionId : null);
+  }, [isFocused, shownSessionId]);
+  useEffect(() => () => usePushStore.getState().setViewingSessionId(null), []);
+
+  // A tapped notification for this project: open its session, the same path
+  // as the Sessions page. The session already on screen stays as it is.
+  const pushOpen = usePushStore((s) => s.pendingOpen);
+  useEffect(() => {
+    if (!pushOpen || !projectId || !scopeReady || !isFocused) return;
+    const open = usePushStore.getState().takeOpen(projectId);
+    if (!open) return;
+    if (drawerSessionRowMove(open.sessionId, shownSessionIdRef.current) === 'open') {
+      handleOpenSessionById(open.sessionId);
+    }
+  }, [pushOpen, projectId, scopeReady, isFocused, handleOpenSessionById]);
 
   // A drawer session row (the drawer has already closed itself). The row of
   // the session on screen does nothing more: reopening it would unmount the

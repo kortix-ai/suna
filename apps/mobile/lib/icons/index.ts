@@ -26,7 +26,6 @@ import { ArrowsInSimpleIcon as ArrowsInSimpleGlyph } from 'phosphor-react-native
 import { ArrowsLeftRightIcon as ArrowsLeftRightGlyph } from 'phosphor-react-native/src/icons/ArrowsLeftRight';
 import { ArrowsOutSimpleIcon as ArrowsOutSimpleGlyph } from 'phosphor-react-native/src/icons/ArrowsOutSimple';
 import { BellIcon as BellGlyph } from 'phosphor-react-native/src/icons/Bell';
-import { BellSlashIcon as BellSlashGlyph } from 'phosphor-react-native/src/icons/BellSlash';
 import { BookOpenIcon as BookOpenGlyph } from 'phosphor-react-native/src/icons/BookOpen';
 import { BrainIcon as BrainGlyph } from 'phosphor-react-native/src/icons/Brain';
 import { BuildingsIcon as BuildingsGlyph } from 'phosphor-react-native/src/icons/Buildings';
@@ -221,7 +220,6 @@ export const ArrowsInSimpleIcon = withAppWeight(ArrowsInSimpleGlyph, 'ArrowsInSi
 export const ArrowsLeftRightIcon = withAppWeight(ArrowsLeftRightGlyph, 'ArrowsLeftRightIcon');
 export const ArrowsOutSimpleIcon = withAppWeight(ArrowsOutSimpleGlyph, 'ArrowsOutSimpleIcon');
 export const BellIcon = withAppWeight(BellGlyph, 'BellIcon');
-export const BellSlashIcon = withAppWeight(BellSlashGlyph, 'BellSlashIcon');
 export const BookOpenIcon = withAppWeight(BookOpenGlyph, 'BookOpenIcon');
 export const BrainIcon = withAppWeight(BrainGlyph, 'BrainIcon');
 export const BuildingsIcon = withAppWeight(BuildingsGlyph, 'BuildingsIcon');
