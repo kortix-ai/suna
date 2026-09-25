@@ -14,7 +14,8 @@ import {
   revokeScimToken,
 } from '../../repositories/scim';
 import { iamRouter, AccountIdParam, ScimTokenSchema } from './app';
-import { auditIam, readBody, requireEntitlement } from './helpers';
+import { auditIam, requireEntitlement } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 
 iamRouter.openapi(
   createRoute({
@@ -70,7 +71,7 @@ iamRouter.openapi(
   const denied = await requireEntitlement(c, accountId, 'scim');
   if (denied) return denied;
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return c.json({ error: 'name is required' }, 400);
   if (name.length > 128) return c.json({ error: 'name too long (max 128 chars)' }, 400);

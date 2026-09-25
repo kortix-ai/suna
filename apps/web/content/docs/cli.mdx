@@ -583,8 +583,6 @@ Manages the project's connection to a chat platform. Tokens are stored encrypted
 | `kortix channels email policy [--allow <email\|@domain>] [--allow-regex <re>] [--allow-all]` | Replace who may email the agent. |
 | `kortix channels bindings [ls] [--json]` | List every bound channel and the agent, model, and join policy it resolves to. |
 | `kortix channels bind <bindingId> [--agent <name>\|--no-agent] [--model <id>\|--no-model] [--policy <p>]` | Change one binding. `--policy` takes `owner_approval`, `owner_only`, or `project_open`. |
-| `kortix channels voice name <text>` | Set the display name the voice bot joins calls with. |
-| `kortix channels voice name --show` | Print the current voice bot name. |
 
 `--platform slack|teams` selects the platform; default `slack`. Teams
 `connect` prints the Microsoft admin-consent URL; granting tenant-wide consent
@@ -600,8 +598,7 @@ required together). `--allow` is repeatable and puts the policy in restricted mo
 bare value with no `@`, or one with a leading `@`, is read as a domain.
 `--allow-all` clears the list and accepts every sender again.
 
-Email and `bind` writes need `project.connector.write`. `voice name` needs
-`project.customize.write`.
+Email and `bind` writes need `project.connector.write`.
 
 ### Connectors
 

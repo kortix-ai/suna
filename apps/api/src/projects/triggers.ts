@@ -50,6 +50,7 @@ import {
   splitManifestByOrigin,
 } from '@kortix/manifest-schema';
 import { type GitBackedProject, readManifestFromRepo } from './git';
+import { isPlainObject } from '../shared/json';
 import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
@@ -87,12 +88,6 @@ export const KNOWN_SCHEMA_VERSION = 1;
 export const MAX_SCHEMA_VERSION = 2;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
-
-/** Local copy — `lib/serializers` imports from this module, so importing back
- *  would close a cycle for one two-line predicate. */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 export type GitTriggerType = 'cron' | 'webhook' | 'monitor';
 

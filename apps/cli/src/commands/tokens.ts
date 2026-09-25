@@ -1,5 +1,6 @@
 import {
   emitJson,
+  missing,
   resolveAccountContext,
   surfaceApiError,
   takeFlagBool,
@@ -400,9 +401,4 @@ async function serviceAccounts(
       );
       return 2;
   }
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }

@@ -41,6 +41,7 @@
  * import their binding API from here, never from `shared/audit`.
  */
 import * as requestContext from '../lib/request-context';
+import { clientIpFromHeaders } from './client-ip';
 
 // Namespace import, resolved at call time: several test files replace
 // `lib/request-context` with a partial `mock.module` (no `runWithContext`),
@@ -169,13 +170,6 @@ const SCOPE_KEY = Symbol.for('kortix.inbound-audit-scope');
 
 type ContextWithScope = { [SCOPE_KEY]?: InboundAuditScope };
 
-function firstForwardedFor(headers: Headers | null | undefined): string | null {
-  if (!headers) return null;
-  return (
-    headers.get('x-forwarded-for')?.split(',')[0]?.trim() || headers.get('x-real-ip') || null
-  );
-}
-
 /**
  * Open the scope for this request, or return the one already open.
  *
@@ -198,7 +192,7 @@ export function attachInboundAuditScope(init: InboundAuditScopeInit): InboundAud
     principal: {},
     annotation: {},
     hono: null,
-    ip: firstForwardedFor(headers),
+    ip: headers ? clientIpFromHeaders((name) => headers.get(name)) : null,
     userAgent: headers?.get('user-agent') || null,
     clientSourceHeader: headers?.get('x-kortix-client') ?? null,
     correlationId: headers?.get('x-correlation-id') || headers?.get('idempotency-key') || null,
