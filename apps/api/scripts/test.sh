@@ -6,13 +6,22 @@ mode="${1:-default}"
 
 case "$mode" in
   integration)
-    exec dotenvx run -- bun test --isolate src/__tests__/integration-*.test.ts
+    # Real-PostgreSQL suites (`integration-*.test.ts`, `*.integration.test.ts`)
+    # run in the `db-suites` lane of the root runner: one process and one fresh
+    # migrated database per file, on local Supabase. Extra arguments are path
+    # filters, e.g. `pnpm --filter kortix-api test:integration prompt-inbox`.
+    shift
+    if [ "$#" -eq 0 ]; then set -- apps/api/; fi
+    # --no-env-file: apps/api/.env is dotenvx ciphertext; the lane needs none of it.
+    exec bun --no-env-file ../../tests/bin/db-suites.ts "$@"
     ;;
   live)
     exec env RUN_LIVE_LLM_TESTS=1 dotenvx run -- bun test --isolate src/llm-gateway/__tests__/gateway.live.test.ts
     ;;
   default)
-    files=$(find src -name '*.test.ts' ! -name 'integration-*' ! -name '*.live.test.ts' | sort)
+    # Real-PostgreSQL suites run in `integration` mode (the root `db-suites`
+    # lane), never here: without a database they could only skip.
+    files=$(find src -name '*.test.ts' ! -name 'integration-*' ! -name '*.integration.test.ts' ! -name '*.live.test.ts' | sort)
     count=$(printf '%s\n' "$files" | grep -c . || true)
     # A suite that runs nothing must never exit 0. `bun test` with an empty
     # file list happily reports success, so a broken find/rename here would
@@ -38,8 +47,7 @@ case "$mode" in
     # on a laptop with no decryption key and on a CI runner that must never be
     # handed one. `--env-file` also stops bun auto-loading the encrypted .env,
     # which would otherwise inject `encrypted:…` ciphertext as var values.
-    # Real credentials belong to `integration` and `live` above, which are not
-    # part of this gate.
+    # Real credentials belong to `live` above, which is not part of this gate.
     #
     # --isolate: bunfig.toml's `[test] isolation = true` documents the intent
     # (each test file gets a fresh global object, so mock.module() in one billing/
