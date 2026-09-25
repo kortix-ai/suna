@@ -3,11 +3,17 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { WIRE_MESSAGE_ID, WireIdClock, mintRootId, mintWireMessageId, wireIdTime } from '../harness/pi/wire-id'
 
-/** The API's own regex, read off disk so the two codecs cannot drift silently. */
+/**
+ * The platform's regex (`@kortix/sdk/wire-message-id`, which apps/api
+ * re-exports), read off disk so the two codecs cannot drift silently.
+ */
 function apiWireIdRegex(): RegExp {
-  const source = readFileSync(resolve(import.meta.dir, '../../../api/src/projects/wire-message-id.ts'), 'utf8')
+  const source = readFileSync(
+    resolve(import.meta.dir, '../../../../packages/sdk/src/core/session/wire-message-id.ts'),
+    'utf8',
+  )
   const match = /\/\^msg_[^/]+\/[a-z]*/.exec(source)
-  if (!match) throw new Error('apps/api wire-message-id regex not found')
+  if (!match) throw new Error('@kortix/sdk wire-message-id regex not found')
   return new Function(`return ${match[0]}`)() as RegExp
 }
 

@@ -51,6 +51,7 @@
     "./session": "./src/deprecated/session.ts",
     "./session/url": "./src/deprecated/session-url.ts",
     "./message-queue": "./src/core/session/message-queue.ts",
+    "./wire-message-id": "./src/core/session/wire-message-id.ts",
     "./turns": "./src/deprecated/turns.ts",
     "./sync-store": "./src/deprecated/sync-store.ts",
     "./server-store": "./src/deprecated/server-store.ts",
@@ -133,6 +134,10 @@
       "./message-queue": {
         "types": "./dist/core/session/message-queue.d.ts",
         "import": "./dist/core/session/message-queue.js"
+      },
+      "./wire-message-id": {
+        "types": "./dist/core/session/wire-message-id.d.ts",
+        "import": "./dist/core/session/wire-message-id.js"
       },
       "./turns": { "types": "./dist/deprecated/turns.d.ts", "import": "./dist/deprecated/turns.js" },
       "./sync-store": {

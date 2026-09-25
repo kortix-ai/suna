@@ -102,7 +102,8 @@ try {
   writeFileSync(
     join(workdir, 'smoke.mjs'),
     [
-      "import { createKortix, ApiError, classifyTurn, getSessionCostRecord, listSessionCosts } from '@kortix/sdk';",
+      "import { createKortix, ApiError, classifyTurn, getSessionCostRecord, listSessionCosts, mintWireMessageId } from '@kortix/sdk';",
+      "import { mintWireMessageId as mintFromSubpath, mintWireMessageIdAbove } from '@kortix/sdk/wire-message-id';",
       "import { useSession } from '@kortix/sdk/react';",
       "import { createScopedKortix, createKortixAuth } from '@kortix/sdk/server';",
       "import { createExecutorClient, ExecutorClient, ExecutorError } from '@kortix/executor-sdk';",
@@ -112,6 +113,8 @@ try {
       "if (typeof createScopedKortix !== 'function') throw new Error('createScopedKortix missing');",
       "if (typeof createKortixAuth !== 'function') throw new Error('createKortixAuth missing');",
       "if (typeof getSessionCostRecord !== 'function') throw new Error('getSessionCostRecord missing');",
+      "if (mintFromSubpath !== mintWireMessageId) throw new Error('@kortix/sdk/wire-message-id is not the root module');",
+      "if (!/^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/.test(mintWireMessageIdAbove({ nowMs: Date.now() }).id)) throw new Error('wire-message-id mint is malformed');",
       "if (typeof listSessionCosts !== 'function') throw new Error('listSessionCosts missing');",
       "if (!(new ApiError('x') instanceof Error)) throw new Error('ApiError is not an Error');",
       "if (typeof createExecutorClient !== 'function') throw new Error('createExecutorClient missing');",

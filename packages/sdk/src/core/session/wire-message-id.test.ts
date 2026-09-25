@@ -2,25 +2,86 @@ import { describe, expect, test } from 'bun:test';
 import wireIdVectors from '../../../../../tests/spec/wire-message-id.vectors.json';
 import { mintWireMessageId as mintFromRoot } from '../../index';
 import {
+  WIRE_ID_CLOCK_TOLERANCE,
+  WIRE_ID_TIME_MASK,
+  WIRE_ID_TIME_SCALE,
+  WIRE_MESSAGE_ID,
   isWireIdAheadOf,
   mintWireMessageId,
+  mintWireMessageIdAbove,
+  newestWireIdClock,
   unwrapWireIdClock,
   wireIdClock,
   wireIdClockAt,
 } from './wire-message-id';
 
-const WIRE_ID = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const clockHex = (id: string) => id.slice(4, 16);
+const hex = (clock: bigint | null) => (clock === null ? null : clock.toString(16).padStart(12, '0'));
 
-describe('mintWireMessageId — golden vectors shared with apps/api', () => {
-  for (const vector of wireIdVectors.vectors) {
-    test(vector.name, () => {
-      const after = vector.newestKnownTime === null ? [] : [`msg_${vector.newestKnownTime}AAAAAAAAAAAAAA`];
-      const id = mintWireMessageId({ nowMs: vector.nowMs, after });
-      expect(id).toMatch(WIRE_ID);
-      expect(clockHex(id)).toBe(vector.expectedTime);
-    });
-  }
+// The ONE place the golden vectors meet the implementation. apps/api and
+// apps/mobile re-export this module and run the same file through their names.
+describe('golden vectors — tests/spec/wire-message-id.vectors.json', () => {
+  describe('mintWireMessageId (transcript ids in `after`)', () => {
+    for (const vector of wireIdVectors.vectors) {
+      test(vector.name, () => {
+        const after = vector.newestKnownTime === null ? [] : [`msg_${vector.newestKnownTime}AAAAAAAAAAAAAA`];
+        const id = mintWireMessageId({ nowMs: vector.nowMs, after });
+        expect(id).toMatch(WIRE_MESSAGE_ID);
+        expect(clockHex(id)).toBe(vector.expectedTime);
+      });
+    }
+  });
+
+  describe('mintWireMessageIdAbove (a floor clock)', () => {
+    for (const vector of wireIdVectors.vectors) {
+      test(vector.name, () => {
+        const minted = mintWireMessageIdAbove({
+          nowMs: vector.nowMs,
+          newestKnownTime: vector.newestKnownTime === null ? null : BigInt(`0x${vector.newestKnownTime}`),
+          random: () => 0,
+        });
+        expect(hex(minted.time)).toBe(vector.expectedTime);
+        expect(minted.id).toBe(`msg_${vector.expectedTime}00000000000000`);
+      });
+    }
+  });
+
+  describe('newestWireIdClock', () => {
+    for (const vector of wireIdVectors.newest) {
+      test(vector.name, () => {
+        expect(hex(newestWireIdClock(vector.ids, vector.nowMs ?? undefined))).toBe(vector.expected);
+      });
+    }
+  });
+
+  test('the fixture constants are the module constants', () => {
+    expect(WIRE_ID_TIME_SCALE).toBe(BigInt(`0x${wireIdVectors.timeScaleHex}`));
+    expect(WIRE_ID_TIME_MASK).toBe(BigInt(`0x${wireIdVectors.timeMaskHex}`));
+    expect(WIRE_ID_CLOCK_TOLERANCE).toBe(BigInt(wireIdVectors.maxCorrectionMs) * WIRE_ID_TIME_SCALE);
+  });
+});
+
+describe('mintWireMessageIdAbove', () => {
+  test('the random tail is 14 base62 chars, and a source at 1 stays in range', () => {
+    const at = (value: number) => mintWireMessageIdAbove({ nowMs: 1755500000000, random: () => value }).id;
+    expect(at(0).slice(16)).toBe('00000000000000');
+    expect(at(0.9999).slice(16)).toBe('zzzzzzzzzzzzzz');
+    expect(at(1).slice(16)).toBe('zzzzzzzzzzzzzz');
+    expect(at(0.5)).toMatch(WIRE_MESSAGE_ID);
+  });
+
+  test('time is the clock the id encodes', () => {
+    const minted = mintWireMessageIdAbove({ nowMs: 1755500000000 });
+    expect(wireIdClock(minted.id)).toBe(minted.time);
+  });
+});
+
+describe('WIRE_MESSAGE_ID', () => {
+  test('accepts the full OpenCode shape only', () => {
+    expect(WIRE_MESSAGE_ID.test('msg_8bbf25e40000AbCdEfGhIjKlMn')).toBe(true);
+    expect(WIRE_MESSAGE_ID.test('msg_8bbf25e40000AbCd')).toBe(false);
+    expect(WIRE_MESSAGE_ID.test('msg_8BBF25E40000AbCdEfGhIjKlMn')).toBe(false);
+  });
 });
 
 describe('mintWireMessageId — the pre-fix CLI shape', () => {

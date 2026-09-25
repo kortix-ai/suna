@@ -194,6 +194,9 @@ importers:
       '@kortix/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@kortix/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@kortix/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -264,9 +267,6 @@ importers:
       '@aws-crypto/sha256-js':
         specifier: 5.2.0
         version: 5.2.0
-      '@kortix/sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk
       '@smithy/signature-v4':
         specifier: 5.6.2
         version: 5.6.2

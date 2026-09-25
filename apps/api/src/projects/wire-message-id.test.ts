@@ -21,9 +21,8 @@ describe('wireIdTime', () => {
 });
 
 describe('mintWireMessageId — golden vectors shared with @kortix/sdk', () => {
-  // The SDK asserts the SAME file. apps/api cannot import the SDK's minter
-  // (no dependency, and it reads the browser sync store), so the fixture is
-  // what stops the two implementations drifting apart.
+  // Runs the fixture through the API's names: proves each alias in
+  // `wire-message-id.ts` maps to the SDK function with the matching contract.
   for (const vector of vectors.vectors) {
     test(vector.name, () => {
       const minted = mintWireMessageId({
@@ -34,6 +33,15 @@ describe('mintWireMessageId — golden vectors shared with @kortix/sdk', () => {
       });
       expect(minted.time.toString(16).padStart(12, '0')).toBe(vector.expectedTime);
       expect(minted.id.slice(4, 16)).toBe(vector.expectedTime);
+    });
+  }
+});
+
+describe('newestWireIdTime — golden vectors shared with @kortix/sdk', () => {
+  for (const vector of vectors.newest) {
+    test(vector.name, () => {
+      const newest = newestWireIdTime(vector.ids, vector.nowMs ?? undefined);
+      expect(newest === null ? null : newest.toString(16).padStart(12, '0')).toBe(vector.expected);
     });
   }
 });
