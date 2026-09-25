@@ -1,7 +1,6 @@
 import { config } from '../../config';
 import { formatRelativeTime, sessionWebUrl } from '../slack/util';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
-import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import {
   currentChannelSelection,

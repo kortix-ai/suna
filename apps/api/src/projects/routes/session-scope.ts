@@ -8,7 +8,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
-import { connectors, projectSessions, projectSessionConnectorBindings, serviceAccounts, sessionProviderSecretPools } from '@kortix/db';
+import { projectSessions, projectSessionConnectorBindings, serviceAccounts, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability, projectCapabilityAllowed } from '../lib/access';
