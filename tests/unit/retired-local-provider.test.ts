@@ -26,9 +26,6 @@ const excludedPrefixes = [
   'tests/test-results/',
 ];
 const excludedFiles = new Set([
-  // Historical decision record. It documents why the provider was removed and
-  // why smolVM is not its replacement on ordinary VPS hosts.
-  'docs/adr/006-local-sandbox-runtime.md',
   // Migration acceptance coverage must construct the retired value to prove
   // that an upgrade fails closed instead of relabelling historical rows.
   'packages/db/scripts/local-docker-provider-removal.integration.test.ts',

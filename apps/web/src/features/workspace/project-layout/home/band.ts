@@ -13,7 +13,7 @@
  * one, so a shared wrapper component would have to take enough props to
  * reconstruct both. The values are what is shared; the elements are not.
  *
- * Every value is a token — see `.claude/skills/kortix-brand-guidelines`. Note
+ * Every value is a token — see `.agents/skills/kortix-brand-guidelines`. Note
  * `--spacing: 0.23rem`, so `py-2` is 7.4px and `pl-4` is 14.7px, not 8 and 16.
  */
 
