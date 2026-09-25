@@ -6,7 +6,10 @@ describe('pi system packages', () => {
   test('install the way pi installs a global package: <agentDir>/npm plus settings.json', () => {
     const lines = piSystemPackageLines(['npm:pi-web-access@0.30.0', 'npm:@juicesharp/rpiv-todo@1.2.0']).join('\n');
     expect(lines).toContain(`mkdir -p ${PI_AGENT_DIR}/npm`);
-    expect(lines).toContain('npm install --omit=dev --ignore-scripts --no-audit --no-fund pi-web-access@0.30.0 @juicesharp/rpiv-todo@1.2.0');
+    // The exact pins are the project's dependencies: no package argument, no `cd`.
+    expect(lines).toContain(`npm install --prefix ${PI_AGENT_DIR}/npm --omit=dev --ignore-scripts --no-audit --no-fund \\`);
+    expect(lines).toContain('"pi-web-access":"0.30.0","@juicesharp/rpiv-todo":"1.2.0"');
+    expect(lines).not.toContain(' cd ');
     // Required peers install; the pi-supplied ones resolve to one empty stub.
     expect(lines).toContain('"@earendil-works/pi-coding-agent":"file:./pi-supplied"');
     expect(lines).toContain(

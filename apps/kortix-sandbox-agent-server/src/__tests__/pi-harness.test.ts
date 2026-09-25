@@ -563,13 +563,6 @@ function fakePrebuilt(workspace: string, packages: FakePrebuilt[]): void {
   writeFileSync(join(root, '.complete'), DIGEST)
 }
 
-/** The installed fallback: `<dir>/<digest>.node_modules/node_modules`, marked complete. */
-function fakeFallback(workspace: string, fill: (root: string) => void): void {
-  const root = join(workspace, '.pi-packages', `${DIGEST}.node_modules`)
-  fill(root)
-  writeFileSync(join(root, '.complete'), DIGEST)
-}
-
 /** A pre-built extension as prebuild.ts emits it: plain ESM, pi's modules read from the host registry. */
 function prebuiltTool(tool: string, prefix: string): string {
   return `const { Type } = globalThis.__kortixPiHost['typebox']

@@ -244,10 +244,9 @@ RUN mkdir -p /opt/kortix/opencode-config-deps \
 RUN PI_PACKAGES="$(node -e "console.log((require('/tmp/kortix-runtime-versions.json').piSystemPackages || []).map((s) => s.slice(4)).join(' '))")" \
     && if [ -n "$PI_PACKAGES" ]; then \
          mkdir -p /opt/kortix/pi-agent/npm/pi-supplied \
-         && cd /opt/kortix/pi-agent/npm \
-         && printf '%s' '{"name":"kortix-pi-supplied","version":"0.0.0","private":true}' > pi-supplied/package.json \
-         && node -e "const s='file:./pi-supplied'; require('fs').writeFileSync('package.json', JSON.stringify({ name: 'kortix-pi-system-packages', private: true, dependencies: { '@earendil-works/pi-agent-core': s, '@earendil-works/pi-ai': s, '@earendil-works/pi-coding-agent': s, '@earendil-works/pi-tui': s } }))" \
-         && npm install --omit=dev --ignore-scripts --no-audit --no-fund $PI_PACKAGES \
+         && printf '%s' '{"name":"kortix-pi-supplied","version":"0.0.0","private":true}' > /opt/kortix/pi-agent/npm/pi-supplied/package.json \
+         && node -e "const s='file:./pi-supplied'; const deps={ '@earendil-works/pi-agent-core': s, '@earendil-works/pi-ai': s, '@earendil-works/pi-coding-agent': s, '@earendil-works/pi-tui': s }; for (const p of require('/tmp/kortix-runtime-versions.json').piSystemPackages) { const spec=p.slice(4); const at=spec.lastIndexOf('@'); deps[spec.slice(0, at)]=spec.slice(at + 1); } require('fs').writeFileSync('/opt/kortix/pi-agent/npm/package.json', JSON.stringify({ name: 'kortix-pi-system-packages', private: true, dependencies: deps }))" \
+         && npm install --prefix /opt/kortix/pi-agent/npm --omit=dev --ignore-scripts --no-audit --no-fund \
          && node -e "require('fs').writeFileSync('/opt/kortix/pi-agent/settings.json', JSON.stringify({ packages: require('/tmp/kortix-runtime-versions.json').piSystemPackages }))"; \
        fi
 

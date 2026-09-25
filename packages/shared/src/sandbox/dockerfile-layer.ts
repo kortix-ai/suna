@@ -296,14 +296,17 @@ export const PI_AGENT_DIR = '/opt/kortix/pi-agent';
 export function piSystemPackageLines(packages: readonly string[]): string[] {
   if (packages.length === 0) return [];
   for (const source of packages) assertPiSystemPackage(source);
-  const specs = packages.map((source) => source.slice('npm:'.length)).join(' ');
-  const stubs = Object.fromEntries(PI_SUPPLIED_PACKAGES.map((name) => [name, 'file:./pi-supplied']));
+  const dependencies: Record<string, string> = Object.fromEntries(PI_SUPPLIED_PACKAGES.map((name) => [name, 'file:./pi-supplied']));
+  for (const source of packages) {
+    const spec = source.slice('npm:'.length);
+    const at = spec.lastIndexOf('@');
+    dependencies[spec.slice(0, at)] = spec.slice(at + 1);
+  }
   return [
     `RUN mkdir -p ${PI_AGENT_DIR}/npm/pi-supplied \\`,
-    `    && cd ${PI_AGENT_DIR}/npm \\`,
-    `    && printf '%s' '{"name":"kortix-pi-supplied","version":"0.0.0","private":true}' > pi-supplied/package.json \\`,
-    `    && printf '%s' '${JSON.stringify({ name: 'kortix-pi-system-packages', private: true, dependencies: stubs })}' > package.json \\`,
-    `    && npm install --omit=dev --ignore-scripts --no-audit --no-fund ${specs} \\`,
+    `    && printf '%s' '{"name":"kortix-pi-supplied","version":"0.0.0","private":true}' > ${PI_AGENT_DIR}/npm/pi-supplied/package.json \\`,
+    `    && printf '%s' '${JSON.stringify({ name: 'kortix-pi-system-packages', private: true, dependencies })}' > ${PI_AGENT_DIR}/npm/package.json \\`,
+    `    && npm install --prefix ${PI_AGENT_DIR}/npm --omit=dev --ignore-scripts --no-audit --no-fund \\`,
     `    && printf '%s' '${JSON.stringify({ packages })}' > ${PI_AGENT_DIR}/settings.json`,
     '',
   ];
