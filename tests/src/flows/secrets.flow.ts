@@ -239,7 +239,7 @@ flow(
         value: 'project-key-test-value', consumer: 'llm_gateway', strategy: 'broker',
       }, { params: resourceParams });
       shared.status(201).body().has('$.access_mode', 'project');
-      const projectKey = shared.json<any>().secret_id as string;
+      const projectKey = shared.json<{ secret_id: string }>().secret_id;
       (await asMember.put(`${sessionPath}/sharing`, { mode: 'project' }, { params })).status(200)
         .body().has('$.visibility', 'project');
       (await asMember.get(poolPath, { params })).status(200).body().has('$.secret_ids', [projectKey]);
