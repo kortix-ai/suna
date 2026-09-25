@@ -15,6 +15,7 @@ import React, { useState } from 'react';
 const LOGO_TILE_BACKGROUND = 'bg-white';
 
 const TILE_SIZE = {
+  xl: 'size-14 rounded-xl',
   lg: 'size-10 rounded-md',
   md: 'size-8 rounded-md',
   xs: 'size-5 rounded-sm',
@@ -66,7 +67,9 @@ export function ConnectorAppMark({
   size?: keyof typeof TILE_SIZE;
 }) {
   const [broken, setBroken] = useState(false);
-  if (!iconUrl || broken) return <EntityAvatar label={name} size={size} />;
+  if (!iconUrl || broken) {
+    return <EntityAvatar label={name} size={size} className={size === 'xl' ? 'rounded-xl' : undefined} />;
+  }
   return (
     <HandshakeTile size={size} className={LOGO_TILE_BACKGROUND}>
       {/* eslint-disable-next-line @next/next/no-img-element -- third-party catalog logo on an arbitrary host */}
@@ -81,6 +84,9 @@ export function ConnectorAppMark({
     </HandshakeTile>
   );
 }
+
+/** The Kortix glyph inside its tile, per tile size. */
+const KORTIX_MARK_PX = { md: 14, lg: 18, xl: 24 } as const;
 
 /**
  * Kortix · · · App. Two marks joined by a dotted bridge, read as "link these
@@ -105,8 +111,8 @@ export function ConnectorHandshake({
   name: string;
   iconUrl: string | null;
   connected?: boolean;
-  /** `lg` heads the connect modal; `md` sits in the chat card. */
-  size?: 'md' | 'lg';
+  /** `xl` fills the connect dialog's top band; `md` sits in the chat card. */
+  size?: 'md' | 'lg' | 'xl';
   /**
    * Hide the Kortix tile and the bridge below 28rem of `@container/connect`.
    * The chat card sets it; the modal has room for the pair at every width.
@@ -114,12 +120,15 @@ export function ConnectorHandshake({
   collapsible?: boolean;
 }) {
   return (
-    <span className="flex shrink-0 items-center gap-1.5" aria-hidden>
+    <span
+      className={cn('flex shrink-0 items-center', size === 'xl' ? 'gap-3' : 'gap-1.5')}
+      aria-hidden
+    >
       <HandshakeTile
         size={size}
         className={cn('bg-foreground text-background', collapsible && 'hidden @md/connect:flex')}
       >
-        <KortixLogo variant="icon" size={size === 'lg' ? 18 : 14} />
+        <KortixLogo variant="icon" size={KORTIX_MARK_PX[size]} />
       </HandshakeTile>
       {/*
         The bridge is one SVG, not five sized spans. Dots of 2–3px on the
@@ -128,8 +137,8 @@ export function ConnectorHandshake({
         they are exact circles on one centre line, however the row is scaled.
       */}
       <svg
-        width="24"
-        height="6"
+        width={size === 'xl' ? 36 : 24}
+        height={size === 'xl' ? 9 : 6}
         viewBox="0 0 24 6"
         className={cn('text-muted-foreground shrink-0', collapsible && 'hidden @md/connect:block')}
         fill="currentColor"

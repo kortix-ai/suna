@@ -13,7 +13,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { ArrowSquareOutIcon, CheckIcon, LockSimpleIcon, WarningIcon } from '@phosphor-icons/react';
+import { CheckIcon, WarningIcon } from '@phosphor-icons/react';
 import { useEffect } from 'react';
 
 import { ConnectorHandshake } from './connector-handshake';
@@ -22,12 +22,10 @@ import { connectorHeadline } from './connector-link-info';
 
 const COPY = {
   title: 'Connect {app}',
+  titleToProject: 'Connect {app} to {project}',
   connectedTitle: '{app} connected',
-  description: 'Give Kortix access to {app} in {project}.',
-  descriptionNoProject: 'Give Kortix access to {app}.',
+  description: 'You sign in on {app} in a new window. Kortix never sees your password.',
   connectedDescription: 'The agent can use {app} now and continues on its own.',
-  signInFact: 'You sign in on {app} in a new window.',
-  passwordFact: 'Kortix never sees your password.',
   waiting: 'Finish signing in to {app} in the window that opened.',
   connectedAs: 'Connected as {account}',
   loading: 'Loading…',
@@ -111,68 +109,62 @@ function ConnectDialogBody({
   const starting = phase === 'starting';
   const waiting = phase === 'opened';
 
-  const description = connected
-    ? fill(copy.connectedDescription, { app })
+  const title = connected
+    ? fill(copy.connectedTitle, { app })
     : headline?.project
-      ? fill(copy.description, { app, project: headline.project })
-      : fill(copy.descriptionNoProject, { app });
+      ? fill(copy.titleToProject, { app, project: headline.project })
+      : fill(copy.title, { app });
+  const description = fill(connected ? copy.connectedDescription : copy.description, { app });
+
+  // A state row only when there is a state to report; the ready dialog is band,
+  // title, sentence, actions.
+  const status =
+    phase === 'loading' ? (
+      <p className="text-muted-foreground flex items-center gap-2 text-sm">
+        <Loading className="size-4 shrink-0" />
+        {copy.loading}
+      </p>
+    ) : phase === 'error' || error ? (
+      <InfoBanner tone="destructive" icon={<WarningIcon weight="fill" />} title={error ?? ''} />
+    ) : waiting ? (
+      <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
+        <Loading className="size-4 shrink-0" />
+        <p className="text-sm text-pretty">{fill(copy.waiting, { app })}</p>
+      </div>
+    ) : connected && connectedAs ? (
+      <p className="text-muted-foreground flex items-center gap-2 text-sm">
+        <CheckIcon weight="bold" className="text-kortix-green size-4 shrink-0" />
+        <span className="min-w-0 truncate" data-testid="connector-intake-connected-as">
+          {fill(copy.connectedAs, { account: connectedAs })}
+        </span>
+      </p>
+    ) : null;
 
   return (
     <>
-      {/* `pr-12` keeps the text clear of the absolute close button (`top-3 right-3 size-8`). */}
-      <ModalHeader className="gap-4 pr-12">
-        <div className="space-y-1">
-          <ModalTitle>{fill(connected ? copy.connectedTitle : copy.title, { app })}</ModalTitle>
-          <ModalDescription className="text-pretty">{description}</ModalDescription>
-        </div>
-
+      {/*
+        The band: the pair on a flush strip above a hairline, like an app-store
+        sheet (Paper, "Connect modal · variants" B). `bg-background` is a step
+        off the dialog's `bg-sidebar` in both themes, so the strip reads as its
+        own surface without a shadow. The modal's close button sits over it.
+      */}
+      <div className="bg-background border-border flex aspect-[21/9] shrink-0 items-center justify-center border-b">
         <ConnectorHandshake
           name={app}
           iconUrl={info?.icon_url ?? null}
           connected={connected}
-          size="lg"
+          size="xl"
           collapsible={false}
         />
+      </div>
+
+      {/* `pr-12` keeps a long title clear of the close button on narrow sheets. */}
+      <ModalHeader className="gap-1 pt-0 pr-12">
+        <ModalTitle>{title}</ModalTitle>
+        <ModalDescription className="text-pretty">{description}</ModalDescription>
       </ModalHeader>
 
-      <ModalBody>
-        {phase === 'loading' ? (
-          <p className="text-muted-foreground flex items-center gap-2 text-sm">
-            <Loading className="size-4 shrink-0" />
-            {copy.loading}
-          </p>
-        ) : phase === 'error' ? (
-          <InfoBanner tone="destructive" icon={<WarningIcon weight="fill" />} title={error ?? ''} />
-        ) : waiting ? (
-          <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
-            <Loading className="size-4 shrink-0" />
-            <p className="text-sm text-pretty">{fill(copy.waiting, { app })}</p>
-          </div>
-        ) : connected ? (
-          connectedAs ? (
-            <p className="text-muted-foreground flex items-center gap-2 text-sm">
-              <CheckIcon weight="bold" className="text-kortix-green size-4 shrink-0" />
-              <span className="min-w-0 truncate" data-testid="connector-intake-connected-as">
-                {fill(copy.connectedAs, { account: connectedAs })}
-              </span>
-            </p>
-          ) : null
-        ) : (
-          <ul className="text-muted-foreground space-y-2 text-sm">
-            <li className="flex items-center gap-2">
-              <ArrowSquareOutIcon className="size-4 shrink-0" />
-              {fill(copy.signInFact, { app })}
-            </li>
-            <li className="flex items-center gap-2">
-              <LockSimpleIcon className="size-4 shrink-0" />
-              {copy.passwordFact}
-            </li>
-          </ul>
-        )}
-        {error && phase !== 'error' ? (
-          <InfoBanner tone="destructive" icon={<WarningIcon weight="fill" />} title={error} />
-        ) : null}
-      </ModalBody>
+      {status ? <ModalBody>{status}</ModalBody> : null}
 
       <ModalFooter>
         {connected ? (
