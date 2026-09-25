@@ -39,7 +39,7 @@ describe('OpenCode lifecycle boot', () => {
       opencodeInternalPort: 4096,
       opencodeStandbyPort: 4097,
     } as Config
-    const opencode = createOpencodeLifecycle(cfg, fixture.dir, undefined, {
+    const opencode = createOpencodeLifecycle(cfg, undefined, {
       binaryPathOverride: fixture.path,
       configPathOverride: join(fixture.dir, 'opencode-config.json'),
     })
@@ -78,7 +78,7 @@ describe('OpenCode lifecycle boot', () => {
       opencodeInternalPort: 4096,
       opencodeStandbyPort: 4097,
     } as Config
-    const opencode = createOpencodeLifecycle(cfg, fixture.dir, undefined, {
+    const opencode = createOpencodeLifecycle(cfg, undefined, {
       configPathOverride: join(fixture.dir, 'opencode-config.json'),
       binaryPathResolverOverride: async () => (++attempts === 1 ? null : fixture.path),
     })
@@ -91,28 +91,30 @@ describe('OpenCode lifecycle boot', () => {
     await opencode.stop()
   })
 
-  test('starts OpenCode from compiled config before checkout extraction completes', async () => {
+  test('OpenCode spawns before the checkout completes; the clone is handed over, not awaited', async () => {
     const main = await readFile(resolve(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
     const repo = main.indexOf('const repoMaterializePromise')
-    const compiledStart = main.indexOf('const compiledOpencodeStartPromise')
-    const checkoutWait = main.indexOf('await repoMaterializePromise')
-
+    const bootPath = main.indexOf('await bootOpenCodeConfig({')
     expect(repo).toBeGreaterThan(-1)
-    expect(compiledStart).toBeGreaterThan(repo)
-    expect(compiledStart).toBeLessThan(checkoutWait)
-    expect(main.slice(compiledStart, checkoutWait)).toContain('await opencode.start()')
+    expect(bootPath).toBeGreaterThan(repo)
+    // The clone is a PROMISE the boot path owns. `boot.ts` never awaits it, so
+    // the spawn in step 0 never waits for the checkout.
+    expect(main).not.toContain('await repoMaterializePromise')
+    expect(main.slice(bootPath, main.indexOf('})', main.indexOf('onReady:', bootPath)))).toContain(
+      'workspace: repoMaterializePromise',
+    )
+    const path = await readFile(resolve(import.meta.dir, '..', 'harness', 'open-code', 'boot-config-path.ts'), 'utf8')
+    expect(path.indexOf('const started = input.start()')).toBeLessThan(path.indexOf('await input.workspace'))
   })
 
-  test('starts the LLM proxy before compiled OpenCode can spawn', async () => {
+  test('starts the LLM proxy before OpenCode can spawn', async () => {
     const main = await readFile(resolve(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
     const llmProxyStart = main.indexOf('const llmUrl = startLlmProxy(')
     const llmProxyExport = main.indexOf('process.env.KORTIX_LLM_PROXY_URL = llmUrl', llmProxyStart)
-    const compiledStart = main.indexOf('const compiledOpencodeStartPromise')
-    const opencodeSpawn = main.indexOf('await opencode.start()', compiledStart)
+    const bootPath = main.indexOf('await bootOpenCodeConfig({')
 
     expect(llmProxyStart).toBeGreaterThan(-1)
     expect(llmProxyExport).toBeGreaterThan(llmProxyStart)
-    expect(compiledStart).toBeGreaterThan(llmProxyExport)
-    expect(opencodeSpawn).toBeGreaterThan(compiledStart)
+    expect(bootPath).toBeGreaterThan(llmProxyExport)
   })
 })

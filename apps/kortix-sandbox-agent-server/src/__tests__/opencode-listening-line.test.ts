@@ -116,7 +116,7 @@ describe('OpenCode lifecycle listening announcement', () => {
     }) as typeof process.stdout.write
     try {
       const ready = deferred()
-      lifecycle = createOpencodeLifecycle(makeCfg(), configDir, undefined, {
+      lifecycle = createOpencodeLifecycle(makeCfg(), undefined, {
         binaryPathOverride: binary,
         configPathOverride: join(root, 'runtime-config.json'),
         onStartupMark: (label) => marks.push(label),
@@ -151,7 +151,7 @@ describe('OpenCode lifecycle listening announcement', () => {
     writeDeadWindowBinary(binary, 300, false, heldFile)
 
     const ready = deferred()
-    lifecycle = createOpencodeLifecycle(makeCfg(), configDir, undefined, {
+    lifecycle = createOpencodeLifecycle(makeCfg(), undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
       // The real value is 10 s; the point here is only that probing resumes.

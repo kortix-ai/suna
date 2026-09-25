@@ -16,7 +16,21 @@ import { readJsonObject } from '../../shared/http-body';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { mayChangeSessionModel } from '../lib/session-model-change';
-import { isConfigStale, latestAgentConfigEtag, readSandboxConfigState, reloadDetail, reloadSessionConfig } from '../lib/session-reload';
+import { resolveDesiredRelease } from '../../config-releases/desired';
+import { ownerMayUseAgent } from '../../config-releases/repoint';
+import { configReleasesEnabled } from '../../config-releases/enabled';
+import { recordDaemonConfigReport } from '../../config-releases/quarantine';
+import { isReleaseStale, toSessionConfigRelease } from '../lib/session-config-release';
+import { repositoryAccessFromSessionMetadata } from '../lib/session-sandbox-metadata';
+import {
+  combineConfigStaleness,
+  isConfigStale,
+  isSessionConfigDirStale,
+  latestAgentConfigEtag,
+  readSandboxConfigState,
+  reloadDetail,
+  reloadSessionConfig,
+} from '../lib/session-reload';
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -49,6 +63,20 @@ projectsApp.openapi(
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
+    const project = {
+      projectId,
+      repoUrl: loaded.row.repoUrl,
+      defaultBranch: loaded.row.defaultBranch,
+      manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
+      gitAuthToken: null,
+    };
+    // CHOKEPOINT — the `config_releases` flag for this read
+    // (docs/specs/config-releases.md, "Feature flag"). Off ⇒ no `release`
+    // block, no desired release is built (so no archive is stored and no
+    // ledger row is written), and `stale` is the pre-release etag compare
+    // alone. The CLI formatter and the web header both render their
+    // pre-release text when `release` is absent.
+    const releasesEnabled = configReleasesEnabled(loaded.row.metadata);
     const [running, latest] = await Promise.all([
       readSandboxConfigState({ sessionId }),
       latestAgentConfigEtag({
@@ -58,6 +86,64 @@ projectsApp.openapi(
         baseRef,
       }),
     ]);
+
+    // ── A daemon with config releases (spec, "`GET /config`, extended") ──
+    if (releasesEnabled && running.configReleases && running.release) {
+      // Health carries `failed_release_id` and `proven`: the project
+      // quarantine learns from every read, not only from reloads.
+      await recordDaemonConfigReport({ projectId, sessionId, report: running.release });
+      // The SAME resolution the daemon's descriptor request makes, minus the
+      // write: a read must never disagree with the assignment about `stale`.
+      const repointSubject = {
+        projectId,
+        accountId: loaded.row.accountId,
+        sessionId,
+        ownerUserId: visible.row.createdBy ?? null,
+      };
+      const desired = await resolveDesiredRelease({
+        project,
+        baseRef,
+        sessionAgent: visible.row.agentName ?? null,
+        repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
+        ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
+      }).catch(() => null);
+      const release = toSessionConfigRelease(
+        running.release,
+        desired ? desired.descriptor.release_id : undefined,
+      );
+      return c.json({
+        base_ref: baseRef,
+        running_etag: running.etag,
+        latest_etag: latest,
+        commit_sha: running.commitSha,
+        // `running_release_id !== desired_release_id`. `null` when the API
+        // could not build the desired release or neither side has one.
+        stale: isReleaseStale(release, desired !== null),
+        sandbox_reachable: running.reachable,
+        release,
+        // Surfaced so the web header and `kortix sessions reload --status` can
+        // say why a session lost its agent, instead of showing a healthy box
+        // that answers nothing.
+        ...(desired?.descriptor.agent_repoint ? { agent_repoint: desired.descriptor.agent_repoint } : {}),
+      });
+    }
+
+    // ── A daemon without config releases: etag and config-dir logic ──
+    // The etag cannot see a skill body, a tool or a plugin. A merge that touched
+    // only those used to leave `stale: false` and the header never offered the
+    // reload, so the config dir is compared as well.
+    // `releasesEnabled` guards this too: the config-dir compare shipped with
+    // config releases. With the flag off the daemon never syncs config files,
+    // so offering "update available" for them would promise a reload that
+    // cannot deliver. `stale` is then exactly the pre-release expression.
+    const filesStale = releasesEnabled && running.reachable
+      ? await isSessionConfigDirStale({
+          project,
+          baseRef,
+          configDirSha: running.configDirSha,
+          commitSha: running.commitSha,
+        })
+      : null;
     return c.json({
       base_ref: baseRef,
       running_etag: running.etag,
@@ -66,7 +152,7 @@ projectsApp.openapi(
       // `null` when it cannot be told — an unreachable box or a project with no
       // compiled config. Never `false`, which would read as "up to date" when
       // the truth is "did not ask".
-      stale: isConfigStale(running.etag, latest),
+      stale: combineConfigStaleness(isConfigStale(running.etag, latest), filesStale),
       sandbox_reachable: running.reachable,
     });
   },

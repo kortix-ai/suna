@@ -48,6 +48,7 @@ export type FeatureFlagKey =
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
   | 'pi_harness'
+  | 'config_releases'
   | 'agent_principal';
 
 /**
@@ -71,6 +72,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'session_transcript_history',
   'pooled_provider_secrets',
   'pi_harness',
+  'config_releases',
   'agent_principal',
 ] as const;
 

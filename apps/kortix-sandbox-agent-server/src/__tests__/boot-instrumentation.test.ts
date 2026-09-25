@@ -7,15 +7,19 @@ import { describe, expect, test } from 'bun:test'
 // initial-turn claim — from being quietly dropped.
 const MAIN = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
 const OPENCODE = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
+const BOOT_PATH = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'boot-config-path.ts'), 'utf8')
 
 describe('boot instrumentation', () => {
   test('the initial-turn claim is prefetched at proxy-up, before the clone is awaited', () => {
     const proxyUp = MAIN.indexOf("bootMark('proxy-up')")
     const earlyClaim = MAIN.indexOf('void claimInitialTurnFromApi()', proxyUp)
-    const repoAwait = MAIN.indexOf('await repoMaterializePromise', proxyUp)
+    // The clone is handed to the boot path as a promise; the boot path is what
+    // awaits it. Nothing between proxy-up and that hand-off blocks on it.
+    const cloneHandOff = MAIN.indexOf('workspace: repoMaterializePromise', proxyUp)
     expect(proxyUp).toBeGreaterThan(-1)
     expect(earlyClaim).toBeGreaterThan(proxyUp)
-    expect(repoAwait).toBeGreaterThan(earlyClaim)
+    expect(cloneHandOff).toBeGreaterThan(earlyClaim)
+    expect(BOOT_PATH).toContain('const workspaceError = await input.workspace')
   })
 
   test('every stage of the initial-session path has its own mark, in order', () => {
@@ -53,42 +57,37 @@ describe('boot instrumentation', () => {
     const check = OPENCODE.indexOf('async function checkReady(')
     expect(OPENCODE.slice(check, check + 220)).toContain('if (!directoryProbeOpen) return false')
 
-    // Native boot: gate requested exactly when the early spawn can happen, and
-    // opened only after config deps + injected skills.
-    expect(MAIN).toContain('deferDirectoryProbe: cfg.autoClone && resolveHintedOpencodeConfigDir(cfg) !== null')
-    const deps = MAIN.indexOf("bootMark('config-deps')")
-    const open = MAIN.indexOf('opencode.markWorkspaceReady()', deps)
-    const reload = MAIN.indexOf('harness.configuration.reloadForWorkspace()', open)
-    expect(deps).toBeGreaterThan(-1)
-    expect(open).toBeGreaterThan(deps)
-    expect(reload).toBeGreaterThan(open)
+    // EVERY boot now spawns OpenCode before the config is decided, so the gate
+    // is unconditionally closed and the one boot path is what opens it.
+    expect(MAIN).toContain('deferDirectoryProbe: true')
+    const chosen = BOOT_PATH.indexOf('// ── Step 7')
+    const open = BOOT_PATH.indexOf('opencode.markWorkspaceReady()', chosen)
+    const proof = BOOT_PATH.indexOf('const proof = await prove(')
+    expect(proof).toBeGreaterThan(-1)
+    expect(open).toBeGreaterThan(proof)
   })
 
   test('the proxy holds every caller off until the workspace is complete', () => {
     const PROXY = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'proxy.ts'), 'utf8')
     expect(PROXY).toContain("bootState.workspaceReady === false")
     expect(PROXY).toContain("'workspace_not_ready'")
-    // set false only on the early-spawn path, true once deps + skills are in
-    expect(MAIN).toContain('if (earlyOpencodeConfigDir) bootState.workspaceReady = false')
-    // The gate must open where the workspace is COMPLETE — after the deps and
-    // the injected skills — and never inside the early-spawn block. An earlier
-    // revision opened it right after start(), which made the whole fix inert
-    // (verified on dev: the log showed the gate opening at ~130 ms, before the
-    // checkout landed at ~300 ms). Anchor on the LAST reconfigure, not on a
-    // bare indexOf that a later duplicate can satisfy.
-    const earlySpawn = MAIN.indexOf('const earlyOpencodeStartPromise')
-    const earlySpawnEnd = MAIN.indexOf('const compiledOpencodeConfigDir', earlySpawn)
-    expect(MAIN.slice(earlySpawn, earlySpawnEnd)).not.toContain('markWorkspaceReady')
-
-    const deps = MAIN.indexOf('await ensureOpencodeConfigDeps(opencodeConfigDir)')
-    const skills = MAIN.indexOf('await ensureInjectedManagedSkills(opencodeConfigDir)', deps)
-    const reconfigure = MAIN.indexOf('harness.configuration.reconfigure(cfg, opencodeConfigDir, projectEnv)', skills)
-    const open = MAIN.indexOf('opencode.markWorkspaceReady()', reconfigure)
-    const reload = MAIN.indexOf('harness.configuration.reloadForWorkspace()', open)
-    expect(deps).toBeGreaterThan(-1)
-    expect(skills).toBeGreaterThan(deps)
-    expect(open).toBeGreaterThan(reconfigure)
-    expect(reload).toBeGreaterThan(open)
+    // Closed before the lifecycle exists, so no caller can slip through while
+    // the config is still being decided.
+    expect(MAIN).toContain('bootState.workspaceReady = false')
+    const close = MAIN.indexOf('bootState.workspaceReady = false')
+    expect(close).toBeLessThan(MAIN.indexOf('const harness = createOpenCodeHarnessService('))
+    // The gate opens where the workspace is COMPLETE and the config is PROVEN,
+    // never inside the spawn. An earlier revision opened it right after
+    // start(), which made the whole fix inert (verified on dev: the gate opened
+    // at ~130 ms, before the checkout landed at ~300 ms). `boot.ts` no longer
+    // opens it at all — `boot-config-path.ts` does, once.
+    expect(MAIN).not.toContain('markWorkspaceReady()')
+    const workspace = BOOT_PATH.indexOf('const workspaceError = await input.workspace')
+    const proof = BOOT_PATH.indexOf('const proof = await prove(', workspace)
+    const open = BOOT_PATH.indexOf('opencode.markWorkspaceReady()', proof)
+    expect(workspace).toBeGreaterThan(-1)
+    expect(proof).toBeGreaterThan(workspace)
+    expect(open).toBeGreaterThan(proof)
   })
 
   test('an instance that answered before the workspace was ready forces a restart, not a dispose', () => {
@@ -96,8 +95,10 @@ describe('boot instrumentation', () => {
     const body = OPENCODE.slice(fn, OPENCODE.indexOf('async reloadConfig(', fn))
     expect(body).toContain('restarting instead of disposing')
     expect(body).not.toContain('return disposeInstances()')
-    const restart = MAIN.indexOf('opencode.restart()', MAIN.indexOf('const reloaded = await harness.configuration.reloadForWorkspace()'))
-    expect(restart).toBeGreaterThan(-1)
+    // The boot path asks for the in-place reload and respawns when it answers
+    // false, so a dispose that is not enough still lands on a fresh process.
+    expect(BOOT_PATH).toContain('if (index === 0 && (await input.refresh?.().catch(() => false)))')
+    expect(BOOT_PATH).toContain('await input.respawn()')
   })
 
   test('the lifecycle reports the first HTTP response separately from the first 200', () => {

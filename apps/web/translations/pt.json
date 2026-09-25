@@ -1142,6 +1142,10 @@
         "agent_principal": {
           "name": "Agentes como principais",
           "description": "Os agentes agem como eles mesmos: com suas permissões do Kortix, limitadas pela sua função. Quem executa um agente adiciona apenas as próprias contas."
+        },
+        "config_releases": {
+          "name": "Versões de configuração",
+          "description": "Executa as sessões com a configuração de agente atual do branch base, servida apenas para leitura, para que um agente, skill ou ferramenta integrado chegue a todas as sessões em curso. Desativado, cada sessão lê a sua própria pasta de configuração no workspace."
         }
       }
     },
@@ -1638,11 +1642,6 @@
     "previousRepository": {
       "title": "Esta sessão está desatualizada",
       "message": "O projeto mudou depois que esta sessão começou. Atualize-a para continuar trabalhando na versão mais recente.",
-      "unavailable": "O espaço de trabalho anterior não está mais disponível. Inicie uma nova sessão no repositório atual.",
-      "resume": "Retomar espaço anterior",
-      "resuming": "Retomando…",
-      "newSession": "Iniciar nova sessão",
-      "delete": "Excluir sessão",
       "update": "Atualizar para o mais recente",
       "updating": "Atualizando…",
       "dismiss": "Dispensar",
@@ -18586,6 +18585,17 @@
       "textea5d0ffa0962": "Um gestor do projeto conecta a conta compartilhada.",
       "text3d6627454174": "Definir credencial",
       "text929505ef815a": "Ainda não há nenhuma conta conectada. Adicione a sua abaixo, ou peça a um gestor do projeto para conectar uma conta compartilhada.",
+      "text931cb67e2af7": "Não foi possível carregar a nova configuração do agente. Esta sessão continua usando uma configuração anterior.",
+      "textd9ff3a72833d": "Falha ao carregar a configuração",
+      "textebfb07812fb4": "Não foi possível carregar a nova configuração do agente",
+      "text4e62b29dd3b6": "Uma configuração anterior está em uso nesta sessão. A configuração com falha só será tentada novamente quando o branch base mudar.",
+      "textf81ab834de5f": "Motivo",
+      "text44cdf35701cd": "Em uso agora",
+      "text591f9f0f3259": "Release com falha",
+      "text00ed4c71dc2b": "Última release funcional",
+      "textbd7a1a3b4141": "A configuração padrão da plataforma",
+      "text643df05476ab": "A configuração padrão da plataforma está em uso nesta sessão. A configuração com falha só será tentada novamente quando o branch base mudar.",
+      "text40652e008fc9": "Não foi possível carregar a nova configuração do agente. Esta sessão usa a configuração padrão da plataforma.",
       "text3312ddb06c1d": "Registe um bot no Azure, ligue-o aqui e depois carregue o pacote da aplicação no Teams.",
       "text7f1b55a356b0": "Registar o bot no Azure",
       "text91004edf8b30": "Ligá-lo a este projeto",
@@ -19163,7 +19173,9 @@
       "text8cc0d84b66bb": "Link de identidade do Slack pré-visualizado",
       "text508b43cc4545": "Link de identidade do Teams pré-visualizado",
       "text467f597e95b0": "Domínio SSO verificado",
-      "text8295f9d4861b": "Verificação do domínio SSO da conta definida"
+      "text8295f9d4861b": "Verificação do domínio SSO da conta definida",
+      "text7beaff63a7d3": "Arquivo de configuração do projeto baixado",
+      "text5176d59f25fd": "Versão de configuração da sessão resolvida"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
