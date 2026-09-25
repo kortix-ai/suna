@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Slack `/kortix models`, `/kortix model <id>` and the picker's controls. The
 // list and every check run as the person who typed, with the conversation's
@@ -17,18 +18,25 @@ mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: 
 
 let actor: { userId: string } | { reason: string } = { userId: 'ivan' };
 const actorLookups: string[] = [];
-mock.module('../channels/slack/identity', () => ({
-  resolveSlackActor: async (_team: string, slackUserId: string) => {
-    actorLookups.push(slackUserId);
-    return actor;
-  },
-}));
+// The same linked person decides the scope and, through core/settings.ts,
+// whether they may change this channel's settings at all.
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({
+    resolveChatActor: async (user: { platformUserId: string }) => {
+      actorLookups.push(user.platformUserId);
+      return actor;
+    },
+    resolveProjectChatActor: async () => actor,
+  }),
+);
 
 let selection: Record<string, unknown> | null = null;
 const stored: Array<string | null> = [];
 let bound = true;
 mock.module('../channels/slack/selection', () => ({
   currentChannelSelection: async () => selection,
+  setChannelAgent: async () => ({ ok: true }),
+  setChannelConversationPolicy: async () => true,
   setChannelModel: async (_ctx: unknown, model: string | null) => {
     stored.push(model);
     return bound;
@@ -234,12 +242,22 @@ describe('/kortix model — a choice is checked as the person who made it', () =
     expect(stored).toHaveLength(0);
   });
 
-  test('an unlinked person is never told about the owner`s own keys', async () => {
+  test('an unlinked person is never told about the owner`s own keys: they are asked to link, and nothing is checked or stored', async () => {
     actor = { reason: 'unlinked' };
     servableFor = () => false;
     const reply = await applySlackModelChoice(dm, 'codex/gpt-6-astra');
-    expect(checks).toHaveLength(1);
-    expect(reply).toContain("isn't available for this workspace");
+    expect(checks).toHaveLength(0);
+    expect(stored).toHaveLength(0);
+    expect(reply).toContain('Connect your Kortix account first');
+    expect(reply).not.toContain('your own API key');
+  });
+
+  test('a linked member without project.connector.write cannot change a shared channel`s model; nothing is checked or stored', async () => {
+    actor = { reason: 'not_member' };
+    const reply = await applySlackModelChoice({ ...dm, channelId: 'C1' }, 'kortix/glm-5.3-flash');
+    expect(checks).toHaveLength(0);
+    expect(stored).toHaveLength(0);
+    expect(reply).toContain('Only a project manager');
   });
 
   test('an id with whitespace is refused on shape, before any check', async () => {

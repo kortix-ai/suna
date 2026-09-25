@@ -1,4 +1,3 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { makeOpenApiApp } from '../openapi';
 import { reconcileChannelConnectors } from '../connectors/sync';
@@ -10,6 +9,8 @@ import {
   setTeamsPublishState,
 } from './install-store';
 import { publishTeamsAppToCatalog } from './teams/catalog';
+import { signChannelState, verifyChannelState } from './core/signed-state';
+import { frontendBase, installHandoffUrl, stateForCaller, type InstallCompletion } from './core/install-completion';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -91,42 +92,30 @@ const AUTHORITY = 'https://login.microsoftonline.com/organizations/oauth2/v2.0';
 
 interface OauthState {
   projectId: string;
+  /** The Kortix user who started the install. Only they may complete it. */
+  userId: string;
   baseUrl: string;
-  exp: number;
-  nonce: string;
-}
-
-function stateKey(): string {
-  return config.MICROSOFT_APP_PASSWORD ?? 'kortix-dev-teams-oauth-key';
 }
 
 function callbackRedirectUri(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/v1/webhooks/teams/oauth/callback`;
 }
 
-function signState(projectId: string, baseUrl: string): string {
-  const full: OauthState = { projectId, baseUrl, exp: Date.now() + STATE_TTL_MS, nonce: randomBytes(8).toString('hex') };
-  const body = Buffer.from(JSON.stringify(full)).toString('base64url');
-  const mac = createHmac('sha256', stateKey()).update(body).digest('base64url');
-  return `${body}.${mac}`;
+function signState(state: OauthState): string {
+  return signChannelState('teams-install', { ...state }, STATE_TTL_MS);
 }
 
 function verifyState(token: string | undefined): OauthState | null {
-  if (!token) return null;
-  const [body, mac] = token.split('.');
-  if (!body || !mac) return null;
-  const expected = createHmac('sha256', stateKey()).update(body).digest('base64url');
-  const a = Buffer.from(mac);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-  try {
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as OauthState;
-    if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
-    if (typeof payload.projectId !== 'string' || typeof payload.baseUrl !== 'string') return null;
-    return payload;
-  } catch {
+  const payload = verifyChannelState('teams-install', token);
+  if (!payload) return null;
+  if (
+    typeof payload.projectId !== 'string' ||
+    typeof payload.userId !== 'string' ||
+    typeof payload.baseUrl !== 'string'
+  ) {
     return null;
   }
+  return { projectId: payload.projectId, userId: payload.userId, baseUrl: payload.baseUrl };
 }
 
 function tenantFromJwt(token: string): string | null {
@@ -189,6 +178,8 @@ async function exchangeCodeForToken(
  */
 export function teamsOrgConsentUrl(input: {
   projectId: string;
+  /** The Kortix user starting the install; only they can complete it. */
+  userId: string;
   baseUrl: string;
   enabled: boolean;
 }): string | null {
@@ -200,22 +191,26 @@ export function teamsOrgConsentUrl(input: {
   url.searchParams.set('response_mode', 'query');
   url.searchParams.set('redirect_uri', callbackRedirectUri(input.baseUrl));
   url.searchParams.set('scope', GRAPH_PUBLISH_SCOPE);
-  url.searchParams.set('state', signState(input.projectId, input.baseUrl));
+  url.searchParams.set('state', signState({ projectId: input.projectId, userId: input.userId, baseUrl: input.baseUrl }));
   return url.toString();
 }
 
 export const teamsOauthApp = makeOpenApiApp();
 
-teamsOauthApp.get('/callback', async (c: any) => {
-  const frontend = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
-  const state = verifyState(c.req.query('state'));
-  if (!state) return c.redirect(`${frontend}/?teams_error=expired`, 302);
+/**
+ * Where an install outcome lands: the Channels surface (a scope of
+ * Connectors), where the Teams row renders the persisted publish state.
+ */
+function channelsUrl(projectId: string, status: TeamsInstallRedirectStatus): string {
+  return `${frontendBase()}/projects/${projectId}/customize/connectors?scope=channels&teams=${status}`;
+}
 
-  // Land on the Channels surface (a scope of Connectors), where the Teams row
-  // renders the persisted publish state — not the project home, which reads
-  // nothing from the query.
-  const dest = (status: TeamsInstallRedirectStatus) =>
-    `${frontend}/projects/${state.projectId}/customize/connectors?scope=channels&teams=${status}`;
+// The registered redirect URI. It installs nothing: see install-completion.ts.
+teamsOauthApp.get('/callback', async (c: any) => {
+  const rawState = c.req.query('state');
+  const state = verifyState(rawState);
+  if (!state) return c.redirect(`${frontendBase()}/?teams_error=expired`, 302);
+  const dest = (status: TeamsInstallRedirectStatus) => channelsUrl(state.projectId, status);
 
   // The flag is per project, so it can only be read once the signed state
   // tells us which project this consent belongs to.
@@ -232,20 +227,44 @@ teamsOauthApp.get('/callback', async (c: any) => {
   }
   const code = c.req.query('code');
   if (!code) return c.redirect(dest('declined'), 302);
-  const appId = config.MICROSOFT_APP_ID;
-  if (!appId) return c.redirect(dest('unconfigured'), 302);
+  if (!config.MICROSOFT_APP_ID) return c.redirect(dest('unconfigured'), 302);
+  return c.redirect(installHandoffUrl('teams', { projectId: state.projectId, code, state: rawState }), 302);
+});
 
-  const token = await exchangeCodeForToken(code, state.baseUrl);
-  if (!token) return c.redirect(dest('failed'), 302);
+/**
+ * Finish a Teams org install for the signed-in caller. The caller must be the
+ * Kortix user who started it, for the same project; the code is exchanged only
+ * after that check.
+ */
+export async function completeTeamsOauthInstall(input: {
+  projectId: string;
+  userId: string;
+  code: string;
+  state: string;
+}): Promise<InstallCompletion> {
+  const checked = stateForCaller(verifyState(input.state), input);
+  if (!checked.ok) return checked;
+  const state = checked.state;
+  const done = (status: TeamsInstallRedirectStatus): InstallCompletion => ({
+    ok: true,
+    redirectUrl: channelsUrl(state.projectId, status),
+  });
+
+  if (!(await projectFeatureFlagEnabled(state.projectId, 'teams'))) return done('disabled');
+  const appId = config.MICROSOFT_APP_ID;
+  if (!appId) return done('unconfigured');
+
+  const token = await exchangeCodeForToken(input.code, state.baseUrl);
+  if (!token) return done('failed');
   const tenantId = token.tenantId;
-  if (!tenantId) return c.redirect(dest('failed'), 302);
+  if (!tenantId) return done('failed');
 
   await saveTeamsInstall({ projectId: state.projectId, tenantId }).catch((err) =>
     console.error('[teams-oauth] saveTeamsInstall failed', err),
   );
   void reconcileChannelConnectors(state.projectId);
 
-  // The publish runs to completion regardless of the redirect; the browser
+  // The publish runs to completion regardless of the response; the browser
   // only waits a bounded time for it.
   const publish = runCatalogPublish({
     projectId: state.projectId,
@@ -265,5 +284,5 @@ teamsOauthApp.get('/callback', async (c: any) => {
     }),
   ]);
   if (timer) clearTimeout(timer);
-  return c.redirect(dest(status), 302);
-});
+  return done(status);
+}
