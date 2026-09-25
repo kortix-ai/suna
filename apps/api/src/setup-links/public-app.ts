@@ -19,6 +19,11 @@ import {
 } from '../connectors/pipedream';
 import type { ConnectorConnectOwner } from '../projects/lib/connection-access';
 import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
+import {
+  sessionWithheldSecrets,
+  withheldSecretsFix,
+  type SessionWithheldSecrets,
+} from '../projects/lib/session-secret-reach';
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
@@ -153,11 +158,14 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
   // a link on its next loop run. The session ID is sealed into the token at
   // mint time (setup-links.ts passes c.get('sessionId')).
   const sid = (resolved.payload as { sid?: string | null }).sid;
+  const reach = sid && resolved.payload.scope === 'runtime' ? await sessionWithheldSecrets(sid, saved) : null;
   if (sid) {
-    void notifyRequestingSession(sid, resolved.projectId, resolved.payload.uid, saved);
+    void notifyRequestingSession(sid, resolved.projectId, resolved.payload.uid, saved, reach);
   }
 
-  return c.json({ ok: true, saved });
+  // A saved value the requesting agent cannot receive is the one outcome the
+  // human must act on, and this form is the only moment they are here.
+  return c.json({ ok: true, saved, ...(reach ? { agent: reach.agent, withheld: reach.withheld } : {}) });
 });
 
 // GET /v1/setup-links/connectors/:token — which app does this link connect?
@@ -374,13 +382,21 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
 });
 
 /** Exported for tests. The text delivered to the requesting session's agent. */
-export function secretSubmittedPrompt(saved: string[]): string {
+export function secretSubmittedPrompt(
+  saved: string[],
+  reach?: SessionWithheldSecrets | null,
+): string {
   const plural = saved.length === 1 ? 'value' : 'values';
-  return (
+  const text =
     `The secret ${plural} for ${saved.join(', ')} ${saved.length === 1 ? 'was' : 'were'} just ` +
-    'submitted through the intake link and saved to this project. Sync is in flight — run ' +
-    '`kortix secrets sync` if a variable is not visible in your environment yet, then continue ' +
-    'the task that was blocked on it. Do not mint a new intake link for these names.'
+    'submitted through the intake link and saved to this project. Sync is in flight: a variable ' +
+    'not visible in your environment yet arrives with the next message (agent sessions cannot ' +
+    'run `kortix secrets sync`). Continue the task that was blocked on it. Do not mint a new ' +
+    'intake link for these names.';
+  if (!reach || reach.withheld.length === 0) return text;
+  return (
+    `${text} ${withheldSecretsFix(reach.agent, reach.withheld)} ` +
+    'Do not report these secrets as unset: the value is saved. Tell the human this exact fix.'
   );
 }
 
@@ -400,6 +416,7 @@ async function notifyRequestingSession(
   projectId: string,
   actorUserId: string | null,
   saved: string[],
+  reach: SessionWithheldSecrets | null,
 ): Promise<void> {
   try {
     const [session] = await db
@@ -423,7 +440,7 @@ async function notifyRequestingSession(
       accountId: session.accountId,
       sessionId,
       actorUserId,
-      text: secretSubmittedPrompt(saved),
+      text: secretSubmittedPrompt(saved, reach),
     });
     drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
     console.info('[setup-links] secret submitted, session notified', { sessionId, saved });
