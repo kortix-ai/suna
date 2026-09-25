@@ -40,6 +40,7 @@
  */
 
 import { IMPORT_PATH_PATTERN } from './imports';
+import { AGENT_FILE_PATTERN } from './layout';
 import {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
@@ -185,7 +186,7 @@ function permissionConfigSchema(): JsonSchemaFragment {
   };
 }
 
-/** An agent's native `.kortix/opencode/agents/<name>.md` frontmatter — full
+/** An agent's own `.md` frontmatter (`agents/<name>.md`) — full
  *  OpenCode `AgentConfig` parity (mirrors `validateAgentMdFrontmatter`). Not
  *  part of the manifest schema's own tree (frontmatter lives in a sibling
  *  file the manifest never embeds) — published as a `$defs` entry on the v2
@@ -196,7 +197,7 @@ function agentMdFrontmatterSchema(): JsonSchemaFragment {
   return {
     type: 'object',
     description:
-      "OpenCode behavior for one agent — lives in .kortix/opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
+      "Behavior for one agent — lives in its .md frontmatter (agents.<name>.file, default agents/<name>.md), never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
     properties: {
       description: { type: 'string' },
       model: { type: 'string' },
@@ -297,7 +298,11 @@ function opencodeSchema(): JsonSchemaFragment {
   return {
     type: 'object',
     properties: {
-      config_dir: relativePathSchema(),
+      config_dir: {
+        ...relativePathSchema(),
+        description:
+          'Directory with the OpenCode-only files (opencode.jsonc, plugins/, tools/). Defaults to harnesses/opencode, then the legacy .kortix/opencode.',
+      },
     },
     additionalProperties: true,
   };
@@ -597,6 +602,11 @@ function agentBlockV2Schema(): JsonSchemaFragment {
   return {
     type: 'object',
     properties: {
+      file: {
+        type: 'string',
+        pattern: AGENT_FILE_PATTERN,
+        description: "Repo-relative path of this agent's .md (frontmatter + prompt). Defaults to agents/<name>.md.",
+      },
       enabled: { type: 'boolean' },
       sandbox: SLUG_SCHEMA,
       connectors: grantSetSchema(),
@@ -738,10 +748,11 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
     title: 'Kortix manifest (kortix_version 2)',
     description:
       'kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, ' +
-      'GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/repository_access/enabled); every agent must ' +
-      'be declared, and OpenCode behavior (description/model/mode/temperature/permission/the ' +
-      'prompt itself) lives entirely in that agent’s own native ' +
-      '`.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields ' +
+      'GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/repository_access/enabled) plus `file`, ' +
+      'the path of the agent’s `.md`; every agent must ' +
+      'be declared, and agent behavior (description/model/mode/temperature/permission/the ' +
+      'prompt itself) lives entirely in that agent’s own `.md` frontmatter + body ' +
+      '(`agents.<name>.file`, default `agents/<name>.md`) — authoring any of those fields ' +
       'here is a hard error. `[[channels]]` is removed outright. See ' +
       'docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.',
     type: 'object',
