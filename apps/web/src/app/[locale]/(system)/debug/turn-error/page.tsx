@@ -1,17 +1,22 @@
 'use client';
 
 /**
- * /debug/turn-error — the failed-turn row, case by case, with a verdict.
+ * /debug/turn-error — the failed-turn checkpoint row, case by case, with a
+ * verdict.
  *
  * Each case is a synthetic stored error, in the shape OpenCode persists on an
  * assistant message. The page runs it through the same SDK calls the
  * transcript uses (`getTurnError`, `getTurnErrorDetails`,
- * `getTurnErrorRawText`), checks the result against the expected sentence, and
- * renders the real `TurnErrorDisplay` beneath it. No network, no session.
- * Theme: the /debug toggle, or press `D`.
+ * `getTurnErrorRawText`), asks the banner which row that renders
+ * (`describeTurnErrorRow`), checks both against the expectation, and renders
+ * the real `TurnErrorDisplay` beneath. No network, no session. Click a row to
+ * open it, or use "Open all rows". Theme: the /debug toggle, or press `D`.
  */
 
-import { TurnErrorDisplay } from '@/features/session/session-error-banner';
+import { useState } from 'react';
+
+import { Button } from '@/components/ui/button';
+import { describeTurnErrorRow, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { cn } from '@/lib/utils';
 import {
   getTurnError,
@@ -31,15 +36,16 @@ function streamChunk(content: string) {
   });
 }
 
+type RowExpectation = 'checkpoint, opens' | 'checkpoint, no caret' | 'billing card';
+
 interface DebugCase {
   title: string;
   /** The value stored as `AssistantMessage.error`. */
   error: unknown;
   /** The sentence the row must show. */
   sentence: string;
-  /** Whether the SDK must return raw text for the Details section. The
-   *  billing cards never render it; the generic row does. */
-  hasRaw: boolean;
+  /** Which row renders, and whether it opens. */
+  row: RowExpectation;
 }
 
 const CASES: DebugCase[] = [
@@ -54,7 +60,7 @@ const CASES: DebugCase[] = [
       },
     },
     sentence: 'The response from glm-5.3-flash could not be read.',
-    hasRaw: true,
+    row: 'checkpoint, opens',
   },
   {
     title: 'Stream parse failure that names no model',
@@ -67,10 +73,10 @@ const CASES: DebugCase[] = [
       },
     },
     sentence: 'The model response could not be read.',
-    hasRaw: true,
+    row: 'checkpoint, opens',
   },
   {
-    title: 'Gateway error behind an HTTP status',
+    title: 'Gateway error with a suggestion (suggestion stays visible)',
     error: {
       name: 'APIError',
       data: {
@@ -87,7 +93,44 @@ const CASES: DebugCase[] = [
       },
     },
     sentence: 'No upstream configured for model "openai/gpt-4.1"',
-    hasRaw: true,
+    row: 'checkpoint, opens',
+  },
+  {
+    title: 'Every gateway attempt failed (attempt chain inside)',
+    error: {
+      name: 'UnknownError',
+      data: {
+        message: JSON.stringify({
+          message: 'All upstream candidates failed',
+          code: 'upstream_error',
+          provider: 'openrouter',
+          request_id: 'req_debug_0002',
+          attempt_failures: [
+            {
+              attempt: 1,
+              provider: 'openai-codex',
+              route_model: 'codex/gpt-5.6-sol',
+              resolved_model: 'gpt-5.6-sol',
+              stage: 'stream_error',
+              status: 400,
+              code: 'context_length_exceeded',
+              message: 'Your input exceeds the context window of this model.',
+            },
+            {
+              attempt: 2,
+              provider: 'openrouter',
+              route_model: 'glm-5.3-flash',
+              resolved_model: 'z-ai/glm-5.3-flash',
+              stage: 'stream_probe',
+              code: 'stream_probe_timeout',
+              message: 'No bytes within 60 seconds.',
+            },
+          ],
+        }),
+      },
+    },
+    sentence: 'All upstream candidates failed',
+    row: 'checkpoint, opens',
   },
   {
     title: 'Provider body serialized into the message',
@@ -96,13 +139,13 @@ const CASES: DebugCase[] = [
       data: { message: '{"message":"Provided authentication token is expired.","code":401}' },
     },
     sentence: 'Provided authentication token is expired.',
-    hasRaw: true,
+    row: 'checkpoint, opens',
   },
   {
-    title: 'Plain sentence (nothing to fold)',
+    title: 'Plain sentence (nothing to open)',
     error: { name: 'UnknownError', data: { message: 'Connection reset by peer' } },
     sentence: 'Connection reset by peer',
-    hasRaw: false,
+    row: 'checkpoint, no caret',
   },
   {
     title: 'Usage limit (keeps the boxed upgrade card)',
@@ -111,7 +154,7 @@ const CASES: DebugCase[] = [
       data: { message: '{"message":"The usage limit has been reached","code":429}' },
     },
     sentence: 'The usage limit has been reached',
-    hasRaw: true,
+    row: 'billing card',
   },
 ];
 
@@ -122,18 +165,23 @@ function turnWithError(error: unknown): TurnLike {
   } as unknown as TurnLike;
 }
 
+function rowLabel({
+  kind,
+  expandable,
+}: ReturnType<typeof describeTurnErrorRow>): RowExpectation {
+  if (kind === 'billing-card') return 'billing card';
+  return expandable ? 'checkpoint, opens' : 'checkpoint, no caret';
+}
+
 function evaluate(debugCase: DebugCase) {
   const turn = turnWithError(debugCase.error);
   const text = getTurnError(turn);
   const details = getTurnErrorDetails(turn);
   const raw = getTurnErrorRawText(turn);
+  const row = text ? rowLabel(describeTurnErrorRow({ text, gateway: details, raw })) : undefined;
   const checks = [
     { label: 'Sentence', pass: text === debugCase.sentence, got: text ?? '(none)' },
-    {
-      label: 'Raw text',
-      pass: Boolean(raw) === debugCase.hasRaw,
-      got: raw ? 'present' : 'absent',
-    },
+    { label: 'Row', pass: row === debugCase.row, got: row ?? '(none)' },
   ];
   return { text, details, raw, checks, pass: checks.every((check) => check.pass) };
 }
@@ -155,6 +203,7 @@ function Verdict({ pass, className }: { pass: boolean; className?: string }) {
 }
 
 export default function DebugTurnErrorPage() {
+  const [openAll, setOpenAll] = useState(false);
   const results = CASES.map((debugCase) => ({ debugCase, ...evaluate(debugCase) }));
   const failed = results.filter((result) => !result.pass).length;
 
@@ -162,19 +211,24 @@ export default function DebugTurnErrorPage() {
     <main className="bg-background min-h-dvh">
       <div className="mx-auto w-full max-w-2xl space-y-5 px-4 py-10 pb-20">
         <header className="space-y-1.5">
-          <h1 className="text-foreground text-xl font-medium">Turn error row</h1>
+          <h1 className="text-foreground text-xl font-medium">Turn error checkpoint row</h1>
           <p className="text-muted-foreground text-xs">
             Each case runs a stored error through the transcript&apos;s SDK calls and renders the
-            real row.
+            real row. Click a row to open it.
           </p>
-          <div data-testid="turn-error-verdict">
-            {failed === 0 ? (
-              <Verdict pass className="text-sm" />
-            ) : (
-              <span className="text-kortix-red text-sm font-medium">
-                {failed} of {results.length} cases fail
-              </span>
-            )}
+          <div className="flex items-center justify-between gap-3">
+            <div data-testid="turn-error-verdict">
+              {failed === 0 ? (
+                <Verdict pass className="text-sm" />
+              ) : (
+                <span className="text-kortix-red text-sm font-medium">
+                  {failed} of {results.length} cases fail
+                </span>
+              )}
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setOpenAll((value) => !value)}>
+              {openAll ? 'Close all rows' : 'Open all rows'}
+            </Button>
           </div>
         </header>
 
@@ -205,7 +259,14 @@ export default function DebugTurnErrorPage() {
                 ))}
               </ul>
               <div className="border-border border-t pt-3">
-                <TurnErrorDisplay errorText={text} errorDetails={details} errorRaw={raw} />
+                {/* `key` remounts the row so "Open all rows" resets every disclosure. */}
+                <TurnErrorDisplay
+                  key={String(openAll)}
+                  errorText={text}
+                  errorDetails={details}
+                  errorRaw={raw}
+                  defaultDetailsOpen={openAll}
+                />
               </div>
             </li>
           ))}

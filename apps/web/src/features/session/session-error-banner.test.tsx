@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SessionRetryDisplay, TurnErrorDisplay } from './session-error-banner';
+import { SessionRetryDisplay, TurnErrorDisplay, describeTurnErrorRow } from './session-error-banner';
 
 describe('SessionRetryDisplay', () => {
   test('renders the gateway source, request id, and ordered candidate failures', () => {
@@ -61,6 +61,7 @@ describe('SessionRetryDisplay', () => {
     const html = renderToStaticMarkup(
       <TurnErrorDisplay
         errorText="All upstream candidates failed"
+        defaultDetailsOpen
         errorDetails={{
           provider: 'openrouter',
           code: 'upstream_error',
@@ -103,35 +104,50 @@ describe('TurnErrorDisplay routes a usage-limit sentence to the upgrade card', (
   });
 });
 
-// A failed turn is one quiet line in the transcript, not a boxed alert: the
-// SDK's sentence beside a red glyph, and the technical text folded beneath it.
-describe('TurnErrorDisplay generic failure row', () => {
+// A failed turn is a checkpoint row in the activity lane, like "Thought for
+// 1s": an outline red glyph, "Stopped", the SDK's sentence, and a caret that
+// opens the technical detail through the same disclosure the activity rows use.
+describe('TurnErrorDisplay checkpoint row', () => {
+  const sentence = 'The response from glm-5.3-flash could not be read.';
   const raw =
     'JSON parsing failed: Text: {"object":"chat.completion.chunk","model":"glm-5.3-flash"}. ' +
     'Error message: JSON Parse error';
 
-  test('renders the sentence without the boxed item chrome', () => {
-    const html = renderToStaticMarkup(
-      <TurnErrorDisplay errorText="The response from glm-5.3-flash could not be read." />,
-    );
+  test('closed: Stopped and the sentence, no box, detail not rendered', () => {
+    const html = renderToStaticMarkup(<TurnErrorDisplay errorText={sentence} errorRaw={raw} />);
     expect(html).toContain('role="alert"');
-    expect(html).toContain('The response from glm-5.3-flash could not be read.');
+    expect(html).toContain('>Stopped<');
+    expect(html).toContain(sentence);
     expect(html).toContain('text-kortix-red');
+    expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain('data-slot="item"');
-    expect(html).not.toContain('bg-kortix-red/15');
-    expect(html).not.toContain('<details');
+    expect(html).not.toContain('chat.completion.chunk');
   });
 
-  test('folds the raw error text behind a closed Details disclosure', () => {
+  test('open: the raw text renders inside the disclosure', () => {
+    const html = renderToStaticMarkup(
+      <TurnErrorDisplay errorText={sentence} errorRaw={raw} defaultDetailsOpen />,
+    );
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('chat.completion.chunk');
+  });
+
+  test('nothing to open: no caret button', () => {
+    const html = renderToStaticMarkup(<TurnErrorDisplay errorText={sentence} />);
+    expect(html).toContain(sentence);
+    expect(html).not.toContain('aria-expanded');
+  });
+
+  test('the gateway suggestion stays visible while the row is closed', () => {
     const html = renderToStaticMarkup(
       <TurnErrorDisplay
-        errorText="The response from glm-5.3-flash could not be read."
+        errorText="No upstream configured"
+        errorDetails={{ suggestion: 'Add an openai API key in project settings, then retry.' }}
         errorRaw={raw}
       />,
     );
-    expect(html).toContain('Details</summary>');
-    expect(html).not.toContain('<details open');
-    expect(html).toContain('chat.completion.chunk');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('Add an openai API key in project settings, then retry.');
   });
 
   test('billing cards keep their boxed remedy row', () => {
@@ -140,5 +156,28 @@ describe('TurnErrorDisplay generic failure row', () => {
     );
     expect(html).toContain('data-slot="item"');
     expect(html).not.toContain('chat.completion.chunk');
+  });
+});
+
+describe('describeTurnErrorRow', () => {
+  test('a billing sentence routes to the boxed card', () => {
+    expect(describeTurnErrorRow({ text: 'The usage limit has been reached' })).toEqual({
+      kind: 'billing-card',
+      expandable: false,
+    });
+  });
+
+  test('a checkpoint opens only when it has detail to show', () => {
+    expect(describeTurnErrorRow({ text: 'Connection reset by peer' })).toEqual({
+      kind: 'checkpoint',
+      expandable: false,
+    });
+    expect(describeTurnErrorRow({ text: 'Connection reset by peer', raw: 'ECONNRESET' })).toEqual({
+      kind: 'checkpoint',
+      expandable: true,
+    });
+    expect(
+      describeTurnErrorRow({ text: 'Upstream failed', gateway: { requestId: 'req_debug' } }),
+    ).toEqual({ kind: 'checkpoint', expandable: true });
   });
 });
