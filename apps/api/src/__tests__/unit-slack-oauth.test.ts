@@ -28,6 +28,7 @@ mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
   config: {
     SLACK_SIGNING_SECRET: 'state-secret',
+    API_KEY_SECRET: 'unit-test-api-key-secret',
     SLACK_CLIENT_ID: 'client-id',
     SLACK_CLIENT_SECRET: 'client-secret',
     SLACK_REDIRECT_URI: 'https://dev-api.kortix.com/v1/webhooks/slack/oauth/callback',

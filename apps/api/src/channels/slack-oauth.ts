@@ -1,6 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
-import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../shared/db';
@@ -10,47 +9,24 @@ import { saveSlackOauthInstall } from './install-store';
 import { linkSlackIdentity } from './slack/identity';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { makeOpenApiApp, errors } from '../openapi';
+import { signChannelToken, verifyChannelToken } from './core/signed-token';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 interface StatePayload {
   projectId: string;
   userId: string;
-  exp: number;
-  nonce: string;
 }
 
-function stateSigningKey(): string {
-  // `SLACK_SIGNING_SECRET` defaults to '' (config.ts optStr), so a `??`
-  // fallback never fired and the key could be empty. Refuse instead.
-  if (!config.SLACK_SIGNING_SECRET) {
-    throw new Error('SLACK_SIGNING_SECRET must be configured for Slack OAuth state signing');
-  }
-  return config.SLACK_SIGNING_SECRET;
-}
-
-function signState(payload: Omit<StatePayload, 'nonce'>): string {
-  const full: StatePayload = { ...payload, nonce: randomBytes(8).toString('hex') };
-  const body = Buffer.from(JSON.stringify(full)).toString('base64url');
-  const mac = createHmac('sha256', stateSigningKey()).update(body).digest('base64url');
-  return `${body}.${mac}`;
+function signState(payload: StatePayload): string {
+  return signChannelToken('slack-oauth', { ...payload }, STATE_TTL_MS);
 }
 
 function verifyState(token: string): StatePayload | null {
-  const [body, mac] = token.split('.');
-  if (!body || !mac) return null;
-  const expected = createHmac('sha256', stateSigningKey()).update(body).digest('base64url');
-  const a = Buffer.from(mac);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-  try {
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as StatePayload;
-    if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
-    if (typeof payload.projectId !== 'string' || typeof payload.userId !== 'string') return null;
-    return payload;
-  } catch {
-    return null;
-  }
+  const payload = verifyChannelToken('slack-oauth', token);
+  if (!payload) return null;
+  if (typeof payload.projectId !== 'string' || typeof payload.userId !== 'string') return null;
+  return { projectId: payload.projectId, userId: payload.userId };
 }
 
 export function buildSlackInstallUrl(projectId: string, userId: string): string {
@@ -58,7 +34,7 @@ export function buildSlackInstallUrl(projectId: string, userId: string): string 
   if (!mode.available || !mode.clientId) {
     throw new Error('Slack OAuth is not configured on this server.');
   }
-  const state = signState({ projectId, userId, exp: Date.now() + STATE_TTL_MS });
+  const state = signState({ projectId, userId });
   const params = new URLSearchParams({
     client_id: mode.clientId,
     scope: mode.scopes,

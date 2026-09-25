@@ -1,4 +1,3 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { makeOpenApiApp } from '../openapi';
 import { reconcileChannelConnectors } from '../connectors/sync';
@@ -10,6 +9,7 @@ import {
   setTeamsPublishState,
 } from './install-store';
 import { publishTeamsAppToCatalog } from './teams/catalog';
+import { signChannelToken, verifyChannelToken } from './core/signed-token';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -92,12 +92,6 @@ const AUTHORITY = 'https://login.microsoftonline.com/organizations/oauth2/v2.0';
 interface OauthState {
   projectId: string;
   baseUrl: string;
-  exp: number;
-  nonce: string;
-}
-
-function stateKey(): string {
-  return config.MICROSOFT_APP_PASSWORD ?? 'kortix-dev-teams-oauth-key';
 }
 
 function callbackRedirectUri(baseUrl: string): string {
@@ -105,28 +99,14 @@ function callbackRedirectUri(baseUrl: string): string {
 }
 
 function signState(projectId: string, baseUrl: string): string {
-  const full: OauthState = { projectId, baseUrl, exp: Date.now() + STATE_TTL_MS, nonce: randomBytes(8).toString('hex') };
-  const body = Buffer.from(JSON.stringify(full)).toString('base64url');
-  const mac = createHmac('sha256', stateKey()).update(body).digest('base64url');
-  return `${body}.${mac}`;
+  return signChannelToken('teams-oauth', { projectId, baseUrl }, STATE_TTL_MS);
 }
 
 function verifyState(token: string | undefined): OauthState | null {
-  if (!token) return null;
-  const [body, mac] = token.split('.');
-  if (!body || !mac) return null;
-  const expected = createHmac('sha256', stateKey()).update(body).digest('base64url');
-  const a = Buffer.from(mac);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-  try {
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as OauthState;
-    if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
-    if (typeof payload.projectId !== 'string' || typeof payload.baseUrl !== 'string') return null;
-    return payload;
-  } catch {
-    return null;
-  }
+  const payload = verifyChannelToken('teams-oauth', token);
+  if (!payload) return null;
+  if (typeof payload.projectId !== 'string' || typeof payload.baseUrl !== 'string') return null;
+  return { projectId: payload.projectId, baseUrl: payload.baseUrl };
 }
 
 function tenantFromJwt(token: string): string | null {

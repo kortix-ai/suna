@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { createHmac } from 'node:crypto';
 
 /**
  * The one-click Teams install callback. On dev (2026-09-17) it redirected to a
@@ -31,6 +32,7 @@ mock.module('../config', () => ({
   config: {
     MICROSOFT_APP_ID: '62b4470a-e8e6-4e13-a73f-363de2209dfc',
     MICROSOFT_APP_PASSWORD: 'app-secret',
+    API_KEY_SECRET: 'unit-test-api-key-secret',
     FRONTEND_URL: 'https://dev.kortix.com',
     TEAMS_APP_NAME: 'Kortix Dev',
   },
@@ -228,5 +230,39 @@ describe('Teams one-click install callback', () => {
   test('tampered or expired state → home with ?teams_error=expired', async () => {
     const res = await teamsOauthApp.request(`/callback?code=c8&state=${state()}x`);
     expect(location(res)).toBe('https://dev.kortix.com/?teams_error=expired');
+  });
+});
+
+/**
+ * `MICROSOFT_APP_PASSWORD` defaults to '' (config.ts optStr), so a `??`
+ * fallback on it never fired and the state could be MACed with an empty key,
+ * which anyone can compute. The state key now derives from API_KEY_SECRET.
+ */
+describe('Teams install state key', () => {
+  test('a state MACed with an empty key is refused while MICROSOFT_APP_PASSWORD is empty, and nothing is saved', async () => {
+    const { config } = (await import('../config')) as { config: Record<string, unknown> };
+    const original = config.MICROSOFT_APP_PASSWORD;
+    config.MICROSOFT_APP_PASSWORD = '';
+    try {
+      const body = Buffer.from(
+        JSON.stringify({ projectId: PROJECT_ID, baseUrl: BASE_URL, exp: Date.now() + 60_000, nonce: 'n' }),
+      ).toString('base64url');
+      const forged = `${body}.${createHmac('sha256', '').update(body).digest('base64url')}`;
+      const res = await teamsOauthApp.request(`/callback?code=c9&state=${forged}`);
+      expect(location(res)).toBe('https://dev.kortix.com/?teams_error=expired');
+      expect(saved).toHaveLength(0);
+    } finally {
+      config.MICROSOFT_APP_PASSWORD = original;
+    }
+  });
+
+  test('a state MACed with the app password is refused', async () => {
+    const body = Buffer.from(
+      JSON.stringify({ projectId: PROJECT_ID, baseUrl: BASE_URL, exp: Date.now() + 60_000, nonce: 'n' }),
+    ).toString('base64url');
+    const forged = `${body}.${createHmac('sha256', 'app-secret').update(body).digest('base64url')}`;
+    const res = await teamsOauthApp.request(`/callback?code=c10&state=${forged}`);
+    expect(location(res)).toBe('https://dev.kortix.com/?teams_error=expired');
+    expect(saved).toHaveLength(0);
   });
 });
