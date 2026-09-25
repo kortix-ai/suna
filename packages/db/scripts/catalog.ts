@@ -14,7 +14,7 @@ import pg from 'pg';
  * transaction-mode pooler cannot move a read to a session without the setting.
  */
 
-export const LEDGER_TABLE = 'kortix_migrations.pgmigrations';
+const LEDGER_TABLE = 'kortix_migrations.pgmigrations';
 
 export type RelationKind = 'table' | 'view';
 
@@ -184,7 +184,7 @@ export function catalogFromRow(row: CatalogRow | undefined): Catalog {
   return catalog;
 }
 
-async function readCatalog(client: pg.Client, schema = 'kortix'): Promise<Catalog> {
+async function readCatalog(client: pg.Client, schema: string): Promise<Catalog> {
   const { rows } = await client.query<CatalogRow>(CATALOG_SQL, [schema]);
   return catalogFromRow(rows[0]);
 }

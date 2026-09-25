@@ -78,14 +78,22 @@ export function definitionKey(def: string): string {
 }
 
 /** The base tables (relkind r or p): the relations whose objects the migrations guarantee. */
-export function tablesOf(catalog: Catalog): Set<string> {
+function tablesOf(catalog: Catalog): Set<string> {
   return new Set([...catalog.relations].filter(([, kind]) => kind === 'table').map(([name]) => name));
 }
 
-/** The objects this gate compares, with definitions normalized once. */
+/**
+ * The objects this gate compares for one database. `main` derives it once per
+ * database with `comparedObjects`; every comparison takes it, never a raw
+ * `Catalog`.
+ */
 export interface ComparedObjects {
   /** Base tables (relkind r or p). */
   tables: Set<string>;
+  /** `relation.column` for every relation, views included (the catalog's, unchanged). */
+  columns: Set<string>;
+  /** `enum_type.label` (the catalog's, unchanged). */
+  enumValues: Set<string>;
   /** Indexes on those tables. `definition` is `normalizeIndexDef` of the catalog's. */
   indexes: Map<string, CatalogIndex>;
   /** Every constraint. `definition` is `normalizeConstraintDef` of the catalog's. */
@@ -93,9 +101,10 @@ export interface ComparedObjects {
 }
 
 /**
- * Pure: the base tables of `catalog`, the indexes on them, and every
- * constraint, with each definition normalized. Indexes on materialized views
- * are left out: the migrations guarantee only table objects.
+ * Pure: the base tables of `catalog`, its columns and enum values, the indexes
+ * on those tables, and every constraint, with each index and constraint
+ * definition normalized. Indexes on materialized views are left out: the
+ * migrations guarantee only table objects.
  */
 export function comparedObjects(catalog: Catalog): ComparedObjects {
   const tables = tablesOf(catalog);
@@ -107,29 +116,27 @@ export function comparedObjects(catalog: Catalog): ComparedObjects {
   for (const [name, c] of catalog.constraints) {
     constraints.set(name, { ...c, definition: normalizeConstraintDef(c.definition) });
   }
-  return { tables, indexes, constraints };
+  return { tables, columns: catalog.columns, enumValues: catalog.enumValues, indexes, constraints };
 }
 
 /** Pure: the count line printed for one database. */
-export function countsLine(catalog: Catalog): string {
-  const { tables, indexes, constraints } = comparedObjects(catalog);
+export function countsLine({ tables, columns, enumValues, indexes, constraints }: ComparedObjects): string {
   return (
-    `${tables.size} tables, ${catalog.columns.size} columns, ${catalog.enumValues.size} enum values, ` +
+    `${tables.size} tables, ${columns.size} columns, ${enumValues.size} enum values, ` +
     `${indexes.size} indexes, ${constraints.size} constraints.`
   );
 }
 
 /** Pure: tables/columns/enum values in `canonical` that are absent from `live`. */
-export function diffMissing(canonical: Catalog, live: Catalog): {
+export function diffMissing(canonical: ComparedObjects, live: ComparedObjects): {
   missingTables: string[];
   missingColumns: string[];
   missingEnumValues: string[];
 } {
-  const liveTables = tablesOf(live);
-  const missingTables = [...tablesOf(canonical)].filter((t) => !liveTables.has(t)).sort();
+  const missingTables = [...canonical.tables].filter((t) => !live.tables.has(t)).sort();
   // A column on a table that is itself missing is reported via the table, not twice.
   const missingColumns = [...canonical.columns]
-    .filter((c) => !live.columns.has(c) && liveTables.has(c.split('.')[0]!))
+    .filter((c) => !live.columns.has(c) && live.tables.has(c.split('.')[0]!))
     .sort();
   const missingEnumValues = [...canonical.enumValues].filter((v) => !live.enumValues.has(v)).sort();
   return { missingTables, missingColumns, missingEnumValues };
@@ -159,8 +166,8 @@ export interface StructureDrift {
  * both sides (a missing table is reported by diffMissing, not here).
  */
 export function diffStructure(
-  canonicalCatalog: Catalog,
-  liveCatalog: Catalog,
+  canonical: ComparedObjects,
+  live: ComparedObjects,
   waivers: LiveSchemaWaivers = LIVE_SCHEMA_WAIVERS,
 ): StructureDrift {
   const drift: StructureDrift = {
@@ -173,8 +180,6 @@ export function diffStructure(
     extraIndexes: [],
     extraConstraints: [],
   };
-  const canonical = comparedObjects(canonicalCatalog);
-  const live = comparedObjects(liveCatalog);
   const shared = (table: string) => canonical.tables.has(table) && live.tables.has(table);
 
   const liveIndexDefs = new Set([...live.indexes.values()].map((i) => definitionKey(i.definition)));
@@ -263,11 +268,15 @@ async function main() {
   const { canonical, live } = resolveUrls(process.argv.slice(2));
   const [canon, target] = await Promise.all([readDatabase(canonical, SCHEMA), readDatabase(live, SCHEMA)]);
 
-  const presence = diffMissing(canon.catalog, target.catalog);
-  const structure = diffStructure(canon.catalog, target.catalog);
+  // Each database's objects are derived once; every comparison below reads these.
+  const canonObjects = comparedObjects(canon.catalog);
+  const targetObjects = comparedObjects(target.catalog);
+
+  const presence = diffMissing(canonObjects, targetObjects);
+  const structure = diffStructure(canonObjects, targetObjects);
   const pending = pendingMigrations(canon.ledger, target.ledger);
 
-  console.log(`Canonical: ${countsLine(canon.catalog)}\nLive:      ${countsLine(target.catalog)}`);
+  console.log(`Canonical: ${countsLine(canonObjects)}\nLive:      ${countsLine(targetObjects)}`);
   section(
     'NOTE — migrations applied on canonical but not on live; objects they create are reported as missing until they run',
     pending,

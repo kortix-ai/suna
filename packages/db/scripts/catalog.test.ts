@@ -84,8 +84,15 @@ describe('catalog.ts is the only catalog and ledger reader of the schema gates',
   });
 
   test('catalog.ts exports one database entry point and one test seam', () => {
-    const exported = [...source('catalog.ts').matchAll(/^export (?:async )?function (\w+)/gm)].map((m) => m[1]).sort();
+    // Every exported value: functions, consts, lets, vars and classes. Types and interfaces are not values.
+    const exported = [
+      ...source('catalog.ts').matchAll(/^export (?:async )?(?:function\*?|const|let|var|class) (\w+)/gm),
+    ]
+      .map((m) => m[1])
+      .sort();
     expect(exported).toEqual(['assertReadOnlySetting', 'catalogFromRow', 'readDatabase', 'withReadOnly']);
+    // No re-export or export list can add a value the pattern above misses.
+    expect(source('catalog.ts')).not.toMatch(/^export (?:\{|\*|default\b)/m);
   });
 
   test('BEGIN READ ONLY is issued only by connectReadOnly', () => {

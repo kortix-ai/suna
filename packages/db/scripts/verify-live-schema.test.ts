@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { type Catalog, type CatalogRow, catalogFromRow } from './catalog';
+import { type CatalogRow, catalogFromRow } from './catalog';
 import {
+  type ComparedObjects,
   comparedObjects,
   countsLine,
   definitionKey,
@@ -11,9 +12,9 @@ import {
 } from './verify-live-schema';
 import { LIVE_SCHEMA_WAIVERS, type LiveSchemaWaivers } from './verify-live-schema-waivers';
 
-/** A synthetic catalog: each `table.column` puts the column on its table. */
-const objsWithEnums = (tables: string[], columns: string[], enumValues: string[]): Catalog =>
-  catalogFromRow({
+/** A synthetic database's compared objects: each `table.column` puts the column on its table. */
+const objsWithEnums = (tables: string[], columns: string[], enumValues: string[]): ComparedObjects =>
+  comparedObjects(catalogFromRow({
     relations: tables.map((name) => ({
       name,
       kind: 'table',
@@ -22,8 +23,8 @@ const objsWithEnums = (tables: string[], columns: string[], enumValues: string[]
     enums: enumValues.map((value) => ({ type: value.split('.')[0]!, label: value.split('.')[1]! })),
     indexes: [],
     constraints: [],
-  });
-const objs = (tables: string[], columns: string[]): Catalog => objsWithEnums(tables, columns, []);
+  }));
+const objs = (tables: string[], columns: string[]): ComparedObjects => objsWithEnums(tables, columns, []);
 
 describe('diffMissing (presence: canonical ⊆ live)', () => {
   test('identical schemas → nothing missing', () => {
@@ -103,11 +104,14 @@ const index = (name: string, tbl: string, def: string, valid = true): Part => (r
   });
 const constraint = (name: string, tbl: string, type: string, def: string, validated = true): Part => (row) =>
   row.constraints.push({ name, table: tbl, type, definition: def, validated });
-/** Synthetic catalog rows, parsed the way catalog.ts parses the real query's row. */
-const catalogOf = (parts: Part[]): Catalog => {
+/**
+ * Synthetic catalog rows, parsed the way catalog.ts parses the real query's
+ * row and derived the way `main` derives each database: one `comparedObjects`.
+ */
+const catalogOf = (parts: Part[]): ComparedObjects => {
   const row: CatalogRow = { relations: [], enums: [], indexes: [], constraints: [] };
   for (const part of parts) part(row);
-  return catalogFromRow(row);
+  return comparedObjects(catalogFromRow(row));
 };
 const NO_WAIVERS: LiveSchemaWaivers = { indexes: {}, constraints: {} };
 
@@ -196,16 +200,21 @@ describe('diffStructure (indexes and constraints, canonical ⊆ live)', () => {
     expect(countsLine(onTable)).toBe('2 tables, 0 columns, 0 enum values, 2 indexes, 0 constraints.');
   });
 
-  test('comparedObjects normalizes every index and constraint definition once', () => {
-    const compared = comparedObjects(
-      catalogOf([
-        table('t'),
-        index('t_a_idx', 't', 'CREATE INDEX t_a_idx ON ONLY kortix.t USING btree (a)'),
-        constraint('t_fk', 't', 'f', 'FOREIGN KEY (a) REFERENCES kortix.u(id) NOT VALID', false),
-      ]),
-    );
+  test('comparedObjects normalizes index and constraint definitions', () => {
+    const compared = catalogOf([
+      table('t'),
+      index('t_a_idx', 't', 'CREATE INDEX t_a_idx ON ONLY kortix.t USING btree (a)'),
+      constraint('t_fk', 't', 'f', 'FOREIGN KEY (a) REFERENCES kortix.u(id) NOT VALID', false),
+    ]);
     expect(compared.indexes.get('t_a_idx')?.definition).toBe('CREATE INDEX ON t USING btree (a)');
     expect(compared.constraints.get('t_fk')?.definition).toBe('FOREIGN KEY (a) REFERENCES u(id)');
+  });
+
+  test('comparedObjects carries the columns and enum values of the catalog unchanged', () => {
+    const compared = objsWithEnums(['t'], ['t.a', 't.b'], ['state.on']);
+    expect(compared.tables).toEqual(new Set(['t']));
+    expect(compared.columns).toEqual(new Set(['t.a', 't.b']));
+    expect(compared.enumValues).toEqual(new Set(['state.on']));
   });
 
   test('indexes on a table live lacks are left to the table check', () => {
