@@ -7,6 +7,7 @@ import { isSelfHostOperator } from '../../shared/platform-roles';
 import { managedGithubToken } from '../git-backends';
 import {
   GitHubPersonalAccountCreateUnsupportedError,
+  addRepositoryToInstallation,
   commitFile,
   createRepo,
   getFileSha,
@@ -370,6 +371,30 @@ projectsApp.openapi(
       },
       409,
     );
+  }
+
+  // An installation with `repository_selection: 'selected'` cannot see a
+  // repository created a second ago, and the starter commits below run on the
+  // installation token. Grant it access first, with the same user token that
+  // created the repository. `all` needs nothing.
+  if (createAuth.source === 'user_token' && githubAuth.installation.repositorySelection === 'selected') {
+    try {
+      await addRepositoryToInstallation({
+        installationId: githubAuth.installation.installationId,
+        repositoryId: repo.id,
+        auth: createAuth,
+      });
+    } catch (error) {
+      // The repository exists but Kortix cannot write to it, so there is no
+      // usable project to hand back. Say which step failed.
+      return c.json({
+        error:
+          `Created ${repo.full_name}, but could not give Kortix access to it: ` +
+          `${(error as Error).message || 'GitHub refused the request'}. ` +
+          'Grant the Kortix app access to that repository on GitHub, then import it.',
+        code: 'github_installation_repository_grant_failed',
+      }, 502);
+    }
   }
 
   const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(repo.full_name);

@@ -556,8 +556,16 @@ export async function createProject(input: ProjectInput) {
   return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
 
+/**
+ * `showErrors: false`: `/new` renders this failure inline, with its own wording
+ * and its own retry. The global handler toasting it as well produced two
+ * different explanations of one failure — prod showed GitHub's raw 403 plus
+ * "Our team has been notified" over an inline message that said something else.
+ */
 export async function createProjectRepo(input: CreateProjectRepoInput) {
-  return unwrap(await backendApi.post<KortixProject>('/projects/create-repo', input));
+  return unwrap(
+    await backendApi.post<KortixProject>('/projects/create-repo', input, { showErrors: false }),
+  );
 }
 
 /**

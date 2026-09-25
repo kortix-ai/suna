@@ -34,6 +34,8 @@ function fakeRepo(owner: string, name: string) {
   };
 }
 
+let repositorySelection = 'all';
+
 function fakeInstallation(ownerLogin: string, ownerType: 'User' | 'Organization') {
   const now = new Date();
   return {
@@ -42,7 +44,7 @@ function fakeInstallation(ownerLogin: string, ownerType: 'User' | 'Organization'
     installationId: '777001',
     ownerLogin,
     ownerType,
-    repositorySelection: 'all',
+    repositorySelection,
     permissions: {},
     metadata: {},
     createdAt: now,
@@ -101,6 +103,9 @@ const realGithub = await import('../github');
 // (`../github.test.ts` pins that). Here the mock reproduces the refusal so this
 // file tests what the ROUTE does: which credential it hands over, and what it
 // answers when there is none.
+const mockAddRepositoryToInstallation = mock(
+  async (_input: { installationId: string; repositoryId: number; auth: { token: string; source?: string } }) => {},
+);
 const mockCreateRepo = mock(async (input: { name: string; auth?: { source?: string } }) => {
   if (currentOwner.type === 'User' && input.auth?.source !== 'user_token') {
     throw new realGithub.GitHubPersonalAccountCreateUnsupportedError(currentOwner.login);
@@ -110,6 +115,7 @@ const mockCreateRepo = mock(async (input: { name: string; auth?: { source?: stri
 mock.module('../github', () => ({
   ...realGithub,
   createRepo: mockCreateRepo,
+  addRepositoryToInstallation: mockAddRepositoryToInstallation,
   commitFile: async () => {},
   getFileSha: async () => null,
 }));
@@ -153,9 +159,53 @@ function postCreateRepo() {
 }
 
 beforeEach(() => {
+  repositorySelection = 'all';
+  mockAddRepositoryToInstallation.mockClear();
   storedUserToken = null;
   mockCreateRepo.mockClear();
   mockRegisterGitHub.mockClear();
+});
+
+describe('POST /create-repo — a selected-repositories installation', () => {
+  test('the new repository is granted to the installation before the starter lands', async () => {
+    currentOwner = { login: 'octo-person', type: 'User' };
+    repositorySelection = 'selected';
+    storedUserToken = { token: 'ghu_live', githubLogin: 'octo-person', expiresAt: null };
+
+    const res = await postCreateRepo();
+
+    expect(res.status).toBe(201);
+    expect(mockAddRepositoryToInstallation).toHaveBeenCalledTimes(1);
+    const granted = mockAddRepositoryToInstallation.mock.calls[0]?.[0];
+    expect(granted?.installationId).toBe('777001');
+    // The user token, not the installation token: only a user may grant.
+    expect(granted?.auth?.source).toBe('user_token');
+  });
+
+  test('an `all` installation already sees it, so nothing is granted', async () => {
+    currentOwner = { login: 'octo-person', type: 'User' };
+    storedUserToken = { token: 'ghu_live', githubLogin: 'octo-person', expiresAt: null };
+
+    expect((await postCreateRepo()).status).toBe(201);
+    expect(mockAddRepositoryToInstallation).not.toHaveBeenCalled();
+  });
+
+  test('a refused grant names the step instead of handing back a project Kortix cannot write to', async () => {
+    currentOwner = { login: 'octo-person', type: 'User' };
+    repositorySelection = 'selected';
+    storedUserToken = { token: 'ghu_live', githubLogin: 'octo-person', expiresAt: null };
+    mockAddRepositoryToInstallation.mockImplementationOnce(async () => {
+      throw new Error('GitHub /user/installations/777001/repositories/1 failed (404): Not Found');
+    });
+
+    const res = await postCreateRepo();
+    const body = (await res.json()) as { code?: string; error?: string };
+
+    expect(res.status).toBe(502);
+    expect(body.code).toBe('github_installation_repository_grant_failed');
+    expect(body.error).toContain('octo-person/company');
+    expect(mockRegisterGitHub).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /create-repo — GitHub owner type', () => {

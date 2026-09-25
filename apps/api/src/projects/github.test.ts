@@ -3,7 +3,9 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   GitHubApiError,
   GitHubPersonalAccountCreateUnsupportedError,
+  addRepositoryToInstallation,
   createRepo,
+  deleteRepo,
   getRepositoryBranch,
   listOwnerRepositories,
   listRepositoryBranches,
@@ -264,5 +266,75 @@ describe('createRepo under a personal owner', () => {
 
     expect(repo.full_name).toBe('acme/company');
     expect(paths[0]).toContain('/orgs/acme/repos');
+  });
+});
+
+/**
+ * An installation with `repository_selection: 'selected'` sees only the
+ * repositories it was granted. A repository created a second ago is not one of
+ * them, so the starter commits — which run on the installation token — would
+ * 404 against a repository that plainly exists.
+ *
+ * `PUT /user/installations/{installation_id}/repositories/{repository_id}` adds
+ * it. That endpoint takes a USER access token, which is the same credential the
+ * personal create already used.
+ */
+describe('addRepositoryToInstallation', () => {
+  test('grants the installation access to one repository, by id', async () => {
+    const calls: Array<{ url: string; method: string; auth: string | null }> = [];
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      calls.push({
+        url: String(input instanceof Request ? input.url : input),
+        method: init?.method ?? 'GET',
+        auth: headers.get('authorization'),
+      });
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+
+    await addRepositoryToInstallation({
+      installationId: '777001',
+      repositoryId: 4242,
+      auth: { token: 'ghu_live' },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toContain('/user/installations/777001/repositories/4242');
+    expect(calls[0]?.method).toBe('PUT');
+    expect(calls[0]?.auth).toBe('Bearer ghu_live');
+  });
+
+  test('a GitHub refusal is raised, never swallowed', async () => {
+    globalThis.fetch = (async (_input: string | URL | Request) =>
+      new Response(JSON.stringify({ message: 'Not Found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      })) as typeof fetch;
+
+    await expect(
+      addRepositoryToInstallation({
+        installationId: '777001',
+        repositoryId: 4242,
+        auth: { token: 'ghu_live' },
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+/**
+ * GitHub answers 204 with no body for a repository delete and for adding a
+ * repository to an installation. `res.json()` on an empty body throws
+ * `SyntaxError: Unexpected end of JSON input` after the call already
+ * succeeded, so the caller is told a delete failed that in fact happened —
+ * `deleteRepo` is the rollback path of a failed provision.
+ */
+describe('a 204 answer', () => {
+  test('deleteRepo resolves instead of throwing on the empty body', async () => {
+    globalThis.fetch = (async (_input: string | URL | Request) =>
+      new Response(null, { status: 204 })) as typeof fetch;
+
+    await expect(
+      deleteRepo({ owner: 'acme', repo: 'company', auth: { token: 't' } }),
+    ).resolves.toBeUndefined();
   });
 });

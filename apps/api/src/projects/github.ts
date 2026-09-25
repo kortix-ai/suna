@@ -638,7 +638,14 @@ async function ghFetch<T>(
       githubRetryAfterSeconds(res.status, res.headers, detail) ?? undefined,
     );
   }
-  return res.json() as Promise<T>;
+  // GitHub answers 204 with no body for several endpoints (repository delete,
+  // adding a repository to an installation). `res.json()` on an empty body
+  // throws `SyntaxError: Unexpected end of JSON input` AFTER the call has
+  // already succeeded, so the caller sees a failure that did not happen.
+  if (res.status === 204 || res.status === 205) return undefined as T;
+  const text = await res.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 async function ghFetchAllPages<T>(
@@ -1106,6 +1113,28 @@ export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
     method: 'POST',
     body: JSON.stringify(body),
   }, input.auth);
+}
+
+/**
+ * Give an installation access to one repository.
+ *
+ * An installation with `repository_selection: 'selected'` sees only what it was
+ * granted, and a repository created a moment ago is not on that list — so the
+ * starter commits and the runtime push token, which both run on the
+ * installation token, would fail against a repository that exists. The endpoint
+ * takes a USER access token (it is on GitHub's user-token list), which is the
+ * same credential a personal create already holds.
+ */
+export async function addRepositoryToInstallation(opts: {
+  installationId: string;
+  repositoryId: number;
+  auth: Pick<GitHubAuthContext, 'token'>;
+}): Promise<void> {
+  await ghFetch<unknown>(
+    `/user/installations/${encodeURIComponent(opts.installationId)}/repositories/${opts.repositoryId}`,
+    { method: 'PUT' },
+    opts.auth,
+  );
 }
 
 /** Delete a repo. Best-effort teardown for managed-repo rollback / removal. */
