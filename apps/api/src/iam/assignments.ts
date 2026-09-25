@@ -21,7 +21,6 @@ import {
   accountGroups,
   accountMembers,
   accountMemberships,
-  connectorConnections,
   iamRoleActions,
   iamRoles,
   projects,
@@ -703,18 +702,17 @@ async function assertObjectAssignable(
   object: { type: ObjectType; id: string },
 ): Promise<void> {
   if (object.type !== 'connection') return;
-  const [row] = await db
-    .select({ id: connectorConnections.connectionId })
-    .from(connectorConnections)
-    .where(
-      and(
-        sql`${connectorConnections.connectionId}::text = ${object.id}`,
-        eq(connectorConnections.projectId, projectId),
-        eq(connectorConnections.ownerType, 'project'),
-      ),
-    )
-    .limit(1);
-  if (!row) {
+  // Raw SQL, not the `connectorConnections` table object: this module sits
+  // under suites that stub `@kortix/db` with an explicit export list, and a new
+  // named import there fails every one of them at link time.
+  const result = await db.execute<{ found: number }>(sql`
+    select 1 as found from kortix.connector_connections
+    where connection_id::text = ${object.id}
+      and project_id = ${projectId}::uuid
+      and owner_type = 'project'
+    limit 1`);
+  const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
+  if ((rows as Array<{ found: number }>).length === 0) {
     throw new HTTPException(404, {
       message: 'object_id is not a shared connection in this project',
     });
