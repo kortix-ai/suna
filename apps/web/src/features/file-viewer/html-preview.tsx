@@ -23,7 +23,6 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { useStaticFilePreview } from '@kortix/sdk/react';
 import {
@@ -31,6 +30,7 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
 } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
+import { framePolicy } from './preview-policy';
 
 /**
  * The frame fills its region edge to edge, and paints WHITE behind the
@@ -110,17 +110,16 @@ export function HtmlPreview({
   }
 
   return (
-    // `ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX` — scripts, forms, popups and
-    // downloads run; `allow-same-origin` is withheld. An agent wrote this page,
-    // so it gets a real browser to run in and an opaque origin to run it from:
-    // it cannot read this app's DOM, cookies or storage. Withholding
-    // `allow-scripts` instead would make every interactive page a screenshot.
+    // An agent wrote this page, so it is a `document` frame: scripts, forms,
+    // popups and downloads run, and the origin is opaque — it cannot read this
+    // app's DOM, cookies or storage. Withholding `allow-scripts` instead would
+    // make every interactive page a screenshot.
     <iframe
       key={path}
       src={url}
       title={fileName}
       className={cn(HTML_PREVIEW_IFRAME_CLASS, className)}
-      sandbox={ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX}
+      sandbox={framePolicy('document', url).sandbox}
     />
   );
 }

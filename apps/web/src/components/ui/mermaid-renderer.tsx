@@ -1,10 +1,16 @@
 'use client';
 
+import { CODE_SETTLE_MS, useSettledValue } from '@/components/markdown/code/settle';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import { KortixLoader } from '@/components/ui/kortix-loader';
-import { MERMAID_CONFIG, removeMermaidRenderArtifacts } from '@/components/ui/mermaid-render';
+import {
+  cacheMermaidSvg,
+  MERMAID_CONFIG,
+  readCachedMermaidSvg,
+  removeMermaidRenderArtifacts,
+} from '@/components/ui/mermaid-render';
 import { Modal, ModalBody, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { cn } from '@/lib/utils';
 import {
@@ -16,37 +22,31 @@ import {
   MagnifyingGlassPlusIcon as ZoomIn,
   MagnifyingGlassMinusIcon as ZoomOut,
 } from '@phosphor-icons/react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-// Global cache for rendered Mermaid diagrams
-const mermaidCache = new Map<string, string>();
 let mermaidInstance: any = null;
 
 interface MermaidRendererProps {
   chart: string;
   className?: string;
   enableFullscreen?: boolean;
+  /**
+   * The message is still streaming. The diagram renders once its source holds
+   * still for `CODE_SETTLE_MS`, not once per streamed token.
+   */
+  isStreaming?: boolean;
 }
 
 export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
-  ({ chart, className, enableFullscreen = true }) => {
+  ({ chart, className, enableFullscreen = true, isStreaming = false }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [renderedContent, setRenderedContent] = useState<string>('');
     const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
 
-    // Create a stable hash for the chart content to enable caching
-    const chartHash = useMemo(() => {
-      let hash = 0;
-      const trimmed = chart.trim();
-      for (let i = 0; i < trimmed.length; i++) {
-        const char = trimmed.charCodeAt(i);
-        hash = (hash << 5) - hash + char;
-        hash = hash & hash; // Convert to 32-bit integer
-      }
-      return hash.toString(36);
-    }, [chart]);
+    // The source to render: null while a streaming diagram is still changing.
+    const source = useSettledValue(chart.trim(), isStreaming, CODE_SETTLE_MS);
 
     // Canvas state for fullscreen viewer
     const canvasRef = useRef<HTMLDivElement>(null);
@@ -251,20 +251,20 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
     };
 
     useEffect(() => {
+      if (source === null) return;
       let mounted = true;
 
       const renderChart = async () => {
-        if (!chart.trim()) {
+        if (!source) {
           if (mounted) setIsLoading(false);
           return;
         }
 
-        // Check cache first
-        const cachedResult = mermaidCache.get(chartHash);
+        const cachedResult = readCachedMermaidSvg(source);
         if (cachedResult) {
-          console.log('🎯 Using cached Mermaid diagram for hash:', chartHash);
           if (mounted) {
             setRenderedContent(cachedResult);
+            setError(null);
             setIsLoading(false);
           }
           return;
@@ -276,16 +276,8 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
             setError(null);
           }
 
-          console.log('🎯 Starting Mermaid rendering for chart:', chart.substring(0, 50) + '...');
-
-          // Basic syntax validation before attempting to render
-          const trimmedChart = chart.trim();
-          if (!trimmedChart) {
-            throw new Error('Empty chart content');
-          }
-
           // Check for basic Mermaid syntax
-          const firstLine = trimmedChart.split('\n')[0].toLowerCase().trim();
+          const firstLine = source.split('\n')[0].toLowerCase().trim();
           const validStarters = [
             'graph',
             'flowchart',
@@ -330,28 +322,20 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
               gitGraph: { ...MERMAID_CONFIG.gitGraph },
             });
             mermaidInstance = mermaid;
-            console.log('✅ Mermaid initialized and cached');
           }
 
-          // Create a unique ID for this chart
-          const chartId = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const chartId = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-          console.log('🎯 Rendering chart with ID:', chartId);
-
-          // Wrap Mermaid render in additional error handling to catch parsing errors
           let result;
           try {
-            result = await mermaidInstance.render(chartId, trimmedChart);
+            result = await mermaidInstance.render(chartId, source);
           } catch (renderError) {
-            // Handle specific Mermaid parsing errors
             const errorMessage =
               renderError instanceof Error ? renderError.message : String(renderError);
-            console.error('🚨 Mermaid parsing error:', errorMessage);
 
             // Remove the temporary nodes this render created, and only those.
             removeMermaidRenderArtifacts(document, chartId);
 
-            // Throw a more user-friendly error
             if (errorMessage.includes('Parse error') || errorMessage.includes('Syntax error')) {
               throw new Error(`Diagram syntax error: ${errorMessage}`);
             } else if (errorMessage.includes('UnknownDiagramError')) {
@@ -361,38 +345,25 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
             }
           }
 
+          cacheMermaidSvg(source, result.svg);
           if (!mounted) return;
-
-          console.log('✅ Chart rendered successfully, SVG length:', result.svg.length);
-
-          // Cache the result
-          mermaidCache.set(chartHash, result.svg);
-
-          // Set the rendered content
           setRenderedContent(result.svg);
         } catch (err) {
-          console.error('❌ Mermaid rendering error:', err);
-
           if (mounted) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to render diagram';
 
-            // Check if it's an unsupported diagram type
+            // Unsupported diagram types render as a plain code block below.
             if (
               errorMessage.includes('UnknownDiagramError') ||
               errorMessage.includes('No diagram type detected')
             ) {
-              // For unsupported diagrams, show as code block instead of large error
-              console.log('🔄 Unsupported Mermaid diagram type, falling back to code block');
               setError('unsupported_diagram_type');
             } else {
               setError(errorMessage);
             }
           }
         } finally {
-          if (mounted) {
-            setIsLoading(false);
-            console.log('🏁 Mermaid rendering completed');
-          }
+          if (mounted) setIsLoading(false);
         }
       };
 
@@ -401,10 +372,13 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
       return () => {
         mounted = false;
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [chartHash]);
+    }, [source]);
 
-    if (isLoading) {
+    // A diagram that already drew keeps its last SVG while a newer source
+    // renders, and a streaming diagram shows no error for a half-written
+    // source: the placeholder stands until there is something to draw.
+    const showError = !!error && !isStreaming;
+    if ((isLoading || (error && !showError)) && !renderedContent) {
       return (
         <div
           className={cn(
@@ -413,23 +387,20 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           )}
         >
           <div className="text-center">
-            <div className="text-muted-foreground mb-2 text-sm">
-              🎨 Rendering Mermaid diagram...
-            </div>
+            <div className="text-muted-foreground mb-2 text-sm">Rendering Mermaid diagram...</div>
             <KortixLoader size="medium" />
           </div>
         </div>
       );
     }
 
-    if (error) {
+    if (showError) {
       // For unsupported diagram types, render as a simple code block
       if (error === 'unsupported_diagram_type') {
         return (
           <div className={cn('my-2', className)}>
-            <div className="text-muted-foreground mb-1 flex items-center gap-1 text-xs">
-              <span>⚠️</span>
-              <span>Unsupported diagram type (not available in Mermaid 11.x)</span>
+            <div className="text-muted-foreground mb-1 text-xs">
+              Unsupported diagram type (not available in Mermaid 11.x)
             </div>
             <pre className="bg-muted/50 overflow-x-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">
               {chart}
@@ -449,7 +420,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           </div>
           <details className="mt-2">
             <summary className="text-muted-foreground hover:text-foreground cursor-pointer text-xs">
-              📄 Show diagram source
+              Show diagram source
             </summary>
             <pre className="bg-muted/50 mt-2 overflow-x-auto rounded p-2 text-xs whitespace-pre-wrap">
               {chart}

@@ -4,8 +4,8 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { isHexColor } from './inline-chip';
-import { highlightAsync, SHIKI_THEME_LIGHT } from './shiki-highlighter';
 import { MarkdownCode, type MarkdownCodeProps } from './markdown-code';
+import { highlightAsync, SHIKI_THEME_LIGHT } from './shiki-highlighter';
 
 const render = (props: MarkdownCodeProps) => renderToStaticMarkup(<MarkdownCode {...props} />);
 
@@ -194,7 +194,7 @@ describe('MarkdownCode — inline code', () => {
   });
 
   test('inline code holding a setup-link path renders the setup card', () => {
-    const markup = render({ children: '/secret-intake/ksl_7f3a91c2b4' });
+    const markup = render({ children: '/secret-intake/ksl_7f3a91c2b4', setupLinks: true });
 
     // `SetupLinkButton` renders the transcript's own `OutcomeCard` — the same
     // row a change request gets — so the assertion is the card's testid, not
@@ -218,13 +218,24 @@ describe('MarkdownCode — inline code', () => {
   test('a connector setup link gets the connector card', () => {
     // Agents mint these against FRONTEND_URL, so the absolute form is the one
     // that actually arrives; server-side there is no window to compare origins.
-    const markup = render({ children: 'http://localhost:3000/connect/ksl_7f3a91c2b4' });
+    const markup = render({
+      children: 'http://localhost:3000/connect/ksl_7f3a91c2b4',
+      setupLinks: true,
+    });
 
     expect(markup).toContain('data-testid="outcome-card-external"');
     expect(markup).toContain('Connect app');
     // Unsettled, so the action is the filled CTA rather than the outline
     // `View` a settled card shows.
     expect(markup).toContain('Connect');
+  });
+
+  test('without setupLinks, a setup-link path stays inline code', () => {
+    // Only agent content may raise the in-app card; see `MarkdownPolicy`.
+    const markup = render({ children: '/secret-intake/ksl_7f3a91c2b4' });
+
+    expect(markup).not.toContain('outcome-card-external');
+    expect(markup).toContain('ksl_7f3a91c2b4');
   });
 
   test('an absolute file path becomes a preview target', () => {
@@ -342,7 +353,9 @@ describe('MarkdownCode — highlighting while a message streams', () => {
 
   test('a settled block renders Shiki HTML on its first render once the grammar is loaded', async () => {
     // Warm the lazy highlighter and the grammar, as the first block on a page does.
-    expect(await highlightAsync('const warm = 1;', 'typescript', SHIKI_THEME_LIGHT)).toContain('<pre');
+    expect(await highlightAsync('const warm = 1;', 'typescript', SHIKI_THEME_LIGHT)).toContain(
+      '<pre',
+    );
 
     const markup = render({ className: 'language-typescript', children: CODE });
 
@@ -350,7 +363,9 @@ describe('MarkdownCode — highlighting while a message streams', () => {
   });
 
   test('a streaming block renders plain text, never a tokenizer pass per delta', async () => {
-    expect(await highlightAsync('const warm = 1;', 'typescript', SHIKI_THEME_LIGHT)).toContain('<pre');
+    expect(await highlightAsync('const warm = 1;', 'typescript', SHIKI_THEME_LIGHT)).toContain(
+      '<pre',
+    );
 
     const markup = render({ className: 'language-typescript', children: CODE, isStreaming: true });
 
