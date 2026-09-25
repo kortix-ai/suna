@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Separate complete OpenAI SSE chunks at the gateway relay (2026-09-25)
+
+**Rule:** On the direct provider stream, insert an SSE event boundary between
+consecutive complete `data:` JSON chunks, and terminate a complete final chunk
+at EOF. Preserve valid multiline and CRLF events. **Trigger surface:** gateway
+SSE relay changes. **Incident:** a managed model emitted nine reasoning chunks
+without event separators; the client rejected their joined JSON while gateway
+logs recorded HTTP 200. **Enforcers:** `pipeline/streaming.test.ts` and
+`pipeline/simple-handler.test.ts` pin client framing, usage, and public rewriting.
+
 ### A retired Enforcer names its keeper here, in the same PR (2026-09-25)
 
 **Rule:** When a PR deletes or renames a test file that an entry below names as
