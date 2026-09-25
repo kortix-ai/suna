@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -159,21 +159,23 @@ describe('performUpdate', () => {
 
   test('the no-op check trusts the (path, size, mtime) digest cache and re-hashes on a new mtime', async () => {
     const target = join(dir, 'kortixd')
-    writeFileSync(target, Buffer.from('BINARY-V1'))
+    const current = Buffer.from('BINARY-V1')
+    writeFileSync(target, current)
+    // Pin the mtime so the cache key is known without a separate stat.
+    const mtimeMs = Date.UTC(2026, 0, 1)
+    utimesSync(target, new Date(mtimeMs), new Date(mtimeMs))
     const next = Buffer.from('BINARY-V2')
     // A cache entry that claims the on-disk bytes are already the target build.
-    const st = statSync(target)
     const statePath = join(dir, '.state.json')
     writeFileSync(
       statePath,
-      JSON.stringify({ current: { path: target, size: st.size, mtimeMs: Math.trunc(st.mtimeMs), sha256: sha(next) } }),
+      JSON.stringify({ current: { path: target, size: current.byteLength, mtimeMs, sha256: sha(next) } }),
     )
     const hit = await performUpdate(baseOpts({ ...serve(next), statePath }))
     expect(hit.outcome).toBe('current')
 
     // Same bytes, new mtime: the cache misses and the real digest decides.
-    const later = new Date(st.mtimeMs + 5_000)
-    utimesSync(target, later, later)
+    utimesSync(target, new Date(mtimeMs + 5_000), new Date(mtimeMs + 5_000))
     const miss = await performUpdate(baseOpts({ ...serve(next), statePath }))
     expect(miss.outcome).toBe('updated')
     expect(readFileSync(target).toString()).toBe('BINARY-V2')
