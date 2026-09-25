@@ -15,6 +15,7 @@ import React, { useState } from 'react';
 const LOGO_TILE_BACKGROUND = 'bg-white';
 
 const TILE_SIZE = {
+  lg: 'size-10 rounded-md',
   md: 'size-8 rounded-md',
   xs: 'size-5 rounded-sm',
 } as const;
@@ -98,15 +99,27 @@ export function ConnectorHandshake({
   name,
   iconUrl,
   connected = false,
+  size = 'md',
+  collapsible = true,
 }: {
   name: string;
   iconUrl: string | null;
   connected?: boolean;
+  /** `lg` heads the connect modal; `md` sits in the chat card. */
+  size?: 'md' | 'lg';
+  /**
+   * Hide the Kortix tile and the bridge below 28rem of `@container/connect`.
+   * The chat card sets it; the modal has room for the pair at every width.
+   */
+  collapsible?: boolean;
 }) {
   return (
     <span className="flex shrink-0 items-center gap-1.5" aria-hidden>
-      <HandshakeTile size="md" className="bg-foreground text-background hidden @md/connect:flex">
-        <KortixLogo variant="icon" size={14} />
+      <HandshakeTile
+        size={size}
+        className={cn('bg-foreground text-background', collapsible && 'hidden @md/connect:flex')}
+      >
+        <KortixLogo variant="icon" size={size === 'lg' ? 18 : 14} />
       </HandshakeTile>
       {/*
         The bridge is one SVG, not five sized spans. Dots of 2–3px on the
@@ -118,7 +131,7 @@ export function ConnectorHandshake({
         width="24"
         height="6"
         viewBox="0 0 24 6"
-        className="text-muted-foreground hidden shrink-0 @md/connect:block"
+        className={cn('text-muted-foreground shrink-0', collapsible && 'hidden @md/connect:block')}
         fill="currentColor"
       >
         <circle cx="2" cy="3" r="1" opacity="0.3" />
@@ -128,7 +141,7 @@ export function ConnectorHandshake({
         <circle cx="22" cy="3" r="1" opacity="0.3" />
       </svg>
       <span className="relative flex">
-        <ConnectorAppMark name={name} iconUrl={iconUrl} />
+        <ConnectorAppMark name={name} iconUrl={iconUrl} size={size} />
         {connected ? (
           <span className="bg-kortix-green ring-background absolute -right-1 -bottom-1 flex size-3.5 items-center justify-center rounded-full ring-2">
             <CheckIcon weight="bold" className="text-background size-2" />

@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { CheckIcon, KeyIcon, PlugIcon } from '@phosphor-icons/react';
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { ConnectorAppMark, ConnectorHandshake } from './connector-handshake';
-import { ConnectorIntake } from './connector-intake';
+import { ConnectorConnectModal } from './connector-connect-modal';
 import { connectorHeadline, useConnectorLinkInfo } from './connector-link-info';
 import { SecretIntakeForm } from './secret-intake-form';
 import { onSetupLinkModalClose } from './setup-link-close-finalize';
@@ -223,29 +223,31 @@ export function SetupLinkButton({
     <>
       {card}
 
-      {token !== null && (
+      {token !== null && kind === 'connector' ? (
+        <ConnectorConnectModal
+          token={token}
+          open={open}
+          onOpenChange={handleOpenChange}
+          onConnected={handleSettled}
+          fallbackName={appName}
+        />
+      ) : null}
+
+      {token !== null && kind === 'secret' ? (
         <Modal open={open} onOpenChange={handleOpenChange}>
           <ModalContent className="lg:max-w-lg">
             {/* `pr-12` keeps the text clear of the absolute close button (`top-3 right-3 size-8`). */}
             <ModalHeader className="pr-12">
-              <ModalTitle>
-                {kind === 'connector' && headlineApp !== null
-                  ? titles.app.replace('{app}', headlineApp)
-                  : copy.title}
-              </ModalTitle>
+              <ModalTitle>{copy.title}</ModalTitle>
               <ModalDescription className="text-pretty">{copy.blurb}</ModalDescription>
             </ModalHeader>
 
             <ModalBody className="max-h-[60vh] overflow-y-auto">
-              {kind === 'secret' ? (
-                <SecretIntakeForm token={token} compact onDone={handleSettled} />
-              ) : (
-                <ConnectorIntake token={token} compact onConnected={handleSettled} />
-              )}
+              <SecretIntakeForm token={token} compact onDone={handleSettled} />
             </ModalBody>
           </ModalContent>
         </Modal>
-      )}
+      ) : null}
     </>
   );
 }

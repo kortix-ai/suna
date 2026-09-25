@@ -40,26 +40,16 @@ type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected'
  * what tells THIS window it worked. Shared by the public /connect/[token] page
  * and the in-chat modal.
  */
-export function ConnectorIntake({
-  token,
-  onOpened,
-  onConnected,
-  compact,
-}: {
-  token: string;
-  onOpened?: () => void;
-  /**
-   * Fired once the poll confirms the connection landed.
-   *
-   * The parent cannot observe this on its own: the connect happens in
-   * Pipedream's hosted popup, and the only proof is the finalize poll below.
-   * `SetupLinkButton` uses it to flip its card from "Waiting for you" to
-   * "Connected" without reopening the modal.
-   */
-  onConnected?: () => void;
-  compact?: boolean;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+/**
+ * The connect flow for one link: load what it names, open the provider's
+ * hosted page, poll until the connection lands. Shared by the public
+ * `/connect/[token]` page (`ConnectorIntake`) and the in-chat modal
+ * (`ConnectorConnectModal`), so both run the same start/poll/finalize rules.
+ */
+export function useConnectorIntake(
+  token: string,
+  { onOpened }: { onOpened?: () => void } = {},
+) {
   const base = setupLinkApiBase();
   const [phase, setPhase] = useState<Phase>('loading');
   const [info, setInfo] = useState<ConnectorSetupLinkInfo | null>(null);
@@ -163,6 +153,34 @@ export function ConnectorIntake({
     setPhase('opened');
     onOpened?.();
   }
+
+  return { phase, info, error, connectedAs, alreadyConnected, connect };
+}
+
+export function ConnectorIntake({
+  token,
+  onOpened,
+  onConnected,
+  compact,
+}: {
+  token: string;
+  onOpened?: () => void;
+  /**
+   * Fired once the poll confirms the connection landed.
+   *
+   * The parent cannot observe this on its own: the connect happens in
+   * Pipedream's hosted popup, and the only proof is the finalize poll below.
+   * `SetupLinkButton` uses it to flip its card from "Waiting for you" to
+   * "Connected" without reopening the modal.
+   */
+  onConnected?: () => void;
+  compact?: boolean;
+}) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const { phase, info, error, connectedAs, alreadyConnected, connect } = useConnectorIntake(
+    token,
+    { onOpened },
+  );
 
   const appLabel = info?.app || info?.slug || 'the app';
 
