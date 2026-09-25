@@ -71,6 +71,8 @@ const DISPOSE_TIMEOUT_MS = 15_000
 /** Warm-up preconditions are re-checked on this cadence until they hold. */
 const WARM_RETRY_MS = 1_000
 const WARM_RETRY_LIMIT = 120
+/** How often a held prompt checks whether its session was stopped. */
+const STOP_POLL_MS = 25
 
 // ── Stop requests ────────────────────────────────────────────────────────────
 //
@@ -101,12 +103,16 @@ export function abortTargetOf(method: string, path: string): string | null {
   return match?.[1] ? decodeURIComponent(match[1]) : null
 }
 
+/** The session a loop-starting request (prompt, command, shell) runs in, else null. */
+export function loopStartTargetOf(method: string, path: string): string | null {
+  if (method.toUpperCase() !== 'POST') return null
+  const match = /^\/session\/([^/?#]+)\/(?:prompt_async|message|command|shell)(?:$|[/?#])/.exec(path)
+  return match?.[1] ? decodeURIComponent(match[1]) : null
+}
+
 /** Does this request start (or continue) a prompt loop? */
 export function isLoopStartRequest(method: string, path: string): boolean {
-  return (
-    method.toUpperCase() === 'POST' &&
-    /^\/session\/[^/]+\/(?:prompt_async|message|command|shell)(?:$|[/?#])/.test(path)
-  )
+  return loopStartTargetOf(method, path) !== null
 }
 
 export function resetStopRequestsForTests(): void {
@@ -176,8 +182,11 @@ export type AbortedTurnVerdict =
 export interface InstanceGuard {
   /** Build the prompt-path caches from requests the daemon owns. Single-flight. */
   warm(reason: string): Promise<WarmResult | null>
-  /** Resolves when no warm-up is in flight, or after `maxMs`. Never rejects. */
-  settled(maxMs?: number): Promise<void>
+  /**
+   * Resolves when no warm-up is in flight, after `maxMs`, or as soon as a stop
+   * is requested for `opencodeSessionId`. Never rejects.
+   */
+  settled(maxMs?: number, opencodeSessionId?: string): Promise<void>
   /** Probe the caches; dispose and re-warm when one holds an interrupt. */
   healIfPoisoned(reason: string, opts?: { force?: boolean; endingSessionId?: string }): Promise<HealResult>
   /**
@@ -260,17 +269,32 @@ export function createInstanceGuard(initial: InstanceGuardDeps): InstanceGuard {
     return run
   }
 
-  async function settled(maxMs = WARM_GATE_MAX_MS): Promise<void> {
+  async function settled(maxMs = WARM_GATE_MAX_MS, opencodeSessionId?: string): Promise<void> {
     const pending = warming
     if (!pending) return
+    const since = now()
     let timer: ReturnType<typeof setTimeout> | undefined
+    let poll: ReturnType<typeof setInterval> | undefined
     await Promise.race([
       pending.catch(() => undefined),
       new Promise<void>((resolve) => {
         timer = setTimeout(resolve, maxMs)
       }),
+      // A Stop for this session releases its held prompt AT ONCE. Held any
+      // longer, the prompt would reach OpenCode after the Stop's abort found
+      // nothing to cancel, and after the hold settle stopped watching for a
+      // late delivery (3 s): the turn would run although the user stopped it.
+      // Released, it lands inside that window and the settle aborts it; if
+      // that abort interrupts a cache build, the heal repairs the instance.
+      new Promise<void>((resolve) => {
+        if (!opencodeSessionId) return
+        poll = setInterval(() => {
+          if (opencodeStopRequestedSince(opencodeSessionId, since)) resolve()
+        }, STOP_POLL_MS)
+      }),
     ])
     if (timer) clearTimeout(timer)
+    if (poll) clearInterval(poll)
   }
 
   async function poisonedPaths(): Promise<string[]> {
