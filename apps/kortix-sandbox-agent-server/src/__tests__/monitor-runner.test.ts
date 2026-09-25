@@ -329,9 +329,11 @@ describe('lifecycle events', () => {
       ingest,
     ).start()
 
-    await waitFor(() => ingest.eventsFor('chatty').filter((e) => e.kind === 'event').length >= 8)
+    // The script needs ~2 s for 8 beats; under a loaded single-process suite it
+    // measured past the 5 s default, so budget 5x the event.
+    await waitFor(() => ingest.eventsFor('chatty').filter((e) => e.kind === 'event').length >= 8, 12_000)
     expect(ingest.eventsFor('chatty').filter((event) => event.line.event === 'silent')).toHaveLength(0)
-  })
+  }, 15_000)
 })
 
 describe('poll mode', () => {

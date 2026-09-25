@@ -381,9 +381,10 @@ opencode's blocking `question` call is a separate POST to
 posted the card and then hung until its box parked — strictly worse than the
 prose it replaced, because the user sees the question and answers a turn that
 never finishes. Caught while verifying a claim in the PR description, after
-merge, before anyone hit it. **Enforcers:** `channelRelayContext()` now accepts
-either platform, asserted by `question-relay-scope.test.ts` (a Teams session
-must count as a channel; the sentinel must come from `channelLabel()`), and
+merge, before anyone hit it. **Enforcers:** `sessionChannel()` (daemon
+`relay-context.ts`) accepts either platform, asserted by the daemon's
+`question-relay.test.ts` for both harness adapters (a Teams session must count
+as a channel; the sentinel names the channel it was posted to), and
 `unit-channel-question-guidance.test.ts` asserts the two platforms differ ON
 PURPOSE until sandboxes carry the fixed daemon.
 

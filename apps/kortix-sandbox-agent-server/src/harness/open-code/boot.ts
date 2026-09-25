@@ -44,7 +44,7 @@ import { isSharedSeedBakedRoot } from './opencode-fork-root'
 import { flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './events'
 import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from '../../kortix-event-bus'
-import { runtimeStateStore } from './runtime-state-projection'
+import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, createAuditRelay } from './opencode-audit-relay'
 import { relayQuestionToApi } from './question-relay'
 import { readControlPlaneEnv, sandboxRelayContext } from '../../relay-context'
@@ -688,6 +688,22 @@ export async function reconcileManagedModels(
   }
 }
 
+/**
+ * What every runtime-ready exit of `startSessionRuntime` owes the control
+ * plane. Both exits (initial session, plain readiness) call this one function,
+ * so neither can drop a step.
+ */
+function runtimeReadyTail(cfg: Config, bootState: SandboxBootState): void {
+  // Persist the in-guest timeline now that this boot is complete — see
+  // boot-timeline-relay.ts. Fire-and-forget and once-guarded.
+  relayBootTimelineToApi(bootState.timeline)
+  runDeferredHistoryBackfill(bootState)
+  // The boot push: the projection exists server-side from the moment the box
+  // is usable, so a cold session answers its roster from Postgres.
+  scheduleRuntimeProjectionPush('boot')
+  scheduleRuntimeAssetsReconcile(cfg)
+}
+
 async function startSessionRuntime(
   harness: OpenCodeHarnessService,
   cfg: Config,
@@ -764,13 +780,7 @@ async function startSessionRuntime(
       publishOpenCodeEvent(kortixEventBus(), event)
       runtimeStateStore()?.noteEvent(event)
       // A catalog-moving frame re-pushes the projection (debounced, etag-gated).
-      // Same set noteEvent invalidates its catalog on.
-      if (
-        event.type === 'server.instance.disposed' ||
-        event.type === 'mcp.tools.changed' ||
-        event.type === 'plugin.added' ||
-        event.type === 'global.disposed'
-      ) {
+      if (event.type && CATALOG_MOVING_EVENT_TYPES.has(event.type)) {
         scheduleRuntimeProjectionPush(event.type)
       }
     } catch (error) {
@@ -916,24 +926,8 @@ async function startSessionRuntime(
         opencodePid: opencode.getPid(),
         timeline: bootState.timeline,
       })
-      // Persist the in-guest timeline now that this boot is complete — see
-      // boot-timeline-relay.ts. Fire-and-forget and once-guarded.
-      relayBootTimelineToApi(bootState.timeline)
-      runDeferredHistoryBackfill(bootState)
-      // The boot push: the projection exists server-side from the moment the
-      // box is usable, so a cold session answers its roster from Postgres.
-      scheduleRuntimeProjectionPush('boot')
-      scheduleRuntimeAssetsReconcile(cfg)
+      runtimeReadyTail(cfg, bootState)
     }
-    await maybeCreateInitialOpencodeSession(
-      opencode,
-      bootState,
-      bootMark,
-      markOpencodeListening,
-    ).catch((err) => {
-      bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
-      logger.warn('[boot] initial opencode session setup failed', err)
-    })
     const attemptInitialSession = () =>
       maybeCreateInitialOpencodeSession(
         opencode,
@@ -944,6 +938,7 @@ async function startSessionRuntime(
         bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
         logger.warn('[boot] initial opencode session setup failed', err)
       })
+    await attemptInitialSession()
     if (bootState.initialOpenCodeSessionId) {
       await completeInitialSessionBoot()
       return
@@ -966,10 +961,7 @@ async function startSessionRuntime(
   if (ready) {
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
-    relayBootTimelineToApi(bootState.timeline)
-    runDeferredHistoryBackfill(bootState)
-    scheduleRuntimeProjectionPush('boot')
-    scheduleRuntimeAssetsReconcile(cfg)
+    runtimeReadyTail(cfg, bootState)
     // Only start the loop if the initial-session branch didn't already (avoids a
     // duplicate subscription when the initial session was requested but failed).
     if (!loopStarted) harness.events.subscribe(cfg, eventHandlers)
@@ -1366,8 +1358,8 @@ type InitialSessionBootState = Pick<
  * throw in two places and cleared in none, so one throwing attempt wedged
  * the sandbox for its whole life even after `retryUntilInitialSessionEstablished`
  * established the root on a later rung. Only a manual Restart healed it.
- * Pure and exported so it can be exercised directly — see
- * initial-session-poison-flag.test.ts.
+ * Exported so proxy-auth.test.ts can prove the HTTP consequence: the proxy
+ * stops answering `initial_opencode_session_failed` once this runs.
  */
 export function finalizeInitialSession(bootState: InitialSessionBootState, sessionId: string): void {
   bootState.initialOpenCodeSessionId = sessionId
@@ -1499,16 +1491,10 @@ async function maybeCreateInitialOpencodeSession(
       lastTurnHasError: existing.lastTurnHasError,
     })
     // A turn interrupted by the restart left a part stuck "running"; finalize it
-    // so a client streaming this root sees the turn end instead of spinning. A
-    // turn that already carries `info.error` was already finalized by a prior
-    // abort (see `isTurnStillOrphaned`) — re-aborting it here is exactly the
-    // repeated-abort-on-every-boot bug this guard exists to prevent.
-    if (
-      isTurnStillOrphaned(existing) &&
-      (await confirmTurnOrphaned(baseUrl, workspace, sessionId, existing))
-    ) {
-      await abortOpencodeTurn(baseUrl, workspace, sessionId)
-    }
+    // so a client streaming this root sees the turn end instead of spinning.
+    // The ONE abort site: it re-reads the root, never re-aborts a turn a prior
+    // finalize already errored, and never aborts a turn still being written.
+    await finalizeOrphanedTurn(baseUrl, workspace, sessionId)
     bootMark('runtime-session-resume-requested')
   } else {
     logger.info('[boot] creating initial opencode session', {
@@ -1827,7 +1813,7 @@ export async function waitForOpencodeRootReadiness(
  * without a 20s wait or a real pin file — same pattern as
  * `opencodeTurnInFlight` in opencode-turn-state.ts.
  */
-async function resolveExistingRoot(
+export async function resolveExistingRoot(
   baseUrl: string,
   workspace: string,
   priorPin: string | null = readOpenCodeSessionPin(),
@@ -1867,13 +1853,6 @@ async function resolveExistingRoot(
     },
   }
 }
-// Exported (via a trailing statement, not an inline `export` keyword) so the
-// text `async function resolveExistingRoot(` stays intact for
-// orphan-finalize-error-idempotent.test.ts's source-text assertion, which
-// locates `maybeCreateInitialOpencodeSession`'s body by searching for exactly
-// that string.
-export { resolveExistingRoot }
-
 interface RootLite { id: string; created: number; updated: number }
 
 /** Poll opencode's session list until it answers definitively (reachable),
@@ -2030,7 +2009,7 @@ function isTurnStillOrphaned(inspection: {
  * empty, which is always safe to retry from outside: nothing observable ran
  * yet to redo. See T12.
  */
-export function initialPromptAlreadyDelivered(existing: { known: boolean; hasMessages: boolean }): boolean {
+function initialPromptAlreadyDelivered(existing: { known: boolean; hasMessages: boolean }): boolean {
   if (!existing.known) return true
   return existing.hasMessages
 }

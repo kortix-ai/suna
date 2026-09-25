@@ -380,18 +380,6 @@ describe('wiring', () => {
     'utf8',
   ) as string
 
-  test('native boot pushes on both runtime-ready exits', () => {
-    const bootPushes = main.split("scheduleRuntimeProjectionPush('boot')").length - 1
-    expect(bootPushes).toBe(2)
-  })
-
-  test('native boot pushes on the catalog-moving SSE frames', () => {
-    expect(main).toContain("event.type === 'server.instance.disposed'")
-    expect(main).toContain("event.type === 'mcp.tools.changed'")
-    expect(main).toContain("event.type === 'plugin.added'")
-    expect(main).toContain('scheduleRuntimeProjectionPush(event.type)')
-  })
-
   test('routes/env.ts pushes after the daemon rewrites config', () => {
     expect(envRoute).toContain("scheduleRuntimeProjectionPush('kortix-env-applied')")
   })

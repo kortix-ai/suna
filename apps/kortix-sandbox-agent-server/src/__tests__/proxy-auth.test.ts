@@ -19,6 +19,7 @@ import { loadConfig } from '../config'
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import type { Opencode } from '../harness/open-code/lifecycle'
 import { buildOpenCodeTestApp } from './helpers/open-code-harness'
+import { finalizeInitialSession } from '../harness/open-code/boot'
 import { createProjectEnvStore, mergeProjectEnv } from '../project-env'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import {
@@ -1101,7 +1102,23 @@ describe('daemon proxy auth gate', () => {
         headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
       })
       expect(second.status).toBe(503)
-      expect(second.headers.get('x-kortix-boot-phase')).not.toBe(firstPhase)
+      const secondPhase = second.headers.get('x-kortix-boot-phase')
+      expect(secondPhase).not.toBe(firstPhase)
+
+      // OpenCode answering is progress too, even while the box still waits on
+      // its initial session.
+      const answering = buildOpenCodeTestApp(
+        baseConfig({ autoClone: false, projectTarget: target }),
+        fakeOpencode('ok'),
+        Date.now(),
+        { repoMaterializationError: null, timeline, initialOpenCodeSessionRequired: true, initialOpenCodeSessionId: null },
+      )
+      const third = await answering.request('/session?directory=%2Fworkspace', {
+        headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+      })
+      expect(third.status).toBe(503)
+      expect(third.headers.get('x-kortix-boot-phase')).toContain('opencode=ok')
+      expect(third.headers.get('x-kortix-boot-phase')).not.toBe(secondPhase)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1140,6 +1157,51 @@ describe('daemon proxy auth gate', () => {
     expect(res.status).toBe(503)
     const body = (await res.json()) as { reason: string }
     expect(body.reason).toBe('initial_opencode_session_pending')
+  })
+
+  it('holds every caller off until the workspace is complete, then lets them through', async () => {
+    // A directory-scoped request before the config-dir dependencies land makes
+    // OpenCode cache a tool registry whose imports failed, for the life of the
+    // process.
+    const bootState = { repoMaterializationError: null, timeline: [], workspaceReady: false }
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now(), bootState)
+    const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+    const request = () =>
+      app.request('/session?directory=%2Fworkspace', { headers: { [KORTIX_USER_CONTEXT_HEADER]: signed } })
+
+    const held = await request()
+    expect(held.status).toBe(503)
+    expect(((await held.json()) as { reason: string }).reason).toBe('workspace_not_ready')
+
+    bootState.workspaceReady = true
+    // Past the gate: the unreachable fake upstream answers 502.
+    expect((await request()).status).toBe(502)
+  })
+
+  it('a failed initial-session attempt blocks callers only until a later attempt succeeds', async () => {
+    // The flag was written on a caught throw and cleared nowhere, so one
+    // failed rung of the retry ladder wedged the box until a manual Restart.
+    const bootState = {
+      repoMaterializationError: null,
+      timeline: [],
+      initialOpenCodeSessionRequired: true,
+      initialOpenCodeSessionId: null as string | null,
+      initialOpenCodeSessionError: 'ECONNREFUSED on attempt 1' as string | null,
+    }
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now(), bootState)
+    const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+    const request = () =>
+      app.request('/session?directory=%2Fworkspace', { headers: { [KORTIX_USER_CONTEXT_HEADER]: signed } })
+
+    const failed = await request()
+    expect(failed.status).toBe(503)
+    expect(((await failed.json()) as { reason: string }).reason).toBe('initial_opencode_session_failed')
+
+    finalizeInitialSession(bootState, 'ses_root_abc')
+
+    expect((await request()).status).toBe(502)
+    const health = (await (await app.request('/kortix/health')).json()) as { runtimeReady: boolean }
+    expect(health.runtimeReady).toBe(true)
   })
 
   it('keeps OpenCode proxy disabled when auto-clone is enabled but no repo is present', async () => {

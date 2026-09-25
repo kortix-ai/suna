@@ -392,14 +392,28 @@ describe('GET /state', () => {
     expect(opencodeCalls.length).toBe(before)
   })
 
-  test('a catalog-moving frame forces exactly one rebuild', async () => {
+  // The four ways the roster moves. Boot re-pushes the projection on the same
+  // set (CATALOG_MOVING_EVENT_TYPES), so this table proves both consumers.
+  test.each(['server.instance.disposed', 'mcp.tools.changed', 'global.disposed', 'plugin.added'])(
+    'a %s frame forces exactly one rebuild',
+    async (type) => {
+      const { app, state } = makeRouter()
+      await app.request('http://d/state', { headers: auth })
+      const before = opencodeCalls.filter((p) => p === '/agent').length
+      state.noteEvent({ type, properties: {} })
+      await app.request('http://d/state', { headers: auth })
+      await app.request('http://d/state', { headers: auth })
+      expect(opencodeCalls.filter((p) => p === '/agent').length).toBe(before + 1)
+    },
+  )
+
+  test('an ordinary frame does not rebuild the catalog', async () => {
     const { app, state } = makeRouter()
     await app.request('http://d/state', { headers: auth })
     const before = opencodeCalls.filter((p) => p === '/agent').length
-    state.noteEvent({ type: 'mcp.tools.changed', properties: {} })
+    state.noteEvent({ type: 'message.part.delta', properties: {} })
     await app.request('http://d/state', { headers: auth })
-    await app.request('http://d/state', { headers: auth })
-    expect(opencodeCalls.filter((p) => p === '/agent').length).toBe(before + 1)
+    expect(opencodeCalls.filter((p) => p === '/agent').length).toBe(before)
   })
 
   test('concurrent opens share ONE build', async () => {

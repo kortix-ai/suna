@@ -33,10 +33,16 @@ const SESSION = 'ses_abc';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 let calls: string[] = [];
+/** Full request URLs, query included. */
+let urls: string[] = [];
 
+/** `messages` may be a function: it is called on every message-list read, so a
+ *  row can make the second read differ from the first. `onAbort` runs on each
+ *  `/abort`, the way real OpenCode stamps `info.error` on the aborted turn. */
 function stubFetch(
-  messages: unknown,
+  messages: unknown | (() => unknown),
   opts: {
+    onAbort?: () => void;
     messagesOk?: boolean;
     abortThrows?: boolean;
     sessionStatus?: unknown;
@@ -45,13 +51,17 @@ function stubFetch(
   } = {},
 ) {
   calls = []
+  urls = []
   ;(globalThis as { fetch: unknown }).fetch = async (input: unknown, init?: { method?: string }) => {
     const url = String(input);
     calls.push(`${init?.method ?? 'GET'} ${url.split('?')[0]}`);
+    urls.push(url);
     if (url.includes('/abort')) {
       if (opts.abortThrows) throw new Error('connection refused');
+      opts.onAbort?.();
       return new Response('{}', { status: 200 });
     }
+    const list = typeof messages === 'function' ? (messages as () => unknown)() : messages;
     if (url.includes('/session/status')) {
       if (opts.sessionStatusOk === false) return new Response('nope', { status: 503 });
       return new Response(JSON.stringify(opts.sessionStatus ?? {}), { status: 200 });
@@ -63,8 +73,8 @@ function stubFetch(
     if (byId) {
       if (opts.messageByIdOk === false) return new Response('nope', { status: 503 });
       const id = decodeURIComponent(byId[1] ?? '');
-      const hit = Array.isArray(messages)
-        ? (messages as Array<{ info?: { id?: string } }>).find((m) => m.info?.id === id)
+      const hit = Array.isArray(list)
+        ? (list as Array<{ info?: { id?: string } }>).find((m) => m.info?.id === id)
         : undefined;
       if (!hit) {
         return new Response(
@@ -77,9 +87,9 @@ function stubFetch(
     // `GET /session/:id/message?limit=N` — the newest N, chronological.
     const limit = Number(new URL(url).searchParams.get('limit') ?? '');
     const page =
-      Array.isArray(messages) && Number.isFinite(limit) && limit > 0
-        ? (messages as unknown[]).slice(-limit)
-        : messages;
+      Array.isArray(list) && Number.isFinite(limit) && limit > 0
+        ? (list as unknown[]).slice(-limit)
+        : list;
     return new Response(JSON.stringify(page), { status: 200 });
   };
 }
@@ -117,29 +127,21 @@ describe('finalizeOrphanedTurn', () => {
     stubFetch(assistantTurn(undefined));
 
     expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(true);
-    expect(calls.some((c) => c.startsWith('POST') && c.endsWith('/abort'))).toBe(true);
+    expect(calls.filter((c) => c.startsWith('POST') && c.endsWith('/abort'))).toHaveLength(1);
   });
 
-  test('leaves a COMPLETED turn alone', async () => {
-    // Aborting a finished turn would be a visible lie in the transcript, and the
-    // lifecycle's hook fires on every unplanned respawn — including ones where
-    // nothing was in flight.
-    stubFetch(assistantTurn(1_700_000_000));
+  // Aborting a finished turn would be a visible lie in the transcript, and the
+  // lifecycle's hook fires on every unplanned respawn, including ones where
+  // nothing was in flight.
+  test.each([
+    ['a COMPLETED turn', assistantTurn(1_700_000_000)],
+    ['a session whose last message is the USER (the prompt never reached the model)', [{ info: { role: 'user', time: { completed: 1 } } }]],
+    ['an empty session', []],
+  ])('%s is not an orphaned turn', async (_name, transcript) => {
+    stubFetch(transcript);
 
     expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false);
     expect(calls.some((c) => c.includes('/abort'))).toBe(false);
-  });
-
-  test('a session whose last message is the USER is not an orphaned turn', async () => {
-    // The prompt never reached the model. There is no assistant message to end.
-    stubFetch([{ info: { role: 'user', time: { completed: 1 } } }]);
-
-    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false);
-  });
-
-  test('an empty session is not an orphaned turn', async () => {
-    stubFetch([]);
-    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false);
   });
 
   test('an unreadable message list does NOT abort', async () => {
@@ -150,6 +152,59 @@ describe('finalizeOrphanedTurn', () => {
     expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false);
     expect(calls.some((c) => c.includes('/abort'))).toBe(false);
   });
+
+  // A turn still being written reads exactly like an orphaned one on the first
+  // look. The settle re-read separates them: an orphan stays unfinished and
+  // unchanged. Aborting a live one stamped "Interrupted" under a complete
+  // answer (reported from dev).
+  test('a turn that finished during the settle window is not aborted', async () => {
+    let reads = 0;
+    stubFetch(() => (++reads === 1 ? assistantTurn(undefined) : assistantTurn(1_700_000_000)));
+
+    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false);
+    expect(reads).toBe(2);
+    expect(calls.some((c) => c.includes('/abort'))).toBe(false);
+  });
+
+  test('a DIFFERENT turn that started during the settle window is not aborted', async () => {
+    const first = [
+      { info: { id: 'msg_u1', role: 'user', time: { completed: 1 } } },
+      { info: { id: 'msg_a1', role: 'assistant', parentID: 'msg_u1', time: {} } },
+    ];
+    const second = [
+      ...first,
+      { info: { id: 'msg_u2', role: 'user', time: { completed: 2 } } },
+      { info: { id: 'msg_a2', role: 'assistant', parentID: 'msg_u2', time: {} } },
+    ];
+    let reads = 0;
+    stubFetch(() => (++reads === 1 ? first : second));
+
+    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false);
+    expect(calls.some((c) => c.includes('/abort'))).toBe(false);
+  });
+
+  test('is idempotent: a turn a prior finalize already errored is never re-aborted', async () => {
+    // Real OpenCode's abort stamps `info.error` and never `time.completed`, so
+    // the turn keeps its "incomplete" shape. Every later boot or respawn used
+    // to abort it again and re-render "Interrupted".
+    let errored = false;
+    const transcript = () => [
+      { info: { id: 'msg_user', role: 'user', time: { completed: 1 } } },
+      {
+        info: {
+          id: 'msg_assistant',
+          role: 'assistant',
+          time: {},
+          ...(errored ? { error: { name: 'MessageAbortedError', message: 'aborted' } } : {}),
+        },
+      },
+    ];
+    stubFetch(transcript, { onAbort: () => (errored = true) });
+
+    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(true);
+    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false);
+    expect(calls.filter((c) => c.endsWith('/abort'))).toHaveLength(1);
+  }, 15_000);
 
   test('a failing abort is swallowed, never thrown at the lifecycle', async () => {
     // This runs from the respawn path. A daemon that cannot finish bringing
@@ -163,7 +218,11 @@ describe('finalizeOrphanedTurn', () => {
     stubFetch(assistantTurn(undefined));
     await finalizeOrphanedTurn(BASE, '/work space', 'ses/1');
 
-    expect(calls.every((c) => !c.includes('ses/1'))).toBe(true);
+    expect(urls.length).toBeGreaterThan(0);
+    for (const url of urls) {
+      expect(new URL(url).pathname).toContain('/session/ses%2F1/');
+      expect(new URL(url).search).toContain('directory=%2Fwork%20space');
+    }
   });
 });
 
