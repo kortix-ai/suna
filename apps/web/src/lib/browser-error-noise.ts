@@ -3237,14 +3237,24 @@ export function isNonErrorUndefinedRejectionNoise(input: {
 // error class, and it is a GENERIC type a real first-party
 // `new OperationError(...)` could also surface with — so the matcher anchors on
 // the EXACT message `/^Instance dropped in popErrorScope$/` (case-sensitive),
-// never on the bare `OperationError` type. It additionally requires the
-// frameless shape as a positive guard (no resolvable frame / no
-// `call_site_file` / no stack) — the production noise pattern carries NO
-// stack — mirroring the negative-guard pattern from PR #5200's
-// `isNonErrorUndefinedRejectionNoise`: any resolved first-party
-// `apps/web/src/…` frame → KEEP reporting (a real first-party `OperationError`
-// rejection with a stack is preserved); any other resolvable frame location →
-// keep reporting. Only the frameless capture is dropped. Deliberately NOT
+// never on the bare `OperationError` type. The ONLY negative guard is a
+// resolved first-party `apps/web/src/…` frame → KEEP reporting (a real
+// first-party `OperationError` rejection with a stack is preserved).
+//
+// A 2026-09-23 recurrence (Better Stack pattern `93f6cf89…`, 43 occurrences /
+// 0 identified users, release `52c2174f…`, route `/`) proved that also
+// requiring the frameless shape is too narrow. The SAME browser-internal
+// rejection now surfaces WITH a full minified stack inside the `shaders`
+// package's embedded three.js WebGPU renderer — `_renderScene` /
+// `_renderTransparents` / `_renderObjects` / `_renderObjectDirect` /
+// `_getRenderPipeline` / `createRenderPipeline` / `_animationLoop` frames, all
+// in `app:///_next/static/immutable/chunks/*.js`, NO `apps/web/src/…` frame.
+// The browser drops a pending GPU error scope when the device is destroyed
+// (component teardown / navigation / device loss) and rejects the scope's
+// promise with this exact message; that is not a bug in the third-party
+// renderer we can fix. The old "any resolvable frame → keep reporting" rule
+// let every one of those occurrences leak, so a non-first-party frame (however
+// resolvable) is now dropped like the frameless capture. Deliberately NOT
 // added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no
 // frame context, so a bare-string match there could swallow a real first-party
 // `OperationError` rejection the negative guard exists to preserve; the
@@ -3262,12 +3272,14 @@ const OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN = /^Instance dropped in popErrorSc
  * `onunhandledrejection` — never first-party app code. Requires the EXACT
  * message (case-sensitive; `OperationError` alone is a generic WebIDL type a
  * real first-party `new OperationError(...)` could also surface with) AND a
- * NEGATIVE guard: if any frame resolves to a de-minified first-party
- * `apps/web/src/…` source path OR any resolvable frame location at all, the
- * event keeps reporting (a real first-party `OperationError` rejection we can
- * attribute should still surface). The production noise pattern has NO frames
- * at all; only the frameless capture is dropped. See
- * `OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN` for the full rationale.
+ * NEGATIVE guard: only a frame that resolves to a de-minified first-party
+ * `apps/web/src/…` source path keeps the event reporting (a real first-party
+ * `OperationError` rejection we can attribute must still surface). Every other
+ * shape — frameless, or a stack made only of minified third-party bundle
+ * chunks / CDN URLs — is dropped: the browser generates this message itself
+ * when a GPU error scope is dropped, so a third-party stack is no more
+ * actionable than no stack. See `OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN` for
+ * the full rationale and the 2026-09-23 recurrence.
  */
 export function isOperationErrorPopErrorScopeNoise(input: {
   message?: unknown;
@@ -3278,16 +3290,13 @@ export function isOperationErrorPopErrorScopeNoise(input: {
     return false;
   }
   const frames = input.frames ?? [];
-  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means our
-  // own code rejected a promise with an `OperationError` → actionable; keep
-  // reporting so the call site can be found + fixed.
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our own
+  // code rejected a promise with an `OperationError` → actionable; keep
+  // reporting so the call site can be found + fixed. Every other frame — a
+  // minified third-party bundle chunk, a CDN URL, or no frame at all — leaves
+  // this a browser-generated GPU error-scope rejection with nothing first-party
+  // to fix, so it is dropped.
   if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
-    return false;
-  }
-  // Negative guard #2: any resolvable source location (real chunk/URL/named
-  // file) → an attributable error with a real stack; keep reporting. Only the
-  // frameless capture (the production noise pattern) remains → drop it.
-  if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
     return false;
   }
   return true;
@@ -4003,8 +4012,7 @@ export function isDocumentStateNotFoundNoise(input: {
 //      bare string is noise).
 //   2. A FRAMELESS positive guard: the event has NO resolvable frames (empty
 //      `stacktrace.frames` AND no resolvable `filename`/`call_site` anywhere)
-//      — mirroring `isOperationErrorPopErrorScopeNoise` /
-//      `isNonErrorUndefinedRejectionNoise`. A real first-party
+//      — mirroring `isNonErrorUndefinedRejectionNoise`. A real first-party
 //      `new Error('network error')` throw almost always has a stack with a
 //      resolvable frame (chunk URL or `apps/web/src/…`), so requiring
 //      framelessness is the over-match guard.
@@ -4092,9 +4100,8 @@ export function isFramelessNetworkErrorNoise(input: {
 // — `isUnresolvableStackOverflowNoise` (Safari frameless `onerror` stack
 // overflow), `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
 // `5cfc90e5…`), and `isOperationErrorPopErrorScopeNoise` (PR #5237, pattern
-// `5e1aca20…`) — a frameless global-handler capture dropped by a precise
-// message matcher with two negative guards preserving any first-party or
-// resolvable frame.
+// `5e1aca20…`) — a global-handler capture dropped by a precise message
+// matcher with a negative guard preserving any first-party frame.
 //
 // `Can't find variable: <Name>` is Safari's GENERIC ReferenceError wording —
 // a REAL first-party `ReferenceError` (e.g. a typo referencing an undeclared
@@ -4110,7 +4117,7 @@ export function isFramelessNetworkErrorNoise(input: {
 //      at all (every frame's `filename` is empty or the literal `"undefined"`
 //      placeholder, and the window.onerror `filename` is empty/`undefined`)
 //      — mirroring `isNonErrorUndefinedRejectionNoise` /
-//      `isOperationErrorPopErrorScopeNoise` / `isUnresolvableStackOverflowNoise`.
+//      `isUnresolvableStackOverflowNoise`.
 // Plus two negative guards: (a) any resolved first-party `apps/web/src/…`
 // frame → keep reporting (our own ReferenceError with a stack is preserved —
 // a real first-party Safari `ReferenceError` de-minifies to `apps/web/src/…`);
@@ -5333,15 +5340,15 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // popErrorScope` noise — `popErrorScope` is part of the WebIDL/internal
   // error-scope machinery (DOMQueuingStrategy, ResizeObserver,
   // IntersectionObserver, media streams, GPU, …), NOT a first-party API. Some
-  // browser code paths surface a frameless `OperationError` with this exact
-  // message as an uncaught global `onunhandledrejection`; never first-party
-  // app code. Requires the EXACT message AND NEGATIVE guards: any resolved
-  // first-party `apps/web/src/…` frame OR any resolvable frame location → keep
-  // reporting (a real first-party `OperationError` rejection we can attribute
-  // should still surface). The production noise pattern has NO frames at all;
-  // only the frameless capture is dropped. See
-  // `isOperationErrorPopErrorScopeNoise`. NOT in `ignoreErrors` (no frame
-  // context there).
+  // browser code paths surface an `OperationError` with this exact message as
+  // an uncaught global `onunhandledrejection`; never first-party app code.
+  // Requires the EXACT message AND a NEGATIVE guard: only a resolved
+  // first-party `apps/web/src/…` frame keeps it reporting (a real first-party
+  // `OperationError` rejection we can attribute must still surface). A
+  // frameless capture, or a stack made only of minified third-party bundle
+  // chunks (the 2026-09-23 recurrence's `shaders` / three.js WebGPU renderer
+  // frames), is dropped. See `isOperationErrorPopErrorScopeNoise`. NOT in
+  // `ignoreErrors` (no frame context there).
   if (isOperationErrorPopErrorScopeNoise({ message, frames })) {
     return true;
   }

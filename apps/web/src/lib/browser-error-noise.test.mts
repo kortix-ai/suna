@@ -8097,9 +8097,11 @@ test('does NOT suppress a frameless rejection with a different message', () => {
 // error class) and is generic enough that a real first-party
 // `new OperationError(...)` could surface with the same type — so the matcher
 // anchors on the EXACT message `/^Instance dropped in popErrorScope$/`
-// (case-sensitive), never on the bare `OperationError` type. It requires the
-// frameless shape as a positive guard and a negative guard preserving any
-// first-party `apps/web/src/…` frame.
+// (case-sensitive), never on the bare `OperationError` type. The ONLY negative
+// guard preserves a resolved first-party `apps/web/src/…` frame; a frameless
+// capture OR a stack of only minified third-party bundle chunks is dropped
+// (the 2026-09-23 recurrence carried the latter from the `shaders` package's
+// embedded three.js WebGPU renderer).
 // ---------------------------------------------------------------------------
 
 // The exact exception value from the production event.
@@ -8208,13 +8210,37 @@ test('does NOT suppress the OperationError popErrorScope rejection when a first-
   }
 });
 
-test('does NOT suppress the OperationError popErrorScope rejection when any resolvable (non-first-party) frame is present', () => {
-  // Any resolvable source location (real chunk / URL / named file) means the
-  // rejection is attributable — a real first-party or third-party
-  // `Promise.reject(new OperationError(...))` with a stack we can trace. Keep
-  // reporting; only the frameless capture (the production noise pattern) is
-  // dropped.
+test('suppresses the OperationError popErrorScope rejection when the stack is only third-party minified chunks', () => {
+  // 2026-09-23 recurrence (Better Stack pattern `93f6cf89…`, 43 occurrences /
+  // 0 identified users, release `52c2174f…`, route `/`): the SAME
+  // browser-internal rejection surfaced WITH a full minified stack inside the
+  // `shaders` package's embedded three.js WebGPU renderer. Every frame is a
+  // same-origin `app:///_next/static/immutable/chunks/*.js` bundle chunk, and
+  // there is NO resolved first-party `apps/web/src/…` frame. The browser
+  // generates the message when it drops a pending GPU error scope; a
+  // third-party minified stack is not actionable, so it is dropped like the
+  // frameless capture. This is the regression the matcher must cover.
+  const productionFrames = [
+    { filename: 'app:///_next/static/immutable/chunks/1t2z4o9r-gb3e.js', function: 'n' },
+    {
+      filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+      function: 'dV._animationLoop',
+    },
+    {
+      filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+      function: 'Te._renderScene',
+    },
+    {
+      filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+      function: 'd4._getRenderPipeline',
+    },
+    {
+      filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+      function: 'vz.createRenderPipeline',
+    },
+  ];
   for (const frames of [
+    productionFrames,
     [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
     [{ filename: 'https://cdn.example.com/lib.js', function: 'init' }],
   ]) {
@@ -8223,8 +8249,17 @@ test('does NOT suppress the OperationError popErrorScope rejection when any reso
         message: OPERATION_ERROR_POP_ERROR_SCOPE,
         frames,
       }),
-      false,
-      `expected attributable OperationError popErrorScope rejection from ${JSON.stringify(frames)} to keep reporting`,
+      true,
+      `expected third-party OperationError popErrorScope rejection from ${JSON.stringify(frames)} to be dropped`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: OPERATION_ERROR_POP_ERROR_SCOPE, stacktrace: { frames } }],
+        },
+      }),
+      true,
+      `expected Sentry gate to drop third-party OperationError popErrorScope rejection from ${JSON.stringify(frames)}`,
     );
   }
 });
