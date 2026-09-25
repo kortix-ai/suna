@@ -52,10 +52,11 @@ interface Timeline {
 }
 
 /**
- * Record, per document, when each surface is first SHOWN. The session route
- * paints the chat layer under its overlay and marks the covered layer
- * `aria-hidden` + `inert`, so a surface inside such a subtree is in the DOM
- * but not on screen, and does not count.
+ * Record, per document, when each surface is first SHOWN — hit-testable at its
+ * center, the way a user can see it. Being in the DOM is not enough: the route
+ * paints the chat layer under its overlay (`aria-hidden` + `inert`), and the
+ * closed side panel holds a boot checklist with the same heading, clipped to
+ * nothing.
  */
 async function installTimeline(page: Page) {
   await page.addInitScript(
@@ -65,7 +66,16 @@ async function installTimeline(page: Page) {
       const mark = (key: string) => {
         if (!(key in state.marks)) state.marks[key] = performance.now() - state.from;
       };
-      const shown = (el: Element) => !el.closest('[aria-hidden="true"], [inert]');
+      const shown = (el: Element) => {
+        if (el.closest('[aria-hidden="true"], [inert]')) return false;
+        const box = el.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) return false;
+        const x = box.left + box.width / 2;
+        const y = box.top + box.height / 2;
+        if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return false;
+        const hit = document.elementFromPoint(x, y);
+        return !!hit && (hit === el || el.contains(hit));
+      };
       const scan = () => {
         const skeletons = document.querySelectorAll('[data-testid="saved-session-skeleton"]');
         if (Array.from(skeletons).some(shown)) mark('skeleton');
@@ -143,7 +153,12 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
     });
     dispose = project.dispose;
 
-    const newSession = async (options: { saved: boolean; history: boolean }) => {
+    const newSession = async (options: {
+      saved: boolean;
+      history: boolean;
+      /** Hold the saved-copy reads until this settles, instead of READ_DELAY_MS. */
+      holdCopy?: Promise<void>;
+    }) => {
       const sessionId = await createDatabaseSession(env, {
         projectId: project.id,
         accountId,
@@ -169,7 +184,7 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
       // The saved copy answers, as slowly as a deployed API does.
       for (const path of ['snapshot', 'transcript']) {
         await page.route(`**/sessions/${sessionId}/${path}*`, async (route) => {
-          await new Promise((resolve) => setTimeout(resolve, READ_DELAY_MS));
+          await (options.holdCopy ?? new Promise((resolve) => setTimeout(resolve, READ_DELAY_MS)));
           await route.continue().catch(() => {});
         });
       }
@@ -256,6 +271,39 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
     ].join('\n');
     await testInfo.attach('timeline', { body: report, contentType: 'text/plain' });
     if (process.env.BENCH_OUT) writeFileSync(process.env.BENCH_OUT, `${report}\n`);
+
+    // Evidence for review: the skeleton while the saved copy is held, then the
+    // conversation, in both themes and at the smallest supported window.
+    const views = [
+      { scheme: 'light', width: 1280, height: 800 },
+      { scheme: 'dark', width: 1280, height: 800 },
+      { scheme: 'light', width: 720, height: 480 },
+    ] as const;
+    for (const view of views) {
+      let releaseCopy = () => {};
+      const copy = new Promise<void>((resolve) => {
+        releaseCopy = resolve;
+      });
+      const sessionId = await newSession({ saved: true, history: false, holdCopy: copy });
+      await page.setViewportSize({ width: view.width, height: view.height });
+      await page.emulateMedia({ colorScheme: view.scheme });
+      await openByUrl(sessionId);
+      await expect(page.getByTestId('saved-session-skeleton')).toBeVisible({ timeout: 60_000 });
+      const name = `${view.scheme}-${view.width}x${view.height}`;
+      await page.screenshot({
+        path: testInfo.outputPath(`skeleton-${name}.png`),
+        animations: 'disabled',
+      });
+      releaseCopy();
+      await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId('saved-session-skeleton')).toHaveCount(0);
+      await page.screenshot({
+        path: testInfo.outputPath(`conversation-${name}.png`),
+        animations: 'disabled',
+      });
+      const marks = await readTimeline(page);
+      expect.soft(marks.bootScreen, `${name}: the boot screen must not appear`).toBeUndefined();
+    }
   } finally {
     release();
     await dispose().catch(() => {});
