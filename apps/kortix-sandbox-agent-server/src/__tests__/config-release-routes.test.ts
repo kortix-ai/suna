@@ -192,7 +192,7 @@ describe('POST /kortix/config/converge end to end through the OpenCode control s
       getPid: () => 7,
       getState: () => 'ok',
       async reloadVerified(): Promise<VerifiedReloadResult> {
-        return { outcome: 'swapped', port: 4097, pid: 8, turnEnded: false }
+        return { outcome: 'swapped', port: 4097, pid: 8, turnEnded: false, orphanedMessageId: null }
       },
     } as unknown as Opencode
     const cfg = {

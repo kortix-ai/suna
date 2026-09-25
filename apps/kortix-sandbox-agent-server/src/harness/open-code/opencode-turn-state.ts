@@ -101,6 +101,16 @@ export interface RootInspection {
   /** An incomplete assistant turn still owns runtime. */
   turnInFlight: boolean
   /**
+   * The id of the newest assistant message that has no completion time, or
+   * `null`.
+   *
+   * It is the row a client is streaming right now. A process that is killed
+   * emits neither `session.idle` nor `session.error`, so that row stays open
+   * for ever and the API has nothing to settle it by — unless the id is read
+   * from the OUTGOING process, before it dies, and reported.
+   */
+  openAssistantMessageId: string | null
+  /**
    * False when the read failed — opencode unreachable, non-2xx, unparseable.
    *
    * Without this the two "no turn here" answers are indistinguishable: a session
@@ -121,6 +131,7 @@ export async function inspectOpencodeRoot(
     lastTurnIncomplete: false,
     orphanedPrompt: false,
     turnInFlight: false,
+    openAssistantMessageId: null,
     known: false,
   }
   try {
@@ -148,6 +159,7 @@ export async function inspectOpencodeRoot(
         lastTurnIncomplete: false,
         orphanedPrompt: false,
         turnInFlight: false,
+        openAssistantMessageId: null,
         known: true,
       }
 
@@ -190,11 +202,30 @@ export async function inspectOpencodeRoot(
       // `orphanedPrompt`. An open assistant message IS, even when a newer user
       // row sits after it.
       turnInFlight: lastTurnIncomplete,
+      openAssistantMessageId: lastTurnIncomplete && typeof newest?.id === 'string' ? newest.id : null,
       known: true,
     }
   } catch {
     return unknown
   }
+}
+
+/**
+ * The open assistant message on a root, read from the process that owns it.
+ *
+ * Called on the OUTGOING OpenCode immediately before a verified reload kills
+ * it: afterwards nothing can answer for that row. `null` means "no open turn,
+ * or could not tell" — both are "report nothing", because a repair must never
+ * be invented for a turn that finished normally.
+ */
+export async function openAssistantMessageIdOnRoot(
+  baseUrl: string,
+  workspace: string,
+  rootSessionId: string | null = readOpenCodeSessionPin(),
+): Promise<string | null> {
+  if (!rootSessionId) return null
+  const inspection = await inspectOpencodeRoot(baseUrl, workspace, rootSessionId).catch(() => null)
+  return inspection?.known ? inspection.openAssistantMessageId : null
 }
 
 /**

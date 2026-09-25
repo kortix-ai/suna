@@ -81,7 +81,20 @@ export interface ConvergeResponse {
   ok: boolean
   outcome: ConvergeOutcome
   config: ConfigReleaseReport
-  reload: { how: 'restarted'; turn_ended: boolean | null } | null
+  reload: {
+    how: 'restarted'
+    turn_ended: boolean | null
+    /**
+     * The assistant message the RETIRED OpenCode left open, read off it before
+     * it was killed. `null` when there was none, or when it could not be read.
+     *
+     * The API settles that row `runtime_gone` and redelivers its prompt. Left
+     * unreported, the row stays `completed = null` for ever: the process that
+     * owned it is gone, so it never emits `session.idle`/`session.error`, and
+     * the replacement never held that turn's stream to finalize it.
+     */
+    orphaned_message_id: string | null
+  } | null
   /** Why the release did not apply. Null when it applied or nothing changed. */
   reason: string | null
 }
@@ -358,7 +371,14 @@ function respond(
     ok: outcome === 'applied' || outcome === 'unchanged',
     outcome,
     config: configReleaseReport(),
-    reload: reload && reload.outcome === 'swapped' ? { how: 'restarted', turn_ended: reload.turnEnded } : null,
+    reload:
+      reload && reload.outcome === 'swapped'
+        ? {
+            how: 'restarted',
+            turn_ended: reload.turnEnded,
+            orphaned_message_id: reload.orphanedMessageId,
+          }
+        : null,
     reason,
   }
 }
@@ -438,8 +458,10 @@ async function revertToPreReleaseConfig(
     return respond('unchanged', null, reason)
   }
 
+  const idle = async (): Promise<boolean> =>
+    !deps.turnInFlight || (await deps.turnInFlight().catch(() => null)) === false
   if (opencode.getPid() === null) return respond('failed', null, 'opencode is not running; nothing to replace')
-  if (deps.turnInFlight && (await deps.turnInFlight().catch(() => null)) !== false) {
+  if (!(await idle())) {
     return respond('failed', null, 'a turn is running or its state is unknown; the revert waits for the next trigger')
   }
 
@@ -448,6 +470,12 @@ async function revertToPreReleaseConfig(
   await (deps.prepare ?? ((target: string) => prepareConfigDir(target, deps.managedSkillsDir)))(dir)
   const toolNames = await toolNamesInDir(dir)
   const pluginFiles = await pluginFilesInDir(dir)
+  // The check above ran before `prepare`, which walks and rewrites a config
+  // directory. Ask again now that the work is done, and ask once more inside
+  // the reload — see `mayPromote`.
+  if (!(await idle())) {
+    return respond('failed', null, 'a turn is running or its state is unknown; the revert waits for the next trigger')
+  }
   const previousDir = await servingConfigDir(root)
   await serveConfigDir(dir, 'config releases are disabled for this project', root)
   const result = await opencode.reloadVerified({
@@ -459,9 +487,11 @@ async function revertToPreReleaseConfig(
         configDir: dir,
         fetchImpl: deps.proveFetch,
       }),
+    mayPromote: deps.turnInFlight ? idle : undefined,
   })
   if (result.outcome === 'kept-old') {
     if (previousDir) await serveConfigDir(previousDir, 'the workspace config dir did not start', root)
+    if (result.promotionCalledOff) return respond('failed', null, result.reason)
     logger.warn('[config-release] disabled, but the workspace config dir did not start; keeping the release', {
       dir,
       reason: result.reason,
@@ -510,9 +540,19 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
 
   // Every replacement needs a live process to fall back on, and must not end
   // a running turn.
+  //
+  // It is asked THREE times on the download path, and that is the point: once
+  // here, once again after the archive is built, and once more inside the
+  // reload, after the candidate is proven and before the live port moves
+  // (`mayPromote`). Dev measured 2.4-6.1 s for the fetch and extract and ~3.3 s
+  // for the candidate boot, so a single check at the top is a TOCTOU: the
+  // prompt that arrives inside that window starts a turn on the very process
+  // the swap is about to kill.
+  const idle = async (): Promise<boolean> =>
+    !deps.turnInFlight || (await deps.turnInFlight().catch(() => null)) === false
   const requireRunning = async (): Promise<ConvergeResponse | null> => {
     if (opencode.getPid() === null) return respond('failed', null, 'opencode is not running; nothing to replace')
-    if (deps.turnInFlight && (await deps.turnInFlight().catch(() => null)) !== false) {
+    if (!(await idle())) {
       return respond('failed', null, 'a turn is running or its state is unknown; the swap waits for the next trigger')
     }
     return null
@@ -541,6 +581,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
           configDir: dir,
           fetchImpl: deps.proveFetch,
         }),
+      mayPromote: deps.turnInFlight ? idle : undefined,
     })
     if (result.outcome === 'kept-old') {
       if (previousDir) await serveConfigDir(previousDir, 'the candidate was declined', root)
@@ -561,6 +602,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     if (notRunning) return notRunning
     const result = await swap(dir, [])
     if (result.outcome === 'kept-old') {
+      if (result.promotionCalledOff) return respond('failed', null, result.reason)
       setRunningConfig({ fallback_reason: result.reason })
       return respond('declined', null, result.reason)
     }
@@ -637,8 +679,15 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   }
 
   // 7–9. Governance, replacement on the standby port, proven check, promotion.
+  // The download and extract above took seconds. Ask again before paying the
+  // ~3.3 s candidate boot, so a prompt that landed meanwhile costs nothing.
+  const lateTurn = await requireRunning()
+  if (lateTurn) return lateTurn
   const result = await swap(dir, toolNamesFromFiles(manifest.files), pluginFilesFrom(manifest.files))
   if (result.outcome === 'kept-old') {
+    // A turn that started while the release was being built is not a release
+    // failure: nothing is quarantined and nothing is recorded against it.
+    if (result.promotionCalledOff) return respond('failed', null, result.reason)
     // 10. Keep the old process. Quarantine only a release whose candidate failed.
     if (result.candidateFailed) await quarantineRelease(root, releaseId, result.reason)
     recordKeptConfigFailure(releaseId, result.reason)
