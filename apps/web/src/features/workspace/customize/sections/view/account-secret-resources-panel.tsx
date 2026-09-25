@@ -25,9 +25,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { PrincipalPicker, type PrincipalSelection } from '@/features/workspace/shared/access/principal-picker';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import {
-  accessSummary, chatGptSharing, keyAccessFields, labelOwnerName, type ConnectionAccessChoice,
-} from './account-secret-access';
+import { accessSummary, chatGptSharing, type ConnectionAccessChoice, keyAccessFields, labelOwnerName, needsReconnection } from './account-secret-access';
 
 const NO_MEMBERS: PrincipalSelection = { memberIds: [], groupIds: [], inviteEmails: [] };
 type StartInput = NonNullable<Parameters<typeof startProjectProviderOAuth>[2]>;
@@ -251,18 +249,24 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
           const canManage = canWrite && manageable(secret);
           const canReconnect = Boolean(oauth) && canWrite && secret.created_by === user?.id;
           const canChangeAccess = canManage && canShare;
+          const stale = Boolean(oauth) && needsReconnection(secret);
           return (
             <li key={secret.secret_id} className="border-border flex min-w-0 items-center gap-3 rounded-md border px-3 py-1.5">
               <span className="text-foreground min-w-0 flex-1 text-sm font-medium">
                 <span className="block break-words">{secret.label}</span>
                 <span className="text-muted-foreground block text-xs font-normal">{accessLine(secret)}</span>
-                {!secret.active && oauth && (
+                {stale && (
                   <span className="text-muted-foreground block text-xs font-normal">{t('needsReconnection')}</span>
                 )}
                 {secret.cooldown_until && Date.parse(secret.cooldown_until) > resources.dataUpdatedAt && (
                   <span className="text-muted-foreground block text-xs font-normal">{t('coolingDown')}</span>
                 )}
               </span>
+              {stale && canReconnect && (
+                <Button size="sm" variant="secondary" aria-label={t('reconnectTitle', { label: secret.label })} onClick={() => openReconnect(secret)}>
+                  {t('reconnectAccount')}
+                </Button>
+              )}
               {(canManage || canReconnect) && <DropdownMenu>
                 <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={t('actionsFor', { label: secret.label })}><DotsThreeIcon className="size-4" /></Button></DropdownMenuTrigger>
                 <DropdownMenuContent align="end">

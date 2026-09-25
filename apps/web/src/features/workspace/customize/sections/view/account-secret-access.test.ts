@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { accessSummary, chatGptSharing, keyAccessFields, labelOwnerName } from './account-secret-access';
+import { accessSummary, chatGptSharing, keyAccessFields, labelOwnerName, needsReconnection } from './account-secret-access';
 
 const ME = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -78,5 +78,22 @@ describe('labelOwnerName — the name in a new account default label', () => {
 
   test('no user yields no name', () => {
     expect(labelOwnerName(null)).toBe('');
+  });
+});
+
+// The gateway marks an account whose login stopped working (needs_reauth_at);
+// an inactive account needed reconnection before that mark existed.
+describe('needsReconnection — a ChatGPT account the viewer must sign in to again', () => {
+  test('a marked account needs reconnection', () => {
+    expect(needsReconnection({ active: true, needs_reauth_at: '2026-09-25T10:00:00.000Z' })).toBe(true);
+  });
+
+  test('an inactive account needs reconnection', () => {
+    expect(needsReconnection({ active: false, needs_reauth_at: null })).toBe(true);
+  });
+
+  test('a working account does not, including from an API without the field', () => {
+    expect(needsReconnection({ active: true, needs_reauth_at: null })).toBe(false);
+    expect(needsReconnection({ active: true })).toBe(false);
   });
 });
