@@ -233,9 +233,19 @@ again. Reconnecting keeps the account's name, access, and session selections.
 Only the member who connected an account can reconnect it. Account owners and
 admins can delete any account.
 
+When an account's login stops working, the account shows **Needs
+reconnection**. This happens when ChatGPT rejects the renewal of the login, or
+when the stored login cannot be read. A brief outage at ChatGPT does not mark
+an account. The member who connected the account sees **Reconnect** beside it.
+**Session overrides → Provider keys** shows the same mark. A turn that fails
+names the accounts that need reconnection. The account stays selected, and
+reconnecting it or a successful renewal clears the mark.
+
 A session can select multiple granted ChatGPT accounts in **Session overrides →
 Provider keys**. Without a selection, the member's newest usable connection is
-the default in their own private session. A session shared with the project
+the default in their own private session. A connection marked **Needs
+reconnection** is the default only when all of the member's connections are
+marked. A session shared with the project
 never uses a member's own connection: select a connection shared with the whole
 project for it. Scheduled sessions cannot use an **Only you** account either.
 Another member's shared connection requires an explicit selection. The legacy

@@ -108,6 +108,45 @@ point outside Customize, and an expired account had no reconnect.
 - Verification: `unit-project-oauth-byos.test.ts`, flow `SEC-POOL-5`, and the
   member journey in `30-pooled-provider-secrets.spec.ts`.
 
+## ChatGPT login health, 2026-09-25
+
+Problem: when an account's OAuth refresh failed, the gateway returned
+`provider_reauth_required` on every turn, but nothing recorded the failure on
+the account. The accounts panel showed **Needs reconnection** only for
+inactive accounts, which no code path produced, and the error did not name
+the account. A member with several ChatGPT accounts could not tell which one
+to reconnect.
+
+- `account_secret_resources.needs_reauth_at` (nullable `timestamptz`) records
+  the first permanent failure of the stored login. The account stays active
+  and in its pools; the column is a label, not a switch.
+- Permanent means: the refresh endpoint answered 401, or 400/403 with a
+  dead-token code (`invalid_grant`, `invalid_refresh_token`,
+  `refresh_token_expired`, `refresh_token_reused`,
+  `refresh_token_invalidated`); or the stored login cannot be decrypted or has
+  no access token. Network errors, timeouts, 429 and 5xx never mark.
+  Measured on 2026-09-25: an unknown refresh token answers
+  `401 invalid_refresh_token`.
+- The mark keeps the first failure time and never moves `updated_at`. It is
+  written only when `updated_at` still equals the version the gateway read, so
+  a concurrent refresh on another replica or a reconnect always wins. A
+  successful refresh, a reconnect, and a key rotation clear it.
+- The member's default ChatGPT account is the newest unmarked one, falling
+  back to the newest marked one.
+- The gateway error names the failing accounts: `Your ChatGPT account "<label>"
+  needs reconnection.` for the default, and up to three labels for a session
+  selection.
+- A pooled key this API cannot decrypt is skipped instead of failing the
+  request with 500. For a ChatGPT account it also marks the account.
+- The list API returns `needs_reauth_at`; the SDK type carries it as an
+  optional field. The panel shows the mark with a **Reconnect** button for the
+  member who connected the account; session overrides show the mark.
+- Verification: `codex.test.ts` (refresh classification against the measured
+  wire shape), `codex-consumer.test.ts` (marks, transient failures, guarded
+  SQL), `resolve-candidates.test.ts` (named errors, unreadable keys), flow
+  `SEC-POOL-6` (real gateway, real database), and the reconnection journey in
+  `30-pooled-provider-secrets.spec.ts`.
+
 ## UI follow-up, 2026-09-18
 
 - One session footer saves every staged provider selection and default reset.
