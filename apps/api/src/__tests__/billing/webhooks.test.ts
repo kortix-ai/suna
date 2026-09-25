@@ -1308,6 +1308,27 @@ describe('per-seat entitlement is the allowance, never the price', () => {
     expect(walletGrants.length).toBe(0);
   });
 
+  // Stripe can report a seat line with quantity 0 or a fraction; the team is
+  // still funded for at least one whole seat.
+  test.each([
+    [0, 1, 25],
+    [2.9, 2, 50],
+  ])('a seat line with quantity %p is stored as %p seats and funds %p', async (seats, stored, amount) => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        tier: 'free',
+        billingModel: 'per_seat',
+        seatCount: 0,
+        stripeSubscriptionId: null,
+      });
+
+    await syncSeats(perSeatSub(seats));
+
+    const persisted = updateCreditAccountCalls.find((c: any) => c.data.seatCount !== undefined);
+    expect(persisted?.data.seatCount).toBe(stored);
+    expect(walletResets.map((reset) => reset.amount)).toEqual([amount]);
+  });
+
   test('a brand-new per-seat team gets seat tokens minted even though no grant is written', async () => {
     // Minting is not a money decision. It once sat inside a credit-grant block,
     // so a change to the grant rule silently stopped minting for newly
