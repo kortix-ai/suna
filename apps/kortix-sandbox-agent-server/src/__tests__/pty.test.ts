@@ -4,7 +4,8 @@ import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import type { Opencode } from '../harness/open-code/lifecycle'
 import { startProxy } from '../proxy'
-import { createOpenCodeHarnessFixture } from './helpers/open-code-harness'
+import { requireOpenCodeConfig } from '../harness/open-code/config'
+import { composeOpenCodeHarnessService } from '../harness/open-code/service'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
@@ -72,7 +73,7 @@ function authHeaders(): Record<string, string> {
 }
 
 function startTestProxy(cfg: Config = baseConfig()) {
-  return startProxy(cfg, createOpenCodeHarnessFixture(cfg, fakeOpencode()), Date.now(), { repoMaterializationError: null, timeline: [] })
+  return startProxy(cfg, composeOpenCodeHarnessService(requireOpenCodeConfig(cfg), fakeOpencode()), Date.now(), { repoMaterializationError: null, timeline: [] })
 }
 
 interface PtyMeta {
