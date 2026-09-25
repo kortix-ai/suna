@@ -300,6 +300,11 @@ describe('managed OpenRouter pool', () => {
     }
   });
 
+  test('an omitted list in a minimal config disables direct Morph', () => {
+    config.MORPH_MANAGED_MODELS = undefined;
+    expect(managedCandidates(MANAGED_MODELS[0]!).map((candidate) => candidate.provider)).toEqual(['openrouter']);
+  });
+
   test('a selected model remains available through Morph when OpenRouter has no key', () => {
     const saved = config.OPENROUTER_API_KEY;
     config.OPENROUTER_API_KEY = undefined;

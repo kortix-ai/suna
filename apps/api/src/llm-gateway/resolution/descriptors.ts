@@ -158,7 +158,7 @@ function managedPricing(managed: ManagedModel): UpstreamDescriptor['pricing'] | 
 }
 
 function morphManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  if (!config.MORPH_MANAGED_MODELS.includes(managed.id) || !managed.morphModelId || !managed.morphPricing || !config.MORPH_API_KEY) return null;
+  if (!config.MORPH_MANAGED_MODELS?.includes(managed.id) || !managed.morphModelId || !managed.morphPricing || !config.MORPH_API_KEY) return null;
   return {
     provider: 'morph',
     kind: 'openai-compat',
