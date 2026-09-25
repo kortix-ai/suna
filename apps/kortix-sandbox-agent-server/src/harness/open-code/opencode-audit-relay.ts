@@ -421,8 +421,7 @@ export interface AuditRelay {
  * `/v1/projects/:p/sessions/:s/audit/events` ran 3,395 times across 20 session
  * opens in one hour — 680 ms median, 2,265 s cumulative, the single largest
  * line in the whole performance corpus. One local session
- * (`08891820-0cd9-4fe7-bcfd-2431375ff75d`, `kortix.audit_events`) shows the
- * mechanism: 117,437 relayed OpenCode events in 64 minutes, and the relay's own
+ * (`kortix.audit_events`) shows the mechanism: 117,437 relayed OpenCode events in 64 minutes, and the relay's own
  * access log records 4,848 POSTs for that ONE session.
  *
  * The volume was never batched away because the relay forwarded EVERY OpenCode

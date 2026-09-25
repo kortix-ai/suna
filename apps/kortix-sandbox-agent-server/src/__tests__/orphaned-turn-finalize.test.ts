@@ -343,7 +343,7 @@ describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBeNull();
   });
 
-  // EXPECTATION FLIPPED 2026-08-20 (live incident, SampleCo session d1b74954):
+  // EXPECTATION FLIPPED 2026-08-20 (live incident, a customer session):
   // prompts forwarded INTO a live turn — and OpenCode's own synthetic
   // `<pty_exited>` wake-ups — put a NEWER user message on the root while the
   // SAME loop is still streaming the older turn's steps. The old rule ("a
@@ -808,25 +808,25 @@ describe('observeRequestedTurn — what /kortix/health?turn=1 answers with', () 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REPLAY of the incident this gate exists for: SampleCo session d1b74954 at
+// REPLAY of the incident this gate exists for: a customer session at
 // 2026-08-20T12:48:51Z, reconstructed from the box's own transcript.
 //
-// Turn `msg_01f3518bd002` was STREAMING — its step completed at 12:48:54Z —
-// when OpenCode's synthetic `<pty_exited>` user message (`msg_01f377133001`)
+// Turn `LIVE_TURN` was STREAMING — its step completed at 12:48:54Z —
+// when OpenCode's synthetic `<pty_exited>` user message (a newer user message)
 // landed above it. The reaper asked the daemon, the old newer-user rule
 // answered "terminal" without ever looking at the root's status, and turn
 // authority was destroyed mid-stream (`end_reason='unknown'`). The composer
 // then read "not running" over a visibly working session.
 // ─────────────────────────────────────────────────────────────────────────────
-describe('SampleCo d1b74954 replay — a streaming turn under a pty wake-up', () => {
-  const ROOT_2 = 'ses_fea1ccba5ffeW98pYkIvdImthU';
-  const LIVE_TURN = 'msg_01f3518bd002UMWkvirVrVsjxE';
+describe('incident replay — a streaming turn under a pty wake-up', () => {
+  const ROOT_2 = 'ses_testIncidentRoot000000000';
+  const LIVE_TURN = 'msg_0000000a0001TestLiveTurnAa';
   const incidentTranscript = [
     { info: { id: LIVE_TURN, role: 'user' } },
     // the step that was mid-flight at 12:48:51 — no completion yet
-    { info: { id: 'msg_01f376fde001uV4uqd', role: 'assistant', parentID: LIVE_TURN, time: {} } },
+    { info: { id: 'msg_0000000b0001TestStep', role: 'assistant', parentID: LIVE_TURN, time: {} } },
     // the synthetic <pty_exited> wake-up that landed above it
-    { info: { id: 'msg_01f377133001S9mt83', role: 'user' } },
+    { info: { id: 'msg_0000000c0001TestWake', role: 'user' } },
   ];
 
   test('is NOT terminal while the root reports busy', async () => {

@@ -49,7 +49,7 @@ let root: string
 let origin: string
 let work: string
 
-const SESSION_ID = '5edfa699-4af7-42a4-b323-d317c8137cf8'
+const SESSION_ID = '00000000-0000-4000-8000-00000000a0b1'
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-refresh-'))

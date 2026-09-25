@@ -506,7 +506,7 @@ describe('audit relay backoff', () => {
 // Emission volume. SampleCo 2026-08-26: 3,395 POSTs to
 // /v1/projects/:p/sessions/:s/audit/events across 20 sessions in one hour,
 // 680 ms median, 2,265 s cumulative. One local session
-// (08891820-0cd9-4fe7-bcfd-2431375ff75d) shows the mechanism: 117,437 relayed
+// shows the mechanism: 117,437 relayed
 // OpenCode events in 64 minutes, of which 107,394 (91.4%) are per-token
 // `message.part.delta` and 384 are `server.heartbeat`. At the old
 // batchSize=50 that is 4,848 POSTs for ONE session.
@@ -711,8 +711,8 @@ describe('audit relay emission volume', () => {
   });
 
   test('replays the real SampleCo-shaped event mix into ~1 POST per 200 kept events', async () => {
-    // Ratios measured on kortix.audit_events for session
-    // 08891820-0cd9-4fe7-bcfd-2431375ff75d (117,437 relayed events / 64 min).
+    // Ratios measured on kortix.audit_events for one session
+    // (117,437 relayed events / 64 min).
     const sent: OpenCodeAuditEvent[][] = [];
     const relay = createAuditRelay(
       async (events) => {

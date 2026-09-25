@@ -24,7 +24,7 @@
  *     proxy's response stripper turns it into an on-demand ref and
  *     `/kortix/part/:s/:m/:p` serves the sidecar bytes to the UI.
  *
- * Verified live on 1.18.23 (2026-08-25, box i67m4): OpenCode serves an
+ * Verified live on 1.18.23 (2026-08-25, one customer box): OpenCode serves an
  * externally UPDATEd row on the next read — no cache, no restart; the UPDATE
  * took 7 ms with OpenCode holding the DB open (WAL).
  *

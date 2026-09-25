@@ -2,7 +2,7 @@
  * Regression: a memory-guard abort must reach the control plane as the end of
  * THE turn it stopped.
  *
- * Observed 2026-09-18 (session `ad02e053`): the guard aborted two turns at 97 %
+ * Observed 2026-09-18: the guard aborted two turns at 97 %
  * and 96 % box memory. The `SandboxMemoryGuard` end frame it relayed carried no
  * `turn_message_id`. The API only matches an id-less end against an active turn
  * that ALSO has no `messageId` (`fallback_match` in `completeSandboxTurn`), and
@@ -83,7 +83,7 @@ const savedEnv = new Map<string, string | undefined>(ENV_KEYS.map((k) => [k, pro
 
 const OPENCODE_URL = 'http://127.0.0.1:4096'
 const API_ROOT = 'http://api.test/v1'
-const USER_MESSAGE_ID = 'msg_0b4b8ed0d002I5zuKucp0FSRZc'
+const USER_MESSAGE_ID = 'msg_0000000d0001TestUserPrompt'
 
 const ORIGINAL_FETCH = globalThis.fetch
 let aborts: string[] = []
@@ -201,7 +201,7 @@ describe('memory guard turn end', () => {
     // An aborted turn is over. apps/api reads `error_retryable: true` as "a
     // retry, still running" (`isTerminalTurnEnd`) and drops the frame as
     // `non_terminal` before it ever looks at the identity — verified on a real
-    // sandbox 2026-09-21 (session 65617759).
+    // sandbox 2026-09-21.
     expect(end.error_retryable).toBe(false)
   })
 

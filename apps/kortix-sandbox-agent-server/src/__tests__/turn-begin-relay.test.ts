@@ -6,7 +6,7 @@ import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 
 // A BOX-INITIATED turn (OpenCode's synthetic `<pty_exited>` wake-up) must be
 // announced to apps/api so it gets turn authority — live incident 2026-08-20
-// (SampleCo session d1b74954): pty-driven turns streamed for 10+ minutes while
+// (a customer session): pty-driven turns streamed for 10+ minutes while
 // `GET .../turn` reported idle, because nothing ever told the control plane a
 // turn had started.
 

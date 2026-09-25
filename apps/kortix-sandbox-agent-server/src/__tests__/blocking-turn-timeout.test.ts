@@ -9,7 +9,7 @@
  *
  * It got worse downstream: that 502 is exactly the signal apps/api's retry loop
  * was built to act on, so a fail-fast meant to trigger a retry met a retry loop
- * that assumed idempotency. Session 9f6b0d87 recorded one `/webapp` submit as
+ * that assumed idempotency. One session recorded one `/webapp` submit as
  * four identical user messages ~10.75s apart (the 10s bound plus apps/api's
  * [250, 1000, 3000] delays), each retry aborting the turn the last one started.
  */

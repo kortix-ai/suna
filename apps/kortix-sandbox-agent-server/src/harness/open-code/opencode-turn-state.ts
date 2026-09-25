@@ -410,8 +410,8 @@ export async function observeOpencodeDelivery(
     // SAME loop still streams the older turn's steps; and between two steps of
     // one turn the latest assistant message reads completed while tools run
     // and the next step's message does not exist yet. Both shapes read
-    // "terminal" here and were: live incident 2026-08-20 (SampleCo session
-    // d1b74954) — the reaper destroyed a streaming turn's authority at
+    // "terminal" here and were: live incident 2026-08-20 (a customer
+    // session) — the reaper destroyed a streaming turn's authority at
     // 12:48:51Z on the newer-user rule; its step completed at 12:48:54Z. So no
     // terminal verdict leaves this function while the root itself reports
     // busy, and an unreadable status is unknown, never terminal.
