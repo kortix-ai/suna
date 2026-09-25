@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { HostBoundaryError } from '@kortix/sdk';
 import {
   classifySetupLinkError,
+  describeWithheldSecrets,
   describeLinkExpiry,
   holdPendingSetupLink,
   parsePendingSetupLinkHref,
@@ -302,5 +303,40 @@ describe('holdPendingSetupLink', () => {
     withWindowOrigin('https://kortix.com');
     const text = `${LEAD}[a] b](https://kortix.com/connect/ksl_A`;
     expect(holdPendingSetupLink(text)).toBe(text);
+  });
+});
+
+describe('describeWithheldSecrets', () => {
+  test('a fully delivered submit has nothing to say', () => {
+    expect(describeWithheldSecrets({})).toBeNull();
+    expect(describeWithheldSecrets({ agent: 'analyst', withheld: [] })).toBeNull();
+  });
+
+  test('a grant exclusion names the agent and the exact Customize path', () => {
+    expect(
+      describeWithheldSecrets({
+        agent: 'analyst',
+        withheld: [{ name: 'API_KEY', reason: 'agent_grant' }],
+      }),
+    ).toEqual({
+      title: "Saved, but analyst can't read it yet",
+      description:
+        "API_KEY is not in the analyst agent's secrets. Open Customize → Agents → analyst → Secrets and enable it.",
+    });
+  });
+
+  test('several names and an allowlist exclusion each get their own fix', () => {
+    const notice = describeWithheldSecrets({
+      agent: 'analyst',
+      withheld: [
+        { name: 'A_KEY', reason: 'agent_grant' },
+        { name: 'B_KEY', reason: 'agent_grant' },
+        { name: 'C_KEY', reason: 'session_allowlist' },
+      ],
+    });
+    expect(notice?.description).toContain('A_KEY, B_KEY are not in the analyst agent');
+    expect(notice?.description).toContain('enable them.');
+    expect(notice?.description).toContain('C_KEY is outside this session');
+    expect(notice?.description).toContain('Start a new session to use it.');
   });
 });
