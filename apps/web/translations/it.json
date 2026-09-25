@@ -1594,6 +1594,7 @@
     "backToProject": "Torna al progetto",
     "delete": "Elimina sessione",
     "failedLabel": "Sessione non riuscita",
+    "loadingConversation": "Caricamento della conversazione",
     "prompt": {
       "queueFailed": "Impossibile accodare il prompt salvato",
       "unavailable": "Nessun prompt salvato disponibile.",

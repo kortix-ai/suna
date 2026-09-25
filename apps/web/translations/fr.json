@@ -1594,6 +1594,7 @@
     "backToProject": "Retour au projet",
     "delete": "Supprimer la session",
     "failedLabel": "Session échouée",
+    "loadingConversation": "Chargement de la conversation",
     "prompt": {
       "queueFailed": "Impossible de mettre le prompt enregistré en file d’attente",
       "unavailable": "Aucun prompt enregistré n’est disponible.",
