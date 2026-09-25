@@ -1397,7 +1397,13 @@ export async function retryUntilInitialSessionEstablished(input: {
     await sleep(delayMs(attempt))
     if (input.established()) break
     logger.warn('[boot] initial opencode session still pending; retrying', { attempt })
-    await input.attempt()
+    // A throwing attempt is one failed rung, never the end of the loop.
+    await input.attempt().catch((err) => {
+      logger.warn('[boot] initial opencode session attempt failed', {
+        attempt,
+        err: err instanceof Error ? err.message : String(err),
+      })
+    })
     if (input.established()) break
   }
   if (!input.established()) return false

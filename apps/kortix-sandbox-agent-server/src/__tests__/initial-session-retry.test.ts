@@ -80,6 +80,7 @@ describe('retryUntilInitialSessionEstablished', () => {
   test('an attempt that throws does not kill the loop', async () => {
     let attempts = 0
     let established = false
+    let finalized = 0
     const ok = await retryUntilInitialSessionEstablished({
       attempt: async () => {
         attempts++
@@ -87,15 +88,15 @@ describe('retryUntilInitialSessionEstablished', () => {
         established = true
       },
       established: () => established,
-      finalize: async () => {},
+      finalize: async () => {
+        finalized++
+      },
       sleep: noSleep,
       maxAttempts: 10,
-    }).catch(() => false)
-    // The loop is driven with a catch-wrapped attempt in main(); direct throws
-    // here surface — assert the wrapper contract instead: with a rejecting
-    // attempt the caller's wrapper must swallow. This test documents that the
-    // loop itself does not retry a THROWING attempt silently.
-    expect(ok === false || attempts >= 2).toBe(true)
+    })
+    expect(ok).toBe(true)
+    expect(attempts).toBe(2)
+    expect(finalized).toBe(1)
   })
 
   test('uses the delay schedule per attempt', async () => {
