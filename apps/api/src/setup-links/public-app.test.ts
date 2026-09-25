@@ -57,7 +57,10 @@ mock.module('../projects/session-lifecycle', () => ({
 }));
 
 let pipedreamOn = false;
-let finalizeResult: { connected: boolean; accountId?: string } = { connected: false };
+let finalizeResult: { connected: boolean; accountId?: string; connectedAs?: string | null } = {
+  connected: false,
+};
+let connectResult: Record<string, unknown> = { provider: 'pipedream', connectUrl: null, connected: false };
 const finalizeCalls: Array<Record<string, unknown>> = [];
 mock.module('../connectors/pipedream', () => ({
   pipedreamConfigured: () => pipedreamOn,
@@ -79,7 +82,7 @@ mock.module('../connectors/credentials', () => ({
 // behaviour — what it persists and who it tells — not a provider client.
 mock.module('../connectors/db-deps', () => ({
   dbConnectorRouterDeps: {
-    connectorConnect: async () => ({ provider: 'pipedream', connectUrl: null, connected: false }),
+    connectorConnect: async () => connectResult,
     connectorFinalize: async (projectId: string, slug: string) => {
       finalizeCalls.push({ projectId, slug });
       return { provider: 'pipedream', ...finalizeResult };
@@ -170,6 +173,68 @@ describe('GET /secret/:token', () => {
   test('a mangled token returns 404', async () => {
     const res = await setupLinksPublicApp.request(`/secret/${mintToken().slice(0, -8)}`);
     expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /connectors/:token', () => {
+  test('returns the connector display name and icon so the chat card can name the app', async () => {
+    connectorRows = [
+      { name: 'Smartlead', config: { icon_url: 'https://cdn.example.test/smartlead.svg' } },
+    ];
+    const res = await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      kind: 'connector',
+      project_name: 'Kortix Company',
+      slug: 'smartlead',
+      app: 'smartlead',
+      name: 'Smartlead',
+      icon_url: 'https://cdn.example.test/smartlead.svg',
+    });
+  });
+
+  test('a connector without a catalog icon reports icon_url null, not a guessed URL', async () => {
+    connectorRows = [{ name: 'Smartlead', config: {} }];
+    const body = await (
+      await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`)
+    ).json();
+    expect(body.name).toBe('Smartlead');
+    expect(body.icon_url).toBeNull();
+  });
+
+  test('a Composio connector without a stored icon uses the toolkit logo the catalogue shows', async () => {
+    const { setComposioRuntimeForTest } = await import('../connectors/composio');
+    const previousKey = process.env.COMPOSIO_API_KEY;
+    process.env.COMPOSIO_API_KEY = 'test-key';
+    setComposioRuntimeForTest({
+      sessions: { create: async () => ({}) as never, use: async () => ({}) as never },
+      toolkits: {
+        get: async () => [
+          { slug: 'SmartLead', name: 'Smartlead', meta: { logo: 'https://logos.example.test/smartlead' } },
+        ],
+      },
+    });
+    try {
+      connectorRows = [{ name: 'Smartlead', config: {} }];
+      const body = await (
+        await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`)
+      ).json();
+      expect(body.icon_url).toBe('https://logos.example.test/smartlead');
+    } finally {
+      setComposioRuntimeForTest(null);
+      if (previousKey === undefined) delete process.env.COMPOSIO_API_KEY;
+      else process.env.COMPOSIO_API_KEY = previousKey;
+    }
+  });
+
+  test('a link whose connector row is gone still resolves, with null identity', async () => {
+    connectorRows = [];
+    const res = await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.name).toBeNull();
+    expect(body.icon_url).toBeNull();
   });
 });
 
@@ -308,7 +373,8 @@ describe('POST /connectors/:token/finalize', () => {
     sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
     const res = await finalize(mintConnectorToken());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ connected: true });
+    // No provider round trip on this path, so the identity is unknown.
+    expect(await res.json()).toEqual({ connected: true, connected_as: null });
     expect(finalizeCalls).toHaveLength(0);
     await flushNotification();
     expect(enqueued).toHaveLength(0);
@@ -332,7 +398,7 @@ describe('POST /connectors/:token/finalize', () => {
     sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
     const res = await finalize(mintConnectorToken());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ connected: true });
+    expect(await res.json()).toEqual({ connected: true, connected_as: null });
     // The provider-neutral contract: the route names the project and the
     // connector, and the dep resolves the provider behind it. `app` /
     // `connectorId` were arguments of the old Pipedream-only call.
@@ -347,6 +413,15 @@ describe('POST /connectors/:token/finalize', () => {
       actorUserId: 'user-1',
     });
     expect(String(enqueued[0].text)).toContain('smartlead');
+  });
+
+  test('connected → names the identity the account was authorized as', async () => {
+    pipedreamOn = true;
+    finalizeResult = { connected: true, accountId: 'ca_1', connectedAs: 'ops@example.test' };
+    sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
+    const res = await finalize(mintConnectorToken());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ connected: true, connected_as: 'ops@example.test' });
   });
 
   test('a STOPPED session is told too — the agent posted the link and its turn ended before the human finished (#6885)', async () => {
@@ -378,7 +453,7 @@ describe('POST /connectors/:token/finalize', () => {
     finalizeResult = { connected: true };
     sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
     const res = await finalize(mintConnectorToken({ sid: null }));
-    expect(await res.json()).toEqual({ connected: true });
+    expect(await res.json()).toEqual({ connected: true, connected_as: null });
     await flushNotification();
     expect(enqueued).toHaveLength(0);
   });
@@ -405,5 +480,37 @@ describe('secretSubmittedPrompt', () => {
     expect(text).toContain('DRATA_API_KEY, DRATA_WORKSPACE_ID');
     expect(text).toContain('kortix secrets sync');
     expect(text).toContain('Do not mint a new intake link');
+  });
+});
+
+describe('POST /connectors/:token/start', () => {
+  beforeEach(() => {
+    pipedreamOn = true;
+    connectorRows = [{ connectorId: CONNECTOR_ID, providerType: 'composio' }];
+    connectResult = { provider: 'pipedream', connectUrl: null, connected: false };
+  });
+
+  function start(token: string) {
+    return setupLinksPublicApp.request(`/connectors/${token}/start`, { method: 'POST' });
+  }
+
+  test('a slot that already holds an active account answers connected, not an error', async () => {
+    connectResult = { provider: 'composio', connectUrl: undefined, connected: true, isNoAuth: false };
+    const res = await start(mintConnectorToken());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ connect_url: null, connected: true, already_connected: true });
+  });
+
+  test('a no-auth toolkit answers connected without claiming a prior account', async () => {
+    connectResult = { provider: 'composio', connectUrl: undefined, connected: true, isNoAuth: true };
+    const res = await start(mintConnectorToken());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ connect_url: null, connected: true, already_connected: false });
+  });
+
+  test('a provider that returns neither a url nor a connection is a 502', async () => {
+    connectResult = { provider: 'composio', connectUrl: undefined, connected: false, isNoAuth: false };
+    const res = await start(mintConnectorToken());
+    expect(res.status).toBe(502);
   });
 });

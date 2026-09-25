@@ -84,7 +84,7 @@ export class UpstreamHttpError extends Error {
 // used for merely "irrelevant to this route model") so the pipeline can carry
 // a specific, actionable code/message/suggestion all the way to the client
 // instead of collapsing every cause into one generic "No upstream configured"
-// string. See packages/llm-gateway/src/pipeline/handler.ts's dispatch loop.
+// string. See pipeline/simple-handler.ts and pipeline/dispatch.ts.
 export type NoUpstreamReasonCode =
   | 'model_not_found'
   | 'model_disabled_on_deployment'
@@ -203,7 +203,7 @@ export function indicatesUpstreamDown(err: unknown): boolean {
  * other 400: the request is fine without that one field, so the caller can
  * strip it and try once more instead of failing the turn.
  *
- * Essentia 2026-08-25: Bedrock's `global.openai.gpt-5.6-sol` profile answered
+ * SampleCo 2026-08-25: Bedrock's `global.openai.gpt-5.6-sol` profile answered
  * `{"code":"unknown_parameter","param":"reasoning_effort"}` to a wire shape the
  * gateway believed was right (#6879; corrected to the nested `reasoning.effort`
  * by #6893). Whatever the next wrong claim is, it must cost one retry, never

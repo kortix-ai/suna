@@ -257,8 +257,8 @@ describe('resolveCandidates — selected account key pool', () => {
   });
 });
 
-describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback', () => {
-  test('paid tier: platform-fee billing, 10% markup, managed fallback queued behind the BYOK key', async () => {
+describe('resolveCandidates — BYOK billing', () => {
+  test('paid tier: BYOK has no Kortix charge and no managed fallback', async () => {
     catalogUpstream = {
       baseUrl: 'https://api.anthropic.com/v1',
       envVar: 'ANTHROPIC_API_KEY',
@@ -271,17 +271,16 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
     const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
 
-    expect(candidates).toHaveLength(2);
+    expect(candidates).toHaveLength(1);
     expect(candidates[0]).toMatchObject({
-      billingMode: 'platform-fee',
-      markup: 0.1,
+      billingMode: 'none',
+      markup: 0,
       apiKey: 'sk-user-key',
       credentialRef: 'ANTHROPIC_API_KEY',
     });
-    expect(candidates[1]).toMatchObject({ provider: 'kortix-managed' });
   });
 
-  test('queues every provider credential before the managed fallback', async () => {
+  test('queues every provider credential without a managed fallback', async () => {
     catalogUpstream = {
       baseUrl: 'https://api.anthropic.com/v1',
       envVar: 'ANTHROPIC_API_KEY',
@@ -297,17 +296,9 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
     const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
 
-    expect(candidates).toHaveLength(3);
-    expect(candidates.map((candidate) => candidate.credentialRef)).toEqual([
-      'primary',
-      'secondary',
-      undefined,
-    ]);
-    expect(candidates.map((candidate) => candidate.apiKey)).toEqual([
-      'sk-primary',
-      'sk-secondary',
-      'm',
-    ]);
+    expect(candidates).toHaveLength(2);
+    expect(candidates.map((candidate) => candidate.credentialRef)).toEqual(['primary', 'secondary']);
+    expect(candidates.map((candidate) => candidate.apiKey)).toEqual(['sk-primary', 'sk-secondary']);
   });
 
   test('BYOK descriptor carries the model capability flags for the transport', async () => {
@@ -385,6 +376,30 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     });
   });
 
+  test('BYOK Bedrock: an AWS_REGION that is not a region name is refused before any endpoint is built', async () => {
+    catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+    for (const region of ['x@example.test/', 'example.test#', 'us-east-1.example.test', 'us-east-1/']) {
+      secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: region };
+      await expect(resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8')).rejects.toMatchObject({
+        code: 'provider_not_connected',
+      });
+    }
+  });
+
+  test('BYOK Bedrock: a padded region name is trimmed and accepted', async () => {
+    catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
+    secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: ' us-gov-west-1 ' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+    const candidates = await resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8');
+    expect(candidates[0]).toMatchObject({
+      baseUrl: 'https://bedrock-runtime.us-gov-west-1.amazonaws.com',
+      region: 'us-gov-west-1',
+    });
+  });
+
   // Regression coverage for the $0 upstream-cost-hint bug: models.dev only
   // catalogs the BASE Bedrock model id, never the cross-region
   // inference-profile id the user actually requests — so the PRICING lookup
@@ -404,7 +419,7 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     expect(livePricingCalls).toEqual(['amazon-bedrock/anthropic.claude-opus-4-8']);
   });
 
-  // The Essentia incident, at the resolve-candidates layer: a session pinned to
+  // The SampleCo incident, at the resolve-candidates layer: a session pinned to
   // a `jp.` opus profile on a us-east-1 box must resolve to the `us.` invoke id
   // so it stops 400ing "The provided model identifier is invalid."
   test('BYOK Bedrock: a wrong-geography jp. pin on a us-east-1 box is normalized to us.', async () => {
@@ -460,7 +475,7 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     expect(candidates[0]).toMatchObject({ billingMode: 'none', markup: 0 });
   });
 
-  test('self-hosted (billing disabled): no tier lookup, still gets the platform markup and a managed fallback', async () => {
+  test('self-hosted (billing disabled): no tier lookup, no charge, and no managed fallback', async () => {
     config.KORTIX_BILLING_INTERNAL_ENABLED = false;
     catalogUpstream = {
       baseUrl: 'https://api.anthropic.com/v1',
@@ -473,8 +488,8 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     const candidates = await resolveCandidates(principal(), 'anthropic/claude-sonnet-4.6');
 
     expect(getAccountTier).not.toHaveBeenCalled();
-    expect(candidates).toHaveLength(2);
-    expect(candidates[0]).toMatchObject({ billingMode: 'none', markup: 0.1 });
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ billingMode: 'none', markup: 0 });
   });
 
   test('no BYOK key connected for anyone throws provider_not_connected', async () => {
@@ -629,6 +644,8 @@ describe('resolveCandidates — codex + unknown provider', () => {
     expect(resolveCodexCredential).toHaveBeenCalledWith('p1', 'u1', undefined, {
       accountId: 'acct-1',
       sessionId: 'session-1',
+      // Legacy principal (no personalUserId): the personal override owner is the token user.
+      principalUserId: 'u1',
     });
   });
 
@@ -715,7 +732,7 @@ test('a prospective ChatGPT pool validates through the same member-bound resolve
   const actor = principal();
   const candidates = await resolveCandidates(actor, 'codex/gpt-5.5', { providerSecretPools: { codex: ['shared'] } });
   expect(candidates.map(candidate => candidate.poolSecretId)).toEqual(['shared']);
-  expect(resolveSessionProviderSecrets).toHaveBeenCalledWith({ accountId: actor.accountId, projectId: actor.projectId, userId: actor.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON', secretIds: ['shared'] });
+  expect(resolveSessionProviderSecrets).toHaveBeenCalledWith({ accountId: actor.accountId, projectId: actor.projectId, userId: actor.userId, grantUserId: actor.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON', secretIds: ['shared'] });
   expect(resolveCodexAccountCredential).toHaveBeenCalledWith(expect.objectContaining({ sessionId: null }));
 });
 

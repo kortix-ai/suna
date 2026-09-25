@@ -19,14 +19,13 @@ on:
         required: true
         type: number
       provider:
-        description: Preview sandbox provider
+        description: Preview sandbox provider (Platinum only; `auto` means Platinum)
         required: true
         default: auto
         type: choice
         options:
           - auto
           - platinum
-          - daytona
   schedule:
     - cron: "17 6 * * *"
 
@@ -109,7 +108,9 @@ jobs:
             echo "::error::Pull request head is not a full Git SHA."
             exit 1
           }
-          case "$provider" in auto|platinum|daytona) ;; *) exit 1 ;; esac
+          # Previews run on Platinum only, host and sessions (2026-09-22). The
+          # shared Daytona org hit its snapshot quota on 2026-09-21.
+          case "$provider" in auto|platinum) ;; *) echo "::error::Previews run on Platinum only."; exit 1 ;; esac
 
           current="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.sha)"
           [ "$current" = "$sha" ] || {
@@ -131,10 +132,9 @@ jobs:
           }
 
           branch="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.ref)"
-          # A manual Daytona run verifies the exact PR SHA on an ephemeral
-          # origin after Platinum fails. It must not claim or replace the
-          # branch's persistent Platinum identity.
-          persistent_branch=$([ "$EVENT_NAME" = workflow_dispatch ] && [ "$provider" = daytona ] && printf '' || printf '%s' "$branch")
+          # Every run is a Platinum run, so every run owns the branch's
+          # persistent Platinum identity.
+          persistent_branch="$branch"
 
           {
             echo "pr_number=$num"
@@ -506,11 +506,20 @@ jobs:
           DEPLOYMENT_ID: ${{ steps.deployment.outputs.id }}
           PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
           PREVIEW_OUTCOME: ${{ steps.preview.outcome }}
+          TESTS_RAN: ${{ steps.preview.outputs.tests_ran }}
         run: |
           set -euo pipefail
+          # `TESTS_RAN` comes from the deploy itself, not from re-reading
+          # PREVIEW_RUN_TESTS here — see the output's comment in
+          # tests/bin/sandbox-preview.ts. A redeploy from a push skips the
+          # suite, and this line used to call that "tests passed".
           if [ "$PREVIEW_OUTCOME" = success ] && [ -n "$PREVIEW_URL" ]; then
             state=success
-            description='Full self-host preview and target-full tests passed'
+            if [ "$TESTS_RAN" = 1 ]; then
+              description='Full self-host preview and target-full tests passed'
+            else
+              description='Full self-host preview deployed; target-full did not run'
+            fi
           else
             state=failure
             description='Preview deployment or target-full tests failed'
@@ -530,14 +539,24 @@ jobs:
           PROVIDER: ${{ steps.preview.outputs.provider }}
           SANDBOX_ID: ${{ steps.preview.outputs.sandbox_id }}
           PREVIEW_OUTCOME: ${{ steps.preview.outcome }}
+          TESTS_RAN: ${{ steps.preview.outputs.tests_ran }}
         run: |
           set -euo pipefail
           marker='<!-- preview-status -->'
-          if [ "$PREVIEW_OUTCOME" = success ]; then
+          if [ "$PREVIEW_OUTCOME" = success ] && [ "$TESTS_RAN" = 1 ]; then
             title='## Preview environment - live and tested'
             # Markdown needs literal backticks.
             # shellcheck disable=SC2016
             result='`pnpm test -- --target-full` passed.'
+          elif [ "$PREVIEW_OUTCOME" = success ]; then
+            # The suite is the GATE, and a redeploy from a push deliberately
+            # skips it (see PREVIEW_RUN_TESTS). Saying so is the whole point:
+            # this comment used to read "live and tested / target-full passed"
+            # over a deploy that ran nothing, which is the most reassuring
+            # sentence on the pull request and was not true.
+            title='## Preview environment - live; NOT tested'
+            # shellcheck disable=SC2016
+            result='`pnpm test -- --target-full` did NOT run on this deploy — a redeploy from a push skips it. Re-run the workflow from the Actions tab, or re-apply the `preview` label, to test this commit.'
           elif [ -n "$PREVIEW_URL" ]; then
             title='## Preview environment - live; tests failed'
             result='The sandbox remains available for diagnosis. Open the report and workflow log.'
@@ -547,7 +566,7 @@ jobs:
           fi
           body="$(printf '%s\n' "$marker" "$title" '' \
             "- **Preview:** ${PREVIEW_URL:-unavailable}" \
-            "- **Test report:** ${REPORT_URL:-unavailable}" \
+            "- **Test report:** ${REPORT_URL:-not run for this commit}" \
             "- **Provider:** ${PROVIDER:-$PREVIEW_SANDBOX_PROVIDER}" \
             "- **Sandbox:** ${SANDBOX_ID:-unavailable}" \
             "- **Commit:** \`${COMMIT}\`" '' \

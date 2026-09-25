@@ -6,13 +6,14 @@ import {
   createMockStripeClient,
   mockRegistry,
   registerGlobalMocks,
-  registerCreditsMock,
+  registerWalletMock,
+  fakeWallet,
   resetMockRegistry,
 } from './mocks';
 
-// Register global mocks + credits service mock (stubs grantCredits/resetExpiringCredits)
+// Register global mocks + the fake wallet (records every grant and reset)
 registerGlobalMocks();
-registerCreditsMock();
+registerWalletMock();
 
 // Per-seat checkout reads the active member count for the Stripe quantity.
 // Stub it so the unit test doesn't reach for the DB.
@@ -25,16 +26,13 @@ mock.module('../../billing/services/seat-management', () => ({
 let upsertCreditAccountCalls: any[] = [];
 let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
-let resetExpiringCreditsCalls: any[] = [];
-let grantCreditsCalls: any[] = [];
+const walletGrants = fakeWallet.calls.grant;
 let stripeCancelSubCalls: any[] = [];
 
 beforeEach(() => {
   upsertCreditAccountCalls = [];
   updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
-  resetExpiringCreditsCalls = [];
-  grantCreditsCalls = [];
   stripeCancelSubCalls = [];
   resetMockRegistry();
 
@@ -78,12 +76,6 @@ beforeEach(() => {
   };
 
   // Credit service defaults
-  mockRegistry.grantCredits = async (...args: any[]) => {
-    grantCreditsCalls.push(args);
-  };
-  mockRegistry.resetExpiringCredits = async (...args: any[]) => {
-    resetExpiringCreditsCalls.push(args);
-  };
 });
 
 // Import AFTER mocking
@@ -441,12 +433,28 @@ describe('createInlineCheckout: free tier handling', () => {
   });
 });
 
+// The staging `pro` monthly price (tests run with INTERNAL_KORTIX_ENV=staging).
+const STAGING_PRO_PRICE = 'price_1TeyA7G6l1KZGqIr7ZhEpoVm';
+
+function paidProSubscription(overrides: Record<string, any> = {}) {
+  return createMockStripeSubscription({
+    id: 'sub_new_paid',
+    status: 'active',
+    customer: 'cus_test_123',
+    items: { data: [{ id: 'si_pro', price: { id: STAGING_PRO_PRICE, unit_amount: 2000, currency: 'usd' } }] },
+    metadata: {
+      account_id: 'acc_test_123',
+      tier_key: 'pro',
+      billing_period: 'monthly',
+    },
+    ...overrides,
+  });
+}
+
 describe('confirmInlineCheckout: cancel old free sub', () => {
   test('cancels old free sub when previous_subscription_id in subscription metadata', async () => {
     mockRegistry.stripeClient.subscriptions.retrieve = async () =>
-      createMockStripeSubscription({
-        id: 'sub_new_paid',
-        status: 'active',
+      paidProSubscription({
         metadata: {
           account_id: 'acc_test_123',
           tier_key: 'pro',
@@ -464,7 +472,6 @@ describe('confirmInlineCheckout: cancel old free sub', () => {
     const result = await confirmInlineCheckout({
       accountId: 'acc_test_123',
       subscriptionId: 'sub_new_paid',
-      tierKey: 'pro',
     });
 
     expect(result.success).toBe(true);
@@ -473,16 +480,7 @@ describe('confirmInlineCheckout: cancel old free sub', () => {
   });
 
   test('does not cancel when no previous_subscription_id in metadata', async () => {
-    mockRegistry.stripeClient.subscriptions.retrieve = async () =>
-      createMockStripeSubscription({
-        id: 'sub_new_paid',
-        status: 'active',
-        metadata: {
-          account_id: 'acc_test_123',
-          tier_key: 'pro',
-          billing_period: 'monthly',
-        },
-      });
+    mockRegistry.stripeClient.subscriptions.retrieve = async () => paidProSubscription();
 
     let cancelCalled = false;
     mockRegistry.stripeClient.subscriptions.cancel = async () => {
@@ -493,11 +491,89 @@ describe('confirmInlineCheckout: cancel old free sub', () => {
     const result = await confirmInlineCheckout({
       accountId: 'acc_test_123',
       subscriptionId: 'sub_new_paid',
-      tierKey: 'pro',
     });
 
     expect(result.success).toBe(true);
     expect(cancelCalled).toBe(false);
+  });
+});
+
+describe('confirmInlineCheckout: the subscription must be the caller\'s and the tier comes from its price', () => {
+  function tierWrites() {
+    return [...upsertCreditAccountCalls, ...updateCreditAccountCalls].filter((c: any) => 'tier' in c.data);
+  }
+
+  test('a subscription billed to another account\'s Stripe customer is rejected with 404 and writes nothing', async () => {
+    mockRegistry.stripeClient.subscriptions.retrieve = async () =>
+      paidProSubscription({ customer: 'cus_other_account' });
+    mockRegistry.getCustomerByStripeId = async (id: string) => ({
+      id,
+      accountId: 'acc_someone_else',
+      email: null,
+      provider: 'stripe',
+      active: true,
+    });
+
+    await expect(
+      confirmInlineCheckout({ accountId: 'acc_test_123', subscriptionId: 'sub_new_paid' }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(tierWrites()).toHaveLength(0);
+  });
+
+  test('a subscription whose customer is unmapped is rejected with 404', async () => {
+    mockRegistry.stripeClient.subscriptions.retrieve = async () => paidProSubscription({ customer: 'cus_unknown' });
+    mockRegistry.getCustomerByStripeId = async () => null;
+
+    await expect(
+      confirmInlineCheckout({ accountId: 'acc_test_123', subscriptionId: 'sub_new_paid' }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(tierWrites()).toHaveLength(0);
+  });
+
+  test('the tier written is the one the price pays for, whatever the metadata or body names', async () => {
+    mockRegistry.stripeClient.subscriptions.retrieve = async () =>
+      paidProSubscription({
+        metadata: { account_id: 'acc_test_123', tier_key: 'enterprise', plan_key: 'enterprise', billing_period: 'monthly' },
+      });
+
+    const result = await confirmInlineCheckout({
+      accountId: 'acc_test_123',
+      subscriptionId: 'sub_new_paid',
+      // A client-supplied tier is not part of the contract and has no effect.
+      ...({ tierKey: 'enterprise' } as Record<string, unknown>),
+    } as any);
+
+    expect(result.tier).toBe('pro');
+    const writes = tierWrites();
+    expect(writes).toHaveLength(1);
+    expect(writes[0].data.tier).toBe('pro');
+  });
+
+  test('a subscription on a price that maps to no plan is rejected with 400', async () => {
+    mockRegistry.stripeClient.subscriptions.retrieve = async () =>
+      paidProSubscription({
+        items: { data: [{ id: 'si_x', price: { id: 'price_not_a_plan', unit_amount: 100, currency: 'usd' } }] },
+      });
+
+    await expect(
+      confirmInlineCheckout({ accountId: 'acc_test_123', subscriptionId: 'sub_new_paid' }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(tierWrites()).toHaveLength(0);
+  });
+
+  test('an incomplete subscription is not activated', async () => {
+    mockRegistry.stripeClient.subscriptions.retrieve = async () => paidProSubscription({ status: 'incomplete' });
+
+    await expect(
+      confirmInlineCheckout({ accountId: 'acc_test_123', subscriptionId: 'sub_new_paid' }),
+    ).rejects.toThrow('Subscription is not active');
+    expect(tierWrites()).toHaveLength(0);
+  });
+
+  test('a missing or malformed subscription_id is rejected with 400', async () => {
+    await expect(
+      confirmInlineCheckout({ accountId: 'acc_test_123', subscriptionId: undefined }),
+    ).rejects.toMatchObject({ statusCode: 400 });
   });
 });
 
@@ -662,8 +738,9 @@ describe('confirmCheckoutSession: payment gate (client-callable fraud path)', ()
       createMockStripeCheckoutSession({ status: 'complete', payment_status: 'unpaid' });
 
     let granted = false;
-    mockRegistry.grantCredits = async () => {
+    fakeWallet.wallet.grant = async () => {
       granted = true;
+      return { replayed: false, ledgerId: null };
     };
 
     const { confirmCheckoutSession } = await import('../../billing/services/subscriptions');
@@ -722,9 +799,8 @@ describe('confirmCheckoutSession: activation grant idempotency key', () => {
     });
 
     expect(result.success).toBe(true);
-    const tierGrant = grantCreditsCalls.find((args: any[]) => args[2] === 'tier_grant');
+    const tierGrant = walletGrants.find((grant) => grant.kind === 'tier_grant');
     expect(tierGrant).toBeDefined();
-    expect(tierGrant![5]).toBe('subscription_activation:sub_confirm_123');
-    expect(tierGrant![5]).not.toBe('cs_confirm_race');
+    expect(tierGrant!.key).toEqual({ event: 'subscription_activation:sub_confirm_123' });
   });
 });

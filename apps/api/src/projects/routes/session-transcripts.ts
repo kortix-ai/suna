@@ -9,11 +9,13 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, parseBoundedPositiveInt } from '../lib/serializers';
+import { parseBoundedPositiveInt } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
 import {
   buildSessionTranscriptDigest,
   buildSessionTranscriptSyncEnvelope,
 } from '../lib/session-transcript';
+import { UnknownTranscriptCursorError } from '../lib/session-transcript-mirror';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/transcript
 // Compact server-side transcript read for project automation. Unlike the raw
@@ -29,6 +31,12 @@ import {
 // non-running session no longer answers `unavailable` when a mirror exists: it
 // answers with the mirror and SAYS that is what it did. The two are never
 // merged.
+//
+// `shape=sync` pages BACKWARDS with `before=<message id>`, taken from the
+// previous window's `next_cursor`, and reports `total`. Without them a reader
+// could only ever see the newest `limit` messages of a history the mirror
+// retains in full — the startup view asks for 40, and 25 of 375 mirrored dev
+// sessions already hold more than that.
 
 projectsApp.openapi(
   createRoute({
@@ -44,6 +52,7 @@ projectsApp.openapi(
         chars: z.string().optional(),
         shape: z.enum(['compact', 'sync']).optional(),
         history: z.enum(['true', 'false']).optional(),
+        before: z.string().optional(),
       }),
     },
     responses: {
@@ -54,7 +63,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const limit = parseBoundedPositiveInt(c.req.query('limit'), 40, 1, 500, 'limit');
     if (!limit.ok) return c.json({ error: limit.error }, 400);
@@ -86,9 +95,28 @@ projectsApp.openapi(
     }
 
     if (c.req.query('shape') === 'sync') {
-      return c.json(
-        await buildSessionTranscriptSyncEnvelope({ session: visible.row, limit: limit.value, requireCurrentRoot: history }),
-      );
+      // `before` walks older windows of the SAME mirror. A cursor naming no
+      // mirrored message is answered 400 rather than with the newest window:
+      // a client paging older would otherwise be handed page one forever.
+      const before = c.req.query('before');
+      if (before !== undefined && (before.length === 0 || before.length > 128)) {
+        return c.json({ error: 'Invalid cursor' }, 400);
+      }
+      try {
+        return c.json(
+          await buildSessionTranscriptSyncEnvelope({
+            session: visible.row,
+            limit: limit.value,
+            requireCurrentRoot: history,
+            before: before ?? null,
+          }),
+        );
+      } catch (err) {
+        if (err instanceof UnknownTranscriptCursorError) {
+          return c.json({ error: 'Unknown cursor' }, 400);
+        }
+        throw err;
+      }
     }
 
     const transcript = await buildSessionTranscriptDigest({

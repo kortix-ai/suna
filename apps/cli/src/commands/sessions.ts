@@ -44,6 +44,7 @@ import {
   runSessionsWarm,
 } from './sessions-lifecycle.ts';
 import { runSessionsQueue, wireMessageId } from './sessions-queue.ts';
+import { runSessionsAttachments } from './sessions-attachments.ts';
 import { runSessionsFiles } from './sessions-sandbox-files.ts';
 import { runSessionsScope } from './sessions-scope.ts';
 import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
@@ -64,7 +65,11 @@ Subcommands:
                                     initial prompt. --agent <name> pins the
                                     session to that agent (default: the
                                     project's declared default agent).
-                                    --model <id> overrides the model.
+                                    --model <id> overrides the model. A
+                                    model on an API key or a ChatGPT
+                                    subscription runs on every key you may
+                                    use for it, and they rotate (see
+                                    \`kortix models ls\`).
                                     --wait blocks until it's running; --json
                                     prints the session object (capture
                                     session_id to orchestrate).
@@ -108,8 +113,15 @@ Subcommands:
                                     to end one.
   log [<session-id>]                Print a session's recent messages
                                     (read-only) — peek at what an agent is
-                                    doing without sending it anything.
-                                    --limit <N>, --json. Aliases: messages.
+                                    doing without sending it anything. A
+                                    stopped session is read from its saved
+                                    transcript. --limit <N>, --json.
+                                    Aliases: messages.
+  attachments <session-id>          List a session's stored files — uploads
+                                    and copies of what the agent showed —
+                                    and download them (--download <id>,
+                                    --all, --out <dir>). Works while the
+                                    session is stopped. --json.
   pending <session-id>              List open interactive prompts the agent
                                     is blocked on: tool-permission asks +
                                     questions. --json. Aliases: prompts.
@@ -177,6 +189,9 @@ Subcommands:
                                     --exclude <session-id>, --json.
   model <session-id> <model-id>     Change the model a session runs. A live
                                     box restarts, ending the turn in flight.
+                                    A session with no keys for the new
+                                    model's provider gets every key you may
+                                    use there.
   compact <session-id>              Summarize the conversation and continue
                                     from the summary.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it
@@ -261,6 +276,10 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   if (sub === 'files') {
     return runSessionsFiles(argv.slice(1));
+  }
+  // `attachments` reads the platform's private store, never the sandbox.
+  if (sub === 'attachments') {
+    return runSessionsAttachments(argv.slice(1));
   }
   if (sub === 'stop' || sub === 'pause') {
     return runSessionsStop(argv.slice(1));
@@ -670,6 +689,8 @@ async function sendPromptToSession(
   await handle.prompts.create({
     clientMessageId: randomUUID(),
     messageId: wireMessageId(),
+    // The CLI cannot read the transcript; the server places the id.
+    remintOnDelivery: true,
     parts: [{ type: 'text', text }],
     ...(defaults.agent || defaults.model
       ? {

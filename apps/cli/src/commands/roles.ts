@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import {
   emitJson,
+  missing,
   resolveAccountContext,
   surfaceApiError,
   takeFlagValue,
@@ -43,7 +44,7 @@ interface ActionCatalogEntry {
 const HELP = help`Usage: kortix roles <subcommand> [options]
 
 A role is a named set of permissions. People, groups and service accounts get
-roles; agents get Kortix CLI scopes in kortix.yaml. A session can only do what
+roles; agents get Kortix permissions in kortix.yaml. A session can only do what
 both allow.
 
 System roles (owner/admin/member, manager/member, agent-user) are read-only
@@ -506,11 +507,6 @@ export async function runRoles(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }
 
 function notFound(what: string): number {

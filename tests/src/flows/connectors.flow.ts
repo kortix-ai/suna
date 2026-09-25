@@ -974,6 +974,152 @@ flow(
 );
 
 flow(
+  'CONN-RENAME',
+  {
+    domain: 'connectors',
+    routes: [
+      'POST /v1/accounts/tokens',
+      'GET /v1/projects/:projectId/connections',
+      'POST /v1/projects/:projectId/connections',
+      'PUT /v1/projects/:projectId/connections/:connectionId/label',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const slug = `ke2e-rename-${Date.now().toString(36)}`;
+    const rename = (connectionId: string, body: unknown, as = ctx.P.OWNER) =>
+      ctx.client.as(as).put('/v1/projects/:projectId/connections/:connectionId/label', body, {
+        params: { projectId: p.id, connectionId },
+      });
+    const listed = async () =>
+      (
+        await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/connections', {
+          params: { projectId: p.id },
+        })
+      ).json<{ connections: Array<Record<string, unknown>> }>().connections;
+
+    await ctx.step('seed a connector with two project connections', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/connectors/projects/:projectId/connectors',
+        { slug, provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } },
+        { params: { projectId: p.id } },
+      );
+      r.status(200).body().has('$.ok', true);
+    });
+
+    let primaryId = '';
+    let backupId = '';
+    await ctx.step('create "Project connection" and "Backup" → 201 each', async () => {
+      for (const label of ['Project connection', 'Backup']) {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/connections',
+          { connector_alias: slug, owner_type: 'project', label },
+          { params: { projectId: p.id } },
+        );
+        r.status(201).body().has('$.label', label);
+        if (label === 'Backup') backupId = r.json<any>().connection_id;
+        else primaryId = r.json<any>().connection_id;
+      }
+    });
+
+    await ctx.step(
+      'rename "Project connection" → 200 with the new label; id, owner, status, and default are unchanged',
+      async () => {
+        const [before] = (await listed()).filter((row) => row.connection_id === primaryId);
+        const r = await rename(primaryId, { label: '  Shared support inbox  ' });
+        r.status(200)
+          .body()
+          .has('$.connection_id', primaryId)
+          .has('$.label', 'Shared support inbox')
+          .has('$.owner_type', 'project')
+          .has('$.status', before!.status as string)
+          .has('$.is_default', before!.is_default as boolean);
+      },
+    );
+
+    await ctx.step('the connection list reads back the new label and a connected_as field', async () => {
+      const row = (await listed()).find((item) => item.connection_id === primaryId);
+      if (row?.label !== 'Shared support inbox') {
+        throw new Error(`list returned label ${JSON.stringify(row?.label)}`);
+      }
+      if (!('connected_as' in row)) throw new Error('list row has no connected_as field');
+      if (row.connected_as !== null) {
+        throw new Error(`an unauthorized MCP row reported connected_as ${JSON.stringify(row.connected_as)}`);
+      }
+    });
+
+    await ctx.step('renaming to the current label → 200, no change', async () => {
+      (await rename(primaryId, { label: 'Shared support inbox' }))
+        .status(200)
+        .body()
+        .has('$.label', 'Shared support inbox');
+    });
+
+    await ctx.step('a label another account of the same owner has, in any case → 409', async () => {
+      (await rename(primaryId, { label: 'BACKUP' })).status(409);
+      const row = (await listed()).find((item) => item.connection_id === primaryId);
+      if (row?.label !== 'Shared support inbox') throw new Error('a refused rename changed the label');
+    });
+
+    await ctx.step('reserved selector words, an id-shaped label, and an empty label → 400', async () => {
+      for (const label of ['me', 'Project', '00000000-0000-4000-a000-000000000000', '   ']) {
+        (await rename(backupId, { label })).status(400);
+      }
+      (await rename(backupId, { label: 'Fine', extra: true })).status(400);
+      (await rename(backupId, {})).status(400);
+    });
+
+    await ctx.step('an unknown connection → 404; a non-member → 403/404; anonymous → 401', async () => {
+      (await rename('00000000-0000-4000-a000-000000000000', { label: 'Nope' })).status(404);
+      (await rename(backupId, { label: 'Nope' }, ctx.P.NONMEMBER)).status([403, 404]);
+      (await rename(backupId, { label: 'Nope' }, ctx.P.ANON)).status(401);
+    });
+
+    await ctx.step(
+      'the real CLI renames by id (`connections rename <id> <label…>`) and lists the new label',
+      async () => {
+        const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('rename-cli') });
+        const cli = new CliSandbox('connections-rename');
+        const env = { KORTIX_TOKEN: pat, KORTIX_PROJECT_ID: p.id, KORTIX_API_URL: ctx.env.apiUrl };
+        try {
+          const renamed = parseCliJson<{ connection_id: string; label: string }>(
+            await cli.run(['connectors', 'connections', 'rename', backupId, 'Backup', 'inbox', '--json'], {
+              env,
+            }),
+            'kortix connectors connections rename',
+          );
+          if (renamed.connection_id !== backupId || renamed.label !== 'Backup inbox') {
+            throw new Error(`CLI rename returned ${JSON.stringify(renamed)}`);
+          }
+          const plain = await cli.run(['connectors', 'connections', 'rename', backupId, 'Backup mailbox'], {
+            env,
+          });
+          throwIfCliInfraFailure(plain, 'kortix connectors connections rename (text)');
+          if (plain.exitCode !== 0 || !plain.stdout.includes('Backup mailbox')) {
+            throw new Error(`CLI text rename exited ${plain.exitCode}: ${plain.all}`);
+          }
+          const refused = await cli.run(['connectors', 'connections', 'rename', backupId, 'me'], { env });
+          throwIfCliInfraFailure(refused, 'kortix connectors connections rename me');
+          if (refused.exitCode === 0 || !/reserved/i.test(refused.all)) {
+            throw new Error(`CLI accepted a reserved label: ${refused.all}`);
+          }
+          const rows = parseCliJson<{ connections: Array<{ connection_id: string; label: string }> }>(
+            await cli.run(['connectors', 'connections', 'ls', '--json'], { env }),
+            'kortix connectors connections ls',
+          ).connections;
+          const row = rows.find((item) => item.connection_id === backupId);
+          if (row?.label !== 'Backup mailbox') {
+            throw new Error(`CLI list returned ${JSON.stringify(row)}`);
+          }
+        } finally {
+          cli.dispose();
+        }
+      },
+    );
+  },
+);
+
+flow(
   'CONN-24',
   {
     domain: 'connectors',
@@ -2087,7 +2233,7 @@ flow(
     // repository) so the gateway has something to derive the grant from.
     const declare = await ctx.client.as(ctx.P.OWNER).put(
       '/v1/projects/:projectId/agents/:agentName/config',
-      { connectors: 'all', secrets: 'all', kortix_cli: 'all', skills: 'all' },
+      { connectors: 'all', secrets: 'all', kortix_permissions: 'all', skills: 'all' },
       { params: { projectId: p.id, agentName: 'kortix' }, timeoutMs: 60_000 },
     );
     declare.status(200);
@@ -2163,7 +2309,7 @@ flow(
             ownerUserId,
             p.id,
             sessionId,
-            JSON.stringify({ agent: 'kortix', connectors: ['stripe'], kortixCli: [], env: [] }),
+            JSON.stringify({ agent: 'kortix', connectors: ['stripe'], permissions: [], env: [] }),
           ],
         );
         // A declared openapi connector with bearer auth and NO credential
@@ -2245,7 +2391,7 @@ flow(
         'a glitched deny-all grant on the SAME manifest blob is repaired by two consistent reads',
         async () => {
           const before = await readGrant();
-          const glitched = { ...(before ?? {}), connectors: [], kortixCli: [], env: [] };
+          const glitched = { ...(before ?? {}), connectors: [], permissions: [], env: [] };
           await db.query(`UPDATE kortix.account_tokens SET agent_grant = $1::jsonb WHERE session_id = $2`, [
             JSON.stringify(glitched),
             sessionId,
@@ -2266,7 +2412,7 @@ flow(
         async () => {
           const put = await ctx.client.as(ctx.P.OWNER).put(
             '/v1/projects/:projectId/agents/:agentName/config',
-            { connectors: ['stripe'], secrets: 'all', kortix_cli: 'all', skills: 'all' },
+            { connectors: ['stripe'], secrets: 'all', kortix_permissions: 'all', skills: 'all' },
             { params: { projectId: p.id, agentName: 'kortix' }, timeoutMs: 60_000 },
           );
           put.status(200);
@@ -2434,7 +2580,7 @@ flow(
     const declareAgent = (connectorsGrant: 'all' | string[]) =>
       ctx.client.as(ctx.P.OWNER).put(
         '/v1/projects/:projectId/agents/:agentName/config',
-        { connectors: connectorsGrant, secrets: 'all', kortix_cli: 'all', skills: 'all' },
+        { connectors: connectorsGrant, secrets: 'all', kortix_permissions: 'all', skills: 'all' },
         { params: { projectId: p.id, agentName: 'kortix' }, timeoutMs: 60_000 },
       );
 
@@ -2477,7 +2623,7 @@ flow(
               ownerUserId,
               p.id,
               sessionId,
-              JSON.stringify({ agent: 'kortix', connectors: 'all', kortixCli: [], env: [] }),
+              JSON.stringify({ agent: 'kortix', connectors: 'all', permissions: [], env: [] }),
             ],
           );
           // `auth: {type:'none'}` is the fixture's whole point: the connector
@@ -2691,6 +2837,440 @@ flow(
         .query(`DELETE FROM kortix.project_sessions WHERE session_id = $1`, [sessionId])
         .catch(() => undefined);
       await db.end().catch(() => undefined);
+    }
+  },
+);
+
+// ── CONN-ATT-1 — a staged file reaches a Microsoft Graph-shaped OpenAPI call ──
+// A customer's agent could not attach a PDF to Graph `sendMail` through an
+// OpenAPI connector. This flow stages a synthetic PDF through the real upload
+// route, references it as `{"$kortix_attachment": id}` in the nested
+// `body.message.attachments`, and calls the real gateway. On the local target
+// a Graph-strict echo upstream (one `application/json` header, a JSON object
+// body, else Graph's 400) proves the bytes arrive byte for byte. Deployed
+// targets cannot reach a runner-local upstream, so they prove the staging
+// contract and the refusals, which need no upstream.
+flow(
+  'CONN-ATT-1',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'POST /v1/connectors/projects/:projectId/attachments',
+      'POST /v1/connectors/projects/:projectId/call',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const { createHash } = await import('node:crypto');
+    const { createServer } = await import('node:http');
+    const { Client: PgClient } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+
+    // Synthetic ~300 KB PDF with every byte value.
+    const pdf = new Uint8Array(300_000);
+    pdf.set(new TextEncoder().encode('%PDF-1.7\n'));
+    for (let i = 9; i < pdf.length; i++) pdf[i] = (i * 31) % 256;
+    const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+    const received: Array<{ contentTypes: string[]; body: string }> = [];
+    const upstream = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        const raw = req.headers['content-type'];
+        const contentTypes = raw === undefined ? [] : String(raw).split(/,\s*/);
+        received.push({ contentTypes, body });
+        let parsed: unknown = null;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          parsed = null;
+        }
+        const ok =
+          contentTypes.length === 1 &&
+          contentTypes[0] === 'application/json' &&
+          parsed !== null &&
+          typeof parsed === 'object' &&
+          !Array.isArray(parsed);
+        res.writeHead(ok ? 202 : 400, { 'content-type': 'application/json' });
+        res.end(
+          ok
+            ? ''
+            : JSON.stringify({
+                error: {
+                  code: 'BadRequest',
+                  message:
+                    'Unable to read JSON request payload. Please ensure Content-Type header is set and payload is of valid JSON format.',
+                },
+              }),
+        );
+      });
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+
+    const slug = `ke2e-graph-${Date.now().toString(36)}`;
+    const itemSchema = {
+      type: 'object',
+      properties: {
+        '@odata.type': { type: 'string' },
+        name: { type: 'string' },
+        contentType: { type: 'string' },
+        contentBytes: { type: 'string', format: 'base64url' },
+      },
+    };
+    const inputSchema = {
+      type: 'object',
+      properties: {
+        user: { type: 'string', 'x-in': 'path' },
+        body: {
+          type: 'object',
+          properties: {
+            message: {
+              type: 'object',
+              properties: {
+                subject: { type: 'string' },
+                toRecipients: { type: 'array' },
+                attachments: { type: 'array', items: itemSchema },
+              },
+            },
+            saveToSentItems: { type: 'boolean' },
+          },
+        },
+        files: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' } } } },
+      },
+    };
+    const upload = (bytes: Uint8Array, filename: string, connector: string | null) =>
+      ctx.client.as(ctx.P.OWNER).post('/v1/connectors/projects/:projectId/attachments', bytes, {
+        params: { projectId: p.id },
+        raw: true,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'X-Kortix-Attachment-Filename': encodeURIComponent(filename),
+          ...(connector ? { 'X-Kortix-Attachment-Connector': connector } : {}),
+        },
+        timeoutMs: 60_000,
+      });
+    const call = (args: Record<string, unknown>) =>
+      ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/call',
+          { connector: slug, action: 'sendmail', args },
+          { params: { projectId: p.id }, timeoutMs: 60_000 },
+        );
+    const mail = (attachments: unknown[]) => ({
+      user: 'sender@example.com',
+      body: {
+        message: {
+          subject: 'CONN-ATT-1 report',
+          toRecipients: [{ emailAddress: { address: 'recipient@example.com' } }],
+          attachments,
+        },
+        saveToSentItems: true,
+      },
+    });
+
+    try {
+      await db.connect();
+      await ctx.step('seed an OpenAPI connector shaped like Graph sendMail, with its default connection', async () => {
+        const connector = await db.query<{ connector_id: string }>(
+          `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+           VALUES ($1, $2, $3, 'KE2E Graph', 'openapi', $4::jsonb, 'active') RETURNING connector_id`,
+          [team.id, p.id, slug, JSON.stringify({ auth: { type: 'none' } })],
+        );
+        const connectorId = connector.rows[0]?.connector_id;
+        if (!connectorId) throw new Error('connector insert returned no id');
+        await db.query(
+          `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+           VALUES ($1, $2, $3, 'project', 'KE2E Graph', 'active', true, $4::jsonb)`,
+          [team.id, p.id, connectorId, JSON.stringify({ provider: 'openapi', connector_slug: slug })],
+        );
+        await db.query(
+          `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+           VALUES ($1, 'sendmail', 'sendMail', 'Send mail', $2::jsonb, 'write', $3::jsonb)`,
+          [
+            connectorId,
+            JSON.stringify(inputSchema),
+            JSON.stringify({
+              kind: 'openapi',
+              method: 'POST',
+              path: '/users/{user}/sendMail',
+              server: `http://127.0.0.1:${port}/v1.0`,
+            }),
+          ],
+        );
+      });
+
+      let ref: { $kortix_attachment: string } | null = null;
+      await ctx.step('upload for the connector → 201 with a $kortix_attachment ref', async () => {
+        const r = await upload(pdf, 'weekly report.pdf', slug);
+        r.status(201)
+          .body()
+          .has('$.filename', 'weekly report.pdf')
+          .has('$.content_type', 'application/pdf')
+          .has('$.size', pdf.byteLength);
+        const body = r.json<{ attachment_id: string; ref: { $kortix_attachment: string } }>();
+        if (body.ref?.$kortix_attachment !== body.attachment_id) {
+          throw new Error(`ref does not name the staged file: ${r.text()}`);
+        }
+        ref = body.ref;
+      });
+
+      await ctx.step('an item shape the gateway does not know is refused and names the fix', async () => {
+        const r = await call({ ...mail([]), files: [ref] });
+        r.status(500).body().has('$.status', 'error');
+        const reason = r.json<{ reason: string }>().reason;
+        if (!reason.startsWith('attachment_item_shape_unknown: files items declare {url}')) {
+          throw new Error(`unexpected refusal: ${reason}`);
+        }
+      });
+
+      await ctx.step('a malformed reference is refused before any upstream request', async () => {
+        const before = received.length;
+        const r = await call(mail([{ $kortix_attachment: 42 }]));
+        r.status(500);
+        if (!r.json<{ reason: string }>().reason.startsWith('attachment_ref_invalid')) {
+          throw new Error(`unexpected refusal: ${r.text()}`);
+        }
+        if (received.length !== before) throw new Error('a malformed reference reached the upstream');
+      });
+
+      if (ctx.env.target === 'local') {
+        await ctx.step('the refused call released the file; the call delivers a Graph fileAttachment byte for byte', async () => {
+          const r = await call(mail([ref]));
+          r.status(200).body().has('$.ok', true);
+          const hit = received.at(-1);
+          if (!hit) throw new Error('the upstream received no request');
+          if (hit.contentTypes.join(',') !== 'application/json') {
+            throw new Error(`upstream Content-Type: ${JSON.stringify(hit.contentTypes)}`);
+          }
+          const sent = JSON.parse(hit.body) as {
+            message: { attachments: Array<Record<string, string>> };
+          };
+          const attachment = sent.message.attachments[0]!;
+          if (
+            attachment['@odata.type'] !== '#microsoft.graph.fileAttachment' ||
+            attachment.name !== 'weekly report.pdf' ||
+            attachment.contentType !== 'application/pdf'
+          ) {
+            throw new Error(`wrong attachment item: ${JSON.stringify({ ...attachment, contentBytes: '…' })}`);
+          }
+          const decoded = new Uint8Array(Buffer.from(attachment.contentBytes!, 'base64'));
+          if (sha256(decoded) !== sha256(pdf)) throw new Error('attachment bytes differ from the staged file');
+        });
+
+        await ctx.step('a delivered file is single-use: a second call is refused', async () => {
+          const r = await call(mail([ref]));
+          r.status(500);
+          if (!r.json<{ reason: string }>().reason.includes('attachment_already_consumed')) {
+            throw new Error(`expected attachment_already_consumed: ${r.text()}`);
+          }
+        });
+
+        await ctx.step('a JSON-string body reaches the upstream as one JSON object, not a string literal', async () => {
+          const r = await call({ user: 'sender@example.com', body: JSON.stringify(mail([]).body) });
+          r.status(200).body().has('$.ok', true);
+          const hit = received.at(-1)!;
+          if (typeof JSON.parse(hit.body) !== 'object') throw new Error(`double-encoded body: ${hit.body.slice(0, 80)}`);
+        });
+
+        await ctx.step('the audit row records the attachment count, never the bytes', async () => {
+          const rows = await db.query<{ result_summary: Record<string, unknown> | null; request_digest: string | null }>(
+            `SELECT result_summary, request_digest FROM kortix.connector_calls
+              WHERE project_id = $1 AND action_path = $2 AND status = 'ok'`,
+            [p.id, `${slug}.sendmail`],
+          );
+          const withFile = rows.rows.find((row) => row.result_summary?.attachment_count === 1);
+          if (!withFile) throw new Error(`no ok audit row with attachment_count 1: ${JSON.stringify(rows.rows)}`);
+          const fingerprint = Buffer.from(pdf.subarray(1_000, 1_096)).toString('base64');
+          if (JSON.stringify(rows.rows).includes(fingerprint)) throw new Error('file bytes reached the audit table');
+        });
+      }
+    } finally {
+      upstream.close();
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [p.id, slug]).catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
+
+// ── CONN-EGRESS-1 — a connector reaches public endpoints only ────────────────
+// Connector endpoints come from project configuration (`base_url`, an OpenAPI
+// `servers[0].url`, an MCP URL). Sync refuses a literal private host, and the
+// gateway resolves and checks the target of every call and every redirect hop.
+// The local stack allows its own loopback upstream (127.0.0.1) and nothing else,
+// so the redirect steps run on the local target only.
+flow(
+  'CONN-EGRESS-1',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'DELETE /v1/connectors/projects/:projectId/connectors/:slug',
+      'POST /v1/connectors/projects/:projectId/call',
+    ],
+  },
+  async (ctx) => {
+    // The manifest step needs a Git-backed project. The seeded connectors live
+    // in a database-only project: it has no kortix.yaml, so no sync (this
+    // flow's or a parallel account-wide reconcile) removes them as undeclared.
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const seeded = await ctx.fixtures.project();
+    const { createServer } = await import('node:http');
+    const { Client: PgClient } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    const stamp = Date.now().toString(36);
+    const yamlSlug = `ke2e-egress-yaml-${stamp}`;
+    const seededSlug = `ke2e-egress-db-${stamp}`;
+
+    const hits: string[] = [];
+    let redirectTo = '';
+    const upstream = createServer((req, res) => {
+      hits.push(req.url ?? '');
+      if (redirectTo) {
+        res.writeHead(302, { location: redirectTo });
+        res.end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ reached: true }));
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+    const call = (slug: string) =>
+      ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/call',
+          { connector: slug, action: 'ping', args: {} },
+          { params: { projectId: seeded.id }, timeoutMs: 60_000 },
+        );
+    let accountId = '';
+    const seed = async (baseUrl: string) => {
+      if (!accountId) {
+        const owner = await db.query<{ account_id: string }>(
+          `SELECT account_id FROM kortix.projects WHERE project_id = $1`,
+          [seeded.id],
+        );
+        accountId = owner.rows[0]?.account_id ?? '';
+        if (!accountId) throw new Error('project has no account');
+      }
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [seeded.id, seededSlug]);
+      const connector = await db.query<{ connector_id: string }>(
+        `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+         VALUES ($1, $2, $3, 'KE2E egress', 'http', $4::jsonb, 'active') RETURNING connector_id`,
+        [accountId, seeded.id, seededSlug, JSON.stringify({ baseUrl, auth: { type: 'none' } })],
+      );
+      const connectorId = connector.rows[0]?.connector_id;
+      if (!connectorId) throw new Error('connector insert returned no id');
+      await db.query(
+        `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+         VALUES ($1, $2, $3, 'project', 'KE2E egress', 'active', true, $4::jsonb)`,
+        [accountId, seeded.id, connectorId, JSON.stringify({ provider: 'http', connector_slug: seededSlug })],
+      );
+      await db.query(
+        `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+         VALUES ($1, 'ping', 'ping', 'Ping', '{"type":"object"}'::jsonb, 'read', $2::jsonb)`,
+        [connectorId, JSON.stringify({ kind: 'http', method: 'GET', path: '/ping' })],
+      );
+    };
+    const expectBlocked = (r: Awaited<ReturnType<typeof call>>) => {
+      r.status(500).body().has('$.status', 'error');
+      const reason = r.json<{ reason: string }>().reason;
+      if (!reason.startsWith('connector_egress_blocked')) {
+        throw new Error(`expected connector_egress_blocked, got: ${reason}`);
+      }
+    };
+
+    try {
+      await db.connect();
+      await ctx.step('adding an http connector whose base_url is a private address reports the endpoint as refused', async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug: yamlSlug, provider: 'http', baseUrl: 'http://10.255.255.1:8080', auth: { type: 'none' } },
+          { params: { projectId: p.id }, timeoutMs: 60_000 },
+        );
+        r.status(200).body().has('$.ok', true);
+        const errors = r.json<{ sync?: { errors?: Array<{ slug: string; error: string }> } }>().sync?.errors ?? [];
+        const mine = errors.find((e) => e.slug === yamlSlug);
+        if (!mine || !mine.error.includes('base_url must be a public host')) {
+          throw new Error(`sync did not refuse the private base_url: ${JSON.stringify(errors)}`);
+        }
+        // Another sync of the same account (a machine or channel reconcile from
+        // a parallel flow) can own the write; it lands within a few seconds.
+        let rows: Array<{ status: string; actions: string }> = [];
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          const row = await db.query<{ status: string; actions: string }>(
+            `SELECT c.status, (SELECT count(*) FROM kortix.connector_actions a WHERE a.connector_id = c.connector_id)::text AS actions
+               FROM kortix.connectors c WHERE c.project_id = $1 AND c.slug = $2`,
+            [p.id, yamlSlug],
+          );
+          rows = row.rows;
+          if (rows.length > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        if (rows[0]?.status !== 'error' || rows[0]?.actions !== '0') {
+          throw new Error(`connector row is callable: ${JSON.stringify(rows)}`);
+        }
+      });
+
+      await ctx.step('a stored private base_url is refused at call time before any request', async () => {
+        await seed('http://10.255.255.1:8080');
+        expectBlocked(await call(seededSlug));
+      });
+
+      await ctx.step('a stored link-local metadata address is refused at call time', async () => {
+        await seed('http://169.254.169.254/latest');
+        expectBlocked(await call(seededSlug));
+      });
+
+      if (ctx.env.target === 'local') {
+        await ctx.step('an allowed upstream answers the call and its response comes back', async () => {
+          redirectTo = '';
+          await seed(`http://127.0.0.1:${port}`);
+          const before = hits.length;
+          const r = await call(seededSlug);
+          r.status(200).body().has('$.ok', true).has('$.data.reached', true);
+          if (hits.length !== before + 1) throw new Error(`upstream saw ${hits.length - before} requests`);
+        });
+
+        await ctx.step('a redirect from the allowed upstream to a metadata address is refused, not followed', async () => {
+          redirectTo = 'http://169.254.169.254/latest/meta-data/';
+          const before = hits.length;
+          expectBlocked(await call(seededSlug));
+          if (hits.length !== before + 1) throw new Error(`upstream saw ${hits.length - before} requests`);
+        });
+
+        await ctx.step('a redirect to another loopback port is refused too: only the listed host is exempt', async () => {
+          redirectTo = `http://localhost:${port}/ping`;
+          expectBlocked(await call(seededSlug));
+        });
+      }
+
+      await ctx.step('delete the manifest connector → 200', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .del('/v1/connectors/projects/:projectId/connectors/:slug', { params: { projectId: p.id, slug: yamlSlug } });
+        r.status(200);
+      });
+    } finally {
+      upstream.close();
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [seeded.id, seededSlug]).catch(() => {});
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [p.id, yamlSlug]).catch(() => {});
+      await db.end().catch(() => {});
     }
   },
 );

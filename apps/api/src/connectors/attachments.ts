@@ -2,6 +2,8 @@ import { connectorAttachments } from '@kortix/db';
 import { and, asc, eq, inArray, lt, or } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
+import type { InlineAttachmentFile } from './attachment-inline';
+import { isUuid } from '../shared/validate';
 
 export const MAX_CONNECTOR_ATTACHMENT_FILES = 20;
 export const MAX_CONNECTOR_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -53,6 +55,13 @@ export interface ClaimedConnectorAttachments {
   attachmentIds: string[];
 }
 
+export interface ClaimedInlineAttachments {
+  claimToken: string;
+  attachmentIds: string[];
+  /** Staged bytes and metadata, keyed by attachment id. Server-side only. */
+  files: Map<string, InlineAttachmentFile>;
+}
+
 export interface ConnectorAttachmentStore {
   stage(
     scope: ConnectorAttachmentScope,
@@ -62,15 +71,21 @@ export interface ConnectorAttachmentStore {
     scope: ConnectorAttachmentScope,
     args: Record<string, unknown>,
   ): Promise<ClaimedConnectorAttachments>;
+  /**
+   * Claim staged attachments for a JSON connector call (OpenAPI / HTTP /
+   * Postman / MCP) and return their bytes, which the gateway base64-encodes
+   * into the upstream request. Optional so older fakes keep compiling; a
+   * store without it refuses inline attachments.
+   */
+  claimInline?(
+    scope: ConnectorAttachmentScope,
+    attachmentIds: string[],
+  ): Promise<ClaimedInlineAttachments>;
   completeClaim(claimToken: string, attachmentIds: string[]): Promise<void>;
   releaseClaim(claimToken: string, attachmentIds: string[]): Promise<void>;
 }
 
 type AttachmentRow = typeof connectorAttachments.$inferSelect;
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
 
 function plainFilename(value: string): boolean {
   return (
@@ -197,7 +212,7 @@ class DbConnectorAttachmentStore implements ConnectorAttachmentStore {
       if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
       const attachmentId = (value as Record<string, unknown>).attachment_id;
       if (attachmentId === undefined) return [];
-      if (typeof attachmentId !== 'string' || !isUuid(attachmentId)) {
+      if (!isUuid(attachmentId)) {
         throw new Error(`attachments[${index}].attachment_id is invalid`);
       }
       return [{ index, attachmentId }];
@@ -208,27 +223,7 @@ class DbConnectorAttachmentStore implements ConnectorAttachmentStore {
     const ids = handleItems.map((item) => item.attachmentId);
     if (new Set(ids).size !== ids.length) throw new Error('duplicate attachment_id');
 
-    const now = new Date();
-    const claimToken = crypto.randomUUID();
-    const claimExpiresAt = new Date(now.getTime() + ATTACHMENT_CLAIM_TTL_MS);
-    const rows = await db.transaction(async (tx) => {
-      const locked = await tx
-        .select()
-        .from(connectorAttachments)
-        .where(inArray(connectorAttachments.attachmentId, ids))
-        .orderBy(asc(connectorAttachments.attachmentId))
-        .for('update');
-      const ordered = validateClaimRows(locked, ids, scope, now);
-      const totalBytes = ordered.reduce((sum, row) => sum + row.sizeBytes, 0);
-      if (totalBytes > MAX_CONNECTOR_ATTACHMENT_BYTES) {
-        throw new Error('attachments exceeds the 25 MiB aggregate limit');
-      }
-      await tx
-        .update(connectorAttachments)
-        .set({ status: 'claimed', claimToken, claimExpiresAt })
-        .where(inArray(connectorAttachments.attachmentId, ids));
-      return ordered;
-    });
+    const { claimToken, rows } = await this.lockAndClaim(scope, ids);
 
     const supabase = getSupabase();
     try {
@@ -264,6 +259,79 @@ class DbConnectorAttachmentStore implements ConnectorAttachmentStore {
       await this.releaseClaim(claimToken, ids).catch(() => {});
       throw error;
     }
+  }
+
+  async claimInline(
+    scope: ConnectorAttachmentScope,
+    attachmentIds: string[],
+  ): Promise<ClaimedInlineAttachments> {
+    if (attachmentIds.length === 0) throw new Error('attachments is empty');
+    if (attachmentIds.length > MAX_CONNECTOR_ATTACHMENT_FILES) {
+      throw new Error(`attachments supports at most ${MAX_CONNECTOR_ATTACHMENT_FILES} files`);
+    }
+    attachmentIds.forEach((id, index) => {
+      if (!isUuid(id)) throw new Error(`attachments[${index}].attachment_id is invalid`);
+    });
+    if (new Set(attachmentIds).size !== attachmentIds.length) {
+      throw new Error('duplicate attachment_id');
+    }
+
+    const { claimToken, rows } = await this.lockAndClaim(scope, attachmentIds);
+    const supabase = getSupabase();
+    try {
+      const downloaded = await Promise.all(
+        rows.map(async (row) => {
+          const { data, error } = await supabase.storage
+            .from(ATTACHMENT_BUCKET)
+            .download(row.objectPath);
+          if (error || !data) throw error ?? new Error('failed to read attachment');
+          const bytes = new Uint8Array(await data.arrayBuffer());
+          // The row size is what the caller staged; storage must agree.
+          if (bytes.byteLength !== row.sizeBytes) throw new Error('attachment_size_mismatch');
+          const file: InlineAttachmentFile = {
+            filename: row.filename,
+            contentType: row.contentType,
+            contentDisposition: row.contentDisposition as 'attachment' | 'inline',
+            ...(row.contentId ? { contentId: row.contentId } : {}),
+            bytes,
+          };
+          return [row.attachmentId, file] as const;
+        }),
+      );
+      return { claimToken, attachmentIds, files: new Map(downloaded) };
+    } catch (error) {
+      await this.releaseClaim(claimToken, attachmentIds).catch(() => {});
+      throw error;
+    }
+  }
+
+  /** Lock, validate, and claim rows in one transaction. Rows return in `ids` order. */
+  private async lockAndClaim(
+    scope: ConnectorAttachmentScope,
+    ids: string[],
+  ): Promise<{ claimToken: string; rows: AttachmentRow[] }> {
+    const now = new Date();
+    const claimToken = crypto.randomUUID();
+    const claimExpiresAt = new Date(now.getTime() + ATTACHMENT_CLAIM_TTL_MS);
+    const rows = await db.transaction(async (tx) => {
+      const locked = await tx
+        .select()
+        .from(connectorAttachments)
+        .where(inArray(connectorAttachments.attachmentId, ids))
+        .orderBy(asc(connectorAttachments.attachmentId))
+        .for('update');
+      const ordered = validateClaimRows(locked, ids, scope, now);
+      const totalBytes = ordered.reduce((sum, row) => sum + row.sizeBytes, 0);
+      if (totalBytes > MAX_CONNECTOR_ATTACHMENT_BYTES) {
+        throw new Error('attachments exceeds the 25 MiB aggregate limit');
+      }
+      await tx
+        .update(connectorAttachments)
+        .set({ status: 'claimed', claimToken, claimExpiresAt })
+        .where(inArray(connectorAttachments.attachmentId, ids));
+      return ordered;
+    });
+    return { claimToken, rows };
   }
 
   async completeClaim(claimToken: string, attachmentIds: string[]): Promise<void> {

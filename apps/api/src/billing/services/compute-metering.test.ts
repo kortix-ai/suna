@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 import { appRuntimes } from '@kortix/db';
 import * as realProviders from '../../platform/providers';
 
@@ -39,8 +39,8 @@ mock.module('../repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => null,
 }));
 
-mock.module('./credits', () => ({
-  deductCredits: async () => {},
+mock.module('../wallet', () => ({
+  wallet: { settle: async () => ({ amount: 0, balance: 0, overdraft: false, transactionId: 'tx', replayed: false }) },
 }));
 
 interface FakeComputeRow {
@@ -64,6 +64,7 @@ interface FakeComputeRow {
 let computeRows: FakeComputeRow[] = [];
 let insertCalls = 0;
 let nextId = 1;
+let staleCutoff: Date | null = null;
 
 function openRowFor(sandboxId: string): FakeComputeRow | null {
   return computeRows.find((r) => r.sandboxId === sandboxId && r.endedAt === null) ?? null;
@@ -130,7 +131,10 @@ mock.module('../repositories/compute-sessions', () => ({
     }
     return true;
   },
-  findStaleActiveSessions: async () => [],
+  findStaleActiveSessions: async (cutoff: Date) => {
+    staleCutoff = cutoff;
+    return [];
+  },
 }));
 
 interface FakeSandboxRow {
@@ -255,7 +259,10 @@ beforeEach(() => {
   appRuntimeRows = [];
   insertCalls = 0;
   nextId = 1;
+  staleCutoff = null;
 });
+
+afterEach(() => { setSystemTime(); });
 
 function sandbox(overrides: Partial<FakeSandboxRow> = {}): FakeSandboxRow {
   return {
@@ -409,6 +416,14 @@ describe('reconcileMissingComputeSessions', () => {
 });
 
 describe('tickRunningComputeCharges', () => {
+  test('makes active compute billable after one maintenance interval', async () => {
+    setSystemTime(new Date('2026-09-22T16:00:00.000Z'));
+
+    await tickRunningComputeCharges();
+
+    expect(staleCutoff?.toISOString()).toBe('2026-09-22T15:55:00.000Z');
+  });
+
   test('runs the missing-compute reconciler in the same pass and reports both counts', async () => {
     accountsById['acct-ps'] = { billingModel: 'per_seat' };
     sandboxRows = [sandbox({ sandboxId: 'sb-tick', sessionId: 'sb-tick', accountId: 'acct-ps' })];

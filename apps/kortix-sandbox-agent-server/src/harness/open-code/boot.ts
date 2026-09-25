@@ -1,4 +1,5 @@
 import { publishOpenCodeEvent } from './event-bus'
+import { noteOpencodeStopRequested, type AbortedTurnVerdict } from './instance-guard'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../../agent-env-file'
@@ -692,6 +693,10 @@ async function startSessionRuntime(
   bootMark: (label: string) => void,
 ): Promise<void> {
   const opencode = harness.native
+  const instanceGuard = harness.instanceGuard
+  instanceGuard.configure({
+    canWarm: () => opencode.getState() === 'ok' && bootState.workspaceReady !== false,
+  })
   const markOpencodeListening = () => {
     if (bootState.timeline.some((mark) => mark.label === 'opencode-listening')) return
     bootMark('opencode-listening')
@@ -770,6 +775,12 @@ async function startSessionRuntime(
       ) {
         scheduleRuntimeProjectionPush(event.type)
       }
+      // A disposed instance is rebuilt lazily by its next request. Make that
+      // request the daemon's own, so no prompt is the first caller of a cache.
+      if (event.type === 'server.instance.disposed' || event.type === 'global.disposed') {
+        instanceGuard.noteInstanceDisposed()
+        void instanceGuard.warm(event.type)
+      }
     } catch (error) {
       logger.warn('[opencode-events] runtime fan-out failed', {
         err: error instanceof Error ? error.message : String(error),
@@ -791,12 +802,18 @@ async function startSessionRuntime(
     )
   }
   const onSessionIdle = (opencodeSessionId: string) => {
-    kortixEventBus().publishDaemon(
-      'kortix.turn',
-      { opencode_session_id: opencodeSessionId, verdict: 'idle' },
-      opencodeSessionId,
-    )
-    void relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg).catch((err) =>
+    void (async () => {
+      // An aborted turn is checked first: it may have been healed and resumed,
+      // and then it has not ended (instance-guard.ts).
+      const verdict = await instanceGuard.inspectEndedTurn(opencodeSessionId)
+      if (verdict.kind === 'unrequested' && verdict.resumed) return
+      kortixEventBus().publishDaemon(
+        'kortix.turn',
+        { opencode_session_id: opencodeSessionId, verdict: 'idle' },
+        opencodeSessionId,
+      )
+      await relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg, unrequestedAbortCause(verdict))
+    })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
@@ -814,6 +831,15 @@ async function startSessionRuntime(
     cfg,
     isRoot: (sid) => isRootOpencodeSession(sid, opencode, cfg),
   })
+  instanceGuard.configure({
+    isRoot: (sid) => isRootOpencodeSession(sid, opencode, cfg),
+    resumeVictim: (sid, view) =>
+      autoResumer.maybeResume(
+        sid,
+        { name: view.errorName ?? 'MessageAbortedError', message: 'Aborted' },
+        { cause: 'runtime-fault' },
+      ),
+  })
   const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
     void (async () => {
       // A successful resume means the turn is being re-prompted to continue, so
@@ -821,6 +847,10 @@ async function startSessionRuntime(
       // bus nor in the API ledger. maybeResume returns false when the error is
       // not resumable → relay it exactly as before this feature.
       if (await autoResumer.maybeResume(opencodeSessionId, error)) return
+      // The same for an abort nobody asked for (instance-guard.ts).
+      const verdict = await instanceGuard.inspectEndedTurn(opencodeSessionId)
+      if (verdict.kind === 'unrequested' && verdict.resumed) return
+      error = unrequestedAbortCause(verdict) ?? error
       kortixEventBus().publishDaemon(
         'kortix.turn',
         { opencode_session_id: opencodeSessionId, verdict: 'error', error: error ?? null },
@@ -874,6 +904,9 @@ async function startSessionRuntime(
   // and this reconcile collapse to a single finalize; a reconnect after the turn
   // relayed is a no-op.
   const onConnected = () => {
+    // A (re)connected stream means an OpenCode process is serving: build its
+    // instance caches before any prompt can (instance-guard.ts).
+    void instanceGuard.warm('event-stream-connected')
     void reconcileInitialTurnAcceptance()
     void reconcileFinishedFirstTurn(opencode, cfg).catch((err) =>
       logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
@@ -949,7 +982,7 @@ async function startSessionRuntime(
     // or a claim/setup failure. Until 2026-08-26 this was a dead end: nothing
     // ever retried, `runtimeReady` stayed false forever, the proxy 503'd every
     // request `initial_opencode_session_pending`, and the session spun "Waking
-    // the agent" until a human clicked Restart (Essentia ef9f344b, 10+ min).
+    // the agent" until a human clicked Restart (reported session, 10+ min).
     // The runtime is unusable without the root, so retry until established —
     // bounded interval, detached so the rest of boot (readiness probe, event
     // loop fallback below) proceeds and the box stays observable meanwhile.
@@ -2166,8 +2199,24 @@ async function confirmTurnOrphaned(
   return true
 }
 
+/**
+ * The cause relayed for a turn the runtime aborted before it reached the model
+ * while nobody asked for a stop, when it could not be resumed. Without it the
+ * turn reads "No reason was reported" (instance-guard.ts).
+ */
+export function unrequestedAbortCause(verdict: AbortedTurnVerdict): OpencodeTurnError | undefined {
+  if (verdict.kind !== 'unrequested' || verdict.resumed || !verdict.view.empty) return undefined
+  return {
+    name: 'RuntimeAbortedTurn',
+    message: verdict.heal.disposed
+      ? 'The agent runtime stopped this turn before it started. Kortix reset the runtime. Send your message again.'
+      : 'The agent runtime stopped this turn before it started, and nobody asked it to stop. Send your message again.',
+  }
+}
+
 /** Finalize an interrupted turn so a streaming client stops spinning. */
 async function abortOpencodeTurn(baseUrl: string, workspace: string, sessionId: string): Promise<void> {
+  noteOpencodeStopRequested(sessionId, 'orphaned-turn')
   try {
     await fetch(
       `${baseUrl}/session/${encodeURIComponent(sessionId)}/abort?directory=${encodeURIComponent(workspace)}`,
@@ -2495,9 +2544,32 @@ function sandboxRelayContext(tokenOverride?: string | null): SandboxRelayContext
 
 // Question relays remain Slack-only. A web session answers the question tool
 // through OpenCode SSE and must not receive the Slack sentinel response.
-function slackRelayContext(): SandboxRelayContext | null {
-  if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return null
+/**
+ * A CHANNEL session — Slack or Teams — as opposed to a dashboard one.
+ *
+ * This used to read SLACK_THREAD_TS / SLACK_CHANNEL_ID only, and it gates
+ * RELEASING opencode's blocking `question` tool. A Teams session carries
+ * MS_TEAMS_CONVERSATION_ID / MS_TEAMS_TENANT_ID instead (buildTeamsTurnEnv), so
+ * the gate returned null, the call was "left open for the UI", and a Teams
+ * agent that called `question` hung until its box was parked — after the card
+ * had already been posted, because the RELAY is ungated.
+ *
+ * The distinction that matters is not which vendor: it is whether the answer
+ * arrives out of band (a channel) or over opencode's own SSE (the dashboard).
+ */
+function channelRelayContext(): SandboxRelayContext | null {
+  const inChannel =
+    process.env.SLACK_THREAD_TS ||
+    process.env.SLACK_CHANNEL_ID ||
+    process.env.MS_TEAMS_CONVERSATION_ID ||
+    process.env.MS_TEAMS_TENANT_ID
+  if (!inChannel) return null
   return sandboxRelayContext()
+}
+
+/** Which channel this session belongs to, for copy that names it. */
+function channelLabel(): 'Teams' | 'Slack' {
+  return process.env.MS_TEAMS_CONVERSATION_ID || process.env.MS_TEAMS_TENANT_ID ? 'Teams' : 'Slack'
 }
 
 // Relay an opencode `question.asked` event for a SLACK session: post the
@@ -2581,18 +2653,21 @@ async function relayQuestionToApi(
   // If the box is parked while the question is still open, the control plane
   // has it (persisted above) and POST /sessions/:id/question delivers the answer
   // as a follow-up turn. Nothing is lost by leaving this one blocked.
-  if (!slackRelayContext()) {
+  if (!channelRelayContext()) {
     logger.info('[opencode-events] question persisted; left open for the UI', {
       requestId: req.id,
     })
     return
   }
 
+  // Name the channel the agent is actually in. The old text said "Slack" and
+  // "`slack send`" unconditionally, which in a Teams conversation instructed
+  // the agent to use a CLI it does not have.
+  const channel = channelLabel()
   const sentinel =
-    '(Posted to the Slack thread. In Slack, questions are async — the user replies ' +
-    'as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
-    'wait for an answer here; finish this turn now. Next time, just ask with ' +
-    '`slack send` rather than the question tool.)'
+    `(Posted to the ${channel} conversation. In ${channel}, questions are async — the user ` +
+    'replies as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
+    'wait for an answer here; finish this turn now.)'
   const answers: string[][] = req.questions.map(() => [sentinel])
   const replyUrl = `${opencode.getInternalUrl()}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
   try {
@@ -2654,7 +2729,7 @@ export function __resetRelayedTurnBegins(): void {
  * user message it injects when a background pty finishes. Those turns had no
  * authority at all: `GET .../turn` read idle over minutes of live streaming
  * and the box ran on its 15-minute idle tail (live incident 2026-08-20,
- * Essentia session d1b74954). This relay fires on the root's `busy`/`retry`
+ * a reported session). This relay fires on the root's `busy`/`retry`
  * status frames and names the newest user message; apps/api adopts it only
  * when no open turn exists and the message was never seen — so relaying for
  * an ordinary delivered prompt is a cheap no-op.
@@ -2760,7 +2835,7 @@ export async function relayTurnEndToApi(
   // the real error. The completed timestamp doubles as the per-turn dedup key.
   //
   // Read BEFORE the root filter, because the runaway guard below must see EVERY
-  // session's completions: the 2026-08-18 Essentia incident was a CHILD session
+  // session's completions: the 2026-08-18 incident was a CHILD session
   // re-answering the same standing prompt indefinitely, and with the guard
   // placed after the root filter it never saw a single one of those repeats.
   let turn = await readRootTurnState(opencodeSessionId, opencode, cfg)
@@ -2780,6 +2855,7 @@ export async function relayTurnEndToApi(
   const runawayCheck = (): void => {
     if (effectiveStatus !== 'idle') return
     void observeIdleForRunaway(opencodeSessionId, turn.parentMessageId, async () => {
+      noteOpencodeStopRequested(opencodeSessionId, 'runaway-guard')
       try {
         await fetch(
           `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/abort?directory=${encodeURIComponent(cfg.workspace)}`,
@@ -2955,8 +3031,8 @@ async function readRootTurnState(
     // USER rows are SKIPPED, not a boundary: a prompt forwarded into a live
     // turn — and OpenCode's own synthetic `<pty_exited>` wake-ups — leave a
     // user message as the newest row at almost every turn end, and bailing
-    // there unnamed EVERY relay for such sessions (live 2026-08-20, Essentia
-    // session d1b74954: `relay_named:false` on each end, double finalizes
+    // there unnamed EVERY relay for such sessions (live 2026-08-20:
+    // `relay_named:false` on each end, double finalizes
     // because the unnamed relay has no dedup signature, and the forwarded-turn
     // reconciler lost its primary key). Attribution is message-scoped — the
     // assistant's own `parentID` names the turn it answered — so a pending

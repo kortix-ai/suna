@@ -96,31 +96,34 @@ export function splitModelLabel(modelName: string | undefined): {
  * accounts connected that list doubles again. Almost every session uses a
  * managed model, so the rest is scrolling the user pays for on every open.
  *
- * Collapsed by default, with four exceptions that each exist because the
- * alternative is a picker that looks broken:
+ * Every section is a collapsible group with the same header. Search opens
+ * all of them. Without a search, the user's toggle wins. Without a toggle,
+ * two defaults apply:
  *
  *  1. SEARCH. A query must reach every provider — a collapsed group that hides
  *     a match reads as "the model is gone", which is the bug this picker had
- *     once already.
- *  2. THE FIRST GROUP. `MODEL_SELECTOR_PROVIDER_IDS` puts `kortix` first, so
- *     this is the managed set: the models most sessions use, always open. On a
- *     BYOK-only project there is no kortix group and this keeps the picker from
- *     opening fully collapsed.
- *  3. THE SELECTED MODEL'S GROUP. Opening the picker must always show what you
- *     are currently on, or the check mark has nowhere to live.
- *  4. What the user expanded by hand, this time the popover was open.
+ *     once already. It overrides a collapse the user made.
+ *  2. THE USER'S TOGGLE, this time the popover was open. It overrides both
+ *     defaults below. They used to be unconditional, so the managed group and
+ *     the selected model's group had a header that did nothing.
+ *  3. THE FIRST GROUP starts open. `MODEL_SELECTOR_PROVIDER_IDS` puts `kortix`
+ *     first, so this is the managed set most sessions use. On a BYOK-only
+ *     project it keeps the picker from opening fully collapsed.
+ *  4. THE SELECTED MODEL'S GROUP starts open, so opening the picker shows what
+ *     you are currently on.
  */
 export function isPickerGroupOpen(input: {
   groupIndex: number;
   groupProviderID: string;
   hasSearch: boolean;
   containsSelected: boolean;
-  expanded: ReadonlySet<string>;
+  /** Open (true) or collapsed (false) by the user; absent = not toggled. */
+  toggled: ReadonlyMap<string, boolean>;
 }): boolean {
   if (input.hasSearch) return true;
-  if (input.groupIndex === 0) return true;
-  if (input.containsSelected) return true;
-  return input.expanded.has(input.groupProviderID);
+  const toggled = input.toggled.get(input.groupProviderID);
+  if (toggled !== undefined) return toggled;
+  return input.groupIndex === 0 || input.containsSelected;
 }
 
 /** One collapsible section in the picker: a heading and the models under it. */
@@ -133,57 +136,19 @@ export interface PickerSection {
   /** The heading: the provider's name. */
   label: string;
   models: FlatModel[];
-  /** Credentials connected for this provider. Empty for most providers. */
-  accounts: PickerAccount[];
-  /** The credential currently pinned, or null for the project default. */
-  activeSecretId: string | null;
-}
-
-/** The subset of an account secret resource the picker needs. */
-export interface PickerAccount {
-  secret_id: string;
-  label: string;
-  provider_id: string | null;
-  /** False when this viewer holds no grant on the credential. */
-  can_use?: boolean;
-  /** False once the credential is retired. */
-  active?: boolean;
 }
 
 /**
- * Provider sections, each carrying the credentials connected for it.
- *
- * A ChatGPT subscription is a CREDENTIAL, not a model set: every connected
- * account exposes the SAME models. Splitting the group into one section per
- * account therefore printed the same five models twice — ten rows to express
- * five models and two credentials, and it multiplies with every account added.
- *
- * So the models are listed ONCE and the credential is a control in the heading.
- * `activeSecretId` is what the session has pinned (null = the project default),
- * supplied by the caller because only it knows whether that lives in a live
- * session's pool or in a not-yet-created session's draft.
+ * Provider sections for the picker. Which credential a session bills to is
+ * chosen in Session overrides -> Provider keys (a rotating pool), not here.
  */
 export function buildPickerSections(
   groups: readonly { providerID: string; providerName: string; models: FlatModel[] }[],
-  accounts: readonly PickerAccount[],
-  activeByProvider: Readonly<Record<string, string | null>> = {},
 ): PickerSection[] {
-  return groups.map((group) => {
-    // Offer only what the write would accept. `PUT .../provider-secret-pools`
-    // rejects a credential this viewer holds no grant on, and an inactive one,
-    // with 403 — so listing either would be a choice that fails on click.
-    const mine = accounts.filter(
-      (a) => a.provider_id === group.providerID && a.can_use !== false && a.active !== false,
-    );
-    const active = activeByProvider[group.providerID] ?? null;
-    return {
-      id: group.providerID,
-      providerID: group.providerID,
-      label: group.providerName,
-      models: group.models,
-      accounts: mine,
-      // A pin naming a credential that is gone must not survive as a claim.
-      activeSecretId: mine.some((a) => a.secret_id === active) ? active : null,
-    };
-  });
+  return groups.map((group) => ({
+    id: group.providerID,
+    providerID: group.providerID,
+    label: group.providerName,
+    models: group.models,
+  }));
 }

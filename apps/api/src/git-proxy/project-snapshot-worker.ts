@@ -16,6 +16,7 @@ import {
   type ProcessedProjectSnapshot,
 } from './project-snapshot';
 import { projectSnapshotStorageConfigured } from './project-snapshot-store';
+import { runWorkerTick } from '../shared/audit-scope';
 
 const CLAIM_BATCH = 2;
 const IDLE_MS = 5_000;
@@ -74,7 +75,7 @@ async function tick(): Promise<void> {
   }
   if (stopped) return;
   timer = setTimeout(() => {
-    activeTick = tick();
+    activeTick = runWorkerTick('project-snapshots', tick);
   }, delay);
 }
 
@@ -86,7 +87,7 @@ export function startProjectSnapshotWorker(): void {
   }
   running = true;
   stopped = false;
-  activeTick = tick();
+  activeTick = runWorkerTick('project-snapshots', tick);
 }
 
 export async function stopProjectSnapshotWorker(): Promise<void> {

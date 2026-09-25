@@ -5,6 +5,7 @@ import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { PROJECT_ACTIONS } from '../iam';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -35,11 +36,11 @@ beforeAll(async () => {
     // manager rows still pass and the member rows still hit the leaf.
     metadata: { experimental: { review_center: false, teams: true } },
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);
@@ -140,8 +141,8 @@ const MANAGER_TIER_READ_CASES: Case[] = [
 describe('HTTP enforcement — project read-leaf gates (agent-grant fold now reachable)', () => {
   for (const c of CASES) {
     describe(c.name, () => {
-      test('agent granted an UNRELATED capability → 403 (leaf missing from kortix_cli)', async () => {
-        const secret = await mintToken({ agent: 'scoped-bot', kortixCli: ['project.trigger.fire'], connectors: [] });
+      test('agent granted an UNRELATED capability → 403 (leaf missing from kortix_permissions)', async () => {
+        const secret = await mintToken({ agent: 'scoped-bot', permissions: ['project.trigger.fire'], connectors: [] });
         const res = await getReq(c.path(), secret);
         expect(res.status).toBe(403);
         const body = await res.json().catch(() => ({}));
@@ -149,7 +150,7 @@ describe('HTTP enforcement — project read-leaf gates (agent-grant fold now rea
       });
 
       test('agent granted the exact leaf → passes the gate (not 403)', async () => {
-        const secret = await mintToken({ agent: 'scoped-bot', kortixCli: [c.leaf], connectors: [] });
+        const secret = await mintToken({ agent: 'scoped-bot', permissions: [c.leaf], connectors: [] });
         const res = await getReq(c.path(), secret);
         expect(res.status).not.toBe(403);
       });
@@ -165,7 +166,7 @@ describe('HTTP enforcement — project read-leaf gates (agent-grant fold now rea
 
 describe('HTTP enforcement — gateway playground spend gate', () => {
   test('agent granted an UNRELATED capability → 403 before upstream dispatch', async () => {
-    const secret = await mintToken({ agent: 'scoped-bot', kortixCli: ['project.trigger.fire'], connectors: [] });
+    const secret = await mintToken({ agent: 'scoped-bot', permissions: ['project.trigger.fire'], connectors: [] });
     const res = await postReq(`/v1/projects/${PROJECT}/gateway/playground`, secret, {
       prompt: 'hello',
       models: ['not-a-real-model'],
@@ -194,7 +195,7 @@ describe('HTTP enforcement — manager-tier read gates (file/secret/connector re
       });
 
       test('agent (manager) granted the exact leaf → passes the gate (not 403)', async () => {
-        const secret = await mintManagerToken({ agent: 'scoped-bot', kortixCli: [c.leaf], connectors: [] });
+        const secret = await mintManagerToken({ agent: 'scoped-bot', permissions: [c.leaf], connectors: [] });
         const res = await getReq(c.path(), secret);
         expect(res.status).not.toBe(403);
       });
@@ -247,8 +248,8 @@ describe('HTTP enforcement — send-primitive gates (Slack upload / meet speak)'
         expect(res.status).not.toBe(403);
       });
 
-      test('scoped agent launched by a manager but missing connector.write in kortix_cli → 403', async () => {
-        const secret = await mintManagerToken({ agent: 'scoped-bot', kortixCli: ['project.trigger.fire'], connectors: [] });
+      test('scoped agent launched by a manager but missing connector.write in kortix_permissions → 403', async () => {
+        const secret = await mintManagerToken({ agent: 'scoped-bot', permissions: ['project.trigger.fire'], connectors: [] });
         const res = await postReq(c.path(), secret, {});
         expect(res.status).toBe(403);
         const body = await res.json().catch(() => ({}));
@@ -256,7 +257,7 @@ describe('HTTP enforcement — send-primitive gates (Slack upload / meet speak)'
       });
 
       test('scoped agent launched by a manager AND granted connector.write → passes the gate (not 403)', async () => {
-        const secret = await mintManagerToken({ agent: 'scoped-bot', kortixCli: [c.leaf], connectors: [] });
+        const secret = await mintManagerToken({ agent: 'scoped-bot', permissions: [c.leaf], connectors: [] });
         const res = await postReq(c.path(), secret, {});
         expect(res.status).not.toBe(403);
       });

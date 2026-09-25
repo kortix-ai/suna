@@ -3,7 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { CodeEditor } from '@/components/file-editors/code-editor';
+import { CodeEditor } from '@/components/file-editors/lazy-code-editor';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { StatusDot } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
@@ -34,6 +35,7 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
+import { getFileCategory, getLanguageFromExt, type FileCategory } from './preview-policy';
 // Direct module import, not the feature barrel: the barrel re-exports THIS file.
 import { HtmlPreview } from './html-preview';
 import { usePreviewFit } from './preview-fit';
@@ -79,145 +81,6 @@ const ZipRenderer = lazy(() =>
 /** Categories that need a blob fetched via readFileAsBlob */
 const BLOB_CATEGORIES = ['docx', 'video', 'audio', 'pptx', 'zip'] as const;
 type BlobCategory = (typeof BLOB_CATEGORIES)[number];
-
-export type FileCategory =
-  | 'image'
-  | 'pdf'
-  | 'docx'
-  | 'pptx'
-  | 'xlsx'
-  | 'csv'
-  | 'sqlite'
-  | 'video'
-  | 'audio'
-  | 'html'
-  | 'zip'
-  | 'code'
-  | 'text'
-  | 'binary';
-
-export function getFileCategory(filename: string, mimeType?: string): FileCategory {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-
-  if (
-    [
-      'png',
-      'jpg',
-      'jpeg',
-      'gif',
-      'svg',
-      'webp',
-      'ico',
-      'bmp',
-      'avif',
-      'tiff',
-      'tif',
-      'heic',
-      'heif',
-    ].includes(ext)
-  )
-    return 'image';
-  if (ext === 'pdf') return 'pdf';
-  if (ext === 'docx') return 'docx';
-  if (['pptx', 'ppt'].includes(ext)) return 'pptx';
-  if (['xlsx', 'xls'].includes(ext)) return 'xlsx';
-  if (['csv', 'tsv'].includes(ext)) return 'csv';
-  if (['db', 'sqlite', 'sqlite3', 'db3', 'sdb', 's3db'].includes(ext)) return 'sqlite';
-  if (['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v'].includes(ext)) return 'video';
-  if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma'].includes(ext)) return 'audio';
-  if (['html', 'htm'].includes(ext)) return 'html';
-  // Zip CONTAINERS only. `.docx`/`.xlsx`/`.pptx` are zips too and are matched
-  // above, because their contents are an implementation detail rather than
-  // something anyone wants to browse. `.tar.gz`/`.tgz` are deliberately absent
-  // — they are not zip, and jszip cannot read them.
-  if (['zip', 'jar', 'war', 'whl', 'vsix', 'nupkg', 'xpi', 'apk'].includes(ext)) return 'zip';
-
-  // Code/text files
-  if (getLanguageFromExt(filename) !== 'plaintext') return 'code';
-  if (mimeType?.startsWith('text/')) return 'text';
-
-  return 'binary';
-}
-
-export function getLanguageFromExt(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-  const fileNameLower = filename.toLowerCase();
-  const baseName = (fileNameLower.split('/').pop() ?? fileNameLower).split('.')[0];
-
-  // .env files (e.g., .env, .env.local, .env.production)
-  if (fileNameLower.includes('.env') || fileNameLower.startsWith('.env')) {
-    return 'properties';
-  }
-
-  // Files without a useful extension — detect by base name
-  if (baseName === 'dockerfile' || fileNameLower.startsWith('dockerfile.')) return 'dockerfile';
-  if (baseName === 'makefile' || baseName === 'gnumakefile') return 'makefile';
-
-  const map: Record<string, string> = {
-    ts: 'typescript',
-    tsx: 'tsx',
-    js: 'javascript',
-    jsx: 'jsx',
-    mjs: 'javascript',
-    cjs: 'javascript',
-    py: 'python',
-    rb: 'ruby',
-    go: 'go',
-    rs: 'rust',
-    java: 'java',
-    c: 'c',
-    cpp: 'cpp',
-    h: 'c',
-    hpp: 'cpp',
-    cs: 'csharp',
-    swift: 'swift',
-    kt: 'kotlin',
-    php: 'php',
-    html: 'html',
-    css: 'css',
-    scss: 'scss',
-    less: 'less',
-    json: 'json',
-    jsonc: 'json',
-    json5: 'json',
-    yaml: 'yaml',
-    yml: 'yaml',
-    toml: 'toml',
-    xml: 'xml',
-    sql: 'sql',
-    sh: 'bash',
-    bash: 'bash',
-    zsh: 'bash',
-    fish: 'bash',
-    md: 'markdown',
-    mdx: 'markdown',
-    txt: 'plaintext',
-    dockerfile: 'dockerfile',
-    makefile: 'makefile',
-    vue: 'vue',
-    svelte: 'svelte',
-    env: 'properties',
-    ini: 'properties',
-    conf: 'properties',
-    cfg: 'properties',
-    properties: 'properties',
-    graphql: 'graphql',
-    gql: 'graphql',
-    prisma: 'prisma',
-    proto: 'proto',
-    nix: 'nix',
-    lua: 'lua',
-    r: 'r',
-    dart: 'dart',
-    tf: 'hcl',
-    hcl: 'hcl',
-    tfvars: 'hcl',
-    diff: 'diff',
-    patch: 'diff',
-    vim: 'vim',
-  };
-  return map[ext] || 'plaintext';
-}
 
 function isImageMime(mimeType?: string): boolean {
   return !!mimeType && mimeType.startsWith('image/');
@@ -372,6 +235,10 @@ export function FileContentRenderer({
   const language = getLanguageFromExt(fileName);
   const fileCategory = getFileCategory(fileName, fileContent?.mimeType);
   const isMarkdownFile = language === 'markdown';
+  // `.mmd` / `.mermaid` share the markdown Preview/Source toggle and its state:
+  // both are text files whose rendered form is the default view.
+  const isMermaidFile = language === 'mermaid';
+  const hasPreviewToggle = isMarkdownFile || isMermaidFile;
   const isJsonFile = language === 'json';
   const isHtmlFile = fileCategory === 'html';
   // Markdown defaults to rendered preview (UnifiedMarkdown). Users can flip to
@@ -813,8 +680,8 @@ export function FileContentRenderer({
               </Hint>
             )}
 
-            {/* Markdown preview toggle */}
-            {isMarkdownFile && fileContent?.type === 'text' && (
+            {/* Markdown / Mermaid preview toggle */}
+            {hasPreviewToggle && fileContent?.type === 'text' && (
               <Hint
                 label={
                   isMarkdownPreview
@@ -948,6 +815,11 @@ export function FileContentRenderer({
             </Suspense>
           )}
 
+          {/* The rich renderers below get `showDownload={false}`: every host of
+              this component (the session panel, the file preview modal, the
+              public share page) already shows Download in its own toolbar, and
+              a second one inside the viewer is the duplicate we removed. */}
+
           {/* PDF preview */}
           {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
@@ -956,6 +828,7 @@ export function FileContentRenderer({
                 fileName={fileName}
                 className="h-full"
                 fitOnOpen={fitOnOpen}
+                showDownload={false}
               />
             </Suspense>
           )}
@@ -963,7 +836,12 @@ export function FileContentRenderer({
           {/* DOCX preview */}
           {isContentReady && fileCategory === 'docx' && rawBlob && (
             <Suspense fallback={<RendererFallback />}>
-              <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
+              <DocxRenderer
+                blob={rawBlob}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
@@ -982,7 +860,12 @@ export function FileContentRenderer({
           {/* XLSX / XLS preview */}
           {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (
             <Suspense fallback={<RendererFallback />}>
-              <XlsxRenderer filePath={filePath} fileName={fileName} className="h-full" />
+              <XlsxRenderer
+                filePath={filePath}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
@@ -1001,14 +884,19 @@ export function FileContentRenderer({
           {/* CSV / TSV preview */}
           {!isLoading && !error && fileCategory === 'csv' && fileContent && (
             <Suspense fallback={<RendererFallback />}>
-              <CsvRenderer content={fileContent.content} fileName={fileName} className="h-full" />
+              <CsvRenderer
+                content={fileContent.content}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
           {/* Video preview */}
           {isContentReady && fileCategory === 'video' && blobUrl && (
             <Suspense fallback={<RendererFallback />}>
-              <VideoRenderer url={blobUrl} className="h-full" onDownload={handleDownload} />
+              <VideoRenderer url={blobUrl} className="h-full" />
             </Suspense>
           )}
 
@@ -1103,7 +991,14 @@ export function FileContentRenderer({
             !imageDataUrl &&
             fileCategory !== 'csv' &&
             fileCategory !== 'html' && (
-              <div className={cn('relative flex flex-col', readOnly ? 'min-h-full' : 'h-full')}>
+              <div
+                className={cn(
+                  'relative flex flex-col',
+                  // The diagram fits the pane, so it needs a definite height
+                  // even read-only; `min-h-full` would collapse it to zero.
+                  readOnly && !(isMermaidFile && isMarkdownPreview) ? 'min-h-full' : 'h-full',
+                )}
+              >
                 {/* Diff indicator */}
                 {fileContent.patch && fileContent.patch.hunks.length > 0 && (
                   <InfoBanner
@@ -1122,6 +1017,16 @@ export function FileContentRenderer({
                       content={hasUnsavedChanges ? latestContentRef.current : displayContent}
                     />
                   </div>
+                ) : isMarkdownPreview && isMermaidFile ? (
+                  // Reads the unsaved editor text, like the markdown preview
+                  // below, so an edit in Source shows up here before saving.
+                  <MermaidDiagram
+                    key={filePath}
+                    source={hasUnsavedChanges ? latestContentRef.current : displayContent}
+                    fileName={fileName}
+                    onShowSource={() => setIsMarkdownPreview(false)}
+                    className="h-full"
+                  />
                 ) : isMarkdownPreview && isMarkdownFile ? (
                   // Markdown is prose, so it gets a measure. The markdown root
                   // renders at text-[15px]; full-bleed on a wide viewport that

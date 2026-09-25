@@ -1,24 +1,19 @@
 import * as React from 'react';
-import { Pressable, View, TextInput, Alert, Keyboard, ScrollView } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring
-} from 'react-native-reanimated';
+import { Pressable, View, Alert, Keyboard, ScrollView, type TextInput } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Save, Mail, AlertTriangle } from 'lucide-react-native';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { FloppyDiskIcon as Save, EnvelopeIcon as Mail, WarningIcon as AlertTriangle } from '@/lib/icons';
 import { SettingsHeader } from './SettingsHeader';
 import { supabase } from '@/api/supabase';
 import * as Haptics from 'expo-haptics';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { ProfilePicture } from './ProfilePicture';
 import { log } from '@/lib/logger';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-  
 interface NameEditPageProps {
   visible: boolean;
   currentName: string;
@@ -167,7 +162,7 @@ export function NameEditPage({
                 fallbackText={name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
               />
               <View className="mt-6 w-full">
-                <TextInput
+                <Input
                   ref={inputRef}
                   value={name}
                   onChangeText={(text) => {
@@ -175,8 +170,7 @@ export function NameEditPage({
                     setError(null);
                   }}
                   placeholder={t('nameEdit.yourNamePlaceholder')}
-                  placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-                  className="text-3xl font-roobert-semibold text-foreground text-center tracking-tight"
+                  className="h-auto border-0 bg-transparent px-0 py-0 text-3xl font-roobert-semibold text-foreground text-center tracking-tight shadow-none"
                   editable={!isLoading}
                   maxLength={100}
                   autoCapitalize="words"
@@ -193,7 +187,7 @@ export function NameEditPage({
             {error && (
               <View className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4 mb-6">
                 <View className="flex-row items-start gap-2">
-                  <Icon as={AlertTriangle} size={16} className="text-destructive mt-0.5" strokeWidth={2} />
+                  <Icon as={AlertTriangle} size={16} className="text-destructive mt-0.5" />
                   <Text className="text-sm font-roobert-medium text-destructive flex-1">
                     {error}
                   </Text>
@@ -205,7 +199,7 @@ export function NameEditPage({
               <View className="bg-primary/5 rounded-3xl p-5">
                 <View className="flex-row items-center gap-3">
                   <View className="h-11 w-11 rounded-full bg-primary/10 items-center justify-center">
-                    <Icon as={Mail} size={20} className="text-primary" strokeWidth={2.5} />
+                    <Icon as={Mail} size={20} className="text-primary" />
                   </View>
                   <View className="flex-1">
                     <Text className="text-xs font-roobert-medium text-muted-foreground mb-1">
@@ -243,60 +237,24 @@ interface SaveButtonProps {
 function SaveButton({ onPress, disabled, isLoading, hasChanges }: SaveButtonProps) {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
-  const scale = useSharedValue(1);
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-  
-  const handlePressIn = () => {
-    if (!disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-  };
-  
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-  
+
   if (!hasChanges && !isLoading) {
     return null;
   }
-  
+
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
-      disabled={disabled}
-      className={`rounded-full items-center justify-center flex-row gap-2 px-6 py-4 ${
-        disabled ? 'bg-muted/50' : 'bg-primary'
-      }`}
-    >
+    <Button size="lg" className="rounded-full" disabled={disabled} onPress={onPress}>
       {isLoading ? (
         <>
-          <KortixLoader 
-            size="small" 
-            forceTheme={colorScheme === 'dark' ? 'dark' : 'light'}
-          />
-          <Text className="text-primary-foreground text-sm font-roobert-medium">
-            {t('nameEdit.saving')}
-          </Text>
+          <KortixLoader size="small" forceTheme={colorScheme === 'dark' ? 'dark' : 'light'} />
+          <Text>{t('nameEdit.saving')}</Text>
         </>
       ) : (
         <>
-          <Icon 
-            as={Save} 
-            size={16} 
-            className="text-primary-foreground" 
-            strokeWidth={2.5} 
-          />
-          <Text className="text-primary-foreground text-sm font-roobert-medium">
-            {t('nameEdit.saveChanges')}
-          </Text>
+          <Icon as={Save} size={16} className="text-primary-foreground" />
+          <Text>{t('nameEdit.saveChanges')}</Text>
         </>
       )}
-    </AnimatedPressable>
+    </Button>
   );
 }

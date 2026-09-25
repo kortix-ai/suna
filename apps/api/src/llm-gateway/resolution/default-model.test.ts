@@ -70,6 +70,32 @@ afterEach(() => {
 
 const PRINCIPAL_BASE = { userId: 'u1', accountId: 'a1', projectId: 'p1' };
 
+describe('isModelServableForAccount — whose personal keys the probe may use', () => {
+  const principals: Array<Record<string, unknown>> = [];
+  beforeEach(() => {
+    principals.length = 0;
+    spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(
+      (async (principal: Record<string, unknown>) => {
+        principals.push(principal);
+        return [{ provider: 'anthropic' }];
+      }) as unknown as typeof resolveCandidatesModule.resolveCandidates,
+    );
+  });
+
+  test('a shared session probes with no personal user, so a personal key cannot pass', async () => {
+    // A Teams group chat or channel: its session is shared, and the gateway
+    // will resolve it with personalUserId null. A probe that let the
+    // checker's own keys count would approve a model that then fails.
+    await isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'anthropic/x', personalUserId: null });
+    expect(principals[0]).toMatchObject({ userId: 'u1', personalUserId: null });
+  });
+
+  test('absent keeps the legacy principal — the checker is its own personal user', async () => {
+    await isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'anthropic/x' });
+    expect(principals[0]).not.toHaveProperty('personalUserId');
+  });
+});
+
 describe('isModelServableForAccount — never 500s a passive servability check', () => {
   test('resolveCandidates throwing a typed GatewayResolutionError → false, not a throw', async () => {
     resolveCandidatesImpl = async () => {
@@ -130,7 +156,7 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
     expect(result).toEqual({ model: 'openai/gpt-5.5', source: 'project' });
   });
 
-  test('THE ESSENTIA BUG: a stale/unservable configured default (e.g. disconnected openrouter) never 500s, and degrades to a provider the project HAS connected', async () => {
+  test('THE SAMPLECO BUG: a stale/unservable configured default (e.g. disconnected openrouter) never 500s, and degrades to a provider the project HAS connected', async () => {
     accountDefaults = { account: null, agents: {}, projects: { p1: 'openrouter/some-model' } };
     // The configured openrouter default is no longer servable — no key connected.
     resolveCandidatesImpl = async (model) => {
@@ -166,6 +192,35 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
 
     const result = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
     expect(result).toEqual({ model: null, source: 'platform' });
+  });
+
+  test('a shared session checks the configured default without anyone`s personal keys', async () => {
+    // A default reached only through one person's ChatGPT subscription is not
+    // a default for a Teams channel session: the gateway runs it with
+    // personalUserId null, so the first turn would fail "Connect Codex".
+    accountDefaults = { account: 'codex/gpt-6-astra', agents: {}, projects: {} };
+    const principals: Array<Record<string, unknown>> = [];
+    spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(
+      (async (principal: Record<string, unknown>) => {
+        principals.push(principal);
+        if (principal.personalUserId === null) {
+          throw new GatewayResolutionError('provider_not_connected', 'Connect Codex to use this model.', 'connect it');
+        }
+        return [{ provider: 'codex' }];
+      }) as unknown as typeof resolveCandidatesModule.resolveCandidates,
+    );
+    connectedSecretNames = [];
+
+    const shared = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false, personalUserId: null });
+    expect(shared).toEqual({ model: null, source: 'platform' });
+    expect(principals[0]).toMatchObject({ userId: 'u1', personalUserId: null });
+    // Only shared project keys count for the fallback provider as well.
+    expect(secretsModule.listProjectSecretNamesForConsumer).toHaveBeenCalledWith(
+      expect.objectContaining({ principalUserId: undefined }),
+    );
+
+    const own = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+    expect(own).toEqual({ model: 'codex/gpt-6-astra', source: 'account' });
   });
 
   test('an explicit pin that is unservable degrades through the same chain (never throws)', async () => {

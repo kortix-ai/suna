@@ -18,6 +18,8 @@ let endpoint: { endpoint: { url: string; headers: Record<string, string> }; open
 };
 let ok = true;
 let throws = false;
+const marks: Array<{ sessionId: string; name: string; opencodeSessionId?: string | null }> = [];
+let markThrows = false;
 
 describe('abortRuntimeTurn', () => {
   test('posts abort to the session the runtime is holding', async () => {
@@ -57,6 +59,34 @@ describe('abortRuntimeTurn', () => {
     ok = true;
   });
 
+  // A Stop from Slack or Teams aborts the runtime directly, never through the
+  // sandbox proxy that stamps `UserStop`. Unstamped, the abort it causes reads
+  // as a failure nobody explained under the turn the user stopped.
+  test('a requested stop is stamped on the open turn before the abort', async () => {
+    calls.length = 0;
+    marks.length = 0;
+    const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
+    expect(await abortRuntimeTurn('kortix-session-1', { requestedStop: true })).toBe(true);
+    expect(marks).toEqual([{ sessionId: 'kortix-session-1', name: 'UserStop', opencodeSessionId: 'ses_123' }]);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('a housekeeping abort stamps nothing', async () => {
+    marks.length = 0;
+    const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
+    await abortRuntimeTurn('kortix-session-1');
+    expect(marks).toEqual([]);
+  });
+
+  test('a stamp that fails never blocks the stop', async () => {
+    calls.length = 0;
+    markThrows = true;
+    const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
+    expect(await abortRuntimeTurn('kortix-session-1', { requestedStop: true })).toBe(true);
+    expect(calls).toHaveLength(1);
+    markThrows = false;
+  });
+
   test('a network error reports false instead of throwing', async () => {
     throws = true;
     const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
@@ -65,8 +95,15 @@ describe('abortRuntimeTurn', () => {
   });
 });
 
-mock.module('../projects/session-lifecycle/engine', () => ({
+mock.module('../projects/session-lifecycle/runtime-client', () => ({
   resolveSessionOpencodeEndpoint: async () => endpoint,
+}));
+
+mock.module('../projects/sandbox-turn-lifecycle', () => ({
+  markTurnStopRequested: async (sessionId: string, name: string, scope: { opencodeSessionId?: string | null }) => {
+    if (markThrows) throw new Error('db down');
+    marks.push({ sessionId, name, opencodeSessionId: scope.opencodeSessionId });
+  },
 }));
 
 mock.module('../projects/sandbox-fetch', () => ({

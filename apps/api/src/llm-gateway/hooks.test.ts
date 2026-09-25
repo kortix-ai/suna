@@ -62,6 +62,7 @@ mock.module('./resolution/default-model', () => ({
 
 mock.module('./budgets', () => ({
   checkBudget: async () => ({ exceeded: false }),
+  releaseBudgetReservation: () => {},
 }));
 
 // A minimal stand-in for the real `BillingGateError` (HTTPException + `.reason`)
@@ -155,5 +156,15 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
       expect(result.principal.freeModelsOnly).toBe(false);
       expect(result.principal.billingHold).toEqual({ amountUsd: 0.01 });
     }
+  });
+
+  test('a new gateway defers the paid-tier hold until model resolution', async () => {
+    accountTier = 'per_seat';
+
+    const result = await authorizeRequest('good', { deferBilling: true });
+
+    expect(result.ok).toBe(true);
+    expect(billingCalls).toBe(0);
+    if (result.ok) expect(result.principal.billingHold).toBeUndefined();
   });
 });

@@ -55,22 +55,36 @@ function parseTimestampMs(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * Every key an explicit in-place restart removes: the readiness clocks plus the
+ * restart-cleared keys above. `runtimeWakeStartedAt` and
+ * `runtimeWakeProviderStatus` are in the list and come straight back through
+ * {@link inPlaceRestartWakePatch}.
+ */
+export const IN_PLACE_RESTART_CLEARED_KEYS = [
+  ...RUNTIME_READINESS_CLOCK_KEYS,
+  ...RUNTIME_RESTART_CLEARED_KEYS,
+] as const;
+
+/** The wake clock an explicit in-place restart starts. */
+export function inPlaceRestartWakePatch(now = new Date()): RuntimeReadinessMetadata {
+  return {
+    runtimeWakeStartedAt: now.toISOString(),
+    runtimeWakeProviderStatus: 'starting',
+  };
+}
+
 export function prepareInPlaceRestartMetadata(
   metadata: RuntimeReadinessMetadata | null | undefined,
   now = new Date(),
 ): RuntimeReadinessMetadata {
   const next = { ...(metadata ?? {}) };
-  for (const key of RUNTIME_READINESS_CLOCK_KEYS) delete next[key];
   // A human pressing Restart is an explicit "start this episode over": the
   // consecutive-failure accounting that escalates the automatic retry cooldown
   // (runtime-wake-fence.ts) resets with it, and no stale stop reason survives
   // to be replayed as a verdict about the new attempt.
-  for (const key of RUNTIME_RESTART_CLEARED_KEYS) delete next[key];
-  return {
-    ...next,
-    runtimeWakeStartedAt: now.toISOString(),
-    runtimeWakeProviderStatus: 'starting',
-  };
+  for (const key of IN_PLACE_RESTART_CLEARED_KEYS) delete next[key];
+  return { ...next, ...inPlaceRestartWakePatch(now) };
 }
 
 /**
@@ -79,7 +93,7 @@ export function prepareInPlaceRestartMetadata(
  * A readiness clock older than this was written by a previous attempt on the
  * same row and is not evidence about this one.
  *
- * *Incident (2026-08-26, Essentia, session 29861dfa / box inqwpv4a).* Attempt 1
+ * *Incident (2026-08-26, SampleCo, session 29861dfa / box inqwpv4a).* Attempt 1
  * failed during a post-roll build storm at ~13:27. The automatic cooldown rung
  * re-attempted at ~13:33: the resume launched the entrypoint, the daemon booted
  * through 13:34:48.8, authenticated to the gateway at 13:34:48.5–49.1 and
@@ -163,7 +177,7 @@ export function hasRuntimeReadinessClock(metadata: RuntimeReadinessMetadata): bo
  * progress has not stalled. `opencodeBootWaitFirstSeenAt` is written once per
  * boot wait and never moved; it feeds the hard cap.
  *
- * Essentia 2026-08-25 17:23–17:24: two resumes converged OpenCode 1.18.19 →
+ * SampleCo 2026-08-25 17:23–17:24: two resumes converged OpenCode 1.18.19 →
  * 1.18.23 and sat through that version's 53 s first init — legitimate work the
  * old fixed 90 s budget turned into `runtime_boot_failed` on both boxes.
  */

@@ -15,15 +15,14 @@
  */
 
 import { API_URL, getAuthToken } from '@/api/config';
-import { createApiRequestError, getUpgradeGate } from '@/lib/billing/upgrade-gate';
+import { createApiRequestError } from '@/lib/billing/upgrade-gate';
 import { backendApi } from '@kortix/sdk';
 import * as sdk from '@kortix/sdk';
 
 // ── Generic fetch helper ────────────────────────────────────────────────────
 // Kept mobile-native: this is the shared primitive for endpoints the SDK does
-// NOT cover at all (account-level IAM groups/MFA/session-policy/PAT-policy/
-// service-accounts/audit — see lib/accounts/{accounts-client,groups-client,
-// iam-client}.ts, all of which import `apiFetch` from this file) as well as
+// NOT cover at all (account-level IAM MFA/session-policy/PAT-policy/
+// service-accounts/audit — see lib/accounts/{accounts-client,iam-client}.ts, all of which import `apiFetch` from this file) as well as
 // the couple of functions below kept mobile-native for behavioral reasons.
 // Uses the same token source (`api/config.ts#getAuthToken`) that's wired into
 // `configureKortix({ getToken })`, so both paths share one auth story.
@@ -115,11 +114,13 @@ export type { ConnectorSharing as SessionSharing } from '@kortix/sdk';
 
 export {
   listProjectSessions,
+  listProjectSessionsPage,
   createProjectSession,
   restartProjectSession,
   updateProjectSession,
   deleteProjectSession,
   setProjectSessionSharing,
+  stopProjectSession,
 } from '@kortix/sdk';
 
 export type { SessionStartStage, SessionStartResult } from '@kortix/sdk';
@@ -128,30 +129,21 @@ export type { SessionStartStage, SessionStartResult } from '@kortix/sdk';
  * THE session-open call — kept MOBILE-NATIVE rather than re-exporting
  * `@kortix/sdk`'s `startProjectSession`.
  *
- * Mismatch found: the SDK's version NEVER throws — on any failure (including
- * a 402 billing gate) it just returns `null` and expects the *page* to have
- * already gated billing before polling (its own comment: "402 (billing) is
- * handled by the page's plan gate before polling"). Mobile's flow instead
- * discovers the billing gate BY catching this call's thrown error — see
- * `getUpgradeGate` below and its use in app/projects/[id].tsx /
- * components/billing/GlobalUpgradeSheet.tsx. Swapping to the SDK's
- * swallow-everything version would silently turn a billing paywall into an
- * infinite "provisioning" retry loop. Kept native; still hits the same
- * `/start` endpoint via `apiFetch` so behavior elsewhere is unchanged.
+ * The SDK's version NEVER throws: it turns every failure (including a 402
+ * billing gate) into `null`. Mobile's session-open loop needs the error:
+ * - a 402 opens the upgrade sheet (`getUpgradeGate`, ProjectScreen);
+ * - any other failure goes to `connectStepFromRequestError`
+ *   (lib/session/connect-step.ts), which shows ONE error. A `null` here made
+ *   the loop poll a broken request every 1.5 s for 4 min with no message.
  */
 export async function startProjectSession(
   projectId: string,
   sessionId: string,
-): Promise<sdk.SessionStartResult | null> {
-  try {
-    return await apiFetch<sdk.SessionStartResult>(
-      `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
-      { method: 'POST', body: JSON.stringify({}) },
-    );
-  } catch (error) {
-    if (getUpgradeGate(error)) throw error;
-    return null;
-  }
+): Promise<sdk.SessionStartResult> {
+  return apiFetch<sdk.SessionStartResult>(
+    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
 }
 
 export type { ProjectSessionSandbox } from '@kortix/sdk';
@@ -169,7 +161,7 @@ export type { ProjectConfigSummary, ProjectDetail, ProjectLlmCatalogResponse } f
 export type ProjectConfigEntry = sdk.ProjectConfigSummary['skills'][number];
 export type ProjectAgentEntry = sdk.ProjectConfigSummary['agents'][number];
 
-export { getProjectDetail, getProjectLlmCatalog } from '@kortix/sdk';
+export { getProjectDetail, getProjectLlmCatalog, getProjectModelPicker } from '@kortix/sdk';
 
 // ── Connectors (web parity: connectors-view) ──────────────────────────────────
 
@@ -268,47 +260,6 @@ export {
   resendPendingProjectInvite,
 } from '@kortix/sdk';
 
-// ── IAM V2: project ⇄ group attachments (project-scoped) ─────────────────────
-// NOTE: account-LEVEL group listing (`listAccountGroups`, `removeGroupMember`)
-// has no SDK equivalent — the SDK's `access.ts` only covers PROJECT-scoped
-// group grants. Kept mobile-native below via `apiFetch`.
-
-export type { ProjectGroupGrant } from '@kortix/sdk';
-
-export {
-  listProjectGroupGrants,
-  attachGroupToProject,
-  updateProjectGroupGrant,
-  detachGroupFromProject,
-} from '@kortix/sdk';
-
-/** Account-level group directory — NOT covered by `@kortix/sdk`
- *  (its `access.ts` only has project ⇄ group grants, not the account's group
- *  list). Mirrors the type mobile's `lib/accounts/groups-client.ts` re-exports. */
-export interface AccountGroup {
-  group_id: string;
-  name: string;
-  description: string | null;
-  source: 'manual' | 'scim';
-  member_count?: number;
-  project_count?: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export function listAccountGroups(accountId: string) {
-  return apiFetch<{ groups: AccountGroup[] }>(
-    `/accounts/${encodeURIComponent(accountId)}/iam/groups`,
-  ).then((r) => r.groups);
-}
-
-export function removeGroupMember(accountId: string, groupId: string, userId: string) {
-  return apiFetch<{ removed: boolean }>(
-    `/accounts/${encodeURIComponent(accountId)}/iam/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}`,
-    { method: 'DELETE' },
-  );
-}
-
 // ── Connector policies (tool-approval rules) ──────────────────────────────────
 
 export type {
@@ -356,6 +307,9 @@ export {
   setPersonalProjectSecret,
   deletePersonalProjectSecret,
 } from '@kortix/sdk';
+
+// ── Default agent ───────────────────────────────────────────────────────────
+export { updateProjectDefaultAgent } from '@kortix/sdk';
 
 // ── Channels — Slack (web parity: customize/sections/channels-view) ───────────
 

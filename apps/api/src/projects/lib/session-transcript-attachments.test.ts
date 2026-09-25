@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test';
 import { recoverTranscriptAttachments } from './session-transcript-attachments';
 import { sessionAttachmentRef } from '@kortix/shared';
+import { stableSessionAttachmentId } from './session-attachment-identity';
+import { mirrorRowsFromOpencodePayload } from './session-transcript-mirror';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const sessionId = '22222222-2222-4222-8222-222222222222';
@@ -210,4 +212,183 @@ test('replaces temporary upload identities with one durable reference', async ()
     ...f.input, messages, previous: new Map([['msg_1', result[0].parts]]), recover: false,
   })).toEqual(result);
   expect(f.saved).toHaveLength(0);
+});
+
+test('a user attachment keeps the exact reference it was stored under', async () => {
+  // The id is derived from a key; changing that key's shape would stop every
+  // stored reference from matching, and the next capture would re-read and
+  // re-upload every file the session ever held.
+  const f = fixture();
+  const [message] = await recoverTranscriptAttachments({ ...f.input, messages: [row([file])] });
+  const expected = sessionAttachmentRef({
+    projectId,
+    sessionId,
+    attachmentId: stableSessionAttachmentId(
+      `${sessionId}:msg_1:p1:file:photo.png:image/png:${file.url}`,
+    ),
+  });
+  expect(message.parts[0].url).toBe(expected);
+});
+
+// ── Artifacts an agent SHOWED ──────────────────────────────────────────────
+
+const assistant = (parts: Record<string, unknown>[]) => ({
+  info: { id: 'msg_2', role: 'assistant' },
+  parts,
+});
+const shown = (input: Record<string, unknown>, status = 'completed', tool = 'show') => ({
+  id: 'p_show',
+  type: 'tool',
+  tool,
+  callID: 'call_1',
+  state: { status, title: 'Chart', input },
+});
+
+test('a shown workspace file is copied and the card records where', async () => {
+  const f = fixture();
+  const original = [assistant([{ id: 'p_text', type: 'text', text: 'Here it is.' }, shown({
+    type: 'image',
+    title: 'Revenue',
+    path: '/workspace/out/revenue.png',
+  })])];
+  const [message] = await recoverTranscriptAttachments({ ...f.input, messages: original });
+  expect(f.paths).toEqual(['/workspace/out/revenue.png']);
+  expect(f.saved.map((value: any) => [value.filename, value.mime])).toEqual([
+    ['revenue.png', 'image/png'],
+  ]);
+  const card = message.parts[1] as any;
+  expect(card.state.input.attachment).toStartWith(`kortix-attachment://${projectId}/${sessionId}/`);
+  // Everything else about the card is untouched — only the reference is added.
+  expect(card.state.input.path).toBe('/workspace/out/revenue.png');
+  expect(card.state.title).toBe('Chart');
+  expect(message.info).toEqual(original[0].info);
+  expect(message.parts.map((part: any) => part.id)).toEqual(['p_text', 'p_show']);
+});
+
+test('every carousel item is copied under its own reference, even from a JSON string', async () => {
+  const f = fixture();
+  const [message] = await recoverTranscriptAttachments({
+    ...f.input,
+    messages: [assistant([shown({
+      items: JSON.stringify([
+        { type: 'image', path: '/workspace/a.png' },
+        { type: 'url', url: 'https://example.test' },
+        { type: 'pdf', path: '/workspace/report.pdf' },
+      ]),
+    })])],
+  });
+  expect(f.paths).toEqual(['/workspace/a.png', '/workspace/report.pdf']);
+  const items = (message.parts[0] as any).state.input.items;
+  expect(items[0].attachment).toStartWith('kortix-attachment://');
+  expect(items[1].attachment).toBeUndefined();
+  expect(items[2].attachment).toStartWith('kortix-attachment://');
+  expect(items[0].attachment).not.toBe(items[2].attachment);
+  expect(f.saved.map((value: any) => value.mime)).toEqual(['image/png', 'application/pdf']);
+});
+
+test('only a settled, file-backed show inside the workspace is copied', async () => {
+  const f = fixture();
+  const untouched = [
+    assistant([shown({ type: 'image', path: '/workspace/still-writing.png' }, 'running')]),
+    assistant([shown({ type: 'url', url: 'https://example.test/page' })]),
+    assistant([shown({ type: 'markdown', content: '# inline' })]),
+    // A path that escapes the workspace is not the session's to copy.
+    assistant([shown({ type: 'file', path: '/etc/passwd' })]),
+    assistant([shown({ type: 'file', path: '/workspace/../etc/passwd' })]),
+    // Not a show at all.
+    assistant([{ id: 'p', type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: '/workspace/a.png' } } }]),
+  ];
+  const result = await recoverTranscriptAttachments({ ...f.input, messages: untouched });
+  expect(f.paths).toEqual([]);
+  expect(f.saved).toHaveLength(0);
+  // Same objects back: a no-op is visibly a no-op.
+  result.forEach((message, index) => expect(message).toBe(untouched[index] as any));
+});
+
+test('every spelling the SDK treats as show is copied', async () => {
+  for (const tool of ['show', 'show_user', 'oc-show', 'show-user']) {
+    const f = fixture();
+    await recoverTranscriptAttachments({
+      ...f.input,
+      messages: [assistant([shown({ type: 'image', path: '/workspace/x.png' }, 'completed', tool)])],
+    });
+    expect(f.paths).toEqual(['/workspace/x.png']);
+  }
+});
+
+test('a show copied by an earlier capture is not read again', async () => {
+  const f = fixture();
+  const messages = [assistant([shown({ type: 'image', path: '/workspace/out/revenue.png' })])];
+  const [first] = await recoverTranscriptAttachments({ ...f.input, messages });
+  expect(f.paths).toHaveLength(1);
+  const [second] = await recoverTranscriptAttachments({
+    ...f.input,
+    messages,
+    previous: new Map([['msg_2', first.parts]]),
+  });
+  expect(f.paths).toHaveLength(1);
+  expect((second.parts[0] as any).state.input.attachment).toBe(
+    (first.parts[0] as any).state.input.attachment,
+  );
+});
+
+test('a Stop (no recovery) never reads a shown file', async () => {
+  const f = fixture();
+  await recoverTranscriptAttachments({
+    ...f.input,
+    recover: false,
+    messages: [assistant([shown({ type: 'image', path: '/workspace/out/revenue.png' })])],
+  });
+  expect(f.paths).toEqual([]);
+});
+
+test('a shown file that is gone keeps its card and is retried next capture', async () => {
+  const f = fixture();
+  const messages = [assistant([shown({ type: 'image', path: '/workspace/deleted.png' })])];
+  const result = await recoverTranscriptAttachments({
+    ...f.input,
+    messages,
+    readFile: async (p: string) => {
+      f.paths.push(p);
+      return null;
+    },
+  });
+  expect(f.warnings).toEqual(['deleted.png']);
+  expect((result[0].parts[0] as any).state.input.attachment).toBeUndefined();
+  expect(result[0]).toBe(messages[0] as any);
+});
+
+test('the recorded reference survives into the stored mirror row', async () => {
+  // Recovery runs on the raw payload, THEN `mirrorRowsFromOpencodePayload`
+  // sanitizes it. The pair is the real write path; either alone proves nothing.
+  const f = fixture();
+  const recovered = await recoverTranscriptAttachments({
+    ...f.input,
+    messages: [assistant([shown({
+      type: 'image',
+      title: 'Revenue',
+      path: '/workspace/out/revenue.png',
+    })])],
+  });
+  const [row] = mirrorRowsFromOpencodePayload(recovered);
+  const input = (row.parts[0] as any).state.input;
+  expect(input.attachment).toStartWith(`kortix-attachment://${projectId}/${sessionId}/`);
+  expect(input.path).toBe('/workspace/out/revenue.png');
+  expect(input.title).toBe('Revenue');
+});
+
+test('a pathological prompt cannot stall the capture', async () => {
+  // Recovery scans user text for `<file>` tags synchronously, on the API's
+  // event loop, at every capture. The regex it used took ~10 s on this input
+  // (quadratic: each doubling quadrupled it) and stalled every request on the
+  // process for that long. The text is whatever a user typed.
+  const f = fixture();
+  const evil = `${'<file\t'.repeat(40_000)}${'<file'}${'\t'.repeat(200_000)}`;
+  const started = performance.now();
+  await recoverTranscriptAttachments({
+    ...f.input,
+    messages: [row([{ id: 'p', type: 'text', text: evil }])],
+  });
+  expect(performance.now() - started).toBeLessThan(200);
+  expect(f.paths).toEqual([]);
 });

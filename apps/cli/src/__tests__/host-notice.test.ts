@@ -97,7 +97,7 @@ function seedTokenIdentity(token: string, agent: string): void {
             agent,
             projectId: 'proj_123',
             sessionId: 'sess_123',
-            kortixCli: ['project.secret.read', 'project.secret.write'],
+            permissions: ['project.secret.read', 'project.secret.write'],
             userId: 'user_123',
             userEmail: 'agent@example.com',
           },

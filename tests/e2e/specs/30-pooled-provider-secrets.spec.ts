@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { loadEnv } from '../../src/core/env';
@@ -139,7 +140,11 @@ test.describe('30 — pooled provider secrets', () => {
       for (const label of ['Primary test key', 'Backup test key for shared research and development sessions']) {
         await panel.getByRole('button', { name: 'Add key' }).click();
         const dialog = page.getByRole('dialog', { name: 'Add key · Anthropic' });
-        await expect(dialog.getByRole('radio', { name: /Everyone in this project/ })).toBeChecked();
+        // New connections are private to their creator; sharing is an explicit choice.
+        await expect(dialog.getByRole('radio', { name: /Only you/ })).toBeChecked();
+        await expect(dialog.getByRole('textbox', { name: 'Search members' })).toHaveCount(0);
+        const sharedWithProject = label !== 'Primary test key';
+        if (sharedWithProject) await dialog.getByRole('radio', { name: /Everyone in this project/ }).click();
         await dialog.getByPlaceholder('Primary key').fill(label);
         await dialog.locator('input[type="password"]').fill(`fake-${label.replaceAll(' ', '-')}`);
         if (label === 'Primary test key') {
@@ -157,7 +162,8 @@ test.describe('30 — pooled provider secrets', () => {
         const response = page.waitForResponse((candidate) => candidate.request().method() === 'POST'
           && candidate.url().endsWith(`/v1/accounts/${accountId}/secret-resources`));
         await dialog.getByRole('button', { name: 'Save key' }).click();
-        expect((await request).postDataJSON()).toMatchObject({ label, project_id: projectId, access_mode: 'project', provider_id: 'anthropic', consumer: 'llm_gateway' });
+        expect((await request).postDataJSON()).toMatchObject({ label, project_id: projectId, provider_id: 'anthropic', consumer: 'llm_gateway',
+          ...(sharedWithProject ? { access_mode: 'project', user_ids: [] } : { access_mode: 'members', user_ids: [] }) });
         const saved = await response;
         expect(saved.status()).toBe(201);
         const body = await saved.json() as { secret_id: string; value?: string };
@@ -208,15 +214,17 @@ test.describe('30 — pooled provider secrets', () => {
       });
       await page.goto(`/projects/${projectId}/customize/models`, { waitUntil: 'domcontentloaded' });
       const chatGptAccounts = page.getByRole('region', { name: 'ChatGPT accounts' });
-      await expect(chatGptAccounts.getByRole('button', { name: 'Add account' })).toBeVisible();
+      // With no account yet, the panel leads with the one action that matters.
+      await expect(chatGptAccounts.getByText('No ChatGPT accounts yet', { exact: true })).toBeVisible();
+      await expect(chatGptAccounts.getByRole('button', { name: 'Connect ChatGPT' })).toBeVisible();
       for (const label of ['Personal ChatGPT', 'Second ChatGPT']) {
-        await chatGptAccounts.getByRole('button', { name: 'Add account' }).click();
+        await chatGptAccounts.getByRole('button', { name: 'Connect ChatGPT' }).click();
         const dialog = page.getByRole('dialog', { name: 'Add account · ChatGPT Plus/Pro' });
         await dialog.getByRole('textbox', { name: 'Label' }).fill(label);
         const startRequest = page.waitForRequest((request) => request.method() === 'POST'
           && request.url().endsWith(`/v1/projects/${projectId}/oauth/openai/start`));
         await dialog.getByRole('button', { name: 'Connect account' }).click();
-        expect((await startRequest).postDataJSON()).toEqual({ resource_label: label, sharing: { mode: 'project' } });
+        expect((await startRequest).postDataJSON()).toEqual({ resource_label: label, sharing: { mode: 'private', ownerId: user.id } });
 
         await expect(dialog.getByText(`TEST-CODE-${oauthStarts}`)).toBeVisible();
         if (oauthStarts === 1) {
@@ -265,15 +273,16 @@ test.describe('30 — pooled provider secrets', () => {
       await panel.getByRole('button', { name: 'Actions for Primary test key' }).click();
       await page.getByRole('menuitem', { name: 'Manage access' }).click();
       const accessDialog = page.getByRole('dialog', { name: 'Access to Primary test key' });
-      await expect(accessDialog.getByRole('radio', { name: /Everyone in this project/ })).toBeChecked();
-      await page.screenshot({ path: testInfo.outputPath('provider-access-modes.png'), fullPage: true, animations: 'disabled' });
-      await accessDialog.getByRole('radio', { name: /Specific members/ }).click();
+      await expect(accessDialog.getByRole('radio', { name: /Specific members/ })).toBeChecked();
       await expect(accessDialog.getByRole('textbox', { name: 'Search members' })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath('provider-access-modes.png'), fullPage: true, animations: 'disabled' });
+      await accessDialog.getByRole('radio', { name: /Everyone in this project/ }).click();
+      await expect(accessDialog.getByRole('textbox', { name: 'Search members' })).toHaveCount(0);
       const accessRequest = page.waitForRequest((request) => request.method() === 'PUT' &&
         request.url().endsWith(`/accounts/${accountId}/secret-resources/${createdIds[0]}/access`));
       await accessDialog.getByRole('button', { name: 'Done' }).click();
-      expect((await accessRequest).postDataJSON()).toMatchObject({ mode: 'members' });
-      await expect(panel.getByText('1 member')).toBeVisible();
+      expect((await accessRequest).postDataJSON()).toMatchObject({ mode: 'project' });
+      await expect(panel.getByRole('listitem').filter({ hasText: 'Primary test key' }).getByText('Everyone in this project')).toBeVisible();
 
       await panel.getByRole('button', { name: 'Actions for Primary test key' }).click();
       await page.getByRole('menuitem', { name: 'Delete key' }).click();
@@ -313,9 +322,20 @@ test.describe('30 — pooled provider secrets', () => {
         label: 'Second provider key', value: 'fake-openai-key', consumer: 'llm_gateway', strategy: 'broker',
       }, 201);
       createdIds.push(secondProvider.secret_id);
+      // Secrets catalog down + connectors inheriting = nothing for the scope PUT
+      // to carry. A keys-only Save must not send `{}` (the API answers 400).
+      await page.route(`**/v1/projects/${projectId}/secrets`, async (route) => {
+        if (route.request().method() === 'GET') await route.fulfill({ status: 503, json: { error: 'Secrets unavailable' } });
+        else await route.continue();
+      });
+      const scopeWrites: string[] = [];
+      page.on('request', (request) => {
+        if (request.method() === 'PUT' && request.url().endsWith(`/sessions/${existingSession}/scope`)) scopeWrites.push(request.postData() ?? '');
+      });
       await page.setViewportSize({ width: 720, height: 480 });
       await page.goto(`/projects/${projectId}/sessions/${existingSession}`, { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: 'Session overrides' }).click();
+      await expect(page.getByRole('button', { name: /^Secrets Unavailable/ })).toBeVisible();
       await page.getByRole('button', { name: 'Provider keys 1 key selected Override', exact: true }).click();
       await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).toBeChecked();
       const saveChanges = page.getByRole('button', { name: 'Save changes', exact: true });
@@ -388,13 +408,37 @@ test.describe('30 — pooled provider secrets', () => {
       await expect(page.getByRole('alert').filter({ hasText: 'Selected key access changed' })).toBeVisible();
       await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).not.toBeChecked();
       rejectSave = false;
+      // The forced 403 also raises the global "Failed to perform action" toast.
+      // At 1440x900 that toast sits on top of Save changes and swallows the
+      // click for its whole lifetime (preview runs 35707181258, 35709014601,
+      // 35709807756, 35708105773: `<section aria-label="Notifications alt+T">
+      // subtree intercepts pointer events`). The inline alert above is the
+      // asserted error surface, so dismiss the toast before retrying the save.
+      for (const close of await page.getByRole('button', { name: 'Close notification' }).all()) {
+        await close.click().catch(() => {});
+      }
+      await expect(page.getByRole('region', { name: /Notifications/ }).getByRole('listitem')).toHaveCount(0);
+      // A click on the toast is outside the popover, so Radix may dismiss it.
+      // The unsaved selection survives a close (asserted above); reopen it.
+      if (!(await saveChanges.isVisible().catch(() => false))) {
+        if (!(await overrides.isVisible().catch(() => false))) {
+          await page.getByRole('button', { name: 'Session overrides' }).click();
+          await expect(overrides).toBeVisible();
+        }
+        await page.getByRole('button', { name: /Provider keys/ }).click();
+      }
+      await expect(page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' })).not.toBeChecked();
       const saveResponse = page.waitForResponse((response) => response.request().method() === 'PUT'
         && response.url().endsWith(`${poolPath}/anthropic`) && response.status() === 200);
       await saveChanges.click();
-      expect((await saveResponse).request().postDataJSON()).toEqual({ secret_ids: [] });
+      // Unchecking the last key resets to the default; an empty pool fails every turn.
+      expect((await saveResponse).request().postDataJSON()).toEqual({ secret_ids: null });
       await expect(page.getByRole('dialog', { name: 'Session overrides', exact: true })).toHaveCount(0);
-      expect((await api<{ pools: Array<{ provider_id: string; secret_ids: string[] }> }>(session.access_token, 'GET', poolPath)).pools)
-        .toContainEqual(expect.objectContaining({ provider_id: 'anthropic', secret_ids: [] }));
+      await expect(page.getByText('Validation failed')).toHaveCount(0);
+      expect(scopeWrites).toEqual([]);
+      await page.unroute(`**/v1/projects/${projectId}/secrets`);
+      expect((await api<{ pools: Array<{ provider_id: string; secret_ids: string[] }> }>(session.access_token, 'GET', poolPath)).pools
+        .map((pool) => pool.provider_id)).not.toContain('anthropic');
       await page.unroute(`**/v1${poolPath}/anthropic`);
       expect((await api<{ secret_ids: string[] }>(session.access_token, 'GET', `${poolPath}/openai`)).secret_ids).toEqual([secondProvider.secret_id]);
       await api(session.access_token, 'PUT', `${poolPath}/openai`, { secret_ids: null });
@@ -433,6 +477,165 @@ test.describe('30 — pooled provider secrets', () => {
       }
       await project?.dispose();
       await deleteAuthUser(user.id, authOptions).catch(() => {});
+    }
+  });
+
+  // Bring your own ChatGPT subscription as a plain project member: no
+  // project.secret.write and no Customize. The composer is the way in.
+  test('a project member brings their own ChatGPT subscription from the composer', async ({ page }, testInfo) => {
+    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+    test.setTimeout(180_000);
+    const runId = Date.now().toString(36);
+    const ownerEmail = `e2e-byos-owner-${runId}@example.test`;
+    const memberEmail = `e2e-byos-member-${runId}@example.test`;
+    const owner = await createAuthUser(ownerEmail, authOptions);
+    const member = await createAuthUser(memberEmail, authOptions);
+    const ownerSession = await signIn(ownerEmail, authOptions);
+    const accountSecretId = randomUUID();
+    let project: ManifestProject | null = null;
+    let accountId: string | null = null;
+    try {
+      const accounts = await api<Array<{ account_id: string }>>(ownerSession.access_token, 'GET', '/accounts');
+      accountId = accounts[0]!.account_id;
+      await api(ownerSession.access_token, 'POST', `/accounts/${accountId}/members`, { email: memberEmail, role: 'member' }, 201);
+      project = await createManifestProject({ api, accessToken: ownerSession.access_token, accountId, userId: owner.id,
+        name: `ChatGPT BYOS ${runId}`, databaseUrl: databaseUrl! });
+      const projectId = project.id;
+      for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+        await api(ownerSession.access_token, 'PATCH', `/projects/${projectId}/features`, { feature, enabled: true });
+      }
+      await api(ownerSession.access_token, 'PUT', `/projects/${projectId}/access/${member.id}`, { role: 'user' });
+      const memberSession = await signIn(memberEmail, authOptions);
+
+      // The device flow is OpenAI's; the browser contract is what the page sends
+      // and shows. The first authorization is refused, the next ones succeed.
+      const starts: Array<Record<string, unknown>> = [];
+      await page.route(`**/v1/projects/${projectId}/oauth/openai/start`, async (route) => {
+        starts.push(route.request().postDataJSON());
+        await route.fulfill({ status: 200, json: {
+          flow_id: `byos-flow-${starts.length}`, verification_url: 'https://example.test/device',
+          user_code: `BYOS-${starts.length}`, expires_at: Date.now() + 60_000, interval_ms: 2000,
+        } });
+      });
+      await page.route(`**/v1/projects/${projectId}/oauth/openai/poll`, async (route) => {
+        if (route.request().postDataJSON().flow_id === 'byos-flow-1') {
+          await route.fulfill({ status: 200, json: { status: 'failed', error: 'ChatGPT denied the authorization' } });
+          return;
+        }
+        // What a completed poll persists: an account only its member can use.
+        const label = String(starts.find((start) => typeof start.resource_label === 'string')?.resource_label);
+        await runDatabaseSql(`INSERT INTO kortix.account_secret_resources
+          (secret_id, account_id, project_id, access_mode, label, provider_id, name, value_enc, consumer, strategy, created_by)
+          VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', 'v1:not:a:login', 'llm_gateway', 'broker', $5)
+          ON CONFLICT DO NOTHING`, [accountSecretId, accountId, projectId, label, member.id], databaseUrl);
+        await runDatabaseSql(`INSERT INTO kortix.account_secret_grants (secret_id, account_id, user_id, granted_by)
+          VALUES ($1, $2, $3, $3) ON CONFLICT DO NOTHING`, [accountSecretId, accountId, member.id], databaseUrl);
+        await route.fulfill({ status: 200, json: { status: 'success', credential: {
+          provider_id: 'codex', secret_id: accountSecretId, label, expires_in_ms: null, updated_at: new Date().toISOString(),
+        } } });
+      });
+
+      await installBrowserSessionDirect(page, memberSession, `/projects/${projectId}`, authOptions);
+      await selectAccountForUi(page, accountId);
+      await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+      const welcome = page.getByRole('complementary', { name: 'Welcome from Marko' });
+      if (await welcome.isVisible().catch(() => false)) await welcome.getByRole('button', { name: 'Dismiss' }).click();
+      const openModelPicker = async () => {
+        const input = page.getByRole('textbox', { name: 'Message input' });
+        await expect(input).toBeVisible();
+        await input.click();
+        await input.pressSequentially('/model');
+        await page.getByRole('option', { name: /Switch model/ }).click();
+      };
+
+      // The way in follows the account. With no model yet (the local profile)
+      // the picker is empty and the composer offers "Connect model". A funded
+      // account on a deployed target lists models, and the list ends with a
+      // ChatGPT row. Both reach the same accounts dialog.
+      await openModelPicker();
+      const emptyPicker = page.getByText('No models available', { exact: true });
+      const chatGptRow = page.getByRole('option', { name: /Use your ChatGPT subscription/ });
+      await expect(emptyPicker.or(chatGptRow)).toBeVisible();
+      if (await emptyPicker.isVisible()) {
+        await page.keyboard.press('Escape');
+        // The composer's own call to action reaches the same accounts panel. A
+        // member cannot read project secrets; the modal must settle instead of
+        // re-reading them in a loop (it used to send ~6 requests a second).
+        let secretReads = 0;
+        page.on('request', (request) => {
+          if (request.method() === 'GET' && request.url().endsWith(`/v1/projects/${projectId}/secrets`)) secretReads++;
+        });
+        await page.getByRole('button', { name: 'Connect model', exact: true }).click();
+        const providerAccounts = page.getByRole('region', { name: 'ChatGPT accounts' });
+        await expect(providerAccounts.getByRole('button', { name: 'Connect ChatGPT' })).toBeVisible({ timeout: 60_000 });
+        const readsWhenSettled = secretReads;
+        await page.waitForTimeout(3_000);
+        expect(secretReads - readsWhenSettled).toBeLessThanOrEqual(1);
+        await page.keyboard.press('Escape');
+        await expect(providerAccounts).toHaveCount(0);
+        await openModelPicker();
+        await page.getByRole('button', { name: 'Connect ChatGPT', exact: true }).click();
+      } else {
+        await chatGptRow.click();
+      }
+      const accountsDialog = page.getByRole('dialog', { name: 'ChatGPT subscription' });
+      await expect(accountsDialog.getByText('No ChatGPT accounts yet', { exact: true })).toBeVisible();
+      await accountsDialog.getByRole('button', { name: 'Connect ChatGPT' }).click();
+
+      const dialog = page.getByRole('dialog', { name: 'Add account · ChatGPT Plus/Pro' });
+      await expect(dialog.getByRole('textbox', { name: 'Label' })).toHaveValue(/^ChatGPT · e2e-byos-member-/);
+      await expect(dialog.getByRole('radio', { name: /Only you/ })).toBeChecked();
+      await expect(dialog.getByRole('radio', { name: /Everyone in this project/ })).toBeDisabled();
+      await expect(dialog.getByRole('radio', { name: /Specific members/ })).toBeDisabled();
+      await expect(dialog.getByText('Sharing with others requires permission to manage project secrets.', { exact: true })).toBeVisible();
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate((value) => { document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add(value); }, theme);
+        for (const size of [{ width: 720, height: 480 }, { width: 1280, height: 720 }]) {
+          await page.setViewportSize(size);
+          await expect(dialog.getByRole('button', { name: 'Connect account' })).toBeInViewport({ ratio: 1 });
+          await page.screenshot({ path: testInfo.outputPath(`byos-member-connect-${theme}-${size.width}x${size.height}.png`), animations: 'disabled' });
+        }
+        const accessibility = await new AxeBuilder({ page }).include('[role="dialog"]')
+          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+        expect(accessibility.violations).toEqual([]);
+      }
+      await page.evaluate(() => { document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add('light'); });
+
+      await dialog.getByRole('button', { name: 'Connect account' }).click();
+      await expect(dialog.getByRole('alert')).toHaveText('ChatGPT denied the authorization');
+      await dialog.getByRole('button', { name: 'Try again', exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      expect(starts).toEqual([1, 2].map(() => ({
+        resource_label: expect.stringMatching(/^ChatGPT · e2e-byos-member-/),
+        sharing: { mode: 'private', ownerId: member.id },
+      })));
+      const row = accountsDialog.getByRole('listitem').filter({ hasText: /^ChatGPT · / });
+      await expect(row.getByText('Only you', { exact: true })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath('byos-member-connected.png'), animations: 'disabled' });
+
+      // Reconnect refreshes the same account in place; sharing stays a manager's call.
+      await row.getByRole('button', { name: /^Actions for ChatGPT · / }).click();
+      await expect(page.getByRole('menuitem', { name: 'Manage access' })).toHaveCount(0);
+      await expect(page.getByRole('menuitem', { name: 'Delete account' })).toBeVisible();
+      await page.getByRole('menuitem', { name: 'Reconnect' }).click();
+      await expect(page.getByRole('dialog', { name: /^Reconnect ChatGPT · / })).toHaveCount(0, { timeout: 15_000 });
+      expect(starts[2]).toEqual({ resource_id: accountSecretId });
+      const listed = await api<{ secrets: Array<{ secret_id: string; created_by: string; granted_user_ids: string[] }> }>(
+        memberSession.access_token, 'GET', `/accounts/${accountId}/secret-resources?project_id=${projectId}`);
+      expect(listed.secrets.map((secret) => secret.secret_id)).toEqual([accountSecretId]);
+
+      // Modal ignores Escape while a menu or tooltip layer is open (z-stack's
+      // hasOpenFloatingLayer); the explicit Close is deterministic.
+      await accountsDialog.getByRole('button', { name: 'Close' }).click();
+      await expect(accountsDialog).toHaveCount(0);
+      await openModelPicker();
+      await expect(page.getByRole('option', { name: 'Manage ChatGPT accounts' })).toBeVisible();
+    } finally {
+      if (accountId) {
+        await runDatabaseSql('DELETE FROM kortix.account_secret_resources WHERE secret_id = $1', [accountSecretId], databaseUrl).catch(() => {});
+      }
+      await project?.dispose();
+      for (const user of [member, owner]) await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });
 });

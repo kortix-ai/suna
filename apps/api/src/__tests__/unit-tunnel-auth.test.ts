@@ -14,7 +14,7 @@ import {
   getTunnelOwnerContext,
 } from '../tunnel/routes/auth';
 import { createConnectionsRouter } from '../tunnel/routes/connections';
-import { effectiveRegisteredCapabilities } from '../tunnel';
+import { effectiveRegisteredCapabilities, tunnelAgentAuthAuditEvent } from '../tunnel';
 import { tunnelRelay } from '../tunnel/core/relay';
 import { heartbeatManager } from '../tunnel/core/heartbeat';
 
@@ -191,5 +191,49 @@ describe('tunnel heartbeat wiring', () => {
     } finally {
       heartbeatManager.recordPong = originalRecordPong;
     }
+  });
+});
+
+describe('a tunnel agent handshake is audited', () => {
+  // The machine's setup token arrives in the first WebSocket message, outside
+  // any HTTP request, so no request audit ever saw it: a machine connecting to
+  // a tunnel, or failing to, left no row. The authenticator records it.
+  const TUNNEL = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+  test('an accepted machine is the tunnel agent on its account', () => {
+    expect(
+      tunnelAgentAuthAuditEvent({
+        tunnelId: TUNNEL,
+        accountId: ACCOUNT,
+        outcome: 'success',
+        credentialFingerprint: 'fp-1',
+      }),
+    ).toEqual({
+      accountId: ACCOUNT,
+      actorType: 'system',
+      actorUserId: null,
+      authoritativeSource: 'tunnel_agent',
+      outcome: 'success',
+      action: 'tunnel.agent.authenticate',
+      resourceType: 'tunnel',
+      resourceId: TUNNEL,
+      metadata: { auth: { kind: 'tunnel_setup_token', credential_fingerprint: 'fp-1' } },
+    });
+  });
+
+  test('a refused handshake proves nobody, and says why', () => {
+    expect(
+      tunnelAgentAuthAuditEvent({
+        tunnelId: TUNNEL,
+        accountId: ACCOUNT,
+        outcome: 'denied',
+        reason: 'bad_secret',
+      }),
+    ).toMatchObject({
+      accountId: ACCOUNT,
+      actorType: 'anonymous',
+      outcome: 'denied',
+      metadata: { auth: { kind: 'tunnel_setup_token' }, reason: 'bad_secret' },
+    });
   });
 });

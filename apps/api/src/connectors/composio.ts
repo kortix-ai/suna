@@ -42,6 +42,10 @@ export interface ComposioRuntime {
       }>
     >;
   };
+  /** Read one connected account. Only the non-secret `displayName` is used. */
+  connectedAccounts?: {
+    get(id: string): Promise<{ state?: { val?: Record<string, unknown> } | null } | null | undefined>;
+  };
 }
 
 export interface ComposioSessionLike {
@@ -192,6 +196,11 @@ interface ToolkitMeta {
   categories: string[];
 }
 
+/** What the cache holds per toolkit: the enrichment, plus the catalogue logo. */
+interface CachedToolkit extends ToolkitMeta {
+  logo: string | null;
+}
+
 /**
  * The paged browse response, plus the two fields the provider's paged endpoint
  * omits. Declared rather than inferred so a caller that groups by `categories`
@@ -205,19 +214,20 @@ const TOOLKIT_META_TTL_MS = 6 * 60 * 60_000;
 
 const toolkitMetaCache = new WeakMap<
   ComposioRuntime,
-  { at: number; bySlug: Promise<Map<string, ToolkitMeta>> }
+  { at: number; bySlug: Promise<Map<string, CachedToolkit>> }
 >();
 
-async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, ToolkitMeta>> {
+async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, CachedToolkit>> {
   const cached = toolkitMetaCache.get(runtime);
   if (cached && Date.now() - cached.at < TOOLKIT_META_TTL_MS) return cached.bySlug;
   if (!runtime.toolkits) return new Map();
 
   const bySlug = (async () => {
     const page = await runtime.toolkits!.get({ limit: 1000 });
-    const map = new Map<string, ToolkitMeta>();
+    const map = new Map<string, CachedToolkit>();
     for (const toolkit of page) {
       map.set(toolkit.slug.toLowerCase(), {
+        logo: toolkit.meta?.logo ?? null,
         description: toolkit.meta?.description ?? null,
         categories: (toolkit.meta?.categories ?? []).map((category) => category.slug),
       });
@@ -233,6 +243,28 @@ async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, 
     toolkitMetaCache.delete(runtime);
     console.warn('[composio] toolkit metadata unavailable, serving catalogue unenriched:', err);
     return new Map();
+  }
+}
+
+/**
+ * The logo the connectors catalogue shows for a Composio toolkit, by slug.
+ *
+ * A connector an agent adds stores no `icon_url` in its config, so without this
+ * its connect card fell back to a monogram while the catalogue showed the real
+ * logo. Served from the same 6-hour toolkit cache as the catalogue enrichment:
+ * one provider request per process, not one per card.
+ *
+ * `null` when Composio is not configured, the toolkit is past the 1000-item
+ * cache cap, or the provider fails. Never throws: a missing logo is a monogram,
+ * not an error.
+ */
+export async function composioToolkitLogo(toolkit: string): Promise<string | null> {
+  if (!composioConfigured()) return null;
+  try {
+    const bySlug = await toolkitMetaBySlug(getComposioRuntime());
+    return bySlug.get(toolkit.trim().toLowerCase())?.logo ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -542,4 +574,121 @@ export async function finalizeComposioConnection(input: {
     ...(input.authRequestId ? { authRequestId: input.authRequestId } : {}),
     isNoAuth: false,
   };
+}
+
+/**
+ * The one tool per toolkit that answers "who is this account?". Used only when
+ * Composio stores no `displayName` on the connected account. Every slug below
+ * was checked against Composio's live tool catalog on 2026-09-23. Google Docs
+ * and Google Sheets expose no such tool, so they have no entry.
+ */
+const IDENTITY_TOOLS: Record<string, { slug: string; args: Record<string, unknown> }> = {
+  gmail: { slug: 'GMAIL_GET_PROFILE', args: {} },
+  googlecalendar: { slug: 'GOOGLECALENDAR_GET_CALENDAR', args: { calendar_id: 'primary' } },
+  googledrive: { slug: 'GOOGLEDRIVE_GET_ABOUT', args: { fields: 'user' } },
+  linear: { slug: 'LINEAR_GET_CURRENT_USER', args: {} },
+  github: { slug: 'GITHUB_GET_THE_AUTHENTICATED_USER', args: {} },
+  slack: { slug: 'SLACK_TEST_AUTH', args: {} },
+  notion: { slug: 'NOTION_GET_ABOUT_ME', args: {} },
+  outlook: { slug: 'OUTLOOK_GET_PROFILE', args: {} },
+  microsoft_teams: { slug: 'MICROSOFT_TEAMS_GET_MY_PROFILE', args: {} },
+  hubspot: { slug: 'HUBSPOT_GET_ACCOUNT_INFO', args: {} },
+  jira: { slug: 'JIRA_GET_CURRENT_USER', args: {} },
+  asana: { slug: 'ASANA_GET_CURRENT_USER', args: {} },
+  figma: { slug: 'FIGMA_GET_CURRENT_USER', args: {} },
+  airtable: { slug: 'AIRTABLE_GET_USER_INFO', args: {} },
+  salesforce: { slug: 'SALESFORCE_GET_USER_INFO', args: {} },
+  trello: { slug: 'TRELLO_GET_MEMBERS_ME', args: {} },
+  dropbox: { slug: 'DROPBOX_GET_ABOUT_ME', args: {} },
+  calendly: { slug: 'CALENDLY_GET_CURRENT_USER', args: {} },
+};
+
+const IDENTITY_PROBE_TIMEOUT_MS = 5_000;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const LOGIN_KEYS = ['login', 'username', 'user_name', 'user', 'handle'];
+const NAME_KEYS = ['displayname', 'display_name', 'name'];
+
+/** An email is lower-cased so one person never reads as two accounts. */
+function normalizeIdentity(value: string): string | null {
+  const trimmed = value.trim().slice(0, 255);
+  if (!trimmed) return null;
+  return EMAIL.test(trimmed) ? trimmed.toLowerCase() : trimmed;
+}
+
+/**
+ * The best identity string in a whoami response: any email first, then a
+ * login, then a display name. Walks at most four levels, because every
+ * catalogued response nests the user one or two levels down (`data.user`,
+ * `data.viewer`).
+ */
+export function identityFromWhoami(data: unknown): string | null {
+  const found: { email?: string; login?: string; name?: string } = {};
+  const visit = (value: unknown, depth: number) => {
+    if (!value || typeof value !== 'object' || depth > 4) return;
+    for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof raw === 'string' && raw.trim()) {
+        const lower = key.toLowerCase();
+        const text = raw.trim();
+        // Any email-shaped value counts, whatever its key: Google Calendar's
+        // primary calendar carries the account email as its `id`.
+        if (!found.email && EMAIL.test(text)) {
+          found.email = text;
+        } else if (!found.login && LOGIN_KEYS.includes(lower)) {
+          found.login = text;
+        } else if (!found.name && NAME_KEYS.includes(lower)) {
+          found.name = text;
+        }
+      } else if (raw && typeof raw === 'object') {
+        visit(raw, depth + 1);
+      }
+    }
+  };
+  visit(data, 0);
+  const best = found.email ?? found.login ?? found.name;
+  return best ? normalizeIdentity(best) : null;
+}
+
+function withTimeout<T>(work: Promise<T>): Promise<T | null> {
+  return Promise.race([
+    work,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), IDENTITY_PROBE_TIMEOUT_MS)),
+  ]);
+}
+
+/**
+ * WHO the connected account is: an email when the provider has one, else a
+ * login or display name. It is shown as "Connected as …" and becomes the
+ * default label, so an account authorized with the wrong login is visible
+ * the moment it lands instead of months later.
+ *
+ * Best effort by contract: any failure returns `null` and never throws.
+ * Finalize must not fail because a label could not be derived.
+ */
+export async function probeComposioIdentity(input: {
+  app: string;
+  sessionId: string;
+  connectedAccountId: string;
+  runtime?: ComposioRuntime;
+}): Promise<string | null> {
+  try {
+    const runtime = input.runtime ?? getComposioRuntime();
+    const account = await withTimeout(
+      runtime.connectedAccounts?.get(input.connectedAccountId) ?? Promise.resolve(null),
+    ).catch(() => null);
+    const displayName = account?.state?.val?.displayName;
+    if (typeof displayName === 'string') {
+      const identity = normalizeIdentity(displayName);
+      if (identity) return identity;
+    }
+
+    const tool = IDENTITY_TOOLS[input.app.toLowerCase()];
+    if (!tool) return null;
+    const response = await withTimeout(
+      runtime.sessions.use(input.sessionId).then((session) => session.execute(tool.slug, tool.args)),
+    );
+    if (!response || response.error) return null;
+    return identityFromWhoami(response.data);
+  } catch {
+    return null;
+  }
 }

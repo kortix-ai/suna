@@ -70,6 +70,45 @@ function runtime(): OpencodeClient {
  */
 const inFlightSessionStarts = new Map<string, Promise<SessionRuntimeEntry>>();
 
+/**
+ * Build the `RUNTIME_UNAVAILABLE` message from a not-ready `/start` result.
+ *
+ * The server already earns a concrete reason on a terminal `stage:"failed"` —
+ * `failure.category`/`failure.message`, its `failure.evidence.error`, or a
+ * plain `reason` (see `SessionStartResultSchema` in `@kortix/api-contract`).
+ * Before this, the caller threw only `(stage: <stage>)` and dropped all of it,
+ * so `kortix sessions log`/`sessions new --wait` surfaced a bare
+ * `Session runtime not ready (stage: failed)` with no cause — the operator
+ * could not tell a provider-capacity failure from a git-auth failure
+ * (incident-20260922T140537Z-kxhourly). Keep the stage for continuity and
+ * append the concrete reason when the result carries one.
+ */
+function runtimeNotReadyMessage(
+  started:
+    | {
+        stage?: string;
+        reason?: string;
+        failure?: {
+          category?: string;
+          message?: string;
+          evidence?: { error?: string | null } | null;
+        } | null;
+      }
+    | null
+    | undefined,
+): string {
+  const base = `Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`;
+  const failure = started?.failure;
+  const parts: string[] = [];
+  if (failure?.category) parts.push(failure.category);
+  if (failure?.message) parts.push(failure.message);
+  const providerError = failure?.evidence?.error;
+  if (providerError && providerError !== failure?.message) parts.push(providerError);
+  // `reason` is the coarser fallback the server sends without a `failure` block.
+  if (parts.length === 0 && started?.reason) parts.push(started.reason);
+  return parts.length > 0 ? `${base}: ${parts.join(' — ')}` : base;
+}
+
 export class SessionNotReadyError extends Error {
   constructor(action: string) {
     super(
@@ -340,6 +379,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
    * genuinely don't fit account- or project-scoping.
    */
   const accountInvites = {
+    /** The caller's own pending invites, matched by email. */
+    listMine: P.listMyAccountInvites,
     describe: P.describeAccountInvite,
     accept: P.acceptAccountInvite,
     decline: P.declineAccountInvite,
@@ -462,6 +503,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.activateConnection(projectId, ...a),
       setDefault: (...a: DropFirst<Parameters<typeof P.setDefaultConnection>>) =>
         P.setDefaultConnection(projectId, ...a),
+      rename: (...a: DropFirst<Parameters<typeof P.renameConnection>>) =>
+        P.renameConnection(projectId, ...a),
       pipedreamConnect: (...a: DropFirst<Parameters<typeof P.pipedreamConnectConnection>>) =>
         P.pipedreamConnectConnection(projectId, ...a),
       pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>
@@ -501,6 +544,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.updateAppAccess(projectId, ...a),
           session: (...a: DropFirst<Parameters<typeof P.createAppAccessSession>>) =>
             P.createAppAccessSession(projectId, ...a),
+          /** Agents whose `kortix.yaml` `apps:` grant names this App. Read-only. */
+          agents: (appId: string) => P.listAppAgents(projectId, appId),
         },
         remove: (appId: string) => P.deleteApp(projectId, appId),
         artifacts: {
@@ -801,6 +846,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           connect: (input: Parameters<typeof P.connectSlack>[1]) =>
             P.connectSlack(projectId, input),
           mode: () => P.getSlackMode(projectId),
+          /** Finish an "Add to Slack" install as the signed-in user (web completion page). */
+          completeInstall: (input: Parameters<typeof P.completeSlackInstall>[1]) =>
+            P.completeSlackInstall(projectId, input),
           manifest: () => P.getSlackManifest(projectId),
           disconnect: () => P.disconnectSlack(projectId),
           /** Download a Slack-hosted file through the server-side proxy (bot token stays server-side). */
@@ -808,6 +856,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           /** Upload a file to Slack through the server-side 3-step external-upload proxy. */
           uploadFile: (input: Parameters<typeof P.uploadSlackChannelFile>[1]) =>
             P.uploadSlackChannelFile(projectId, input),
+        },
+        teams: {
+          /** Finish a Microsoft Teams org install as the signed-in user (web completion page). */
+          completeInstall: (input: Parameters<typeof P.completeTeamsInstall>[1]) =>
+            P.completeTeamsInstall(projectId, input),
         },
         email: {
           installation: (connectorSlug?: string | null) =>
@@ -1020,7 +1073,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           !started.sandbox ||
           !started.opencode_session_id
         ) {
-          throw new ApiError(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`, {
+          throw new ApiError(runtimeNotReadyMessage(started), {
             code: 'RUNTIME_UNAVAILABLE',
           });
         }

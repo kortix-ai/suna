@@ -41,7 +41,6 @@ import {
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 
@@ -118,10 +117,9 @@ const ICON_WIDTH = '2.5rem';
  * check to run. This component holds no validation rules of its own; both the
  * charset/length check and the submit gate come from the shared form model.
  *
- * `/new` is also where `/projects` sends an account with zero workspaces
- * (Task 8), so a user must never be trapped here — the create-into account
- * picker (or email fallback) sits top-left and a `Log out` control sits
- * top-right, independent of the form below.
+ * A user must never be trapped here. The web row links back to `/projects`;
+ * the desktop shell shows its root `DesktopBackButton`. The create-into account
+ * picker stays in the form, and Log out remains available on both surfaces.
  */
 export function NewWorkspacePage() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -300,24 +298,18 @@ export function NewWorkspacePage() {
           max-w-md column. `inset-x-0` + padding (not `w-full` + `right-*`) so
           the row spans the viewport without overflowing left. Sits ahead of
           the <form> so it stays reachable regardless of form state.
-
           `kx-desktop-band-row` moves the row below the title-bar band on
           desktop, clear of the macOS traffic lights and the Win/Linux window
           controls. */}
       <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
-        {/* The way OUT. `/new` is also where `/projects` sends an account with
-            zero workspaces, so a user must never be trapped here: this link
-            sits ahead of the <form>, reachable regardless of form state, and
-            goes to the landing door (the latest project, or create/sign-out
-            for an account with none). Log out alone was the only exit on the
-            web and read as "you can't leave" (reported on dev, 2026-09-17). */}
+        {/* The web needs an in-page exit; Electron supplies Back in its band. */}
         <Button
           asChild
           variant="ghost"
           size="sm"
-          className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
+          className="kx-web-only-back text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
         >
-          <Link href={PROJECT_LANDING_PATH}>
+          <Link href="/projects">
             <ArrowLeftIcon className="size-4" />
             {t('actions.back')}
           </Link>
@@ -332,7 +324,7 @@ export function NewWorkspacePage() {
             `performSignOut`, not the old bare `void signOut()`: that neither
             awaited the sign-out nor navigated, so pressing Log out here signed
             the user out and left them sitting on the create form. */}
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <Button
             type="button"
             variant="ghost"
@@ -352,7 +344,7 @@ export function NewWorkspacePage() {
               `push`: `/new` is where the user left, not somewhere to return
               to. The landing door resolves the latest project, or offers
               create and sign-out to an account with none. */}
-          <DesktopCloseButton onClose={() => router.replace(PROJECT_LANDING_PATH)} />
+          <DesktopCloseButton onClose={() => router.replace('/projects')} />
         </div>
       </div>
 

@@ -11,6 +11,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
+import { waitForSessionReady } from '../helpers/session-ready';
 import {
   dismissOnboarding,
   dismissWelcomeCard,
@@ -257,6 +258,179 @@ test('30 — saved session history paints while sandbox start and the open bundl
   }
 });
 
+/**
+ * The first model the project picker offers that accepts attachments, in the
+ * picker's own order. Throws with the offered ids when none qualifies, so a
+ * catalog change reads as a catalog change and not as a transcript failure.
+ */
+function firstAttachmentModel(
+  models: Record<string, { attachment?: boolean; enabled?: boolean }>,
+): string {
+  const offered = Object.entries(models).filter(([, model]) => model.enabled !== false);
+  const match = offered.find(([, model]) => model.attachment === true);
+  if (!match) {
+    throw new Error(
+      `the model picker offers no enabled model with attachment support; offered: ${
+        offered.map(([id]) => id).join(', ') || '(none)'
+      }`,
+    );
+  }
+  return match[0];
+}
+
+test('30 — a file the agent showed renders from saved history while the sandbox is down', async ({
+  page,
+}, testInfo) => {
+  // Saved history keeps a completed `show` card (its input used to be
+  // stripped, which dropped the card) and a stored copy of the file it points
+  // at, recorded as `attachment`. With `/start` and `/snapshot` held the
+  // sandbox can never answer, so the image can only come from the platform's
+  // private store — and the sandbox's `/file/raw` must never be asked.
+  test.setTimeout(240_000);
+  const env = loadEnv();
+  const email = `shown-file-${Date.now()}@example.test`;
+  const user = await createAuthUser(email, authOptions);
+  const auth = await signIn(email, authOptions);
+  let disposeProject = async () => {};
+  let releaseReads = () => {};
+  try {
+    const accounts = await api<Array<{ account_id: string; personal_account?: boolean }>>(
+      auth.access_token,
+      'GET',
+      '/accounts',
+    );
+    const accountId = (accounts.find((a) => a.personal_account) ?? accounts[0]).account_id;
+    await fundAccount(env.databaseUrl!, accountId);
+    const project = await createManifestProject({
+      api,
+      accessToken: auth.access_token,
+      databaseUrl: env.databaseUrl!,
+      accountId,
+      userId: user.id,
+      name: 'Shown file from saved history',
+    });
+    disposeProject = project.dispose;
+    const sessionId = await createDatabaseSession(env, {
+      projectId: project.id,
+      accountId,
+      userId: user.id,
+    });
+    const seeded = await seedSessionTranscript(env, { projectId: project.id, accountId, sessionId });
+    await runDatabaseSql(
+      "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
+      [sessionId],
+      env.databaseUrl,
+    );
+    await api(auth.access_token, 'PATCH', `/projects/${project.id}/features`, {
+      feature: 'session_transcript_history',
+      enabled: true,
+    });
+
+    // The stored copy capture would have made while the box was up.
+    const attachmentId = crypto.randomUUID();
+    const body = new FormData();
+    body.append('attachment_id', attachmentId);
+    body.append('file', new Blob([imageFixture.buffer], { type: 'image/png' }), 'revenue.png');
+    const uploaded = await fetch(
+      `${process.env.E2E_API_URL}/projects/${project.id}/sessions/${sessionId}/attachments`,
+      { method: 'POST', headers: { Authorization: `Bearer ${auth.access_token}` }, body },
+    );
+    expect(uploaded.status).toBe(201);
+    const ref = ((await uploaded.json()) as { url: string }).url;
+    expect(ref).toBe(`kortix-attachment://${project.id}/${sessionId}/${attachmentId}`);
+
+    // The agent's turn: a completed show card carrying the stored copy.
+    const shownAt = Date.now() - 30_000;
+    const info = {
+      id: 'msg_000000000000000000000003',
+      sessionID: seeded.root,
+      parentID: 'msg_000000000000000000000001',
+      role: 'assistant',
+      time: { created: shownAt, completed: shownAt + 1 },
+      agent: 'kortix',
+      mode: 'build',
+      providerID: 'kortix',
+      modelID: 'openai/gpt-5.6-sol',
+      path: { cwd: '/workspace', root: '/workspace' },
+      cost: 0,
+      tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+      finish: 'stop',
+    };
+    const parts = [
+      {
+        id: 'prt_show_revenue',
+        sessionID: seeded.root,
+        messageID: info.id,
+        type: 'tool',
+        tool: 'show',
+        callID: 'call_show_revenue',
+        state: {
+          status: 'completed',
+          title: 'Revenue chart',
+          time: { start: shownAt, end: shownAt + 1 },
+          input: {
+            type: 'image',
+            title: 'Revenue chart',
+            path: '/workspace/out/revenue.png',
+            attachment: ref,
+          },
+        },
+      },
+    ];
+    await runDatabaseSql(
+      'INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [sessionId, info.id, seeded.root, 'assistant', new Date(shownAt), JSON.stringify(info), JSON.stringify(parts)],
+      env.databaseUrl,
+    );
+
+    await installBrowserSessionDirect(page, auth, `/projects/${project.id}`, authOptions);
+    await selectAccountForUi(page, accountId);
+    await dismissOnboarding(page);
+
+    const held = new Promise<void>((resolve) => {
+      releaseReads = resolve;
+    });
+    for (const pattern of [`**/sessions/${sessionId}/start*`, `**/sessions/${sessionId}/snapshot*`]) {
+      await page.route(pattern, async (route) => {
+        await held;
+        await route.continue().catch(() => {});
+      });
+    }
+    const storeReads: string[] = [];
+    const sandboxReads: string[] = [];
+    page.on('request', (request) => {
+      const url = request.url();
+      if (url.includes(`/sessions/${sessionId}/attachments/${attachmentId}`)) storeReads.push(url);
+      if (url.includes('/file/raw') || url.includes('revenue.png')) sandboxReads.push(url);
+    });
+
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, {
+      waitUntil: 'domcontentloaded',
+    });
+    const image = page.getByRole('img', { name: 'revenue.png', exact: true });
+    await expect(image).toBeVisible({ timeout: 60_000 });
+    await expect.poll(() => image.evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBe(1);
+    expect(await image.getAttribute('src')).toMatch(/^blob:/);
+    await expect(page.getByText('Revenue chart').first()).toBeVisible();
+
+    // Where the bytes came from is the claim, not a detail.
+    expect(storeReads.length).toBeGreaterThan(0);
+    expect(sandboxReads).toEqual([]);
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('shown-file-from-saved-history.png'),
+      fullPage: true,
+    });
+  } finally {
+    releaseReads();
+    await disposeProject();
+    await deleteAuthUser(user.id, {
+      supabaseUrl: authOptions.supabaseUrl,
+      envFiles: ['apps/api/.env', 'apps/web/.env'],
+    });
+  }
+});
+
 interface SavedHistory {
   source: string;
   messages: Array<{
@@ -351,13 +525,13 @@ if (process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1') {
         feature: 'session_transcript_history',
         enabled: true,
       });
-      const imageModel = 'gpt-5.6-luna';
-      const picker = await api<{ models: Record<string, { attachment?: boolean }> }>(
-        auth.access_token,
-        'GET',
-        `/projects/${projectId}/model-picker`,
-      );
-      expect(picker.models[imageModel]?.attachment).toBe(true);
+      // The picker is the contract, not a model name. A hard-coded
+      // `gpt-5.6-luna` failed 13 of 13 previews: a preview's picker offers
+      // deepseek-v4.1-flash, glm-5.3-flash, and kimi-k3 instead.
+      const picker = await api<{
+        models: Record<string, { attachment?: boolean; enabled?: boolean }>;
+      }>(auth.access_token, 'GET', `/projects/${projectId}/model-picker`);
+      const imageModel = firstAttachmentModel(picker.models);
       await api(auth.access_token, 'PUT', `/projects/${projectId}/model-defaults`, {
         scope: 'project',
         model: imageModel,
@@ -411,18 +585,10 @@ if (process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1') {
             textOf(message).trim().replace(/^`([^`\n]+)`$/, '$1') === text,
         );
       await test.step('a real cloud sandbox reaches ready', async () => {
-        await expect
-          .poll(
-            async () => {
-              const result = await api<{
-                stage: string;
-                sandbox?: { status?: string };
-              }>(auth.access_token, 'POST', `${sessionPath}/start?wait_ms=8000`, {});
-              return `${result.stage}:${result.sandbox?.status}`;
-            },
-            { timeout: 12 * 60_000, intervals: [2_000, 5_000] },
-          )
-          .toBe('ready:active');
+        await waitForSessionReady(api, auth.access_token, projectId, sessionId, {
+          timeoutMs: 12 * 60_000,
+          intervalMs: 5_000,
+        });
       });
       page.on('request', (request) => {
         if (request.method() === 'POST' && request.url().endsWith(`${sessionPath}/prompts`)) {

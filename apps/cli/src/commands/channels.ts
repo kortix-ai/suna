@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import {
   emitJson,
+  fail,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -45,10 +46,6 @@ Channel bindings (which agent/model/join-policy one bound channel uses):
   bindings [ls] [--json]          List every bound channel + what it resolves to.
   bind <bindingId> [options]      Change one binding.
 
-Voice:
-  voice name <text>               Set the display name the bot joins calls with.
-  voice name --show               Print the current name.
-
 Global options:
   --platform <slack|teams>  Chat platform (default: slack).
   --project <id>          Operate on this project id (default: linked or
@@ -91,8 +88,7 @@ Bind options:
   --policy <p>            Who may join a conversation: owner_approval,
                           owner_only, or project_open.
 
-Email + bind writes need \`project.connector.write\`; \`voice name\` needs
-\`project.customize.write\`.
+Email + bind writes need \`project.connector.write\`.
 `;
 
 interface SlackInstallation {
@@ -133,7 +129,7 @@ type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>
 
 // ── Email (AgentMail) ───────────────────────────────────────────────────────
 // apps/api/src/channels/install-store.ts AgentMailSenderPolicy /
-// AgentMailInstallSummary; routes at apps/api/src/projects/routes/r4.ts:1907-2231.
+// AgentMailInstallSummary; routes at apps/api/src/projects/routes/channel-email.ts.
 
 interface EmailSenderPolicy {
   mode: 'allow_all' | 'restricted';
@@ -186,13 +182,10 @@ interface ChannelBindingsResponse {
   bindings: ChannelBinding[];
 }
 
-/** The default connector slug every email route falls back to (r4.ts:1917). */
+/** The default connector slug every email route falls back to (channel-email.ts). */
 const DEFAULT_EMAIL_CONNECTOR = 'kortix_email';
 
-/** The voice bot's fallback display name (channels/voice-identity.ts:29). */
-const DEFAULT_VOICE_BOT_NAME = 'Kortix';
-
-/** Extra flags the email/bindings/voice subcommands take. */
+/** Extra flags the email/bindings subcommands take. */
 interface ExtraFlags {
   connector?: string;
   apiKey?: string;
@@ -209,7 +202,6 @@ interface ExtraFlags {
   model?: string;
   noModel: boolean;
   policy?: string;
-  show: boolean;
 }
 
 export async function runChannels(argv: string[]): Promise<number> {
@@ -253,7 +245,6 @@ export async function runChannels(argv: string[]): Promise<number> {
       allowAll: takeFlagBool(rest, ['--allow-all']),
       noAgent: takeFlagBool(rest, ['--no-agent', '--default-agent']),
       noModel: takeFlagBool(rest, ['--no-model', '--default-model']),
-      show: takeFlagBool(rest, ['--show']),
       connector: takeFlagValue(rest, ['--connector', '--connector-slug']),
       apiKey: takeFlagValue(rest, ['--api-key']),
       displayName: takeFlagValue(rest, ['--display-name']),
@@ -303,17 +294,10 @@ export async function runChannels(argv: string[]): Promise<number> {
       return bindingsLs(ctxOpts, rest, json);
     case 'bind':
       return bindingsPatch(ctxOpts, rest, extra, json);
-    case 'voice':
-      return voiceCommand(ctxOpts, rest, extra, json);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
   }
-}
-
-function badArg(msg: string): number {
-  process.stderr.write(`${status.err(msg)}\n`);
-  return 2;
 }
 
 async function channelsStatus(
@@ -719,7 +703,9 @@ async function teamsManifest(
 ): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
-  // The Teams app manifest lives in the repo at apps/api/src/channels/teams-app-manifest.json.
+  // The Teams app manifest is BUILT by the API (apps/api/src/channels/teams-manifest.ts)
+  // from the project's own app id and base URL. The checked-in
+  // teams-app-manifest.json is a stale hand file and is not read at runtime.
   // Print it so an operator can review/submit it manually if the one-click flow
   // isn't available. The server's /mode endpoint carries the consent URL; the
   // manifest is static (doesn't depend on the project).
@@ -734,7 +720,7 @@ async function teamsManifest(
           orgConsentUrl: mode.orgConsentUrl,
           orgInstalled: mode.orgInstalled,
           deepLinkUrl: mode.deepLinkUrl,
-          note: 'Teams app manifest is generated server-side from apps/api/src/channels/teams-app-manifest.json. Use the orgConsentUrl above for one-click install; manual app-package upload uses buildTeamsAppPackage() in apps/api/src/channels/teams/app-package.ts.',
+          note: 'The Teams app manifest is generated server-side by apps/api/src/channels/teams-manifest.ts. Use the orgConsentUrl above for one-click install; manual app-package upload uses buildTeamsAppPackage() in apps/api/src/channels/teams/app-package.ts.',
         },
         null,
         2,
@@ -747,7 +733,7 @@ async function teamsManifest(
 }
 
 // ─── Microsoft Teams: disconnect ─────────────────────────────────────────
-// DELETE /projects/:id/channels/teams/installation (r4.ts:1791). Needs the
+// DELETE /projects/:id/channels/teams/installation (channel-teams.ts). Needs the
 // 'manage' project role + `project.connector.write`; no feature-flag gate, so
 // a project whose `teams` flag was turned off can still clean up its install.
 
@@ -865,7 +851,7 @@ async function emailCommand(
       }
       case 'connect': {
         if (Boolean(extra.inboxId) !== Boolean(extra.email)) {
-          return badArg('Attaching an existing inbox needs BOTH --inbox-id and --email.');
+          return fail('Attaching an existing inbox needs BOTH --inbox-id and --email.');
         }
         const apiKey = extra.apiKey === '-' ? readFileSync(0, 'utf-8').trim() : extra.apiKey;
         const body: Record<string, unknown> = { connector_slug: slug };
@@ -899,7 +885,7 @@ async function emailCommand(
       }
       case 'policy': {
         if (!extra.allowAll && extra.allow.length === 0 && !extra.allowRegex) {
-          return badArg(
+          return fail(
             'Pass at least one --allow <email|@domain>, --allow-regex <re>, or --allow-all.',
           );
         }
@@ -923,7 +909,7 @@ async function emailCommand(
         return 0;
       }
       default:
-        return badArg(`unknown email action "${action}" — status|connect|disconnect|policy`);
+        return fail(`unknown email action "${action}" — status|connect|disconnect|policy`);
     }
   } catch (err) {
     return surfaceApiError(err);
@@ -939,7 +925,7 @@ async function bindingsLs(
 ): Promise<number> {
   const action = rest.find((a) => !a.startsWith('-')) ?? 'ls';
   if (action !== 'ls' && action !== 'list') {
-    return badArg(`unknown bindings action "${action}" — ls`);
+    return fail(`unknown bindings action "${action}" — ls`);
   }
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
@@ -989,11 +975,11 @@ async function bindingsPatch(
   json: boolean,
 ): Promise<number> {
   const bindingId = rest.find((a) => !a.startsWith('-'));
-  if (!bindingId) return badArg('Pass a binding id — list them with `kortix channels bindings`.');
-  if (extra.agent && extra.noAgent) return badArg('Pass --agent or --no-agent, not both.');
-  if (extra.model && extra.noModel) return badArg('Pass --model or --no-model, not both.');
+  if (!bindingId) return fail('Pass a binding id — list them with `kortix channels bindings`.');
+  if (extra.agent && extra.noAgent) return fail('Pass --agent or --no-agent, not both.');
+  if (extra.model && extra.noModel) return fail('Pass --model or --no-model, not both.');
   if (extra.policy && !(CONVERSATION_POLICIES as readonly string[]).includes(extra.policy)) {
-    return badArg(`--policy must be one of ${CONVERSATION_POLICIES.join(', ')}.`);
+    return fail(`--policy must be one of ${CONVERSATION_POLICIES.join(', ')}.`);
   }
 
   // `null` resets an override to the project default; an omitted key leaves it
@@ -1006,7 +992,7 @@ async function bindingsPatch(
   else if (extra.noModel) body.opencodeModel = null;
   if (extra.policy) body.conversationPolicy = extra.policy;
   if (Object.keys(body).length === 0) {
-    return badArg('Pass at least one of --agent/--no-agent, --model/--no-model, --policy.');
+    return fail('Pass at least one of --agent/--no-agent, --model/--no-model, --policy.');
   }
 
   const ctx = await resolveProjectContext(ctxOpts);
@@ -1031,61 +1017,4 @@ async function bindingsPatch(
       `         policy  ${C.dim}${binding.conversationPolicy}${C.reset}\n`,
   );
   return 0;
-}
-
-// ─── Voice ───────────────────────────────────────────────────────────────
-// PUT /projects/:id/channels/meet/name is write-only — there is NO GET for it
-// (voice-view.tsx renders a placeholder, never a fetched value). The stored
-// value does ride along on the project row as `metadata.meet.bot_name`, so
-// --show reads it from there rather than inventing a route.
-
-async function voiceCommand(
-  ctxOpts: { projectArg?: string; hostArg?: string },
-  rest: string[],
-  extra: ExtraFlags,
-  json: boolean,
-): Promise<number> {
-  const positional = rest.filter((a) => !a.startsWith('-'));
-  const action = positional[0] ?? 'name';
-  if (action !== 'name') return badArg(`unknown voice action "${action}" — name`);
-  // `--show` was already lifted out of argv, so read the parsed flag. A bare
-  // `voice name` with nothing to set is a read too — never a silent no-op write.
-  const show = extra.show || positional.length < 2;
-  const ctx = await resolveProjectContext(ctxOpts);
-  if (!ctx) return 1;
-
-  try {
-    if (show) {
-      const project = await ctx.client.get<{ metadata?: { meet?: { bot_name?: string } } }>(
-        `/projects/${ctx.projectId}`,
-      );
-      const name = project.metadata?.meet?.bot_name ?? DEFAULT_VOICE_BOT_NAME;
-      if (json) {
-        emitJson({ bot_name: name, is_default: !project.metadata?.meet?.bot_name });
-        return 0;
-      }
-      process.stdout.write(
-        `  ${C.dim}voice bot name${C.reset}  ${C.bold}${name}${C.reset}` +
-          `${project.metadata?.meet?.bot_name ? '' : ` ${C.faded}(default)${C.reset}`}\n`,
-      );
-      return 0;
-    }
-    // Everything after `name` is the name — a display name is usually two words.
-    const wanted = positional.slice(1).join(' ');
-    const saved = await ctx.client.put<{ ok: boolean; bot_name: string }>(
-      `/projects/${ctx.projectId}/channels/meet/name`,
-      { name: wanted },
-    );
-    if (json) {
-      emitJson(saved);
-      return 0;
-    }
-    process.stdout.write(
-      `${status.ok(`Voice bot name → ${C.bold}${saved.bot_name}${C.reset}`)}` +
-        `${saved.bot_name !== wanted ? ` ${C.dim}(trimmed to 80 chars)${C.reset}` : ''}\n`,
-    );
-    return 0;
-  } catch (err) {
-    return surfaceApiError(err);
-  }
 }

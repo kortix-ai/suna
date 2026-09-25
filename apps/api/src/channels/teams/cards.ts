@@ -72,16 +72,104 @@ function stepElements(step: StreamTaskChunk): CardElement[] {
   return out;
 }
 
+/**
+ * Teams refuses a message over about 28 KB, card JSON included, and the
+ * refusal is silent to the person waiting: the live card simply stops
+ * changing. Every card that grows with the run is kept under this.
+ */
+export const TEAMS_CARD_BUDGET_BYTES = 24_000;
+
+/** The plan's share of a card, so a long run still leaves room for its answer. */
+const PLAN_BUDGET_BYTES = 12_000;
+
+export const TRUNCATION_NOTE = '_… truncated — open the session for the full output._';
+
+export function cardBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8');
+}
+
 function planContainer(title: string, steps: StreamTaskChunk[]): CardElement[] {
   const elements: CardElement[] = [
     { type: 'TextBlock', text: title, weight: 'bolder', size: 'medium', wrap: true },
   ];
-  for (const step of steps) elements.push(...stepElements(step));
+  // Newest steps first into the budget: the step in flight is the one a
+  // reader needs, and the oldest ones are what a long run can spare.
+  const shown: CardElement[][] = [];
+  let used = 0;
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const els = stepElements(steps[i]!);
+    const size = cardBytes(els);
+    if (shown.length > 0 && used + size > PLAN_BUDGET_BYTES) break;
+    shown.unshift(els);
+    used += size;
+  }
+  const hidden = steps.length - shown.length;
+  if (hidden > 0) {
+    elements.push(text(`… ${hidden} earlier ${hidden === 1 ? 'step' : 'steps'}`, { isSubtle: true, size: 'small' }));
+  }
+  for (const els of shown) elements.push(...els);
   return elements;
 }
 
-export function buildPlanCard(title: string, steps: StreamTaskChunk[]): Record<string, unknown> {
-  return card(planContainer(title, steps));
+/**
+ * The longest head of `body` whose rendered card fits the budget, cut at a
+ * line break and marked as cut. The whole body when it fits.
+ *
+ * A long answer used to be cut at 11,000 characters with no mark, and one
+ * whose card still exceeded the limit — a table, code, anything not ASCII —
+ * was refused by Teams and never shown at all.
+ */
+export function fitBodyToCard(
+  body: string,
+  render: (body: string) => unknown,
+  budget = TEAMS_CARD_BUDGET_BYTES,
+): { body: string; truncated: boolean } {
+  if (cardBytes(render(body)) <= budget) return { body, truncated: false };
+  const marked = (head: string) => {
+    let out = head.trimEnd();
+    // An unclosed fence would swallow the note into the code block.
+    if ((out.match(/^```/gm) ?? []).length % 2 === 1) out += '\n```';
+    return `${out}\n\n${TRUNCATION_NOTE}`;
+  };
+  let lo = 0;
+  let hi = body.length;
+  let best = marked('');
+  for (let i = 0; i < 20 && lo < hi; i++) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const head = body.slice(0, mid);
+    const nl = head.lastIndexOf('\n');
+    const cut = nl > mid * 0.6 ? head.slice(0, nl) : head;
+    const candidate = marked(cut);
+    if (cardBytes(render(candidate)) <= budget) {
+      best = candidate;
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return { body: best, truncated: true };
+}
+
+export const TEAMS_STOP_VERB = 'teams_stop';
+
+/**
+ * The live "working on it" card.
+ *
+ * `sessionId` adds the Stop button. Every other Kortix surface can end a run
+ * the moment it goes wrong; in Teams the only lever was to wait out the
+ * 30-minute GC, and a wedged turn swallowed every later message in the
+ * conversation (dev 2026-09-19). The button carries the session id because the
+ * invoke that comes back names no turn of its own.
+ */
+export function buildPlanCard(
+  title: string,
+  steps: StreamTaskChunk[],
+  sessionId?: string,
+): Record<string, unknown> {
+  return card(
+    planContainer(title, steps),
+    sessionId ? [executeAction('Stop', TEAMS_STOP_VERB, { sessionId })] : undefined,
+  );
 }
 
 export function buildFinalCard(opts: {
@@ -235,6 +323,116 @@ export function buildSelectCard(opts: {
   return card(body);
 }
 
+export interface ModelPickerOption {
+  id: string;
+  label: string;
+  /** How the model is reached: `chatgpt`, `key` (an API key), `kortix`. */
+  via: 'chatgpt' | 'key' | 'kortix';
+  /** The provider's display name (`Anthropic`, `OpenRouter`). */
+  providerLabel: string;
+}
+
+/** Past this many choices, buttons stop being scannable and a searchable dropdown wins. */
+const MAX_MODEL_BUTTONS = 8;
+
+function viaHint(o: ModelPickerOption): string {
+  if (o.via === 'chatgpt') return 'ChatGPT subscription';
+  if (o.via === 'key') return `${o.providerLabel} key`;
+  return 'Kortix';
+}
+
+/**
+ * The `/models` card: every model this conversation may run, as the web picker
+ * lists them — the person's ChatGPT subscriptions and API keys (their own in a
+ * personal chat, the project's everywhere) before Kortix models.
+ *
+ * Up to MAX_MODEL_BUTTONS choices are one-tap buttons; more become a
+ * searchable dropdown with one Use button. Both post `teams_set_model` with
+ * `model` (the dropdown's input id is `model` too), so one handler serves both.
+ */
+export function buildModelPickerCard(opts: {
+  models: ModelPickerOption[];
+  /** The conversation's pick as a wire id, or null for the project default. */
+  current: string | null;
+  currentLabel: string | null;
+  defaultLabel: string | null;
+  /** "Rotates across 2 ChatGPT connections: …" for the current pick. */
+  keysNote?: string | null;
+  /** Which keys count in this conversation. */
+  scopeNote: string;
+}): Record<string, unknown> {
+  const subtitle = [
+    opts.current ? `Currently ${opts.currentLabel ?? opts.current}` : `Currently the project default${opts.defaultLabel ? ` (${opts.defaultLabel})` : ''}`,
+    opts.keysNote ?? null,
+  ].filter(Boolean).join(' · ');
+  const body: CardElement[] = [...headerBlock('🧠', 'Model', subtitle)];
+  const defaultChoice = { label: 'Project default', hint: opts.defaultLabel ?? undefined, value: '' };
+
+  if (opts.models.length + 1 <= MAX_MODEL_BUTTONS) {
+    const options: SelectOption[] = [
+      { label: defaultChoice.label, hint: defaultChoice.hint, current: !opts.current, data: { model: '' } },
+      ...opts.models.map((m) => ({
+        label: m.label,
+        hint: viaHint(m),
+        current: opts.current === m.id,
+        data: { model: m.id },
+      })),
+    ];
+    body.push(emphasisContainer(options.map((o, i) => selectRow(o, 'teams_set_model', i > 0))));
+    body.push(text(opts.scopeNote, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
+    return card(body);
+  }
+
+  body.push({
+    type: 'Input.ChoiceSet',
+    id: 'model',
+    style: 'filtered',
+    value: opts.current ?? '',
+    choices: [
+      { title: `Project default${opts.defaultLabel ? ` — ${opts.defaultLabel}` : ''}`, value: '' },
+      ...opts.models.map((m) => ({ title: `${m.label} · ${viaHint(m)}`, value: m.id })),
+    ],
+    spacing: 'medium',
+  });
+  body.push(text(opts.scopeNote, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
+  return card(body, [executeAction('Use model', 'teams_set_model')]);
+}
+
+/**
+ * The agent picker, in both of its moods.
+ *
+ * `/agents` builds the neutral one: the conversation's current pick is marked
+ * "✓ In use". A failed session start builds the recovery one by passing `lead`
+ * — it leads with the failure, marks nothing as current (the conversation's own
+ * pick is the dead agent it is replacing), and closes with what to do next.
+ * Both carry the same `teams_set_agent` verb, so one tap fixes the conversation
+ * either way and `interactivity.ts` needs no second handler.
+ */
+export function buildAgentPickerCard(opts: {
+  agents: ReadonlyArray<{ name: string; description?: string | null }>;
+  current: string | null;
+  lead?: { title: string; subtitle: string };
+}): Record<string, unknown> {
+  const current = opts.lead ? null : opts.current;
+  const options: SelectOption[] = [
+    { label: 'Default', current: !opts.lead && !current, data: { agent: '' } },
+    ...opts.agents.slice(0, 6).map((a) => ({
+      label: a.name,
+      hint: a.description ?? undefined,
+      current: current === a.name,
+      data: { agent: a.name },
+    })),
+  ];
+  return buildSelectCard({
+    emoji: opts.lead ? '⚠️' : '🤖',
+    title: opts.lead?.title ?? 'Agent',
+    subtitle: opts.lead?.subtitle ?? (current ? `Currently ${current}` : 'Currently the default agent'),
+    verb: 'teams_set_agent',
+    options,
+    ...(opts.lead ? { footer: 'Pick one, then send your message again.' } : {}),
+  });
+}
+
 export function buildPanelCard(opts: {
   emoji?: string;
   title: string;
@@ -249,22 +447,148 @@ export function buildPanelCard(opts: {
   return card(body, actions);
 }
 
-export function buildQuestionCard(
-  questions: Array<{ question: string; options?: Array<{ label: string }> }>,
-): Record<string, unknown> {
-  const body: CardElement[] = [...headerBlock('💬', 'A quick question')];
-  for (const q of questions) body.push(text(q.question, { weight: 'bolder', wrap: true, spacing: 'small' }));
-  const seen = new Set<string>();
-  const actions: CardElement[] = [];
-  for (const o of questions.flatMap((q) => q.options ?? [])) {
-    if (!o.label || seen.has(o.label)) continue;
-    seen.add(o.label);
-    actions.push(executeAction(o.label, 'teams_answer', { answer: o.label }));
-    if (actions.length >= 6) break;
-  }
-  body.push(text('Tap an option, or just reply in the chat.', { isSubtle: true, size: 'small', spacing: 'medium' }));
-  return card(body, actions.length ? actions : undefined);
+export interface TeamsQuestion {
+  question: string;
+  header?: string;
+  options?: Array<{ label: string; description?: string }>;
+  /** Several answers allowed. */
+  multiple?: boolean;
+  /** An answer outside the listed options is allowed. */
+  custom?: boolean;
 }
+
+const MAX_BUTTON_OPTIONS = 6;
+/** Past this, a column of radios stops being scannable and a dropdown wins. */
+const MAX_EXPANDED_CHOICES = 6;
+
+/**
+ * An `Input.*` id doubles as the label the agent reads back, because
+ * `handleForm` relays `- <id>: <value>` and a `q1` would tell it nothing. Ids
+ * cannot contain a comma — `fieldIds` travels comma-joined — so strip those
+ * and keep it short enough to stay readable in the relayed message.
+ */
+function questionFieldId(question: string, index: number): string {
+  const cleaned = question.replace(/[,\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return `Question ${index + 1}`;
+  return cleaned.length > 60 ? `${cleaned.slice(0, 59)}…` : cleaned;
+}
+
+/**
+ * The card that asks. Two shapes, picked by what the question actually is.
+ *
+ * ONE question, a handful of options, one answer, no free text → a button per
+ * option. It is one tap, and that is the common case.
+ *
+ * Anything else → a real form. The old card flattened EVERY option of EVERY
+ * question into a single deduped button row: two questions offering "Yes"
+ * showed one button, nothing said which question a button belonged to, and a
+ * tap sent back a single bare label for what were several questions. It also
+ * dropped `header`, `multiple`, `custom` and every option `description` on the
+ * floor. A form answers all of them — one `Input.ChoiceSet` per question,
+ * multi-select when asked, a text box when free-form answers are allowed — and
+ * `handleForm` relays the answers back labelled with their questions.
+ */
+export function buildQuestionCard(questions: TeamsQuestion[]): Record<string, unknown> {
+  const list = (questions ?? []).filter((q) => q?.question?.trim());
+  if (list.length === 0) return buildNoticeCard('The agent asked a question, but it arrived empty.', '💬');
+
+  const single = list.length === 1 ? list[0] : null;
+  const options = single?.options?.filter((o) => o?.label?.trim()) ?? [];
+  // `custom` deliberately does NOT force the form. The relay route defaults it
+  // to true (`obj.custom === false ? false : true`, projects/routes/turn-questions.ts), so
+  // gating on it would turn every plain yes/no into a form with a Submit
+  // button. In Teams the free-text path already exists and always has: the
+  // card says "or just reply in the chat", and a reply arrives as the next
+  // turn. The form's own "(other)" box is for when the user is in a form
+  // anyway.
+  const oneTap = single && options.length > 0 && options.length <= MAX_BUTTON_OPTIONS && !single.multiple;
+
+  if (oneTap && single) {
+    const body: CardElement[] = [...headerBlock('💬', single.header?.trim() || 'A quick question')];
+    body.push(text(single.question, { weight: 'bolder', wrap: true, spacing: 'small' }));
+    // An Action has no room for a subtitle, so a described option explains
+    // itself above the buttons instead of losing the description entirely.
+    for (const o of options) {
+      if (o.description?.trim()) {
+        body.push(text(`**${o.label}** — ${o.description.trim()}`, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
+      }
+    }
+    body.push(text('Tap an option, or just reply in the chat.', { isSubtle: true, size: 'small', spacing: 'medium' }));
+    return card(
+      body,
+      // The question rides along with the answer. `Action.Execute` REPLACES
+      // the card, so without it the conversation is left showing a bare
+      // "Answer received: Yes" — no context for anyone reading the channel
+      // later, and a bare label for the agent. Truncated because action data
+      // travels on every tap.
+      options.map((o) =>
+        executeAction(o.label, 'teams_answer', {
+          answer: o.label,
+          question: single.question.slice(0, 200),
+        }),
+      ),
+    );
+  }
+
+  const fields: TeamsFormField[] = [];
+  const numbered = list.length > 1;
+  for (const [i, q] of list.entries()) {
+    const id = questionFieldId(q.question, i);
+    const opts = q.options?.filter((o) => o?.label?.trim()) ?? [];
+    // Shape of the Kortix web question UI: each question carries its short
+    // header, and several questions say where they sit ("2 of 3") so
+    // "question 2" means one thing. The position lives in the caption, never
+    // as a "2. " prefix on the label: Teams renders TextBlock markdown, and a
+    // label starting "2. " became an indented ordered list, out of line with
+    // its caption and choices. The field ID stays the bare question —
+    // `handleForm` relays it to the agent, which should read the question.
+    const header = q.header?.trim();
+    const label = q.question;
+    const caption = numbered ? `${i + 1} of ${list.length}${header ? ` · ${header}` : ''}` : header || undefined;
+    if (opts.length > 0) {
+      fields.push({
+        id,
+        label,
+        caption,
+        type: q.multiple ? 'multichoice' : 'choice',
+        // Every option VISIBLE, as the web UI shows them — a dropdown hides the
+        // choices behind a tap and turns "which of these?" into "open this to
+        // find out". Past MAX_EXPANDED_CHOICES a list of radios stops being
+        // scannable, and the dropdown earns its place back.
+        style: opts.length <= MAX_EXPANDED_CHOICES ? 'expanded' : 'compact',
+        // A description belongs on the choice itself, where the user reads it.
+        choices: opts.map((o) => ({
+          title: o.description?.trim() ? `${o.label} — ${o.description.trim()}` : o.label,
+          value: o.label,
+        })),
+        placeholder: q.multiple ? 'Pick one or more' : 'Pick one',
+      });
+      // `custom` means the listed options are not exhaustive. The relay route
+      // defaults it to TRUE, so this box appears under nearly every question —
+      // which is why it carries NO label of its own: an unlabeled box directly
+      // under the choices reads as "or say it yourself", where a repeated bold
+      // "Something else" read as a second question.
+      if (q.custom) {
+        fields.push({ id: `${id} (other)`, label: '', type: 'text', placeholder: 'Or type your own answer' });
+      }
+    } else {
+      fields.push({ id, label, caption, type: 'textarea', placeholder: 'Your answer' });
+    }
+  }
+
+  const form = buildFormCard({
+    title: single?.header?.trim() || (list.length > 1 ? `${list.length} questions` : 'A quick question'),
+    subtitle: 'Answer here, or just reply in the chat.',
+    submitLabel: 'Send answers',
+    fields,
+  });
+  // `buildFormCard` returns null only when nothing usable survived; the
+  // questions still have to reach the user, so fall back to plain text.
+  return form ?? buildNoticeCard(list.map((q) => q.question).join('\n\n'), '💬');
+}
+
+/** The id the review card's feedback box reports under. */
+export const REVIEW_FEEDBACK_INPUT = 'reviewFeedback';
 
 export function buildReviewCard(opts: {
   reviewItemId: string;
@@ -282,6 +606,21 @@ export function buildReviewCard(opts: {
       ]),
     );
   }
+  // `Action.Execute` returns EVERY input on the card, whichever button was
+  // pressed — so one optional box serves all three verdicts. Without it
+  // `applyVerdict` was always called with `feedback: null` and the agent was
+  // told to "ask what to change", asking the reviewer for something they
+  // already knew when they clicked. The column has always existed
+  // (review_items.feedback); nothing ever filled it.
+  body.push(
+    text('Feedback (optional)', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+    {
+      type: 'Input.Text',
+      id: REVIEW_FEEDBACK_INPUT,
+      isMultiline: true,
+      placeholder: 'What should change, or why — sent to the agent with your decision',
+    },
+  );
   const actions: CardElement[] = [
     { type: 'Action.Execute', title: 'Approve', verb: 'teams_review', data: { verb: 'teams_review', reviewItemId: opts.reviewItemId, verdict: 'approve' }, style: 'positive' },
     executeAction('Request changes', 'teams_review', { reviewItemId: opts.reviewItemId, verdict: 'changes' }),
@@ -387,6 +726,14 @@ export interface TeamsFormField {
   required?: boolean;
   /** For `choice` / `multichoice`. A bare string is both label and value. */
   choices?: Array<string | { title: string; value: string }>;
+  /**
+   * `expanded` lays every choice out as a visible radio/checkbox; `compact` is
+   * a dropdown. Unset keeps the Adaptive Cards default (compact for a single
+   * choice), so agent-authored `teams ask --form-file` forms are unchanged.
+   */
+  style?: 'expanded' | 'compact';
+  /** A small, subtle line ABOVE the label — a question's short header. */
+  caption?: string;
 }
 
 export interface TeamsFormSpec {
@@ -431,6 +778,7 @@ function formInput(field: TeamsFormField): CardElement | null {
         type: 'Input.ChoiceSet',
         choices,
         ...(field.type === 'multichoice' ? { isMultiSelect: true, style: 'expanded' } : {}),
+        ...(field.style ? { style: field.style } : {}),
         placeholder: field.placeholder,
         value: field.value,
         ...common,
@@ -452,9 +800,22 @@ export function buildFormCard(spec: TeamsFormSpec): Record<string, unknown> | nu
   for (const field of fields) {
     const input = formInput(field);
     if (!input) continue;
-    // A toggle renders its own label, so it does not get a second one.
-    if ((field.type ?? 'text') !== 'toggle') {
-      body.push(text(field.label, { weight: 'bolder', size: 'small', spacing: 'medium', wrap: true }));
+    if (field.caption?.trim()) {
+      body.push(text(field.caption.trim(), { isSubtle: true, size: 'small', spacing: 'large', wrap: true }));
+    }
+    // A toggle renders its own label, so it does not get a second one. An
+    // EMPTY label means the input belongs to the field above it — the "type
+    // your own answer" box under a question — and a second bold label there is
+    // what made one question read as two.
+    if ((field.type ?? 'text') !== 'toggle' && field.label.trim()) {
+      body.push(
+        text(field.label, {
+          weight: 'bolder',
+          size: 'small',
+          spacing: field.caption?.trim() ? 'none' : 'medium',
+          wrap: true,
+        }),
+      );
     }
     body.push(input);
     ids.push(field.id.trim());

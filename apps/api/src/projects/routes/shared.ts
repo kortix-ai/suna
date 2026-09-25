@@ -3,8 +3,8 @@ import type {
   SessionStartFailure,
   SessionStartResult,
 } from '@kortix/api-contract';
-import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
-import { type SQL, and, eq, sql } from 'drizzle-orm';
+import { changeRequests, sessionSandboxes } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   markComputeSessionAlive,
   reopenComputeForSandbox,
@@ -48,6 +48,8 @@ import {
 import { runStoppedObservationFollowUp } from '../session-lifecycle/stopped-observation-followup';
 import type { StopReason } from '../stop-reason';
 import { recoverTurnsAfterRuntimeRestart } from '../session-lifecycle/runtime-restart-recovery';
+import { metadataDelta, stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
+import { transitionRuntime, transitionSession } from '../session-lifecycle/status-transitions';
 import {
   RUNTIME_READINESS_CLOCK_KEYS,
   STALE_OPENCODE_BOOT_HARD_MS,
@@ -72,29 +74,6 @@ import {
 } from '../session-lifecycle/runtime-wake-fence';
 
 /**
- * `metadata - 'a' - 'b' - …`, generated from a key list.
- *
- * Hand-written `-` chains are how the readiness clocks drifted apart: the wake
- * claim stripped four of the ten, `clearRuntimeReadinessClocks` stripped eight
- * by hardcoded index, and `opencodeBootWaitFirstSeenAt` was therefore cleared
- * by nothing except a human Restart. That immortal clock parked session
- * 29861dfa's second attempt 14 ms before its daemon claimed its first turn
- * (2026-08-26). One generator, one list, no drift.
- */
-function stripMetadataKeys(keys: readonly string[]): SQL {
-  return keys.reduce<SQL>((acc, key) => {
-    // A LITERAL, not a bind parameter. `jsonb - $1` leaves the parameter type
-    // unknown and Postgres cannot choose between `jsonb - text` and
-    // `jsonb - integer`. Every key here is a compile-time constant from a
-    // frozen list, and this guard keeps it that way.
-    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)) {
-      throw new Error(`refusing to strip a non-identifier metadata key: ${key}`);
-    }
-    return sql`${acc} - ${sql.raw(`'${key}'`)}`;
-  }, sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)`);
-}
-
-/**
  * Keys a WAKE CLAIM drops. The readiness clocks are appended, so a re-attempt
  * boots against a clean budget.
  *
@@ -117,6 +96,25 @@ export const RUNTIME_WAKE_CLAIM_CLEARED_KEYS = [
   'runtimeWakeLateStartStoppedAt',
   'runtimeWakeProgressAt',
   ...RUNTIME_READINESS_CLOCK_KEYS,
+] as const;
+
+/** Keys the wake's finalize drops once the provider confirms the box runs. */
+const RUNTIME_WAKE_FINALIZE_CLEARED_KEYS = [
+  'runtimeWakeStartedAt',
+  'runtimeWakeId',
+  'runtimeWakeLeaseExpiresAt',
+  'runtimeWakeProviderStatus',
+  'runtimeWakeError',
+  'runtimeWakeFailedAt',
+  'runtimeWakeRetryAfterAt',
+  'runtimeWakeCleanupUntilAt',
+  'runtimeWakeCleanupId',
+  'runtimeWakeCleanupLeaseExpiresAt',
+  'runtimeWakeLateStartCheckedAt',
+  'runtimeWakeLateStartProviderStatus',
+  'runtimeWakeLateStartStoppedAt',
+  'runtimeWakeProgressAt',
+  ...RUNTIME_START_FAILURE_KEYS,
 ] as const;
 
 /**
@@ -241,48 +239,23 @@ export async function resumeStoppedSandbox(
     isMissingError: isMissingRuntimeError,
     finalize: async () => {
       const confirmedAt = new Date();
-      const finalized = await db.transaction(async (tx) => {
-        const [activated] = await tx
-          .update(sessionSandboxes)
-          .set({
-            status: 'active',
-            updatedAt: confirmedAt,
-            metadata: sql`(
-              coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-                - 'runtimeWakeStartedAt'
-                - 'runtimeWakeId'
-                - 'runtimeWakeLeaseExpiresAt'
-                - 'runtimeWakeProviderStatus'
-                - 'runtimeWakeError'
-                - 'runtimeWakeFailedAt'
-                - 'runtimeWakeRetryAfterAt'
-                - 'runtimeWakeCleanupUntilAt'
-                - 'runtimeWakeCleanupId'
-                - 'runtimeWakeCleanupLeaseExpiresAt'
-                - 'runtimeWakeLateStartCheckedAt'
-                - 'runtimeWakeLateStartProviderStatus'
-                - 'runtimeWakeLateStartStoppedAt'
-                - 'runtimeWakeProgressAt'
-                - ${RUNTIME_START_FAILURE_KEYS[0]}
-                - ${RUNTIME_START_FAILURE_KEYS[1]}
-                - ${RUNTIME_START_FAILURE_KEYS[2]}
-              ) || ${JSON.stringify({ providerRunningConfirmedAt: confirmedAt.toISOString() })}::jsonb`,
-          })
-          .where(
-            and(
-              eq(sessionSandboxes.sandboxId, row.sandboxId),
-              eq(sessionSandboxes.externalId, externalId),
-              eq(sessionSandboxes.status, 'stopped'),
-              sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
-            ),
-          )
-          .returning({ sandboxId: sessionSandboxes.sandboxId });
-        if (!activated) return false;
-        await tx
-          .update(projectSessions)
-          .set({ status: 'running', error: null, updatedAt: confirmedAt })
-          .where(eq(projectSessions.sessionId, row.sessionId));
-        return true;
+      // Both rows move together, or neither does: the sandbox CAS on this
+      // wake's own id, the session guarded against a delete.
+      const finalized = await transitionRuntime({
+        sessionId: row.sessionId,
+        sandboxId: row.sandboxId,
+        session: 'resume',
+        sandbox: 'wake',
+        at: confirmedAt,
+        error: null,
+        metadata: {
+          strip: RUNTIME_WAKE_FINALIZE_CLEARED_KEYS,
+          merge: { providerRunningConfirmedAt: confirmedAt.toISOString() },
+        },
+        guard: and(
+          eq(sessionSandboxes.externalId, externalId),
+          sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
+        ),
       });
       if (!finalized) return false;
       invalidateSandbox(externalId);
@@ -442,15 +415,12 @@ export async function allocateRuntimeOnOpen(
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
   if (sandboxCallbackUnreachableReason()) return;
-  await db
-    .update(projectSessions)
-    .set({ status: 'provisioning', error: null, updatedAt: new Date() })
-    .where(eq(projectSessions.sessionId, sessionId));
+  await transitionSession('provision', sessionId, { error: null });
   const opencodeModel =
     typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
   const runtimeMetadata = { opened_at: new Date().toISOString() };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
-  const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata);
+  const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata, loaded.row.projectId);
 
   allocateSessionRuntime({
     sessionId,
@@ -618,30 +588,38 @@ function removedRuntimeStillInGrace(
   return graceStartedAtMs != null && nowMs - graceStartedAtMs <= STALE_RUNTIME_WAKE_MS;
 }
 
-async function markRuntimeWakeStarted(
+export async function markRuntimeWakeStarted(
   row: typeof sessionSandboxes.$inferSelect,
   providerStatus: SandboxStatus,
 ): Promise<void> {
   const metadata = sandboxMetadata(row);
   if (typeof metadata.runtimeWakeStartedAt === 'string') return;
   try {
+    // A merge, gated on the LOCKED row: `row` was read before the provider
+    // status call, and writing `{ ...metadata }` back erased a restart claim
+    // installed in between (SESS-9, 2026-09). A claim sets its own wake clock,
+    // so the predicate also keeps a stale poll from moving it.
     await db
       .update(sessionSandboxes)
       .set({
-        metadata: {
-          ...metadata,
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
           runtimeWakeStartedAt: new Date().toISOString(),
           runtimeWakeProviderStatus: providerStatus,
-        },
+        })}::jsonb`,
         updatedAt: new Date(),
       })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, row.sandboxId),
+          sql`${sessionSandboxes.metadata}->>'runtimeWakeStartedAt' IS NULL`,
+        ),
+      );
   } catch (err) {
     console.warn(`[start] failed to mark runtime wake for ${row.sandboxId}:`, err);
   }
 }
 
-async function markOpencodeReadyWaitStarted(
+export async function markOpencodeReadyWaitStarted(
   row: typeof sessionSandboxes.$inferSelect,
   reason: 'not_ready' | 'unreachable',
   bootPhase: string | undefined,
@@ -653,10 +631,24 @@ async function markOpencodeReadyWaitStarted(
   const patch = opencodeReadyWaitPatch(metadata, reason, bootPhase);
   if (!patch) return;
   try {
+    // Merge only the clocks this poll changed. `patch` spreads the row read
+    // before the daemon round-trip; writing it whole erased a restart claim
+    // installed in between (SESS-9, 2026-09). A row under a restart claim is
+    // not this poll's to stamp: the claim reset the clocks for its own attempt.
     await db
       .update(sessionSandboxes)
-      .set({ metadata: patch, updatedAt: new Date() })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      .set({
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify(
+          metadataDelta(metadata, patch),
+        )}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, row.sandboxId),
+          sql`${sessionSandboxes.metadata}->>'runtimeRestartId' IS NULL`,
+        ),
+      );
   } catch (err) {
     console.warn(`[start] failed to mark OpenCode wait for ${row.sandboxId}:`, err);
   }
@@ -769,7 +761,7 @@ export function stoppedWakeResult(
   // A STAMPED runtime-start failure — `runtime_wake_failed` from a wake that
   // ran out of budget, `runtime_boot_failed` from a park. It used to short
   // -circuit every later `/start` to a terminal payload forever, so the session
-  // could only be recovered by a human pressing Restart (Essentia 2026-08-26:
+  // could only be recovered by a human pressing Restart (SampleCo 2026-08-26:
   // e06ad0c4 answered `failed` in 47ms for a startable box; 9c8749ac replayed a
   // 03:37Z stamp for 10+ hours). Now it is a cooldown with three outcomes.
   const failureState = stampedRuntimeFailureState(metadata, now);
@@ -1369,7 +1361,7 @@ async function runOpenSession(args: {
         stopUnconfirmed = true;
         // OWN the confirmation instead of hoping someone reads again. Without
         // this the row keeps claiming `running` for as long as nothing polls —
-        // 5+ minutes on Essentia 2026-08-26, with the queued prompt delivered
+        // 5+ minutes on SampleCo 2026-08-26, with the queued prompt delivered
         // against a box the provider had already stopped. Detached: the answer
         // this call returns must not wait a confirmation window for it.
         void runStoppedObservationFollowUp({

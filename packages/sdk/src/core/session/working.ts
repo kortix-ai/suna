@@ -246,7 +246,7 @@ export interface WorkingStreamInput {
  * This one is not an observer. Content arriving is not a report that the
  * runtime is working — it IS the runtime working, and no report outranks it.
  *
- * Reported with a screen recording (essentia, 2026-08-23): a tool row with a
+ * Reported with a screen recording (sampleco, 2026-08-23): a tool row with a
  * live spinner and text growing on screen, and a composer showing its send
  * arrow. Every observer had gone quiet; the only thing still speaking was the
  * content, and nothing was listening to it.
@@ -255,7 +255,7 @@ export interface WorkingStreamInput {
  * part off the SSE wire) and PULLED (a liveness-poll tail read whose hydrate
  * shows the transcript moved with its tail still open — `sync-store.hydrate`).
  * The pull path is what answers when the wire itself is the thing that died
- * (essentia, 2026-08-26: stream black-holed mid-turn, stale idle frame vetoing
+ * (sampleco, 2026-08-26: stream black-holed mid-turn, stale idle frame vetoing
  * the open turn row, transcript minutes behind).
  */
 export interface WorkingActivityInput {

@@ -104,6 +104,7 @@ Reached by invite token alone — the invitee may not be a member yet.
 
 | method | what |
 | --- | --- |
+| `listMine()` | every pending, unexpired invite addressed to your email, with the workspace and any projects it grants |
 | `describe(inviteId)` · `accept(inviteId)` · `decline(inviteId)` | preview · accept · decline an invite |
 
 ### Projects — `kortix.projects`
@@ -307,7 +308,7 @@ project manager as much as a member.
 | `search(query, options?)` · `describe(tool)` | find · inspect one callable tool |
 | `call(tool, args?, options?)` | call one `<connector>.<action>` tool through the server-side gateway. `options.account` names which account to run as — see below. |
 | `accounts(slug)` | the accounts this caller may call `slug` as, default first — what `options.account` matches against |
-| `uploadAttachment(content, input)` | upload bytes and receive an opaque attachment handle for a later call |
+| `uploadAttachment(content, input)` | stage bytes for `input.connector`; returns `ref` (`{ $kortix_attachment }`) to place in a later call's args — see [Attach files](/docs/connect/connectors#attach-files) |
 | `list()` · `config(connectorId)` | configured connectors · one connector's config |
 | `create(input)` | add a connector |
 | `auth.discover(input)` | preview auth from an OpenAPI spec, Postman collection, or endpoint |
@@ -319,6 +320,8 @@ project manager as much as a member.
 | `connections.list()` · `connections.reconcile(input)` | list · create/update connected accounts |
 | `connections.updateCredential(connectionId, input)` | rotate a connection credential |
 | `connections.revoke(connectionId)` · `connections.activate(connectionId)` | deny · restore a connection |
+| `connections.setDefault(connectionId)` | make it the default for its owner scope |
+| `connections.rename(connectionId, label)` | change the label only; the account stays authorized. Each connection carries `connected_as`, the identity it was authorized as. |
 
 `p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under [Settings → Experimental](/docs/feature-flags) → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
 
@@ -508,6 +511,16 @@ A routing policy holds a default model, a vision model, and an ordered
 fallback chain, each model attempted at most once; `fallbackOn` is
 `transient` or `any-error`.
 
+The gateway moves to the next fallback model only when the current model
+failed before it returned any output:
+
+- `transient`: a network error, a timeout, any `5xx`, or `402`, `403`, `429`.
+- `any-error`: every failure, including a `400`.
+
+A failure after output started stays with that model. A request on your own
+provider key (BYOK) never falls back to a Kortix-billed model. Each fallback
+model gets its own generation defaults.
+
 #### `p.channels` — Slack / email / voice
 
 Connector surfaces that let an agent act as a Slack app, an email address,
@@ -629,6 +642,22 @@ await files.upload(file, '/workspace/uploads', file.name, {
 
 Uploads larger than 64 KiB cross the sandbox edge in verified chunks. The
 progress callback runs after each chunk reaches the session filesystem.
+
+`files.write(path, blob)` replaces the file at `path` and fails if `path` is a
+folder. `files.create(path)` creates an empty file and never overwrites: when a
+file or folder already exists at `path`, it throws `FileExistsError`
+(`status` `409`, `code` `'FILE_EXISTS'`).
+
+```ts
+import { FileExistsError, files } from '@kortix/sdk';
+
+try {
+  await files.create('/workspace/notes.md');
+} catch (error) {
+  if (error instanceof FileExistsError) console.log(`${error.path} already exists`);
+  else throw error;
+}
+```
 
 `files` targets the globally active sandbox. If your host runs more than one
 session at a time, call `s.files` on the session handle instead. It always

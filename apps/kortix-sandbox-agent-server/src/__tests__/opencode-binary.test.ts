@@ -91,7 +91,7 @@ describe('OpenCode launch binary detection', () => {
 
   test('never launches a postinstall-less pnpm stub from PATH; falls through to the managed link', async () => {
     // OpenCode's own autoupdate (plain `pnpm add -g`) leaves a 479-byte stub as
-    // the PATH launcher (Essentia 2026-08-22 and 2026-08-25). Spawning it exits
+    // the PATH launcher (SampleCo 2026-08-22 and 2026-08-25). Spawning it exits
     // at once and the daemon respawns forever with "binary not found".
     const events: string[] = []
     const resolved = await detectOpencodeBinary({
@@ -243,7 +243,7 @@ describe('isStubOpencodeLauncher', () => {
     const { isStubOpencodeLauncher } = await import('../harness/open-code/lifecycle')
     const dir = await mkdtemp(join(tmpdir(), 'kortix-stub-'))
     try {
-      // Exactly what pnpm's shim looks like on a box (Essentia 2026-08-25).
+      // Exactly what pnpm's shim looks like on a box (SampleCo 2026-08-25).
       const shim = (exe: string) =>
         `#!/bin/sh\nbasedir=$(dirname "$(echo "$0" | sed -e 's,\\\\,/,g')")\nexe=""\n` +
         `exec "$basedir/../global/v11/229-hash/node_modules/opencode-ai/bin/opencode.exe"   "$@"\nexit $?\n` +

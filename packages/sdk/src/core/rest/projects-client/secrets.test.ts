@@ -200,6 +200,17 @@ test('startProjectProviderOAuth sends a named account resource request', async (
   expect(last().body).toMatchObject({ resource_label: 'My ChatGPT' });
 });
 
+test('startProjectProviderOAuth reconnects an existing account resource by id alone', async () => {
+  nextResponse = {
+    status: 200,
+    body: { flow_id: 'flow', verification_url: 'https://example.test', user_code: 'ABCD', expires_at: 1, interval_ms: 3000 },
+  };
+  await startProjectProviderOAuth('P1', 'openai', { resourceId: '77777777-7777-4777-8777-777777777777' });
+  expect(last().url).toContain('/projects/P1/oauth/openai/start');
+  // Reconnect keeps the label and access: nothing but the id is sent.
+  expect(last().body).toEqual({ sharing: undefined, resource_id: '77777777-7777-4777-8777-777777777777' });
+});
+
 test('pollProjectProviderOAuth posts the flow_id and returns the poll result', async () => {
   nextResponse = { status: 200, body: { status: 'pending', next_poll_ms: 2000 } };
   const result = await pollProjectProviderOAuth('P1', 'chatgpt', 'flow-123');

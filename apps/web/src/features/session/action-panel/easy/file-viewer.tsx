@@ -7,7 +7,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * The view toggle is not a universal control, because "source" only means
  * something for a file whose rendered form differs from its text:
  *
- *   - **HTML and SVG** render to something you can look at AND are code you
+ *   - **HTML, SVG and Mermaid** render to something you can look at AND are code you
  *     might want to read. They are the file types that earn a Preview/Source
  *     toggle, so that toggle lives at the far left of their toolbar.
  *   - **Markdown** is meant to be read as a document. A non-technical user has
@@ -17,19 +17,17 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * So the toolbar is: what you're looking at (left) and what you can do with it
  * (right). The right side is one split button — `Copy`, with a caret holding
- * `Copy link` and `Download file` — then full screen and close. Every file gets
+ * `Copy link` — then a visible Download button, full screen and close. Every file gets
  * the same right side, built by `ViewerActions`, so the actions never move and
  * this toolbar cannot drift from `PreviewShell`'s.
  */
 
 import { HighlightedCode } from '@/components/markdown/code';
-import { DocMarkdown } from '@/components/markdown/doc-markdown';
-import {
-  MarkdownFrontmatterCard,
-  parseFrontmatter,
-} from '@/components/markdown/markdown-frontmatter';
+import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
+import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
+import { isMermaidFile } from '@/features/file-renderers/mermaid/mermaid-utils';
 import { HtmlPreview } from '@/features/file-viewer';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
@@ -71,6 +69,8 @@ const LANGUAGE_BY_EXT: Record<string, string> = {
   // is what it would alias to anyway.
   svg: 'xml',
   sql: 'sql',
+  mmd: 'mermaid',
+  mermaid: 'mermaid',
 };
 
 function extensionOf(fileName: string): string {
@@ -134,10 +134,11 @@ export function FileViewer({
   const html = isHtml(fileName) && !!path;
   const svg = isSvg(fileName);
   const markdown = isMarkdown(fileName);
+  const mermaid = isMermaidFile(fileName);
   // The files whose rendered form and source are both worth seeing — the ones
   // that earn the toggle, and the ones whose preview owns the pane's scrolling
   // instead of the pane owning theirs.
-  const renders = html || svg;
+  const renders = html || svg || mermaid;
   const [view, setView] = useState<View>('preview');
 
   const isMobile = useIsMobile();
@@ -214,8 +215,10 @@ export function FileViewer({
           path={path}
           html={html}
           svg={svg}
+          mermaid={mermaid}
           markdown={markdown}
           view={view}
+          onShowSource={() => setView('source')}
         />
       </div>
     </div>
@@ -255,16 +258,20 @@ function FileBody({
   path,
   html,
   svg,
+  mermaid,
   markdown,
   view,
+  onShowSource,
 }: {
   content: string;
   fileName: string;
   path?: string;
   html: boolean;
   svg: boolean;
+  mermaid: boolean;
   markdown: boolean;
   view: View;
+  onShowSource: () => void;
 }) {
   const svgUrl = useSvgObjectUrl(content, svg && view === 'preview');
 
@@ -299,23 +306,21 @@ function FileBody({
     return <ImageRenderer url={svgUrl} fileName={fileName} controls="always" backdrop />;
   }
 
+  // A Mermaid file previews as its diagram. Same component as the Files viewer
+  // and the `show` card, so the three agree on what a `.mmd` looks like.
+  if (mermaid && view === 'preview') {
+    return <MermaidDiagram source={content} fileName={fileName} onShowSource={onShowSource} />;
+  }
+
   if (markdown) {
     // Frontmatter has to come off BEFORE the markdown parser sees it. Handed
     // the raw file, markdown reads the block as prose: the opening `---` is a
     // thematic break and the closing `---` is a setext underline, so an agent
     // definition rendered as a stray horizontal rule followed by its entire
-    // metadata as one giant bold heading. Same split, same card as the chat's
-    // inline preview (`MarkdownWithFrontmatter`), so both panes agree on what
-    // an agent file looks like.
-    const { frontmatter, body } = parseFrontmatter(content);
-    return (
-      <div className="p-6">
-        {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-        {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
-            escaped text rather than becoming live DOM. */}
-        <DocMarkdown content={body} allowHtml={false} />
-      </div>
-    );
+    // metadata as one giant bold heading. `MarkdownWithFrontmatter` splits it
+    // off and renders the body as a document (embedded markup stays text), the
+    // same component the chat's inline preview uses.
+    return <MarkdownWithFrontmatter content={content} className="p-6" />;
   }
 
   // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a

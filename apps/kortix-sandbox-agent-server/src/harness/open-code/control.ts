@@ -3,6 +3,7 @@ import { requireOpenCodeConfig, resolveOpencodeConfigDirRelative } from './confi
 import { writeAgentEnvFile } from '../../agent-env-file'
 import { syncEgressShim } from '../../egress-shim'
 import { invalidateRuntimeState } from './runtime-state-projection'
+import { noteOpencodeStopRequested } from './instance-guard'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { llmProxyBaseUrl, setLlmProxyToken } from '../../llm-proxy'
 import { logger } from '../../logger'
@@ -326,7 +327,7 @@ export function createOpenCodeControlService(
           // the session-open path (env-sync) — on a resume that is BEFORE the
           // runtime is ready — and a pass that finds a stale pin installs the
           // new OpenCode and restarts it underneath the boot in progress
-          // (Essentia 2026-08-25 17:23: install at +9 s, spawn at +13 s, the
+          // (2026-08-25 17:23: install at +9 s, spawn at +13 s, the
           // API's start budget expired on both boxes). main.ts schedules the
           // post-boot pass itself once `opencode-ready` is marked; this call is
           // for a box that is already up.
@@ -369,6 +370,7 @@ export function createOpenCodeControlService(
 
           const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
           const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/abort?directory=${encodeURIComponent(workspace)}`
+          noteOpencodeStopRequested(sessionId, 'kortix-abort')
           try {
             // CodeQL js/file-access-to-http (alert 6375) flags `url` here because
             // `sessionId` comes from the pin FILE. Nothing leaves the sandbox:

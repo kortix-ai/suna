@@ -81,6 +81,7 @@ import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { createCorsMiddleware } from './middleware/cors';
 import { compressResponse } from './middleware/compress';
 import { upstreamTiming } from './middleware/upstream-timing';
+import { installFetchTiming } from './lib/server-timing';
 import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
 import { oauthApp } from './oauth';
 import { oauthAuthorizationServerMetadata } from './oauth/discovery';
@@ -95,7 +96,7 @@ import {
   stopProjectTriggerScheduler,
 } from './projects';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
-import { GitOperationError, isGitOperationError } from './projects/git/mirror';
+import { GitOperationError, isGitOperationError, isTransientGitMirrorError } from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import {
   startProviderTransitionWorker,
@@ -116,6 +117,8 @@ import { scimRouter } from './scim';
 import { setupApp } from './setup';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { auditApiRequest, shutdownAuditEvents } from './shared/audit';
+import { runInboundAudit } from './shared/audit-edge';
+import { annotateAuditEvent, setInboundAuditEntrypoint } from './shared/audit-scope';
 import {
   startAuditReconciliationWorker,
   stopAuditReconciliationWorker,
@@ -159,6 +162,8 @@ import {
   tunnelApp,
   wsHandlers as tunnelWsHandlers,
 } from './tunnel';
+import { isUuid } from './shared/validate';
+import { readJsonObject } from './shared/http-body';
 
 /**
  * The streaming secret relay routes, matched on the raw pathname in
@@ -223,7 +228,6 @@ process.on('uncaughtException', (err: Error) => {
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
 const app = new OpenAPIHono();
-const UUID_PATH_SEGMENT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
@@ -284,39 +288,45 @@ app.use(
 // (auth, route handlers, console.error calls) automatically gets context fields
 // (requestId, userId, accountId, sandboxId) attached to every log.
 app.use('*', async (c, next) => {
-  await runWithContext(
-    c.req.method,
-    c.req.path,
-    async () => {
-      // Auto-extract common resource IDs from URL patterns for logs/traces.
-      const path = c.req.path;
-      const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
-      if (projectSessionMatch && UUID_PATH_SEGMENT_RE.test(projectSessionMatch[1])) {
-        setContextField('projectId', projectSessionMatch[1]);
-        setContextField('sessionId', projectSessionMatch[2]);
-      } else {
-        const projectMatch = path.match(/\/projects\/([^/]+)/);
-        if (projectMatch && UUID_PATH_SEGMENT_RE.test(projectMatch[1])) {
-          setContextField('projectId', projectMatch[1]);
-        }
+  const withRequestFields = async () => {
+    // Auto-extract common resource IDs from URL patterns for logs/traces.
+    const path = c.req.path;
+    const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
+    if (projectSessionMatch && isUuid(projectSessionMatch[1])) {
+      setContextField('projectId', projectSessionMatch[1]);
+      setContextField('sessionId', projectSessionMatch[2]);
+    } else {
+      const projectMatch = path.match(/\/projects\/([^/]+)/);
+      if (projectMatch && isUuid(projectMatch[1])) {
+        setContextField('projectId', projectMatch[1]);
       }
-      const sbMatch = path.match(/\/sandbox(?:es)?\/([^/]+)/) || path.match(/\/p\/([^/]+)/);
-      if (sbMatch) setContextField('sandboxId', sbMatch[1]);
-      await next();
-      const ctx = getRequestContext();
-      if (ctx) {
-        c.header('X-Request-Id', ctx.requestId);
-        c.header('traceparent', ctx.traceparent);
-      }
-    },
-    c.req.header('traceparent'),
-  );
+    }
+    const sbMatch = path.match(/\/sandbox(?:es)?\/([^/]+)/) || path.match(/\/p\/([^/]+)/);
+    if (sbMatch) setContextField('sandboxId', sbMatch[1]);
+    await next();
+    const ctx = getRequestContext();
+    if (ctx) {
+      c.header('X-Request-Id', ctx.requestId);
+      c.header('traceparent', ctx.traceparent);
+    }
+  };
+  // The server edge (shared/audit-edge.ts) already opened this request's
+  // context and its audit scope. Reuse it: a second runWithContext would give
+  // the handler a fresh store, and every principal it bound would miss the
+  // edge's scope. A test driving `app` directly has no edge, so open one here.
+  if (getRequestContext()) {
+    await withRequestFields();
+    return;
+  }
+  await runWithContext(c.req.method, c.req.path, withRequestFields, c.req.header('traceparent'));
 });
 
 // Per-request cost attribution (`Server-Timing: up;dur=…, api;dur=…`). Mounted
 // INSIDE the request-context middleware above, because it reads the
 // AsyncLocalStorage scope that one creates. See middleware/upstream-timing.ts.
 app.use('*', upstreamTiming);
+// Outbound HTTP made inside a request is attributed as `gotrue` or `http`.
+installFetchTiming(config.SUPABASE_URL);
 
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
 app.use('*', logger());
@@ -445,7 +455,9 @@ if (config.INTERNAL_KORTIX_ENV === 'dev') {
   app.use('*', prettyJSON());
 }
 
-app.use('/v1/*', auditApiRequest);
+// Every route, not just /v1: `/scim/v2` provisions users and changes group
+// membership, and was never request-audited. See shared/audit-scope.ts.
+app.use('*', auditApiRequest);
 
 // Wall-clock deadline for non-streaming requests — returns 503 before the 30s
 // client abort instead of hanging. Streaming/proxy/WS surfaces are exempted
@@ -754,7 +766,7 @@ app.openapi(
       return c.json({ error: 'Admin access required' }, 403);
     }
     if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const maintenanceConfig = {
       ...DEFAULT_MAINTENANCE,
       ...body,
@@ -1038,9 +1050,10 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 
 // Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
 // session title + sanitized transcript for a valid session public-share
-// (any resource type SESS-13's CRUD creates); backs the logged-out
-// `/share/[shareId]` viewer (apps/web). No auth, no client-side sandbox
-// access — the API reads the sandbox's OpenCode daemon server-side.
+// (any resource type SESS-13's CRUD creates); exposed through the SDK's
+// `getPublicSessionShare` / `getPublicSessionShareMessages`. The web app has
+// no page for it. No auth, no client-side sandbox access — the API reads the
+// sandbox's OpenCode daemon server-side.
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
@@ -1147,24 +1160,31 @@ app.onError((err, c) => {
     );
   }
 
-  // A bare-clone / fetch of a project's git mirror that exceeds its timeout
-  // (SIGTERM mid-transfer, large repo, transient network) is EXPECTED and
-  // retryable — the mirror already retries once internally before surfacing.
-  // Previously these surfaced as the opaque Better Stack pattern `8d0cffbb…`
-  // ("Cloning into bare repository '/tmp/kortix/git-cache/….git'…" — git's
-  // progress line captured on stderr before the kill, masking the real cause).
-  // `runGit` now throws a typed `GitOperationError` (kind 'timeout') whose
-  // message names the timeout; classify the transient kind into a retryable
+  // A bare-clone / fetch of a project's git mirror that fails for a TRANSIENT,
+  // upstream reason is EXPECTED and retryable — the mirror already retries a
+  // bounded number of times internally before surfacing. Two shapes:
+  //   * `kind: 'timeout'` (SIGTERM mid-transfer, large repo, transient network)
+  //     — previously surfaced as the opaque Better Stack pattern `8d0cffbb…`
+  //     ("Cloning into bare repository '/tmp/kortix/git-cache/….git'…" — git's
+  //     progress line captured on stderr before the kill, masking the cause).
+  //   * `kind: 'failed'` whose message is a transient upstream failure — the
+  //     network/DNS/socket class, GitHub's 5xx, and GitHub's ambiguous
+  //     `fatal: repository '<url>' not found` for a PRIVATE mirror whose
+  //     credential is momentarily unusable (incident
+  //     `incident-20260923T100537Z-hbcr`: KX-HOURLY `sessions new` hard-failed
+  //     with an unhandled 500 on exactly this, while the git proxy served the
+  //     same repo 200 seconds before and after).
+  // Both are classified by `isTransientGitMirrorError` into a retryable
   // 503 + Retry-After WITHOUT paging Sentry (mirroring Platinum /
-  // request-deadline), while a real `failed` kind (auth / missing repo) still
-  // falls through to Sentry with a meaningful `fatal:` message. See
-  // projects/git/mirror.ts.
-  if (isGitOperationError(err) && err.kind === 'timeout') {
-    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:timeout] ${err.message}`, {
+  // request-deadline). A PERMANENT failure (bad ref, real auth denial, corrupt
+  // local repo) still falls through to Sentry with a meaningful `fatal:`
+  // message. See projects/git/mirror.ts.
+  if (isTransientGitMirrorError(err)) {
+    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:${err.kind}] ${err.message}`, {
       method,
       path,
       errorType: 'GitOperationError',
-      gitKind: 'timeout',
+      gitKind: err.kind,
       gitArgs: err.gitArgs,
       signal: err.signal,
     });
@@ -1685,6 +1705,213 @@ import {
   previewWsHandlers,
 } from './sandbox-proxy/ws-proxy';
 
+/**
+ * Route one inbound request. Everything here runs inside the audit boundary
+ * (`runInboundAudit`, called from `fetch` below): each branch that answers
+ * outside Hono names its entrypoint class so its row says what it was.
+ * `unit-audit-boundary-wiring.test.ts` fails if a branch escapes it.
+ */
+async function dispatchInbound(
+  req: Request,
+  url: URL,
+  server: any,
+): Promise<Response | undefined> {
+  const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket';
+
+  // Sandbox preview traffic includes OpenCode long-poll and SSE routes. Let
+  // the proxy's own upstream timeout decide instead of Bun closing the client
+  // socket early with an empty reply.
+  if (url.pathname.includes('/v1/p/')) {
+    server.timeout(req, 0);
+  }
+
+  // The secret streaming relay carries SSE and long-lived upstream bodies.
+  // Without this Bun cuts the socket with an empty reply that the LB turns
+  // into a 502 with no CORS headers — the same shape as the gateway
+  // idleTimeout incident. The global `idleTimeout: 0` above is necessary but
+  // not sufficient: `server.timeout(req, …)` is the PER-REQUEST budget.
+  if (SECRET_RELAY_PATH.test(url.pathname)) {
+    server.timeout(req, 0);
+  }
+
+  // The standalone-gateway reverse proxy streams chat completions (SSE). Let
+  // the gateway's own keep-alive / upstream timeout govern it instead of Bun
+  // closing the client socket at idleTimeout with an empty reply.
+  // Covers BOTH the internal `/v1/llm-gateway` prefix used by cloud sandboxes
+  // and `/v1/llm`, the documented public path — which was unguarded.
+  if (url.pathname.startsWith('/v1/llm')) {
+    server.timeout(req, 0);
+  }
+
+  // ── Subdomain preview routing ──────────────────────────────────────
+  // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
+  // Same per-request long-poll/SSE timeout posture as /v1/p/.
+  if (resolveAppRequest(req, url)) {
+    server.timeout(req, 0);
+    if (isWsUpgrade) {
+      setInboundAuditEntrypoint('app_origin', 'app_origin:websocket');
+      const prepared = await prepareAppWsUpgrade(req, url);
+      if (!prepared.ok) {
+        return new Response(JSON.stringify({ error: prepared.message }), {
+          status: prepared.status,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const upgraded = server.upgrade(req, { data: prepared.data });
+      if (upgraded) return undefined;
+      return new Response(JSON.stringify({ error: 'App WebSocket upgrade failed' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    const appResponse = await handleAppPublicRequest(req);
+    if (appResponse) {
+      setInboundAuditEntrypoint('app_origin', 'app_origin');
+      return appResponse;
+    }
+  }
+  if (isPreviewHost(req, url)) {
+    server.timeout(req, 0);
+    // An app on its own origin opens `new WebSocket('/hmr')` — dev-server
+    // hot reload, live preview, anything socket-driven. The handshake is an
+    // ordinary HTTP request, so it carries the preview cookie and needs no
+    // token in the URL.
+    if (isWsUpgrade) {
+      setInboundAuditEntrypoint('preview_origin', 'preview_origin:websocket');
+      const prepared = await preparePreviewHostWsUpgrade(req, url);
+      if (!prepared.ok) {
+        return new Response(JSON.stringify({ error: prepared.message }), {
+          status: prepared.status,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (server.upgrade(req, { data: prepared.data })) return undefined;
+      return new Response(JSON.stringify({ error: 'Preview WebSocket upgrade failed' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    const res = await handlePreviewOriginRequest(req, url);
+    if (res) {
+      setInboundAuditEntrypoint('preview_origin', 'preview_origin');
+      return res;
+    }
+  }
+
+  // ── Tunnel Agent WebSocket ──────────────────────────────────────────
+  // Agent connects, then authenticates via first message (auth handshake).
+  // Token is never sent in URL — only tunnelId is in the query string.
+  if (isWsUpgrade && url.pathname === '/v1/tunnel/ws') {
+    setInboundAuditEntrypoint('ws_upgrade', 'ws:/v1/tunnel/ws');
+    if (!schemaReady) {
+      return new Response(JSON.stringify({ error: 'Service starting up, try again shortly' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
+      });
+    }
+
+    const tunnelId = url.searchParams.get('tunnelId');
+
+    if (!isUuid(tunnelId)) {
+      return new Response(JSON.stringify({ error: 'A valid tunnelId is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Agent Tunnel is a native CLI protocol. Browsers always send Origin on
+    // WebSocket upgrades; rejecting it prevents cross-site WebSocket use if
+    // a machine bearer is ever exposed to browser-accessible state.
+    if (req.headers.has('origin')) {
+      return new Response(
+        JSON.stringify({
+          error: 'Browser tunnel WebSockets are not allowed',
+        }),
+        {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
+    // Include the source address so an unauthenticated attacker who learns a
+    // tunnelId cannot consume the real machine's reconnect budget.
+    const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
+    const { clientKeyFromHeaders } = await import('./shared/client-ip');
+    const clientIp = clientKeyFromHeaders((name) => req.headers.get(name));
+    const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
+    if (!wsIpRateCheck.allowed) {
+      return new Response(
+        JSON.stringify({
+          error: 'Too many connection attempts',
+          retryAfterMs: wsIpRateCheck.retryAfterMs,
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    const wsRateCheck = tunnelRateLimiter.check('wsConnect', `${clientIp}:${tunnelId}`);
+    if (!wsRateCheck.allowed) {
+      return new Response(
+        JSON.stringify({
+          error: 'Too many connection attempts',
+          retryAfterMs: wsRateCheck.retryAfterMs,
+        }),
+        {
+          status: 429,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
+    // The upgrade carries only the tunnel id; the machine's token arrives in
+
+    // its first message and is audited by the tunnel's own authenticator.
+
+    annotateAuditEvent({ resourceType: 'tunnel', resourceId: tunnelId });
+
+    const success = server.upgrade(req, {
+      data: {
+        type: 'tunnel-agent',
+        tunnelId,
+      },
+    });
+    if (success) return undefined;
+  }
+
+  // ── Preview WebSocket proxy ─────────────────────────────────────────
+  // Path-based preview upgrades (`/v1/p/{sandboxId}/{port}/...`) — today the
+  // xterm PTY terminal. Authenticate via the `?token=` query param (browsers
+  // can't set WS headers), resolve the sandbox upstream, then upgrade and
+  // pipe bytes. See sandbox-proxy/ws-proxy.ts.
+  if (isWsUpgrade && matchPreviewWsPath(url.pathname)) {
+    setInboundAuditEntrypoint('ws_upgrade', 'ws:/v1/p/:sandboxId/:port/*');
+    if (!schemaReady) {
+      return new Response(JSON.stringify({ error: 'Service starting up, try again shortly' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
+      });
+    }
+    const prep = await preparePreviewWsUpgrade(url);
+    if (!prep.ok) {
+      console.warn(
+        `[preview-ws] REFUSED ${prep.status} ${prep.message} path=${url.pathname} hasToken=${url.searchParams.has('token')}`,
+      );
+      return new Response(JSON.stringify({ error: prep.message }), {
+        status: prep.status,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    const success = server.upgrade(req, { data: prep.data });
+    if (success) return undefined;
+    return new Response(JSON.stringify({ error: 'WebSocket upgrade failed' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  return app.fetch(req, server);
+}
+
 export default {
   port: config.PORT,
 
@@ -1715,190 +1942,7 @@ export default {
     // BS pattern 28e9a65c… (scanner noise, 0 users, first seen 2026-04-27).
     req = ensureAbsoluteRequestUrl(req, config.PORT);
     const url = getRequestUrl(req, config.PORT);
-    const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket';
-
-    // Sandbox preview traffic includes OpenCode long-poll and SSE routes. Let
-    // the proxy's own upstream timeout decide instead of Bun closing the client
-    // socket early with an empty reply.
-    if (url.pathname.includes('/v1/p/')) {
-      server.timeout(req, 0);
-    }
-
-    // The secret streaming relay carries SSE and long-lived upstream bodies.
-    // Without this Bun cuts the socket with an empty reply that the LB turns
-    // into a 502 with no CORS headers — the same shape as the gateway
-    // idleTimeout incident. The global `idleTimeout: 0` above is necessary but
-    // not sufficient: `server.timeout(req, …)` is the PER-REQUEST budget.
-    if (SECRET_RELAY_PATH.test(url.pathname)) {
-      server.timeout(req, 0);
-    }
-
-    // The standalone-gateway reverse proxy streams chat completions (SSE). Let
-    // the gateway's own keep-alive / upstream timeout govern it instead of Bun
-    // closing the client socket at idleTimeout with an empty reply.
-    // Covers BOTH the internal `/v1/llm-gateway` prefix used by cloud sandboxes
-    // and `/v1/llm`, the documented public path — which was unguarded.
-    if (url.pathname.startsWith('/v1/llm')) {
-      server.timeout(req, 0);
-    }
-
-    // ── Subdomain preview routing ──────────────────────────────────────
-    // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
-    // Same per-request long-poll/SSE timeout posture as /v1/p/.
-    if (resolveAppRequest(req, url)) {
-      server.timeout(req, 0);
-      if (isWsUpgrade) {
-        const prepared = await prepareAppWsUpgrade(req, url);
-        if (!prepared.ok) {
-          return new Response(JSON.stringify({ error: prepared.message }), {
-            status: prepared.status,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        const upgraded = server.upgrade(req, { data: prepared.data });
-        if (upgraded) return undefined;
-        return new Response(JSON.stringify({ error: 'App WebSocket upgrade failed' }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      const appResponse = await handleAppPublicRequest(req);
-      if (appResponse) return appResponse;
-    }
-    if (isPreviewHost(req, url)) {
-      server.timeout(req, 0);
-      // An app on its own origin opens `new WebSocket('/hmr')` — dev-server
-      // hot reload, live preview, anything socket-driven. The handshake is an
-      // ordinary HTTP request, so it carries the preview cookie and needs no
-      // token in the URL.
-      if (isWsUpgrade) {
-        const prepared = await preparePreviewHostWsUpgrade(req, url);
-        if (!prepared.ok) {
-          return new Response(JSON.stringify({ error: prepared.message }), {
-            status: prepared.status,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        if (server.upgrade(req, { data: prepared.data })) return undefined;
-        return new Response(JSON.stringify({ error: 'Preview WebSocket upgrade failed' }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      const res = await handlePreviewOriginRequest(req, url);
-      if (res) return res;
-    }
-
-    // ── Tunnel Agent WebSocket ──────────────────────────────────────────
-    // Agent connects, then authenticates via first message (auth handshake).
-    // Token is never sent in URL — only tunnelId is in the query string.
-    if (isWsUpgrade && url.pathname === '/v1/tunnel/ws') {
-      if (!schemaReady) {
-        return new Response(JSON.stringify({ error: 'Service starting up, try again shortly' }), {
-          status: 503,
-          headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
-        });
-      }
-
-      const tunnelId = url.searchParams.get('tunnelId');
-
-      if (
-        !tunnelId ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tunnelId)
-      ) {
-        return new Response(JSON.stringify({ error: 'A valid tunnelId is required' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-
-      // Agent Tunnel is a native CLI protocol. Browsers always send Origin on
-      // WebSocket upgrades; rejecting it prevents cross-site WebSocket use if
-      // a machine bearer is ever exposed to browser-accessible state.
-      if (req.headers.has('origin')) {
-        return new Response(
-          JSON.stringify({
-            error: 'Browser tunnel WebSockets are not allowed',
-          }),
-          {
-            status: 403,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        );
-      }
-
-      // Include the source address so an unauthenticated attacker who learns a
-      // tunnelId cannot consume the real machine's reconnect budget.
-      const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-      const clientIp =
-        req.headers.get('cf-connecting-ip')?.trim() ||
-        req.headers.get('x-real-ip')?.trim() ||
-        req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-        'unknown';
-      const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
-      if (!wsIpRateCheck.allowed) {
-        return new Response(
-          JSON.stringify({
-            error: 'Too many connection attempts',
-            retryAfterMs: wsIpRateCheck.retryAfterMs,
-          }),
-          { status: 429, headers: { 'Content-Type': 'application/json' } },
-        );
-      }
-      const wsRateCheck = tunnelRateLimiter.check('wsConnect', `${clientIp}:${tunnelId}`);
-      if (!wsRateCheck.allowed) {
-        return new Response(
-          JSON.stringify({
-            error: 'Too many connection attempts',
-            retryAfterMs: wsRateCheck.retryAfterMs,
-          }),
-          {
-            status: 429,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        );
-      }
-
-      const success = server.upgrade(req, {
-        data: {
-          type: 'tunnel-agent',
-          tunnelId,
-        },
-      });
-      if (success) return undefined;
-    }
-
-    // ── Preview WebSocket proxy ─────────────────────────────────────────
-    // Path-based preview upgrades (`/v1/p/{sandboxId}/{port}/...`) — today the
-    // xterm PTY terminal. Authenticate via the `?token=` query param (browsers
-    // can't set WS headers), resolve the sandbox upstream, then upgrade and
-    // pipe bytes. See sandbox-proxy/ws-proxy.ts.
-    if (isWsUpgrade && matchPreviewWsPath(url.pathname)) {
-      if (!schemaReady) {
-        return new Response(JSON.stringify({ error: 'Service starting up, try again shortly' }), {
-          status: 503,
-          headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
-        });
-      }
-      const prep = await preparePreviewWsUpgrade(url);
-      if (!prep.ok) {
-        console.warn(
-          `[preview-ws] REFUSED ${prep.status} ${prep.message} path=${url.pathname} hasToken=${url.searchParams.has('token')}`,
-        );
-        return new Response(JSON.stringify({ error: prep.message }), {
-          status: prep.status,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      const success = server.upgrade(req, { data: prep.data });
-      if (success) return undefined;
-      return new Response(JSON.stringify({ error: 'WebSocket upgrade failed' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    return app.fetch(req, server);
+    return runInboundAudit(req, url, () => dispatchInbound(req, url, server));
   },
 
   websocket: {

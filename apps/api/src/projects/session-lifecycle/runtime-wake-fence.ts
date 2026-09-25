@@ -172,7 +172,7 @@ export function runtimeWakeInProgress(
  * Stamped runtime-start failures: a COOLDOWN, never a gravestone.
  * ───────────────────────────────────────────────────────────────────────────
  *
- * Incident 2026-08-26 (Essentia): session e06ad0c4 answered `/start` with
+ * Incident 2026-08-26 (SampleCo): session e06ad0c4 answered `/start` with
  * `stage:'failed'` in 47ms — no provider call — because a wake that ran out of
  * its FIXED 240s budget had stamped `stopReason:'runtime_wake_failed'` on the
  * row. Session 9c8749ac replayed the same dead end for 10+ hours from a

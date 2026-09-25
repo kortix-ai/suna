@@ -9,6 +9,16 @@ would be dynamically imported and crash the runner.
 Nothing here is in `kortix_migrations.pgmigrations`. `pnpm migrate:status` will
 never list them. `pnpm --filter @kortix/db lint` does not scan this directory.
 
+## PARKED — `drop_public_wallet_wrappers.sql.pending`
+
+`20260925013304428_wallet_private_schema` moved the credit functions into the
+private `kortix_wallet` schema and left `public.atomic_add_credits`,
+`atomic_use_credits`, `atomic_settle_credits` and `atomic_reset_expiring_credits`
+as wrappers, so API images built before it keep working during the rollout.
+The file's header lists the two preconditions for dropping them and the tests
+to update in the same PR. Earliest: the release after the one that ships
+`20260925013304428`.
+
 ---
 
 ## APPLIED — the cutover shipped
@@ -90,8 +100,18 @@ DROP VIEW kortix.account_group_members;
 ```
 
 That migration is NOT written yet, deliberately: it cannot land before the code
-change that stops naming those relations, and that code change is the drizzle
-symbol rename (`iamRoles` -> `roles`, `iamRoleActions` -> `rolePermissions`,
+change that stops naming those relations.
+
+Progress (2026-09-25, `refactor/wallet-storage-and-schema-contract`):
+`kortix.ts` now declares `iamRoles` / `iamRoleActions` / `accountGroupMembers`
+on the physical tables (`roles`, `role_permissions`, `group_members`), so
+Drizzle reads and writes no longer pass through those three views; raw SQL in
+`apps/api/src/iam/account-identity.ts`, `apps/api/src/repositories/iam.ts` and
+`apps/api/scripts/rbac-cutover-audit.ts` still names them. The five
+INSTEAD OF views are declared as views (read-only in Drizzle); only test
+fixtures write through them, via `apps/api/src/__tests__/helpers/compat-views.ts`.
+
+What remains is the drizzle symbol rename (`iamRoles` -> `roles`, `iamRoleActions` -> `rolePermissions`,
 `accountGroupMembers` -> `groupMembers`, and the removal of `projectMembers` /
 `projectGroupGrants` / `iamPolicies` / `iamResourceGrants` / `accountMembers`) —
 576 occurrences across `apps/` and `packages/`, a purely mechanical change with

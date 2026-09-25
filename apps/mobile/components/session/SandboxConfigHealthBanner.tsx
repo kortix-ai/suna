@@ -10,20 +10,25 @@
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Animated, Easing, Platform, Pressable, View } from 'react-native';
+import { Animated, Easing, Pressable, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
-import { CheckCircle2, Copy, Loader, ShieldAlert, SquarePen } from 'lucide-react-native';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { CheckCircleIcon as CheckCircle2, CopyIcon as Copy, ShieldWarningIcon as ShieldAlert, NotePencilIcon as SquarePen } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { useToast } from '@/components/ui/toast-provider';
+import { useToast } from '@/components/kortix/toast-provider';
 import { useSandboxConfigStatus } from '@/hooks/useSandboxConfigStatus';
+import { useThemeColors } from '@/lib/theme-colors';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 export function SandboxConfigHealthBanner() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const toast = useToast();
+  const theme = useThemeColors();
 
   const {
     hasProblem,
@@ -36,7 +41,6 @@ export function SandboxConfigHealthBanner() {
   } = useSandboxConfigStatus();
 
   const pingAnim = useRef(new Animated.Value(0)).current;
-  const spinAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!hasProblem) return;
@@ -51,24 +55,6 @@ export function SandboxConfigHealthBanner() {
     loop.start();
     return () => loop.stop();
   }, [hasProblem, pingAnim]);
-
-  useEffect(() => {
-    if (!isStartingFix) {
-      spinAnim.stopAnimation();
-      spinAnim.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.timing(spinAnim, {
-        toValue: 1,
-        duration: 900,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [isStartingFix, spinAnim]);
 
   const handleFix = useCallback(async () => {
     try {
@@ -95,21 +81,20 @@ export function SandboxConfigHealthBanner() {
 
   // Tokens mirror the web: amber border/18, sidebar-accent/45 background,
   // emerald pill, foreground-on-background primary button.
-  const amber = '#F59E0B';
-  const amberSoft = 'rgba(245,158,11,0.8)';
-  const borderColor = isDark ? 'rgba(245,158,11,0.22)' : 'rgba(245,158,11,0.28)';
-  const cardBg = isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.025)';
-  const emeraldBorder = isDark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.3)';
-  const emeraldBg = isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.1)';
-  const emeraldFg = isDark ? '#34D399' : '#059669';
-  const primaryBg = isDark ? '#F8F8F8' : '#121215';
-  const primaryFg = isDark ? '#121215' : '#F8F8F8';
-  const outlineBg = isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.03)';
-  const outlineBorder = isDark ? 'rgba(248,248,248,0.12)' : 'rgba(18,18,21,0.12)';
+  const amber = THEME.accent.orange;
+  const amberSoft = withAlpha(THEME.accent.orange, 0.8);
+  const borderColor = isDark ? withAlpha(THEME.accent.orange, 0.22) : withAlpha(THEME.accent.orange, 0.28);
+  const cardBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.025);
+  const emeraldBorder = isDark ? withAlpha(THEME.accent.green, 0.25) : withAlpha(THEME.accent.green, 0.3);
+  const emeraldBg = isDark ? withAlpha(THEME.accent.green, 0.12) : withAlpha(THEME.accent.green, 0.1);
+  const emeraldFg = THEME.accent.green;
+  const primaryBg = theme.primary;
+  const primaryFg = theme.primaryForeground;
+  const outlineBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03);
+  const outlineBorder = isDark ? withAlpha(THEME.dark.foreground, 0.12) : withAlpha(THEME.light.foreground, 0.12);
 
   const pingScale = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 2.2] });
   const pingOpacity = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] });
-  const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   const taskTargetLabel = configFixProject
     ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})`
@@ -129,7 +114,7 @@ export function SandboxConfigHealthBanner() {
       <View className="flex-row items-start" style={{ gap: 10 }}>
         {/* Shield + pulsing dot */}
         <View style={{ marginTop: 2, width: 18, height: 18, position: 'relative' }}>
-          <Icon as={ShieldAlert} size={16} color={amberSoft} strokeWidth={2} />
+          <Icon as={ShieldAlert} size={16} color={amberSoft} />
           <View
             style={{
               position: 'absolute',
@@ -180,7 +165,7 @@ export function SandboxConfigHealthBanner() {
                 gap: 3,
               }}
             >
-              <Icon as={CheckCircle2} size={10} color={emeraldFg} strokeWidth={2.5} />
+              <Icon as={CheckCircle2} size={10} color={emeraldFg} />
               <Text
                 className="font-roobert-medium"
                 style={{ color: emeraldFg, fontSize: 10 }}
@@ -203,7 +188,7 @@ export function SandboxConfigHealthBanner() {
               numberOfLines={1}
               style={{
                 fontSize: 10,
-                fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+                fontFamily: MONO_FONT_FAMILY,
               }}
             >
               {primaryProblem.source}
@@ -225,11 +210,10 @@ export function SandboxConfigHealthBanner() {
               }}
             >
               {isStartingFix ? (
-                <Animated.View style={{ transform: [{ rotate: spin }] }}>
-                  <Icon as={Loader} size={12} color={primaryFg} strokeWidth={2.5} />
-                </Animated.View>
+                // The button fill inverts the theme, so the loader does too.
+                <KortixLoader customSize={12} forceTheme={isDark ? 'light' : 'dark'} />
               ) : (
-                <Icon as={SquarePen} size={12} color={primaryFg} strokeWidth={2.5} />
+                <Icon as={SquarePen} size={12} color={primaryFg} />
               )}
               <Text
                 className="font-roobert-semibold"
@@ -251,7 +235,7 @@ export function SandboxConfigHealthBanner() {
                 gap: 6,
               }}
             >
-              <Icon as={Copy} size={12} className="text-foreground" strokeWidth={2.2} />
+              <Icon as={Copy} size={12} className="text-foreground" />
               <Text className="font-roobert-medium text-foreground" style={{ fontSize: 12 }}>
                 Prompt
               </Text>

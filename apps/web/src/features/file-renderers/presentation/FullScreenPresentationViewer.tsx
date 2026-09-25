@@ -6,10 +6,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { useDownloadRestriction } from '@/hooks/billing';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useTranslations } from '@/i18n/use-translations';
-import { PRESENTATION_WITH_MODALS_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import {
@@ -431,6 +431,9 @@ export function FullScreenPresentationViewer({
         const slideUrl = constructHtmlPreviewUrl(slide.file_path, subdomainOpts);
         // Add cache-busting to iframe src to ensure fresh content
         const slideUrlWithCacheBust = `${slideUrl}?t=${refreshTimestamp}`;
+        const frameSrc = showEditor
+          ? `${sandboxUrl}/api/html/${slide.file_path}/editor`
+          : slideUrlWithCacheBust;
 
         return (
           <div className="flex h-full w-full items-center justify-center bg-transparent">
@@ -448,17 +451,15 @@ export function FullScreenPresentationViewer({
             >
               <iframe
                 key={`slide-${slide.number}-${refreshTimestamp}-${showEditor}`} // Key with stable timestamp ensures iframe refreshes when metadata changes
-                src={
-                  showEditor
-                    ? `${sandboxUrl}/api/html/${slide.file_path}/editor`
-                    : slideUrlWithCacheBust
-                }
+                src={frameSrc}
                 title={tI18nComplete('text871475cb411c', {
                   value0: slide.number,
                   value1: slide.title,
                 })}
                 className="rounded-xl border-0"
-                sandbox={PRESENTATION_WITH_MODALS_IFRAME_SANDBOX}
+                // Agent-written slides keep same-origin only on a preview origin
+                // of their own, never on this app's or the API's origin.
+                sandbox={framePolicy('slide', frameSrc).sandbox}
                 style={{
                   width: '1920px',
                   height: '1080px',
@@ -500,7 +501,10 @@ export function FullScreenPresentationViewer({
     <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm">
       {/* Top Controls Bar */}
       <div className="shrink-0 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="flex items-center justify-between p-4">
+        <div
+          className="kx-titlebar-row flex items-center justify-between p-4"
+          data-sidebar-collapsed=""
+        >
           <div className="flex items-center gap-3">
             <div className="relative shrink-0 rounded-2xl border border-zinc-300 bg-zinc-200/60 p-2 dark:border-zinc-700 dark:bg-zinc-900">
               <Presentation className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />

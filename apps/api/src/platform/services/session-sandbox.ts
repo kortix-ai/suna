@@ -12,12 +12,16 @@
  * path in sandbox-cloud.ts.
  */
 
-import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 import { db } from '../../shared/db';
-import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
+import {
+  patchedSandboxMetadata,
+  transitionSandbox,
+  transitionSession,
+} from '../../projects/session-lifecycle/status-transitions';
 import { nextFailoverProvider } from '../../projects/lib/provider-precedence';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { createAccountToken } from '../../repositories/account-tokens';
@@ -39,6 +43,7 @@ import {
   buildSandboxInitSuccessMetadata,
   retrySandboxProvisionCreate,
   SANDBOX_INIT_MAX_ATTEMPTS,
+  sandboxInitMetadataPatch,
 } from './sandbox-init-state';
 import {
   ensureSandboxImage,
@@ -47,6 +52,7 @@ import {
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
   type EnsureSandboxImageResult,
+  type SandboxImageSpec,
 } from '../../snapshots/builder';
 import { config } from '../../config';
 import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
@@ -66,6 +72,8 @@ import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
+import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
+import { agentPrincipalModeFor } from '../../iam/agent-principal';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
 import {
   type PreparedInitialSandboxTurn,
@@ -88,6 +96,26 @@ const BEFORE_ACTIVE_HOOK_TIMEOUT_MS = configuredTimeoutMs(
 // Mirrors the platform default sandbox size (2 vCPU / 4 GB / 20 GB).
 const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 
+/**
+ * The spec compute metering bills a session at.
+ *
+ * The image that booted is the authority: the provider allocates the box from
+ * the size that image was built with. Meta and pi-worker images are built at
+ * 1 vCPU / 2 GB / 8 GB and have no project template, so a template lookup for
+ * them always failed and billed the 2 / 4 / 20 fallback instead.
+ */
+export function computeMeteringSpec(
+  imageSpec: SandboxImageSpec | null | undefined,
+  templateSpec: Partial<SandboxImageSpec> | null,
+): typeof DEFAULT_METERING_SPEC {
+  const source = imageSpec ?? templateSpec;
+  const spec = { ...DEFAULT_METERING_SPEC };
+  if (source?.cpu !== undefined) spec.cpuCores = source.cpu;
+  if (source?.memoryGb !== undefined) spec.memoryGb = source.memoryGb;
+  if (source?.diskGb !== undefined) spec.diskGb = source.diskGb;
+  return spec;
+}
+
 async function openComputeSessionForSandbox(
   sandboxId: string,
   accountId: string,
@@ -95,17 +123,19 @@ async function openComputeSessionForSandbox(
   userId: string | null | undefined,
   sandboxSlug: string | undefined,
   provider: ProviderName,
+  imageSpec: SandboxImageSpec | null | undefined,
 ): Promise<void> {
-  let spec = { ...DEFAULT_METERING_SPEC };
-  try {
-    const tpl = await resolveTemplate(project, sandboxSlug);
-    if (tpl.cpu !== undefined) spec.cpuCores = tpl.cpu;
-    if (tpl.memoryGb !== undefined) spec.memoryGb = tpl.memoryGb;
-    if (tpl.diskGb !== undefined) spec.diskGb = tpl.diskGb;
-  } catch {
-    // Template resolution failed (repo unreachable, parse error, etc.). Fall
-    // back to defaults so metering still records the session.
+  let templateSpec: Partial<SandboxImageSpec> | null = null;
+  if (!imageSpec) {
+    try {
+      const tpl = await resolveTemplate(project, sandboxSlug);
+      templateSpec = { cpu: tpl.cpu, memoryGb: tpl.memoryGb, diskGb: tpl.diskGb };
+    } catch {
+      // Template resolution failed (repo unreachable, parse error, etc.). Fall
+      // back to defaults so metering still records the session.
+    }
   }
+  const spec = computeMeteringSpec(imageSpec, templateSpec);
   await startComputeSession({
     sandboxId,
     accountId,
@@ -172,6 +202,20 @@ export async function mintSessionToken(opts: {
           return null;
         }),
       ]);
+  // Agents as principals (spec 2026-09-22 §2.1): with the project flag on, a
+  // governed agent authorizes AS its service account. A token without one would
+  // fall back to the launcher — for an unattended run, the account OWNER — so
+  // under the flag a missing service account stops provisioning instead.
+  const [agentPrincipal, onBehalfOfUserId] = await Promise.all([
+    agentPrincipalModeFor(opts.projectId, agentGrant),
+    resolveSessionOnBehalfOf({ accountId: opts.accountId, sessionId: opts.sandboxId, userId: opts.userId }),
+  ]);
+  if (agentPrincipal && !serviceAccountId) {
+    throw new Error(
+      `agent_principal is on for project ${opts.projectId}, but agent "${opts.agentName}" has no service account; ` +
+        'refusing to mint a session credential that would authorize as the launcher',
+    );
+  }
   const tok = await createAccountToken({
     accountId: opts.accountId,
     userId: opts.userId,
@@ -183,6 +227,7 @@ export async function mintSessionToken(opts: {
     name: `Session ${opts.sandboxId.slice(0, 8)}`,
     agentGrant,
     serviceAccountId,
+    onBehalfOfUserId,
   });
   return tok.secretKey;
 }
@@ -452,29 +497,20 @@ export async function provisionSessionSandbox(opts: {
     // identity guards and child records intentionally forbid deleting it. The
     // recovery transaction resets external_id to NULL and stamps an explicit
     // authorization marker; only that exact placeholder may be claimed here.
-    return db
-      .update(sessionSandboxes)
-      .set({
-        provider: providerName,
-        status: 'provisioning',
-        baseUrl: null,
-        config: {},
-        // Legacy recovery placeholders may still exist while this release rolls
-        // out. Consume their authorization marker atomically so at most one
-        // allocator can claim the row and call provider.create(). New code never
-        // creates this marker because established identities are fail-closed.
-        metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt') || ${JSON.stringify(instanceStampMetadata())}::jsonb`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(sessionSandboxes.sandboxId, sandboxId),
-          isNull(sessionSandboxes.externalId),
-          eq(sessionSandboxes.status, 'provisioning'),
-          sql`coalesce(${sessionSandboxes.metadata}->>'identityRecoveryAuthorizedAt', '') <> ''`,
-        ),
-      )
-      .returning();
+    // Legacy recovery placeholders may still exist while this release rolls
+    // out. Consume their authorization marker atomically so at most one
+    // allocator can claim the row and call provider.create(). New code never
+    // creates this marker because established identities are fail-closed.
+    const claimed = await transitionSandbox('reprovision', sandboxId, {
+      columns: { provider: providerName, baseUrl: null, config: {} },
+      metadata: { strip: ['identityRecoveryAuthorizedAt'], merge: instanceStampMetadata() },
+      guard: and(
+        eq(sessionSandboxes.status, 'provisioning'),
+        isNull(sessionSandboxes.externalId),
+        sql`coalesce(${sessionSandboxes.metadata}->>'identityRecoveryAuthorizedAt', '') <> ''`,
+      ),
+    });
+    return claimed ? [claimed] : [];
   };
 
   const [sandboxRows, sessionToken] = await Promise.all([
@@ -571,6 +607,7 @@ export async function provisionSessionSandbox(opts: {
       contentHash: string;
       isDefault: boolean;
       runtimeProfile?: 'standard' | 'meta' | 'pi-worker';
+      spec?: SandboxImageSpec;
     } | null = null;
     // FIX-A: the project's ACTIVATED routing pin (provider + exact template id
     // and image name), read once, best-effort — a DB hiccup yields null → name-boot. Set
@@ -630,6 +667,7 @@ export async function provisionSessionSandbox(opts: {
         contentHash: image.contentHash,
         isDefault: image.isDefault,
         runtimeProfile: image.runtimeProfile,
+        spec: image.spec,
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
       providerCreateInput.snapshot = image.snapshotName;
@@ -699,24 +737,27 @@ export async function provisionSessionSandbox(opts: {
         onAttemptStart: async (attempt, maxAttempts) => {
           lastProvisionAttempt = attempt;
           lastProvisionMaxAttempts = maxAttempts;
+          const snapshot = sandbox.metadata as Record<string, unknown> | null;
           await db
             .update(sessionSandboxes)
             .set({
-              metadata: {
-                ...buildSandboxInitAttemptMetadata(
-                  sandbox.metadata as Record<string, unknown> | null,
-                  attempt,
-                  attempt === 1 ? 'provisioning' : 'retrying',
-                  firstStage?.id,
-                  attempt === 1 ? firstStage?.message : `Retrying initialization (${attempt}/${maxAttempts})…`,
-                  maxAttempts,
-                ),
-                // S1: persist the MONOTONIC counter every attempt (cheap,
-                // idempotent write of the current value) so a mid-attempt
-                // process crash still leaves the latest value durable for
-                // restorePlatinumCreateAttempt to pick up on resume.
-                platinumCreateAttempt,
-              },
+              metadata: patchedSandboxMetadata(
+                sandboxInitMetadataPatch(snapshot, {
+                  ...buildSandboxInitAttemptMetadata(
+                    snapshot,
+                    attempt,
+                    attempt === 1 ? 'provisioning' : 'retrying',
+                    firstStage?.id,
+                    attempt === 1 ? firstStage?.message : `Retrying initialization (${attempt}/${maxAttempts})…`,
+                    maxAttempts,
+                  ),
+                  // S1: persist the MONOTONIC counter every attempt (cheap,
+                  // idempotent write of the current value) so a mid-attempt
+                  // process crash still leaves the latest value durable for
+                  // restorePlatinumCreateAttempt to pick up on resume.
+                  platinumCreateAttempt,
+                }),
+              ),
               updatedAt: new Date(),
             })
             .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
@@ -724,20 +765,13 @@ export async function provisionSessionSandbox(opts: {
         onAttemptFailure: async (attempt, error, willRetry, maxAttempts) => {
           lastProvisionAttempt = attempt;
           lastProvisionMaxAttempts = maxAttempts;
-          await db
-            .update(sessionSandboxes)
-            .set({
-              ...(willRetry ? { status: 'provisioning' as const } : { status: 'error' as const }),
-              metadata: buildSandboxInitFailureMetadata(
-                sandbox.metadata as Record<string, unknown> | null,
-                error,
-                attempt,
-                willRetry,
-                maxAttempts,
-              ),
-              updatedAt: new Date(),
-            })
-            .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+          const snapshot = sandbox.metadata as Record<string, unknown> | null;
+          await transitionSandbox(willRetry ? 'reprovision' : 'failProvisioning', sandbox.sandboxId, {
+            metadata: sandboxInitMetadataPatch(
+              snapshot,
+              buildSandboxInitFailureMetadata(snapshot, error, attempt, willRetry, maxAttempts),
+            ),
+          });
         },
       }, createFn));
       } catch (createErr) {
@@ -786,25 +820,20 @@ export async function provisionSessionSandbox(opts: {
         await provider.remove(result.externalId).catch((err) => {
           console.warn(`[session-sandbox] failed to remove deleted session sandbox ${result.externalId}:`, err);
         });
-        await db
-          .update(sessionSandboxes)
-          .set({
-            externalId: result.externalId,
-            baseUrl: result.baseUrl || null,
-            // 'archived', not 'stopped': the box is gone, so GET …/sandbox must
-            // not try to resume it — it reprovisions fresh on reopen instead.
-            status: 'archived',
-            metadata: {
-              ...((sandbox.metadata as Record<string, unknown> | null) ?? {}),
+        // 'archived', not 'stopped': the box is gone, so GET …/sandbox must
+        // not try to resume it — it reprovisions fresh on reopen instead.
+        await transitionSandbox('archive', sandbox.sandboxId, {
+          columns: { externalId: result.externalId, baseUrl: result.baseUrl || null },
+          metadata: {
+            merge: {
               initStatus: 'failed',
               initAbortedAt: new Date().toISOString(),
               lastInitError: 'Session was stopped before provider create completed',
               provisionTimeline: timeline,
               providerExternalId: result.externalId,
             },
-            updatedAt: new Date(),
-          })
-          .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+          },
+        });
         tl.mark('row-stopped-before-active');
         tl.log({ provider: providerName, attempts, stoppedBeforeActive: true });
         const stopTl = tl.summary();
@@ -825,29 +854,24 @@ export async function provisionSessionSandbox(opts: {
             err,
           );
         });
-        await db
-          .update(sessionSandboxes)
-          .set({
-            externalId: result.externalId,
-            baseUrl: result.baseUrl || null,
-            status: 'stopped',
-            metadata: {
-              ...buildSandboxInitSuccessMetadata(
-                sandbox.metadata as Record<string, unknown> | null,
-                {
-                  ...result.metadata,
-                  provisionTimeline: timeline,
-                  providerExternalId: result.externalId,
-                },
-                attempts,
-                lastProvisionMaxAttempts,
-              ),
-              stoppedDuringProvisioning: true,
-              stoppedAt: new Date().toISOString(),
-            },
-            updatedAt: new Date(),
-          })
-          .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+        const snapshot = sandbox.metadata as Record<string, unknown> | null;
+        await transitionSandbox('stop', sandbox.sandboxId, {
+          columns: { externalId: result.externalId, baseUrl: result.baseUrl || null },
+          metadata: sandboxInitMetadataPatch(snapshot, {
+            ...buildSandboxInitSuccessMetadata(
+              snapshot,
+              {
+                ...result.metadata,
+                provisionTimeline: timeline,
+                providerExternalId: result.externalId,
+              },
+              attempts,
+              lastProvisionMaxAttempts,
+            ),
+            stoppedDuringProvisioning: true,
+            stoppedAt: new Date().toISOString(),
+          }),
+        });
         tl.mark('row-stopped-during-provision');
         tl.log({ provider: providerName, attempts, stoppedDuringProvisioning: true });
         const stoppedTl = tl.summary();
@@ -892,11 +916,9 @@ export async function provisionSessionSandbox(opts: {
       // Async providers leave the row at 'provisioning' so the dashboard
       // poller can flip it to 'active' once port 8000 is reachable. Sync
       // providers (none today) would be ready immediately on create.
-      const finishUpdate: Partial<typeof sessionSandboxes.$inferInsert> = {
-        externalId: result.externalId,
-        baseUrl: result.baseUrl || null,
-        metadata: buildSandboxInitSuccessMetadata(
-          sandbox.metadata as Record<string, unknown> | null,
+      const snapshot = sandbox.metadata as Record<string, unknown> | null;
+      const finishMetadata = buildSandboxInitSuccessMetadata(
+          snapshot,
           {
             ...result.metadata,
             provisioningStage: firstStage?.id,
@@ -915,19 +937,7 @@ export async function provisionSessionSandbox(opts: {
           },
           attempts,
           lastProvisionMaxAttempts,
-        ),
-        config: { serviceKey: sessionToken, llmGatewayEnabled },
-        lastUsedAt: new Date(),
-        updatedAt: new Date(),
-      };
-      if (!provider.provisioning.async) {
-        finishUpdate.status = 'active';
-      } else {
-        // For cloud providers we still flip to active here because the legacy
-        // provider provisioning status does not gate this table; the frontend's
-        // own readiness poller validates port 8000.
-        finishUpdate.status = 'active';
-      }
+        );
 
       // Conditional finish: `deleteSession()` is the ONLY place that sets a
       // session_sandboxes row to 'archived', and it does so as soon as the
@@ -936,16 +946,20 @@ export async function provisionSessionSandbox(opts: {
       // resurrect a tombstoned row. If no row comes back, the session was
       // deleted mid-provision: remove the box we just created and stop —
       // no 'running' flip, no compute metering.
-      const [finished] = await db
-        .update(sessionSandboxes)
-        .set(finishUpdate)
-        .where(
-          and(
-            eq(sessionSandboxes.sandboxId, sandbox.sandboxId),
-            ne(sessionSandboxes.status, 'archived'),
-          ),
-        )
-        .returning();
+      //
+      // Every provider flips to 'active' here: the legacy provider
+      // provisioning status does not gate this table, and the frontend's own
+      // readiness poller validates port 8000. `activate` never leaves
+      // `archived`.
+      const finished = await transitionSandbox('activate', sandbox.sandboxId, {
+        columns: {
+          externalId: result.externalId,
+          baseUrl: result.baseUrl || null,
+          config: { serviceKey: sessionToken, llmGatewayEnabled },
+          lastUsedAt: new Date(),
+        },
+        metadata: sandboxInitMetadataPatch(snapshot, finishMetadata),
+      });
 
       if (!finished) {
         console.warn(
@@ -975,20 +989,9 @@ export async function provisionSessionSandbox(opts: {
       // 'stopped' (deleted, or an explicit stop) and 'running' (won by the
       // separate stopped→running resume path in routes/shared.ts) must not be
       // clobbered back to 'running' by a provisioning attempt finishing late.
-      await db
-        .update(projectSessions)
-        .set({
-          status: 'running',
-          sandboxUrl: result.baseUrl || null,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(projectSessions.sessionId, sandbox.sandboxId),
-            inArray(projectSessions.status, [...PROVISIONING_SESSION_STATUSES]),
-          ),
-        )
-        .catch(() => {});
+      await transitionSession('provisioned', sandbox.sandboxId, {
+        sandboxUrl: result.baseUrl || null,
+      }).catch(() => {});
 
       tl.mark('row-active');
       tl.log({ provider: providerName, attempts });
@@ -1001,8 +1004,16 @@ export async function provisionSessionSandbox(opts: {
       });
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
-      // Spec is resolved from the project manifest with provider-default fallbacks.
-      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId, imageInfo?.slug, providerName).catch(
+      // Billed at the size of the image that booted (computeMeteringSpec).
+      void openComputeSessionForSandbox(
+        sandbox.sandboxId,
+        accountId,
+        opts.gitProject,
+        userId,
+        imageInfo?.slug,
+        providerName,
+        imageInfo?.spec,
+      ).catch(
         (err) =>
           console.warn(
             `[session-sandbox] failed to open compute metering for ${sandbox.sandboxId}:`,
@@ -1089,11 +1100,9 @@ export async function provisionSessionSandbox(opts: {
           // correct if `next` is Platinum).
           platinumCreateAttempt += 1;
           providerCreateInput.createAttempt = platinumCreateAttempt;
-          await db
-            .update(sessionSandboxes)
-            .set({ provider: next, status: 'provisioning', updatedAt: new Date() })
-            .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId))
-            .catch(() => {});
+          await transitionSandbox('reprovision', sandbox.sandboxId, {
+            columns: { provider: next },
+          }).catch(() => {});
           tl.mark(`failover:${next}`);
           continue provisioning;
         }
@@ -1127,30 +1136,22 @@ export async function provisionSessionSandbox(opts: {
       }
 
       try {
-        await db
-          .update(sessionSandboxes)
-          .set({
-            status: 'error',
-            metadata: {
-              ...buildSandboxInitFailureMetadata(
-                sandbox.metadata as Record<string, unknown> | null,
-                bgErr,
-                lastProvisionAttempt,
-                false,
-                lastProvisionMaxAttempts,
-              ),
-              errorMessage: userMessage,
-              lastProvisioningError: bgMessage.slice(0, 500),
-              ...(failureCategory ? { failureCategory } : {}),
-            },
-            updatedAt: new Date(),
-          })
-          .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
-        await db
-          .update(projectSessions)
-          .set({ status: 'failed', error: userMessage, updatedAt: new Date() })
-          .where(eq(projectSessions.sessionId, sandbox.sandboxId))
-          .catch(() => {});
+        const snapshot = sandbox.metadata as Record<string, unknown> | null;
+        await transitionSandbox('failProvisioning', sandbox.sandboxId, {
+          metadata: sandboxInitMetadataPatch(snapshot, {
+            ...buildSandboxInitFailureMetadata(
+              snapshot,
+              bgErr,
+              lastProvisionAttempt,
+              false,
+              lastProvisionMaxAttempts,
+            ),
+            errorMessage: userMessage,
+            lastProvisioningError: bgMessage.slice(0, 500),
+            ...(failureCategory ? { failureCategory } : {}),
+          }),
+        });
+        await transitionSession('fail', sandbox.sandboxId, { error: userMessage }).catch(() => {});
       } catch (markErr) {
         console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
       }

@@ -74,13 +74,43 @@ describe('hero media', () => {
   });
 
   /**
-   * A `<video>` resolves its `<source>` list once, at load. Keying the element
-   * on the resolved theme is what makes a mid-session toggle swap the file;
-   * a `prefers-color-scheme` media query on `<source>` would be right on first
-   * paint and wrong for the rest of the session.
+   * A `<video>` resolves its `<source>` list once, at load. The CLI panel keys
+   * its element on the resolved theme. The web panel server-renders both
+   * themes' sources behind `prefers-color-scheme` (so the video starts before
+   * hydration and one theme downloads) and remounts, keyed on the override,
+   * the moment the resolved theme disagrees with the OS or the OS flips.
    */
-  test('the video elements are keyed on theme, not on a colour-scheme media query', () => {
+  test('the video elements remount when the theme leaves the OS query', () => {
     expect(source).toContain('key={theme}');
+    expect(source).toContain("key={override ?? `system-${systemEpoch}`}");
+    expect(source).toContain("showcaseSources('dark', SYSTEM_DARK_MEDIA)");
+    // No literal colour-scheme query in markup: it must stay tied to the
+    // override logic above.
     expect(source).not.toMatch(/media="\(prefers-color-scheme/);
+  });
+
+  /**
+   * The walkthrough poster is a real `<img>` in the server HTML — found by
+   * the preload scanner, fetched at high priority, both themes expressed as
+   * `<picture>` sources — and the web video must not also carry a `poster`,
+   * which would fetch it twice.
+   */
+  test('the web poster is a high-priority <picture> with both themes', () => {
+    const poster = source.slice(
+      source.indexOf('function ShowcasePoster'),
+      source.indexOf('const RETINA_MEDIA'),
+    );
+    expect(poster).toContain('<picture>');
+    expect(poster).toContain('fetchPriority="high"');
+    expect(poster).toContain('SHOWCASE_MEDIA.dark.poster');
+    expect(poster).toContain('SHOWCASE_MEDIA.dark.phonePoster');
+    expect(poster).toContain('SHOWCASE_MEDIA.light.phonePoster');
+    expect(poster).toContain('src={SHOWCASE_MEDIA.light.poster}');
+
+    const video = source.slice(
+      source.indexOf('function ShowcaseVideo'),
+      source.indexOf('const REDUCED_MOTION_QUERY'),
+    );
+    expect(video).not.toContain('poster=');
   });
 });

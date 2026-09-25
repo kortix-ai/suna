@@ -180,7 +180,7 @@ export function AccessHelp({ accountId }: AccessHelpProps) {
             {tI18nComplete.raw('text18c99d7a5ce2')}
           </p>
           <p className="text-foreground text-xs leading-relaxed">
-            {tI18nComplete.raw('textec56dc3a282b')}{' '}
+            {tI18nComplete.raw('text4e2c36d015a8')}{' '}
             <code className="text-foreground text-xs">kortix.yaml</code>
             {tI18nComplete.raw('textfe384b93382f')}
           </p>

@@ -13,6 +13,7 @@ import {
 } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { isAgentPrincipalActor } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 
@@ -22,13 +23,13 @@ import { and, eq, or } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
-  UUID_V4_REGEX,
   hasOwn,
   normalizeString,
-  readBody,
   requestAuditContext,
   serializeSession,
 } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
@@ -40,25 +41,10 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
-
-const SERVER_MANAGED_SESSION_METADATA_KEYS = [
-  'deletedAt',
-  'deletedBy',
-  'opencode_model',
-  'opencode_model_source',
-  'source',
-  'trigger_kind',
-  'trigger_slug',
-  'name',
-  'title_source',
-] as const;
-
-const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
-  ...SERVER_MANAGED_SESSION_METADATA_KEYS,
-  'workspace_mode',
-  'repository_access',
-  'sandbox_slug',
-] as const;
+import {
+  PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
+  SERVER_MANAGED_SESSION_METADATA_KEYS,
+} from '../lib/session-metadata-keys';
 
 function serverManagedSessionMetadataKey(
   value: unknown,
@@ -92,7 +78,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const serverManagedMetadataKey = serverManagedSessionMetadataKey(body.metadata);
   if (serverManagedMetadataKey) {
     return c.json(
@@ -291,6 +277,7 @@ projectsApp.openapi(
     limit: query.limit,
     cursor: query.cursor ?? null,
     boundCredentialSessionId: callerKortixSessionId(c),
+    agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
     probeManageCapability: () =>
       projectCapabilityAllowed(
         c,
@@ -328,7 +315,7 @@ projectsApp.openapi(
   });
 
   // The sidebar re-fetches this list several times per session open (six in the
-  // measured Essentia corpus, 2026-08-26) and the answer is usually byte-identical
+  // measured SampleCo corpus, 2026-08-26) and the answer is usually byte-identical
   // between them. A weak ETag lets those repeats end as a 304 with no body.
   // `no-cache` — not `no-store` — is what makes a client revalidate rather than
   // serve a stale inventory: the response is private and always re-validated,
@@ -369,7 +356,7 @@ projectsApp.openapi(
   async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -418,9 +405,9 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -506,9 +493,9 @@ projectsApp.openapi(
   async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -537,7 +524,7 @@ projectsApp.openapi(
   // metadata.deletedAt / deletedBy are SERVER-MANAGED soft-delete markers.
   // deleteSession() is the only legitimate writer; they are consumed by
   // isSessionVisibleTo (session-inventory.ts — hides the session from every member's
-  // list), the continue-session guard (session-lifecycle/engine.ts:236 —
+  // list), the continue-session guard (session-lifecycle/continue-session.ts `continueSession` —
   // returns 'no-session' so queued Slack/trigger follow-ups 404), and the
   // sandbox reaper (sandbox-reaper.ts:477 — tombstones the live box).
   // Letting a client forge either via PATCH lets any project member hide
@@ -639,7 +626,7 @@ projectsApp.openapi(
   async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);

@@ -135,7 +135,9 @@
     "openEmailApp": "Ouvrir l'application de messagerie",
     "goToSignIn": "Allez vous connecter",
     "verifyEmailInstructions": "Cliquez sur le lien dans l'e-mail pour vérifier votre compte, puis connectez-vous.",
-    "browseAsGuest": "Parcourir en tant qu'invité"
+    "browseAsGuest": "Parcourir en tant qu'invité",
+    "signOutFailed": "Impossible de se déconnecter. Vérifiez votre connexion et réessayez.",
+    "signingOut": "Déconnexion…"
   },
   "onboarding": {
     "welcome": "Découvrez ce que Kortix peut faire",
@@ -537,7 +539,22 @@
     "buyCredits": "Acheter des Crédits",
     "availableCredits": "Crédits disponibles",
     "creditPackages": "Paquets de Crédits",
-    "choosePackageBoost": "Choisis un paquet et augmente ton solde de crédits"
+    "choosePackageBoost": "Choisis un paquet et augmente ton solde de crédits",
+    "title": "Facturation",
+    "nextDailyRefresh": "Prochaine recharge quotidienne",
+    "in1Hour": "dans 1 heure",
+    "cancelsOn": "Prend fin le",
+    "manageOnWeb": "Gérer sur kortix.com",
+    "openWebFailed": "Impossible d'ouvrir kortix.com. Réessayez.",
+    "scheduledChange": "Changement planifié",
+    "newPlan": "Nouvelle offre",
+    "startsOn": "Commence le",
+    "keepCurrentPlan": "Garder l'offre actuelle",
+    "keepPlanTitle": "Garder {{plan}} ?",
+    "keepPlanFailed": "Impossible d'annuler le changement. Réessayez.",
+    "keepPlanDescription": "Le passage à {{plan}} le {{date}} est annulé.",
+    "keepPlan": "Garder l'offre",
+    "keepingPlan": "Conservation de l'offre…"
   },
   "theme": {
     "title": "Apparence",
@@ -593,7 +610,25 @@
     "deletionCancelledSuccess": "Ton compte est en sécurité. La suppression a été annulée.",
     "failedToRequest": "Échec de la demande de suppression de compte",
     "failedToCancel": "Échec de l'annulation de suppression de compte",
-    "cancelRequestDescription": "Tu peux annuler cette demande à tout moment avant la date de suppression. Toutes tes données seront préservées si tu annules."
+    "cancelRequestDescription": "Tu peux annuler cette demande à tout moment avant la date de suppression. Toutes tes données seront préservées si tu annules.",
+    "scheduledBadge": "Planifiée",
+    "notAvailableTitle": "Non disponible sur ce serveur",
+    "projectsAndSessions": "Projets et sessions",
+    "credentialsAndConnections": "Identifiants et connexions",
+    "subscriptionAndBilling": "Abonnement et facturation",
+    "when": "Quand",
+    "in30Days": "Dans 30 jours",
+    "immediately": "Immédiatement",
+    "deleteTitle": "Supprimer le compte ?",
+    "deleteNowTitle": "Supprimer le compte maintenant ?",
+    "deleteScheduledDescription": "Votre compte sera supprimé dans 30 jours. Vous pouvez annuler d'ici là.",
+    "deleteNowDescription": "Votre compte et ses données sont supprimés maintenant. Cette action est irréversible.",
+    "deleteNow": "Supprimer maintenant",
+    "deleting": "Suppression…",
+    "cancelling": "Annulation…",
+    "finalTitle": "Êtes-vous sûr ?",
+    "finalDescriptionNow": "Tout le contenu de votre compte est supprimé maintenant : projets, sessions, identifiants et facturation. Cette action est irréversible.",
+    "finalDescriptionScheduled": "Tout le contenu de votre compte sera supprimé dans 30 jours : projets, sessions, identifiants et facturation. Vous pouvez annuler d'ici là."
   },
   "models": {
     "selectModel": "Choisir un Modèle",
@@ -1112,5 +1147,40 @@
     "openSettings": "Ouvrir les paramètres",
     "enableAll": "Activer tout",
     "disableAll": "Désactiver tout"
+  },
+  "account": {
+    "title": "Compte",
+    "preferences": "Préférences",
+    "sounds": "Sons",
+    "workspace": "Espace de travail",
+    "accounts": "Comptes",
+    "help": "Aide",
+    "docs": "Documentation",
+    "support": "Assistance",
+    "advanced": "Avancé"
+  },
+  "profile": {
+    "changePhoto": "Changer la photo de profil",
+    "photoFailed": "Impossible de mettre à jour votre photo. Réessayez."
+  },
+  "plans": {
+    "title": "Offres",
+    "plan": "Offre",
+    "current": "Actuelle",
+    "currentPlan": "Offre actuelle",
+    "seats": "{{count}} sièges × ${{price}}",
+    "perMonth": "${{total}} / mois",
+    "includes": "{{plan}} comprend",
+    "askOwner": "Demandez à un propriétaire du compte de changer d'offre",
+    "contactSales": "Contacter les ventes",
+    "upgradeTo": "Passer à {{plan}}",
+    "switchTo": "Basculer vers {{plan}}"
+  },
+  "upgrade": {
+    "teamPlan": "Kortix Team",
+    "perSeatMonthly": "par siège / mois",
+    "includes": "Inclus",
+    "askOwner": "Demandez un siège à un propriétaire du compte",
+    "notNow": "Pas maintenant"
   }
 }

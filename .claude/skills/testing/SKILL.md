@@ -13,6 +13,11 @@ the **sdk** skill before editing the SDK.
 ## Select the correct test
 
 - Add pure logic and internal invariant tests beside their package code.
+- Add a test that needs real PostgreSQL as a DB suite: `integration-*.test.ts`
+  or `*.integration.test.ts` in `apps/api/src`, `*.integration.test.ts` in
+  `packages/db/scripts`. Read `TEST_DATABASE_URL`; the `db-suites` lane gives
+  every file its own fresh migrated database. Create every row you read. See
+  `tests/README.md` "DB suites".
 - Add API and CLI product contracts to `tests/spec/end-to-end.md` and
   `tests/src/flows`.
 - Keep SDK tests in `packages/sdk`.
@@ -41,6 +46,7 @@ pnpm test                       # Local REST/CLI flows + SDK + runner units + co
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One domain
 pnpm test -- --sdk-only        # SDK only
+pnpm test -- --db-only [path-filter ...] # PostgreSQL-backed suites only
 pnpm test -- --browser-only    # Browser only; owns the deterministic local stack
 pnpm test -- --browser-only --browser-shard=1/4 # One browser shard
 pnpm test -- --packages-only   # Every app/package test and publish contract
@@ -130,7 +136,8 @@ must change together.
 - Add `preview` only after a writer reviews the exact same-repository PR SHA.
 - Build the API, gateway, and frontend without credentials in separate jobs.
 - Run the trusted preview controller from `main`.
-- Restore Platinum first. Use Daytona only for an infrastructure failure.
+- Run on Platinum only: the preview host and every session inside it. A
+  Platinum failure fails the preview. Never fall back to Daytona.
 - Generate the regular `kortix self-host` Compose distribution in the sandbox.
 - Give each preview a fresh PostgreSQL and Supabase data plane.
 - Run `pnpm test -- --target-full` against the sandbox HTTPS origin.
@@ -138,7 +145,13 @@ must change together.
 - Keep a failed product-test sandbox. Do not hide its failure with fallback.
 - Redeploy the environment in place on a push. Keep the `preview` label.
 - Delete the sandbox on unlabel or branch deletion. Closing the PR does not.
-- Reconcile stale Platinum and Daytona previews each day.
+- Tag every preview session box with its host: the preview API runs with
+  `KORTIX_INSTANCE_ID=<host sandbox name>` (Platinum `kortix.instance`) and its
+  deadline reaper on. Teardown and replacement stop the host's session boxes.
+  Each deploy and the daily reconcile stop session boxes whose host is gone or
+  that idled over 6 hours (`tests/src/core/preview-session-reaper.ts`).
+- Reconcile stale previews each day. Daytona reconciliation only deletes
+  previews created before 2026-09-22.
 
 The preview warm image can contain dependencies and Docker layers. It must not
 contain a database or runtime secret. Keep the runtime secret allowlist in

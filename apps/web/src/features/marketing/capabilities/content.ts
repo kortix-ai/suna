@@ -78,7 +78,7 @@
  *        OpenCode `bun install`s at startup.
  *      · The GRANT covers more than tools. `AgentBlockV2` fields: `sandbox`
  *        (which machine it boots), `connectors` + `connectors_required`,
- *        `secrets`, `skills`, `kortix_cli`, `workspace`, `enabled`. CHANNELS
+ *        `secrets`, `skills`, `kortix_permissions`, `workspace`, `enabled`. CHANNELS
  *        are covered by `connectors` because a connected channel IS a connector
  *        with `provider: 'channel'` (`apps/api/src/projects/connectors.ts:61`).
  *  - TRIGGERS are exactly two kinds. A webhook with no `secret_env` is rejected
@@ -98,7 +98,7 @@
  *    (`apps/api/src/projects/policies.ts:73`) — approval gates are OFF by
  *    default. Say "set it", never "it is on".
  *  - MERGE is default-deny for agents, not human-only. `project.cr.merge` is a
- *    grantable capability asserted at `apps/api/src/projects/routes/r9.ts:58`.
+ *    grantable capability asserted at `apps/api/src/projects/routes/change-request-actions.ts:63`.
  *  - AGENT CEILING. The effective grant at session birth is
  *    `declared ∩ launching-user role` (`apps/api/src/projects/agents.ts:19-21`).
  *  - AUDIT. Recording is never gated; only read/export/stream is

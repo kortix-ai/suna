@@ -9,7 +9,7 @@
  * the first workspace somewhere else.
  *
  * The landing door (`/projects/start`) cannot serve this flow: it opens the
- * first project found in ANY account (`resolve-landing-destination.ts`), so an
+ * remembered project in ANY account (`decideDoor`), so an
  * empty new account always falls through to a different account's project —
  * and `start/page.tsx` then heals the persisted selection to THAT account,
  * undoing the switch the create just made.

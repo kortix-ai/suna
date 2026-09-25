@@ -18,6 +18,7 @@ import * as tar from 'tar';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import {
   emitJson,
+  fail,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -90,11 +91,6 @@ Global options:
 
 type AppsHandle = ProjectHandle['apps'];
 type ContextOptions = { projectArg?: string; hostArg?: string };
-
-function fail(message: string): number {
-  process.stderr.write(`${status.err(message)}\n`);
-  return 2;
-}
 
 function positiveNumber(value: string | undefined, label: string): number | undefined {
   if (value === undefined) return undefined;

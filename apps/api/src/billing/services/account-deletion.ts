@@ -3,6 +3,7 @@ import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
 import { getStripe } from '../../shared/stripe';
 import { db } from '../../shared/db';
 import { BillingError } from '../../errors';
+import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
 import {
   isAlreadyNotRunning,
@@ -10,7 +11,7 @@ import {
   reconcileSandboxStoppedByExternalId,
 } from '../../projects/sandbox-reaper';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
-import { insertLedgerEntry } from '../repositories/transactions';
+import { wallet } from '../wallet';
 import {
   getActiveDeletionRequest,
   createDeletionRequest,
@@ -20,6 +21,7 @@ import {
 } from '../repositories/account-deletion';
 
 const GRACE_PERIOD_DAYS = 14;
+const ACTIVE_DELETION_REQUEST_EXISTS = 'An active deletion request already exists for this account';
 
 export async function requestAccountDeletion(
   accountId: string,
@@ -28,11 +30,20 @@ export async function requestAccountDeletion(
 ) {
   const existing = await getActiveDeletionRequest(accountId);
   if (existing) {
-    throw new BillingError('An active deletion request already exists for this account');
+    throw new BillingError(ACTIVE_DELETION_REQUEST_EXISTS);
   }
 
   const scheduledFor = new Date(Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const request = await createDeletionRequest(accountId, userId, scheduledFor, reason);
+  let request: Awaited<ReturnType<typeof createDeletionRequest>>;
+  try {
+    request = await createDeletionRequest(accountId, userId, scheduledFor, reason);
+  } catch (err) {
+    // A concurrent request inserted its pending row after our read.
+    // uniq_account_deletion_requests_pending refuses the second one; answer it
+    // the same way as the read above.
+    if (isUniqueViolation(err)) throw new BillingError(ACTIVE_DELETION_REQUEST_EXISTS);
+    throw err;
+  }
 
   return {
     success: true,
@@ -360,25 +371,10 @@ async function performDeletion(accountId: string, userId?: string) {
     }
   }
 
-  // Record forfeiture ledger entry for any remaining balance
-  const currentBalance = account ? Number(account.balance) : 0;
-  if (currentBalance > 0) {
-    await insertLedgerEntry({
-      accountId,
-      amount: String(-currentBalance),
-      balanceAfter: '0',
-      type: 'forfeiture',
-      description: 'Account deletion: credit balance forfeited',
-      isExpiring: false,
-    });
-  }
+  // Record any remaining balance as forfeited and empty every bucket.
+  await wallet.forfeit(accountId);
 
-  // Zero out all credit balances
   await updateCreditAccount(accountId, {
-    balance: '0',
-    expiringCredits: '0',
-    nonExpiringCredits: '0',
-    dailyCreditsBalance: '0',
     tier: 'free',
     stripeSubscriptionStatus: 'canceled',
     paymentStatus: 'deleted',

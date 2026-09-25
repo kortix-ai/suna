@@ -118,7 +118,10 @@ export function AccountSettingsShell({ children }: { children: ReactNode }) {
     >
       <AccountSettingsSidebar />
       <SidebarInset className="bg-surface min-h-0">
-        <header className="flex h-11 shrink-0 items-center gap-1 border-b px-2">
+        <header
+          className="kx-titlebar-row kx-titlebar-band-height kx-account-hub-header flex h-11 shrink-0 items-center gap-1 border-b px-2"
+          data-sidebar-collapsed={open ? undefined : ''}
+        >
           <CollapsedTrigger />
           <Suspense fallback={null}>
             <ShellBreadcrumb />

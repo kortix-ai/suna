@@ -33,8 +33,9 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { FileContentRenderer, getLanguageFromExt } from './file-content-renderer';
+import { FileContentRenderer } from './file-content-renderer';
 import { FileSourceProvider, type FileSource } from './file-source';
+import { getLanguageFromExt } from './preview-policy';
 
 /** Tabbable elements used by the focus trap below. */
 const FOCUSABLE_SELECTOR = [
@@ -133,7 +134,8 @@ export function FilePreviewModal({
 
   const [historyPath, setHistoryPath] = useState<string | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState(true);
-  const isMarkdownFile = getLanguageFromExt(fileName) === 'markdown';
+  // Markdown and Mermaid files both open rendered, with a Source toggle.
+  const isMarkdownFile = ['markdown', 'mermaid'].includes(getLanguageFromExt(fileName));
   const shareInput = useMemo(() => {
     if (!selectedFilePath || !shareContext) return null;
     return {

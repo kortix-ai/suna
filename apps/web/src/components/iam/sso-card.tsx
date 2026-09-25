@@ -58,6 +58,7 @@ import {
   getSsoProvider,
   listSsoGroupMappings,
   upsertSsoProvider,
+  verifySsoDomain,
 } from '@/lib/iam-client';
 
 import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
@@ -135,6 +136,7 @@ interface SsoCardProps {
 
 export function SsoCard({ accountId, canManage }: SsoCardProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tDomain = useTranslations('ssoDomainVerification');
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -205,6 +207,19 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
     },
     onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text6d0137714cf5')),
   });
+
+  // DNS proof that the account controls its primary domain. Until it passes,
+  // the IdP's emails are trusted only inside this account and enforce_sso is
+  // inert (the API ignores it), so the toggle below cannot be turned on.
+  const verifyDomainMutation = useMutation({
+    mutationFn: () => verifySsoDomain(accountId),
+    onSuccess: () => {
+      successToast(tDomain('verifiedToast'));
+      queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
+    },
+    onError: (err: Error) => errorToast(err.message || tDomain('failedToast')),
+  });
+  const domainVerified = provider?.domain_verified !== false;
 
   return (
     <div className="space-y-4">
@@ -350,20 +365,72 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
 
         {provider && (
           <div className="border-border border-t px-4 py-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 space-y-0.5">
+                <p className="text-foreground flex items-center gap-2 text-sm font-medium">
+                  {tDomain('title')}
+                  <Badge variant={domainVerified ? 'success' : 'warning'} size="sm">
+                    {domainVerified ? tDomain('verified') : tDomain('unverified')}
+                  </Badge>
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  {domainVerified
+                    ? tDomain('verifiedDescription', { domain: provider.primary_domain })
+                    : tDomain('unverifiedDescription', { domain: provider.primary_domain })}
+                </p>
+              </div>
+              {canManage && !domainVerified && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => verifyDomainMutation.mutate()}
+                  disabled={verifyDomainMutation.isPending}
+                >
+                  {verifyDomainMutation.isPending && <Loading className="size-3.5 shrink-0" />}
+                  {tDomain('verify')}
+                </Button>
+              )}
+            </div>
+            {!domainVerified && provider.domain_verification && (
+              <div className="mt-3 space-y-3">
+                <CopyRow
+                  label={tDomain('recordName')}
+                  value={provider.domain_verification.record_name}
+                />
+                <CopyRow
+                  label={tDomain('recordValue')}
+                  value={provider.domain_verification.record_value}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {provider && (
+          <div className="border-border border-t px-4 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 space-y-0.5">
                 <p className="text-foreground text-sm font-medium">
                   {tI18nComplete.raw('text05b1748edb1e')}
                 </p>
                 <p className="text-muted-foreground text-xs">
-                  {tI18nComplete.raw('text3e29ac703c2f')}
+                  {domainVerified
+                    ? tI18nComplete.raw('text3e29ac703c2f')
+                    : tDomain('enforceNeedsVerification')}
                 </p>
               </div>
               {canManage && (
                 <Switch
                   checked={!!provider.enforce_sso}
                   onCheckedChange={(checked) => enforceSsoMutation.mutate(checked)}
-                  disabled={enforceSsoMutation.isPending || providerQuery.isLoading}
+                  // Turning enforcement OFF always works; turning it ON waits
+                  // for a verified domain, where it actually applies.
+                  disabled={
+                    enforceSsoMutation.isPending ||
+                    providerQuery.isLoading ||
+                    (!domainVerified && !provider.enforce_sso)
+                  }
                   aria-label={tI18nComplete.raw('text05b1748edb1e')}
                 />
               )}

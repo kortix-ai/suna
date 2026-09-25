@@ -1,5 +1,5 @@
 /**
- * P0 regression: POST /projects/provision (r1.ts) stamps
+ * P0 regression: POST /projects/provision (projects.ts) stamps
  * `metadata.require_declared_agents = true` on EVERY new project, but the
  * starter it seeded used to ship a kortix_version 1 manifest with no declared
  * agents / no `default_agent` — so a fresh project's first session (agent
@@ -7,7 +7,7 @@
  * rejected with AGENT_NOT_DECLARED before a sandbox was ever provisioned.
  *
  * This exercises the closest testable seam to the real HTTP route: the exact
- * seed-building function r1.ts calls (`buildProjectSeedFiles`, same inputs a
+ * seed-building function projects.ts calls (`buildProjectSeedFiles`, same inputs a
  * web "Create project" request produces), then feeds its actual output
  * through the same manifest-parse -> agent-extraction -> grant-resolution
  * pipeline `sessions.ts` runs when a session is created. No DB/HTTP mocking
@@ -50,7 +50,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
     expect(result.issues.filter((i) => i.severity === 'error')).toEqual([]);
   });
 
-  test('a first session with no explicit agent (the "default" sentinel) RESOLVES on a project stamped require_declared_agents:true — matches r1.ts /projects/provision + sessions.ts exactly', async () => {
+  test('a first session with no explicit agent (the "default" sentinel) RESOLVES on a project stamped require_declared_agents:true — matches projects.ts /projects/provision + sessions.ts exactly', async () => {
     const seed = await buildProjectSeedFiles({
       projectName: 'Acme Co',
       repoFullName: 'kortix/acme-co',
@@ -62,7 +62,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
     const manifest = parseManifestString(manifestFile.content, 'yaml', 'kortix.yaml');
     const loaded = extractAgents(manifest);
 
-    // r1.ts stamps require_declared_agents:true and never sets
+    // projects.ts stamps require_declared_agents:true and never sets
     // metadata.default_agent — sessions.ts's projectDefaultAgent is therefore
     // null on a brand-new project's very first session.
     const governed = resolveGovernedAgentGrant('default', loaded, {
@@ -77,7 +77,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
     expect(governed.grant).toEqual({
       agent: 'kortix',
       connectors: 'all',
-      kortixCli: 'all',
+      permissions: 'all',
       env: 'all',
     });
   });

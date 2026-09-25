@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { accountMembers, accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -41,6 +41,15 @@ export function secretUsableInProject(row: { projectId: string | null; accessMod
   return (row.projectId === null || row.projectId === projectId) && (row.accessMode === 'project' || granted);
 }
 
+/**
+ * Is a `private` provider key granted to the personal-key owner? Spec
+ * 2026-09-22 §2.3: `grantUserId` null (an agent-principal session with no
+ * on-behalf-of human) matches no grant, so only `project`-mode keys remain.
+ */
+export function personalKeyGranted(rowGrantUserId: string | null, grantUserId: string | null): boolean {
+  return grantUserId !== null && rowGrantUserId === grantUserId;
+}
+
 export async function memberMayReadProject(accountId: string, projectId: string, userId: string): Promise<boolean> {
   const [{ actorForUser }, { authorize }, { PROJECT_ACTIONS }] = await Promise.all([
     import('../iam/actor'), import('../iam/authorize'), import('../iam/actions'),
@@ -48,18 +57,74 @@ export async function memberMayReadProject(accountId: string, projectId: string,
   return (await authorize(actorForUser(userId, accountId), PROJECT_ACTIONS.PROJECT_READ, { type: 'project', id: projectId })).allowed;
 }
 
-export async function listGrantedGatewaySecretNames(accountId: string, projectId: string, userId: string): Promise<string[]> {
-  if (!(await memberMayReadProject(accountId, projectId, userId))) return [];
-  const rows = await db.select({ name: accountSecretResources.name, projectId: accountSecretResources.projectId,
-    accessMode: accountSecretResources.accessMode, grantUserId: accountSecretGrants.userId }).from(accountSecretResources)
-    .leftJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.userId, userId)))
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+export async function listGrantedGatewaySecretNames(
+  accountId: string,
+  projectId: string,
+  userId: string,
+  /**
+   * Whose personal grants count. Absent = `userId`. `null` = none: only keys
+   * shared with the whole project, which is all a shared session reaches
+   * (spec 2026-09-22 §2.3).
+   */
+  grantUserId: string | null = userId,
+): Promise<string[]> {
+  return [...new Set((await listUsableGatewaySecrets({ accountId, projectId, userId, grantUserId })).map((row) => row.name))];
+}
+
+export interface UsableGatewaySecret {
+  secretId: string;
+  providerId: string | null;
+  name: string;
+  label: string;
+  accessMode: string;
+}
+
+/**
+ * The gateway keys a member may select in this project, oldest first. Never
+ * reads a value. `grantUserId` as in `listGrantedGatewaySecretNames`.
+ *
+ * A key cooling down after a rate limit is still listed: it belongs to the
+ * pool, and the gateway skips it only until its cooldown ends.
+ */
+export async function listUsableGatewaySecrets(input: {
+  accountId: string;
+  projectId: string;
+  userId: string;
+  grantUserId?: string | null;
+  providerId?: string;
+}): Promise<UsableGatewaySecret[]> {
+  const grantUserId = input.grantUserId === undefined ? input.userId : input.grantUserId;
+  if (!(await memberMayReadProject(input.accountId, input.projectId, input.userId))) return [];
+  const rows = await db.select({
+    secretId: accountSecretResources.secretId,
+    providerId: accountSecretResources.providerId,
+    name: accountSecretResources.name,
+    label: accountSecretResources.label,
+    projectId: accountSecretResources.projectId,
+    accessMode: accountSecretResources.accessMode,
+    grantUserId: accountSecretGrants.userId,
+  }).from(accountSecretResources)
+    .leftJoin(accountSecretGrants, and(
+      eq(accountSecretGrants.secretId, accountSecretResources.secretId),
+      grantUserId ? eq(accountSecretGrants.userId, grantUserId) : sql`false`,
+    ))
+    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId)))
     .where(and(
-      eq(accountSecretResources.accountId, accountId),
+      eq(accountSecretResources.accountId, input.accountId),
       eq(accountSecretResources.consumer, 'llm_gateway'),
       eq(accountSecretResources.active, true),
-    ));
-  return [...new Set(rows.filter((row) => secretUsableInProject(row, projectId, row.grantUserId === userId)).map((row) => row.name))];
+      ...(input.providerId ? [eq(accountSecretResources.providerId, input.providerId)] : []),
+    ))
+    .orderBy(asc(accountSecretResources.createdAt), asc(accountSecretResources.secretId));
+  const seen = new Set<string>();
+  const usable: UsableGatewaySecret[] = [];
+  for (const row of rows) {
+    if (seen.has(row.secretId)) continue;
+    if (!secretUsableInProject(row, input.projectId, personalKeyGranted(row.grantUserId, grantUserId))) continue;
+    seen.add(row.secretId);
+    usable.push({ secretId: row.secretId, providerId: row.providerId, name: row.name, label: row.label, accessMode: row.accessMode });
+  }
+  return usable;
 }
 
 /** An unconfigured session uses the caller's newest personal ChatGPT connection. */
@@ -94,10 +159,16 @@ export async function resolveSessionProviderSecrets(input: {
   accountId: string;
   projectId: string;
   userId: string;
+  /**
+   * Whose PERSONAL key grants count (spec 2026-09-22 §2.3). Absent = `userId`
+   * (legacy). `null` = none: only project-mode keys are usable.
+   */
+  grantUserId?: string | null;
   providerId: string;
   name: string;
   advanceIndex?: boolean;
 } & ({ sessionId: string; secretIds?: never } | { secretIds: string[]; sessionId?: never })): Promise<{ configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: { secretId: string; label: string; value: string }[] }> {
+  const grantUserId = input.grantUserId === undefined ? input.userId : input.grantUserId;
   let pool: { secretIds: string[]; nextIndex: number } | undefined;
   if (input.secretIds !== undefined) {
     pool = { secretIds: input.secretIds, nextIndex: 1 };
@@ -123,7 +194,10 @@ export async function resolveSessionProviderSecrets(input: {
     accessMode: accountSecretResources.accessMode,
     grantUserId: accountSecretGrants.userId,
   }).from(accountSecretResources)
-    .leftJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.userId, input.userId)))
+    .leftJoin(accountSecretGrants, and(
+      eq(accountSecretGrants.secretId, accountSecretResources.secretId),
+      grantUserId ? eq(accountSecretGrants.userId, grantUserId) : sql`false`,
+    ))
     .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId)))
     .where(and(
       eq(accountSecretResources.accountId, input.accountId),
@@ -133,7 +207,9 @@ export async function resolveSessionProviderSecrets(input: {
       eq(accountSecretResources.active, true),
       inArray(accountSecretResources.secretId, pool.secretIds),
     ));
-  const byId = new Map(rows.filter((row) => secretUsableInProject(row, input.projectId, row.grantUserId === input.userId)).map((row) => [row.secretId, row]));
+  const byId = new Map(rows.filter((row) => secretUsableInProject(
+    row, input.projectId, personalKeyGranted(row.grantUserId, grantUserId),
+  )).map((row) => [row.secretId, row]));
   const ordered = pool.secretIds.flatMap((id) => {
     const row = byId.get(id);
     return row ? [row] : [];

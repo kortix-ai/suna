@@ -55,6 +55,17 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canAgents: false });
     expect(out.config.agents).toEqual([]);
     expect(out.config.agent_discovery).toBeNull();
+    // The default names one of those agents, so it goes with them.
+    expect(out.config.open_code_default_agent).toBeNull();
+  });
+
+  // A project member holds agent.read but not customize.read. Blanking the
+  // default for them made the composer fall back to the first agent
+  // alphabetically (`harness-reflector`) and RUN it instead of `kortix`.
+  test('agent.read without customize.read → the default agent name survives', () => {
+    const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canCustomize: false });
+    expect(out.config.agents).toEqual([{ name: 'a' }]);
+    expect(out.config.open_code_default_agent).toBe('bot');
   });
 
   test('no command.read → commands emptied', () => {
@@ -68,7 +79,6 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     expect(out.config.manifest).toEqual({});
     expect(out.config.env).toEqual([]);
     expect(out.config.open_code_raw).toBeNull();
-    expect(out.config.open_code_default_agent).toBeNull();
     // Structural signals survive so the workspace shell still renders.
     expect(out.config.is_kortix_repo).toBe(true);
     expect(out.config.signals).toEqual({ manifest: true });

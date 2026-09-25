@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { type ViewProps } from 'react-native';
-import { Avatar } from '@/components/ui/Avatar';
+import { Avatar } from '@/components/kortix/avatar';
 import type { Agent } from '@/api/types';
 
 interface AgentAvatarProps extends ViewProps {
@@ -33,8 +33,8 @@ export function AgentAvatar({ agent, size = 48, style, ...props }: AgentAvatarPr
       variant="agent"
       size={size}
       icon={agent?.icon_name || undefined}
-      iconColor={isSunaAgent ? undefined : agent?.icon_color}
-      backgroundColor={isSunaAgent ? undefined : agent?.icon_background}
+      iconColor={isSunaAgent ? undefined : (agent?.icon_color ?? undefined)}
+      backgroundColor={isSunaAgent ? undefined : (agent?.icon_background ?? undefined)}
       useKortixSymbol={isSunaAgent}
       fallbackText={agent?.name}
       style={style}

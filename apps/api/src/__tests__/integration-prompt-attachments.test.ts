@@ -492,13 +492,17 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
     .from(promptAttachments)
     .where(eq(promptAttachments.attachmentId, id));
   const cleanupAt = new Date(initial.expiresAt.getTime() + 1);
-  const transaction = db.transaction.bind(db);
+  // `db` is the request-context Proxy from shared/db-context.ts. Bun's spyOn
+  // cannot install a spy through a Proxy (it records 0 calls), so spy on the
+  // pooled database the Proxy forwards to outside a request.
+  const pooled = (globalThis as { __kortixApiDb?: typeof db }).__kortixApiDb!;
+  const transaction = pooled.transaction.bind(pooled);
   // Replay the READ COMMITTED interleaving deterministically: candidate SELECT
   // sees no reference, binding commits without changing the attachment tuple,
   // then cleanup acquires the tuple lock and receives its stale candidate.
   // The sweep's first transaction is the delivery release, which runs as is;
   // the second is the batch claim this test intercepts.
-  const intercepted = spyOn(db, 'transaction')
+  const intercepted = spyOn(pooled, 'transaction')
     .mockImplementationOnce((work) => transaction(work))
     .mockImplementationOnce((work) =>
     transaction(async (tx) => {

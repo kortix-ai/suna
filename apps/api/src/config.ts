@@ -128,7 +128,7 @@ const envSchema = z.object({
   // Public origin for CLIENT-facing Supabase Storage URLs. On a self-host box
   // SUPABASE_URL is an internal Docker hostname (http://supabase-kong:8000) that
   // no browser/CLI/remote-sandbox can resolve; this is the box's public origin
-  // (e.g. https://essentia.kortix.cloud) used to rewrite signed URLs on the way
+  // (e.g. https://sampleco.kortix.cloud) used to rewrite signed URLs on the way
   // out (see toPublicStorageUrl). Optional: unset on managed cloud, where
   // SUPABASE_URL is already public and no rewrite is needed.
   SUPABASE_PUBLIC_URL: z
@@ -136,6 +136,17 @@ const envSchema = z.object({
     .refine((v) => v === '' || /^https?:\/\//.test(v), { message: 'SUPABASE_PUBLIC_URL must be a valid HTTP(S) URL' })
     .optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
+  // Legacy symmetric (HS256) JWT secret of the Supabase project. When set, the
+  // API checks an HS256 access token's signature and expiry locally instead of
+  // asking GoTrue on every request (shared/jwt-verify.ts). Optional: without it
+  // HS256 tokens keep the per-request GoTrue round trip.
+  SUPABASE_JWT_SECRET: optStr,
+  // How long a GoTrue confirmation that an HS256 token's session is still live
+  // is reused, per token, per replica. This is the upper bound on how long a
+  // signed-out or deleted user's still-unexpired HS256 token keeps working on a
+  // replica that already confirmed it. 0 = confirm with GoTrue on every request
+  // (the pre-2026-09-23 behavior).
+  SUPABASE_JWT_LIVENESS_TTL_MS: optInt(30_000),
 
   // ── Prompt attachment uploads (optional, non-secret) ────────────────────
   // `direct` (default): the client PUTs each file once to a signed Storage URL.
@@ -188,6 +199,14 @@ const envSchema = z.object({
    * off-sandbox token use`.
    */
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: optBoolTrue,
+  /**
+   * Hosts a connector may call even though they resolve to a private address.
+   * Comma-separated hostnames or IP literals, matched exactly. Empty (the
+   * default) means every connector endpoint must be a public address. Set it
+   * on a self-hosted deployment whose connectors call internal APIs; the local
+   * test stack sets `127.0.0.1` for its loopback upstream.
+   */
+  KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: optStr,
 
   // ── Streaming secret relay (POST /v1/projects/:id/secrets/:id/relay) ──────
   //
@@ -431,7 +450,7 @@ const envSchema = z.object({
   // fully supported first-class path (native OpenCode provider management:
   // provider keys injected into the sandbox env, native `provider/model`
   // refs, no gateway URL in the box) — the deliberate lever for deployments
-  // like Essentia that want their own keys end to end. The master switch
+  // like SampleCo that want their own keys end to end. The master switch
   // still wins — LLM_GATEWAY_ENABLED=false forces native OpenCode for
   // everyone regardless of this value — and an operator can set
   // LLM_GATEWAY_DEFAULT_ENABLED=false to opt a whole environment back to
@@ -689,6 +708,15 @@ const envSchema = z.object({
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: optInt(600),
   KORTIX_PROXY_REQS_PER_MIN: optInt(600),
+  // Proxies in front of the API that APPEND to X-Forwarded-For. The client is
+  // the entry this many places from the right; everything to its left was
+  // written by the client. Cloud: Cloudflare + ALB = 2. Self-host Caddy
+  // replaces an untrusted header with one entry, which the rule also reads
+  // correctly. See shared/client-ip.ts.
+  KORTIX_TRUSTED_PROXY_HOPS: optInt(2),
+  // Per client IP: Kortix bearer tokens that need a fresh hash (not seen by
+  // this process recently). A token already validated here is not counted.
+  KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: optInt(300),
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED: optBoolTrue,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: optInt(1_000),
@@ -1067,6 +1095,10 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
+  KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean),
   KORTIX_SECRET_RELAY_STREAM_ENABLED: env.KORTIX_SECRET_RELAY_STREAM_ENABLED,
   KORTIX_RELAY_WS_ENABLED: env.KORTIX_RELAY_WS_ENABLED,
   KORTIX_RELAY_MAX_REQUEST_BYTES: env.KORTIX_RELAY_MAX_REQUEST_BYTES,
@@ -1086,6 +1118,8 @@ export const config = {
   SUPABASE_URL: env.SUPABASE_URL,
   SUPABASE_PUBLIC_URL: env.SUPABASE_PUBLIC_URL,
   SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_JWT_SECRET: env.SUPABASE_JWT_SECRET,
+  SUPABASE_JWT_LIVENESS_TTL_MS: env.SUPABASE_JWT_LIVENESS_TTL_MS,
   PROMPT_ATTACHMENT_UPLOAD_MODE: env.PROMPT_ATTACHMENT_UPLOAD_MODE,
   PROMPT_ATTACHMENT_CHUNK_BYTES: env.PROMPT_ATTACHMENT_CHUNK_BYTES,
 
@@ -1311,6 +1345,8 @@ export const config = {
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
+  KORTIX_TRUSTED_PROXY_HOPS: env.KORTIX_TRUSTED_PROXY_HOPS,
+  KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: env.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN,
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT:
     env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
   KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,
@@ -1396,15 +1432,11 @@ export const config = {
 
 // ─── Billing Markup Constants ────────────────────────────────────────────────
 //
-// Two pricing modes based on whose API key is used:
-//   * Kortix keys (user uses our keys):  1.2x provider cost (20% markup)
-//   * User's own keys (passthrough):     0.1x provider cost (10% platform fee)
+// Kortix-managed inference uses 1.2x provider cost (20% markup).
+// BYOK inference always has a zero Kortix charge.
 
 /** Markup when Kortix provides the API key. */
 export const KORTIX_MARKUP = 1.2;
-
-/** Platform fee when user provides their own API key. */
-export const PLATFORM_FEE_MARKUP = 0.1;
 
 // ─── Tool Pricing (Router) ──────────────────────────────────────────────────
 

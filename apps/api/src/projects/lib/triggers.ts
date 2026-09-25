@@ -11,6 +11,7 @@ import type { Context } from 'hono';
 import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitMultipleFilesToBranch } from '../git/branches';
@@ -62,10 +63,10 @@ import {
   type ProjectRow,
   type RequestAuditContext,
   deriveKortixApiRoot,
-  isPlainObject,
   normalizeBoolean,
   normalizeString,
 } from './serializers';
+import { isPlainObject } from '../../shared/json';
 
 /**
  * Who asked for this fire. `monitor` is the third trigger type's source
@@ -911,10 +912,19 @@ async function enqueueTriggerPrompt(input: {
   /** The trigger's configured model; carried on the prompt for a re-prompted session. */
   model?: string | null;
 }): Promise<'queued' | 'no-session' | 'failed'> {
+  // Scoped to the trigger's own project and account. A pinned `session_id` is
+  // manifest text, so a session of any other project is "no session" here and
+  // the fire falls through to the trigger's own reuse/create path.
   const [session] = await db
     .select({ status: projectSessions.status, metadata: projectSessions.metadata })
     .from(projectSessions)
-    .where(eq(projectSessions.sessionId, input.sessionId))
+    .where(
+      and(
+        eq(projectSessions.sessionId, input.sessionId),
+        eq(projectSessions.projectId, input.project.projectId),
+        eq(projectSessions.accountId, input.project.accountId),
+      ),
+    )
     .limit(1);
   if (!session) return 'no-session';
   if (session.status === 'failed') return 'failed';
@@ -1308,7 +1318,7 @@ export function startProjectTriggerScheduler(): void {
   if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
     clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
   }
-  const tick = () => {
+  const tickBody = () => {
     // Watchdog: if we're the leader but the sweep has stalled (started and never
     // completed within the stale window), make it LOUD. A silent dead scheduler
     // is what turned a single hung fire into an ~18h fleet-wide outage.
@@ -1369,6 +1379,9 @@ export function startProjectTriggerScheduler(): void {
         });
     }
   };
+  // Everything the tick starts (sweep, drains, connector reconcile) inherits
+  // the worker context through AsyncLocalStorage.
+  const tick = () => void runWorkerTick('trigger-scheduler', tickBody);
   tick();
   triggerSchedulerTimer = setInterval(tick, triggerSchedulerIntervalMs());
   globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;

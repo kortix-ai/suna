@@ -1,6 +1,6 @@
 import { buildPreviewGuardInstall } from './preview-guard';
 
-export type SandboxPreviewProvider = 'auto' | 'platinum' | 'daytona';
+export type SandboxPreviewProvider = 'auto' | 'platinum';
 
 export interface SandboxPreviewInput {
   provider: SandboxPreviewProvider;
@@ -10,7 +10,7 @@ export interface SandboxPreviewInput {
 }
 
 export interface SandboxPreviewResult {
-  provider: 'platinum' | 'daytona';
+  provider: 'platinum';
   exitCode: number;
   sandboxId?: string;
   /** Where people go. The stable name when there is one, else `sandboxOrigin`. */
@@ -72,6 +72,12 @@ export function buildPreviewBootstrapScript(input: {
    */
   runTests?: boolean;
   statusPath?: string;
+  /**
+   * The host sandbox's name. The stack tags every session box with it
+   * (`kortix.instance`), which is how teardown and the sweep find the session
+   * boxes a preview owns. See previewWorkerEnvironment().
+   */
+  hostName?: string;
 }): string {
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repository)) {
     throw new Error(`invalid GitHub repository: ${input.repository}`);
@@ -82,6 +88,9 @@ export function buildPreviewBootstrapScript(input: {
   const origin = new URL(input.origin);
   if (origin.protocol !== 'https:' || origin.pathname !== '/') {
     throw new Error('preview origin must be an HTTPS origin');
+  }
+  if (input.hostName !== undefined && !/^kortix-[a-z0-9-]+$/.test(input.hostName)) {
+    throw new Error(`invalid preview host name: ${input.hostName}`);
   }
   const instance = `pr-${input.prNumber}`;
   const state = '/workspace/kortix-preview';
@@ -170,7 +179,8 @@ PREVIEW_STATE_DIR=${shellQuote(state)} \
 PREVIEW_ORIGIN=${shellQuote(origin.origin)} \
 PREVIEW_SHA=${shellQuote(input.sha)} \
 PREVIEW_SECRETS_FILE="$SECRETS" \
-bun tests/bin/preview-stack.ts
+${input.hostName ? `PREVIEW_INSTANCE_ID=${shellQuote(input.hostName)} \
+` : ''}bun tests/bin/preview-stack.ts
 
 printf 'stack\n' > "$PHASE"
 
@@ -436,20 +446,21 @@ export function selectStalePreviewSandboxIds(
     .map((sandbox) => sandbox.id);
 }
 
+/**
+ * Previews run on Platinum only, host and sessions. There is no Daytona
+ * fallback: from 2026-08-10 an infrastructure failure moved the preview to
+ * Daytona, and on 2026-09-21 the shared Daytona org hit its snapshot quota and
+ * every preview session failed there. A Platinum failure now fails the preview
+ * loudly. Daytona code remains only to tear down previews created before this.
+ */
 export async function runSandboxPreview(
   input: SandboxPreviewInput,
   runners: {
     platinum: (input: SandboxPreviewInput) => Promise<SandboxPreviewResult>;
-    daytona: (input: SandboxPreviewInput) => Promise<SandboxPreviewResult>;
   },
 ): Promise<SandboxPreviewResult> {
-  if (input.provider === 'platinum') return runners.platinum(input);
-  if (input.provider === 'daytona') return runners.daytona(input);
-  try {
-    return await runners.platinum(input);
-  } catch (error) {
-    if (!(error instanceof PreviewInfrastructureError)) throw error;
-    console.warn(`[sandbox-preview] Platinum infrastructure failed; fallback=daytona error=${error.message}`);
-    return runners.daytona(input);
+  if (input.provider !== 'auto' && input.provider !== 'platinum') {
+    throw new Error(`previews run on Platinum only; received provider ${String(input.provider)}`);
   }
+  return runners.platinum(input);
 }

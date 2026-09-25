@@ -86,7 +86,7 @@ export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
  * Stable error code the platform API returns (HTTP 409) when a user tries to
  * set a model their account can't use — e.g. a managed model on a free tier,
  * or a BYOK model whose provider isn't connected. The API emits this from the
- * model-defaults PUT (`apps/api/src/projects/routes/r4.ts`) and the channel
+ * model-defaults PUT (`apps/api/src/projects/routes/models.ts`) and the channel
  * binding model set (`apps/api/src/projects/routes/channel-bindings.ts`) via
  * `isModelServableForAccount`. This is an EXPECTED condition — a UI validation
  * error, not a server bug — so `makeRequest` classifies a 409 carrying this
@@ -104,7 +104,7 @@ export const MODEL_NOT_SERVABLE_CODE = 'model_not_servable';
  * carrying the same `idempotency_key` is still mid-provision — see
  * `apps/api/src/projects/lib/provision-idempotency.ts`'s `in_flight` case and
  * the two `POST /projects/provision` handlers in
- * `apps/api/src/projects/routes/r1.ts`. This is a RETRYABLE, EXPECTED state:
+ * `apps/api/src/projects/routes/projects.ts`. This is a RETRYABLE, EXPECTED state:
  * the concurrent attempt simply hasn't committed yet, and the caller retries
  * with the same key until it does. First-run onboarding hits it whenever a
  * second tab (or the other entry door) races the same auto-create, so it must
@@ -154,6 +154,18 @@ const isIdempotentMethod = (method?: string): boolean => {
   return m === 'GET' || m === 'HEAD';
 };
 
+/** A DELETE that fails at the TRANSPORT layer (fetch throws, no HTTP response)
+ *  never reached the server as a completed request, so replaying it is safe —
+ *  the server never confirmed it applied the delete. Kortix DELETEs are
+ *  idempotent by design (a soft-tombstone stamp, then 404 for an already-absent
+ *  row), so a replay re-tombstones (a no-op) or 404s. This is retried ONLY on a
+ *  transport failure, NEVER on a received response status, where the server may
+ *  already have applied the delete. Regression: incident-20260922T210537Z (a
+ *  `sessions rm` DELETE stalled once, got zero retries, and blew past the
+ *  heartbeat runner's 120s wall; a fresh retry deleted the session in ~1.1s). */
+const isRetryableOnTransportFailure = (method?: string): boolean =>
+  isIdempotentMethod(method) || (method ?? 'GET').toUpperCase() === 'DELETE';
+
 const TRANSIENT_READ_RETRIES = 2;
 
 const isAbortError = (error: unknown): boolean =>
@@ -193,7 +205,7 @@ async function makeRequest<T = any>(
   let activeController = controller;
   const abortFromCaller = () => activeController.abort();
   fetchOptions.signal?.addEventListener('abort', abortFromCaller, { once: true });
-  let timeoutId: NodeJS.Timeout | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let isAborted = false;
   // Tracks whether *our* timer fired the abort, vs. an external abort
   // (client navigation, tab close, dropped connection). Only the former is a
@@ -258,7 +270,11 @@ async function makeRequest<T = any>(
     // The backend handles token refresh via Supabase directly.
 
     const retryableRead = isIdempotentMethod(fetchOptions.method);
-    const maxAttempts = retryableRead ? TRANSIENT_READ_RETRIES + 1 : 1;
+    // A DELETE is retried on a TRANSPORT failure only (see the predicate). It is
+    // NOT retried on a received response status, so `retryableRead` still gates
+    // the transient-gateway (502/503/504) response path below.
+    const retryableTransport = isRetryableOnTransportFailure(fetchOptions.method);
+    const maxAttempts = retryableTransport ? TRANSIENT_READ_RETRIES + 1 : 1;
     let response!: Response;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -291,6 +307,18 @@ async function makeRequest<T = any>(
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
+        }
+        // A self-timeout (OUR deadline fired, the caller did not abort) means
+        // this attempt got no response, so replaying it is safe for a
+        // retryable-transport method — the exact recovery the manual retry of a
+        // stalled `sessions rm` performed. Reset the flag so the next attempt
+        // classifies its own outcome, and re-arm a fresh attempt controller
+        // (the current one is aborted). An EXTERNAL abort stays terminal.
+        const selfTimedOut =
+          didTimeout && isAbortError(error) && !fetchOptions.signal?.aborted;
+        if (selfTimedOut && retryableTransport && attempt < maxAttempts - 1) {
+          didTimeout = false;
+          continue;
         }
         if (isAbortError(error) || attempt === maxAttempts - 1) {
           throw error;
@@ -427,7 +455,7 @@ async function makeRequest<T = any>(
 
       // Expected "this model isn't available for this account" state — the
       // backend returns a TYPED 409 with `code: 'model_not_servable'` (from
-      // `isModelServableForAccount` in `apps/api/src/projects/routes/r4.ts` and
+      // `isModelServableForAccount` in `apps/api/src/projects/routes/models.ts` and
       // `channel-bindings.ts`) when a user picks a model their account can't
       // use (free-tier managed model, disconnected BYOK provider). This is a UI
       // validation error, not a server defect, so it must NEVER page Better

@@ -27,7 +27,7 @@ mock.module('../../../lib/logger', () => ({
     },
   },
 }));
-mock.module('../engine', () => ({
+mock.module('../drain', () => ({
   drainSessionLifecycleQueue: async (input: {
     workerId?: string;
     limit?: number;

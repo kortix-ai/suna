@@ -221,7 +221,7 @@ describe('E2B provider lifecycle', () => {
   });
 
   test('refuses to report a renewal the provider clamped (endAt pinned by max_length_hours)', async () => {
-    // Essentia 2026-08-25: tier base_v1 max_length_hours=1 → every 204 left
+    // SampleCo 2026-08-25: tier base_v1 max_length_hours=1 → every 204 left
     // endAt at startedAt+1h; here the sandbox has 20 minutes left.
     infoEndAt = new Date(Date.now() + 20 * 60_000);
     const provider = new E2BProvider();
@@ -557,7 +557,7 @@ describe('E2B provider lifecycle', () => {
   // E2B's filesystem-only pause has no autostart contract: `lifecycle.autoResume`
   // needs a MEMORY snapshot, and Kortix sets no template `startCmd`. So apps/api
   // is the ONLY thing that starts the runtime after a resume — and a resume that
-  // brings the VM back with a DEAD process tree (Essentia box
+  // brings the VM back with a DEAD process tree (SampleCo box
   // igu3qpz1ctv0pg2agda1x: no new boot lines in /opt/kortix/logs/daemon.log after
   // the pause) used to burn the caller's whole wake budget on the 190 s health
   // wait and hand back an unreachable box. Only a human restart healed it.
@@ -636,7 +636,7 @@ describe('E2B provider lifecycle', () => {
 
     // A RESUME wakes a powered-down VM whose disk already holds the image. It
     // must never touch the snapshot builder: `self-host update` rebuilds took
-    // 14m11s on Essentia and a resume that waited on one was the 10-34 minute
+    // 14m11s on SampleCo and a resume that waited on one was the 10-34 minute
     // `open-session:starting` stall.
     expect(createdTemplate).toBeUndefined();
     expect(createdOpts).toBeUndefined();

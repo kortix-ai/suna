@@ -269,7 +269,7 @@ describe('messageFor', () => {
   });
 
   // This route's ONLY 503 is the managed-git-unavailable one
-  // (`isManagedGitUnavailableError`, `ensure-first-project.ts`) — a server
+  // (`isManagedGitUnavailableError`, `provision-errors.ts`) — a server
   // configuration state, not a transient failure. Unlike 502, it must NOT
   // get the retry-hint message: nothing the user does changes the outcome.
   test('maps 503 to a server-config message distinct from the 502 retry hint', () => {
@@ -318,9 +318,8 @@ describe('messageFor', () => {
   //
   // `messageFor`'s 403 branch used to fire for ANY 403, including
   // `enforceProjectQuota`'s `project_limit_reached` (`apps/api/src/projects/
-  // lib/access.ts`) — telling a free-tier user (FREE_TIER_PROJECT_LIMIT = 1,
-  // `ensureFirstProject` auto-provisions everyone's first project) they lack
-  // permissions they actually have.
+  // lib/access.ts`) — telling a free-tier user (FREE_TIER_PROJECT_LIMIT = 1)
+  // who already has a project that they lack permissions they actually have.
 
   test("FIX 2: maps a 403 project_limit_reached to the server's own quota message, not the owner/admin explanation", () => {
     const err = new ApiError(

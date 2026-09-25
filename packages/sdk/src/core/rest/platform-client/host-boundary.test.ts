@@ -63,6 +63,29 @@ describe('host boundary transport', () => {
     expect(requests[1]?.init?.headers).not.toHaveProperty('Authorization');
   });
 
+  test('connector setup-link info carries the app display name and icon', async () => {
+    responseFactory = () =>
+      Response.json({
+        kind: 'connector',
+        project_name: 'Project 1',
+        slug: 'miro',
+        app: 'miro',
+        name: 'Miro',
+        icon_url: 'https://cdn.example.test/miro.svg',
+        expires_at: '2026-10-01T00:00:00.000Z',
+      });
+
+    const info = await boundary.getConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    const identity: { name: string | null | undefined; icon: string | null | undefined } = {
+      name: info.name,
+      icon: info.icon_url,
+    };
+    expect(identity).toEqual({ name: 'Miro', icon: 'https://cdn.example.test/miro.svg' });
+  });
+
   test('connector setup-link finalize POSTs anonymously and returns the connected flag', async () => {
     responseFactory = () => Response.json({ connected: true });
 
@@ -76,6 +99,36 @@ describe('host boundary transport', () => {
     );
     expect(requests[0]?.init?.method).toBe('POST');
     expect(requests[0]?.init?.headers).not.toHaveProperty('Authorization');
+  });
+
+  test('connector setup-link finalize returns who the account was authorized as', async () => {
+    responseFactory = () => Response.json({ connected: true, connected_as: 'ops@example.test' });
+
+    const result = await boundary.finalizeConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    const identity: string | null | undefined = result.connected_as;
+    expect(identity).toBe('ops@example.test');
+  });
+
+  test('connector setup-link start types the already-connected answer (no url)', async () => {
+    responseFactory = () =>
+      Response.json({ connect_url: null, connected: true, already_connected: true });
+
+    const result = await boundary.startConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    const url: string | null = result.connect_url;
+    const alreadyConnected: boolean | undefined = result.already_connected;
+    expect(url).toBeNull();
+    expect(result.connected).toBe(true);
+    expect(alreadyConnected).toBe(true);
+    expect(requests[0]?.url).toBe(
+      'https://api.example.test/v1/setup-links/connectors/connect-token/start',
+    );
+    expect(requests[0]?.init?.method).toBe('POST');
   });
 
   test('connector setup-link finalize reports a still-pending connect as connected:false', async () => {
@@ -134,5 +187,15 @@ describe('host boundary transport', () => {
     );
     expect(result.complete).toBe(false);
     expect(result.nextCursor).toBe('2026-08-07T12:00:00.000Z|event-1');
+  });
+
+  test('audit export can select the rows no authenticator identified', async () => {
+    responseFactory = () => new Response('', { status: 200 });
+    await boundary.downloadAccountAudit(
+      'account-1',
+      { format: 'jsonl', actor_type: 'anonymous' },
+      { backendUrl: 'https://api.example.test/v1', accessToken: 'token-1' },
+    );
+    expect(new URL(requests[0]!.url).searchParams.get('actor_type')).toBe('anonymous');
   });
 });

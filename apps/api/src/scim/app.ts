@@ -16,6 +16,7 @@ import { makeOpenApiApp } from '../openapi';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
 import { withDirectoryTransaction } from '../iam/directory-transaction';
+import { emailTrustedSql } from '../iam/email-trust';
 import { getSupabase } from '../shared/supabase';
 
 // SCIM payloads are large/dynamic — model permissively.
@@ -124,6 +125,11 @@ export async function emailsByUserId(userIds: string[]): Promise<Map<string, str
   return map;
 }
 
+/**
+ * The Auth user a directory email names. Only an identity whose email is
+ * trusted (iam/email-trust.ts) qualifies: an SSO identity from another
+ * account's IdP that did not verify the email's domain is never linked.
+ */
 export async function userIdByEmail(email: string, accountId?: string): Promise<string | null> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return null;
@@ -133,6 +139,7 @@ export async function userIdByEmail(email: string, accountId?: string): Promise<
     LEFT JOIN kortix.account_memberships m
       ON m.user_id = u.id AND m.account_id = ${accountId ?? null}::uuid
     WHERE u.email = ${normalized}
+      AND ${emailTrustedSql(sql`u`, accountId)}
     ORDER BY (m.user_id IS NOT NULL) DESC, u.created_at, u.id
     LIMIT 1
   `);

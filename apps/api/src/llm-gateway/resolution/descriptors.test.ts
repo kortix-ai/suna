@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realTiers from '../../billing/services/tiers';
 
 const config: Record<string, unknown> = {
@@ -41,6 +41,8 @@ const getModelPricing = mock(
 mock.module('../../router/config/model-pricing', () => ({ getModelPricing }));
 
 const {
+  bedrockByokBaseUrl,
+  isAwsRegion,
   livePricing,
   managedCandidates,
   stripBedrockInferenceProfilePrefix,
@@ -101,7 +103,7 @@ describe('stripBedrockInferenceProfilePrefix', () => {
 });
 
 describe('normalizeBedrockInferenceProfileRegion', () => {
-  test('rewrites a wrong-geography profile to the endpoint region (the Essentia jp.→us. incident)', () => {
+  test('rewrites a wrong-geography profile to the endpoint region (the SampleCo jp.→us. incident)', () => {
     // 41 sessions on a us-east-1 box were pinned to jp.anthropic.claude-opus-5,
     // which Bedrock 400s "The provided model identifier is invalid."
     expect(
@@ -218,6 +220,78 @@ describe('managed OpenRouter descriptor', () => {
   });
 });
 
+describe('managed Morph primary with OpenRouter pool fallback', () => {
+  const glm = {
+    id: 'glm-5.3-flash', name: 'GLM 5.3 Flash',
+    upstreamModelId: 'z-ai/glm-5.3-flash', transport: 'openrouter' as const,
+    morphModelId: 'morph-glm53flash',
+    pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+    pricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
+    tier: 'fast' as const, vision: true, limit: { context: 1_048_576, output: 16_384 },
+    openrouterProvider: {
+      only: ['morph', 'wafer', 'together'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+      max_price: { prompt: 0.15, completion: 0.5 },
+    },
+  };
+
+  beforeEach(() => {
+    config.MORPH_API_KEY = 'morph-test-key';
+    config.MORPH_API_URL = 'https://api.morphllm.com/v1';
+  });
+  afterEach(() => {
+    config.MORPH_API_KEY = undefined;
+    config.MORPH_API_URL = undefined;
+  });
+
+  test('Morph is the first candidate and the OpenRouter pool is the failover', () => {
+    expect(managedCandidates(glm)).toEqual([
+      expect.objectContaining({
+        provider: 'morph', kind: 'openai-compat', baseUrl: 'https://api.morphllm.com/v1',
+        apiKey: 'morph-test-key', resolvedModel: 'morph-glm53flash', billingMode: 'credits', markup: 2,
+        pricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
+        failover: true, publicProvider: 'kortix',
+      }),
+      expect.objectContaining({
+        provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'openrouter-test-key',
+        resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits', failover: true, publicProvider: 'kortix',
+        bodyExtras: { provider: {
+          only: ['morph', 'wafer', 'together'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+          max_price: { prompt: 0.15, completion: 0.5 },
+        } },
+      }),
+    ]);
+    expect(managedCandidates(glm)[0].bodyExtras).toBeUndefined();
+  });
+
+  test('the OpenRouter route always forces ZDR and no data collection', () => {
+    const [, openrouter] = managedCandidates({
+      ...glm,
+      openrouterProvider: { only: ['wafer'], allow_fallbacks: true, zdr: false, data_collection: 'allow' },
+    });
+    expect(openrouter.bodyExtras).toEqual({
+      provider: { only: ['wafer'], allow_fallbacks: true, zdr: true, data_collection: 'deny' },
+    });
+  });
+
+  test('without a Morph key the OpenRouter pool serves alone', () => {
+    config.MORPH_API_KEY = undefined;
+    expect(managedCandidates(glm).map((c) => c.provider)).toEqual(['openrouter']);
+  });
+
+  test('without an OpenRouter key Morph serves alone', () => {
+    const saved = config.OPENROUTER_API_KEY;
+    config.OPENROUTER_API_KEY = undefined;
+    try {
+      expect(managedCandidates(glm).map((c) => c.provider)).toEqual(['morph']);
+    } finally { config.OPENROUTER_API_KEY = saved; }
+  });
+
+  test('a model without a Morph id routes through OpenRouter only', () => {
+    const { morphModelId: _drop, ...openrouterOnly } = glm;
+    expect(managedCandidates(openrouterOnly).map((c) => c.provider)).toEqual(['openrouter']);
+  });
+});
+
 test('managed GLM pins CoreWeave and enforces ZDR without fallback', () => {
   expect(managedCandidates({
     id: 'glm-5.3-flash', name: 'GLM-5.3-Flash',
@@ -231,4 +305,27 @@ test('managed GLM pins CoreWeave and enforces ZDR without fallback', () => {
     resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits',
     bodyExtras: { provider: { only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
   })]);
+});
+
+describe('bedrockByokBaseUrl', () => {
+  test.each(['us-east-1', 'eu-central-2', 'ap-southeast-4', 'us-gov-west-1', 'il-central-1', 'ca-west-1'])(
+    'accepts the region %s',
+    (region) => {
+      expect(isAwsRegion(region)).toBe(true);
+      expect(bedrockByokBaseUrl(region)).toBe(`https://bedrock-runtime.${region}.amazonaws.com`);
+    },
+  );
+
+  test.each(['x@example.test/', 'example.test#', 'us-east-1.example.test', 'us-east-1/', 'US-EAST-1', 'us_east_1', '10.0.0.5:8443'])(
+    'refuses %s, which is not a region name',
+    (region) => {
+      expect(isAwsRegion(region)).toBe(false);
+      expect(() => bedrockByokBaseUrl(region)).toThrow('AWS_REGION is not a valid AWS region name');
+    },
+  );
+
+  test('an unset region uses us-east-1', () => {
+    expect(bedrockByokBaseUrl(null)).toBe('https://bedrock-runtime.us-east-1.amazonaws.com');
+    expect(bedrockByokBaseUrl('  ')).toBe('https://bedrock-runtime.us-east-1.amazonaws.com');
+  });
 });

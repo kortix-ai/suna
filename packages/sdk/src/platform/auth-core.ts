@@ -72,7 +72,7 @@ export async function withTokenRetry(
  *
  * 30s was both, and the second role broke sessions: a transcript page that was
  * 7-19 MB of inline attachment bytes took 23-30 s to arrive and was killed at
- * exactly 30.00 s — then retried, and killed again, forever (essentia,
+ * exactly 30.00 s — then retried, and killed again, forever (sampleco,
  * 2026-08-24, network panel: five reads in a row at 29.23-30.08 s). The bytes
  * are gone now (`stripInlineAttachmentBytes`), which is the real fix; this
  * ceiling is raised so the next large-but-legitimate response is not

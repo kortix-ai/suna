@@ -24,7 +24,7 @@ import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import {
   isManagedGitUnavailableError,
   isProjectLimitError,
-} from '@/lib/onboarding/ensure-first-project';
+} from '@/lib/onboarding/provision-errors';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   createProjectRepo,
@@ -63,7 +63,7 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * actually identifies a genuinely different workspace: keying on those means
  * creating "suna-web" then, moments later, "kortix-api" in the same account
  * mints two independent keys instead of the second create silently returning
- * the first project (the exact failure mode `r1.ts`'s `idempotency_key` doc
+ * the first project (the exact failure mode `projects.ts`'s `idempotency_key` doc
  * comment warns about).
  */
 export function fingerprintOf(state: NewWorkspaceFormState): string {
@@ -226,11 +226,11 @@ export function buildManagedImportRequest(
  * every branch below reads identically regardless of which one ran.
  *
  * Managed git being unconfigured is NOT an upstream failure and must not share
- * its message. `isManagedGitUnavailableError` (`ensure-first-project.ts`)
- * names it by its message: on the wire it is a 503, but so is every 502, which
- * the API's edge middleware rewrites to 503 (`apps/api/src/index.ts`,
- * EDGE_REWRITTEN_STATUSES). Managed git unconfigured is a server-config state
- * no client-side retry can fix. Telling the
+ * its message. `isManagedGitUnavailableError`
+ * (`lib/onboarding/provision-errors.ts`) names it by its message: on the wire
+ * it is a 503, but so is every 502, which the API's edge middleware rewrites to
+ * 503 (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES). Managed git
+ * unconfigured is a server-config state no client-side retry can fix. Telling the
  * user to "try again" there is false: nothing they do changes the outcome
  * until an operator configures it. Any other 502 or 503 (an upstream/gateway
  * fault) keeps the retryable generic message, matching every OTHER call site that reuses
@@ -242,14 +242,13 @@ export function buildManagedImportRequest(
  * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
  * (`apps/api/src/projects/lib/access.ts`) returns 403 too, and
  * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/shared/account-limits.ts`)
- * plus `ensureFirstProject` auto-provisioning every account's first project
- * means EVERY free-tier user who clicks "Create a workspace…" hits this —
- * not an edge case. The generic 403 message ("You need owner or admin
+ * means every free-tier user who already has one project and clicks
+ * "Create a workspace…" hits this — not an edge case. The generic 403 message ("You need owner or admin
  * access…") is actively false for them: they have the role, they are simply
  * out of quota. The server's own message is reused verbatim rather than
  * inventing new copy — it already states the exact limit and the upgrade
  * path, matching what the deleted create modal's `isProjectLimitError`
- * handling reused for the same code (`ensure-first-project.ts`).
+ * handling reused for the same code (`provision-errors.ts`).
  *
  * `provision_in_flight` (409, final-review FIX 1) also gets its own branch,
  * never the raw server text: `PROVISION_IN_FLIGHT_CODE`'s own doc comment
@@ -280,7 +279,7 @@ export function messageFor(error: unknown): string {
     // `provision_in_flight` carries a typed `code`
     // (`PROVISION_IN_FLIGHT_CODE`); the GitHub sources' 409s do not — they are
     // "install the Kortix GitHub App first" (`create-repo` and
-    // `link-repository`, `apps/api/src/projects/routes/r2.ts`) and "no
+    // `link-repository`, `apps/api/src/projects/routes/project-from-repository.ts`) and "no
     // available repository name near X". Both of those already say exactly
     // what to do, so the server's own message is reused verbatim rather than
     // being overwritten with a wait-and-retry line that is simply false for
@@ -329,8 +328,9 @@ const GITHUB_PERSONAL_ACCOUNT_CREATE_UNSUPPORTED = 'github_personal_account_crea
  *   so a role grant made in the meantime can turn this into a success.
  * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
  *   later attempt can land differently with no change on the client at all.
- * - `503` that `isManagedGitUnavailableError` matches — NOT retryable. A
- *   server configuration state; see `messageFor` above. Any other `503` is an
+ * - `503` that `isManagedGitUnavailableError`
+ *   (`lib/onboarding/provision-errors.ts`) matches — NOT retryable. A server
+ *   configuration state; see `messageFor` above. Any other `503` is an
  *   edge-rewritten `502` and falls through to the retryable default. Reuses that detector rather than
  *   re-deriving the 503 check, so this and `messageFor` can never disagree
  *   about which failure is which.
@@ -375,8 +375,7 @@ export function isRetryableError(error: unknown): boolean {
  * The network calls `runCreateAttempt` and `runProvisionAttempt` need,
  * injectable so their logic is unit-tested with a plain fake instead of
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
- * hazard for sibling test suites (see `ensure-first-project.ts`'s own
- * `EnsureFirstProjectClient` for the same pattern). `wait` is injected too, so
+ * hazard for sibling test suites. `wait` is injected too, so
  * a test exercises the FULL retry budget without sleeping the real
  * 400ms/1200ms.
  */
@@ -437,7 +436,7 @@ export function isTransportFailure(error: unknown): boolean {
  *
  * POSTs once. On a `409` `provision_in_flight` — another call carrying this
  * SAME `idempotency_key` is still mid-provision, per
- * `apps/api/src/projects/routes/r1.ts` — retries up to `RETRY_DELAY_MS.length`
+ * `apps/api/src/projects/routes/projects.ts` — retries up to `RETRY_DELAY_MS.length`
  * more times with the IDENTICAL payload. Never a re-minted key: the key
  * identifies the ATTEMPT, and the whole point of retrying is to land on that
  * same attempt's result. Any other error, or exhausting the retry budget,
@@ -538,8 +537,7 @@ export async function runProvisionAttempt(
  * `mock.module('@kortix/sdk', ...)`, which is process-wide in this monorepo.
  *
  * `attemptKeyFor`/`clearAttemptKey`/`writeLastProjectId`/`now` don't depend on
- * React and could be given real module-level defaults (as
- * `EnsureFirstProjectClient` does in `ensure-first-project.ts`); the other
+ * React and could be given real module-level defaults ; the other
  * three (`primeProjectCache`, `invalidateProjects`, `enterOnboarding`) are
  * inherently render-scoped — they close over the live `queryClient`/`router`
  * a hook only has inside a component — so there is no single "no-args"
@@ -649,15 +647,13 @@ async function runSourceAttempt(
  *
  * **No onboarding gate.** An earlier version read the account's project count
  * here and pre-stamped the new project onboarded unless it was the account's
- * first. That gate could never fire: the account's first project is
- * auto-provisioned (`ensure-first-project.ts`), never created through `/new`,
- * so the count was always >= 1 by the time anyone reached this code — and the
- * pre-stamp made the wizard render `null` on arrival, every single time.
+ * first. The pre-stamp made the wizard render `null` on arrival for every
+ * project after the first.
  * Every `/new` create now runs onboarding, and the only thing that stamps the
  * project is the wizard finishing.
  *
  * The key is cleared FIRST among the success-path steps, before any of the
- * other four. The API's own contract (`r1.ts`) is that the key identifies the
+ * other four. The API's own contract (`projects.ts`) is that the key identifies the
  * ATTEMPT, not the payload — once the server has confirmed this attempt
  * succeeded, the key must never be replayed, or a LATER, genuinely different
  * create with the same name would silently return THIS project instead of

@@ -178,18 +178,18 @@ describe('warnIfPreviewOriginsMissing', () => {
   };
 
   test('warns on a public deployment with no preview domain — the silent-downgrade case', () => {
-    configState.KORTIX_URL = 'https://api.essentia.kortix.cloud';
+    configState.KORTIX_URL = 'https://api.sampleco.kortix.cloud';
     configState.KORTIX_PREVIEW_BASE_DOMAIN = undefined;
     const log = spy();
     warnIfPreviewOriginsMissing(log);
     expect(log.calls).toHaveLength(1);
     expect(log.calls[0]!.message).toContain('no KORTIX_PREVIEW_BASE_DOMAIN');
-    expect(log.calls[0]!.meta?.kortix_url).toBe('https://api.essentia.kortix.cloud');
+    expect(log.calls[0]!.meta?.kortix_url).toBe('https://api.sampleco.kortix.cloud');
   });
 
   test('silent once a preview domain is configured', () => {
-    configState.KORTIX_URL = 'https://api.essentia.kortix.cloud';
-    configState.KORTIX_PREVIEW_BASE_DOMAIN = 'p.essentia.kortix.cloud';
+    configState.KORTIX_URL = 'https://api.sampleco.kortix.cloud';
+    configState.KORTIX_PREVIEW_BASE_DOMAIN = 'p.sampleco.kortix.cloud';
     const log = spy();
     warnIfPreviewOriginsMissing(log);
     expect(log.calls).toEqual([]);

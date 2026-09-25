@@ -462,3 +462,74 @@ describe('the one-shot token never lingers in the address bar', () => {
     expect(forwarded).toBe(0);
   });
 });
+
+describe('every preview request is attributed in the audit log', () => {
+  // A preview page load is hundreds of requests and only the first presents a
+  // token; the rest ride the signed cookie. Each one is audited by the server
+  // edge, so each must be attributed here — from the cookie — and name the
+  // sandbox it reached, so the row lands in the sandbox owner's log.
+  const { runWithContext } = require('../lib/request-context');
+  const { attachInboundAuditScope } = require('../shared/audit-scope');
+  const USER = '00000000-0000-4000-a000-000000000001';
+
+  async function scopeAfter(req: Request, url: URL) {
+    return runWithContext(req.method, url.pathname, async () => {
+      const scope = attachInboundAuditScope({ owner: 'edge', method: req.method });
+      await handlePreviewOriginRequest(req, url);
+      return scope;
+    });
+  }
+
+  test('a request riding the cookie is attributed from it, without re-validating a token', async () => {
+    const token = mintPreviewSession(
+      {
+        kind: 'principal',
+        principalKind: 'user',
+        sandboxLabel: 'sbx-known',
+        sandboxId: 'sbx_KNOWN',
+        port: 8081,
+        userId: USER,
+        callerSessionId: null,
+        sandboxAuthored: false,
+      },
+      3600,
+    );
+    const [req, url] = request('/app.js', { headers: { cookie: `__kortix_preview=${token}` } });
+
+    const scope = await scopeAfter(req, url);
+
+    expect(principalCalls).toEqual([]);
+    expect(scope.principal).toMatchObject({
+      actorType: 'human',
+      actorUserId: USER,
+      authMethod: { kind: 'preview_session' },
+    });
+    expect(scope.annotation).toMatchObject({
+      resourceType: 'sandbox_preview_origin',
+      resourceId: 'sbx_KNOWN',
+      metadata: { port: 8081 },
+    });
+  });
+
+  test('a cookie minted before the kind existed names its principal and asserts no user', async () => {
+    const [req, url] = request('/app.js', { headers: { cookie: mintCookieFor('sbx-known', 8081) } });
+
+    const scope = await scopeAfter(req, url);
+
+    expect(scope.principal).toMatchObject({
+      authMethod: { kind: 'preview_session', principal_id: 'user-1' },
+    });
+    expect(scope.principal.actorUserId).toBeUndefined();
+  });
+
+  test('a refused credential on a known preview is recorded against that sandbox', async () => {
+    const [req, url] = request('/learn?token=nope');
+
+    const scope = await scopeAfter(req, url);
+
+    expect(scope.annotation).toMatchObject({
+      resourceType: 'sandbox_preview_origin',
+      resourceId: 'sbx_KNOWN',
+    });
+  });
+});

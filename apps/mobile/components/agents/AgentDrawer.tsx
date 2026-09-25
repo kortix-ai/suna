@@ -1,34 +1,28 @@
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
-import { SearchBar } from '@/components/ui/SearchBar';
+import { Button } from '@/components/ui/button';
+import { SearchBar } from '@/components/kortix/SearchBar';
 import { useLanguage } from '@/contexts';
 import { useAgent } from '@/contexts/AgentContext';
 import { useAdvancedFeatures } from '@/hooks';
 import { useBillingContext } from '@/contexts/BillingContext';
-import BottomSheet, {
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetView,
-  BottomSheetModal,
-  BottomSheetFlatList,
-  TouchableOpacity as BottomSheetTouchable,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetScrollView, BottomSheetView, BottomSheetModal, BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import {
-  Plus,
-  Zap,
-  ArrowLeft,
-  Brain,
-  Wrench,
-  Server,
-  Sparkles,
-  Lock,
-  ChevronRight,
-  Plug,
-} from 'lucide-react-native';
+  PlusIcon as Plus,
+  LightningIcon as Zap,
+  ArrowLeftIcon as ArrowLeft,
+  BrainIcon as Brain,
+  WrenchIcon as Wrench,
+  HardDrivesIcon as Server,
+  SparkleIcon as Sparkles,
+  LockIcon as Lock,
+  CaretRightIcon as ChevronRight,
+  PlugIcon as Plug,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Pressable, View, ScrollView, Keyboard, Alert, Platform, StyleSheet } from 'react-native';
+import { View, ScrollView, Keyboard, Alert, Platform } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   withTiming,
@@ -51,8 +45,10 @@ import { ComposioConnectorContent } from '@/components/settings/connections/Comp
 import { ComposioToolsContent } from '@/components/settings/connections/ComposioToolsSelector';
 import { CustomMcpContent } from '@/components/settings/connections/CustomMcpDialog';
 import { CustomMcpToolsContent } from '@/components/settings/connections/CustomMcpToolsSelector';
+import { canShowExternalPurchase } from '@/lib/billing/store-policy';
 import { log } from '@/lib/logger';
-import { getSheetBg } from '@/lib/theme-colors';
+import { KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface AgentDrawerProps {
   visible: boolean;
@@ -72,16 +68,17 @@ type ViewState =
   | 'composio'
   | 'composio-detail'
   | 'composio-connector'
-  | 'composio-tools'
   | 'customMcp'
-  | 'customMcp-tools';
+  | 'customMcp-tools'
+  | 'composio-tools';
 
 function BackButton({ onPress }: { onPress: () => void }) {
   const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
   return (
-    <BottomSheetTouchable onPress={onPress} style={{ padding: 4 }}>
-      <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-    </BottomSheetTouchable>
+    <Button variant="ghost" size="icon" onPress={onPress} accessibilityLabel="Back">
+      <ArrowLeft size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
+    </Button>
   );
 }
 
@@ -100,14 +97,7 @@ export function AgentDrawer({
   const isDark = colorScheme === 'dark';
 
   // Theme colors
-  const colors = {
-    bg: isDark ? '#161618' : '#FFFFFF',
-    card: isDark ? '#1e1e20' : '#f5f5f5',
-    border: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-    text: isDark ? '#f8f8f8' : '#121215',
-    muted: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
-    accent: isDark ? '#22c55e' : '#16a34a',
-  };
+  const c = isDark ? THEME.dark : THEME.light;
 
   const {
     agents,
@@ -173,6 +163,9 @@ export function AgentDrawer({
 
   const handleUpgradeRequired = React.useCallback(() => {
     log.log('🔒 Upgrade required');
+    // iOS: Plans opens web checkout, which App Store guideline 3.1.1
+    // forbids linking to from the app — stay put instead of navigating.
+    if (!canShowExternalPurchase(Platform.OS)) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     onClose?.();
     setTimeout(() => router.push('/plans'), 100);
@@ -245,18 +238,6 @@ export function AgentDrawer({
     setCurrentView('connections');
   }, [selectedAgent, hasFreeTier, handleUpgradeRequired, advancedFeaturesEnabled]);
 
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-        pressBehavior="close"
-      />
-    ),
-    []
-  );
 
   // ============================================================================
   // MAIN VIEW - Clean, focused on Mode selection
@@ -265,12 +246,12 @@ export function AgentDrawer({
     <View style={styles.mainContainer}>
       {/* Mode Section - Primary & prominent */}
       <View style={styles.section}>
-        <Text style={[styles.sectionLabel, { color: colors.muted }]}>
+        <Text style={styles.sectionLabel} className="text-muted-foreground">
           {t('models.mode', 'Mode')}
         </Text>
         {modelsLoading ? (
           <View style={styles.loadingContainer}>
-            <Text style={[styles.loadingText, { color: colors.muted }]}>Loading...</Text>
+            <Text style={styles.loadingText} className="text-muted-foreground">Loading...</Text>
           </View>
         ) : (
           <ModelToggle
@@ -284,116 +265,119 @@ export function AgentDrawer({
       </View>
 
       {/* Connections */}
-      <Pressable
+      <PressableSurface
         onPress={handleConnectionsPress}
         style={({ pressed }) => [
           styles.connectionsContainer,
           {
-            backgroundColor: pressed 
-              ? isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'
-              : isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-            borderColor: colors.border,
+            backgroundColor: pressed ? c.hover : withAlpha(c.foreground, 0.02),
+            borderColor: c.border,
           },
         ]}
       >
         <View style={styles.connectionsRow}>
-          <View style={[styles.connectionsIcon, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
+          <View style={[styles.connectionsIcon, { backgroundColor: c.hover }]}>
             {hasFreeTier ? (
-              <Lock size={18} color={colors.muted} strokeWidth={2} />
+              <Lock size={18} color={c.mutedForeground} />
             ) : (
-              <Plug size={18} color={colors.text} strokeWidth={2} />
+              <Plug size={18} color={c.foreground} />
             )}
           </View>
           <View style={styles.connectionsTextContainer}>
-            <Text style={[styles.connectionsTitle, { color: colors.text }]}>
+            <Text style={styles.connectionsTitle} className="text-foreground">
               Connect your Apps
             </Text>
-            <Text style={[styles.connectionsSubtitle, { color: colors.muted }]}>
+            <Text style={styles.connectionsSubtitle} className="text-muted-foreground">
               {hasFreeTier ? 'Upgrade to unlock' : 'Google, Slack, GitHub & more'}
             </Text>
           </View>
-          <ChevronRight size={18} color={colors.muted} />
+          <ChevronRight size={18} color={c.mutedForeground} />
         </View>
-      </Pressable>
+      </PressableSurface>
 
       {/* Worker Section - ONLY visible in beta mode */}
       {advancedFeaturesEnabled && (
         <>
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <View style={[styles.divider, { backgroundColor: c.border }]} />
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionLabel, { color: colors.muted }]}>
+              <Text style={styles.sectionLabel} className="text-muted-foreground">
                 {t('agents.myWorkers', 'Workers')}
               </Text>
               {onCreateAgent && (
-                <BottomSheetTouchable
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     hasFreeTier ? handleUpgradeRequired() : onCreateAgent();
                   }}
+                  accessibilityLabel={hasFreeTier ? 'Upgrade to create an agent' : 'Create agent'}
                 >
                   {hasFreeTier ? (
-                    <Sparkles size={16} color={colors.accent} />
+                    <Sparkles size={16} color={THEME.accent.green} />
                   ) : (
-                    <Plus size={16} color={colors.muted} />
+                    <Plus size={16} color={c.mutedForeground} />
                   )}
-                </BottomSheetTouchable>
+                </Button>
               )}
             </View>
 
             {/* Selected Worker */}
             {selectedAgent ? (
-              <Pressable
+              <PressableSurface
                 onPress={() => navigateToView('agents')}
                 style={({ pressed }) => [
                   styles.workerCard,
                   {
-                    backgroundColor: pressed ? colors.card : 'transparent',
-                    borderColor: colors.border,
+                    backgroundColor: pressed ? c.card : 'transparent',
+                    borderColor: c.border,
                   },
                 ]}
               >
                 <AgentAvatar agent={selectedAgent} size={40} />
                 <View style={styles.workerInfo}>
-                  <Text style={[styles.workerName, { color: colors.text }]} numberOfLines={1}>
+                  <Text style={styles.workerName} className="text-foreground" numberOfLines={1}>
                     {selectedAgent.name}
                   </Text>
                   {selectedAgent.description && (
-                    <Text style={[styles.workerDesc, { color: colors.muted }]} numberOfLines={1}>
+                    <Text style={styles.workerDesc} className="text-muted-foreground" numberOfLines={1}>
                       {selectedAgent.description}
                     </Text>
                   )}
                 </View>
-                <ChevronRight size={18} color={colors.muted} />
-              </Pressable>
+                <ChevronRight size={18} color={c.mutedForeground} />
+              </PressableSurface>
             ) : (
-              <Pressable
+              <PressableSurface
                 onPress={() => navigateToView('agents')}
                 style={({ pressed }) => [
                   styles.workerCard,
                   {
-                    backgroundColor: pressed ? colors.card : 'transparent',
-                    borderColor: colors.border,
+                    backgroundColor: pressed ? c.card : 'transparent',
+                    borderColor: c.border,
                   },
                 ]}
               >
-                <View style={[styles.workerPlaceholder, { backgroundColor: colors.card }]}>
-                  <Sparkles size={18} color={colors.muted} />
+                <View style={[styles.workerPlaceholder, { backgroundColor: c.card }]}>
+                  <Sparkles size={18} color={c.mutedForeground} />
                 </View>
-                <Text style={[styles.workerPlaceholderText, { color: colors.muted }]}>
+                <Text style={styles.workerPlaceholderText} className="text-muted-foreground">
                   Select a worker
                 </Text>
-                <ChevronRight size={18} color={colors.muted} />
-              </Pressable>
+                <ChevronRight size={18} color={c.mutedForeground} />
+              </PressableSurface>
             )}
           </View>
 
           {/* Worker Quick Actions */}
           {selectedAgent && (
             <View style={styles.quickActionsContainer}>
-              <BottomSheetTouchable
-                style={[styles.quickAction, { borderColor: colors.border }]}
+              <Button
+                size="lg"
+                variant="outline"
+                className="flex-1"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
@@ -401,11 +385,14 @@ export function AgentDrawer({
                     onClose?.();
                   }
                 }}
+                accessibilityLabel="Instructions"
               >
-                <Brain size={18} color={colors.text} />
-              </BottomSheetTouchable>
-              <BottomSheetTouchable
-                style={[styles.quickAction, { borderColor: colors.border }]}
+                <Brain size={18} color={c.foreground} />
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="flex-1"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
@@ -413,11 +400,14 @@ export function AgentDrawer({
                     onClose?.();
                   }
                 }}
+                accessibilityLabel="Tools"
               >
-                <Wrench size={18} color={colors.text} />
-              </BottomSheetTouchable>
-              <BottomSheetTouchable
-                style={[styles.quickAction, { borderColor: colors.border }]}
+                <Wrench size={18} color={c.foreground} />
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="flex-1"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
@@ -425,11 +415,14 @@ export function AgentDrawer({
                     onClose?.();
                   }
                 }}
+                accessibilityLabel="Connections"
               >
-                <Server size={18} color={colors.text} />
-              </BottomSheetTouchable>
-              <BottomSheetTouchable
-                style={[styles.quickAction, { borderColor: colors.border }]}
+                <Server size={18} color={c.foreground} />
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="flex-1"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
@@ -437,9 +430,10 @@ export function AgentDrawer({
                     onClose?.();
                   }
                 }}
+                accessibilityLabel="Triggers"
               >
-                <Zap size={18} color={colors.text} />
-              </BottomSheetTouchable>
+                <Zap size={18} color={c.foreground} />
+              </Button>
             </View>
           )}
         </>
@@ -455,10 +449,10 @@ export function AgentDrawer({
       <View style={styles.viewHeader}>
         <BackButton onPress={() => navigateToView('main')} />
         <View style={styles.viewHeaderText}>
-          <Text style={[styles.viewTitle, { color: colors.text }]}>
+          <Text style={styles.viewTitle} className="text-foreground">
             {t('agents.selectAgent', 'Select Worker')}
           </Text>
-          <Text style={[styles.viewSubtitle, { color: colors.muted }]}>
+          <Text style={styles.viewSubtitle} className="text-muted-foreground">
             {t('agents.chooseAgent', 'Choose a worker for your tasks')}
           </Text>
         </View>
@@ -474,22 +468,25 @@ export function AgentDrawer({
       </View>
 
       <View style={styles.sectionHeader}>
-        <Text style={[styles.sectionLabel, { color: colors.muted }]}>
+        <Text style={styles.sectionLabel} className="text-muted-foreground">
           {t('agents.myWorkers', 'Workers')}
         </Text>
         {onCreateAgent && (
-          <BottomSheetTouchable
+          <Button
+            variant="ghost"
+            size="icon"
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               hasFreeTier ? handleUpgradeRequired() : onCreateAgent();
             }}
+            accessibilityLabel={hasFreeTier ? 'Upgrade to create an agent' : 'Create agent'}
           >
             {hasFreeTier ? (
-              <Sparkles size={16} color={colors.accent} />
+              <Sparkles size={16} color={THEME.accent.green} />
             ) : (
-              <Plus size={16} color={colors.muted} />
+              <Plus size={16} color={c.mutedForeground} />
             )}
-          </BottomSheetTouchable>
+          </Button>
         )}
       </View>
 
@@ -515,24 +512,12 @@ export function AgentDrawer({
   );
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={bottomSheetRef}
       snapPoints={advancedFeaturesEnabled ? ['70%'] : ['50%']}
       enablePanDownToClose
       onDismiss={handleDismiss}
       onChange={handleSheetChange}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
       style={{
         zIndex: 50,
         elevation: Platform.OS === 'android' ? 10 : undefined,
@@ -663,11 +648,11 @@ export function AgentDrawer({
           )}
         </BottomSheetScrollView>
       )}
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = {
   scrollContent: {
     paddingHorizontal: 24,
     paddingTop: 16,
@@ -771,14 +756,6 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 8,
   },
-  quickAction: {
-    flex: 1,
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   viewHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -806,4 +783,4 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     flex: 1,
   },
-});
+} as const;

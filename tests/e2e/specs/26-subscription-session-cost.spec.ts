@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { loadEnv } from "../../src/core/env";
 import {
@@ -166,10 +167,25 @@ test("26 — ChatGPT session usage excludes historical subscription costs and re
           env.databaseUrl,
         );
       }
-      // A retained, stopped computer makes the persisted transcript readable.
+      // A retained, stopped computer with a wake in flight makes the persisted
+      // transcript readable: /start answers `starting` + the stopped sandbox
+      // row (`stoppedWakeResult`, before any provider call), and the page
+      // renders cached content while the sandbox is down.
+      //
+      // The claim must be in the fixture. A bare stopped row makes /start ask
+      // the provider about this fabricated external_id. Daytona answered
+      // non-definitively, the API claimed a wake, and the page rendered the
+      // transcript by accident. Platinum answers 404 -> `runtime_removed` ->
+      // `stopped`/`failed` with no readable transcript (preview run
+      // 35708105773). The lease (240 s) outlives one scenario (~7 s).
+      const wakeClaim = {
+        runtimeWakeId: randomUUID(),
+        runtimeWakeStartedAt: new Date().toISOString(),
+        runtimeWakeLeaseExpiresAt: new Date(Date.now() + 240_000).toISOString(),
+      };
       await runDatabaseSql(
-        "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id, base_url) VALUES ($1::uuid,$1,$2,$3,'stopped',$1,'http://127.0.0.1:1')",
-        [sessionId, accountId, projectId],
+        "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id, base_url, metadata) VALUES ($1::uuid,$1,$2,$3,'stopped',$1,'http://127.0.0.1:1',$4::jsonb)",
+        [sessionId, accountId, projectId, JSON.stringify(wakeClaim)],
         env.databaseUrl,
       );
       // The browser reads the persisted mirror through the real authenticated API.

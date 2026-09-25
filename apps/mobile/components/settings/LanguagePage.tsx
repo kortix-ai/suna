@@ -8,7 +8,7 @@ import Animated, {
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Check } from 'lucide-react-native';
+import { CheckIcon as Check } from '@/lib/icons';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import { log } from '@/lib/logger';
@@ -148,7 +148,6 @@ function LanguageItem({ language, isSelected, onPress }: LanguageItemProps) {
               as={Check}
               size={12}
               className="text-primary-foreground"
-              strokeWidth={3}
             />
           </View>
         )}

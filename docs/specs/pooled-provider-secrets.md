@@ -81,6 +81,33 @@ failure paths, which must be covered before the feature is ready:
    gates pass. The updated preview proves selection and gateway behavior through
    an actual session. Human OAuth approval remains a separate explicit check.
 
+## ChatGPT BYOS, 2026-09-25
+
+Problem: a project member without `project.secret.write` could not connect
+their own ChatGPT subscription. The Add dialog preselected the creator in
+`memberIds`, and `POST /oauth/openai/start` treated only an empty member list
+as owner-only, so the default request returned 403. Members also had no entry
+point outside Customize, and an expired account had no reconnect.
+
+- Owner-only is the same rule on both create paths: `private`, or `members`
+  without groups whose member list holds only the caller. It needs project
+  read and account membership, nothing more. Every wider share still needs
+  `project.secret.write`.
+- `resource_id` on start reconnects an existing ChatGPT account in place. Only
+  its creator may reconnect it. The request carries no label or sharing. Poll
+  success replaces the encrypted login, sets `active`, and clears the cooldown.
+  The id, label, access, and session selections stay. A deleted account fails
+  the poll; it is never recreated.
+- New connections default to **Only you** in the UI. Share options stay visible
+  and disabled, with the reason, for callers without secret write.
+- The session composer's model picker ends with **Use your ChatGPT
+  subscription** (or **Manage ChatGPT accounts** once its models exist). It
+  opens the same panel as Models → Providers. Schedule pickers omit it, because
+  background sessions cannot use personal accounts. Session overrides open the
+  same dialog for ChatGPT instead of linking to Customize.
+- Verification: `unit-project-oauth-byos.test.ts`, flow `SEC-POOL-5`, and the
+  member journey in `30-pooled-provider-secrets.spec.ts`.
+
 ## UI follow-up, 2026-09-18
 
 - One session footer saves every staged provider selection and default reset.

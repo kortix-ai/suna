@@ -69,6 +69,7 @@ let unconfirmedTurnDrips: string[] = [];
 // on its own, without every existing exact-equality assertion having to carry
 // it.
 let clearedTurnReasons: Array<string | undefined> = [];
+let clearedTurnCauses: Array<string | null> = [];
 let ledgerSettleStatements: string[] = [];
 let huskFinalizeCalls: Array<{
   sandboxId: string;
@@ -427,12 +428,14 @@ const reapAndReconcileSandboxes = (
       token: string,
       _graceMs?: number,
       reason?: string,
+      cause?: { name: string | null } | null,
     ) => {
       clearedTurnCalls.push({
         sandboxId,
         token,
       });
       clearedTurnReasons.push(reason);
+      clearedTurnCauses.push(cause?.name ?? null);
       lifecycleCallOrder.push(`clear:${token}`);
       return true;
     },
@@ -504,6 +507,7 @@ beforeEach(() => {
   clearedTurnCalls = [];
   promptRedeliveries = [];
   clearedTurnReasons = [];
+  clearedTurnCauses = [];
   unconfirmedTurnDrips = [];
   __resetProbeBackoffForTests();
   ledgerSettleStatements = [];
@@ -1351,7 +1355,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     // the moments between OpenCode ACKing a prompt and starting it look like.
     // Redelivering into that window runs the user's prompt twice.
     //
-    // EXPECTATION CHANGED 2026-08-20 (live incident, Essentia session
+    // EXPECTATION CHANGED 2026-08-20 (live incident, SampleCo session
     // d1b74954): this used to CLEAR the record while skipping the redelivery.
     // Clearing deletes the record — the only thing that can ever trigger the
     // redelivery — so a terminal observation landing inside the age floor was
@@ -1747,6 +1751,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'active-token' }]);
     expect(clearedTurnReasons).toEqual(['completed']);
+    expect(clearedTurnCauses).toEqual([null]);
   });
 
   test('a turn the model killed is recorded failed, exactly as the session.error relay records it', async () => {
@@ -1761,6 +1766,8 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     await reapAndReconcileSandboxes(NOW);
 
     expect(clearedTurnReasons).toEqual(['failed']);
+    // Its own end frame never arrived, so the reaper says what it saw.
+    expect(clearedTurnCauses).toEqual(['RuntimeTurnFailed']);
   });
 
   test('a husk the reaper had to force-close is failed, never completed', async () => {
@@ -1775,6 +1782,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     expect(r.husksFinalized).toBe(1);
     expect(clearedTurnReasons).toEqual(['failed']);
+    expect(clearedTurnCauses).toEqual(['TurnHuskFinalized']);
   });
 
   test('a terminal answer no observer can explain is recorded unknown', async () => {
@@ -1891,7 +1899,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE PROBE ITSELF WAS THE LOAD ═══
-  // Essentia 2026-08-25 (session 9df2a873): two API replicas re-asked one box
+  // SampleCo 2026-08-25 (session 9df2a873): two API replicas re-asked one box
   // 345 times in an hour after `unknown`; every ask made OpenCode serialise
   // its 140 MB transcript, and the kernel OOM-killed it mid-turn. An unknown
   // answer now backs the PROBE off (20 s → 5 min) while the drip still runs.
@@ -2709,10 +2717,10 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(endedCompute).toEqual(['sb-1']);
     const sbUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
     expect(sbUpdate?.updates.status).toBe('stopped');
-    expect(sbUpdate?.updates.metadata).toMatchObject({
-      runtimeIdentityState: 'unavailable',
-      preservedExternalId: 'ext-1',
-    });
+    // Merged into the row's current metadata in SQL, never assigned.
+    const metadata = describeSql(sbUpdate?.updates.metadata);
+    expect(metadata).toContain('"runtimeIdentityState":"unavailable"');
+    expect(metadata).toContain('"preservedExternalId":"ext-1"');
     expect(stops).toEqual([]);
   });
 

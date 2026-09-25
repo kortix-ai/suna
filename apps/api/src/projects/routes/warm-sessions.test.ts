@@ -5,7 +5,7 @@
  * SOURCE-LEVEL guard on the route's WIRING for `exclude_session_id`. Hermetic
  * (reads the file as text, no database) so it runs under the default
  * `bun test` gate (`scripts/test.sh`'s fake-env mode), same shape as
- * `../r1-provision-idempotency.test.ts`.
+ * `./projects-provision-idempotency.test.ts`.
  *
  * The BEHAVIORAL proof — `findWarmProjectSession` actually skipping the
  * excluded id against a real Postgres — lives in
@@ -58,7 +58,7 @@ describe('POST /sessions/warm threads exclude_session_id into the reuse lookup',
   });
 
   test('the body is read and exclude_session_id normalized before the reuse lookup', () => {
-    const bodyRead = route.indexOf('readBody(c)');
+    const bodyRead = route.indexOf('readJsonObject(c)');
     const normalized = route.indexOf('normalizeString(body.exclude_session_id)');
     const lookup = route.indexOf('findWarmProjectSession(');
     expect(bodyRead).toBeGreaterThan(-1);

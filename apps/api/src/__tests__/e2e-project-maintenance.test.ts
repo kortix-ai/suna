@@ -8,6 +8,7 @@ let cacheInvalidations: string[] = [];
 let branchDeletes: string[] = [];
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 let providerStopError: Error | null = null;
+let auditInserts: Array<Record<string, unknown>> = [];
 
 mock.module('../config', () => ({
   config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 },
@@ -46,6 +47,12 @@ mock.module('../shared/db', () => ({
           updateCalls.push({ table, updates });
         },
       }),
+    }),
+    insert: () => ({
+      values: (values: Record<string, unknown>) => {
+        auditInserts.push(values);
+        return { returning: async () => [{ eventId: 'audit_test', ...values }] };
+      },
     }),
   },
 }));
@@ -148,6 +155,7 @@ beforeEach(() => {
   branchDeletes = [];
   updateCalls = [];
   providerStopError = null;
+  auditInserts = [];
   process.env.KORTIX_SANDBOX_IDLE_TTL = '3600000';
   process.env.KORTIX_BRANCH_RETENTION_DAYS = '90';
 });
@@ -204,5 +212,37 @@ describe('project maintenance', () => {
         remote_deleted: true,
       },
     });
+  });
+
+  // Branch GC deletes a git branch on the project's remote: a data deletion
+  // no request drives, which used to leave no audit row.
+  test('a deleted session branch writes one git.branch.deleted row', async () => {
+    branchCandidates = [
+      {
+        sessionId: 'session-old',
+        branchName: 'session-old',
+        baseRef: 'main',
+        metadata: {},
+        accountId: '00000000-0000-4000-a000-000000000101',
+        projectId: '00000000-0000-4000-a000-000000000201',
+        repoUrl: 'https://github.com/kortix-ai/project.git',
+        defaultBranch: 'main',
+        manifestPath: 'kortix.yaml',
+      },
+    ];
+
+    await sweepExpiredSessionBranches(new Date('2026-05-15T00:00:00Z'));
+
+    const rows = auditInserts.filter((row) => row.action === 'git.branch.deleted');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      accountId: '00000000-0000-4000-a000-000000000101',
+      projectId: '00000000-0000-4000-a000-000000000201',
+      sessionId: 'session-old',
+      resourceType: 'git_repository',
+      resourceId: '00000000-0000-4000-a000-000000000201',
+      outcome: 'success',
+    });
+    expect(rows[0]!.metadata).toMatchObject({ branch_name: 'session-old', reason: 'retention_expired' });
   });
 });

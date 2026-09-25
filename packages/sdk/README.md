@@ -50,9 +50,17 @@ await connectors.search('send email');
 await connectors.describe('gmail.send_email');
 await connectors.call('gmail.send_email', { to, subject, body });
 await connectors.accounts('gmail');
-await connectors.uploadAttachment(bytes, {
+const { ref } = await connectors.uploadAttachment(bytes, {
   filename: 'invoice.pdf',
   contentType: 'application/pdf',
+  connector: 'microsoft-graph', // the connector the file is for
+});
+// `ref` is { $kortix_attachment: '<id>' }. The gateway swaps in the file:
+// as an attachments[] element it becomes the provider's attachment item,
+// in a string field it becomes the base64. The bytes never enter call args.
+await connectors.call('microsoft-graph.sendmail', {
+  user: 'sender@example.com',
+  body: { message: { subject: 'Invoice', attachments: [ref] } },
 });
 ```
 
@@ -369,6 +377,11 @@ server-validated OpenCode root and lets the live read reconcile the saved messag
 The flag is off by default. Missing or rejected history falls back to the existing runtime path.
 See [the testing runbook](../../docs/runbooks/session-transcript-history.md) for capture limits
 and local verification.
+
+`useSession().savedTranscript` says whether that saved conversation can show before the
+computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
+`messages`, and `none` when nothing can show until the runtime answers. A host renders
+placeholder rows on `loading` and its boot screen only on `none`.
 
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 

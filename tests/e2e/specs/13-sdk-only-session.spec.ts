@@ -10,6 +10,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
+import { waitForSessionReady } from '../helpers/session-ready';
 
 const enabled = process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1';
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
@@ -110,39 +111,12 @@ interface ModelPicker {
   models: Record<string, unknown>;
 }
 
-interface SessionStart {
-  stage: string;
-  sandbox?: {
-    status?: string;
-    external_id?: string | null;
-  } | null;
-}
-
 async function waitForReadySession(
   token: string,
   projectId: string,
   sessionId: string,
 ): Promise<void> {
-  const deadline = Date.now() + 10 * 60_000;
-  let last = '';
-  while (Date.now() < deadline) {
-    const result = await api<SessionStart>(
-      token,
-      'POST',
-      `/projects/${projectId}/sessions/${sessionId}/start?wait_ms=8000`,
-      {},
-    );
-    last = `${result.stage}:${result.sandbox?.status ?? 'none'}`;
-    if (
-      result.stage === 'ready'
-      && result.sandbox?.status === 'active'
-      && result.sandbox.external_id
-    ) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
-  }
-  throw new Error(`session did not become ready: ${last}`);
+  await waitForSessionReady(api, token, projectId, sessionId, { intervalMs: 1_000 });
 }
 
 /**
