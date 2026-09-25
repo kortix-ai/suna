@@ -19312,7 +19312,17 @@
   },
   "commandPalette": {
     "title": "Tavolozza dei comandi",
-    "description": "Cerca un comando da eseguire..."
+    "description": "Cerca un comando da eseguire...",
+    "copyTitle": "Copia",
+    "copyEmail": "email",
+    "copyUserId": "ID utente",
+    "copyAccountId": "ID account",
+    "copyProjectId": "ID progetto",
+    "copySessionId": "ID sessione",
+    "copySessionLink": "link della sessione",
+    "copyAction": "Copia {label}",
+    "copied": "Copiato: {label}",
+    "copyFailed": "Impossibile copiare negli appunti"
   },
   "personalWelcome": {
     "dismiss": "Chiudi",

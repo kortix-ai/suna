@@ -99,14 +99,22 @@ function CommandDialog({
         // `!` because tailwind-merge does not know `animate-out` (it comes from
         // tw-animate-css) and keeps both classes; without it, the winner would
         // be whichever utility Tailwind happens to emit last.
+        //
+        // `data-[state=open]:animate-none!` does the same for the way in. The
+        // stock 200ms fade + zoom from 95% made ⌘K — opened dozens of times a
+        // day, almost always from the keyboard — read as late and as growing
+        // out of the page. The palette now paints complete on the first frame.
         className={cn(
-          'p-0 shadow-[0_0_50px_0] shadow-black/10 data-[state=closed]:animate-none! border',
+          'p-0 shadow-[0_0_50px_0] shadow-black/10 data-[state=open]:animate-none! data-[state=closed]:animate-none! border',
           className,
         )}
         hideCloseButton={!showCloseButton}
-        overlayClassName="bg-black/20 backdrop-blur-[1px] data-[state=closed]:animate-none!"
+        overlayClassName="bg-black/20 backdrop-blur-[1px] data-[state=open]:animate-none! data-[state=closed]:animate-none!"
       >
+        {/* `loop`: ↑ on the first row lands on the last, ↓ on the last lands on
+            the first — the list is a ring, so the far end is one key away. */}
         <Command
+          loop
           className="[&_[cmdk-group-heading]]:text-muted-foreground bg-popover **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12"
         >
           {children}
@@ -119,11 +127,14 @@ function CommandDialog({
 function CommandInput({
   className,
   compact,
+  leftElement,
   rightElement,
 
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Input> & {
   compact?: boolean;
+  /** Sits before the text field: a search glyph, or a sub-page's back chip. */
+  leftElement?: React.ReactNode;
   rightElement?: React.ReactNode;
 }) {
   return (
@@ -134,7 +145,7 @@ function CommandInput({
         compact ? 'h-11 gap-2.5 px-4' : 'h-10 gap-3 px-4',
       )}
     >
-      {/* <SearchIcon className="size-4 shrink-0 opacity-50" /> */}
+      {leftElement}
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(

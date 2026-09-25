@@ -19312,7 +19312,17 @@
   },
   "commandPalette": {
     "title": "Paleta de comandos",
-    "description": "Busca un comando para ejecutar..."
+    "description": "Busca un comando para ejecutar...",
+    "copyTitle": "Copiar",
+    "copyEmail": "correo electrónico",
+    "copyUserId": "ID de usuario",
+    "copyAccountId": "ID de cuenta",
+    "copyProjectId": "ID de proyecto",
+    "copySessionId": "ID de sesión",
+    "copySessionLink": "enlace de la sesión",
+    "copyAction": "Copiar {label}",
+    "copied": "Copiado: {label}",
+    "copyFailed": "No se pudo copiar al portapapeles"
   },
   "personalWelcome": {
     "dismiss": "Cerrar",
