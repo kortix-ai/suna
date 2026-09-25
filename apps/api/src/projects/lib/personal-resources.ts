@@ -103,6 +103,9 @@ export function filterPersonalTunnelOwners(input: {
  *
  * Any read failure resolves to null under the flag: a missing value costs
  * personal resources only, never shared ones.
+ *
+ * `visibility` answers for a sharing change before it is stored: the same
+ * rule, with that visibility in place of the session's current one.
  */
 export async function resolveSessionPersonalOwner(input: {
   projectId: string;
@@ -110,6 +113,8 @@ export async function resolveSessionPersonalOwner(input: {
   /** What the pre-flag code used (the session creator, or the token user). */
   legacyUserId: string | null;
   accountId?: string | null;
+  /** A pending visibility to resolve against instead of the stored one. */
+  visibility?: PersonalSessionVisibility;
 }): Promise<string | null> {
   if (!input.sessionId) return input.legacyUserId;
   let flag = false;
@@ -130,6 +135,7 @@ export async function resolveSessionPersonalOwner(input: {
       .where(and(eq(projectSessions.sessionId, input.sessionId), eq(projectSessions.projectId, input.projectId)))
       .limit(1);
     if (!session) return null;
+    const visibility = input.visibility ?? session.visibility;
     const [token] = await db
       .select({
         agentGrant: accountTokens.agentGrant,
@@ -152,7 +158,7 @@ export async function resolveSessionPersonalOwner(input: {
         agentPrincipal: true,
         legacyUserId: input.legacyUserId,
         onBehalfOfUserId: token.onBehalfOfUserId ?? null,
-        visibility: session.visibility,
+        visibility,
       });
     }
     const minted = await resolveSessionOnBehalfOf({
@@ -164,7 +170,7 @@ export async function resolveSessionPersonalOwner(input: {
       agentPrincipal: true,
       legacyUserId: input.legacyUserId,
       onBehalfOfUserId: minted,
-      visibility: session.visibility,
+      visibility,
     });
   } catch (err) {
     console.warn('[personal-resources] session resolution failed; no personal resources', {

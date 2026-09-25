@@ -18,7 +18,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions } from '@kortix/db';
+import { projectSessions, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
@@ -36,6 +36,10 @@ import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindi
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { DEFAULT_AGENT_SENTINEL } from '../agents';
+import { checkSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
@@ -454,6 +458,63 @@ projectsApp.openapi(
       },
       409,
     );
+  }
+
+  // Sharing takes the owner's personal keys away from the session (spec
+  // 2026-09-22 §2.3). A model that ran only on them switches to the keys shared
+  // with the whole project, or the share is refused (lib/session-model-keys.ts).
+  if (intent.mode !== 'private' && projectLlmGatewayEnabled(loaded.row.metadata)) {
+    // The session model lives in metadata, not a column (routes/session-scope.ts).
+    const metadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
+    const keys = await checkSessionSharingChange({
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+      owner: visible.row.createdBy ?? loaded.userId,
+      freeModelsOnly: !(await accountMayUseManagedModels(loaded.row.accountId)),
+      model: typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null,
+      visibility: next.visibility,
+      mayPool:
+        resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
+        !visible.ownerIsMachine &&
+        Boolean(visible.row.createdBy),
+      callerMaySelect: async (providerId, secretIds) =>
+        !(await validateProviderSecretPool({
+          accountId: loaded.row.accountId,
+          projectId,
+          repoUrl: loaded.row.repoUrl,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
+          agentName: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
+          userId: loaded.userId,
+          providerId,
+          ids: secretIds,
+        })),
+    });
+    if (!keys.ok) {
+      return c.json(
+        {
+          error:
+            `This session runs ${keys.model} on keys that work only in your private sessions. ` +
+            'A shared session uses only keys shared with the whole project, and none can run this model. ' +
+            'Share a key with the whole project, or switch the session to another model, then share the session.',
+          code: 'SHARED_SESSION_NEEDS_PROJECT_KEY',
+        },
+        409,
+      );
+    }
+    // Stored before the visibility: if the share then fails, a private session
+    // on keys shared with the project still runs.
+    if (keys.selected) {
+      const { providerId, secretIds } = keys.selected;
+      await db
+        .insert(sessionProviderSecretPools)
+        .values({ sessionId, providerId, secretIds, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: [sessionProviderSecretPools.sessionId, sessionProviderSecretPools.providerId],
+          set: { secretIds, updatedAt: new Date() },
+        });
+    }
   }
 
   await setSessionSharing(sessionId, intent);
