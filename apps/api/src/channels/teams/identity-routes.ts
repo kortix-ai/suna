@@ -8,7 +8,7 @@ import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
 import { listProjectsForWorkspace, loadTeamsInstall } from '../install-store';
 import { consumePendingTeamsAuthMessage, peekPendingTeamsAuthSenderName } from './auth-resume';
-import { isAccountMember, linkTeamsIdentity } from './identity';
+import { chatUser, isAccountMember, linkChatIdentity } from '../core/identity';
 import { verifyTeamsLoginState } from './login';
 import { createOrJoinTeamsConversationSession } from './session';
 import { readJsonObject } from '../../shared/http-body';
@@ -152,11 +152,7 @@ teamsIdentityApp.openapi(
     const memberships = await Promise.all(accountIds.map((a) => isAccountMember(userId, a)));
     const hasAccess = memberships.some(Boolean);
 
-    await linkTeamsIdentity({
-      tenantId: payload.tenantId,
-      teamsUserId: payload.teamsUserId,
-      userId,
-    });
+    await linkChatIdentity(chatUser('teams', payload.tenantId, payload.teamsUserId), userId);
 
     const pending = await consumePendingTeamsAuthMessage({
       pendingId: payload.pendingId,
