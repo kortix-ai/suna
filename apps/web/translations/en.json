@@ -1594,6 +1594,7 @@
     "backToProject": "Back to project",
     "delete": "Delete session",
     "failedLabel": "Failed session",
+    "loadingConversation": "Loading conversation",
     "prompt": {
       "queueFailed": "Could not queue the saved prompt",
       "unavailable": "No saved prompt is available.",

@@ -1594,6 +1594,7 @@
     "backToProject": "Zurück zum Projekt",
     "delete": "Sitzung löschen",
     "failedLabel": "Fehlgeschlagene Sitzung",
+    "loadingConversation": "Gespräch wird geladen",
     "prompt": {
       "queueFailed": "Die gespeicherte Eingabe konnte nicht in die Warteschlange gestellt werden",
       "unavailable": "Keine gespeicherte Eingabe verfügbar.",

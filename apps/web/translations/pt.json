@@ -1594,6 +1594,7 @@
     "backToProject": "Voltar ao projeto",
     "delete": "Excluir sessão",
     "failedLabel": "Sessão com falha",
+    "loadingConversation": "Carregando a conversa",
     "prompt": {
       "queueFailed": "Não foi possível adicionar o prompt salvo à fila",
       "unavailable": "Nenhum prompt salvo está disponível.",
