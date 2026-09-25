@@ -1,5 +1,6 @@
 import {
   emitJson,
+  fail,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -129,12 +130,6 @@ function money(n: unknown): string {
 function outJson(data: unknown): number {
   emitJson(data);
   return 0;
-}
-
-// Write a usage error and return the arg-error exit code (2).
-function fail(message: string): number {
-  process.stderr.write(`${status.err(message)}\n`);
-  return 2;
 }
 
 // Pull an optional leading positional action (e.g. `routing set`) off argv,

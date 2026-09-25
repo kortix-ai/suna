@@ -1,5 +1,7 @@
 import {
   emitJson,
+  fail,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -177,10 +179,10 @@ async function reviewLs(
   json: boolean,
 ): Promise<number> {
   if (f.segment && !(SEGMENTS as readonly string[]).includes(f.segment)) {
-    return invalid(`--segment must be one of ${SEGMENTS.join(', ')}`);
+    return fail(`--segment must be one of ${SEGMENTS.join(', ')}`);
   }
   if (f.kind && !(KINDS as readonly string[]).includes(f.kind)) {
-    return invalid(`--kind must be one of ${KINDS.join(', ')}`);
+    return fail(`--kind must be one of ${KINDS.join(', ')}`);
   }
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
@@ -308,7 +310,7 @@ async function reviewAct(
   if (!verdictArg) return missing(`a verdict: ${VERDICTS.join(' | ')}`);
   const verdict = verdictArg as Verdict;
   if (!(VERDICTS as readonly string[]).includes(verdict)) {
-    return invalid(`verdict must be one of ${VERDICTS.join(', ')}`);
+    return fail(`verdict must be one of ${VERDICTS.join(', ')}`);
   }
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
@@ -423,7 +425,7 @@ async function reviewBulk(
   if (!verdictArg) return missing(`a verdict: ${VERDICTS.join(' | ')}`);
   const verdict = verdictArg as Verdict;
   if (!(VERDICTS as readonly string[]).includes(verdict)) {
-    return invalid(`verdict must be one of ${VERDICTS.join(', ')}`);
+    return fail(`verdict must be one of ${VERDICTS.join(', ')}`);
   }
   if (ids.length === 0) return missing('at least one review item id');
 
@@ -481,22 +483,22 @@ async function reviewSubmit(
 ): Promise<number> {
   if (!f.kind) return missing(`--kind ${SUBMIT_KINDS.join('|')}`);
   if (!(SUBMIT_KINDS as readonly string[]).includes(f.kind)) {
-    return invalid(`--kind must be one of ${SUBMIT_KINDS.join(', ')}`);
+    return fail(`--kind must be one of ${SUBMIT_KINDS.join(', ')}`);
   }
   if (!f.title) return missing('--title "<text>"');
   if (f.risk && !(RISKS as readonly string[]).includes(f.risk)) {
-    return invalid(`--risk must be one of ${RISKS.join(', ')}`);
+    return fail(`--risk must be one of ${RISKS.join(', ')}`);
   }
   let detail: Record<string, unknown> | undefined;
   if (f.detail !== undefined) {
     try {
       const parsed: unknown = JSON.parse(f.detail);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return invalid('--detail must be a JSON object');
+        return fail('--detail must be a JSON object');
       }
       detail = parsed as Record<string, unknown>;
     } catch {
-      return invalid('--detail must be valid JSON');
+      return fail('--detail must be valid JSON');
     }
   }
 
@@ -574,14 +576,4 @@ function riskCell(risk: string): string {
   if (risk === 'medium') return `${C.yellow}medium${C.reset}`;
   if (risk === 'low') return `${C.faded}low${C.reset}`;
   return `${C.faded}none${C.reset}`;
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
-}
-
-function invalid(message: string): number {
-  process.stderr.write(`${status.err(message)}\n`);
-  return 2;
 }
