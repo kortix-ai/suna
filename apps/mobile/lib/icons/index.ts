@@ -63,7 +63,6 @@ import { DesktopIcon as DesktopGlyph } from 'phosphor-react-native/src/icons/Des
 import { DeviceMobileIcon as DeviceMobileGlyph } from 'phosphor-react-native/src/icons/DeviceMobile';
 import { DotsThreeCircleIcon as DotsThreeCircleGlyph } from 'phosphor-react-native/src/icons/DotsThreeCircle';
 import { DotsThreeIcon as DotsThreeGlyph } from 'phosphor-react-native/src/icons/DotsThree';
-import { DotsThreeOutlineIcon as DotsThreeOutlineGlyph } from 'phosphor-react-native/src/icons/DotsThreeOutline';
 import { DotsThreeVerticalIcon as DotsThreeVerticalGlyph } from 'phosphor-react-native/src/icons/DotsThreeVertical';
 import { DownloadIcon as DownloadGlyph } from 'phosphor-react-native/src/icons/Download';
 import { DownloadSimpleIcon as DownloadSimpleGlyph } from 'phosphor-react-native/src/icons/DownloadSimple';
@@ -280,7 +279,6 @@ export const DesktopIcon = withAppWeight(DesktopGlyph, 'DesktopIcon');
 export const DeviceMobileIcon = withAppWeight(DeviceMobileGlyph, 'DeviceMobileIcon');
 export const DotsThreeCircleIcon = withAppWeight(DotsThreeCircleGlyph, 'DotsThreeCircleIcon');
 export const DotsThreeIcon = withAppWeight(DotsThreeGlyph, 'DotsThreeIcon');
-export const DotsThreeOutlineIcon = withAppWeight(DotsThreeOutlineGlyph, 'DotsThreeOutlineIcon');
 export const DotsThreeVerticalIcon = withAppWeight(DotsThreeVerticalGlyph, 'DotsThreeVerticalIcon');
 export const DownloadIcon = withAppWeight(DownloadGlyph, 'DownloadIcon');
 export const DownloadSimpleIcon = withAppWeight(DownloadSimpleGlyph, 'DownloadSimpleIcon');
