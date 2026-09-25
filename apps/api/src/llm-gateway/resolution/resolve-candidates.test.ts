@@ -239,12 +239,14 @@ describe('resolveCandidates — selected account key pool', () => {
     expect(candidates.map((candidate) => candidate.apiKey)).toEqual(['key-a', 'key-b']);
   });
 
+  // The key exists; the agent may not use it. Its own code, so a client never
+  // offers "connect a key" for a fix that lives in the agent's secret grant.
   test('a narrowed agent grant blocks the pool at use time', async () => {
     catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
     pooledEnabled = true;
     pooledSecrets = { configured: true, coolingDown: false, secrets: [{ secretId: 'id-a', label: 'A', value: 'key-a' }] };
     await expect(resolveCandidates(principal({ sessionId: 'session-1', agentGrant: { env: [] } }),
-      'anthropic/claude-sonnet-4.6')).rejects.toMatchObject({ code: 'provider_not_connected' });
+      'anthropic/claude-sonnet-4.6')).rejects.toMatchObject({ code: 'agent_grant_excludes' });
   });
 
   test('an exhausted selected pool returns a rate-limit reason and never uses a legacy key', async () => {
@@ -620,6 +622,32 @@ describe('resolveCandidates — codex + unknown provider', () => {
       ['account-a', 'oauth-a'], ['account-b', 'oauth-b'],
     ]);
     expect(resolveCodexCredential).not.toHaveBeenCalled();
+  });
+
+  test('a narrowed agent grant blocks a selected ChatGPT pool with its own code', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'account-a', label: 'Personal', value: JSON.stringify({ openai: { access: 'oauth-a' } }) },
+    ] };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1', agentGrant: { env: ['GITHUB_TOKEN'] } }),
+      'codex/gpt-5.5')).rejects.toMatchObject({ code: 'agent_grant_excludes' });
+    expect(resolveCodexAccountCredential).not.toHaveBeenCalled();
+  });
+
+  test('a narrowed agent grant blocks the personal ChatGPT default with its own code', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'My account', value: JSON.stringify({ openai: { access: 'mine-token' } }) };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1', agentGrant: { env: [] } }),
+      'codex/gpt-5.5')).rejects.toMatchObject({ code: 'agent_grant_excludes' });
+    expect(resolveCodexAccountCredential).not.toHaveBeenCalled();
+  });
+
+  test('an agent grant that names CODEX_AUTH_JSON reaches the personal ChatGPT default', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'My account', value: JSON.stringify({ openai: { access: 'mine-token' } }) };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1', agentGrant: { env: ['codex_auth_json'] } }),
+      'codex/gpt-5.5');
+    expect(candidates.map((candidate) => candidate.apiKey)).toEqual(['mine-token']);
   });
 
   test('codex provider without a projectId throws provider_not_connected', async () => {
