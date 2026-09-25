@@ -65,7 +65,7 @@ export interface HandlerRuntime {
   imageWindow?: ImageWindowOptions;
 }
 
-export function streamErrorTraceStatus(error: SseErrorFrame): number {
+function streamErrorTraceStatus(error: SseErrorFrame): number {
   if (error.code === 'client_aborted') return 499;
   if (
     typeof error.code === 'number' &&
