@@ -13,7 +13,8 @@ import { and, eq, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, readBody, hasOwn } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { resolveEffectiveSessionConnectorBindings, sessionConnectorBindingsRequirePrivateVisibility, validateSessionConnectorBindings } from '../lib/session-connector-bindings';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
@@ -49,7 +50,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -141,7 +142,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -164,7 +165,7 @@ projectsApp.openapi(
       );
     }
 
-    const parsedBody = SessionScopeInputSchema.safeParse(await readBody(c));
+    const parsedBody = SessionScopeInputSchema.safeParse(await readJsonObject(c));
     if (!parsedBody.success) {
       return c.json(
         {
@@ -597,7 +598,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -618,8 +619,8 @@ projectsApp.openapi(
       );
     }
 
-    const body = await readBody(c);
-    const requested = typeof body?.opencode_model === 'string' ? body.opencode_model : '';
+    const body = await readJsonObject(c);
+    const requested = typeof body.opencode_model === 'string' ? body.opencode_model : '';
     const shapeError = validateModelChangeShape(requested);
     if (shapeError) {
       return c.json({ error: shapeError.message, code: shapeError.code }, 400);

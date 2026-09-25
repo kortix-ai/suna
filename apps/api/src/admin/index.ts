@@ -14,17 +14,15 @@ import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { supabaseAuth } from '../middleware/auth';
+import { requestClientIp } from '../shared/client-ip';
 import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { MAX_ACCOUNT_SESSION_LIMIT, setAccountSessionLimit } from './account-session-limit';
 import { analyticsApp } from './analytics';
+import { isUuid } from '../shared/validate';
+import { readJsonObject } from '../shared/http-body';
 
 export const adminApp = makeOpenApiApp<AppEnv>();
-
-// `account_id` reaches Postgres as a `uuid`, where a malformed value is a
-// 22P02 cast error long before any guard runs — a 500 on input the caller
-// controls. Shape-check first so a typo is a clean 400.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Drizzle wraps the Postgres error: `e.message` is "Failed query: <sql> …" and
 // the real reason (undefined column, statement timeout, constraint) hides in
@@ -364,7 +362,7 @@ adminApp.openapi(
     const accountId = c.req.param('id');
     const userId = c.req.param('userId');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const roleRaw = String(body.role || '').trim();
 
     if (roleRaw !== 'owner' && roleRaw !== 'admin' && roleRaw !== 'member') {
@@ -419,7 +417,7 @@ adminApp.openapi(
         resourceId: userId,
         before: { account_role: target.accountRole },
         after: { account_role: role },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
     } catch {
@@ -704,7 +702,7 @@ adminApp.openapi(
   async (c: any) => {
   try {
     const accountId = c.req.param('id');
-    if (!UUID_RE.test(accountId)) return c.json({ subscription: null });
+    if (!isUuid(accountId)) return c.json({ subscription: null });
     const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
     const account = await getCreditAccount(accountId);
     const subscriptionId = account?.stripeSubscriptionId ?? null;
@@ -782,7 +780,7 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const amount = Number(body.amount);
     const description = String(body.description || 'Admin credit grant');
     const isExpiring = body.isExpiring !== false;
@@ -836,7 +834,7 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const amount = Number(body.amount);
     const description = String(body.description || 'Admin credit debit');
     if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
@@ -892,7 +890,7 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const tier = String(body.tier || '').trim();
 
     const { isValidTier } = await import('../billing/services/tiers');
@@ -935,7 +933,7 @@ adminApp.openapi(
         resourceId: accountId,
         before: { tier: before?.tier ?? null },
         after: { tier },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
     } catch {
@@ -988,7 +986,7 @@ adminApp.openapi(
     try {
       const accountId = c.req.param('id');
       const actorUserId = c.get('userId') as string | undefined;
-      const body = await c.req.json().catch(() => ({}));
+      const body = await readJsonObject(c);
       const enabled = body.enabled;
       if (typeof enabled !== 'boolean') {
         return c.json({ error: 'enabled must be a boolean' }, 400);
@@ -1016,7 +1014,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { enterprise_entitled: before },
           after: { enterprise_entitled: enabled },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1081,7 +1079,7 @@ adminApp.openapi(
         accountId,
         actorUserId,
         maxConcurrentSessions: body.max_concurrent_sessions,
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       },
       {
@@ -1180,7 +1178,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { trial: result.before },
           after: { trial: result.current, credit_granted: result.creditGranted },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1232,7 +1230,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { trial: result.before },
           after: { trial: result.current },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1303,7 +1301,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { managed_models_override: before },
           after: { managed_models_override: body.override },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1370,7 +1368,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { demo_enterprise: before },
           after: { demo_enterprise: body.enabled },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1439,7 +1437,7 @@ adminApp.openapi(
           resourceId: after.ssoProviderId,
           before: { primary_domain: before.primaryDomain, domain_verified: isSsoDomainVerified(before) },
           after: { primary_domain: after.primaryDomain, domain_verified: isSsoDomainVerified(after), method: 'operator' },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1550,7 +1548,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { entitlement_overrides: before },
           after: { entitlement_overrides: stored },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1594,12 +1592,14 @@ adminApp.openapi(
     responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const src = (body && typeof body.weights === 'object') ? body.weights : body;
+    const body = await readJsonObject(c);
+    const src = (
+      typeof body.weights === 'object' && body.weights !== null ? body.weights : body
+    ) as Record<string, unknown>;
     const { config } = await import('../config');
     const weights: Record<string, number> = {};
     for (const p of config.ALLOWED_SANDBOX_PROVIDERS) {
-      const w = Number(src?.[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
+      const w = Number(src[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
     }
     const { db } = await import('../shared/db');
     const { platformSettings } = await import('@kortix/db');
@@ -1635,8 +1635,8 @@ adminApp.openapi(
     responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const value = { enabled: body?.enabled === true };
+    const body = await readJsonObject(c);
+    const value = { enabled: body.enabled === true };
     const { db } = await import('../shared/db');
     const { platformSettings } = await import('@kortix/db');
     const { PROVIDER_FALLBACK_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
@@ -1689,7 +1689,7 @@ adminApp.openapi(
   }),
   async (c: any) => {
     const sessionId = c.req.param('sessionId');
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const target = String(body.targetProvider || '');
     const { config } = await import('../config');
     if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(target)) return c.json({ error: 'invalid targetProvider' }, 400);
@@ -1904,7 +1904,7 @@ adminApp.openapi(
       const accountId = typeof body?.account_id === 'string' ? body.account_id.trim() : '';
       const reasonRaw = typeof body?.reason === 'string' ? body.reason.trim() : '';
       const reason = reasonRaw ? reasonRaw.slice(0, 500) : null;
-      if (!UUID_RE.test(accountId)) {
+      if (!isUuid(accountId)) {
         return c.json({ error: 'account_id must be a uuid' }, 400);
       }
 
@@ -1948,7 +1948,7 @@ adminApp.openapi(
           reason,
           expires_at: expiresAt.toISOString(),
         },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
 
@@ -2007,7 +2007,7 @@ adminApp.openapi(
           impersonator_user_id: adminUserId,
           target_account_id: grant.targetAccountId,
         },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
 

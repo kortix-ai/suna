@@ -16,7 +16,8 @@ import {
   listServiceAccounts,
 } from '../../repositories/service-accounts';
 import { iamRouter, AccountIdParam, ServiceAccountSchema } from './app';
-import { auditIam, isUniqueViolation, readBody } from './helpers';
+import { auditIam, isUniqueViolation } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 
 iamRouter.openapi(
@@ -71,7 +72,7 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return c.json({ error: 'name is required' }, 400);
   if (name.length > 128) return c.json({ error: 'name too long (max 128)' }, 400);

@@ -23,11 +23,11 @@ import {
   OkSchema,
   MeSchema,
   autoClaimPendingInvites,
-  readBodyTokens,
   resolveAccountForUser,
   resolveAccountDisplayNames,
   lookupEmailsByUserIds,
 } from './app';
+import { readJsonObject } from '../../shared/http-body';
 
 /**
  * A query flag arrives as a string or not at all. `?mine`, `?mine=true` and
@@ -249,7 +249,7 @@ accountsRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
-  const body = await readBodyTokens(c);
+  const body = await readJsonObject(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) {
     return c.json({ error: 'name is required' }, 400);

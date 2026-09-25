@@ -1,12 +1,11 @@
 import type { TriggerSessionAccess } from '@kortix/api-contract';
+import { isUuid } from '../shared/validate';
 
 export const PRIVATE_TRIGGER_SESSION_ACCESS: TriggerSessionAccess = {
   mode: 'private',
   memberIds: [],
   groupIds: [],
 };
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type TriggerSessionAccessParseResult =
   | { ok: true; access: TriggerSessionAccess }
@@ -39,7 +38,7 @@ export function parseTriggerSessionAccess(value: unknown): TriggerSessionAccessP
       error: 'session_access memberIds and groupIds must be string arrays',
     };
   }
-  const invalidId = [...memberIds, ...groupIds].find((id) => !UUID_PATTERN.test(id));
+  const invalidId = [...memberIds, ...groupIds].find((id) => !isUuid(id));
   if (invalidId) {
     return {
       ok: false,
