@@ -23,6 +23,7 @@ import {
 } from './helpers/open-code-harness'
 import { finalizeInitialSession } from '../harness/open-code/boot'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import { egressShimPort } from '../egress-shim'
 
 const TEST_TOKEN = TEST_SANDBOX_TOKEN
 const baseConfig = testOpenCodeConfig
@@ -413,6 +414,41 @@ describe('daemon proxy auth gate', () => {
       })
       expect({ port, status: res.status }).toEqual({ port, status: 403 })
       expect(((await res.json()) as { code: string }).code).toBe('WEB_PROXY_PORT_BLOCKED')
+    }
+  })
+
+  it('the web proxy also refuses the daemon itself and the egress shim', async () => {
+    // proxy.ts wires blockedSelfPorts to cfg.servicePort + egressShimPort() +
+    // harness.proxy.blockedPorts(cfg) (proxy.ts:178-182). The row above proves
+    // only the harness half (the two OpenCode ports); this proves the other
+    // two — the daemon's own port and the egress shim — are in the same Set
+    // as actually constructed by buildDaemonApp, not a hand-picked constant.
+    const cfg = baseConfig()
+    const app = buildOpenCodeTestApp(cfg, fakeOpencode('ok'), Date.now())
+    const signed = signTestUserContext({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+    for (const port of [cfg.servicePort, egressShimPort()]) {
+      const res = await app.request(`/web-proxy/http/127.0.0.1:${port}/session`, {
+        headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+      })
+      expect({ port, status: res.status }).toEqual({ port, status: 403 })
+      expect(((await res.json()) as { code: string }).code).toBe('WEB_PROXY_PORT_BLOCKED')
+    }
+  })
+
+  it('the port proxy refuses the daemon itself and the egress shim', async () => {
+    // portProxyRouter's blockedPorts is built the same way, straight from
+    // cfg.servicePort + egressShimPort() (proxy.ts:157-164). No test anywhere
+    // drove /proxy/{port}/* through the real buildDaemonApp composition to
+    // prove that Set actually contains them — this closes that gap.
+    const cfg = baseConfig()
+    const app = buildOpenCodeTestApp(cfg, fakeOpencode('ok'), Date.now())
+    const signed = signTestUserContext({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+    for (const port of [cfg.servicePort, egressShimPort()]) {
+      const res = await app.request(`/proxy/${port}/session`, {
+        headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+      })
+      expect({ port, status: res.status }).toEqual({ port, status: 403 })
+      expect(((await res.json()) as { error: string; port: number }).error).toBe('Port is blocked')
     }
   })
 
