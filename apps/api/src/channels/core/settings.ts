@@ -2,16 +2,11 @@ import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls } from '@kortix/db';
 import { db } from '../../shared/db';
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
-import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
-import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
-import { channelModelContext } from '../slack/model-gate';
 import {
   type ChannelCtx,
   currentChannelSelection,
   setChannelAgent,
   setChannelConversationPolicy,
-  setChannelModel,
 } from '../slack/selection';
 import { type ChatUser, resolveProjectChatActor } from './identity';
 
@@ -19,18 +14,25 @@ import { type ChatUser, resolveProjectChatActor } from './identity';
  * Channel settings: the project a chat channel runs, and the agent, model and
  * session policy that new sessions there start with.
  *
- * The settings belong to the project, so changing one needs the capability
- * that edits the binding on the web (`PATCH /projects/:id/channels/bindings`):
- * `project.connector.write`, held by project managers and by account owners
- * and admins, through a linked chat identity. Every Slack command, Slack
- * button, Teams command and Teams card that writes a setting calls this
- * module, so that check exists once.
+ * A shared channel's settings belong to the project, so changing one needs
+ * the capability that edits the binding on the web (`PATCH
+ * /projects/:id/channels/bindings`): `project.connector.write`, held by
+ * project managers and by account owners and admins, through a linked chat
+ * identity. A one-to-one conversation with the bot (a Slack DM, a Teams
+ * personal chat) affects only that person, so there the bar is the one for
+ * sending a message: `project.write`. Every Slack command, Slack button, Teams
+ * command and Teams card that writes a setting goes through
+ * `authorizeChannelSettings`, so that check exists once. The model setters
+ * (slack/model-choice.ts, teams/model-choice.ts) call `authorizeChannelChange`.
  *
  * Re-pointing a bound channel to another project needs the capability on
  * both projects. The first binding of an unbound channel stays open, as the
  * project picker always was: the channel's next message still runs only for
  * a sender who may work in the chosen project.
  */
+
+/** A channel as settings see it: `oneToOne` for a DM or personal chat with the bot. */
+export type SettingsChannel = ChannelCtx & { oneToOne?: boolean };
 
 export type SettingsRefusal = 'unlinked' | 'forbidden' | 'no_binding';
 
@@ -42,64 +44,28 @@ export type SettingsChange<Ok extends object = object, Reason extends string = n
 export async function authorizeChannelSettings(
   user: ChatUser,
   projectId: string,
+  opts: { oneToOne?: boolean } = {},
 ): Promise<{ ok: true; userId: string } | { ok: false; reason: 'unlinked' | 'forbidden' }> {
-  const actor = await resolveProjectChatActor(user, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+  const action = opts.oneToOne ? PROJECT_ACTIONS.PROJECT_WRITE : PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE;
+  const actor = await resolveProjectChatActor(user, projectId, action);
   if ('userId' in actor) return { ok: true, userId: actor.userId };
   return { ok: false, reason: actor.reason === 'unlinked' ? 'unlinked' : 'forbidden' };
 }
 
-async function authorizeBoundChannel(user: ChatUser, channel: ChannelCtx): Promise<SettingsChange> {
+/** May `user` change a setting of `channel`, given the project it is bound to? */
+export async function authorizeChannelChange(user: ChatUser, channel: SettingsChannel): Promise<SettingsChange> {
   const selection = await currentChannelSelection(channel);
   if (!selection) return { ok: false, reason: 'no_binding' };
-  return authorizeChannelSettings(user, selection.projectId);
-}
-
-/**
- * Pin the channel model. `null`, '' and `default` reset it to the project
- * default. A gateway project stores a servable id as its OpenCode ref; a
- * native project (LLM gateway off) stores a `provider/model` ref verbatim.
- */
-export async function changeChannelModel(
-  user: ChatUser,
-  channel: ChannelCtx,
-  requested: string | null,
-): Promise<SettingsChange<{ model: string | null; native: boolean }, 'invalid_id' | 'not_native' | 'not_servable'>> {
-  const auth = await authorizeBoundChannel(user, channel);
-  if (!auth.ok) return auth;
-  const id = requested?.trim() ?? '';
-  if (!id || id.toLowerCase() === 'default') {
-    if (!(await setChannelModel(channel, null))) return { ok: false, reason: 'no_binding' };
-    return { ok: true, model: null, native: false };
-  }
-  if (/\s/.test(id)) return { ok: false, reason: 'invalid_id' };
-  const gate = await channelModelContext(channel);
-  if (!gate) return { ok: false, reason: 'no_binding' };
-  let stored = id;
-  if (gate.llmGatewayEnabled) {
-    // Never store a model that would 404 at request time.
-    const servable = await isModelServableForAccount({
-      userId: gate.ownerUserId,
-      accountId: gate.accountId,
-      projectId: gate.projectId,
-      freeModelsOnly: gate.freeManagedOnly,
-      model: id,
-    });
-    if (!servable) return { ok: false, reason: 'not_servable' };
-    stored = toOpencodeModelRef(id);
-  } else if (validateNativeOpencodeModelRef(id)) {
-    return { ok: false, reason: 'not_native' };
-  }
-  if (!(await setChannelModel(channel, stored))) return { ok: false, reason: 'no_binding' };
-  return { ok: true, model: stored, native: !gate.llmGatewayEnabled };
+  return authorizeChannelSettings(user, selection.projectId, channel);
 }
 
 /** Pin the channel agent. `null`, '' and `default` reset it to the project default. */
 export async function changeChannelAgent(
   user: ChatUser,
-  channel: ChannelCtx,
+  channel: SettingsChannel,
   requested: string | null,
 ): Promise<SettingsChange<{ agent: string | null }, 'unknown_agent'>> {
-  const auth = await authorizeBoundChannel(user, channel);
+  const auth = await authorizeChannelChange(user, channel);
   if (!auth.ok) return auth;
   const name = requested?.trim() ?? '';
   const agent = name && name.toLowerCase() !== 'default' ? name : null;
@@ -111,10 +77,10 @@ export async function changeChannelAgent(
 /** Set who may join sessions started in the channel. `policy` is already normalized. */
 export async function changeChannelPolicy(
   user: ChatUser,
-  channel: ChannelCtx,
+  channel: SettingsChannel,
   policy: string,
 ): Promise<SettingsChange> {
-  const auth = await authorizeBoundChannel(user, channel);
+  const auth = await authorizeChannelChange(user, channel);
   if (!auth.ok) return auth;
   if (!(await setChannelConversationPolicy(channel, policy))) return { ok: false, reason: 'no_binding' };
   return { ok: true };
@@ -123,14 +89,14 @@ export async function changeChannelPolicy(
 /** Point the channel at `projectId`, which must be installed in the channel's workspace. */
 export async function switchChannelProject(
   user: ChatUser,
-  channel: ChannelCtx,
+  channel: SettingsChannel,
   projectId: string,
 ): Promise<SettingsChange<object, 'not_installed'>> {
   const platform = channel.platform ?? 'slack';
   const current = (await currentChannelSelection(channel))?.projectId ?? null;
   if (current && current !== projectId) {
     for (const id of [current, projectId]) {
-      const auth = await authorizeChannelSettings(user, id);
+      const auth = await authorizeChannelSettings(user, id, channel);
       if (!auth.ok) return auth;
     }
   }
@@ -157,10 +123,10 @@ export async function switchChannelProject(
 }
 
 /** Remove the channel's binding. An unbound channel is already done. */
-export async function unbindChannel(user: ChatUser, channel: ChannelCtx): Promise<SettingsChange> {
+export async function unbindChannel(user: ChatUser, channel: SettingsChannel): Promise<SettingsChange> {
   const current = await currentChannelSelection(channel);
   if (current) {
-    const auth = await authorizeChannelSettings(user, current.projectId);
+    const auth = await authorizeChannelSettings(user, current.projectId, channel);
     if (!auth.ok) return auth;
   }
   await db

@@ -18,6 +18,7 @@ import {
   createOrJoinThreadSession,
   deliverSlackFollowUpToSession,
   renderFollowUpPrompt,
+  slackFollowUpModel,
 } from './session';
 import { ensureSlackThreadParticipant } from './participants';
 import { currentChannelSelection } from './selection';
@@ -741,7 +742,7 @@ export async function spawnAgentTurn(
   //    to the owner (the impersonation this fixes).
   //  • OFF — legacy behavior: run as the account owner stand-in.
   const [project] = await db
-    .select({ accountId: projects.accountId })
+    .select({ accountId: projects.accountId, metadata: projects.metadata })
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
@@ -844,6 +845,18 @@ export async function spawnAgentTurn(
         sessionId: existing.sessionId,
         text: renderFollowUpPrompt(envelope, event),
         userId: actorUserId,
+        // An image on a text-only model, a pin the session can no longer run.
+        model: await slackFollowUpModel({
+          project: { projectId, accountId: project.accountId, metadata: project.metadata },
+          userId: actorUserId,
+          sessionId: existing.sessionId,
+          event,
+          session: {
+            createdBy: existing.createdBy ?? null,
+            metadata: existing.metadata,
+            agentName: existing.agentName ?? null,
+          },
+        }),
       });
 
       if (outcome === 'delivered') {

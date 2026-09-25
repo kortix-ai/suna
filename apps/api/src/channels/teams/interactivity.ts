@@ -1,7 +1,7 @@
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { teamsChannelCtx } from './binding';
-import { changeChannelAgent, changeChannelModel, switchChannelProject } from '../core/settings';
-import { teamsAgentChangeText, teamsModelChangeText, teamsSettingsRefusal } from './settings-text';
+import { changeChannelAgent, switchChannelProject } from '../core/settings';
+import { teamsAgentChangeText, teamsSettingsRefusal, teamsSettingsChannel } from './settings-text';
 import {
   MANAGED_TEAMS_INBOUND,
   conversationProjectFor,
@@ -16,6 +16,7 @@ import { chatUser, createChatAccessRequest, resolveChatActor } from '../core/ide
 import { decideTeamsThreadJoin } from './participants';
 import { createOrJoinTeamsConversationSession } from './session';
 import { stopTeamsTurn } from './stop';
+import { applyTeamsModelChoice } from './model-choice';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
 export interface TeamsInvokeResponse {
@@ -94,6 +95,11 @@ async function conversationInScope(
   return (await conversationProjectFor(inbound, convo.tenantId, convo.conversationId)) === inbound.projectId;
 }
 
+/**
+ * A model card's button or its dropdown's Use button. It used to store any
+ * model it was sent with no check at all; it now runs the same check and key
+ * selection as `/model` (model-choice.ts), as the person who pressed it.
+ */
 async function handleSetModel(
   activity: TeamsActivity,
   data: Record<string, unknown>,
@@ -103,9 +109,15 @@ async function handleSetModel(
   if (!convo) return cardResponse(buildNoticeCard("I couldn't update the model."));
   if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
   const model = typeof data.model === 'string' ? data.model : '';
-  const ctx = teamsChannelCtx(convo.tenantId, convo.conversationId);
-  const result = await changeChannelModel(presser(activity, convo), ctx, model || null);
-  return cardResponse(buildNoticeCard(teamsModelChangeText(result, model), result.ok ? '✅' : undefined));
+  return cardResponse(
+    await applyTeamsModelChoice(
+      activity,
+      convo.tenantId,
+      convo.conversationId,
+      model,
+      inbound.kind === 'managed' ? undefined : inbound.projectId,
+    ),
+  );
 }
 
 /**
@@ -153,8 +165,8 @@ async function handleSetAgent(
   if (!convo) return cardResponse(buildNoticeCard("I couldn't update the agent."));
   if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
   const agent = typeof data.agent === 'string' ? data.agent : '';
-  const ctx = teamsChannelCtx(convo.tenantId, convo.conversationId);
-  const result = await changeChannelAgent(presser(activity, convo), ctx, agent || null);
+  const channel = teamsSettingsChannel(activity, convo.tenantId, convo.conversationId);
+  const result = await changeChannelAgent(presser(activity, convo), channel, agent || null);
   return cardResponse(buildNoticeCard(teamsAgentChangeText(result, agent), result.ok ? '✅' : undefined));
 }
 
@@ -173,7 +185,7 @@ async function handlePickProject(
   if (!convo || !projectId) return cardResponse(buildNoticeCard("I couldn't switch project."));
   const switched = await switchChannelProject(
     presser(activity, convo),
-    teamsChannelCtx(convo.tenantId, convo.conversationId),
+    teamsSettingsChannel(activity, convo.tenantId, convo.conversationId),
     projectId,
   );
   if (!switched.ok) {

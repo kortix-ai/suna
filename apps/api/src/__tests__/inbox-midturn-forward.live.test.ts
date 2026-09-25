@@ -13,7 +13,7 @@
  * It spends real cloud compute and real model credits, so it is opt-in:
  *
  *   cd apps/api && KORTIX_REAL_SANDBOX_TESTS=1 \
- *     dotenvx run -- bun test --isolate src/__tests__/integration-inbox-midturn-forward.test.ts
+ *     dotenvx run -- bun test --isolate src/__tests__/inbox-midturn-forward.live.test.ts
  *
  * It needs the local stack up (`pnpm dev`): the sandbox reaches the control
  * plane back through the tunnel that script starts.

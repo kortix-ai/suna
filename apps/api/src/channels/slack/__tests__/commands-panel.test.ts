@@ -38,7 +38,23 @@ mock.module('../selection', () => ({
 }));
 
 let gate: any = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false, llmGatewayEnabled: true };
-mock.module('../model-gate', () => ({ channelModelContext: async () => gate }));
+mock.module('../model-gate', () => ({
+  channelModelContext: async () => gate,
+  projectModelContext: async () => gate,
+}));
+
+// `/kortix models` lists the web picker's own catalog (channels/model-access.ts).
+mock.module('../../../llm-gateway/models/servable-catalog', () => ({
+  servableProjectCatalog: async () => ({
+    models: {
+      'glm-5.3-flash': { name: 'GLM 5.3 Flash', provider: 'kortix', enabled: true },
+      'claude-opus-4.8': { name: 'Claude Opus 4.8', provider: 'kortix', enabled: true },
+    },
+    modelOverrides: {},
+    defaultModel: 'glm-5.3-flash',
+    usingDefaults: true,
+  }),
+}));
 
 mock.module('../../../llm-gateway/models/picker', () => ({
   listPickerModels: async () => ({
@@ -112,12 +128,12 @@ describe('bare /kortix → channel panel', () => {
 });
 
 describe('/kortix models → real served catalog', () => {
-  test('lists the picker models as set_model_<ref> buttons + a project-default reset', async () => {
+  test('lists the picker models as set_model_<id> buttons + a project-default reset', async () => {
     const resp = await handleSlashCommand('models', '', ctx);
     const ids = actionIds(resp);
     expect(ids).toContain('set_model_default');
-    expect(ids).toContain('set_model_kortix/glm-5.3-flash');
-    expect(ids).toContain('set_model_kortix/claude-opus-4.8');
+    expect(ids).toContain('set_model_glm-5.3-flash');
+    expect(ids).toContain('set_model_claude-opus-4.8');
   });
 });
 

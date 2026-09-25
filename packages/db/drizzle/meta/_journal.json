@@ -568,6 +568,20 @@
       "when": 1790298012393,
       "tag": "20260925010012_sso_domain_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790301779036,
+      "tag": "20260925020259_schema_contract_declarations",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790305502458,
+      "tag": "20260925030502_perf_indexes",
+      "breakpoints": true
     }
   ]
 }

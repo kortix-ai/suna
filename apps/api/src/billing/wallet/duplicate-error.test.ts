@@ -46,8 +46,16 @@ describe('isDuplicateCreditGrantError', () => {
     expect(isDuplicateCreditGrantError(drizzleFailure(pg))).toBe(true);
   });
 
+  test('recognizes the unique idempotency-key index that refuses a concurrent same-key grant', () => {
+    const pg = Object.assign(
+      new Error('duplicate key value violates unique constraint "uniq_credit_ledger_idempotency_key"'),
+      { code: '23505', constraint_name: 'uniq_credit_ledger_idempotency_key' },
+    );
+    expect(isDuplicateCreditGrantError(drizzleFailure(pg))).toBe(true);
+  });
+
   test('a duplicate on some OTHER constraint is still a real failure', () => {
-    // Only the two grant-idempotency keys mean "already granted". Anything else
+    // Only the grant-idempotency keys mean "already granted". Anything else
     // that collides is a defect and must keep paging.
     const pg = Object.assign(new Error('duplicate key value violates unique constraint "other"'), {
       code: '23505',

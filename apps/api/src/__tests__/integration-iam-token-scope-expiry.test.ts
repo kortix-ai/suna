@@ -13,6 +13,7 @@ import { db } from '../shared/db';
 import { authorize } from '../iam/authorize';
 import { actorForToken, actorForUser } from '../iam/actor';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const P1 = crypto.randomUUID();
@@ -29,7 +30,7 @@ beforeAll(async () => {
     { projectId: P1, accountId: ACCOUNT, name: 'p1', repoUrl: 'https://example.com/p1.git' },
     { projectId: P2, accountId: ACCOUNT, name: 'p2', repoUrl: 'https://example.com/p2.git' },
   ]);
-  await db.insert(accountMembers).values({ userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
+  await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
   await db.insert(accountTokens).values([
     // A project-scoped token (sandbox/session or project PAT), bound to P1.
     { tokenId: SCOPED_TOKEN, accountId: ACCOUNT, userId: OWNER, name: 'scoped', publicKey: `pk_s_${SCOPED_TOKEN.slice(0, 8)}`, secretKeyHash: `h_s_${SCOPED_TOKEN.slice(0, 8)}`, projectId: P1 },
@@ -65,16 +66,16 @@ describe('token project-scope', () => {
 describe('grant expiry (filtered at authorization time)', () => {
   test('an EXPIRED project grant is ignored; a FUTURE-dated one still applies', async () => {
     const expired = uid();
-    await db.insert(accountMembers).values({ userId: expired, accountId: ACCOUNT, accountRole: 'member' });
-    await db.insert(projectMembers).values({
+    await insertIntoView(db, accountMembers, { userId: expired, accountId: ACCOUNT, accountRole: 'member' });
+    await insertIntoView(db, projectMembers, {
       accountId: ACCOUNT, projectId: P1, userId: expired, projectRole: 'manager',
       expiresAt: new Date(Date.now() - 60_000), // one minute ago
     });
     expect((await authorize(actorForUser(expired, ACCOUNT), PROJECT_ACTIONS.PROJECT_WRITE, proj(P1))).allowed).toBe(false);
 
     const future = uid();
-    await db.insert(accountMembers).values({ userId: future, accountId: ACCOUNT, accountRole: 'member' });
-    await db.insert(projectMembers).values({
+    await insertIntoView(db, accountMembers, { userId: future, accountId: ACCOUNT, accountRole: 'member' });
+    await insertIntoView(db, projectMembers, {
       accountId: ACCOUNT, projectId: P1, userId: future, projectRole: 'manager',
       expiresAt: new Date(Date.now() + 3_600_000), // one hour out
     });

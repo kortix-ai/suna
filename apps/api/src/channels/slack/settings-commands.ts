@@ -6,14 +6,10 @@ import { lookupEmailsByUserIds } from '../../accounts/core/app';
 import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
 import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
 import { chooseEffectiveAgent, toWireModel } from '../../llm-gateway/resolution/effective';
-import { type ChatUser, chatUser, lookupChatIdentity } from '../core/identity';
-import {
-  type SettingsRefusal,
-  changeChannelAgent,
-  changeChannelModel,
-  changeChannelPolicy,
-  unbindChannel,
-} from '../core/settings';
+import { lookupChatIdentity } from '../core/identity';
+import { changeChannelAgent, changeChannelPolicy, unbindChannel } from '../core/settings';
+import { applySlackModelChoice, buildSlackModelsResponse } from './model-choice';
+import { settingsRefusalText, slackSettingsChannel, slackUserOf } from './settings-text';
 import { buildAgentPickerBlocks, loadScopedChannelAgents } from './agent-picker';
 import { channelModelContext } from './model-gate';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
@@ -26,52 +22,7 @@ import type { SlashCtx, SlashResponse } from './types';
 // model|policy` and their buttons. What may change, and who may change it,
 // lives in core/settings.ts.
 
-export function slackUserOf(ctx: { teamId: string; slackUserId: string }): ChatUser {
-  return chatUser('slack', ctx.teamId, ctx.slackUserId);
-}
-
-/**
- * The reply for a refused settings change. `noBinding` is the surface's own
- * "bind a project first" text.
- */
-export function settingsRefusalText(reason: SettingsRefusal, command: string, noBinding: string): string {
-  switch (reason) {
-    case 'unlinked':
-      return config.SLACK_REQUIRE_USER_IDENTITY
-        ? `Connect your Kortix account first: \`${command} login\`. Channel settings change only for a linked project manager.`
-        : "Change this channel's settings in Kortix: Slack account linking is off on this server.";
-    case 'forbidden':
-      return "Only a project manager, or an account owner or admin, can change this channel's settings.";
-    case 'no_binding':
-      return noBinding;
-  }
-}
-
 const ephemeral = (text: string): SlashResponse => ({ response_type: 'ephemeral', text });
-
-/** The reply for a model change, shared by `/kortix model` and the model picker buttons. */
-export function modelChangeText(
-  result: Awaited<ReturnType<typeof changeChannelModel>>,
-  requested: string,
-  command: string,
-): string {
-  const id = escapeMrkdwn(requested);
-  if (result.ok) {
-    if (!result.model) return 'Model reset to the project default.';
-    if (result.native) return `Model for this channel set to \`${escapeMrkdwn(result.model)}\`. New sessions will use it.`;
-    return `Model for this channel set to *${escapeMrkdwn(labelForModelRef(result.model))}* (\`${escapeMrkdwn(result.model)}\`). New sessions will use it.`;
-  }
-  switch (result.reason) {
-    case 'invalid_id':
-      return `\`${id}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/deepseek-v4.1-flash\` or \`deepseek-v4.1-flash\`).`;
-    case 'not_native':
-      return `\`${id}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`, e.g. \`anthropic/claude-sonnet-4-6\`.`;
-    case 'not_servable':
-      return `\`${id}\` isn't available for this workspace. Pick one from \`${command} models\`, or connect that provider's API key in Kortix first.`;
-    default:
-      return settingsRefusalText(result.reason, command, `Connect a project first — run \`${command}\`.`);
-  }
-}
 
 /** The reply for an agent change, shared by `/kortix agent` and the agent picker buttons. */
 export function agentChangeText(
@@ -214,7 +165,7 @@ export const slashSwitch = (ctx: SlashCtx) => projectPicker(ctx, 'switch');
 
 export async function slashUnbind(ctx: SlashCtx): Promise<SlashResponse> {
   if (!ctx.channelId) return ephemeral('No channel context — run this from inside a channel.');
-  const result = await unbindChannel(slackUserOf(ctx), ctx);
+  const result = await unbindChannel(slackUserOf(ctx), slackSettingsChannel(ctx));
   if (!result.ok) return ephemeral(settingsRefusalText(result.reason, ctx.command, ''));
   return {
     response_type: 'ephemeral',
@@ -463,7 +414,7 @@ export async function slashPolicy(ctx: SlashCtx, arg: string): Promise<SlashResp
   if (next !== requested) {
     return ephemeral(`Unknown policy \`${requested}\`. Use \`owner_approval\`, \`owner_only\`, or \`project_open\`.`);
   }
-  const result = await changeChannelPolicy(slackUserOf(ctx), ctx, next);
+  const result = await changeChannelPolicy(slackUserOf(ctx), slackSettingsChannel(ctx), next);
   if (!result.ok) {
     return ephemeral(settingsRefusalText(result.reason, ctx.command, 'That channel is no longer bound to a project.'));
   }
@@ -509,119 +460,19 @@ export async function slashSetAgent(ctx: SlashCtx, arg: string): Promise<SlashRe
   if (!name) {
     return ephemeral(`Usage: \`${ctx.command} agent <name>\` (or \`${ctx.command} agents\` to pick).`);
   }
-  const result = await changeChannelAgent(slackUserOf(ctx), ctx, name);
+  const result = await changeChannelAgent(slackUserOf(ctx), slackSettingsChannel(ctx), name);
   return ephemeral(agentChangeText(result, name, ctx.command, `Bind a project first with \`${ctx.command} switch\`.`));
 }
 
 // ── Models ───────────────────────────────────────────────────────────────────
 
-export async function slashModels(ctx: SlashCtx): Promise<SlashResponse> {
-  const gate = await channelModelContext(ctx);
-  if (!gate) {
-    return {
-      response_type: 'ephemeral',
-      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project is connected to this channel yet.*\nRun \`${ctx.command}\` to connect one, then pick a model.` } }],
-    };
-  }
-  const selection = await currentChannelSelection(ctx);
-  const current = selection?.opencodeModel ?? null;
-  // Native mode: the gateway picker catalog does not exist for this project.
-  // The channel model is a native `provider/model` ref set directly.
-  if (!gate.llmGatewayEnabled) {
-    return {
-      response_type: 'ephemeral',
-      blocks: [
-        { type: 'header', text: { type: 'plain_text', text: 'Models', emoji: true } },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: current
-              ? `This channel uses \`${escapeMrkdwn(current)}\`.`
-              : 'This channel uses the *project default* (resolved by OpenCode in the sandbox).',
-          },
-        },
-        {
-          type: 'context',
-          elements: [
-            {
-              type: 'mrkdwn',
-              text: `This project runs native OpenCode models (LLM gateway off). Set any connected provider's model with \`${ctx.command} model provider/model\` (e.g. \`anthropic/claude-sonnet-4-6\`), or \`${ctx.command} model default\` to reset.`,
-            },
-          ],
-        },
-      ],
-    };
-  }
-  const isCurrent = (id: string) => !!current && toWireModel(current) === toWireModel(id);
-
-  // The REAL served catalog — managed models + the project's connected BYOK
-  // providers — plus the resolved project default. No hardcoded list, so a pick
-  // can never 404.
-  const { models, projectDefault } = await listPickerModels({
-    projectId: gate.projectId,
-    userId: gate.ownerUserId,
-    accountId: gate.accountId,
-    freeManagedOnly: gate.freeManagedOnly,
-    agentName: selection?.agentName ?? null,
-  });
-
-  const blocks: Array<Record<string, unknown>> = [
-    { type: 'header', text: { type: 'plain_text', text: 'Models', emoji: true } },
-    {
-      type: 'context',
-      elements: [
-        {
-          type: 'mrkdwn',
-          text: current
-            ? `This channel uses *${escapeMrkdwn(labelForModelRef(current))}*.`
-            : `This channel uses the *project default*${projectDefault.label ? ` (${escapeMrkdwn(projectDefault.label)})` : ''}.`,
-        },
-      ],
-    },
-  ];
-
-  // "Project default" clears the per-channel override.
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: `${current ? '' : '✓ '}*Use project default*${projectDefault.label ? `  ·  _${escapeMrkdwn(projectDefault.label)}_` : ''}`,
-    },
-    accessory: {
-      type: 'button',
-      text: { type: 'plain_text', text: current ? 'Reset' : '✓ Current', emoji: true },
-      style: current ? 'primary' : undefined,
-      action_id: 'set_model_default',
-      value: JSON.stringify({ c: ctx.channelId, m: '' }),
-    },
-  });
-
-  for (const m of models) {
-    const cur = isCurrent(m.id);
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: `${cur ? '✓ ' : ''}*${escapeMrkdwn(m.label)}*${m.hint ? `  ·  _${escapeMrkdwn(m.hint)}_` : ''}\n\`${escapeMrkdwn(m.id)}\`` },
-      accessory: {
-        type: 'button',
-        text: { type: 'plain_text', text: cur ? '✓ Current' : 'Use this', emoji: true },
-        style: cur ? undefined : 'primary',
-        action_id: `set_model_${m.id}`.slice(0, 250),
-        value: JSON.stringify({ c: ctx.channelId, m: m.id }),
-      },
-    });
-  }
-  blocks.push({
-    type: 'context',
-    elements: [{ type: 'mrkdwn', text: `Any model works: \`${ctx.command} model provider/model-id\` (must be a managed model or a provider you've connected).` }],
-  });
-  return { response_type: 'ephemeral', blocks };
+export function slashModels(ctx: SlashCtx): Promise<SlashResponse> {
+  return buildSlackModelsResponse(ctx);
 }
 
 export async function slashSetModel(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
-  const id = arg.trim();
-  if (!id) return slashModels(ctx);
-  return ephemeral(modelChangeText(await changeChannelModel(slackUserOf(ctx), ctx, id), id, ctx.command));
+  if (!arg.trim()) return slashModels(ctx);
+  return ephemeral(await applySlackModelChoice(ctx, arg));
 }
 
 export async function listWorkspaceProjects(teamId: string): Promise<WorkspaceProject[]> {

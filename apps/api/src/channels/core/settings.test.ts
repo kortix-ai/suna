@@ -34,10 +34,12 @@ mock.module('../../shared/db', () => ({
 
 const allowed = new Set<string>();
 const checked: string[] = [];
+const actions: string[] = [];
 mock.module('./identity', () =>
   chatIdentityStub({
-    resolveProjectChatActor: async (_user: unknown, projectId: string) => {
+    resolveProjectChatActor: async (_user: unknown, projectId: string, action: string) => {
       checked.push(projectId);
+      actions.push(action);
       return allowed.has(projectId) ? { userId: 'user-1' } : { reason: 'not_member' };
     },
   }),
@@ -47,10 +49,6 @@ const writes: Array<[string, unknown]> = [];
 mock.module('../slack/selection', () => ({
   currentChannelSelection: async () =>
     bound ? { projectId: bound, agentName: null, opencodeModel: null, conversationPolicy: null } : null,
-  setChannelModel: async (_c: unknown, m: string | null) => {
-    writes.push(['model', m]);
-    return true;
-  },
   setChannelAgent: async (_c: unknown, a: string | null) => {
     writes.push(['agent', a]);
     return { ok: true };
@@ -60,19 +58,6 @@ mock.module('../slack/selection', () => ({
     return true;
   },
 }));
-let gateway = true;
-mock.module('../slack/model-gate', () => ({
-  channelModelContext: async () => ({
-    projectId: 'proj-1',
-    accountId: 'acct-1',
-    ownerUserId: 'owner-1',
-    freeManagedOnly: false,
-    llmGatewayEnabled: gateway,
-  }),
-}));
-let servable = true;
-mock.module('../../llm-gateway/resolution/default-model', () => ({ isModelServableForAccount: async () => servable }));
-
 const settings = await import('./settings');
 const user = { platform: 'slack' as const, workspaceId: 'T1', platformUserId: 'U1' };
 const channel = { teamId: 'T1', channelId: 'C1' };
@@ -85,15 +70,14 @@ beforeEach(() => {
   allowed.clear();
   allowed.add('proj-1');
   checked.length = 0;
+  actions.length = 0;
   writes.length = 0;
-  gateway = true;
-  servable = true;
 });
 
 describe('every setting is checked against the bound project', () => {
   test('without the capability nothing is written, and the bound project is the one checked', async () => {
     allowed.clear();
-    expect(await settings.changeChannelModel(user, channel, 'default')).toEqual({ ok: false, reason: 'forbidden' });
+    expect(await settings.authorizeChannelChange(user, channel)).toEqual({ ok: false, reason: 'forbidden' });
     expect(await settings.changeChannelAgent(user, channel, 'reviewer')).toEqual({ ok: false, reason: 'forbidden' });
     expect(await settings.changeChannelPolicy(user, channel, 'owner_only')).toEqual({ ok: false, reason: 'forbidden' });
     expect(await settings.unbindChannel(user, channel)).toEqual({ ok: false, reason: 'forbidden' });
@@ -104,35 +88,22 @@ describe('every setting is checked against the bound project', () => {
 
   test('an unbound channel has no settings to change', async () => {
     bound = null;
-    expect(await settings.changeChannelModel(user, channel, 'default')).toEqual({ ok: false, reason: 'no_binding' });
+    expect(await settings.authorizeChannelChange(user, channel)).toEqual({ ok: false, reason: 'no_binding' });
     expect(checked).toEqual([]);
   });
 });
 
-describe('model', () => {
-  test('default resets; a servable gateway id is stored as its OpenCode ref', async () => {
-    expect(await settings.changeChannelModel(user, channel, 'default')).toEqual({ ok: true, model: null, native: false });
-    const set = await settings.changeChannelModel(user, channel, 'kortix/glm-5.3-flash');
-    expect(set).toMatchObject({ ok: true, native: false });
-    expect(writes).toHaveLength(2);
+describe('shared channel versus one-to-one conversation', () => {
+  test('a shared channel needs project.connector.write', async () => {
+    await settings.authorizeChannelChange(user, channel);
+    expect(actions).toEqual(['project.connector.write']);
   });
 
-  test('an unservable, a spaced, or a non-native id is refused without a write', async () => {
-    servable = false;
-    expect(await settings.changeChannelModel(user, channel, 'nope/model')).toEqual({ ok: false, reason: 'not_servable' });
-    expect(await settings.changeChannelModel(user, channel, 'a b')).toEqual({ ok: false, reason: 'invalid_id' });
-    gateway = false;
-    expect(await settings.changeChannelModel(user, channel, 'no-slash')).toEqual({ ok: false, reason: 'not_native' });
-    expect(writes).toEqual([]);
-  });
-
-  test('a native project stores a provider/model ref verbatim', async () => {
-    gateway = false;
-    expect(await settings.changeChannelModel(user, channel, 'anthropic/claude-sonnet-4-6')).toEqual({
-      ok: true,
-      model: 'anthropic/claude-sonnet-4-6',
-      native: true,
-    });
+  test('a DM or personal chat with the bot needs project.write, the bar for sending a message', async () => {
+    expect(await settings.authorizeChannelChange(user, { ...channel, oneToOne: true })).toMatchObject({ ok: true });
+    await settings.changeChannelAgent(user, { ...channel, oneToOne: true }, 'reviewer');
+    expect(actions).toEqual(['project.write', 'project.write']);
+    expect(writes).toEqual([['agent', 'reviewer']]);
   });
 });
 

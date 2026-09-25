@@ -128,7 +128,7 @@ export async function executeQueuedContinue(
   // the dead-letter, park the user's session `failed`).
   const hasBody = !!text || (payload.parts?.length ?? 0) > 0;
   if (!row.sessionId || !hasBody) {
-    await markCommandFailed(row.commandId, 'continue_session command missing sessionId or body', {
+    await markCommandFailed(row, 'continue_session command missing sessionId or body', {
       retryable: false,
       attempts: row.attempts,
     });
@@ -155,11 +155,11 @@ export async function executeQueuedContinue(
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
     admission = await admitInboxPrompt(row);
-    if (admission.admit) await lifecycleStore.markInboxDeliveryStarted(row.commandId);
+    if (admission.admit) await lifecycleStore.markInboxDeliveryStarted(row);
     tl.mark('admission');
   } catch (err) {
     await markCommandFailed(
-      row.commandId,
+      row,
       `admission check failed: ${err instanceof Error ? err.message : String(err)}`,
       { retryable: true, attempts: row.attempts, sessionId: row.sessionId },
     );
@@ -168,13 +168,13 @@ export async function executeQueuedContinue(
   if (!admission.admit) {
     try {
       await requeueForAdmission(
-        row.commandId,
+        row,
         admission.reason,
         new Date(Date.now() + admission.retryAfterMs),
       );
     } catch (err) {
       await markCommandFailed(
-        row.commandId,
+        row,
         `admission requeue failed: ${err instanceof Error ? err.message : String(err)}`,
         { retryable: true, attempts: row.attempts, sessionId: row.sessionId },
       );
@@ -214,7 +214,7 @@ export async function executeQueuedContinue(
     const summary = (exec?.resultSummary ?? {}) as Record<string, unknown>;
     if (summary.consumed_at) {
       await markCommandSucceeded(
-        row.commandId,
+        row,
         { status: 'skipped', reason: 'consumed_in_band' },
         row.sessionId,
       );
@@ -282,7 +282,7 @@ export async function executeQueuedContinue(
     // does not park a session for an inbox row, so nothing else is taken away.
     if (payload.clientMessageId) {
       await markCommandFailed(
-        row.commandId,
+        row,
         'queued before the session was rewound — send it again to run it',
         { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
       );
@@ -293,7 +293,7 @@ export async function executeQueuedContinue(
       commandId: row.commandId,
     });
     await markCommandSucceeded(
-      row.commandId,
+      row,
       { status: 'skipped', reason: 'staged_revert' },
       row.sessionId,
     );
@@ -393,7 +393,7 @@ export async function executeQueuedContinue(
         answerCheckFailures,
       });
       await lifecycleStore.requeueUnverifiedRedelivery(
-        row.commandId,
+        row,
         new Date(Date.now() + ANSWER_CHECK_RETRY_BASE_MS * 2 ** answerCheckFailures),
       );
       return 'queued';
@@ -413,7 +413,7 @@ export async function executeQueuedContinue(
         redeliveries,
       });
       await markCommandSucceeded(
-        row.commandId,
+        row,
         { status: 'skipped', reason: 'already_answered' },
         row.sessionId,
       );
@@ -504,9 +504,9 @@ export async function executeQueuedContinue(
       // confirmation on and the row would hang for ever. Those close here, as
       // they always did.
       if (wireMessageId) {
-        await markCommandForwarded(row.commandId, row.sessionId, wireMessageId);
+        await markCommandForwarded(row, row.sessionId, wireMessageId);
       } else {
-        await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
+        await markCommandSucceeded(row, { status: 'delivered' }, row.sessionId);
       }
       tl.mark('marked');
       // The prompt is now on the wire for its target session. If it came from a
@@ -619,13 +619,13 @@ export async function executeQueuedContinue(
     // dead-letter below, which is what puts the retry button in front of the user.
     if (delivery === 'unreachable') {
       const parked = await parkPromptForUnreachableRuntime(
-        row.commandId,
+        row,
         DELIVERY_FAILURE_COPY[delivery],
         { sessionId: row.sessionId },
       );
       if (parked.parked) return 'queued';
       await markCommandFailed(
-        row.commandId,
+        row,
         `${DELIVERY_FAILURE_COPY.unreachable} after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
         { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
       );
@@ -638,7 +638,7 @@ export async function executeQueuedContinue(
     if (delivery === 'not-landed') {
       const reason = 'prompt accepted by the runtime but never became a message';
       const requeue = await requeueUnlandedPrompt(
-        row.commandId,
+        row,
         reason,
         new Date(Date.now() + NOT_LANDED_RETRY_DELAY_MS),
       );
@@ -650,7 +650,7 @@ export async function executeQueuedContinue(
         });
         return 'queued';
       }
-      await markCommandFailed(row.commandId, reason, {
+      await markCommandFailed(row, reason, {
         retryable: false,
         attempts: row.attempts,
         sessionId: row.sessionId,
@@ -660,7 +660,7 @@ export async function executeQueuedContinue(
     // 'pending' = runtime not ready in time — worth another pass. 'no-session'
     // and 'failed' are terminal for this command.
     const retryable = delivery === 'pending';
-    await markCommandFailed(row.commandId, DELIVERY_FAILURE_COPY[delivery], {
+    await markCommandFailed(row, DELIVERY_FAILURE_COPY[delivery], {
       retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,
@@ -668,11 +668,11 @@ export async function executeQueuedContinue(
     return retryable ? 'queued' : 'failed';
   } catch (e) {
     if (e instanceof InboxDeliveryPaused) {
-      await releasePausedInboxDelivery(row.commandId);
+      await releasePausedInboxDelivery(row);
       return 'queued';
     }
     const retryable = !(e instanceof PromptDeliveryRefused);
-    await markCommandFailed(row.commandId, (e as Error).message || 'continue_session threw', {
+    await markCommandFailed(row, (e as Error).message || 'continue_session threw', {
       retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,

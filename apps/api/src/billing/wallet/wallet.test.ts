@@ -24,7 +24,7 @@ const { InsufficientCreditsError } = await import('../../errors');
 
 /** A Drizzle failure: the pg detail hangs off `cause`, not `message`. */
 function queryError(cause: Record<string, unknown>) {
-  return Object.assign(new Error('Failed query: select public.atomic_add_credits(...)'), { cause });
+  return Object.assign(new Error('Failed query: select kortix_wallet.grant_credits(...)'), { cause });
 }
 
 const duplicate = queryError({

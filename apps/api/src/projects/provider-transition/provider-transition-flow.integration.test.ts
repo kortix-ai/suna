@@ -23,7 +23,7 @@ import {
   updateTransition,
 } from './provider-transition-store';
 
-const DB_URL = process.env.PTX_TEST_DB_URL;
+const DB_URL = process.env.TEST_DATABASE_URL;
 const RUN = !!DB_URL;
 const d = RUN ? describe : describe.skip;
 

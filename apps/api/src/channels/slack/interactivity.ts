@@ -23,14 +23,10 @@ import { attachPendingSlackAuthResponseUrl } from './auth-resume';
 import { verifyLoginState } from './login';
 import { escapeMrkdwn, respondViaUrl, sessionWebUrl } from './util';
 import { handleSlashCommand } from './commands';
-import {
-  agentChangeText,
-  currentChannelProjectId,
-  modelChangeText,
-  settingsRefusalText,
-  slackUserOf,
-} from './settings-commands';
-import { changeChannelAgent, changeChannelModel, switchChannelProject } from '../core/settings';
+import { agentChangeText, currentChannelProjectId } from './settings-commands';
+import { settingsRefusalText, slackSettingsChannel, slackUserOf } from './settings-text';
+import { applySlackModelChoice } from './model-choice';
+import { changeChannelAgent, switchChannelProject } from '../core/settings';
 import type { SlashCtx } from './types';
 import {
   CANONICAL_SLACK_INBOUND,
@@ -339,7 +335,7 @@ async function handleSwitchProject(
 
   const result = await switchChannelProject(
     slackUserOf({ teamId, slackUserId: payload.user?.id ?? '' }),
-    { teamId, channelId },
+    slackSettingsChannel({ teamId, channelId }),
     projectId,
   );
   if (!result.ok) {
@@ -392,20 +388,17 @@ async function handleSetSelection(
     await reply(OTHER_PROJECT_NOTICE);
     return;
   }
-  const user = slackUserOf({ teamId, slackUserId: payload.user?.id ?? '' });
-  const requested = (kind === 'agent' ? value.a : value.m) || null;
-  const text = kind === 'agent'
-    ? changeText(
-        await changeChannelAgent(user, ctx, requested),
-        (r) => agentChangeText(r, requested ?? '', '/kortix', 'That channel is no longer bound to a project — run `/kortix switch` first.'),
-      )
-    : changeText(await changeChannelModel(user, ctx, requested), (r) => modelChangeText(r, requested ?? '', '/kortix'));
-  await reply(text);
-}
-
-/** A picker click answers in place: a ✓ on success, a ⚠️ on a refusal. */
-function changeText<R extends { ok: boolean }>(result: R, render: (r: R) => string): string {
-  return `${result.ok ? '✓' : '⚠️'} ${render(result)}`;
+  const slackUserId = payload.user?.id ?? '';
+  if (kind === 'model') {
+    // One path for `/kortix model <id>` and the picker: checked as the person
+    // who clicked, with this conversation's keys (channels/slack/model-choice.ts).
+    await reply(await applySlackModelChoice({ teamId, channelId, slackUserId, command: '/kortix' }, value.m ?? ''));
+    return;
+  }
+  const requested = value.a || null;
+  const result = await changeChannelAgent(slackUserOf({ teamId, slackUserId }), slackSettingsChannel(ctx), requested);
+  const text = agentChangeText(result, requested ?? '', '/kortix', 'That channel is no longer bound to a project — run `/kortix switch` first.');
+  await reply(`${result.ok ? '✓' : '⚠️'} ${text}`);
 }
 
 // A `/kortix` panel "Change model/agent/project" button. Re-runs the matching
@@ -809,7 +802,8 @@ export async function handleBlockAction(
   }
 
   if (action.action_id.startsWith('set_model')) {
-    await handleSetSelection(payload, action.value ?? '', 'model', inbound);
+    // A button carries its pick in `value`; the long list's select in `selected_option`.
+    await handleSetSelection(payload, action.selected_option?.value ?? action.value ?? '', 'model', inbound);
     return;
   }
 

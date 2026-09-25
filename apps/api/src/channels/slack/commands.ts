@@ -15,8 +15,8 @@ import {
   revokeChatIdentity,
 } from '../core/identity';
 import { listVisibleChatSessions } from '../core/sessions';
+import { slackUserOf } from './settings-text';
 import {
-  slackUserOf,
   slashAgents,
   slashModels,
   slashPanel,

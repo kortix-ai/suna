@@ -144,7 +144,23 @@ describe('POST /models scope=picker', () => {
     const body = (await res.json()) as { models: Record<string, { enabled?: boolean }> };
     expect(Object.keys(body.models)).toEqual(['amazon-bedrock/global.openai.gpt-5.6-sol', 'grok-4.6']);
     expect(body.models['grok-4.6']?.enabled).toBe(false);
-    expect(servableCalls).toEqual([{ projectId: 'p1', accountId: 'a1', principalUserId: 'u1' }]);
+    expect(servableCalls).toEqual([{ projectId: 'p1', accountId: 'a1', principalUserId: 'u1', personalUserId: 'u1' }]);
+  });
+
+  test('a shared session keeps its member for project-wide keys and loses only personal ones', async () => {
+    // personalUserId null = a shared agent-principal session. It passed null
+    // as the ONLY user before, so servableProjectCatalog listed no pooled key
+    // at all — a model reached through a project-wide key was missing from the
+    // list the sandbox registers, and the runtime refused it.
+    servableCalls.length = 0;
+    await app().request(
+      '/models',
+      authedRequest({
+        principal: { userId: 'u1', accountId: 'a1', projectId: 'p1', personalUserId: null },
+        scope: 'picker',
+      }),
+    );
+    expect(servableCalls).toEqual([{ projectId: 'p1', accountId: 'a1', principalUserId: 'u1', personalUserId: null }]);
   });
 
   test('scope=picker without a project principal falls back to the plain catalog', async () => {

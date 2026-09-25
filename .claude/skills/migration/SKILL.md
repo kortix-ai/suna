@@ -53,7 +53,7 @@ current `package.json` scripts.
 | Command | What it does |
 | --- | --- |
 | `pnpm migrate` | Apply pending migrations using node-pg-migrate. |
-| `pnpm migrate:status` | Dry-run/list pending migrations; exits non-zero if any are pending. |
+| `pnpm migrate:status` | List pending migrations; read-only (reads the ledger, never runs a migration); exits non-zero if any are pending. |
 | `pnpm migrate:create <slug>` | Scaffold a hand-written SQL migration with the house-rules template. |
 | `pnpm migrate:create <slug> --concurrent` | Scaffold the `.concurrent.ts` CONCURRENTLY escape hatch. |
 | `pnpm migrate:generate <slug>` | Generate SQL from a `kortix.ts` schema change and update the Drizzle snapshot. |

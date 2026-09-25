@@ -135,17 +135,17 @@ mock.module('../store', () => ({
     throw new Error('not expected: this test never fails a landing proof');
   },
   markInboxDeliveryStarted: async () => {},
-  markCommandFailed: async (commandId: string, message: string, opts: unknown) => {
+  markCommandFailed: async ({ commandId }: { commandId: string }, message: string, opts: unknown) => {
     failedCalls.push({ commandId, message, opts });
   },
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
-  markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
+  markCommandForwarded: async ({ commandId }: { commandId: string }, sessionId: string, wireMessageId: string) => {
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
   },
   markCommandSucceeded: async (
-    commandId: string,
+    { commandId }: { commandId: string },
     result: unknown,
     sessionId?: string | null,
   ) => {

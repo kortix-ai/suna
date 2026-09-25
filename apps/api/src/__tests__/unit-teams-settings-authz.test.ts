@@ -67,6 +67,7 @@ mock.module('../channels/slack/selection', () => ({
   listProjectAgents: async () => [],
 }));
 mock.module('../channels/slack/model-gate', () => ({
+  projectModelContext: async () => null,
   channelModelContext: async () => ({
     projectId: PROJECT,
     accountId: 'acct-1',
@@ -79,7 +80,8 @@ mock.module('../llm-gateway/models/picker', () => ({
   listPickerModels: async () => ({ models: [], projectDefault: { label: null } }),
   labelForModelRef: (r: string) => r,
 }));
-mock.module('../llm-gateway/resolution/default-model', () => ({ isModelServableForAccount: async () => true }));
+const realDefaultModel = await import('../llm-gateway/resolution/default-model');
+mock.module('../llm-gateway/resolution/default-model', () => ({ ...realDefaultModel, isModelServableForAccount: async () => true }));
 mock.module('../projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map() }));
 mock.module('../channels/teams/agent-picker', () => ({ buildAgentsPicker: async () => ({}) }));
 mock.module('../channels/teams/stop', () => ({ stopTeamsTurn: async () => ({ stopped: false, notice: '' }) }));
@@ -180,10 +182,10 @@ describe('Teams setting commands need a linked project manager', () => {
   });
 
   test('a project manager changes the model, agent, policy and project', async () => {
-    dbResults = [[{ id: 'install-2' }]]; // `/use Second`: the target is installed
     await run('/model default');
     await run('/agent reviewer');
     await run('/policy owner');
+    dbResults = [[{ id: 'install-2' }]]; // `/use Second`: the target is installed
     await run('/use Second');
     expect(writes).toEqual([
       { kind: 'model', value: null },

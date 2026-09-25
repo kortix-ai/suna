@@ -48,6 +48,7 @@ export interface ChatThreadSession {
   createdBy: string | null;
   metadata: unknown;
   status: string | null;
+  agentName: string | null;
 }
 
 /** The thread's live session row (owner, metadata, status); null when the session row is gone. */
@@ -62,6 +63,7 @@ export async function findChatThreadSession(
       createdBy: projectSessions.createdBy,
       metadata: projectSessions.metadata,
       status: projectSessions.status,
+      agentName: projectSessions.agentName,
     })
     .from(chatThreads)
     .innerJoin(projectSessions, eq(projectSessions.sessionId, chatThreads.sessionId))

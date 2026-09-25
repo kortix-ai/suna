@@ -248,7 +248,7 @@ export async function restartSession(input: {
         ? (session.metadata.opencode_model as string)
         : null;
 
-    await transitionSession('provision', sessionId, { error: null, clearSandboxUrl: true });
+    await transitionSession('provision', sessionId, { error: null, sandboxUrl: null });
 
     const runtimeMetadata = { restarted_at: new Date().toISOString() };
     const rehydrate = legacyRehydrateSpec(

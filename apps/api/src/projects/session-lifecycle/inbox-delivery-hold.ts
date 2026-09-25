@@ -1,6 +1,7 @@
 import { sessionLifecycleCommands } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { type CommandLease, ownedByLease } from './command-lease';
 
 export class InboxDeliveryPaused extends Error {
   constructor() {
@@ -23,9 +24,9 @@ export async function assertInboxDeliveryActive(commandId: string): Promise<void
   }
 }
 
-export async function releasePausedInboxDelivery(commandId: string): Promise<void> {
+export async function releasePausedInboxDelivery(lease: CommandLease): Promise<void> {
   // Preserve the CURRENT hold. Resume may have cleared it since the read above.
-  // Only release our running claim; a deleted row must never be resurrected.
+  // Only release our own running claim; a deleted row must never be resurrected.
   await db
     .update(sessionLifecycleCommands)
     .set({
@@ -36,10 +37,5 @@ export async function releasePausedInboxDelivery(commandId: string): Promise<voi
       lockedUntil: null,
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(sessionLifecycleCommands.commandId, commandId),
-        eq(sessionLifecycleCommands.status, 'running'),
-      ),
-    );
+    .where(ownedByLease(lease));
 }

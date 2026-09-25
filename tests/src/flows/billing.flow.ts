@@ -715,6 +715,38 @@ flow(
       const r = await asVictim.post('/v1/account/cancel-deletion', {});
       r.status([400, 404]);
     });
+    await ctx.step('scheduling again after a cancel → 200, and the status reads pending', async () => {
+      const r = await asVictim.post('/v1/account/request-deletion', { reason: 'after-cancel' });
+      r.status(200);
+      const status = await asVictim.get('/v1/billing/account/deletion-status');
+      status.status(200);
+      const body = status.json<{ has_pending_deletion: boolean }>();
+      if (body.has_pending_deletion !== true) {
+        throw new Error(`expected has_pending_deletion=true after re-request, got ${JSON.stringify(body)}`);
+      }
+    });
+    await ctx.step('cancel the second request → 200; status reads not pending', async () => {
+      const r = await asVictim.post('/v1/account/cancel-deletion', {});
+      r.status(200);
+      const status = await asVictim.get('/v1/billing/account/deletion-status');
+      status.status(200);
+      const body = status.json<{ has_pending_deletion: boolean }>();
+      if (body.has_pending_deletion !== false) {
+        throw new Error(`expected has_pending_deletion=false after cancel, got ${JSON.stringify(body)}`);
+      }
+    });
+    await ctx.step('two concurrent requests → exactly one 200, the other 400', async () => {
+      const [a, b] = await Promise.all([
+        asVictim.post('/v1/account/request-deletion', { reason: 'race-a' }),
+        asVictim.post('/v1/account/request-deletion', { reason: 'race-b' }),
+      ]);
+      const statuses = [a.statusCode, b.statusCode].sort();
+      if (statuses[0] !== 200 || statuses[1] !== 400) {
+        throw new Error(`expected [200, 400], got ${JSON.stringify(statuses)}`);
+      }
+      const cleanup = await asVictim.post('/v1/account/cancel-deletion', {});
+      cleanup.status(200);
+    });
   },
 );
 

@@ -21,6 +21,53 @@ linked, not inlined.
 
 ## Register
 
+### A scheduled workflow runs as the last person who edited its cron line (2026-09-25)
+
+**Rule:** When someone leaves the org, list every workflow whose scheduled runs
+carry their login, and change each cron line in a PR. GitHub dispatches a
+`schedule` as the user who last changed that line and stops dispatching once
+that user loses repository access. The workflow still reads `active`, so
+`gh workflow list` shows nothing wrong. **Trigger surface:** offboarding, or a
+nightly job whose newest run is weeks old.
+
+**Incident:** `db-drift.yml` last ran on schedule 2026-08-04 and
+`security-scan.yml` on 2026-08-03. Both runs' `actor` was the author of the
+2026-06-21 cron lines, who is no longer an org member (`GET
+/orgs/<org>/members/<login>` → 404). Every other scheduled workflow ran as a
+current member and kept running. Seven weeks of drift checks and CVE scans did
+not run, and nothing reported it. **Check:** for each scheduled workflow, `gh
+run list --workflow <file> --event schedule --limit 1 --json databaseId`, then
+`gh api repos/<repo>/actions/runs/<id> --jq .actor.login`, and compare the date
+with the cron. **Enforcer:** none; the check above is manual.
+
+### A live-schema check that ignores indexes and constraints passes a crippled table (2026-09-25)
+
+**Rule:** Verify a live environment against a freshly migrated database for
+index DEFINITIONS and constraint definitions, not only tables and columns. A
+faked baseline copies the ledger, not the objects. **Trigger surface:** faking
+or re-baselining an environment, or triaging a slow query on prod only.
+**Incident:** prod `credit_ledger` (2.7M rows) had 4 of its 15 indexes, and
+`account_memberships` had no primary key. `verify-live-schema.ts` reported OK
+because it compared tables and columns only. Account-scoped ledger reads ran
+2.0 s mean (4,804 calls); prod-only because dev/staging ran the real baseline.
+**Enforcer:** `verify-live-schema.ts` now fails on missing index/constraint
+definitions (waivers with evidence in `verify-live-schema-waivers.ts`), PR #7635.
+
+### A declared index is not a built index; kortix.ts is checked against the migrated catalog (2026-09-25)
+
+**Rule:** Every index, unique constraint, table and view in `kortix.ts` must
+exist in a freshly migrated database, and the reverse. Declaring an index in
+`kortix.ts` builds nothing: build it in a `.concurrent.ts` migration in the
+same PR. Declare a compatibility view with `.view(...).existing()`, never as a
+table. **Trigger surface:** any edit to `packages/db/src/schema/kortix.ts` or
+an index migration. **Near-miss:** `kortix.ts` declared
+`uniq_sandbox_compute_sessions_one_open` from 2026-07-16; no migration built
+it until 2026-09-24, so compute metering's de-duplication could never fire.
+Eight RBAC compatibility views were declared as tables. Found by a codebase
+audit. **Enforcer:** `packages/db/scripts/schema-contract.ts` in the
+`shadow-db` job of `db-migrations.yml`; exceptions only on
+`schema-contract-sql-only.ts`, which can only shrink.
+
 ### A cancelled controller does not stop detached work on a reused remote host (2026-09-24)
 
 **Rule:** Before a controller launches work on a reused remote host, stop the
@@ -146,6 +193,14 @@ started a second Platinum keepalive through a copied, unlocked `pt-ka.lock`.
 `infra/test/pt-tmp-migrate.test.sh` (byte parity with the host-agent copy),
 `guest_tmp_test.go`; kortixd `resources.test.ts` names RAM-backed files in the
 guard's stop reason.
+
+### A model check that says "usable" must use the scope the gateway uses, or a chat pins a model that fails every turn (2026-09-24)
+
+**Rule:** Every check made before a request — a picker list, a servability probe, a create-time validation, a per-message replacement check — resolves with the personal-key scope the gateway uses at request time (`resolveSessionPersonalOwner`, `personalUserId`). When a change narrows what a session may reach, find every such check of that resource and move it in the same PR.
+
+**Incident (dev, 2026-09-24):** #7563 made agents their own principal by default, so a shared session no longer reaches one person's ChatGPT connection. Teams channel sessions pinned to `codex/*` then failed every message with "Connect Codex to use this model". The per-message check (`channelTurnModel`) still counted the sender's own connection, so it never replaced the model, and `/model` changed only new sessions. PR #7593.
+
+**Enforcement:** `unit-channel-model-access.test.ts` (a follow-up in a shared session is checked with `personalUserId: null`), `unit-channel-vision-model.test.ts` (probe inputs and cache key carry the scope), `default-model.test.ts` (a shared session's default is checked without personal keys).
 
 ### A background job runs its tick as a named worker, or its changes read as API traffic (2026-09-24)
 
@@ -7122,3 +7177,32 @@ endpoint provider and linked openrouter.ai.
 `packages/llm-gateway/src/pipeline/simple-handler.test.ts` (failover and
 public-identity suites), `apps/api/src/llm-gateway/__tests__/gateway.live.test.ts`
 (real Morph + OpenRouter). PR #7589.
+
+### 2026-09-25 — A dry run that calls up() is not read-only; status reads the ledger, never the runner
+
+**Near-miss.** `pnpm migrate:status` was documented as "dry-run, writes nothing",
+and the failed-deploy drill in `packages/db/MIGRATIONS.md` sent operators to run
+it against prod. It called node-pg-migrate 8.0.4 `runner({ dryRun: true })`.
+That dry run takes the advisory lock, creates the ledger schema and table if
+absent, sends `BEGIN` and `COMMIT` unconditionally, and calls every pending
+migration's `up()`. Only SQL collected through `pgm.sql()` is skipped. The
+statements `up()` runs itself through `pgm.db.query()` execute and commit; four
+batched `.concurrent.ts` data passes do that. A disposable PostgreSQL proved it:
+the old status committed a pending migration's `INSERT` (`n: 1`, expected `0`).
+Found while wiring the DB suites into CI (#7636). No known run against a
+database with such a migration pending.
+
+**Rule.** A command that claims to write nothing must not call code that can
+write. "Dry run" describes what a library chooses to skip, not what it runs:
+read the implementation before you document it as read-only. A status check
+reads the ledger itself, inside `BEGIN READ ONLY`, on a session opened with
+`default_transaction_read_only = on`, and refuses to run when that setting
+did not take.
+
+**Enforcement.** `packages/db/scripts/migration-status.integration.test.ts`
+(real PostgreSQL: a pending `pgm.db.query` INSERT stays unwritten and is
+reported pending; no ledger is created on an empty database; the session
+refuses writes even when the URL's `options=` turns read-only off; the real CLI
+lists every migration on an empty database and creates no schema). It failed
+on the old status (3 of 5). `migration-status.test.ts` pins that `migrate.ts`
+has no `dryRun` and that the status path never calls `runner(`.
