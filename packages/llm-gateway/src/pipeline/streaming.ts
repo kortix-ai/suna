@@ -3,6 +3,8 @@ import { type ExtractedUsage, IncrementalSseScanner, type SseErrorFrame } from '
 export interface StreamRelayOptions {
   upstreamBody: ReadableStream<Uint8Array>;
   requestId: string;
+  upstreamProvider?: string;
+  upstreamModel?: string;
   logger: {
     warn: (...args: unknown[]) => void;
     // Required: a failed usage settlement is unrecorded revenue and must be
@@ -69,6 +71,16 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
   let previousDataLineEnding = '';
   let framingRepairLogged = false;
   const encoder = new TextEncoder();
+  const reportFramingRepair = (): void => {
+    if (framingRepairLogged) return;
+    framingRepairLogged = true;
+    options.logger.warn('[gateway] repaired missing SSE event boundary', {
+      event: 'gateway.sse_framing_repaired',
+      requestId: options.requestId,
+      provider: options.upstreamProvider,
+      model: options.upstreamModel,
+    });
+  };
   const relay = (controller: ReadableStreamDefaultController<Uint8Array>, text: string): boolean => {
     const buffered = carry + text;
     const cut = buffered.lastIndexOf('\n') + 1;
@@ -86,10 +98,7 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
         // blank line that dispatches the first event. EventSourceParser then
         // joins them with a newline and JSON.parse rejects the whole event.
         output += previousDataLineEnding;
-        if (!framingRepairLogged) {
-          options.logger.warn('[gateway] repaired missing SSE event boundary', { requestId: options.requestId });
-          framingRepairLogged = true;
-        }
+        reportFramingRepair();
       }
       output += line;
       if (complete) previousDataLineEnding = line.endsWith('\r\n') ? '\r\n' : '\n';
@@ -104,10 +113,7 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
     if (!carry) {
       if (previousDataLineEnding) {
         controller.enqueue(encoder.encode(previousDataLineEnding));
-        if (!framingRepairLogged) {
-          options.logger.warn('[gateway] repaired missing SSE event boundary', { requestId: options.requestId });
-          framingRepairLogged = true;
-        }
+        reportFramingRepair();
         previousDataLineEnding = '';
       }
       return;
@@ -118,10 +124,7 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
     // complete OpenAI chunk at EOF needs the same blank line as every other
     // event, including when the provider omitted its final newline entirely.
     const output = (repairedBoundary ? previousDataLineEnding : '') + carry + (complete ? '\n\n' : '');
-    if (complete && !framingRepairLogged) {
-      options.logger.warn('[gateway] repaired missing SSE event boundary', { requestId: options.requestId });
-      framingRepairLogged = true;
-    }
+    if (complete) reportFramingRepair();
     controller.enqueue(encoder.encode(options.rewriteLines ? options.rewriteLines(output) : output));
     tail = (tail + output).slice(-2);
     carry = '';

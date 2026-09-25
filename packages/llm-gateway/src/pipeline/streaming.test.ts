@@ -17,10 +17,13 @@ describe('relayStream', () => {
       },
     });
     let settledUsage: unknown;
+    const warnings: Array<{ event?: string; requestId?: string; provider?: string; model?: string }> = [];
     const output = await new Response(relayStream({
       upstreamBody: upstream,
       requestId: 'req_framing',
-      logger: { warn() {}, error() {} },
+      upstreamProvider: 'provider-a',
+      upstreamModel: 'model-a',
+      logger: { warn: (_message, detail) => warnings.push(detail as typeof warnings[number]), error() {} },
       settle: async (value) => { settledUsage = value; },
     })).text();
 
@@ -29,6 +32,7 @@ describe('relayStream', () => {
     expect(events).toHaveLength(4);
     expect(events.slice(0, -1).map((event) => JSON.parse(event.slice(6)))).toHaveLength(3);
     expect(settledUsage).toMatchObject({ promptTokens: 11, completionTokens: 7 });
+    expect(warnings).toEqual([{ event: 'gateway.sse_framing_repaired', requestId: 'req_framing', provider: 'provider-a', model: 'model-a' }]);
   });
 
   test('keeps a standard multiline SSE event and CRLF framed events unchanged', async () => {
