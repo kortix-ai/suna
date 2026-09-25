@@ -12,7 +12,12 @@ name: DB Drift Sentinel
 
 on:
   schedule:
-    - cron: '0 7 * * *' # 07:00 UTC daily
+    # GitHub runs a schedule as the user who last changed this cron line. It
+    # stops dispatching when that user loses repository access: the previous
+    # line's author left the org and the last scheduled run was 2026-08-04.
+    # Editing the line re-registers the schedule under the merging user. Off
+    # the top of the hour, where GitHub delays or drops scheduled runs.
+    - cron: '17 7 * * *' # 07:17 UTC daily
   workflow_dispatch:
 
 permissions:
