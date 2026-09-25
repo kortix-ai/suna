@@ -4953,7 +4953,7 @@ export const permissions = kortixSchema.table(
  * new scopable object type is data, not a branch.
  */
 export const objectPolicies = kortixSchema.table('object_policies', {
-  /** 'agent' | 'skill' | 'secret' | 'app' | 'trigger'. */
+  /** 'agent' | 'skill' | 'secret' | 'app' | 'trigger' | 'connection'. */
   objectType: varchar('object_type', { length: 16 }).primaryKey(),
   /** 'closed' | 'open' — what a member-tier caller gets when the object has NO
    *  grant rows at all. Manager tier always gets the open default. */
@@ -4989,7 +4989,10 @@ export const roleAssignments = kortixSchema.table(
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     /** 'user' (auth uid) | 'group' (account_groups.group_id) |
      *  'service_account' (service_accounts.service_account_id) |
-     *  'pending' (uuid5 of the lower-cased invitee email). */
+     *  'pending' (uuid5 of the lower-cased invitee email) |
+     *  'project' (everyone with access to the project: `principal_id` =
+     *  `scope_id`, object grants only — see
+     *  `role_assignments_project_principal_shape_check`). */
     principalType: varchar('principal_type', { length: 16 }).notNull(),
     /** Untyped uuid — polymorphic across the four principal kinds, same choice
      *  the legacy iam_policies.principal_id made. */
@@ -5004,10 +5007,11 @@ export const roleAssignments = kortixSchema.table(
      *  SQL-only: 20260819160100000) removes a deleted project's assignments. */
     scopeId: uuid('scope_id'),
     /** NULL = the whole scope. Otherwise the object TYPE this assignment is
-     *  narrowed to ('agent' | 'skill' | 'secret' | 'app' | 'trigger'). */
+     *  narrowed to ('agent' | 'skill' | 'secret' | 'app' | 'trigger' |
+     *  'connection'). */
     objectType: varchar('object_type', { length: 16 }),
-    /** TEXT, not uuid: an agent name / skill slug from the git manifest, or an
-     *  uppercased secret identifier. */
+    /** TEXT, not uuid: an agent name / skill slug from the git manifest, an
+     *  uppercased secret identifier, or a `connector_connections.connection_id`. */
     objectId: text('object_id'),
     /** Optional auto-revoke. Filtered in SQL on every read. */
     expiresAt: timestamp('expires_at', { withTimezone: true }),
