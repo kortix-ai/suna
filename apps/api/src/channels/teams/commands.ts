@@ -1,13 +1,10 @@
 import { config } from '../../config';
 import { formatRelativeTime, sessionWebUrl } from '../slack/util';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
+import { currentChannelSelection } from '../slack/selection';
+import { type SettingsChannel, changeChannelAgent, changeChannelPolicy, switchChannelProject } from '../core/settings';
+import { teamsAgentChangeText, teamsSettingsChannel, teamsSettingsRefusal } from './settings-text';
 import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
-import {
-  currentChannelSelection,
-  loadProjectAgentGovernance,
-  setChannelAgent,
-  setChannelConversationPolicy,
-} from '../slack/selection';
 import { buildAgentsPicker } from './agent-picker';
 import { stopTeamsTurn } from './stop';
 import { applyTeamsModelChoice, buildTeamsModelsCard, statusModel } from './model-choice';
@@ -29,10 +26,10 @@ import {
   ensureTeamsConversationBinding,
   listTenantProjects,
   resolveConversationProject,
-  setConversationProject,
   teamsChannelCtx,
 } from './binding';
-import { lookupTeamsIdentity, revokeTeamsIdentity, teamsUserId } from './identity';
+import { teamsUserId } from './identity';
+import { type ChatUser, chatUser, lookupChatIdentity, revokeChatIdentity } from '../core/identity';
 import { buildTeamsLoginUrl } from './login';
 import { conversationScope, describeTeamsConversation, type TeamsCommand } from './util';
 import type { TeamsActivity, TeamsConversationRef } from './types';
@@ -70,6 +67,8 @@ export async function handleTeamsCommand(input: {
   const conversationId = ref.conversationId;
   const ctx = teamsChannelCtx(input.tenantId, conversationId);
   const userId = teamsUserId(input.activity);
+  const actor = chatUser('teams', input.tenantId, userId ?? '');
+  const settings = teamsSettingsChannel(input.activity, input.tenantId, conversationId);
 
   const post = (card: unknown) => sendCard(ref, card as Record<string, unknown>);
 
@@ -84,7 +83,7 @@ export async function handleTeamsCommand(input: {
       }
       case 'logout':
       case 'disconnect': {
-        const revoked = userId ? await revokeTeamsIdentity(input.tenantId, userId) : false;
+        const revoked = userId ? await revokeChatIdentity(chatUser('teams', input.tenantId, userId)) : false;
         await post(buildNoticeCard(revoked ? 'Disconnected. Run `/login` to reconnect.' : "You weren't connected.", revoked ? '✅' : ''));
         return true;
       }
@@ -181,18 +180,18 @@ export async function handleTeamsCommand(input: {
         return true;
       case 'agent':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
-        await post(await setAgent(ctx, arg));
+        await post(await setAgent(settings, actor, arg));
         return true;
       case 'projects':
         await post(await buildProjectsCard(input.tenantId, input.projectId));
         return true;
       case 'use':
       case 'switch':
-        await post(await switchProject(input.tenantId, conversationId, arg));
+        await post(await switchProject(actor, settings, arg));
         return true;
       case 'policy':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
-        await post(await setPolicy(ctx, arg));
+        await post(await setPolicy(settings, actor, arg));
         return true;
       default:
         return false;
@@ -309,7 +308,7 @@ async function buildWhoamiCard(
   userId: string | null,
   projectId: string,
 ) {
-  const identity = userId ? await lookupTeamsIdentity(tenantId, userId) : null;
+  const identity = userId ? await lookupChatIdentity(chatUser('teams', tenantId, userId)) : null;
   if (!identity) {
     return buildConnectAccountCard(
       buildTeamsLoginUrl({ tenantId, teamsUserId: userId ?? '' }),
@@ -327,19 +326,10 @@ async function buildWhoamiCard(
   });
 }
 
-async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
+async function setAgent(ctx: SettingsChannel, user: ChatUser, arg: string) {
   const name = arg.trim();
   if (!name) return buildAgentsPicker(ctx, (await currentChannelSelection(ctx))?.projectId ?? '');
-  if (name.toLowerCase() === 'default') {
-    await setChannelAgent(ctx, null);
-    return buildNoticeCard('Agent reset to the project default.');
-  }
-  const res = await setChannelAgent(ctx, name);
-  if (!res.ok && res.reason === 'unknown_agent') {
-    return buildNoticeCard(`\`${name}\` isn't a declared agent in this project. Try /agents.`);
-  }
-  if (!res.ok) return buildNoticeCard('Connect a project to this conversation first.');
-  return buildNoticeCard(`Agent set to ${name}. New sessions will use it.`);
+  return buildNoticeCard(teamsAgentChangeText(await changeChannelAgent(user, ctx, name), name));
 }
 
 const POLICY_ALIASES: Record<string, 'project_open' | 'owner_only' | 'owner_approval'> = {
@@ -354,7 +344,7 @@ const POLICY_ALIASES: Record<string, 'project_open' | 'owner_only' | 'owner_appr
   approve: 'owner_approval',
 };
 
-async function setPolicy(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
+async function setPolicy(ctx: SettingsChannel, user: ChatUser, arg: string) {
   const selection = await currentChannelSelection(ctx);
   if (!selection) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
   const current = normalizeConversationPolicy(selection.conversationPolicy);
@@ -373,8 +363,8 @@ async function setPolicy(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   }
   const next = POLICY_ALIASES[requested];
   if (!next) return buildNoticeCard('Use `/policy open`, `/policy approval`, or `/policy owner`.');
-  const ok = await setChannelConversationPolicy(ctx, next);
-  if (!ok) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
+  const result = await changeChannelPolicy(user, ctx, next);
+  if (!result.ok) return buildNoticeCard(teamsSettingsRefusal(result.reason, 'Connect a project to this conversation first — try /projects.'), '📁');
   return buildNoticeCard(`Session policy set to **${conversationPolicyLabel(next)}**. New sessions started here use it.`, '✅');
 }
 
@@ -397,13 +387,22 @@ async function buildProjectsCard(tenantId: string, currentProjectId: string) {
   });
 }
 
-async function switchProject(tenantId: string, conversationId: string, arg: string) {
+async function switchProject(user: ChatUser, channel: SettingsChannel, arg: string) {
+  const tenantId = channel.teamId;
+  const conversationId = channel.channelId;
   const projects = await listTenantProjects(tenantId);
   const q = arg.trim().toLowerCase();
   const match = q
     ? projects.find((p) => p.name.toLowerCase() === q || p.projectId === arg.trim())
     : null;
   if (!match) return buildProjectsCard(tenantId, (await resolveConversationProject(tenantId, conversationId)) ?? '');
-  await setConversationProject({ tenantId, conversationId, projectId: match.projectId });
+  const result = await switchChannelProject(user, channel, match.projectId);
+  if (!result.ok) {
+    return buildNoticeCard(
+      result.reason === 'not_installed'
+        ? "That project isn't connected to this Teams tenant."
+        : teamsSettingsRefusal(result.reason, ''),
+    );
+  }
   return buildNoticeCard(`This conversation now runs **${match.name}**.`);
 }

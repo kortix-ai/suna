@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from '../../../__tests__/helpers/chat-identity-stub';
 
 // The consolidated `/kortix` panel + the real-catalog model picker + the
 // servability gate (a stored model can never 404). Heavy deps are mocked; the
@@ -76,12 +77,13 @@ mock.module('../participants', () => ({
   conversationPolicyLabel: () => 'Owner approval',
   normalizeConversationPolicy: () => 'owner_approval',
 }));
-mock.module('../identity', () => ({
-  lookupSlackIdentity: async () => null,
-  linkSlackIdentity: async () => {},
-  resolveSlackActor: async () => ({ userId: 'user-1' }),
-  revokeSlackIdentity: async () => true,
-}));
+mock.module('../../core/sessions', () => ({ listVisibleChatSessions: async () => [] }));
+mock.module('../../core/identity', () =>
+  chatIdentityStub({
+    revokeChatIdentity: async () => true,
+    resolveProjectChatActor: async () => ({ userId: 'user-1' }),
+  }),
+);
 mock.module('../../../accounts/core/app', () => ({ lookupEmailsByUserIds: async () => new Map() }));
 
 const { handleSlashCommand } = await import('../commands');
