@@ -454,12 +454,32 @@ export async function filterAccessibleObjects(
   return objectIds.filter((id) => {
     const principals = grants.get(id);
     if (!principals || principals.length === 0) return unscopedOpen || managerTier;
-    return principals.some(
-      (p) =>
-        (p.principalType === 'user' && p.principalId === principal.id) ||
-        (p.principalType === 'group' && groups.has(p.principalId)),
-    );
+    return principals.some((p) => objectGrantReaches(p, principal.id, groups));
   });
+}
+
+/**
+ * Does ONE object grant name this principal?
+ *
+ *   user     -> that user
+ *   group    -> any member of that group
+ *   project  -> everyone with access to the project. The grant map is loaded
+ *               per project, so a `project` row here is always the caller's
+ *               own project, and the caller has already passed the
+ *               project-role check. The DB shape check keeps `principal_id =
+ *               scope_id` for every writer.
+ *
+ * Any other kind grants nothing.
+ */
+export function objectGrantReaches(
+  grant: { principalType: string; principalId: string },
+  principalId: string,
+  groupIds: ReadonlySet<string>,
+): boolean {
+  if (grant.principalType === 'project') return true;
+  if (grant.principalType === 'user') return grant.principalId === principalId;
+  if (grant.principalType === 'group') return groupIds.has(grant.principalId);
+  return false;
 }
 
 // ─── Pure decision helpers (exported for unit tests) ────────────────────────
@@ -503,7 +523,8 @@ export function isImplicitManager(accountRoleKey: string | null): boolean {
  *   no grant rows at all -> the OBJECT TYPE's default (agents closed, the rest
  *                           open), with the manager tier always getting open
  *   >=1 grant row        -> only the named principals, identically for both
- *                           tiers
+ *                           tiers (`objectGrantReaches`; a `project` row names
+ *                           everyone in the project)
  */
 export async function objectUsable(
   objectType: string,
@@ -517,11 +538,7 @@ export async function objectUsable(
     return (await unscopedDefaultFor(objectType)) === 'open';
   }
   const groups = new Set(groupIds);
-  return grantsForObject.some(
-    (g) =>
-      (g.principalType === 'user' && g.principalId === principalId) ||
-      (g.principalType === 'group' && groups.has(g.principalId)),
-  );
+  return grantsForObject.some((g) => objectGrantReaches(g, principalId, groups));
 }
 
 // ─── Principal resolution ───────────────────────────────────────────────────

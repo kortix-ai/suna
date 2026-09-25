@@ -21,6 +21,7 @@ import {
   accountGroups,
   accountMembers,
   accountMemberships,
+  connectorConnections,
   iamRoleActions,
   iamRoles,
   projects,
@@ -215,10 +216,12 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
     });
   }
   if (scopeId) await assertProjectInAccount(accountId, scopeId);
+  assertProjectPrincipalShape(input, role, scopeId);
+  if (input.object && scopeId) await assertObjectAssignable(scopeId, input.object);
 
   await assertPrincipalExists(accountId, input.principal);
   assertAccountRoleHolder(writer, role, scopeType, input.principal);
-  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, input.object != null);
+  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, input.object?.type ?? null);
   await assertDelegable(role);
 
   // Raw SQL, not the query builder: the identity index is on EXPRESSIONS
@@ -398,9 +401,9 @@ export async function updateAssignment(
     },
     existing.scopeType as ScopeType,
     existing.scopeId,
-    existing.objectType != null,
+    existing.objectType,
   );
-  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, false);
+  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, null);
   await assertDelegable(role);
 
   const expiresAt = input.expiresAt ? input.expiresAt.toISOString() : null;
@@ -482,7 +485,7 @@ export async function revokeAssignment(
       role,
       existing.scopeType as ScopeType,
       existing.scopeId,
-      existing.objectType != null,
+      existing.objectType,
     );
   }
   await assertNotLastOwner(accountId, existing);
@@ -616,6 +619,9 @@ function canonicalRoleKey(scopeType: ScopeType, key: string): string {
  */
 async function assertPrincipalExists(accountId: string, principal: PrincipalRef): Promise<void> {
   if (principal.type === 'pending') return;
+  // `project` names the assignment's own scope, which `assertProjectInAccount`
+  // already proved; `assertProjectPrincipalShape` proved the ids are equal.
+  if (principal.type === 'project') return;
 
   if (principal.type === 'group') {
     const [row] = await db
@@ -667,11 +673,63 @@ async function assertPrincipalExists(accountId: string, principal: PrincipalRef)
 }
 
 /**
+ * A `project` principal ("everyone with access to this project") exists only as
+ * an OBJECT grant on its own project, carrying the permission-less
+ * `agent-user` role. Anything else would hand a role to every member at once.
+ * `role_assignments_project_principal_shape_check` is the same rule in storage.
+ */
+function assertProjectPrincipalShape(
+  input: AssignRoleInput,
+  role: ResolvedRole,
+  scopeId: string | null,
+): void {
+  if (input.principal.type !== 'project') return;
+  if (!input.object || !scopeId || input.principal.id !== scopeId || role.key !== 'agent-user') {
+    throw new HTTPException(400, {
+      message:
+        "a 'project' principal is valid only as an object grant on its own project: object required, principal_id = scope_id, role agent-user",
+    });
+  }
+}
+
+/**
+ * The object must exist before a grant can name it. A `connection` grant names
+ * one SHARED (`owner_type = 'project'`) account in this project: a private
+ * account belongs to its owner and is never shared, and an id that names no row
+ * would be a dead grant that comes alive if the id were ever reused.
+ */
+async function assertObjectAssignable(
+  projectId: string,
+  object: { type: ObjectType; id: string },
+): Promise<void> {
+  if (object.type !== 'connection') return;
+  const [row] = await db
+    .select({ id: connectorConnections.connectionId })
+    .from(connectorConnections)
+    .where(
+      and(
+        sql`${connectorConnections.connectionId}::text = ${object.id}`,
+        eq(connectorConnections.projectId, projectId),
+        eq(connectorConnections.ownerType, 'project'),
+      ),
+    )
+    .limit(1);
+  if (!row) {
+    throw new HTTPException(404, {
+      message: 'object_id is not a shared connection in this project',
+    });
+  }
+}
+
+/**
  * May this writer hand out this role, here?
  *
  * The action is chosen by WHAT is being granted, so the ceiling cannot be
  * side-stepped by picking a different route:
- *   object assignment          -> project.members.manage on that project
+ *   connection assignment      -> project.connector.connections.manage on that
+ *                                 project (the same leaf that creates, revokes
+ *                                 and re-credentials a shared account)
+ *   other object assignment    -> project.members.manage on that project
  *   system role, project scope -> project.members.manage on that project
  *   system role, account scope -> member.update  (it re-parents who is admin)
  *   custom role, any scope     -> policy.create
@@ -682,11 +740,15 @@ async function assertWriterMayAssign(
   role: ResolvedRole,
   scopeType: ScopeType,
   scopeId: string | null,
-  isObjectAssignment: boolean,
+  objectType: string | null,
 ): Promise<void> {
   if (writer === SYSTEM_ACTOR) return;
   const projectObj: Obj = scopeId ? { type: 'project', id: scopeId } : { type: 'account' };
-  if (isObjectAssignment || (role.isSystem && scopeType === 'project')) {
+  if (objectType === 'connection') {
+    await assertAuthorized(writer, 'project.connector.connections.manage', projectObj);
+    return;
+  }
+  if (objectType !== null || (role.isSystem && scopeType === 'project')) {
     await assertAuthorized(writer, 'project.members.manage', projectObj);
     return;
   }
@@ -982,7 +1044,8 @@ export async function listAssignmentsByIds(assignmentIds: string[]): Promise<Ass
  */
 async function bustCachesFor(principal: PrincipalRef, scopeId: string | null): Promise<void> {
   if (principal.type === 'group') await invalidateIamCacheForGroup(principal.id);
-  else invalidateIamCacheForUser(principal.id);
+  // A `project` grant names no user; the project-resource bust below is its whole effect.
+  else if (principal.type !== 'project') invalidateIamCacheForUser(principal.id);
   if (scopeId) invalidateIamCacheForProjectResources(scopeId);
 }
 

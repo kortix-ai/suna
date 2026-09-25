@@ -423,3 +423,115 @@ describe.if(hasDatabase)('customRoleBindings — principalTypes', () => {
     expect(peopleOnly.every((b) => b.principalType !== 'token')).toBe(true);
   });
 });
+
+// ── Everyone in the project, and shared connector accounts ─────────────────
+//
+// `project` is a principal that names everyone with access to the project. It
+// only ever holds an object grant on its own project, so it can never hand out
+// a role. A `connection` object grant narrows a SHARED account to the named
+// groups and members; the writer needs the connections-manage capability, the
+// same one that creates and revokes that account.
+describe.if(hasDatabase)('the project principal and connection grants', () => {
+  const connectorId = uid();
+  const shared = uid();
+  const privateConnection = uid();
+
+  beforeAll(async () => {
+    if (!hasDatabase) return;
+    await raw(
+      `insert into kortix.connectors (connector_id, account_id, project_id, slug, name, provider_type, config)
+       values ('${connectorId}','${ACCOUNT}','${PROJECT}','gmail','Gmail','composio','{}')`,
+    );
+    await raw(
+      `insert into kortix.connector_connections (connection_id, account_id, project_id, connector_id, owner_type, owner_id, label, status)
+       values ('${shared}','${ACCOUNT}','${PROJECT}','${connectorId}','project',null,'Team inbox','active'),
+              ('${privateConnection}','${ACCOUNT}','${PROJECT}','${connectorId}','member','${plainMember}','Mine','active')`,
+    );
+  });
+
+  const everyone = { type: 'project' as const, id: PROJECT };
+
+  test('a project principal is refused as a role, on another project, or without an object', async () => {
+    await expect(
+      assignRole(jwt(owner), ACCOUNT, {
+        principal: everyone,
+        roleKey: 'member',
+        scope: { type: 'project', id: PROJECT },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      assignRole(jwt(owner), ACCOUNT, {
+        principal: { type: 'project', id: uid() },
+        roleKey: 'agent-user',
+        scope: { type: 'project', id: PROJECT },
+        object: { type: 'agent', id: 'finance-bot' },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      assignRole(jwt(owner), ACCOUNT, {
+        principal: everyone,
+        roleKey: 'agent-user',
+        scope: { type: 'project', id: PROJECT },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  test('a project principal holds an agent grant, listed with its own type', async () => {
+    const row = await assignRole(jwt(owner), ACCOUNT, {
+      principal: everyone,
+      roleKey: 'agent-user',
+      scope: { type: 'project', id: PROJECT },
+      object: { type: 'agent', id: 'everyone-bot' },
+    });
+    expect(row.principalType).toBe('project');
+    expect(row.principalId).toBe(PROJECT);
+    const listed = await listAssignments({ accountId: ACCOUNT, principal: everyone });
+    expect(listed.map((r) => r.objectId)).toContain('everyone-bot');
+  });
+
+  test('a connection grant names only a shared account in this project', async () => {
+    await expect(
+      assignRole(jwt(owner), ACCOUNT, {
+        principal: { type: 'group', id: groupId },
+        roleKey: 'agent-user',
+        scope: { type: 'project', id: PROJECT },
+        object: { type: 'connection', id: privateConnection },
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      assignRole(jwt(owner), ACCOUNT, {
+        principal: { type: 'group', id: groupId },
+        roleKey: 'agent-user',
+        scope: { type: 'project', id: PROJECT },
+        object: { type: 'connection', id: uid() },
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  test('granting and revoking a connection needs the connections-manage capability', async () => {
+    await expect(
+      assignRole(jwt(plainMember), ACCOUNT, {
+        principal: { type: 'group', id: groupId },
+        roleKey: 'agent-user',
+        scope: { type: 'project', id: PROJECT },
+        object: { type: 'connection', id: shared },
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+
+    const row = await assignRole(jwt(owner), ACCOUNT, {
+      principal: { type: 'group', id: groupId },
+      roleKey: 'agent-user',
+      scope: { type: 'project', id: PROJECT },
+      object: { type: 'connection', id: shared },
+    });
+    expect(row.objectType).toBe('connection');
+    expect(row.objectId).toBe(shared);
+
+    await expect(revokeAssignment(jwt(plainMember), ACCOUNT, row.assignmentId)).rejects.toMatchObject({
+      status: 403,
+    });
+    await revokeAssignment(jwt(owner), ACCOUNT, row.assignmentId);
+    const left = await listAssignments({ accountId: ACCOUNT, objectType: 'connection', objectId: shared });
+    expect(left).toHaveLength(0);
+  });
+});
