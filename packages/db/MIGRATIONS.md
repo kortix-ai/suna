@@ -452,11 +452,61 @@ If you applied a change by hand (emergency only):
 
 ---
 
+## Verify a live database
+
+`scripts/verify-live-schema.ts` answers "does this environment contain what the
+migrations build?". It compares a freshly migrated database (canonical) with a
+live one, in the `kortix` schema, and fails on anything the live database
+lacks:
+
+- tables, columns and enum values;
+- index **definitions** (a renamed index with the same definition passes; an
+  `INVALID` index fails);
+- `PRIMARY KEY` / `UNIQUE` / `FOREIGN KEY` / `CHECK` definitions (a constraint
+  that is `NOT VALID` on live but valid on canonical fails).
+
+Extra objects on the live database are printed and never fail. Definitions are
+compared without schema qualification, object names, casts or parentheses, so
+PostgreSQL 15 (dev, staging, prod) and 16 (CI) renderings compare equal. Known,
+deliberate gaps are listed with their evidence in
+`scripts/verify-live-schema-waivers.ts`; that list only shrinks. The output also
+lists migrations the live database has not applied yet: objects those create
+show as missing until the next deploy runs them.
+
+It is how the 2026-09-25 prod gap was found: prod's `credit_ledger` had 4 of 15
+indexes, `account_memberships` had no primary key, and 8 other constraints were
+absent, all because prod's baseline was faked (the `20260925023833525` …
+`20260925023837104` migrations close it).
+
+Run it read-only against any environment. The live connection runs catalog
+queries only, inside `BEGIN READ ONLY`:
+
+```bash
+# 1. A throwaway canonical database (PostgreSQL 15 or 16).
+docker run -d --name kortix-canonical -e POSTGRES_PASSWORD=postgres -p 55439:5432 postgres:16-alpine
+export CANONICAL_DB_URL=postgres://postgres:postgres@localhost:55439/postgres
+psql "$CANONICAL_DB_URL" -v ON_ERROR_STOP=1 -f packages/db/scripts/test-prereqs.sql
+DATABASE_URL="$CANONICAL_DB_URL" pnpm --filter @kortix/db migrate
+
+# 2. The environment to check (dev | staging | prod). Bare env: see the dotenvx-secrets skill.
+export LIVE_DB_URL="$(env -i PATH="$PATH" HOME="$HOME" npx -y @dotenvx/dotenvx get DATABASE_URL -f apps/api/.env.prod)"
+
+# 3. Compare. Exit 0 = nothing missing, 1 = drift, 2 = usage or connection error.
+cd packages/db && bun scripts/verify-live-schema.ts
+```
+
+The nightly `DB Drift Sentinel` (`.github/workflows/db-drift.yml`,
+`prod-presence`) runs the same comparison against prod, and the deploy-prod
+`verify-schema` job runs it before the ECS roll when the
+`ENABLE_PROD_SCHEMA_GATE` repository variable is `true`.
+
+---
+
 ## Re-baselining / onboarding an existing environment
 
 To put an existing DB (whose schema already matches the baseline) onto this system:
 
-1. Confirm the env's live schema matches the baseline (diff it).
+1. Confirm the env's live schema matches the baseline: run [`verify-live-schema.ts`](#verify-a-live-database) against it.
 2. `pnpm migrate:fake --target=<env>` — creates `kortix_migrations.pgmigrations` and marks the baseline applied without running it.
 3. `pnpm migrate:status --target=<env>` → "Up to date".
 
