@@ -43,7 +43,26 @@
     "connectAccount": "连接账户",
     "oauthWaiting": "等待授权…",
     "oauthExpired": "授权已超时，请重试。",
-    "oauthPrivateDescription": "新的 ChatGPT 账户默认可供此项目的所有成员使用。您可以将每个账户限制为指定成员使用。",
+    "oauthPrivateDescription": "在此项目中使用您的 ChatGPT Plus 或 Pro 套餐。新账户在您共享之前仅供您自己使用。",
+    "chatGptSubscription": "ChatGPT 订阅",
+    "useYourChatGpt": "使用您的 ChatGPT 订阅",
+    "manageChatGptAccounts": "管理 ChatGPT 账户",
+    "connect": "连接",
+    "connectChatGpt": "连接 ChatGPT",
+    "noChatGptAccounts": "还没有 ChatGPT 账户",
+    "oauthCreationDescription": "使用您的 ChatGPT Plus 或 Pro 账户登录。Kortix 会加密保存登录信息，且从不显示。",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "仅您自己",
+    "onlyYouDescription": "只有您可以在会话中选择它。",
+    "onlyOwner": "仅 {name}",
+    "shareRequiresPermission": "与他人共享需要管理项目密钥的权限。",
+    "accountConnected": "ChatGPT 账户已连接",
+    "accountReconnected": "ChatGPT 账户已重新连接",
+    "connectFailed": "ChatGPT 授权失败，请重试。",
+    "reconnectAccount": "重新连接",
+    "reconnectTitle": "重新连接 {label}",
+    "reconnectDescription": "请重新登录 ChatGPT。账户的名称、访问权限和会话选择保持不变。",
+    "needsReconnection": "需要重新连接",
     "accountLabelPlaceholder": "例如：我的 ChatGPT 账户",
     "chooseProvider": "请选择提供商。",
     "saved": "密钥已保存",
@@ -52,7 +71,7 @@
     "deleteError": "无法删除密钥",
     "accessError": "无法更改访问权限",
     "sharedTitle": "提供商连接",
-    "sharedDescription": "添加多个 API 密钥和 ChatGPT 账户。默认情况下，此项目的所有成员都可以使用。您可以按连接限制访问权限，并为每个会话选择密钥。",
+    "sharedDescription": "添加 API 密钥和 ChatGPT 账户。新连接在您共享之前仅供您自己使用。为每个会话选择要使用的连接。",
     "legacyProjectKey": "现有项目密钥 · 本会话未选择密钥时使用",
     "keyCount": "{count, plural, one {# 个密钥} other {# 个密钥}}",
     "providerKeysFor": "{provider} API 密钥",
@@ -1110,7 +1129,7 @@
         },
         "pooled_provider_secrets": {
           "name": "共享提供商密钥",
-          "description": "与成员共享多个提供商密钥，并为每个会话选择密钥池。"
+          "description": "成员连接自己的 ChatGPT 订阅和提供商密钥，按需共享，并为每个会话选择要使用的连接。"
         },
         "pi_worker": {
           "name": "Pi 工作器运行时（已编译）",
@@ -18675,7 +18694,9 @@
       "texta0bcee97cbb3": "已确认内嵌结账",
       "text0b751a917c97": "已连接 GitHub 安装",
       "text8b7a8797d532": "已连接 Microsoft Teams 租户",
+      "text83c0e255d4bb": "已完成 Microsoft Teams 安装",
       "text17a8cf884e2a": "已连接 Slack 工作区",
+      "textf887cb0e6800": "已完成 Slack 应用安装",
       "textc7f9ec5ed69c": "已连接电脑隧道代理",
       "textafd58fcedeee": "已连接邮件收件箱",
       "text2eda12b4ed38": "已连接现有 GitHub App",
@@ -19153,6 +19174,13 @@
       "chatAccount": "{service} 账户",
       "chatWorkspace": "{service} 工作区",
       "checking": "正在检查链接…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} 未连接",
+      "mismatch": "此安装是从另一个 Kortix 账户或为另一个项目发起的。请使用该账户登录，或从项目中重新开始安装。",
+      "expired": "此安装链接无效或已过期。请从项目中重新开始安装。",
+      "failed": "无法完成安装。请从项目中重新开始。",
+      "backToProject": "返回项目"
     }
   },
   "projectOnboarding": {

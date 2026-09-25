@@ -10,6 +10,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
   LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
@@ -33,11 +35,15 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
 
+  // A member without project.secret.read gets 403 for this read. Skip it once
+  // the probe says so; project keys are then unknown to this caller, and the
+  // pooled connections they may use are listed separately.
+  const secretRead = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
   const secretsQuery = useQuery({
     queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
     ...contract('config'),
-    enabled,
+    enabled: enabled && secretRead.allowed !== false,
   });
 
   const secretNames = useMemo(() => {
@@ -124,6 +130,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   const providerStateLoading = isProviderStateLoading({
     projectDetailLoading: projectDetailQuery.isLoading,
     secretsLoading: secretsQuery.isLoading,
+    secretsSettledOnce: secretsQuery.isFetched,
   });
 
   return { secretsQuery, connectedProviders, llmGatewayEnabled, providerStateLoading };

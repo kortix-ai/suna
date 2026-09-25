@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 // Keep config validation happy when commands.ts's import graph loads.
 process.env.SLACK_REQUIRE_USER_IDENTITY = 'false';
 
-import { buildAgentUnavailablePickerBlocks } from '../commands';
+import { buildAgentUnavailablePickerBlocks } from '../agent-picker';
 
 // The deleted-agent recovery picker: names the dead agent and renders one
 // clickable row per current agent, each wired to the existing `set_agent_*`
