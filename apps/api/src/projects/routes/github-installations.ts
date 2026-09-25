@@ -25,10 +25,10 @@ import {
 } from '../lib/git';
 import {
   normalizeString,
-  readBody,
   serializeGitHubInstallation,
   serializeGitHubInstallations,
 } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 // GET /v1/projects/github/installation?account_id=...
 // Account-scoped GitHub App install state. The client only receives metadata;
@@ -162,7 +162,7 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const scope = await resolveProjectAccount(c, body);
     await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
@@ -233,7 +233,7 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const scope = await resolveProjectAccount(c, body);
     await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
@@ -309,7 +309,7 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const state = normalizeString(body.state);
   if (!state) return c.json({ error: 'state is required' }, 400);
   const statePayload = verifyGitHubAppInstallStatePayload(state);

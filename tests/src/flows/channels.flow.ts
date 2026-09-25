@@ -1535,6 +1535,13 @@ flow(
         const r = await ctx.client.as(ctx.P.OWNER).post(path, {});
         r.status([400, 404, 503]);
       });
+
+      await ctx.step(`A ${service} preview whose token is not a string is a validation error`, async () => {
+        // No JSON content-type, so the route schema does not run and the
+        // handler must check the field type itself.
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, '{"token":1}', { raw: true });
+        r.status([400, 404, 503]);
+      });
     }
   },
 );

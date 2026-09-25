@@ -32,15 +32,21 @@ function parseEntries(value: string | null): Record<string, { dur: number; desc?
 
 describe('stage accounting', () => {
   test('parallel operations report wall time, and the count of operations', async () => {
+    let elapsedMs = 0;
     const snapshot = await runWithContext('GET', '/x', async () => {
+      const startedAt = performance.now();
       await Promise.all([1, 2, 3, 4, 5].map(() => timeStage('db', () => sleep(30))));
+      elapsedMs = performance.now() - startedAt;
       return stageSnapshot();
     });
 
     expect(snapshot.db?.count).toBe(5);
-    // Five overlapping 30 ms queries are ~30 ms of wall time, not ~150 ms.
     expect(snapshot.db!.wallMs).toBeGreaterThanOrEqual(25);
-    expect(snapshot.db!.wallMs).toBeLessThan(100);
+    // Five overlapping queries report at most the elapsed wall time. A sum of
+    // durations would report ~5x it. Compared with the measured elapsed time,
+    // not a fixed ceiling, so a loaded runner that delays the timers still
+    // passes.
+    expect(snapshot.db!.wallMs).toBeLessThanOrEqual(elapsedMs + 1);
   });
 
   test('sequential operations add up', async () => {

@@ -17,7 +17,7 @@ import {
 import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import { AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {
@@ -61,7 +61,7 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const userId = c.get('userId') as string;
   const requesterEmail = ((c.get('userEmail') as string | undefined) ?? '').trim().toLowerCase();
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const messageRaw = typeof body.message === 'string' ? body.message.trim() : '';
   const message = messageRaw ? messageRaw.slice(0, 2000) : null;
 
@@ -196,7 +196,7 @@ projectsApp.openapi(
   // requests and even hand out the 'manager' role. Gate on members.manage.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const role = body.role === undefined ? 'member' : parseAssignableProjectRole(body.role);
   if (!role) return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
 

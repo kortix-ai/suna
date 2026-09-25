@@ -25,7 +25,8 @@ import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { AnyObject, GroupGrantSchema, projectsApp } from '../lib/app';
-import { normalizeString, readBody } from '../lib/serializers';
+import { normalizeString } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 
 // ─── Project group grants (IAM V2 bulk-access channel) ────────────────────
@@ -194,7 +195,7 @@ projectsApp.openapi(
     if (denied) return denied;
   }
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
   // parseAssignableProjectRole folds the legacy `viewer`/`user` aliases into
   // `member` and REJECTS the removed `editor`, so a grant is never persisted
@@ -271,7 +272,7 @@ projectsApp.openapi(
     if (denied) return denied;
   }
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const role = parseAssignableProjectRole(body.role);
   if (!role) {
     return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);

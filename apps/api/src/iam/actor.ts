@@ -19,6 +19,7 @@ import type { Context } from 'hono';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { accountTokens, readStoredAgentGrant, roleAssignments, serviceAccounts, type AgentGrant } from '@kortix/db';
 import { createHash } from 'node:crypto';
+import { requestClientIp } from '../shared/client-ip';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
@@ -101,7 +102,7 @@ export type Credential =
  * type the retired V1 engine's public surface still had a caller for.
  */
 export interface RequestContext {
-  /** Caller's source IP, taken from x-forwarded-for or x-real-ip. */
+  /** Caller's source IP, per the trusted-proxy rule in shared/client-ip.ts. */
   ip?: string;
   /** JWT's `aal` claim — 'aal1' = password-only, 'aal2' = MFA-verified. */
   mfaAal?: string;
@@ -302,7 +303,7 @@ export async function buildActor(c: Context, accountIdOverride?: string): Promis
   if (!userId) return null;
 
   const ctx = {
-    ip: firstForwardedIp(c.req.header('x-forwarded-for')) ?? c.req.header('x-real-ip') ?? undefined,
+    ip: requestClientIp(c) ?? undefined,
     mfaAal: (c.get('mfaAal') as string | undefined) ?? undefined,
   };
 
@@ -450,8 +451,3 @@ export async function actorOf(c: Context, accountId: string): Promise<Actor> {
   return (await actorFor(c, accountId)) ?? { userId: '', accountId, credential: { kind: 'jwt' }, ctx: {} };
 }
 
-function firstForwardedIp(header: string | undefined): string | undefined {
-  if (!header) return undefined;
-  const first = header.split(',')[0]?.trim();
-  return first || undefined;
-}

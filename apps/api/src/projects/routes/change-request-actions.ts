@@ -24,7 +24,8 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
-import { normalizeString, readBody } from '../lib/serializers';
+import { normalizeString } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 // POST /v1/projects/:projectId/change-requests/:crId/merge
 // Body: { message?: string }
@@ -48,7 +49,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
