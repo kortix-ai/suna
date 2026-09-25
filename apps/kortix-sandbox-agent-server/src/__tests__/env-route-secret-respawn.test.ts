@@ -25,6 +25,7 @@ import { createProjectEnvStore } from '../project-env'
 import { Hono } from 'hono'
 import { createEnvRouter } from '../routes/env'
 import { createOpenCodeControlService } from '../harness/open-code/control'
+import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
 import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
 import {
   __resetRuntimeProjectionRelayForTests,
@@ -43,10 +44,12 @@ let envSnapshot: NodeJS.ProcessEnv
 beforeEach(() => {
   envSnapshot = { ...process.env }
   delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
+  resetConfigReleaseStateForTests()
 })
 afterEach(() => {
   for (const key of Object.keys(process.env)) if (!(key in envSnapshot)) delete process.env[key]
   Object.assign(process.env, envSnapshot)
+  resetConfigReleaseStateForTests()
 })
 
 function baseConfig(): Config {
