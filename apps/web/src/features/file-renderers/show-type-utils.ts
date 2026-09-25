@@ -4,39 +4,13 @@
  * Next.js dependency graph.
  */
 
-// ── Extension regexes ──────────────────────────────────────────────────────
-
-export const SHOW_IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|tiff?|heic|heif)$/i;
-export const SHOW_VIDEO_EXT_RE = /\.(mp4|webm|mov|avi|mkv|m4v|ogv)$/i;
-export const SHOW_AUDIO_EXT_RE = /\.(mp3|wav|ogg|aac|flac|m4a|opus|wma)$/i;
-export const SHOW_PDF_EXT_RE = /\.pdf$/i;
-export const SHOW_CSV_EXT_RE = /\.(csv|tsv)$/i;
-export const SHOW_XLSX_EXT_RE = /\.xlsx?$/i;
-export const SHOW_DOCX_EXT_RE = /\.docx$/i;
-export const SHOW_PPTX_EXT_RE = /\.(pptx|ppt)$/i;
-export const SHOW_HTML_EXT_RE = /\.(html?|htm)$/i;
-export const SHOW_MERMAID_EXT_RE = /\.(mmd|mermaid)$/i;
-
-/** Auto-detect file category from extension — used when type='file'. */
-export function getShowFileCategory(filePath: string): string {
-  if (SHOW_IMAGE_EXT_RE.test(filePath)) return 'image';
-  if (SHOW_VIDEO_EXT_RE.test(filePath)) return 'video';
-  if (SHOW_AUDIO_EXT_RE.test(filePath)) return 'audio';
-  if (SHOW_PDF_EXT_RE.test(filePath)) return 'pdf';
-  if (SHOW_CSV_EXT_RE.test(filePath)) return 'csv';
-  if (SHOW_XLSX_EXT_RE.test(filePath)) return 'xlsx';
-  if (SHOW_DOCX_EXT_RE.test(filePath)) return 'docx';
-  if (SHOW_PPTX_EXT_RE.test(filePath)) return 'pptx';
-  if (SHOW_HTML_EXT_RE.test(filePath)) return 'html-file';
-  if (SHOW_MERMAID_EXT_RE.test(filePath)) return 'mermaid';
-  return 'file';
-}
+import { getFileCategory, getLanguageFromExt } from '@/features/file-viewer/preview-policy';
 
 /**
- * Rich (non-textual) categories a file path can resolve to. When a declared
- * type is textish but the path points at one of these, the path wins — an agent
- * that labels a `.csv`/`.xlsx`/`.docx`/`.pdf` as `markdown`/`text` should still
- * get the proper viewer rather than flowing prose.
+ * File categories the `show` card has a viewer of its own for. The extension
+ * table is the file viewer's (`getFileCategory`); the card only names what it
+ * calls them. `html` is `html-file` here because a `show` item may also carry
+ * inline `html` content.
  */
 const RICH_SHOW_CATEGORIES = new Set([
   'image',
@@ -50,6 +24,14 @@ const RICH_SHOW_CATEGORIES = new Set([
   'html-file',
   'mermaid',
 ]);
+
+/** Auto-detect file category from extension — used when type='file'. */
+export function getShowFileCategory(filePath: string): string {
+  if (getLanguageFromExt(filePath) === 'mermaid') return 'mermaid';
+  const category = getFileCategory(filePath);
+  const showCategory = category === 'html' ? 'html-file' : category;
+  return RICH_SHOW_CATEGORIES.has(showCategory) ? showCategory : 'file';
+}
 
 /**
  * Declared types that are "textish" enough to be overridden by a richer file

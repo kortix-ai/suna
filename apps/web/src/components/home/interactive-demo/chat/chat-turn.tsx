@@ -4,8 +4,8 @@ import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { AgentAvatar } from '@/components/ui/agent-avatar';
 import { Badge } from '@/components/ui/badge';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
-import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { AnimatePresence, m } from 'motion/react';
 import { Reveal } from '../../reveal';
 import { SkillsRead } from './skill-reads';
 import { ToolCard } from './tool-card';
@@ -98,7 +98,7 @@ export function AssistantTurn({
             const streaming = convo.phase !== 'done' && content.length < step.markdown.length;
             return (
               <div key={step.id} className="text-sm">
-                <UnifiedMarkdown content={content} isStreaming={streaming} />
+                <UnifiedMarkdown content={content} trust="trusted" isStreaming={streaming} />
               </div>
             );
           }

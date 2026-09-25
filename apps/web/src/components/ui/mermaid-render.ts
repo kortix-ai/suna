@@ -33,3 +33,31 @@ export function removeMermaidRenderArtifacts(
     doc.getElementById(id)?.remove();
   }
 }
+
+/**
+ * Rendered SVG per diagram source, least recently used first.
+ *
+ * Keyed by the source text itself, not a hash of it: a 32-bit hash served one
+ * diagram another diagram's SVG on a collision. Capped, because every distinct
+ * source a tab renders would otherwise stay for the life of the tab.
+ */
+export const MERMAID_SVG_CACHE_MAX = 32;
+const mermaidSvgCache = new Map<string, string>();
+
+/** The cached SVG for `source`, marked as most recently used. */
+export function readCachedMermaidSvg(source: string): string | undefined {
+  const svg = mermaidSvgCache.get(source);
+  if (svg === undefined) return undefined;
+  mermaidSvgCache.delete(source);
+  mermaidSvgCache.set(source, svg);
+  return svg;
+}
+
+export function cacheMermaidSvg(source: string, svg: string): void {
+  mermaidSvgCache.delete(source);
+  mermaidSvgCache.set(source, svg);
+  if (mermaidSvgCache.size > MERMAID_SVG_CACHE_MAX) {
+    const oldest = mermaidSvgCache.keys().next().value;
+    if (oldest !== undefined) mermaidSvgCache.delete(oldest);
+  }
+}
