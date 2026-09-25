@@ -263,13 +263,14 @@ function GatewayMetaLine({
  * chain in the DOM (and in static markup) while closed — the same pattern
  * `error-details.tsx` uses for a stack.
  */
-function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDetails }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const failures = details?.attemptFailures;
-  if (!failures?.length) return null;
-
+/**
+ * A closed-by-default fold for diagnostics beneath an error sentence. A native
+ * `<details>` keeps the content in the DOM (and in static markup) while closed —
+ * the same pattern `error-details.tsx` uses for a stack.
+ */
+function DiagnosticFold({ summary, children }: { summary: ReactNode; children: ReactNode }) {
   return (
-    <details className="group/failures text-xs">
+    <details className="group/fold text-xs">
       <summary
         className={cn(
           'text-muted-foreground hover:text-foreground flex w-fit cursor-pointer list-none',
@@ -277,11 +278,30 @@ function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDeta
           '[&::-webkit-details-marker]:hidden',
         )}
       >
-        <CaretRightIcon className="size-3 shrink-0 group-open/failures:rotate-90" />
-        {failures.length === 1
-          ? tI18nComplete.raw('textce4c96225f63')
-          : `${failures.length} attempts`}
+        <CaretRightIcon className="size-3 shrink-0 group-open/fold:rotate-90" />
+        {summary}
       </summary>
+      {children}
+    </details>
+  );
+}
+
+/**
+ * The per-candidate failure chain, collapsed. It is the diagnostic, not the
+ * message: a reader who wants to know WHY every route failed opens it; everyone
+ * else sees one line saying how many were tried.
+ */
+function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDetails }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const failures = details?.attemptFailures;
+  if (!failures?.length) return null;
+
+  return (
+    <DiagnosticFold
+      summary={
+        failures.length === 1 ? tI18nComplete.raw('textce4c96225f63') : `${failures.length} attempts`
+      }
+    >
       <ol className="text-muted-foreground mt-1 list-decimal space-y-1 pl-4 wrap-anywhere">
         {failures.map((failure) => (
           <li key={failure.attempt}>
@@ -293,7 +313,24 @@ function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDeta
           </li>
         ))}
       </ol>
-    </details>
+    </DiagnosticFold>
+  );
+}
+
+/**
+ * The provider's own text behind the sentence — an upstream body, a parse
+ * failure with the stream bytes it choked on. Support needs it; the reader of
+ * the transcript does not, so it stays folded and scrolls inside its well.
+ */
+function RawErrorFold({ raw }: { raw?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  if (!raw) return null;
+  return (
+    <DiagnosticFold summary={tI18nComplete.raw('text45989de49fb7')}>
+      <pre className="bg-muted text-muted-foreground mt-1 max-h-40 overflow-auto rounded-md px-3 py-2 font-mono text-xs whitespace-pre-wrap wrap-anywhere">
+        {raw}
+      </pre>
+    </DiagnosticFold>
   );
 }
 
@@ -312,6 +349,11 @@ interface TurnErrorDisplayProps {
    * provided (its own `.gateway` wins).
    */
   errorDetails?: TurnErrorGatewayDetails | null;
+  /**
+   * The technical text behind `errorText` (from `getTurnErrorRawText()`),
+   * folded beneath the sentence. Omit it when it would only repeat the text.
+   */
+  errorRaw?: string;
   /**
    * Typed send failure from the SDK's `classifySendError` (send/command/reply
    * catch paths). When present, billing-vs-runtime routing reads `.kind`
@@ -344,6 +386,7 @@ interface TurnErrorDisplayProps {
 export function TurnErrorDisplay({
   errorText,
   errorDetails,
+  errorRaw,
   error,
   isAbort,
   className,
@@ -392,29 +435,27 @@ export function TurnErrorDisplay({
     return <UsageLimitCard errorText={text} className={className} />;
   }
 
-  // Real errors → one row, three registers. The message is the title; the
-  // gateway's suggestion (what to do about it) is the description; provider,
-  // code and request id sit in a meta line so support can find the request
-  // without the user having to read past them. Attempt failures list beneath.
+  // Real errors → one quiet line in the transcript, not a boxed alert. The red
+  // glyph is the only hue; the sentence is the message; the gateway's suggestion
+  // (what to do about it) sits beneath in meta type, then provider, code and
+  // request id so support can find the request. Every diagnostic — the attempt
+  // chain, the provider's raw text — stays folded.
   const suggestion =
     gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined;
 
   return (
-    <ErrorRow role="alert" className={className}>
-      <StatusTile tone="error">
-        <StatusGlyph icon={WarningCircleIcon} />
-      </StatusTile>
-      <ItemContent className="min-w-0 gap-1">
-        <ItemTitle className="w-full text-pretty wrap-anywhere">{text}</ItemTitle>
+    <div role="alert" className={cn('flex min-w-0 items-start gap-2 text-sm', className)}>
+      <WarningCircleIcon weight="fill" className="text-kortix-red mt-0.5 size-4 shrink-0" />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <p className="text-foreground text-pretty wrap-anywhere">{text}</p>
         {suggestion ? (
-          <ItemDescription className="line-clamp-none text-xs text-pretty wrap-anywhere">
-            {suggestion}
-          </ItemDescription>
+          <p className="text-muted-foreground text-xs text-pretty wrap-anywhere">{suggestion}</p>
         ) : null}
         <GatewayMetaLine details={gateway} />
         <GatewayAttemptFailureList details={gateway} />
-      </ItemContent>
-    </ErrorRow>
+        <RawErrorFold raw={errorRaw} />
+      </div>
+    </div>
   );
 }
 

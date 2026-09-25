@@ -221,6 +221,7 @@ import {
   getTurnCost,
   getTurnError,
   getTurnErrorDetails,
+  getTurnErrorRawText,
   getTurnStatus,
   getWorkingState,
   groupMessagesIntoTurns,
@@ -1070,6 +1071,13 @@ function SessionTurnImpl({
   // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
   // provider failed and WHAT to do about it instead of only the raw message.
   const turnErrorDetails = useMemo(() => getTurnErrorDetails(turn), [turn]);
+  // The provider's own text behind the sentence, folded under it. Only for the
+  // transcript error itself: a named end cause replaced that text, so the raw
+  // text no longer describes what the row says.
+  const turnErrorRaw = useMemo(
+    () => (turnErrorRow.text === turnError ? getTurnErrorRawText(turn) : undefined),
+    [turn, turnError, turnErrorRow.text],
+  );
   // A named end cause brings its own next step; the gateway's details describe
   // the transcript error it replaced, so they do not apply to it.
   const turnErrorRowDetails = useMemo(
@@ -1550,6 +1558,7 @@ function SessionTurnImpl({
             <TurnErrorDisplay
               errorText={turnErrorRow.text}
               errorDetails={turnErrorRowDetails}
+              errorRaw={turnErrorRaw}
               isAbort={turnErrorRow.isAbort}
               className="mt-2"
             />
@@ -1921,6 +1930,7 @@ function SessionTurnImpl({
         <TurnErrorDisplay
           errorText={turnErrorRow.text}
           errorDetails={turnErrorRowDetails}
+          errorRaw={turnErrorRaw}
           isAbort={turnErrorRow.isAbort}
         />
       )}

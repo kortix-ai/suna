@@ -102,3 +102,43 @@ describe('TurnErrorDisplay routes a usage-limit sentence to the upgrade card', (
     expect(html).toContain('The usage limit has been reached');
   });
 });
+
+// A failed turn is one quiet line in the transcript, not a boxed alert: the
+// SDK's sentence beside a red glyph, and the technical text folded beneath it.
+describe('TurnErrorDisplay generic failure row', () => {
+  const raw =
+    'JSON parsing failed: Text: {"object":"chat.completion.chunk","model":"glm-5.3-flash"}. ' +
+    'Error message: JSON Parse error';
+
+  test('renders the sentence without the boxed item chrome', () => {
+    const html = renderToStaticMarkup(
+      <TurnErrorDisplay errorText="The response from glm-5.3-flash could not be read." />,
+    );
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('The response from glm-5.3-flash could not be read.');
+    expect(html).toContain('text-kortix-red');
+    expect(html).not.toContain('data-slot="item"');
+    expect(html).not.toContain('bg-kortix-red/15');
+    expect(html).not.toContain('<details');
+  });
+
+  test('folds the raw error text behind a closed Details disclosure', () => {
+    const html = renderToStaticMarkup(
+      <TurnErrorDisplay
+        errorText="The response from glm-5.3-flash could not be read."
+        errorRaw={raw}
+      />,
+    );
+    expect(html).toContain('Details</summary>');
+    expect(html).not.toContain('<details open');
+    expect(html).toContain('chat.completion.chunk');
+  });
+
+  test('billing cards keep their boxed remedy row', () => {
+    const html = renderToStaticMarkup(
+      <TurnErrorDisplay errorText="The usage limit has been reached" errorRaw={raw} />,
+    );
+    expect(html).toContain('data-slot="item"');
+    expect(html).not.toContain('chat.completion.chunk');
+  });
+});
