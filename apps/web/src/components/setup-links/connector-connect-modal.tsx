@@ -151,7 +151,7 @@ function ConnectDialogBody({
       <div className="bg-background border-border flex aspect-[21/9] shrink-0 items-center justify-center border-b">
         <ConnectorHandshake
           name={app}
-          iconUrl={info?.icon_url ?? null}
+          iconUrl={phase === 'loading' ? undefined : (info?.icon_url ?? null)}
           connected={connected}
           size="xl"
           collapsible={false}

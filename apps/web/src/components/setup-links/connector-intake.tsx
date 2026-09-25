@@ -5,7 +5,6 @@ import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import {
   finalizeConnectorSetupLink,
-  getConnectorSetupLink,
   startConnectorSetupLink,
   type ConnectorSetupLinkInfo,
 } from '@kortix/sdk';
@@ -16,6 +15,7 @@ import {
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
+import { loadConnectorLinkInfo, peekConnectorLinkInfo } from './connector-link-info';
 import { nextConnectorPollDelay } from './connector-poll';
 import { resolveConnectorStart } from './connector-start';
 import { setupLinkApiBase } from './util';
@@ -51,8 +51,12 @@ export function useConnectorIntake(
   { onOpened }: { onOpened?: () => void } = {},
 ) {
   const base = setupLinkApiBase();
-  const [phase, setPhase] = useState<Phase>('loading');
-  const [info, setInfo] = useState<ConnectorSetupLinkInfo | null>(null);
+  // Seeded from the link-info cache the chat card already filled (or storage,
+  // after a hard refresh), so the dialog opens `ready` with the app's logo on
+  // its first frame instead of a loading state.
+  const [seed] = useState(() => peekConnectorLinkInfo(token));
+  const [phase, setPhase] = useState<Phase>(seed ? 'ready' : 'loading');
+  const [info, setInfo] = useState<ConnectorSetupLinkInfo | null>(seed ?? null);
   const [error, setError] = useState<string | null>(null);
   // Bumped every time the popup is opened, so reopening restarts the poll
   // window instead of inheriting an already-expired one.
@@ -69,12 +73,13 @@ export function useConnectorIntake(
     let cancelled = false;
     (async () => {
       try {
-        const body = await getConnectorSetupLink(token, { backendUrl: base });
+        const body = await loadConnectorLinkInfo(token);
         if (cancelled) return;
         setInfo(body);
-        setPhase('ready');
+        setPhase((current) => (current === 'loading' ? 'ready' : current));
       } catch (cause) {
-        if (!cancelled) {
+        // A seeded dialog already shows the link; a failed refresh is not an error.
+        if (!cancelled && !seed) {
           setError(
             cause instanceof Error
               ? cause.message
@@ -87,7 +92,7 @@ export function useConnectorIntake(
     return () => {
       cancelled = true;
     };
-  }, [base, token]);
+  }, [base, token, seed]);
 
   // Ask the API whether the connection landed, until it says yes or the poll
   // window closes. One request is in flight at a time by construction: the next

@@ -56,3 +56,70 @@ describe('connectorHeadline', () => {
     expect(connectorHeadline({ ...INFO, project_name: '' }).project).toBeNull();
   });
 });
+
+function memoryStorage() {
+  const data = new Map<string, string>();
+  return {
+    data,
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => void data.set(key, value),
+    removeItem: (key: string) => void data.delete(key),
+  };
+}
+
+describe('createConnectorLinkInfoCache — instant reads', () => {
+  test('peek answers synchronously once a load has settled, so the modal opens with the logo', async () => {
+    const cache = createConnectorLinkInfoCache(async () => INFO);
+    expect(cache.peek('ksl_a')).toBeUndefined();
+    await cache.load('ksl_a');
+    expect(cache.peek('ksl_a')).toEqual(INFO);
+  });
+
+  test('a settled load persists, so a fresh page (hard refresh) peeks it before any request', async () => {
+    const storage = memoryStorage();
+    await createConnectorLinkInfoCache(async () => INFO, { storage }).load('ksl_a');
+
+    let calls = 0;
+    const afterRefresh = createConnectorLinkInfoCache(
+      async () => {
+        calls += 1;
+        return INFO;
+      },
+      { storage },
+    );
+    expect(afterRefresh.peek('ksl_a')).toEqual(INFO);
+    expect(calls).toBe(0);
+  });
+
+  test('the raw token is never written to storage — it is a live capability', async () => {
+    const storage = memoryStorage();
+    await createConnectorLinkInfoCache(async () => INFO, { storage }).load('ksl_secretcapability');
+    for (const [key, value] of storage.data) {
+      expect(key).not.toContain('ksl_secretcapability');
+      expect(value).not.toContain('ksl_secretcapability');
+    }
+  });
+
+  test('an expired link is not served from storage', async () => {
+    const storage = memoryStorage();
+    await createConnectorLinkInfoCache(async () => ({ ...INFO, expires_at: '2020-01-01T00:00:00.000Z' }), {
+      storage,
+    }).load('ksl_a');
+    expect(createConnectorLinkInfoCache(async () => INFO, { storage }).peek('ksl_a')).toBeUndefined();
+  });
+
+  test('storage that throws (private mode, blocked) degrades to memory only', async () => {
+    const broken = {
+      getItem: () => {
+        throw new Error('blocked');
+      },
+      setItem: () => {
+        throw new Error('blocked');
+      },
+      removeItem: () => {},
+    };
+    const cache = createConnectorLinkInfoCache(async () => INFO, { storage: broken });
+    await expect(cache.load('ksl_a')).resolves.toEqual(INFO);
+    expect(cache.peek('ksl_a')).toEqual(INFO);
+  });
+});

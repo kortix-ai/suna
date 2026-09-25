@@ -2,6 +2,7 @@
 
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { KortixLogo } from '@/components/ui/kortix-logo';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { CheckIcon } from '@phosphor-icons/react';
 import React, { useState } from 'react';
@@ -53,6 +54,11 @@ function HandshakeTile({
  * load). Never the generic plug: the whole point of the tile is to say WHICH
  * app, and a plug says only "some app".
  *
+ * `iconUrl` is `undefined` while the link info is still loading: the tile is a
+ * skeleton, not the monogram, so a hard refresh never flashes a colourful
+ * letter tile that the real logo then replaces. `null` means "no logo" and
+ * shows the monogram for good.
+ *
  * The `<img>` carries the radius itself. The tile's `overflow-hidden` alone did
  * not contain it: WebKit skips a rounded overflow clip for a composited child
  * (the card animates in), and the logo's square corners painted past the edge.
@@ -63,10 +69,13 @@ export function ConnectorAppMark({
   size = 'md',
 }: {
   name: string;
-  iconUrl: string | null;
+  iconUrl: string | null | undefined;
   size?: keyof typeof TILE_SIZE;
 }) {
   const [broken, setBroken] = useState(false);
+  if (iconUrl === undefined) {
+    return <Skeleton aria-hidden className={cn('shrink-0 py-0', TILE_SIZE[size])} />;
+  }
   if (!iconUrl || broken) {
     return <EntityAvatar label={name} size={size} className={size === 'xl' ? 'rounded-xl' : undefined} />;
   }
@@ -109,7 +118,8 @@ export function ConnectorHandshake({
   collapsible = true,
 }: {
   name: string;
-  iconUrl: string | null;
+  /** `undefined` while loading (skeleton), `null` when the app has no logo. */
+  iconUrl: string | null | undefined;
   connected?: boolean;
   /** `xl` fills the connect dialog's top band; `md` sits in the chat card. */
   size?: 'md' | 'lg' | 'xl';

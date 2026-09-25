@@ -131,7 +131,8 @@ export function SetupLinkButton({
       : (headlineProject ? titles.appToProject : titles.app)
           .replace('{app}', headlineApp)
           .replace('{project}', headlineProject ?? '');
-  const iconUrl = info?.icon_url ?? null;
+  // `undefined` while the info loads (skeleton), `null` once known to have none.
+  const iconUrl = info === undefined ? undefined : (info?.icon_url ?? null);
 
   /** Stable so `ConnectorIntake`'s notify effect does not refire on every render. */
   const handleSettled = useCallback((): void => setSettled(true), []);
