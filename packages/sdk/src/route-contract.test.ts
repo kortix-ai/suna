@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import ts from 'typescript';
 
@@ -402,9 +402,10 @@ function allowlistReason(path: string): string | null {
 
 function sdkSourceFiles(dir: string): Array<{ file: string; text: string }> {
   const out: Array<{ file: string; text: string }> = [];
-  for (const name of readdirSync(dir)) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const name = entry.name;
     const full = join(dir, name);
-    if (statSync(full).isDirectory()) {
+    if (entry.isDirectory()) {
       out.push(...sdkSourceFiles(full));
     } else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) && !name.endsWith('.d.ts')) {
       out.push({ file: relative(SRC, full), text: readFileSync(full, 'utf8') });
