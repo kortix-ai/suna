@@ -7,7 +7,7 @@
 import { mock } from 'bun:test';
 import * as realProviders from '../../platform/providers';
 import * as realSandboxReaper from '../../projects/sandbox-reaper';
-import { createFakeWallet } from '../../billing/wallet/fake';
+import { createFakeWallet } from '../helpers/fake-wallet';
 
 // ─── Global Mock Registry ─────────────────────────────────────────────────────
 
@@ -180,8 +180,6 @@ export function registerGlobalMocks() {
     getProvider: (_name: string) => ({
       stop: async (_externalId: string) => undefined,
     }),
-    // Real contract: no args, always a number >= 60.
-    providerAutoStopBackstopMinutes: () => 60,
   }));
 
   // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -219,7 +217,7 @@ export function registerWalletMock() {
   mock.module('../../billing/wallet', () => ({ wallet: fakeWallet.wallet }));
   mock.module('../../billing/services/credits', () => ({
     calculateTokenCost: () => 0,
-    getCreditSummary: async () => ({ total: 0, daily: 0, monthly: 0, extra: 0, canRun: true }),
+    getCreditSummary: () => ({ total: 0, daily: 0, monthly: 0, extra: 0 }),
   }));
 }
 

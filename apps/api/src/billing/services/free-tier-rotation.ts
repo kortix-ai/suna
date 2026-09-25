@@ -67,7 +67,7 @@ export async function processFreeTierCreditRotation(now = new Date()): Promise<{
  * Resolving the effective plan here would silently stop rotating exactly those
  * accounts and diverge from the query that fetched them.
  */
-export function isFreeTierAccountDueForRotation(
+function isFreeTierAccountDueForRotation(
   account: Pick<CreditAccount, 'tier' | 'nextCreditGrant'>,
   now = new Date(),
 ): boolean {

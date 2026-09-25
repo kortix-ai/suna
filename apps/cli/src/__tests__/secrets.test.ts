@@ -42,6 +42,10 @@ let secretItems: Array<{
 }>;
 let manifestRequired: string[];
 let manifestOptional: string[];
+/** The caller's own grant the GET reports; undefined = an older server omits it. */
+let agentScope: { agent: string; secrets: 'all' | string[] } | null | undefined;
+/** Extra fields the secret-request mint returns (withheld names, the fix). */
+let mintExtra: Record<string, unknown>;
 let syncResponse: Record<string, unknown>;
 /** What the strategy PUT reports for the project's network boundary. */
 let boundaryAvailable: boolean | undefined;
@@ -147,6 +151,18 @@ function mockApi() {
         can_manage: true,
         manifest_status: 'loaded',
         manifest_path: 'kortix.yaml',
+        ...(agentScope === undefined ? {} : { agent_scope: agentScope }),
+      });
+    }
+    if (url.endsWith('/projects/proj_1/secret-requests') && method === 'POST') {
+      const input = typeof body === 'object' && body !== null ? body : {};
+      return json({
+        kind: 'secret',
+        url: 'https://app.test/secret-intake/ksl_test',
+        names: input.names,
+        scope: input.scope ?? 'connector',
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString(),
+        ...mintExtra,
       });
     }
     if (url.includes('/projects/proj_1/secrets/') && url.endsWith('/broker') && method === 'POST') {
@@ -206,6 +222,8 @@ beforeEach(() => {
   secretItems = [];
   manifestRequired = [];
   manifestOptional = [];
+  agentScope = undefined;
+  mintExtra = {};
   boundaryAvailable = undefined;
   syncResponse = {
     ok: true,
@@ -446,6 +464,7 @@ describe('kortix secrets ls — identifier-first', () => {
       consumer: 'sandbox',
       delivery_status: 'available',
       requires_rotation: false,
+      granted: true,
       key: 'GOOGLE_MAPS_API_KEY',
       has_value: true,
       source: 'undeclared',
@@ -463,6 +482,7 @@ describe('kortix secrets ls — identifier-first', () => {
       consumer: 'sandbox',
       delivery_status: 'available',
       requires_rotation: false,
+      granted: true,
       key: 'STRIPE_API_KEY',
       has_value: false,
       source: 'required',
@@ -606,6 +626,73 @@ describe('kortix secrets ls — identifier-first', () => {
       effective_source: 'mine',
       has_value: true,
     });
+  });
+});
+
+describe('kortix secrets ls — inside an agent session', () => {
+  test('a declared key outside the agent grant reads "not granted", never "missing"', async () => {
+    agentScope = { agent: 'analyst', secrets: ['OTHER_KEY'] };
+    manifestRequired = ['STRIPE_API_KEY'];
+    const code = await runSecrets(['ls']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toMatch(/STRIPE_API_KEY\s+not granted/);
+    expect(out).not.toContain('required secret missing');
+    expect(out).toContain('1 secret is not granted to agent analyst');
+    expect(out).toContain('Customize → Agents → analyst → Secrets');
+    expect(out).toContain("Listed: only the secrets agent analyst is granted");
+  });
+
+  test('a declared key inside the grant with no value is still missing', async () => {
+    agentScope = { agent: 'analyst', secrets: ['STRIPE_API_KEY'] };
+    manifestRequired = ['STRIPE_API_KEY'];
+    await runSecrets(['ls']);
+    const out = stripAnsi(stdout);
+    expect(out).toMatch(/STRIPE_API_KEY\s+missing/);
+    expect(out).toContain('1 required secret missing');
+    expect(out).not.toContain('not granted to agent');
+  });
+
+  test('an unrestricted agent and a non-agent caller print no grant note', async () => {
+    manifestRequired = ['STRIPE_API_KEY'];
+    agentScope = { agent: 'analyst', secrets: 'all' };
+    await runSecrets(['ls']);
+    expect(stripAnsi(stdout)).not.toContain('Listed: only');
+    agentScope = null;
+    captureOutput();
+    await runSecrets(['ls']);
+    expect(stripAnsi(stdout)).not.toContain('Listed: only');
+    expect(stripAnsi(stdout)).toMatch(/STRIPE_API_KEY\s+missing/);
+  });
+
+  test('--json marks the row not granted and echoes the agent scope', async () => {
+    agentScope = { agent: 'analyst', secrets: ['OTHER_KEY'] };
+    manifestRequired = ['STRIPE_API_KEY'];
+    await runSecrets(['ls', '--json']);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.agent_scope).toEqual({ agent: 'analyst', secrets: ['OTHER_KEY'] });
+    expect(parsed.secrets[0]).toMatchObject({ identifier: 'STRIPE_API_KEY', granted: false });
+  });
+});
+
+describe('kortix secrets request', () => {
+  test('warns, with the fix, when this agent will not receive a requested name', async () => {
+    mintExtra = {
+      agent: 'analyst',
+      withheld: [{ name: 'STRIPE_API_KEY', reason: 'agent_grant' }],
+      withheld_fix: 'STRIPE_API_KEY is not in agent "analyst"\'s secrets grant. Fix: Customize.',
+    };
+    const code = await runSecrets(['request', 'STRIPE_API_KEY', '--scope', 'runtime']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('https://app.test/secret-intake/ksl_test');
+    expect(out).toContain('This session will not receive STRIPE_API_KEY');
+    expect(out).toContain('STRIPE_API_KEY is not in agent "analyst"\'s secrets grant. Fix: Customize.');
+  });
+
+  test('a fully delivered request prints no warning', async () => {
+    await runSecrets(['request', 'STRIPE_API_KEY', '--scope', 'runtime']);
+    expect(stripAnsi(stdout)).not.toContain('will not receive');
   });
 });
 

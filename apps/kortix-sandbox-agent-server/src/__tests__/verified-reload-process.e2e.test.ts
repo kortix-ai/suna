@@ -71,7 +71,7 @@ describe('verified reload process promotion', () => {
       gitUserName: 'Kortix Agent',
       gitUserEmail: 'agent@kortix.ai',
     } as Config
-    const harness = createOpenCodeHarnessService(cfg, configDir, undefined, {
+    const harness = createOpenCodeHarnessService(cfg, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
     })
@@ -153,7 +153,7 @@ describe('the live port is a property of the process, never a variable beside it
       gitUserName: 'Kortix Agent',
       gitUserEmail: 'agent@kortix.ai',
     } as Config
-    lifecycle = createOpencodeLifecycle(cfg, configDir, undefined, {
+    lifecycle = createOpencodeLifecycle(cfg, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
     })
@@ -166,7 +166,7 @@ describe('the live port is a property of the process, never a variable beside it
 
     // The only code path that rewrites the port variable without touching the
     // process: a config whose pair does not contain the live port.
-    lifecycle.reconfigure({ ...cfg, opencodeStandbyPort: reservePort() } as Config, configDir)
+    lifecycle.reconfigure({ ...cfg, opencodeStandbyPort: reservePort() } as Config)
 
     expect(lifecycle.getActivePort()).toBe(standby)
     expect(lifecycle.getInternalUrl()).toBe(`http://127.0.0.1:${standby}`)
@@ -188,7 +188,7 @@ describe('the live port is a property of the process, never a variable beside it
       gitUserName: 'Kortix Agent',
       gitUserEmail: 'agent@kortix.ai',
     } as Config
-    lifecycle = createOpencodeLifecycle(cfg, configDir, undefined, {
+    lifecycle = createOpencodeLifecycle(cfg, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
     })

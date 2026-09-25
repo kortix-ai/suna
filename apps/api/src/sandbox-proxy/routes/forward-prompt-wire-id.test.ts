@@ -48,6 +48,13 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
+mock.module('../../projects/lib/turn-start-convergence', () => ({
+  // The C9 turn-start convergence gate reads the session's project row before
+  // every prompt. There is no database in this file, so each call waits out the
+  // driver's connect timeout — 5 s per prompt, which times these cases out.
+  // This suite is about wire-id PLACEMENT, so the gate is stubbed to its no-op answer.
+  convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+}));
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));

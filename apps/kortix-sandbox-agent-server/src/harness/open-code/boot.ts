@@ -4,7 +4,7 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from '
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../../agent-env-file'
 import { runSandboxOnBoot } from '../../on-boot'
-import { loadOpenCodeConfig as loadConfig, resolveHintedOpencodeConfigDir, resolveOpencodeConfigDir, type OpenCodeConfig as Config } from './config'
+import { loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
 import {
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
@@ -30,8 +30,8 @@ import {
 import { relayBootTimelineToApi } from '../../boot-timeline-relay'
 import { materializeProject } from '../../config-provider/config-provider'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
-import { repairOpencodeConfigDir } from './apple-double'
-import { ensureOpencodeConfigDeps } from './opencode-config-deps'
+import { ConvergeBusyError, convergeConfigRelease } from './config-release'
+import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
 // Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this
@@ -72,7 +72,7 @@ import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { installShutdownHandlers } from '../../shutdown'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { startStaticWebServer } from '../../static-web'
-import { opencodeDeliveryInFlight, opencodeTurnInFlight } from './opencode-turn-state'
+import { observeOpencodeDelivery, opencodeTurnInFlight } from './opencode-turn-state'
 import type { HarnessBootContext } from '../harness'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
@@ -152,7 +152,11 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // reconfigured with the resolved dir below, before the process is ever
   // spawned. `reconfigure` only rewrites state read at spawn time, so this is
   // exactly equivalent to constructing it late.
-  const harness = createOpenCodeHarnessService(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
+  // EVERY boot spawns OpenCode before the config is decided, so the proxy holds
+  // every caller off until `bootOpenCodeConfig` proves what this box runs and
+  // opens the gate. Set before the lifecycle exists, so no window is open.
+  bootState.workspaceReady = false
+  const harness = createOpenCodeHarnessService(cfg, projectEnv, {
     onStartupMark: bootMark,
     onFirstListeningResponse: () => {
       if (bootState.timeline.some((mark) => mark.label === 'opencode-http-listening')) return
@@ -162,10 +166,10 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
       if (bootState.timeline.some((mark) => mark.label === 'opencode-session-api-ready')) return
       bootMark('opencode-session-api-ready')
     },
-    // The early-spawn path (below) starts OpenCode before the checkout exists.
-    // Keep the directory-scoped probe closed until the workspace is complete so
-    // no Instance — and no tool registry — is built against a partial tree.
-    deferDirectoryProbe: cfg.autoClone && resolveHintedOpencodeConfigDir(cfg) !== null,
+    // ALWAYS closed at first. `bootOpenCodeConfig` spawns OpenCode before the
+    // checkout and before the config is decided, so no Instance — and no tool
+    // registry — may be built until it opens the gate, after its proof.
+    deferDirectoryProbe: true,
   onUnplannedRespawn: () => {
       // opencode died on its own and is back. Close whatever turn it was
       // writing, or the client streams a part that will never complete.
@@ -238,14 +242,14 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // (git | prefer-s3 | require-s3, see src/config-provider). In `git` mode this
   // is materializeRepo's exact behaviour, split across the coordinator's warm
   // check and the Git transport.
-  const repoMaterializePromise: Promise<void> = cfg.autoClone
+  const repoMaterializePromise: Promise<string | null> = cfg.autoClone
     ? materializeProject(cfg, {
         bootMark,
         onSummary: (summary) => {
           bootState.configProvider = summary
         },
       })
-        .then((result) => {
+        .then(async (result) => {
           // A prepared-S3 start already has the exact working tree; the
           // optional history backfill waits for real readiness (see
           // runDeferredHistoryBackfill) instead of competing with the runtime
@@ -261,12 +265,24 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
               )
             }
           }
+          bootMark('repo-materialized')
+          // Pin the credential helper repo-locally now the repo exists, so
+          // `git push` authenticates whatever the invoking shell's HOME is.
+          // Part of materialization, not a step after readiness: the agent can
+          // push the moment the gate opens.
+          await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((err) => {
+            logger.warn('[boot] repo-local git credential helper setup failed', {
+              err: err instanceof Error ? err.message : String(err),
+            })
+          })
+          return null
         })
         .catch((err) => {
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
           logger.error('[boot] repo materialization failed', err)
+          return bootState.repoMaterializationError
         })
-    : Promise.resolve()
+    : Promise.resolve(null)
 
   // Every gateway session routes OpenCode through the localhost LLM proxy.
   // Start it before either compiled-config or checkout-config OpenCode can
@@ -285,68 +301,46 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
     }
   }
 
-  // ── Spawn OpenCode BEFORE the checkout exists ──────────────────────────
-  // OpenCode's process boot (bun start, module load, ~3–4 s on a 2-vCPU box)
-  // does not read the repo; only its per-directory Instance does, and that is
-  // created lazily by the first directory-scoped request. The API resolved the
-  // config dir at the base tip (KORTIX_OPENCODE_CONFIG_DIR_HINT), so the env
-  // var OpenCode reads at Instance init already points at the right place.
-  // After the repo lands we install config deps + injected skills there and
-  // dispose the instances in place (~50 ms) so the next request re-detects
-  // the git root and re-reads config. No hint → the serial boot below.
-  const earlyOpencodeConfigDir = cfg.autoClone ? resolveHintedOpencodeConfigDir(cfg) : null
-  // Only the early-spawn path can expose a half-built workspace; every other
-  // boot leaves this undefined and the proxy gate below is inert.
-  if (earlyOpencodeConfigDir) bootState.workspaceReady = false
-  let opencodeStartedEarly = false
-  const earlyOpencodeStartPromise: Promise<void> | null =
-    earlyOpencodeConfigDir && !(process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
-      ? (async () => {
-          harness.configuration.reconfigure(cfg, earlyOpencodeConfigDir, projectEnv)
-          await opencode.start()
-          opencodeStartedEarly = opencode.getPid() !== null
-          if (opencodeStartedEarly) {
-            bootMark('opencode-spawned')
-            logger.info('[boot] opencode spawned before checkout (config-dir hint)', {
-              opencodeConfigDir: earlyOpencodeConfigDir,
-            })
-          }
-        })().catch((err) => {
-          logger.warn('[boot] early OpenCode start failed; using serial boot', {
-            err: err instanceof Error ? err.message : String(err),
-          })
-        })
-      : null
-
-  const compiledOpencodeConfigDir = (process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
-  const hasCompiledOpencodeConfig =
-    compiledOpencodeConfigDir.length > 0 &&
-    (existsSync(join(compiledOpencodeConfigDir, 'opencode.jsonc')) ||
-      existsSync(join(compiledOpencodeConfigDir, 'opencode.json')))
-  let opencodeStartedFromCompiledConfig = false
-  const compiledOpencodeStartPromise: Promise<void> | null = hasCompiledOpencodeConfig
-    ? (async () => {
-        await ensureOpencodeConfigDeps(compiledOpencodeConfigDir)
-        await ensureInjectedManagedSkills(compiledOpencodeConfigDir)
-        bootMark('compiled-config-deps')
-        harness.configuration.reconfigure(cfg, compiledOpencodeConfigDir, projectEnv)
-        await opencode.start()
-        opencodeStartedFromCompiledConfig = opencode.getPid() !== null
-        if (opencodeStartedFromCompiledConfig) bootMark('opencode-spawned')
-      })().catch((err) => {
-        logger.warn('[boot] compiled-config OpenCode start failed; using checkout fallback', {
-          err: err instanceof Error ? err.message : String(err),
-        })
+  // ── The ONE boot path ───────────────────────────────────────────────────
+  // Everything about what OpenCode runs lives in `bootOpenCodeConfig`: the
+  // early spawn, the flag answer, the candidates, the proof, the readiness
+  // gate. Nothing here decides a config dir, and nothing here opens the gate.
+  const activeConfig = await bootOpenCodeConfig({
+    cfg,
+    opencode,
+    workspace: repoMaterializePromise,
+    mark: bootMark,
+    start: async () => {
+      await opencode.start()
+      if (opencode.getPid() !== null) bootMark('opencode-spawned')
+      // Resolve only once the process can be TALKED to. The proof is the first
+      // request this box sends, and a request to a bound-but-handlerless port
+      // is never answered: it burned its whole 2 s timeout plus a 500 ms poll
+      // on every boot (measured 2026-09-24, +2.0 s to opencode-ready).
+      await opencode.waitForCurrentListening()
+    },
+    respawn: async () => {
+      await opencode.restart({ finalizeTurn: false }).catch((err) => {
+        logger.warn('[boot] opencode.restart() rejected', { err: (err as Error).message })
       })
-    : null
-
-  // Wait for the clone to finish before we let downstream code (config-dir
-  // resolution, readiness probe, initial session creation) think the workspace
-  // is ready.
-  await repoMaterializePromise
-  bootMark('repo-materialized')
-  await compiledOpencodeStartPromise
-  await earlyOpencodeStartPromise
+      await opencode.waitForCurrentListening()
+    },
+    refresh: async () => {
+      const reloaded = await harness.configuration.reloadForWorkspace()
+      if (reloaded) bootMark('opencode-workspace-reloaded')
+      return reloaded
+    },
+    onReady: () => {
+      bootState.workspaceReady = true
+    },
+  })
+  logger.info('[boot] resolved opencode config dir', {
+    opencodeConfigDir: activeConfig.dir,
+    source: activeConfig.source,
+    releaseId: activeConfig.releaseId,
+    proven: activeConfig.proven,
+    fallbackReason: activeConfig.fallbackReason,
+  })
 
   // The boot clone is shallow; restore history in the background now that the
   // workspace is usable, so `git log`/`blame`/`diff` work without ever having
@@ -354,87 +348,8 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   if (cfg.autoClone && !bootState.repoMaterializationError && !bootState.deferredHistoryBackfill) {
     scheduleHistoryBackfill(cfg, cfg.projectTarget)
   }
-
-  const opencodeConfigDir = await resolveOpencodeConfigDir(cfg)
-  logger.info('[boot] resolved opencode config dir', {
-    opencodeConfigDir,
-    usingProjectConfig: opencodeConfigDir !== cfg.defaultOpencodeConfigDir,
-  })
-  // An early spawn on a WRONG dir (hint stale vs. the checkout) is not
-  // reusable: OPENCODE_CONFIG_DIR is process env. Fall through to the serial
-  // path, which reconfigures and starts a fresh process below.
-  if (opencodeStartedEarly && !bootState.repoMaterializationError && opencodeConfigDir !== earlyOpencodeConfigDir) {
-    logger.warn('[boot] config-dir hint did not match the checkout; restarting OpenCode', {
-      hinted: earlyOpencodeConfigDir,
-      resolved: opencodeConfigDir,
-    })
-    await opencode.stop().catch(() => {})
-    opencodeStartedEarly = false
-  }
-  if (!opencodeStartedFromCompiledConfig) {
-    await ensureOpencodeConfigDeps(opencodeConfigDir)
-    await ensureInjectedManagedSkills(opencodeConfigDir)
-    bootMark('config-deps')
-  } else if (opencodeConfigDir !== compiledOpencodeConfigDir) {
-    // Prepare the checked-out directory for the next runtime restart without
-    // delaying this session's readiness. The current process uses the exact
-    // same revision from the verified tmpfs capsule.
-    void Promise.all([
-      ensureOpencodeConfigDeps(opencodeConfigDir),
-      ensureInjectedManagedSkills(opencodeConfigDir),
-    ]).catch((err) => {
-      logger.warn('[boot] checked-out OpenCode config background preparation failed', {
-        err: err instanceof Error ? err.message : String(err),
-      })
-    })
-  }
-
   if (bootState.repoMaterializationError) {
     logger.warn('[boot] skipping runtime readiness because repo materialization failed')
-    bootState.workspaceReady = true
-    opencode.markWorkspaceReady()
-    if (opencodeStartedFromCompiledConfig || opencodeStartedEarly) await opencode.stop()
-  } else {
-    // Now that the repo exists, pin the credential helper repo-locally too, so
-    // `git push` authenticates regardless of the invoking shell's HOME (the
-    // global config above only applies under HOME=<opencode home>).
-    await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((err) => {
-      logger.warn('[boot] repo-local git credential helper setup failed', {
-        err: err instanceof Error ? err.message : String(err),
-      })
-    })
-    // Reconfigure now so any later restart uses the checked-out config. The
-    // already-running compiled-config process stays untouched.
-    harness.configuration.reconfigure(cfg, opencodeConfigDir, projectEnv)
-    // The checkout, its config-dir dependencies and the injected skills are ALL
-    // on disk now — this is the first moment a directory-scoped request may
-    // reach OpenCode. Opening the gate earlier is the bug this exists to stop
-    // (an Instance built against a partial workspace caches failed tool
-    // imports for the life of the process).
-    bootState.workspaceReady = true
-    opencode.markWorkspaceReady()
-    if (opencodeStartedEarly) {
-      // The process is up on the right dir; the workspace arrived after it.
-      // Dispose in place so instances re-read config + re-detect the git root.
-      const reloaded = await harness.configuration.reloadForWorkspace()
-      if (reloaded) {
-        bootMark('opencode-workspace-reloaded')
-      } else {
-        logger.warn('[boot] in-place workspace reload unavailable; restarting OpenCode')
-        await opencode.restart().catch((err) => {
-          logger.warn('[boot] opencode.restart() rejected', {
-            err: err instanceof Error ? err.message : String(err),
-          })
-        })
-      }
-    } else if (!opencodeStartedFromCompiledConfig) {
-      await opencode.start().catch((err) => {
-        logger.warn('[boot] opencode.start() rejected', {
-          err: err instanceof Error ? err.message : String(err),
-        })
-      })
-      bootMark('opencode-spawned')
-    }
   }
 
   // If the image shipped without its baked catalog, opencode just booted on the
@@ -686,6 +601,35 @@ export async function reconcileManagedModels(
   }
 }
 
+/**
+ * One convergence once OpenCode is ready (docs/specs/config-releases.md,
+ * "Boot" step 3). It proves a release spawned at boot and moves the box onto
+ * the desired release. Detached: it never delays readiness. A swap waits while
+ * a turn runs; the API converges again at turn end. The seed-adoption path
+ * reaches this through `startSessionRuntime`, so it converges once after
+ * adoption.
+ */
+function scheduleConvergenceAfterReady(opencode: Opencode, cfg: Config, bootMark: (label: string) => void): void {
+  void convergeConfigRelease({
+    cfg,
+    opencode,
+    turnInFlight: () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace),
+  })
+    .then((response) => {
+      logger.info('[boot] config convergence after ready', {
+        outcome: response.outcome,
+        releaseId: response.config.release_id,
+        source: response.config.source,
+        reason: response.reason,
+      })
+      if (response.config.source === 'release' && response.config.proven) bootMark('config-release-proven')
+    })
+    .catch((err) => {
+      if (err instanceof ConvergeBusyError) return
+      logger.warn('[boot] config convergence after ready failed', { err: String(err) })
+    })
+}
+
 async function startSessionRuntime(
   harness: OpenCodeHarnessService,
   cfg: Config,
@@ -863,11 +807,17 @@ async function startSessionRuntime(
   }
   const onSessionStatus = (opencodeSessionId: string, statusType: string) => {
     if (statusType !== 'busy' && statusType !== 'retry') return
-    void relayTurnBeginToApi(opencodeSessionId, opencode, cfg).catch((err) =>
+    void relayTurnBeginAfterInitialAcceptance({
+      initialAcceptancePending: initialTurnAcceptancePending,
+      reconcileInitialAcceptance: reconcileInitialTurnAcceptance,
+      relayTurnBegin: () => relayTurnBeginToApi(opencodeSessionId, opencode, cfg),
+    }).catch((err) =>
       logger.warn('[opencode-events] turn-begin relay failed', { err: (err as Error).message }),
     )
   }
   let initialTurnAcceptanceSettled = false
+  const initialTurnAcceptancePending = () =>
+    !initialTurnAcceptanceSettled && claimedInitialTurn !== null
   let initialTurnAcceptanceInFlight = false
   const reconcileInitialTurnAcceptance = async () => {
     if (initialTurnAcceptanceSettled || initialTurnAcceptanceInFlight) return
@@ -883,6 +833,11 @@ async function startSessionRuntime(
         opencodeSessionId,
         messageId,
         turnToken,
+        {
+          awaitingPickup:
+            bootState.initialPromptDeliveredAtMs != null &&
+            Date.now() - bootState.initialPromptDeliveredAtMs < INITIAL_TURN_PICKUP_GRACE_MS,
+        },
       )
       // `unknown` grants no authority. Retry it on the next 30-second
       // reconciliation tick. `inactive` means the exact message is absent or
@@ -954,6 +909,7 @@ async function startSessionRuntime(
       // box is usable, so a cold session answers its roster from Postgres.
       scheduleRuntimeProjectionPush('boot')
       scheduleRuntimeAssetsReconcile(cfg)
+      scheduleConvergenceAfterReady(opencode, cfg, bootMark)
     }
     await maybeCreateInitialOpencodeSession(
       opencode,
@@ -1000,6 +956,7 @@ async function startSessionRuntime(
     runDeferredHistoryBackfill(bootState)
     scheduleRuntimeProjectionPush('boot')
     scheduleRuntimeAssetsReconcile(cfg)
+    scheduleConvergenceAfterReady(opencode, cfg, bootMark)
     // Only start the loop if the initial-session branch didn't already (avoids a
     // duplicate subscription when the initial session was requested but failed).
     if (!loopStarted) harness.events.subscribe(cfg, eventHandlers)
@@ -1089,11 +1046,6 @@ async function runWarmSeedMode(
     ? await materializeProjectSeed(cfg)
     : await materializeScaffoldSeed(cfg.projectTarget, cfg.defaultBranch)
   bootMark(projectSeed ? 'seed-project-materialized' : 'seed-scaffold-materialized')
-  const opencodeConfigDir = materialized
-    ? await resolveOpencodeConfigDir(cfg)
-    : cfg.defaultOpencodeConfigDir
-  await repairOpencodeConfigDir(opencodeConfigDir)
-  await ensureOpencodeConfigDeps(opencodeConfigDir).catch(() => {})
 
   // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful warm
   // snapshots only — cold + Daytona never run it).
@@ -1133,7 +1085,7 @@ async function runWarmSeedMode(
     )
   }
 
-  const harness = createOpenCodeHarnessService(cfg, opencodeConfigDir, projectEnv, {
+  const harness = createOpenCodeHarnessService(cfg, projectEnv, {
     onStartupMark: bootMark,
   onUnplannedRespawn: () => {
       // opencode died on its own and is back. Close whatever turn it was
@@ -1158,8 +1110,32 @@ async function runWarmSeedMode(
     },
   })
   const opencode = harness.native
-  await opencode.start().catch((err) => logger.warn('[seed] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
-  bootMark('seed-opencode-spawned')
+  // The warm-seed BUILDER has no session and no API to ask, so the one boot
+  // path takes its legacy branch by construction: OpenCode reads the scaffold's
+  // own config dir, through the boot link like every other spawn. The fork that
+  // adopts this snapshot runs the whole path again and lands on the project's
+  // current release.
+  await bootOpenCodeConfig({
+    cfg,
+    opencode,
+    api: null,
+    workspace: Promise.resolve(materialized ? null : 'no seed repository materialized'),
+    mark: bootMark,
+    start: async () => {
+      await opencode
+        .start()
+        .catch((err) => logger.warn('[seed] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
+      bootMark('seed-opencode-spawned')
+      await opencode.waitForCurrentListening()
+    },
+    respawn: async () => {
+      await opencode.restart({ finalizeTurn: false }).catch(() => {})
+      await opencode.waitForCurrentListening()
+    },
+    onReady: () => {
+      bootState.workspaceReady = true
+    },
+  })
   const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
   installShutdownHandlers(harness.lifecycle, server, staticWeb)
   bootMark('seed-proxy-ready')
@@ -1245,17 +1221,6 @@ async function runWarmSeedMode(
         }
       }
 
-      // The seed opencode process is started before adoption, when it has no
-      // session-scoped Connector/CLI/LLM env and may have started before the
-      // project config dir exists. Restart it after adopting the fork env + repo so
-      // OPENCODE_CONFIG_CONTENT includes the Connector MCP and project config.
-      const adoptedOpencodeConfigDir = bootState.repoMaterializationError
-        ? cfg2.defaultOpencodeConfigDir
-        : await resolveOpencodeConfigDir(cfg2)
-      await repairOpencodeConfigDir(adoptedOpencodeConfigDir)
-      await ensureOpencodeConfigDeps(adoptedOpencodeConfigDir).catch((err) =>
-        logger.warn('[seed] adoption config deps failed', { err: (err as Error).message }),
-      )
       // A warm snapshot freezes OpenCode's provider model registry at capture
       // time. Managed/BYOK catalogs can change independently of that snapshot,
       // so refresh from the now-authenticated project gateway before deciding
@@ -1318,10 +1283,26 @@ async function runWarmSeedMode(
         }
       }
       if (!hotSwapped) {
-        harness.configuration.reconfigure(cfg2, adoptedOpencodeConfigDir, projectEnv)
-        await opencode.restart().catch((err) =>
-          logger.warn('[seed] adoption opencode restart failed', { err: (err as Error).message }),
-        )
+        // The fork is a START of this box, so it runs the SAME one boot path a
+        // fresh boot does — it asks the API what to run, proves it, and only
+        // then reports ready. The seed's own config never decides a fork's.
+        harness.configuration.reconfigure(cfg2, projectEnv)
+        await bootOpenCodeConfig({
+          cfg: cfg2,
+          opencode,
+          workspace: Promise.resolve(bootState.repoMaterializationError ?? null),
+          mark: bootMark,
+          start: async () => {},
+          respawn: async () => {
+            await opencode.restart().catch((err) =>
+              logger.warn('[seed] adoption opencode restart failed', { err: (err as Error).message }),
+            )
+            await opencode.waitForCurrentListening()
+          },
+          onReady: () => {
+            bootState.workspaceReady = true
+          },
+        })
         bootMark('adopt-opencode-restarted')
       }
       await startSessionRuntime(harness, cfg2, bootState, bootMark)
@@ -1604,6 +1585,7 @@ export async function publishInitialOpenCodeSessionAfterPrompt(
   deliver: () => Promise<void>,
 ): Promise<void> {
   await deliver()
+  bootState.initialPromptDeliveredAtMs = Date.now()
   bootState.initialOpenCodeSessionId = sessionId
 }
 
@@ -2422,6 +2404,14 @@ export async function relayInitialTurnAbandonedToApi(turnToken: string): Promise
 export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unknown'
 
 /**
+ * How long a first prompt THIS boot delivered may stay absent or unanswered
+ * before boot calls it abandoned. Matches the control plane's delivery grace
+ * (`KORTIX_SANDBOX_TURN_DELIVERY_GRACE_MINUTES`, 15 min): the `delivering`
+ * record expires on that grace anyway, so a longer wait buys nothing.
+ */
+export const INITIAL_TURN_PICKUP_GRACE_MS = 15 * 60_000
+
+/**
  * Promote daemon-delivered authority only after OpenCode exposes the exact
  * client-minted user message as queued or running.
  *
@@ -2435,20 +2425,38 @@ export async function reconcileInitialTurnAcceptanceToApi(
   opencodeSessionId: string,
   messageId: string,
   turnToken: string,
+  options: { awaitingPickup?: boolean } = {},
 ): Promise<InitialTurnAcceptanceReconciliation> {
-  const inFlight = await opencodeDeliveryInFlight(
+  const observation = await observeOpencodeDelivery(
     opencodeBaseUrl,
     workspace,
     opencodeSessionId,
     messageId,
   )
-  if (inFlight === null) return 'unknown'
-  if (!inFlight) {
-    await relayInitialTurnAbandonedToApi(turnToken)
-    return 'inactive'
+  if (observation.inFlight === null) return 'unknown'
+  if (observation.inFlight) {
+    await relayInitialTurnAcceptedToApi(opencodeSessionId, messageId, turnToken)
+    return 'accepted'
   }
-  await relayInitialTurnAcceptedToApi(opencodeSessionId, messageId, turnToken)
-  return 'accepted'
+  // THIS boot just delivered the prompt, and OpenCode has not picked it up
+  // yet. `prompt_async` answers 204 before OpenCode writes the user message
+  // (absent at +11 ms on 1.18.23) and before its loop marks the root busy
+  // (busy at +308 ms). Boot reconciles right after delivery, so both shapes
+  // are the normal start of a first turn, not proof it was dropped. Reading
+  // them as abandoned stripped the turn authority from ~99% of session-
+  // creating first turns on prod from 2026-08-19: the ledger said `abandoned`
+  // ~12 s in, `turn_begin` could not re-adopt a known message, and the stale-
+  // turn sweeps saw a running first turn as idle. Retry on the reconcile tick
+  // until the pickup grace ends. A prompt an EARLIER boot delivered keeps the
+  // immediate verdict: on a reused root, absence is proof.
+  if (
+    options.awaitingPickup &&
+    (observation.end === 'abandoned' || observation.orphanedPrompt === true)
+  ) {
+    return 'unknown'
+  }
+  await relayInitialTurnAbandonedToApi(turnToken)
+  return 'inactive'
 }
 
 /**
@@ -2719,6 +2727,26 @@ const turnBeginRelaysInFlight = new Set<string>()
 export function __resetRelayedTurnBegins(): void {
   relayedTurnBegins.clear()
   turnBeginRelaysInFlight.clear()
+}
+
+/**
+ * What a busy/retry frame does. Busy is the pickup the first turn's acceptance
+ * waits for, so it promotes the token apps/api minted before the box existed
+ * now, not on the next reconcile tick. While that record is unsettled,
+ * `turn_begin` must not run: the ledger has no row for the first message yet,
+ * so the API would adopt it under a second token beside the pending one.
+ */
+export async function relayTurnBeginAfterInitialAcceptance(input: {
+  initialAcceptancePending: () => boolean
+  reconcileInitialAcceptance: () => Promise<void>
+  relayTurnBegin: () => Promise<void>
+}): Promise<'relayed' | 'deferred'> {
+  if (input.initialAcceptancePending()) {
+    await input.reconcileInitialAcceptance()
+    if (input.initialAcceptancePending()) return 'deferred'
+  }
+  await input.relayTurnBegin()
+  return 'relayed'
 }
 
 /**
