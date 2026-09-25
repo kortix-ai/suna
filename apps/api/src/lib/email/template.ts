@@ -12,12 +12,14 @@ const COLOR_TEXT = '#111111';
 const COLOR_MUTED = '#6b7280';
 const COLOR_ACCENT = '#111111';
 
+/** The API's one HTML escaper: `& < > " '`, safe in element text and in quoted attributes. */
 export function escapeHtml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /** Inline styles — email clients strip <style> blocks, so every rule is local. */

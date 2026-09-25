@@ -22,10 +22,10 @@ import {
   autoClaimPendingInvites,
   getMembership,
   normalizeString,
-  readBody,
   resolveAccountDisplayNames,
   serializeAccount,
 } from './app';
+import { readBody } from '../iam/helpers';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).

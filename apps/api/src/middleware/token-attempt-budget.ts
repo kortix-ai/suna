@@ -87,7 +87,7 @@ export async function withTokenAttemptBudget<T>(
   run: () => Promise<T>,
 ): Promise<T> {
   if (!token || !token.startsWith('kortix_') || isTokenHashCached(token)) return run();
-  const address = requestClientIp(c);
+  const address = requestClientIp(c) ?? 'unknown';
   const now = Date.now();
   const window = current(address, now);
   if (window && window.count >= limit()) {

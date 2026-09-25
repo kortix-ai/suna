@@ -6,6 +6,7 @@
 // email.
 import { emailDomain, isWorkEmail } from '../accounts/personal-email';
 import { config } from '../config';
+import { escapeHtml } from './email/template';
 import { isEmailConfigured, sendEmail } from './email/transport';
 
 export interface DemoRequestLead {
@@ -23,14 +24,6 @@ export type DemoRequestNotifyResult =
   | { ok: true; status: number }
   | { ok: false; skipped: true; reason: 'email_not_configured' }
   | { ok: false; skipped?: false; status?: number; error: string };
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 function row(label: string, value: string | undefined | null): string {
   const v = (value ?? '').toString().trim();

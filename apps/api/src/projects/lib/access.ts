@@ -50,6 +50,7 @@ import {
   isRepositoryProjectAction,
   sessionWorkspaceAllowsRepositoryAccess,
 } from './session-workspace-access';
+import { isUuid } from '../../shared/validate';
 
 // Enforce the per-account project cap (free → 1, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
@@ -939,11 +940,8 @@ export async function assertAgentSessionWorkspaceAllowsRepository(
 // (e.g. a truncated "fda4e35e") makes the lookup throw `invalid input syntax
 // for type uuid` (SQLSTATE 22P02) before any guard runs — surfacing as an
 // opaque 500. Validate the shape first so a bad id is a clean 404, not a 500.
-const PROJECT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function isUuid(value: string): boolean {
-  return PROJECT_ID_RE.test(value);
-}
+// Re-exported for the route modules that import it from here.
+export { isUuid } from '../../shared/validate';
 
 /**
  * The full platform-admin-bypass decision — pure (the DB/header lookups are

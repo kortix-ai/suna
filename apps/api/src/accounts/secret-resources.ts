@@ -7,7 +7,8 @@ import { encryptAccountSecret, memberMayReadProject, secretUsableInProject } fro
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { actorOf, authorize, PROJECT_ACTIONS } from '../iam';
 import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';
-import { AccountIdParam, accountsRouter, getMembership, readBody } from './core/app';
+import { AccountIdParam, accountsRouter, getMembership } from './core/app';
+import { readBody } from './iam/helpers';
 
 const SecretIdParam = AccountIdParam.extend({ secretId: z.string().uuid() });
 const GrantParam = SecretIdParam.extend({ userId: z.string().uuid() });

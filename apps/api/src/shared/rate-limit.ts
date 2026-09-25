@@ -1,6 +1,7 @@
 import type { Context, Next } from 'hono';
 import { config } from '../config';
 import { requestClientIp } from './client-ip';
+import { isUuid } from './validate';
 import { recordAuditEvent } from './audit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from './rate-limit-audit';
 
@@ -30,8 +31,6 @@ interface AuditContext {
   action: string;
   metadata?: Record<string, unknown>;
 }
-
-const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 // Hard cap on distinct live buckets per limiter. A limiter keyed on any
 // attacker-influenced value (e.g. the public-session-share id) would otherwise
@@ -106,7 +105,7 @@ function positiveInt(value: unknown, fallback: number) {
 // Every IP-keyed limiter reads the caller through the trusted-proxy rule in
 // shared/client-ip.ts. The leftmost X-Forwarded-For entry is caller-written.
 function clientIp(c: Context) {
-  return requestClientIp(c);
+  return requestClientIp(c) ?? 'unknown';
 }
 
 function setHeaders(c: Context, result: RateLimitResult) {
@@ -301,7 +300,7 @@ export function createPublicSessionShareRateLimitMiddleware() {
     // of buckets (the id is never a real share, so it never reaches the
     // handler's own validation) and OOM the process.
     const rawShareId = c.req.param('shareId');
-    const shareId = rawShareId && UUID_V4_REGEX.test(rawShareId) ? rawShareId : `ip:${clientIp(c)}`;
+    const shareId = isUuid(rawShareId) ? rawShareId : `ip:${clientIp(c)}`;
     const denied = await enforceRateLimit(
       c,
       publicSessionShareLimiter,

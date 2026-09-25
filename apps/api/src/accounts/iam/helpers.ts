@@ -4,6 +4,8 @@
 
 import { Context } from 'hono';
 import { recordAuditEvent } from '../../shared/audit';
+import { requestClientIp } from '../../shared/client-ip';
+import { readJsonBody } from '../../shared/http-body';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import type { TierEntitlements } from '../../types';
 
@@ -42,12 +44,9 @@ export async function requireEntitlement(
   );
 }
 
+/** The JSON body as an object: `{}` when it is missing, malformed, or JSON `null`. */
 export async function readBody(c: Context): Promise<Record<string, unknown>> {
-  try {
-    return (await c.req.json()) ?? {};
-  } catch {
-    return {};
-  }
+  return (await readJsonBody<Record<string, unknown> | null>(c, null)) ?? {};
 }
 
 /**
@@ -76,10 +75,7 @@ export async function auditIam(
       resourceId: args.resourceId ?? null,
       before: args.before ?? null,
       after: args.after ?? null,
-      ip:
-        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-        c.req.header('x-real-ip') ||
-        null,
+      ip: requestClientIp(c),
       userAgent: c.req.header('user-agent') || null,
     });
   } catch (err) {

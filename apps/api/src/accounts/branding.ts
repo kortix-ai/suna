@@ -31,7 +31,8 @@ import { config } from '../config';
 import { db } from '../shared/db';
 import { rewriteStorageOrigin } from '../shared/storage-url';
 import { getSupabase } from '../shared/supabase';
-import { AccountIdParam, accountsRouter, getMembership, readBody } from './core/app';
+import { AccountIdParam, accountsRouter, getMembership } from './core/app';
+import { readBody } from './iam/helpers';
 import { auditIam, requireEntitlement } from './iam/helpers';
 
 export const BRANDING_BUCKET = 'branding';

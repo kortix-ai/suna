@@ -45,8 +45,8 @@ import {
   lookupEmailsByUserIds,
   normalizeEmail,
   parseRole,
-  readBody,
 } from './app';
+import { readBody } from '../iam/helpers';
 
 
 /**

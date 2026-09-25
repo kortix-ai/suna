@@ -32,6 +32,8 @@
  * through by every intermediary, and a crawler or monitor should see them.
  */
 
+import { escapeHtml } from '../lib/email/template';
+
 /**
  * Names the state on every response, HTML included, so a probe or a log can
  * attribute what happened without parsing a page.
@@ -107,15 +109,6 @@ export function previewStateCopy(state: PreviewState, port?: number): PreviewSta
         autoRetry: true,
       };
   }
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (ch) =>
-    ch === '&' ? '&amp;'
-    : ch === '<' ? '&lt;'
-    : ch === '>' ? '&gt;'
-    : ch === '"' ? '&quot;'
-    : '&#39;');
 }
 
 /**

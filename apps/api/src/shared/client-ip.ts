@@ -2,7 +2,8 @@ import type { Context } from 'hono';
 import { config } from '../config';
 
 /**
- * The caller's address, for rate limiting.
+ * The caller's address, for rate limiting and for the address recorded in
+ * audit, session-activity, and IAM request-context rows.
  *
  * `X-Forwarded-For` is a list that every proxy APPENDS to. The client writes
  * whatever it likes into the header first, so the LEFTMOST entry is chosen by
@@ -46,7 +47,7 @@ export function clientIpFromHeaders(
   return header('x-real-ip')?.trim() || null;
 }
 
-/** `clientIpFromHeaders` for a Hono request; `'unknown'` when nothing is set. */
-export function requestClientIp(c: Context): string {
-  return clientIpFromHeaders((name) => c.req.header(name)) ?? 'unknown';
+/** `clientIpFromHeaders` for a Hono request; `null` when neither header is set. */
+export function requestClientIp(c: Context): string | null {
+  return clientIpFromHeaders((name) => c.req.header(name));
 }
