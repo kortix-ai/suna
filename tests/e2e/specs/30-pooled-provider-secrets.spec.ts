@@ -3,11 +3,12 @@ import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { loadEnv } from '../../src/core/env';
 import { createDatabaseSession } from '../../src/fixtures/database-project';
+import { seedSessionTranscript } from '../../src/fixtures/session-transcript';
 import { createManifestProject, isDeployedTarget, type ManifestProject } from '../helpers/manifest-project';
 import { runDatabaseSql } from '../helpers/database';
 import { createApiJsonClient } from '../helpers/http';
 import { createAuthUser, deleteAuthUser, installBrowserSessionDirect, signIn } from '../helpers/session-auth';
-import { selectAccountForUi } from '../helpers/ui';
+import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
@@ -634,6 +635,141 @@ test.describe('30 — pooled provider secrets', () => {
       if (accountId) {
         await runDatabaseSql('DELETE FROM kortix.account_secret_resources WHERE secret_id = $1', [accountSecretId], databaseUrl).catch(() => {});
       }
+      await project?.dispose();
+      for (const user of [member, owner]) await deleteAuthUser(user.id, authOptions).catch(() => {});
+    }
+  });
+
+  test('a failed ChatGPT turn offers the fix only in the member’s own session', async ({ page }, testInfo) => {
+    // The gateway refuses a ChatGPT turn whose login can no longer refresh. The
+    // member's own private session can be fixed from the accounts dialog; a
+    // session shared with the project never uses a member's own account, so
+    // its failure stays informational. `/start` is held, so no sandbox boots:
+    // the failed turn is the one saved history holds.
+    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+    test.setTimeout(240_000);
+    const env = loadEnv();
+    const runId = Date.now().toString(36);
+    const ownerEmail = `e2e-reauth-owner-${runId}@example.test`;
+    const memberEmail = `e2e-reauth-member-${runId}@example.test`;
+    const owner = await createAuthUser(ownerEmail, authOptions);
+    const member = await createAuthUser(memberEmail, authOptions);
+    const ownerSession = await signIn(ownerEmail, authOptions);
+    let project: ManifestProject | null = null;
+    let releaseReads = () => {};
+    try {
+      const accounts = await api<Array<{ account_id: string }>>(ownerSession.access_token, 'GET', '/accounts');
+      const accountId = accounts[0]!.account_id;
+      await api(ownerSession.access_token, 'POST', `/accounts/${accountId}/members`, { email: memberEmail, role: 'member' }, 201);
+      project = await createManifestProject({ api, accessToken: ownerSession.access_token, accountId, userId: owner.id,
+        name: `ChatGPT reconnect ${runId}`, databaseUrl: databaseUrl! });
+      const projectId = project.id;
+      for (const feature of ['llm_gateway', 'pooled_provider_secrets', 'session_transcript_history']) {
+        await api(ownerSession.access_token, 'PATCH', `/projects/${projectId}/features`, { feature, enabled: true });
+      }
+      await api(ownerSession.access_token, 'PUT', `/projects/${projectId}/access/${member.id}`, { role: 'user' });
+      const memberSession = await signIn(memberEmail, authOptions);
+
+      // What OpenCode stores for the refused request: an APIError whose
+      // responseBody is the gateway's error body, exactly as gatewayErrorBody
+      // writes it for a resolution error (`provider: ''`).
+      const message = 'Your ChatGPT connection needs reconnection.';
+      const suggestion = 'Reconnect your ChatGPT account in Models, then retry.';
+      const failure = {
+        message, code: 'provider_reauth_required', provider: '', requested_model: 'codex/gpt-6-sol',
+        resolved_model: 'codex/gpt-6-sol', request_id: `req_reauth_${runId}`, suggestion,
+      };
+      const responseBody = JSON.stringify({ error: { ...failure, type: failure.code }, ...failure });
+      const seedFailedTurn = async (sessionId: string) => {
+        const { root } = await seedSessionTranscript(env, { projectId, accountId, sessionId });
+        await runDatabaseSql("UPDATE kortix.project_sessions SET agent_name = 'kortix' WHERE session_id = $1", [sessionId], databaseUrl);
+        const failedAt = Date.now() - 30_000;
+        const prompt = {
+          info: { id: 'msg_000000000000000000000003', sessionID: root, role: 'user', time: { created: failedAt },
+            agent: 'kortix', model: { providerID: 'kortix', modelID: 'codex/gpt-6-sol' } },
+          parts: [{ id: 'prt_reauth_prompt', sessionID: root, messageID: 'msg_000000000000000000000003',
+            type: 'text', text: 'Summarize the release notes.' }],
+        };
+        const refused = {
+          info: { id: 'msg_000000000000000000000004', sessionID: root, parentID: prompt.info.id, role: 'assistant',
+            time: { created: failedAt + 1, completed: failedAt + 2 }, agent: 'kortix', mode: 'build',
+            providerID: 'kortix', modelID: 'codex/gpt-6-sol', path: { cwd: '/workspace', root: '/workspace' },
+            cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            error: { name: 'APIError', data: { message, statusCode: 400, isRetryable: false, responseBody } } },
+          parts: [],
+        };
+        for (const saved of [prompt, refused]) {
+          await runDatabaseSql(`INSERT INTO kortix.session_transcript_messages
+            (session_id, message_id, opencode_session_id, role, message_created_at, info, parts)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)`, [sessionId, saved.info.id, root, saved.info.role,
+            new Date(saved.info.time.created), JSON.stringify(saved.info), JSON.stringify(saved.parts)], databaseUrl);
+        }
+      };
+      const ownSessionId = await createDatabaseSession(env, { projectId, accountId, userId: member.id });
+      const sharedSessionId = await createDatabaseSession(env, { projectId, accountId, userId: member.id, visibility: 'project' });
+      for (const sessionId of [ownSessionId, sharedSessionId]) await seedFailedTurn(sessionId);
+
+      await installBrowserSessionDirect(page, memberSession, `/projects/${projectId}`, authOptions);
+      await selectAccountForUi(page, accountId);
+      await dismissOnboarding(page);
+      const held = new Promise<void>((resolve) => { releaseReads = resolve; });
+      for (const sessionId of [ownSessionId, sharedSessionId]) {
+        await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+          await held;
+          await route.continue().catch(() => {});
+        });
+      }
+      const failureRow = page.getByRole('alert').filter({ hasText: message });
+
+      const ownPools = page.waitForResponse((response) => response.request().method() === 'GET' &&
+        response.url().includes(`/sessions/${ownSessionId}/provider-secret-pools`));
+      await page.goto(`/projects/${projectId}/sessions/${ownSessionId}`, { waitUntil: 'domcontentloaded' });
+      await expect(failureRow).toBeVisible({ timeout: 60_000 });
+      await expect(failureRow.getByText(suggestion, { exact: true })).toBeVisible();
+      await expect(failureRow.getByText(/provider_reauth_required/)).toBeVisible();
+      const welcome = page.getByRole('complementary', { name: 'Welcome from Marko' });
+      if (await welcome.isVisible().catch(() => false)) await welcome.getByRole('button', { name: 'Dismiss' }).click();
+      // The action reads the session's own ChatGPT selection before it shows.
+      expect((await ownPools).status()).toBe(200);
+      const reconnect = failureRow.getByRole('button', { name: 'Reconnect ChatGPT', exact: true });
+      await expect(reconnect).toBeVisible({ timeout: 30_000 });
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate((value) => { document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add(value); }, theme);
+        for (const size of [{ width: 390, height: 844 }, { width: 1280, height: 720 }]) {
+          await page.setViewportSize(size);
+          await expect(reconnect).toBeInViewport();
+          await failureRow.screenshot({ path: testInfo.outputPath(`chatgpt-reconnect-row-${theme}-${size.width}.png`), animations: 'disabled' });
+        }
+        const accessibility = await new AxeBuilder({ page }).include('[role="alert"]')
+          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+        expect(accessibility.violations).toEqual([]);
+      }
+      await page.evaluate(() => { document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add('light'); });
+
+      // The dialog reads the member's own accounts, and connecting is theirs to do.
+      const accountsRead = page.waitForRequest((request) => request.method() === 'GET' &&
+        request.url().includes(`/v1/accounts/${accountId}/secret-resources`) && request.url().includes(projectId));
+      await reconnect.click();
+      await accountsRead;
+      const accountsDialog = page.getByRole('dialog', { name: 'ChatGPT subscription' });
+      await expect(accountsDialog.getByText('No ChatGPT accounts yet', { exact: true })).toBeVisible();
+      await expect(accountsDialog.getByRole('button', { name: 'Connect ChatGPT' })).toBeEnabled();
+      await page.screenshot({ path: testInfo.outputPath('chatgpt-reconnect-dialog.png'), animations: 'disabled' });
+      await accountsDialog.getByRole('button', { name: 'Close' }).click();
+      await expect(accountsDialog).toHaveCount(0);
+
+      // The shared session shows the same failure without the action once its
+      // selection is known: it has none, so it runs on the project login.
+      const sharedPools = page.waitForResponse((response) => response.request().method() === 'GET' &&
+        response.url().includes(`/sessions/${sharedSessionId}/provider-secret-pools`));
+      await page.goto(`/projects/${projectId}/sessions/${sharedSessionId}`, { waitUntil: 'domcontentloaded' });
+      await expect(failureRow).toBeVisible({ timeout: 60_000 });
+      expect((await sharedPools).status()).toBe(200);
+      await page.waitForTimeout(1_000);
+      await expect(failureRow.getByRole('button')).toHaveCount(0);
+      await expect(failureRow.getByText(suggestion, { exact: true })).toBeVisible();
+    } finally {
+      releaseReads();
       await project?.dispose();
       for (const user of [member, owner]) await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
