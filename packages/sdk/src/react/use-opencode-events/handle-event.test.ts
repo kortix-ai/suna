@@ -101,6 +101,10 @@ function buildHandler(
     projectId?: string;
     reconcileSessionTail?: Parameters<typeof createEventHandler>[0]['reconcileSessionTail'];
     userPartsGraceMs?: number;
+    /** Wire the REAL sync-store reducer instead of the spy, exactly as
+     *  production does, for tests whose contract depends on the order in
+     *  which the reducer and `handle-event.ts` see the same event. */
+    realSyncStore?: boolean;
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -135,7 +139,12 @@ function buildHandler(
   const handleEvent = createEventHandler({
     queryClient,
     client,
-    applySyncEvent: applySyncEvent.fn,
+    applySyncEvent: overrides.realSyncStore
+      ? (event) => {
+          applySyncEvent.fn(event);
+          useSyncStore.getState().applyEvent(event as never);
+        }
+      : applySyncEvent.fn,
     stopCompaction: stopCompaction.fn,
     addPermission: addPermission.fn,
     removePermission: removePermission.fn,
@@ -879,6 +888,27 @@ describe('turn end refreshes open file viewers', () => {
       expect(blob.query().state.isInvalidated).toBe(true);
       text.unsubscribe();
       blob.unsubscribe();
+    });
+  }
+
+  // Production wires the real reducer, which writes the new status BEFORE
+  // `handle-event.ts` looks for the transition. Reading the previous status
+  // after that write saw 'idle' every time, so none of the turn-end work ran
+  // in the app: no file refresh, no Changes refresh, no task-complete notice.
+  for (const { name, event } of settleEvents) {
+    test(`${name} through the REAL sync-store reducer still refreshes the open file`, () => {
+      const { handleEvent, queryClient } = buildHandler({ realSyncStore: true });
+      useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
+      const text = mountViewerQuery(queryClient, fileContentKeys.file(url, '/fire.md'));
+
+      handleEvent(event as Parameters<typeof handleEvent>[0]);
+
+      expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: 'idle' });
+      expect(text.query().state.isInvalidated).toBe(true);
+      expect(notifications).toEqual([
+        { kind: 'task-complete', sessionId: 'ses_1', sessionTitle: undefined },
+      ]);
+      text.unsubscribe();
     });
   }
 
