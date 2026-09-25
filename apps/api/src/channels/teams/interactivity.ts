@@ -1,5 +1,4 @@
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
-import { teamsChannelCtx } from './binding';
 import { changeChannelAgent, switchChannelProject } from '../core/settings';
 import { teamsAgentChangeText, teamsSettingsRefusal, teamsSettingsChannel } from './settings-text';
 import {
