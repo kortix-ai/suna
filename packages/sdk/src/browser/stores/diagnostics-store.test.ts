@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { findDiagnosticsForFile, getRelativePath, useDiagnosticsStore } from './diagnostics-store';
 
 describe('getRelativePath', () => {
@@ -41,5 +41,62 @@ describe('setFromLspEvent → findDiagnosticsForFile', () => {
     setFromLspEvent({ '/workspace/a.ts': [{ range: { start: { line: 0, character: 0 } }, message: 'x' }] });
     setFromLspEvent({ '/workspace/a.ts': [] });
     expect(findDiagnosticsForFile(useDiagnosticsStore.getState().byFile, '/workspace/a.ts')).toBeUndefined();
+  });
+});
+
+describe('persistence through sessionStorage', () => {
+  // Each case installs its own `window` and bare `sessionStorage` global. Put
+  // the originals back so no mutation leaks into another case.
+  const globals = globalThis as Record<string, unknown>;
+  const ORIGINAL = { window: globals.window, sessionStorage: globals.sessionStorage };
+  const PERSIST_KEY = 'kortix-diagnostics';
+
+  beforeEach(() => useDiagnosticsStore.getState().clearAll());
+  afterEach(() => {
+    globals.window = ORIGINAL.window;
+    globals.sessionStorage = ORIGINAL.sessionStorage;
+  });
+
+  function mapStorage() {
+    const map = new Map<string, string>();
+    return {
+      map,
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+    };
+  }
+
+  const diag = { line: 1, column: 0, severity: 1 as const, message: 'boom' };
+
+  test('writes byFile to window.sessionStorage and reads it back on rehydrate', async () => {
+    const storage = mapStorage();
+    globals.window = { sessionStorage: storage };
+
+    useDiagnosticsStore.getState().setFileDiagnostics('/workspace/a.ts', [{ file: '/workspace/a.ts', ...diag }]);
+    const written = storage.map.get(PERSIST_KEY);
+    expect(written).toBeDefined();
+    expect(JSON.parse(written!).state.byFile['/workspace/a.ts']).toMatchObject([{ message: 'boom' }]);
+
+    // setState persists too, so put the saved value back before rehydrating.
+    useDiagnosticsStore.setState({ byFile: {} });
+    storage.map.set(PERSIST_KEY, written!);
+    await useDiagnosticsStore.persist.rehydrate();
+    expect(useDiagnosticsStore.getState().byFile['/workspace/a.ts']).toMatchObject([{ message: 'boom' }]);
+  });
+
+  test('a null sessionStorage (embedded WebView) keeps the store in memory and never throws', async () => {
+    globals.window = { sessionStorage: null };
+    globals.sessionStorage = null;
+
+    expect(() =>
+      useDiagnosticsStore.getState().setFileDiagnostics('/workspace/a.ts', [{ file: '/workspace/a.ts', ...diag }]),
+    ).not.toThrow();
+    expect(useDiagnosticsStore.getState().byFile['/workspace/a.ts']).toHaveLength(1);
+
+    // rehydrate() returns a thenable, not a Promise; awaiting it throws if it rejects.
+    await useDiagnosticsStore.persist.rehydrate();
+    expect(useDiagnosticsStore.getState().byFile['/workspace/a.ts']).toHaveLength(1);
+    expect(() => useDiagnosticsStore.persist.clearStorage()).not.toThrow();
   });
 });

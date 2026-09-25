@@ -2,6 +2,11 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import {
+  safeSessionGetItem,
+  safeSessionRemoveItem,
+  safeSessionSetItem,
+} from '../../platform/storage/managed-storage';
 
 // ============================================================================
 // Types
@@ -194,7 +199,6 @@ export function getRelativePath(absPath: string): string {
     // Strategy: find the deepest "project root" heuristic and strip it
     // Common patterns: /workspace/X/Y/ where Y is the project
     const parts = clean.split('/').filter(Boolean);
-    // Look for common project markers going from right to left
     for (let i = 0; i < parts.length; i++) {
       if (PROJECT_ROOT_MARKERS.has(parts[i])) {
         return parts.slice(i).join('/');
@@ -397,35 +401,24 @@ export const useDiagnosticsStore = create<DiagnosticsState>()(
 }),
   {
     name: 'kortix-diagnostics',
+    // Every read and write goes through the SDK's never-throw sessionStorage
+    // helpers. Where storage is missing, blocked or `null` (React Native, Safari
+    // private mode, embedded WebViews), diagnostics stay in memory only.
     storage: {
-      // Guarded with try/catch (not just `typeof window`): React Native sets a
-      // global `window` shim but has no `sessionStorage`, so a bare reference
-      // throws a ReferenceError there. Degrading to "diagnostics didn't
-      // persist" is fine; crashing the store is not.
       getItem: (name) => {
+        const str = safeSessionGetItem(name);
+        if (!str) return null;
         try {
-          if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return null;
-          const str = sessionStorage.getItem(name);
-          return str ? JSON.parse(str) : null;
+          return JSON.parse(str);
         } catch {
           return null;
         }
       },
       setItem: (name, value) => {
-        try {
-          if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return;
-          sessionStorage.setItem(name, JSON.stringify(value));
-        } catch {
-          /* ignore — quota or unavailable storage */
-        }
+        safeSessionSetItem(name, JSON.stringify(value));
       },
       removeItem: (name) => {
-        try {
-          if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return;
-          sessionStorage.removeItem(name);
-        } catch {
-          /* ignore */
-        }
+        safeSessionRemoveItem(name);
       },
     },
     partialize: (state) => ({ byFile: state.byFile }) as unknown as DiagnosticsState,
