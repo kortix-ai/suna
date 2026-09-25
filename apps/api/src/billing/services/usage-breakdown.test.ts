@@ -74,7 +74,7 @@ describe('classifyLedgerKind covers every kind that is actually written', () => 
     ['admin_debit', 'other'],
     ['tool_reservation_refund', null],
     [null, null],
-  ] as const)('%s -> %s', (kind, expected) => {
+  ] as const)('%p -> %p', (kind, expected) => {
     expect(classifyLedgerKind(kind)).toBe(expected);
   });
 });

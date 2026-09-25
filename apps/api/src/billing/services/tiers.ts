@@ -15,7 +15,6 @@ export {
   accountMetersCompute,
   accountRowMetersCompute,
   isCreditPlanAccount,
-  isLegacyAccount,
   isPaidTier,
   isPerSeatAccount,
 } from './tier-facts';
@@ -33,7 +32,7 @@ export const MACHINE_CREDIT_BONUS = 5;
  * KORTIX_LLM_MARKUP — useful for staging (1.0 = at-cost) or promotional
  * periods. Clamped to >= 1 so we never undercut the provider.
  */
-export const DEFAULT_LLM_PRICE_MARKUP = 1.2;
+const DEFAULT_LLM_PRICE_MARKUP = 1.2;
 
 export function llmPriceMarkup(): number {
   const raw = Number.parseFloat(process.env.KORTIX_LLM_MARKUP ?? '');
@@ -70,19 +69,7 @@ export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 15;
 /** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
 export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 
-// Per-second customer pricing for the reserved sandbox spec in kortix.yaml.
-// These rates apply to every hosted provider. Each rate is 1.2× Daytona's
-// published list rate.
-// Daytona list (https://www.daytona.io/pricing, as of 2026-06):
-//   vCPU  $0.0504 / core-hour → 0.000014   per core-second
-//   RAM   $0.0162 / GiB-hour  → 0.0000045  per GB-second
-//   disk  $0.000108 / GiB-hour→ 0.00000003 per GB-second
-// We bill the full reserved spec — Daytona's first-5-GiB-free RAM/disk allowance
-// is an ORG-level promo to us, not a per-sandbox grant, so passing it per sandbox
-// would under-bill.
-export const COMPUTE_CPU_PRICE_PER_CORE_SECOND = 0.0000168;
-export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND = 0.0000054;
-export const COMPUTE_DISK_PRICE_PER_GB_SECOND = 0.000000036;
+// Per-second customer compute prices live in platform/providers/compute-rates.ts.
 /** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
 export const COMPUTE_ARCHIVE_DISK_MULTIPLIER = 0.25;
 
@@ -92,8 +79,8 @@ export const COMPUTE_ARCHIVE_DISK_MULTIPLIER = 0.25;
 //   threshold = 25% of one seat (top up when wallet has < 1/4 seat-month left)
 //   amount    = 1 seat-month (refill the equivalent of one seat)
 // Legacy accounts keep their flat $5/$20 (auto_topup_customized=true or just unaffected).
-export const AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT = 5;
-export const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT = 20;
+const AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT = 5;
+const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT = 20;
 
 // Sensible caps for the per-seat plan. Effectively uncapped for normal use.
 export const MAX_PROJECTS_PER_ACCOUNT = 200;

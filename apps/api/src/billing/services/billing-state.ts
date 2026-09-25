@@ -112,10 +112,9 @@ export function isDeadSubscriptionStatus(status: string | null | undefined): boo
 /**
  * Whether a RAW Stripe subscription status means Stripe is collecting money.
  *
- * Same allow-list as `hasPayingSubscription`, but takes the status string
- * directly so the webhook layer can ask the question about a `Stripe.
- * Subscription` object it has just retrieved, before any `credit_accounts` row
- * exists to build a snapshot from.
+ * Takes the status string directly so the webhook layer can ask the question
+ * about a `Stripe.Subscription` object it has just retrieved, before any
+ * `credit_accounts` row exists to build a snapshot from.
  *
  * THE WEBHOOK LAYER MUST GATE EVERY TIER WRITE AND EVERY ACTIVATION/RECOVERY
  * CREDIT GRANT ON THIS PREDICATE. It previously activated on subscription
@@ -144,19 +143,13 @@ export function hasSubscriptionRecord(snapshot: BillingSnapshot): boolean {
 /**
  * Whether the subscription exists and has not been terminated. This is a
  * REPORTING predicate (it backs `account_state.has_active_subscription`), not a
- * spending permission — `past_due` is "live" here. Use
- * `subscriptionBypassesWalletFloor` for anything that decides who may spend.
+ * spending permission — `past_due` is "live" here. Who may spend is
+ * `resolveBillingState`'s answer.
  */
 export function hasLiveSubscription(snapshot: BillingSnapshot): boolean {
   if (!snapshot.subscriptionId) return false;
   const status = snapshot.subscriptionStatus ?? '';
   return !DEAD_SUBSCRIPTION_STATUSES.has(status);
-}
-
-/** Whether Stripe is currently successfully collecting for this subscription. */
-export function hasPayingSubscription(snapshot: BillingSnapshot): boolean {
-  if (!snapshot.subscriptionId) return false;
-  return PAYING_SUBSCRIPTION_STATUSES.has(snapshot.subscriptionStatus ?? '');
 }
 
 /**
@@ -189,9 +182,9 @@ export function hasPayingSubscription(snapshot: BillingSnapshot): boolean {
  * never as `no_subscription` ("Subscribe"). Fixing the copy is what should have
  * happened the first time.
  *
- * `hasPayingSubscription` above is retained: it is still the right predicate for
- * "is Stripe collecting", which the webhook layer and `payment_failed` need. It
- * simply no longer grants anyone a blank cheque.
+ * `isPayingSubscriptionStatus` above is retained: it is still the right
+ * predicate for "is Stripe collecting", which the webhook layer needs. It simply
+ * no longer grants anyone a blank cheque.
  */
 
 /**
@@ -201,7 +194,7 @@ export function hasPayingSubscription(snapshot: BillingSnapshot): boolean {
  * and for any paid tier. Deliberately does NOT look at `billing_model`:
  * `per_seat` is set at migration time and survives cancellation.
  */
-export function hasPlan(snapshot: BillingSnapshot): boolean {
+function hasPlan(snapshot: BillingSnapshot): boolean {
   if (!snapshot.exists) return false;
   if (hasSubscriptionRecord(snapshot)) return true;
   return isPaidTier(snapshot.tier ?? 'none');
