@@ -21,6 +21,53 @@ linked, not inlined.
 
 ## Register
 
+### An endpoint's token type is part of its contract, and a mocked fetch cannot check it (2026-09-25)
+
+**Rule:** before calling a provider endpoint, check which CREDENTIAL TYPES it
+accepts, not only its path and permissions. GitHub publishes two lists —
+"endpoints available for GitHub App installation access tokens" and the same
+for user access tokens. `POST /orgs/{org}/repos` is on the first;
+`POST /user/repos` is only on the second. A test whose stub answers 201 proves
+the routing and says nothing about the credential, so this shipped green.
+**Trigger surface:** any new provider call, any change to which token a call
+carries.
+
+**Incident:** every "Create a new repository" under a PERSONAL GitHub account
+failed from the day personal accounts could be connected. GitHub answered
+`403 Resource not accessible by integration`; the route passed it through as a
+502, the edge rewrote that to 503 (`EDGE_REWRITTEN_STATUSES`,
+`apps/api/src/index.ts`), and `isManagedGitUnavailableError` matched ANY 503 —
+so the user was told "Managed git isn't set up on this server. A platform admin
+connects GitHub in the admin console", which is false and unactionable, beside
+a toast carrying GitHub's raw text. `unit-github-owner-type-routing.test.ts`
+asserted the `/user/repos` routing against a stub that always returned 201.
+
+**Second failure, same report:** reconnecting mints a NEW installation id.
+`upsertAccountGitHubInstallation` conflicted on `(account_id, installation_id)`
+only, so the retired row survived; the list ordered oldest-first, so `/new`
+defaulted to the dead one; minting its token answers 404, which reads as "This
+GitHub connection is no longer valid. Reconnect it in Settings → Git." to
+someone who just reconnected. Nothing ever removed a dead row: the App's
+manifest registers webhooks `active: false`, so an uninstall is never observed.
+
+**Rules from it:**
+1. A client-side detector must match a CODE or a message, never a bare status:
+   every 502 reaches the browser as a 503.
+2. A credential's liveness is proven by the provider, so treat a provider 404
+   on `/access_tokens` as authority to delete that row and continue with
+   another connection for the same owner.
+3. A uniqueness rule the product depends on belongs in an index, not in a
+   convention: one connection per `(account, owner)`.
+
+**Enforcers:** `apps/api/src/projects/lib/installation-healing.test.ts`,
+`integration-github-installation-dedupe.test.ts` (real PostgreSQL: the upsert
+replaces a same-owner row, and the unique index answers 23505),
+`github.test.ts` ("createRepo under a personal owner": refused for an
+installation token, still posted for a PAT),
+`project-from-repository-personal-account.test.ts`, and
+`apps/web/.../github-user-authorization.test.ts`. Personal creates now run on a
+GitHub App user access token, which that endpoint does accept.
+
 ### A scheduled workflow runs as the last person who edited its cron line (2026-09-25)
 
 **Rule:** When someone leaves the org, list every workflow whose scheduled runs
