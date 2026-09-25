@@ -1,5 +1,5 @@
 import { getEnv } from '@/lib/env-config';
-import { HostBoundaryError } from '@kortix/sdk';
+import { HostBoundaryError, type SecretSetupLinkSubmitResult } from '@kortix/sdk';
 import { openMarkdownLinkAtEnd } from '@kortix/shared';
 
 /** API base (already includes the /v1 suffix), e.g. https://api.kortix.com/v1. */
@@ -185,4 +185,24 @@ export function setupLinkChipLabel(raw: string, token: string, fallback: string)
     text.includes('/connect/') ||
     (text.length > 48 && !text.includes(' '));
   return looksLikeUrl ? fallback : text;
+}
+
+/**
+ * The one outcome the human must still act on: the value is saved, but the
+ * agent that asked for it is not allowed to receive it. Said on the form
+ * because it is the only moment the human is present — the agent otherwise
+ * reports the secret as unset and the human re-enters a value already saved.
+ * Returns structure only; the form renders it through the locale catalog
+ * (`hardcodedUi.secretIntakeWithheld`).
+ */
+export function describeWithheldSecrets(
+  result: Pick<SecretSetupLinkSubmitResult, 'agent' | 'withheld'>,
+): { agent: string; byGrant: string[]; byAllowlist: string[] } | null {
+  const withheld = result.withheld ?? [];
+  if (!result.agent || withheld.length === 0) return null;
+  return {
+    agent: result.agent,
+    byGrant: withheld.filter((w) => w.reason === 'agent_grant').map((w) => w.name),
+    byAllowlist: withheld.filter((w) => w.reason === 'session_allowlist').map((w) => w.name),
+  };
 }

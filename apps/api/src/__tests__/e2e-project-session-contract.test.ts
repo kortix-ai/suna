@@ -1721,6 +1721,8 @@ describe('project session API contract', () => {
     expect(gitAuthSecret).toBeUndefined();
     expect(Array.isArray(listed.required)).toBe(true);
     expect(Array.isArray(listed.optional)).toBe(true);
+    // A dashboard caller is not an agent: nothing narrows what it lists.
+    expect(listed.agent_scope).toBeNull();
 
     const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/openai_api_key`, {
       method: 'DELETE',
@@ -1760,6 +1762,9 @@ describe('project session API contract', () => {
           configured: true,
         }),
       ],
+      // The caller's own grant, so a client can say "not granted to this
+      // agent" instead of "missing" for a name the list omits.
+      agent_scope: { agent: 'contract-agent', secrets: 'all' },
     });
   });
 

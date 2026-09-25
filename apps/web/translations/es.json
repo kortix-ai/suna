@@ -19194,6 +19194,11 @@
       "expired": "Este enlace de instalación no es válido o ha caducado. Vuelve a iniciar la instalación desde el proyecto.",
       "failed": "No se pudo completar la instalación. Vuelve a iniciarla desde el proyecto.",
       "backToProject": "Volver al proyecto"
+    },
+    "secretIntakeWithheld": {
+      "title": "Guardado, pero {agent} aún no puede leerlo",
+      "grant": "{names} no {count, plural, one {está} other {están}} entre los secretos del agente {agent}. Abre Personalizar → Agentes → {agent} → Secretos y {count, plural, one {actívalo} other {actívalos}}.",
+      "allowlist": "{names} {count, plural, one {está} other {están}} fuera de los secretos de esta sesión. Inicia una nueva sesión para {count, plural, one {usarlo} other {usarlos}}."
     }
   },
   "projectOnboarding": {
