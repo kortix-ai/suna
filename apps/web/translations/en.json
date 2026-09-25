@@ -19206,6 +19206,11 @@
       "expired": "This install link is invalid or has expired. Start the install again from the project.",
       "failed": "The install could not be finished. Start it again from the project.",
       "backToProject": "Back to the project"
+    },
+    "secretIntakeWithheld": {
+      "title": "Saved, but {agent} can't read it yet",
+      "grant": "{names} {count, plural, one {is} other {are}} not in the {agent} agent's secrets. Open Customize → Agents → {agent} → Secrets and enable {count, plural, one {it} other {them}}.",
+      "allowlist": "{names} {count, plural, one {is} other {are}} outside this session's secrets. Start a new session to use {count, plural, one {it} other {them}}."
     }
   },
   "projectOnboarding": {
@@ -19320,7 +19325,17 @@
   },
   "commandPalette": {
     "title": "Command Palette",
-    "description": "Search for a command to run..."
+    "description": "Search for a command to run...",
+    "copyTitle": "Copy",
+    "copyEmail": "email",
+    "copyUserId": "user ID",
+    "copyAccountId": "account ID",
+    "copyProjectId": "project ID",
+    "copySessionId": "session ID",
+    "copySessionLink": "session link",
+    "copyAction": "Copy {label}",
+    "copied": "Copied {label}",
+    "copyFailed": "Could not copy to the clipboard"
   },
   "personalWelcome": {
     "dismiss": "Dismiss",

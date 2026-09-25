@@ -19193,6 +19193,11 @@
       "expired": "Questo link di installazione non è valido o è scaduto. Riavvia l’installazione dal progetto.",
       "failed": "Non è stato possibile completare l’installazione. Riavviala dal progetto.",
       "backToProject": "Torna al progetto"
+    },
+    "secretIntakeWithheld": {
+      "title": "Salvato, ma {agent} non può ancora leggerlo",
+      "grant": "{names} non {count, plural, one {è} other {sono}} tra i segreti dell'agente {agent}. Apri Personalizza → Agenti → {agent} → Segreti e {count, plural, one {abilitalo} other {abilitali}}.",
+      "allowlist": "{names} {count, plural, one {è} other {sono}} fuori dai segreti di questa sessione. Avvia una nuova sessione per {count, plural, one {usarlo} other {usarli}}."
     }
   },
   "projectOnboarding": {
@@ -19307,7 +19312,17 @@
   },
   "commandPalette": {
     "title": "Tavolozza dei comandi",
-    "description": "Cerca un comando da eseguire..."
+    "description": "Cerca un comando da eseguire...",
+    "copyTitle": "Copia",
+    "copyEmail": "email",
+    "copyUserId": "ID utente",
+    "copyAccountId": "ID account",
+    "copyProjectId": "ID progetto",
+    "copySessionId": "ID sessione",
+    "copySessionLink": "link della sessione",
+    "copyAction": "Copia {label}",
+    "copied": "Copiato: {label}",
+    "copyFailed": "Impossibile copiare negli appunti"
   },
   "personalWelcome": {
     "dismiss": "Chiudi",
