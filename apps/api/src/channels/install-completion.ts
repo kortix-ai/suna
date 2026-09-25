@@ -24,13 +24,17 @@ export function frontendBase(): string {
   return (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
 }
 
-/** Where the callback sends the browser to finish the install as a signed-in user. */
+/**
+ * Where the callback sends the browser to finish the install as a signed-in
+ * user: `/<platform>/install`, next to the `/<platform>/login` identity page.
+ * Not under `/channels`, which is a public marketing path.
+ */
 export function installHandoffUrl(
   platform: ChatInstallPlatform,
   input: { projectId: string; code: string; state: string },
 ): string {
   const params = new URLSearchParams({ project: input.projectId, code: input.code, state: input.state });
-  return `${frontendBase()}/channels/install/${platform}?${params.toString()}`;
+  return `${frontendBase()}/${platform}/install?${params.toString()}`;
 }
 
 export type InstallRefusal = Extract<InstallCompletion, { ok: false }>;

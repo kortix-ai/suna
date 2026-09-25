@@ -144,7 +144,7 @@ describe('Slack OAuth callback', () => {
 
     expect(res.status).toBe(302);
     const location = new URL(redirectLocation(res));
-    expect(`${location.origin}${location.pathname}`).toBe('https://dev.kortix.com/channels/install/slack');
+    expect(`${location.origin}${location.pathname}`).toBe('https://dev.kortix.com/slack/install');
     expect(location.searchParams.get('project')).toBe(PROJECT_ID);
     expect(location.searchParams.get('code')).toBe('code-1');
     expect(location.searchParams.get('state')).toBe(state);

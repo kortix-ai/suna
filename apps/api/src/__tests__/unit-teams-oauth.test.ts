@@ -157,7 +157,7 @@ describe('Teams one-click install callback', () => {
 
     expect(res.status).toBe(302);
     const target = new URL(location(res));
-    expect(`${target.origin}${target.pathname}`).toBe('https://dev.kortix.com/channels/install/teams');
+    expect(`${target.origin}${target.pathname}`).toBe('https://dev.kortix.com/teams/install');
     expect(target.searchParams.get('project')).toBe(PROJECT_ID);
     expect(target.searchParams.get('code')).toBe('c1');
     expect(target.searchParams.get('state')).toBe(s);
