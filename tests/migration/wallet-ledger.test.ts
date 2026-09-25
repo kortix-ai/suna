@@ -7,7 +7,9 @@
 // settle-credits.ts), and the wallet reproduces them. One is deliberately
 // stronger: a request-keyed grant now applies once for the life of the ledger,
 // not once per hour.
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
+import { contextualDatabase } from '../../apps/api/src/shared/db-context';
+import { createDb } from '../../packages/db/src/client';
 import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
 
 const dockerOk = sh(['docker', 'info']).ok;
@@ -96,6 +98,7 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
   // The API modules are imported only after the database exists, because
   // `apps/api/src/config` validates the environment at import time.
   let wallet: typeof import('../../apps/api/src/billing/wallet').wallet;
+  let database: ReturnType<typeof createDb> | undefined;
   let router: typeof import('../../apps/api/src/router/services/billing');
   let errors: typeof import('../../apps/api/src/errors');
 
@@ -131,12 +134,27 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       DAYTONA_SERVER_URL: 'http://127.0.0.1:1',
       DAYTONA_TARGET: 'us',
     });
+    // `mock.module` is process-global and `bun test tests/migration` runs every
+    // file in one process, in directory order. Another file here replaces
+    // `shared/db` with a client for ITS container, which is gone by the time
+    // this file runs. Bind the module to this container explicitly, with the
+    // same exports the real module has, so file order cannot decide which
+    // database the wallet writes to.
+    database = createDb(url);
+    const scoped = contextualDatabase(database);
+    mock.module('../../apps/api/src/shared/db', () => ({
+      hasDatabase: true,
+      db: scoped.db,
+      withDbTransaction: scoped.transaction,
+      afterDbCommit: scoped.afterCommit,
+    }));
     ({ wallet } = await import('../../apps/api/src/billing/wallet'));
     router = await import('../../apps/api/src/router/services/billing');
     errors = await import('../../apps/api/src/errors');
   }, 300_000);
 
-  afterAll(() => {
+  afterAll(async () => {
+    await database?.$client.end({ timeout: 5 });
     sh(['docker', 'rm', '-f', CONTAINER]);
   });
 
