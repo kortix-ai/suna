@@ -7,6 +7,14 @@ import { CheckIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 /**
+ * The logo tile is white in both themes. Catalogue logos are third-party art
+ * drawn for a white ground: on the dark `bg-popover` a black glyph (Notion,
+ * GitHub, Linear) disappears. This is the brand guide's third-party-logo
+ * exception, kept here as a named constant rather than inline.
+ */
+const LOGO_TILE_BACKGROUND = 'bg-white';
+
+/**
  * The app's own logo, or its first letter when there is none (or it fails to
  * load). Never the generic plug: the whole point of the tile is to say WHICH
  * app, and a plug says only "some app".
@@ -25,7 +33,8 @@ export function ConnectorAppMark({
   return (
     <span
       className={cn(
-        'border-border bg-popover flex shrink-0 items-center justify-center overflow-hidden border',
+        'border-border flex shrink-0 items-center justify-center overflow-hidden border',
+        LOGO_TILE_BACKGROUND,
         size === 'md' ? 'size-8 rounded-md p-1' : 'size-5 rounded-sm p-0.5',
       )}
     >
