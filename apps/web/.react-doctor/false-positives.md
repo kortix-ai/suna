@@ -4,7 +4,7 @@ Each entry records a diagnostic that remains in the report deliberately. A
 suppression is valid only while every predicate below still holds — re-verify
 before trusting an entry. Triage date: 2026-08-17, branch `react-doctor`.
 
-## no-layout-property-animation (20) — intentional intrinsic-size animations
+## no-layout-property-animation (17) — intentional intrinsic-size animations
 
 All are `height: 0↔auto` / `width: 0↔<px>` enter-collapse animations whose
 purpose is sibling reflow. Transforms cannot reflow siblings; the rule's own
@@ -18,8 +18,6 @@ recipe endorses keeping bounded one-shot intrinsic-size animations.
 - `src/components/ui/switch.tsx:172-173` — 16px thumb ±2/4px hover/press morph
   on a rounded-full capsule; scale distorts the capsule radius and `x` is a
   drag-driven motionValue.
-- `src/features/accounts/settings/general-tab.tsx:483-485` — one-shot
-  `height: 0↔auto` list reveal in a modal.
 - `src/features/billing/auto-topup-card.tsx:228-230` — `overflow-hidden`
   accordion, one-shot on toggle.
 - `src/features/workspace/customize/sections/view/permission-editor.tsx:169-171` —
@@ -72,12 +70,6 @@ recipe endorses keeping bounded one-shot intrinsic-size animations.
 - `src/features/file-viewer/file-preview-modal.tsx:276` — guards
   `createPortal(node, document.body)`; portal children contribute no DOM at
   this tree position during SSR/hydration, and `isOpen` gates first.
-
-## no-impure-state-updater (1)
-
-- `src/features/layout/account-switcher.tsx:213` — `deferAfterClose` is a plain
-  local helper (`setMenuOpen(false)` + `requestAnimationFrame`), not a state
-  updater; `setCreateOpen` runs in a RAF callback.
 
 ## no-prop-callback-in-render (1)
 

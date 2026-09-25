@@ -500,11 +500,11 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
   // Replay the READ COMMITTED interleaving deterministically: candidate SELECT
   // sees no reference, binding commits without changing the attachment tuple,
   // then cleanup acquires the tuple lock and receives its stale candidate.
-  // The sweep's first transaction is the delivery release, which runs as is;
-  // the second is the batch claim this test intercepts.
-  const intercepted = spyOn(pooled, 'transaction')
-    .mockImplementationOnce((work) => transaction(work))
-    .mockImplementationOnce((work) =>
+  // The interception keys on the statement, not on which transaction of the
+  // sweep runs it: the first `FOR UPDATE` select from prompt_attachments is the
+  // batch claim.
+  let injected = false;
+  const intercepted = spyOn(pooled, 'transaction').mockImplementation((work) =>
     transaction(async (tx) => {
       const proxy = new Proxy(tx, {
         get(target, property) {
@@ -514,7 +514,11 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
             const from = selection.from.bind(selection);
             selection.from = ((...fromArgs: Parameters<typeof from>) => {
               const query = from(...fromArgs);
-              query.for = () => {
+              if (fromArgs[0] !== promptAttachments) return query;
+              const lockFor = query.for.bind(query);
+              query.for = ((...forArgs: Parameters<typeof lockFor>) => {
+                if (injected || forArgs[0] !== 'update') return lockFor(...forArgs);
+                injected = true;
                 const result = (async () => {
                   const candidates = await query;
                   await enqueue(id);
@@ -531,7 +535,7 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
                     return Reflect.get(target, property, receiver);
                   },
                 });
-              };
+              }) as typeof query.for;
               return query;
             }) as typeof selection.from;
             return selection;
@@ -546,6 +550,7 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
   } finally {
     intercepted.mockRestore();
   }
+  expect(injected).toBe(true);
   const [retained] = await db
     .select()
     .from(promptAttachments)

@@ -11,12 +11,12 @@ styling inline. If a primitive is missing a capability, extend the primitive
 — do not work around it in a screen.
 
 `components/ui/` is unmodified React Native Reusables (RNR) registry output —
-32 files, no barrel, no capitalized filenames. `components/kortix/` is
-Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
+18 files, no barrel, no capitalized filenames. `components/kortix/` is
+Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
 `@/components/ui` barrel.** Import direct paths only, e.g.
 `@/components/ui/button`, `@/components/kortix/avatar`.
 
-## Canonical UI primitives — `components/ui/` (RNR registry, 32 files)
+## Canonical UI primitives — `components/ui/` (RNR registry, 18 files)
 
 | Need | Use ONLY | Never |
 | --- | --- | --- |
@@ -28,37 +28,22 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | Icons | `@/components/ui/icon` → `<Icon as={XIcon} />`, or `<XIcon />`, with icons from `@/lib/icons` — see **Icons** below | importing `phosphor-react-native`, `lucide-react-native`, or `@expo/vector-icons`; ad-hoc svg in screens |
 | Dialog (centered overlay) | `@/components/ui/dialog` → `<Dialog>` + parts | custom centered overlay, raw `Modal` |
 | Alert dialog (confirm/cancel) | `@/components/ui/alert-dialog` → `<AlertDialog>` + parts; a plain title · description · Cancel · action confirm is `useConfirmDialog()` from `@/components/kortix/confirm-dialog` | `Alert.alert`, custom confirm overlays |
-| Inline alert | `@/components/ui/alert` → `<Alert>` + `AlertTitle` / `AlertDescription` | custom banner boxes |
 | Badge | `@/components/ui/badge` → `<Badge variant="…">` | ad-hoc pill `View` |
 | Skeleton loading state | `@/components/ui/skeleton` → `<Skeleton>` | ad-hoc `animate-pulse` boxes — see also **Loading** rule below |
-| Card surface | `@/components/ui/card` → `<Card>` + `CardHeader` / `CardTitle` / `CardContent` / `CardFooter` | ad-hoc bordered/rounded `View` cards |
-| Accordion | `@/components/ui/accordion` → `<Accordion>` + parts | custom expand/collapse |
-| Collapsible | `@/components/ui/collapsible` → `<Collapsible>` + parts | custom show/hide |
-| Checkbox | `@/components/ui/checkbox` → `<Checkbox>` | custom check `Pressable` |
 | Switch | `@/components/ui/switch` → `<Switch>` | raw RN `Switch` styled ad-hoc |
-| Radio group | `@/components/ui/radio-group` → `<RadioGroup>` + `RadioGroupItem` | custom radio rows |
-| Toggle | `@/components/ui/toggle` → `<Toggle>` | custom pressed chip |
-| Toggle group | `@/components/ui/toggle-group` → `<ToggleGroup>` + `ToggleGroupItem` | custom segmented control |
 | Tabs | `@/components/ui/tabs` → `<Tabs>` + `TabsList` / `TabsTrigger` / `TabsContent` | custom tab bars |
-| Menu bar | `@/components/ui/menubar` → `<Menubar>` + parts | custom top-level app menu |
 | Select | `@/components/ui/select` → `<Select>` + parts | custom picker menus |
-| Dropdown menu | `@/components/ui/dropdown-menu` → `<DropdownMenu>` + parts | custom action menus |
-| Context menu | `@/components/ui/context-menu` → `<ContextMenu>` + parts | custom long-press menus |
 | Popover | `@/components/ui/popover` → `<Popover>` + parts | custom anchored overlays |
-| Hover card | `@/components/ui/hover-card` → `<HoverCard>` + parts | custom hover/preview overlays |
-| Tooltip | `@/components/ui/tooltip` → `<Tooltip>` + parts | custom tooltip overlays |
 | Progress | `@/components/ui/progress` → `<Progress>` | custom progress bars |
 | Separator | `@/components/ui/separator` → `<Separator>` | ad-hoc `border-b` / hairline `View`s |
-| Aspect ratio | `@/components/ui/aspect-ratio` → `<AspectRatio>` | manual width/height ratio math |
 | Avatar (3-part composition) | `@/components/ui/avatar` → `<Avatar>` + `AvatarImage` / `AvatarFallback` | see **Avatar** section — most screens want `@/components/kortix/avatar` instead |
 | Native-only animated wrapper | `@/components/ui/native-only-animated-view` → `<NativeOnlyAnimatedView>` | animating a view that must also render inertly on web |
 
-## Kortix-specific components — `components/kortix/` (23 files)
+## Kortix-specific components — `components/kortix/` (34 files)
 
 | File | Purpose |
 | --- | --- |
 | `avatar.tsx` | The single-prop avatar most screens use (agent/model/thread/trigger/custom). See **Avatar** section. |
-| `ThreadAvatar.tsx` | Thin wrapper around `kortix/avatar` for thread rows. |
 | `sheet.tsx` | `<Sheet>` bottom-sheet wrapper + `SheetHeader`/`SheetBody`/`SheetFooter`, and the shared gorhom chrome — `SheetBackdrop`, `sheetHandleIndicatorStyle(isDark)`, `useSheetBackground()`. See **Bottom sheets** invariant below. |
 | `SheetInput.tsx` | Canonical pill text field for inside a bottom sheet (wraps gorhom's `BottomSheetTextInput`). |
 | `pill-input.tsx` | `PillInput` — the same pill on a plain `TextInput`, for full screens outside a sheet (the auth forms). Forwards its ref. Exports `usePillInputStyle`, the one source of the pill's look for both fields. |
@@ -70,12 +55,12 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | `search-list-header.tsx` | "Search input + add button" row under `PageHeader` on list pages. |
 | `page-header.tsx` | Unified top header (hamburger / title / "···" more button) for every page. |
 | `page-content.tsx` | Content area under `PageHeader` — no card framing, consistent top spacing. |
-| `list-row.tsx` | Standard settings-style row (`title` / `subtitle` / `left` / `right` / divider). |
 | `composer.tsx` | The chat input of the project home and of a thread (`SessionChatInput` wraps it): one card with the text field on top and a 36pt row of add · model · send `Button`s below (`icon-md` icon buttons, `sm` model pill). Page colour (`bg-background`) in both themes, hairline `border-border` in both themes, no shadow. No animated placeholder. Thread-only slots: `header` (queue, staged command), `accessory` (AutoContinue), `busy` (Stop). See design.md → Project home. |
+| `dictation-waveform.tsx` | `DictationWaveform` — the composer's listening indicator: one bar per recogniser volume sample, newest on the right. Runs on the UI thread from a shared value. See `design.md` → Dictation. |
 | `pinned-bar.tsx` | `PinnedBar` + `usePinnedBarInset`. Inside a bottom sheet, wrap the body in `SheetFill` (`sheet.tsx`) first: gorhom's content box is taller than the visible sheet, so `bottom: 0` alone lands off-screen.  — controls pinned to the bottom of a scrolling region, floating over a fade of the surface (clear → 85% at 45% → solid), 16pt above the safe area; the content scrolls under it and pads its end by the inset. The project drawer's bottom bar as a component (Jay, 2026-09-22); used by the session file preview sheet (Download · Add to chat). Never a solid footer under a separate fade strip. **A new control added to any header or chrome row prefers this gradient-fade backdrop over a flat one** (Jay, 2026-09-22) — see design.md's "New header controls" row. |
 | `animated-toggle-icon.tsx` | Cross-fade + rotate between an icon and its "X" close state, used by `PageHeader`. |
 | `kortix-loader.tsx` | Lottie brand loading spinner. |
-| `ShimmerText.tsx` | Gradient-sweep shimmer text for "AI is working" status lines. |
+| `text-shimmer.tsx` | `TextShimmer` — gradient-sweep shimmer text for "AI is working" status lines. |
 | `StopIcon.tsx` | Stop-square SVG icon used on the composer's stop button. |
 | `PixelDeadFlower.tsx` | 16×16 pixel-art wilted flower, one `color` prop at 6 opacities (one `Path` per tone, no seams). One petal falls in a loop: whole-cell steps on the UI thread (Reanimated), off under Reduce Motion and while `animate={false}`. The empty session list in the project drawer (`DrawerEmptyFlower` runs the loop only while the drawer is open) and on the Sessions page (loop only while focused; errors and empty filter results keep their text) (Jay, 2026-09-24). The wrapper carries the "No sessions yet" `accessibilityLabel`. |
 | `OfflineBanner.tsx` | Global connectivity banner (slides in on disconnect / brief "Back online" flash). |
@@ -354,7 +339,7 @@ that drops props silently breaks the screens that still pass them.
 
 ## Invariants (mechanically checked)
 
-1. `components/ui/` contains ONLY RNR registry output — 32 files, no barrel,
+1. `components/ui/` contains ONLY RNR registry output — 18 files, no barrel,
    no capitalized filenames. A file here that differs from
    `https://reactnativereusables.com/r/nativewind/<name>.json` is a bug.
    Never edit one; extend it in `components/kortix/` and record the reason in
@@ -362,7 +347,7 @@ that drops props silently breaks the screens that still pass them.
 
    Check it against the captured upstream sources. **Normalize the import path
    first** — the RNR installer rewrites `'@/lib/utils'` to `'@/lib/utils/index'`
-   in every file it emits, so a naive `diff` reports all 30 `cn`-importing files
+   in every file it emits, so a naive `diff` reports all 17 `cn`-importing files
    as forked and tells you nothing:
 
    ```bash
@@ -380,8 +365,7 @@ that drops props silently breaks the screens that still pass them.
    which IS tracked — that file, not the captures, is the source of truth.
 
    Stock RNR imports its icons from `lucide-react-native`. This app imports the
-   same glyphs from `@/lib/icons` (Phosphor). In 8 files (`accordion`, `alert`,
-   `checkbox`, `context-menu`, `dialog`, `dropdown-menu`, `menubar`, `select`)
+   same glyphs from `@/lib/icons` (Phosphor). In 2 files (`dialog`, `select`)
    that import line is the icon delta, and `icon.tsx` is rewritten for Phosphor.
    These are recorded in `rnr-fork-delta.md` → Icon library, and are not forks.
 
