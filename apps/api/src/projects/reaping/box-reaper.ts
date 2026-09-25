@@ -128,7 +128,7 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
   requeueAbandonedPrompt,
   promoteNextInboxRow,
   drainSessionLifecycleQueue: async (input) => {
-    const { drainSessionLifecycleQueue } = await import('../session-lifecycle/engine');
+    const { drainSessionLifecycleQueue } = await import('../session-lifecycle/drain');
     return drainSessionLifecycleQueue(input);
   },
 };

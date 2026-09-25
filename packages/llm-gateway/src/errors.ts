@@ -84,7 +84,7 @@ export class UpstreamHttpError extends Error {
 // used for merely "irrelevant to this route model") so the pipeline can carry
 // a specific, actionable code/message/suggestion all the way to the client
 // instead of collapsing every cause into one generic "No upstream configured"
-// string. See packages/llm-gateway/src/pipeline/handler.ts's dispatch loop.
+// string. See pipeline/simple-handler.ts and pipeline/dispatch.ts.
 export type NoUpstreamReasonCode =
   | 'model_not_found'
   | 'model_disabled_on_deployment'

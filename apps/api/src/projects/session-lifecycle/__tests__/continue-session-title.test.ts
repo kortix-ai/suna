@@ -1,6 +1,6 @@
 // continueSession() titles the OpenCode REST session it is delivering into.
 //
-// Same mocking caveat as ./continue-session-deleted-guard.test.ts: engine.ts's
+// Same mocking caveat as ./continue-session-deleted-guard.test.ts: continue-session.ts's
 // heavier dependencies are stubbed so its top-level imports resolve, and
 // `mock.module` is process-global, so this file must be run on its own.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -85,7 +85,7 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   // The landing proof requeues a prompt the runtime never showed (fresh
-  // attempt, fresh idempotency key). `engine.ts` imports it by name, so every
+  // attempt, fresh idempotency key). `queued-continue.ts` imports it by name, so every
   // store mock has to carry it or the engine import fails outright. Nothing in
   // this file fails a landing.
   requeueUnlandedPrompt: async () => {
@@ -115,7 +115,7 @@ mock.module('../store', () => ({
   },
 }));
 
-const { continueSession } = await import('../engine');
+const { continueSession } = await import('../continue-session');
 
 beforeEach(() => {
   sessionRow = null;

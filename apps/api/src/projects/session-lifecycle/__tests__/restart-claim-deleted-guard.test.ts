@@ -30,7 +30,9 @@ test('the restart claim refuses an archived (deleted-session) row', async () => 
     claim: { id: 'restart-1', startedAt, leaseExpiresAt: new Date(startedAt.getTime() + 240_000) },
   });
   expect(claimed).toBe(false);
+  // The claim moves only a live row: `archived` is outside its from-set.
   const query = new PgDialect().sqlToQuery(captured as Parameters<PgDialect['sqlToQuery']>[0]);
-  expect(query.sql).toContain('"status" <> $');
-  expect(query.params).toContain('archived');
+  expect(query.sql).toContain('"status" in (');
+  expect(query.params).toEqual(expect.arrayContaining(['provisioning', 'active', 'stopped']));
+  expect(query.params).not.toContain('archived');
 });

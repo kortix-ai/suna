@@ -39,10 +39,14 @@ mock.module('../../config', () => mockConfigModule());
 
 const updater = (table: unknown) => ({
   set: (updates: Record<string, unknown>) => ({
-    where: async (predicate?: unknown) => {
+    // Awaitable, and chainable to `.returning()` (the status transitions).
+    where: (predicate?: unknown) => {
       events.push(`update:${table === sessionSandboxes ? 'sandbox' : 'session'}`);
       updateCalls.push({ table, updates, predicate, inTransaction });
-      if (updateThrows) throw new Error(updateThrows);
+      const result = updateThrows
+        ? Promise.reject(new Error(updateThrows))
+        : Promise.resolve([{ sandboxId: 'moved', sessionId: 'moved' }]);
+      return Object.assign(result, { returning: () => result });
     },
   }),
 });
@@ -149,7 +153,9 @@ function describeSql(expression: unknown): string {
   if (typeof expression === 'string') return expression;
   if (typeof expression !== 'object') return String(expression);
   const node = expression as { queryChunks?: unknown[]; value?: unknown; name?: unknown };
-  if (Array.isArray(node.queryChunks)) return node.queryChunks.map(describeSql).join(' ');
+  if (Array.isArray(node.queryChunks)) {
+    return node.queryChunks.map(describeSql).join(' ').replace(/\s+/g, ' ');
+  }
   if (Array.isArray(node.value)) return node.value.join('');
   if (typeof node.value === 'string' || typeof node.value === 'number') return String(node.value);
   return typeof node.name === 'string' ? node.name : '';

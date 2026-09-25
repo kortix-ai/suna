@@ -302,7 +302,7 @@ projectsApp.openapi(
 
   // Visibility isolation: a scoped-out member can't read the commit history of
   // an agent/skill they aren't granted — return the same 404 as a missing file
-  // so the path isn't confirmed to exist. Mirrors files/content (r5.ts:477-484).
+  // so the path isn't confirmed to exist. Mirrors files/content (above).
   // See F-5 (weekly pentest run #4).
   const denier = await resourceDenierForRequest({
     userId: loaded.userId,

@@ -120,7 +120,7 @@ async function loadMutableConnection(c: any, projectId: string, connectionId: st
       metadata: connection.metadata,
     }),
   });
-  // Same rule as `mayMutateConnection` in r4: your own private account is
+  // Same rule as `mayMutateConnection` in connection-actions.ts: your own private account is
   // yours; anything shared with the project needs the manage capability.
   const allowed = reachable && (connection.ownerType === 'member' || mayManage);
   return allowed ? { loaded, connection } : null;

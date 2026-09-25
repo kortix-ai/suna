@@ -303,7 +303,7 @@ projectsApp.openapi(
     // PROJECT_SESSION_START)` is the usual bar for starting a turn, but that
     // leaf ships in the default agent preset (accounts/iam/role-presets.ts), so
     // it would admit the self-answer on a stock grant. Answering is a human
-    // operation. Same shape as the token-minting guard in r3.ts.
+    // operation. Same shape as the token-minting guard in project-credentials.ts.
     if (isProjectSessionPrincipal(c)) {
       return c.json({ error: 'Agent-session tokens cannot answer their own question' }, 403);
     }

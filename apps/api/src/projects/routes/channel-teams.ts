@@ -128,7 +128,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Connecting a Teams bot is a connector-write capability — a custom role can
     // withhold it and a scoped agent must hold it (central fold), mirroring the
-    // Slack (r4 slack/connect) and email connect twins.
+    // Slack (channel-slack.ts slack/connect) and email connect twins.
     // Authz before the feature-flag check so an unauthorized caller never gets a
     // capability-independent answer (same order as the file-upload twin below).
     await assertProjectCapability(
@@ -362,7 +362,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Posting a consent card drives the project bot to SEND into the customer's
     // Teams channel — a send primitive gated on connector-write like the Slack
-    // (r4 slack/file/upload) and meet/speak twins. Authz before the feature-flag
+    // (channel-slack.ts slack/file/upload) and meet/speak twins. Authz before the feature-flag
     // check so an unauthorized caller never gets a capability-independent answer.
     await assertProjectCapability(
       c,

@@ -117,7 +117,7 @@ projectsApp.openapi(
     } catch (error) {
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
-    // Same "degrade, never fail the create" rationale as r1.ts's provision
+    // Same "degrade, never fail the create" rationale as projects.ts's provision
     // handler — see the comment there.
     const icon = normalizeProjectIcon(body.icon);
     const iconGlyph = normalizeProjectGlyph(body.icon_glyph);

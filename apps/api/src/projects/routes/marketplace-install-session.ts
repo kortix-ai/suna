@@ -124,7 +124,7 @@ async function handleMarketplaceInstallSession(c: any) {
       metadata: { kind: 'marketplace-install', item_id: id },
     },
     visibility: 'project',
-    // Derive origin from the caller's token kind, same as POST /sessions (r7),
+    // Derive origin from the caller's token kind, same as POST /sessions (project-sessions.ts),
     // so a backend-driven install records origin='backend' rather than 'user'.
     authType: c.get('authType') as string | undefined,
     apiKeyType: c.get('apiKeyType') as string | undefined,

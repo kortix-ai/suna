@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { runtimeAgentRosterCacheKey } from './engine';
+import { runtimeAgentRosterCacheKey } from './runtime-client';
 
 describe('runtimeAgentRosterCacheKey', () => {
   // The roster was fetched with a hardcoded /workspace while the prompt is
