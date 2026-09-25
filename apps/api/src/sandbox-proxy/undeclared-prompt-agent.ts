@@ -4,8 +4,8 @@
  * INC-2026-09-15. A turn-start body (`/session/:id/prompt_async|message|command`)
  * names the agent to run, and three things follow that name verbatim: the
  * session token's grant (`remintGrantForAgentSwitch`), the prompt's secret env
- * (`syncSandboxEnvForPrompt`) and the runtime itself. `chief-of-staff` — an agent
- * of a DIFFERENT project — reached all three for ~50 sessions of unrelated
+ * (`syncSandboxEnvForPrompt`) and the runtime itself. An agent of a DIFFERENT
+ * project reached all three for ~50 sessions of unrelated
  * projects, and every one of them lost its CLI and connector access.
  *
  * The name is checked against the session's OWN project manifest before any of

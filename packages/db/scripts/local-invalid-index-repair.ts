@@ -13,8 +13,11 @@ export async function dropLocalInvalidIndexes(databaseUrl: string): Promise<stri
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
   try {
+    // The view lists builds in every database of the cluster. Only a build in
+    // THIS database can be one of the indexes dropped below; the local cluster
+    // also builds indexes in the db-suites lane's per-file databases.
     const activeBuilds = await client.query<{ count: number }>(
-      'select count(*)::int as count from pg_stat_progress_create_index',
+      'select count(*)::int as count from pg_stat_progress_create_index where datname = current_database()',
     );
     if ((activeBuilds.rows[0]?.count ?? 0) > 0) {
       throw new Error('Cannot repair local invalid indexes while an index build is active.');

@@ -67,10 +67,10 @@ describe('env-rpc route', () => {
 
   test('file ops round-trip on the real filesystem, failures are Results not 500s', async () => {
     const { call, workspace } = await makeApp()
-    const write = await call('writeFile', { path: 'notes/hello.txt', content: 'hi worker' })
+    const write = await call('writeFile', { path: 'notes/hello.txt', content: 'hi worker\nsecond line' })
     expect(write.body.ok).toBe(true)
     const read = await call('readTextFile', { path: 'notes/hello.txt' })
-    expect(read.body).toEqual({ ok: true, value: 'hi worker' })
+    expect(read.body).toEqual({ ok: true, value: 'hi worker\nsecond line' })
     const lines = await call('readTextLines', { path: 'notes/hello.txt', maxLines: 1 })
     expect(lines.body.value).toEqual(['hi worker'])
     const info = await call('fileInfo', { path: 'notes/hello.txt' })
@@ -93,6 +93,8 @@ describe('env-rpc route', () => {
     expect(rename.body.ok).toBe(true)
     const gone = await call('exists', { path: 'notes/hello.txt' })
     expect(gone.body.value).toBe(false)
+    const landed = await call('exists', { path: 'notes/renamed.txt' })
+    expect(landed.body.value).toBe(true)
   })
 
   test('exec runs a real shell in the workspace and reports exit codes', async () => {

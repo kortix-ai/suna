@@ -31,6 +31,8 @@ mock.module('../shared/crypto', () => ({
   isAccountToken: (t: string) => t.startsWith('kortix_pat_'),
   isServiceAccountToken: (t: string) => t.startsWith('kortix_sa_'),
   isKortixToken: (t: string) => t.startsWith('kortix_'),
+  isTunnelToken: (t: string) => t.startsWith('kortix_tun_'),
+  isApiKeySecretConfigured: () => true,
 }));
 
 mock.module('../repositories/account-tokens', () => ({
@@ -72,38 +74,78 @@ mock.module('../repositories/service-accounts', () => ({
   validateServiceAccountToken: async () => ({ isValid: false, error: 'Invalid service account' }),
 }));
 
+// `kortix_sb_attachment_runtime` is the legacy sandbox key the project-scope
+// tests use; `kortix_owner`/`kortix_other` are the preview-ownership tests'
+// account-holding Kortix tokens below. Distinct literal tokens, one function.
 mock.module('../repositories/api-keys', () => ({
-  validateSecretKey: async (token: string) =>
-    token === 'kortix_sb_attachment_runtime'
-      ? {
-          isValid: true,
-          type: 'sandbox',
-          sandboxId: SANDBOX_A,
-          accountId: ACCOUNT,
-          keyId: 'legacy-key',
-        }
-      : { isValid: false, error: 'Invalid Kortix token' },
+  validateSecretKey: async (token: string) => {
+    if (token === 'kortix_sb_attachment_runtime') {
+      return {
+        isValid: true,
+        type: 'sandbox',
+        sandboxId: SANDBOX_A,
+        accountId: ACCOUNT,
+        keyId: 'legacy-key',
+      };
+    }
+    if (token === 'kortix_owner') return { isValid: true, accountId: 'acct-owner' };
+    if (token === 'kortix_other') return { isValid: true, accountId: 'acct-other' };
+    return { isValid: false, error: 'Invalid Kortix token' };
+  },
 }));
 
+// `no-keys` is inconclusive (see shared/jwt-verify-outcome.ts) and falls
+// through to the shared/supabase network mock below; the preview-ownership
+// tests' jwt-* tokens get their own verdicts, everything else (incl. the
+// project-scope tests' non-Kortix bearer) keeps the original always-fall-through
+// behavior.
 mock.module('../shared/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
-  verifySupabaseJwt: async () => ({ ok: false, reason: 'no-keys' }),
+  verifySupabaseJwt: async (token: string) => {
+    if (token === 'jwt-owner') return { ok: true, userId: 'user-owner', email: 'owner@kortix.dev' };
+    if (token === 'jwt-other') return { ok: true, userId: 'user-other', email: 'other@kortix.dev' };
+    // jwt-fallback-{owner,other} AND every other/unrecognized bearer (e.g. the
+    // project-scope tests' plain JWT-shaped token): local verification can't
+    // judge it, so it falls through to the shared/supabase network mock above.
+    return { ok: false, reason: 'no-keys' };
+  },
 }));
+
+/** Supabase network-fallback user, for the jwt-fallback-* rows below. Unused
+ * (stays null) by every other test, reproducing the original always-401 stub. */
+let mockSupabaseUser: { id: string; email?: string } | null = null;
 
 mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
-    auth: { getUser: async () => ({ data: { user: null }, error: { message: 'invalid' } }) },
+    auth: {
+      getUser: async () => ({
+        data: { user: mockSupabaseUser },
+        error: mockSupabaseUser ? null : { message: 'invalid' },
+      }),
+    },
   }),
 }));
 
-// Sandbox → project resolution, keyed by sandboxId the same way the real
-// session_sandboxes lookup would be (uuid/externalId → project_id).
+/** The account that owns every sandbox in the preview-ownership describe below,
+ * or null for "no such sandbox". Unused (and inert) by every other test. */
+let mockSandboxAccountId: string | null = 'acct-owner';
+/** Signed-in people who belong to that owning account. */
+const OWNING_USERS = new Set(['user-owner', 'user-fallback-owner']);
+
+// Sandbox → project resolution (project-scope tests) and sandbox → owning
+// account / user (preview-ownership tests) are two different real functions on
+// two different combinedAuth branches (PAT vs Kortix-token/JWT) that never both
+// fire for the same request — one mock module, no interference.
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../shared/preview-ownership', () => ({
   ...realPreviewOwnership,
-  canAccessPreviewSandbox: async () => true,
+  canAccessPreviewSandbox: async ({ accountId, userId }: { accountId?: string; userId?: string }) => {
+    if (!mockSandboxAccountId) return false;
+    if (accountId) return accountId === mockSandboxAccountId;
+    return !!userId && OWNING_USERS.has(userId);
+  },
   resolveSandboxProjectId: async (sandboxId: string) =>
     sandboxProjectByOwnSandboxId[sandboxId] ?? null,
 }));
@@ -139,6 +181,9 @@ function appWithProbe() {
     c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
   );
   app.get('/v1/skills', (c) => c.json({ ok: true }));
+  // The preview-ownership describe block's one non-sandbox-shaped route: it
+  // must NOT be parsed as `/v1/p/:sandboxId/:port` (no ownership check applies).
+  app.post('/v1/p/share', (c) => c.json({ ok: true }));
   app.post('/v1/platform/runtime-projection', (c) =>
     c.json({
       ok: true,
@@ -456,5 +501,105 @@ describe('unknown-token attempt budget (pre-authentication, per client IP)', () 
       delete config.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN;
       resetTokenAttemptBudget();
     }
+  });
+});
+
+// `combinedAuth` on the path-form preview proxy (`/v1/p/:sandboxId/:port/*`):
+// which credential shapes it accepts, and how the ownership verdict maps to
+// 401/403/200 for each token branch. The ownership RULE itself runs on real
+// rows in __tests__/integration-preview-access.test.ts; here it is a verdict
+// this suite chooses.
+describe('preview auth ownership', () => {
+  const OWNED_SANDBOX = '8c70e5be-2f95-45ae-bd8d-5d07b65c631b';
+
+  beforeEach(() => {
+    mockSandboxAccountId = 'acct-owner';
+    mockSupabaseUser = null;
+  });
+
+  test('rejects request without auth token', async () => {
+    const res = await appWithProbe().request(`/v1/p/${OWNED_SANDBOX}/8000/session/status`);
+    expect(res.status).toBe(401);
+  });
+
+  test('allows owner via Bearer kortix token', async () => {
+    const res = await appWithProbe().request(`/v1/p/${OWNED_SANDBOX}/8000/session/status`, {
+      headers: { Authorization: 'Bearer kortix_owner' },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test('allows owner via X-Kortix-Token header', async () => {
+    const res = await appWithProbe().request(`/v1/p/${OWNED_SANDBOX}/8000/session/status`, {
+      headers: { 'X-Kortix-Token': 'kortix_owner' },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test('allows owner via preview session cookie with kortix token', async () => {
+    const res = await appWithProbe().request(`/v1/p/${OWNED_SANDBOX}/8000/session/status`, {
+      headers: { Cookie: '__preview_session=kortix_owner' },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test('rejects query-string bearer tokens on ordinary HTTP preview routes', async () => {
+    const res = await appWithProbe().request(
+      `/v1/p/${OWNED_SANDBOX}/8000/session/status?token=kortix_owner`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test('rejects non-owner kortix token', async () => {
+    const res = await appWithProbe().request(`/v1/p/${OWNED_SANDBOX}/8000/session/status`, {
+      headers: { Authorization: 'Bearer kortix_other' },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  test('rejects invalid X-Kortix-Token', async () => {
+    const res = await appWithProbe().request(`/v1/p/${OWNED_SANDBOX}/8000/session/status`, {
+      headers: { 'X-Kortix-Token': 'kortix_invalid' },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  test('allows jwt owner with matching account ownership', async () => {
+    const res = await appWithProbe().request(`/v1/p/${OWNED_SANDBOX}/8000/session/status`, {
+      headers: { Authorization: 'Bearer jwt-owner' },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test('rejects jwt user without ownership', async () => {
+    const res = await appWithProbe().request(`/v1/p/${OWNED_SANDBOX}/8000/session/status`, {
+      headers: { Authorization: 'Bearer jwt-other' },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  test('allows jwt owner via Supabase fallback path', async () => {
+    mockSupabaseUser = { id: 'user-fallback-owner', email: 'fallback@kortix.dev' };
+    const res = await appWithProbe().request(`/v1/p/${OWNED_SANDBOX}/8000/session/status`, {
+      headers: { Authorization: 'Bearer jwt-fallback-owner' },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test('rejects jwt via Supabase fallback without ownership', async () => {
+    mockSupabaseUser = { id: 'user-fallback-other', email: 'other@kortix.dev' };
+    const res = await appWithProbe().request(`/v1/p/${OWNED_SANDBOX}/8000/session/status`, {
+      headers: { Authorization: 'Bearer jwt-fallback-other' },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  test('does not treat /v1/p/share as a sandbox ownership route', async () => {
+    mockSandboxAccountId = null;
+    const res = await appWithProbe().request('/v1/p/share', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer kortix_owner' },
+    });
+    expect(res.status).toBe(200);
   });
 });

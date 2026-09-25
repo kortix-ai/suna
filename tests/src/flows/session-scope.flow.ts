@@ -367,7 +367,26 @@ flow(
     const params = { projectId: project.id, sessionId: session.id };
     const otherProjectId = randomUUID();
 
-    for (const key of ['legacy_migration', 'slack', 'email', 'telegram', 'teams', 'warm', 'trigger_session_key']) {
+    for (const key of [
+      'legacy_migration',
+      'slack',
+      'email',
+      'telegram',
+      'teams',
+      'warm',
+      'trigger_session_key',
+      'deletedAt',
+      'deletedBy',
+      // Owned by the title generator. A rename writes `name` → `custom_name`.
+      'name',
+      'title_source',
+      'source',
+      'trigger_kind',
+      'trigger_slug',
+      'workspace_mode',
+      'repository_access',
+      'sandbox_slug',
+    ]) {
       await ctx.step(`PATCH metadata.${key} → 400 (server-managed)`, async () => {
         (
           await owner.patch(
@@ -391,6 +410,42 @@ flow(
         )
       ).status(400);
     });
+
+    for (const field of ['status', 'sandbox_url', 'sandboxUrl', 'error']) {
+      await ctx.step(`PATCH ${field} → 400 (server-managed field)`, async () => {
+        (await owner.patch('/v1/projects/:projectId/sessions/:sessionId', { [field]: 'client-value' }, { params }))
+          .status(400)
+          .body()
+          .has('$.error', `field is server-managed: ${field}`);
+      });
+    }
+
+    await ctx.step('PATCH an unknown field → 400 (not user-editable)', async () => {
+      (await owner.patch('/v1/projects/:projectId/sessions/:sessionId', { random: 'field' }, { params }))
+        .status(400)
+        .body()
+        .has('$.error', 'field is not user-editable: random');
+    });
+
+    // A forged trigger identity would authorize the session as that trigger.
+    for (const [key, value] of [
+      ['source', 'trigger:scheduler'],
+      ['trigger_kind', 'git'],
+      ['trigger_slug', 'forged-trigger'],
+    ] as const) {
+      await ctx.step(`POST /sessions with metadata.${key} → 400 (server-managed)`, async () => {
+        (
+          await owner.post(
+            '/v1/projects/:projectId/sessions',
+            { metadata: { [key]: value } },
+            { params: { projectId: project.id } },
+          )
+        )
+          .status(400)
+          .body()
+          .has('$.error', `metadata key is server-managed: ${key}`);
+      });
+    }
 
     await ctx.step('POST /sessions with metadata.legacy_migration → 400 before any session is created', async () => {
       (

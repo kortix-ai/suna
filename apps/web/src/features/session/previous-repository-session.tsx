@@ -3,10 +3,13 @@
 /**
  * "This workspace started from the project's previous repository."
  *
- * Shown on a session whose preserved workspace predates a repository
- * replacement. The session keeps working — its Git proxy origin now resolves
- * to the current repository — but the files on disk still come from the old
- * one, so a push without a rebase can carry unrelated history.
+ * Shown on a session whose workspace predates a repository replacement. The
+ * session is NOT frozen: it starts, it runs the project's current config
+ * release, and it converges like any other session. What is still true of it
+ * is PHYSICAL — the clone on its disk came from the old repository, while
+ * `origin` now resolves to the new one. The two histories are unrelated, so a
+ * push without a rebase is refused by Git itself. That is the only thing this
+ * notice is about.
  *
  * Built to the same shape as the header's changes popover
  * (`SessionChangesIndicator`): a tile, a title, one line of explanation, and
@@ -32,7 +35,6 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { useSessionBaseRef } from '@/features/session/session-changes-shared';
 import { useTranslations } from '@/i18n/use-translations';
 import { useChatSendStore } from '@/stores/chat-send-store';
-import { isSessionStartError } from '@kortix/sdk';
 
 function repositoryGeneration(metadata: Record<string, unknown> | null | undefined): string | null {
   const generation = metadata?.repository_generation;
@@ -45,14 +47,6 @@ export function sessionUsesPreviousRepository(
 ): boolean {
   const current = repositoryGeneration(projectMetadata);
   return current !== null && repositoryGeneration(sessionMetadata) !== current;
-}
-
-export function isPreviousRepositorySessionError(error: unknown): boolean {
-  return isSessionStartError(error) && error.code === 'session_repository_changed';
-}
-
-export function isPreviousRepositoryRuntimeUnavailableError(error: unknown): boolean {
-  return isSessionStartError(error) && error.code === 'previous_repository_runtime_unavailable';
 }
 
 /**

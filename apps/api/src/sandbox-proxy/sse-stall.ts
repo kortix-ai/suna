@@ -69,11 +69,6 @@ export function shouldBypassIngressCache(key: string, nowMs = Date.now()): boole
   return nowMs - markedAtMs <= SSE_SILENT_MARK_MAX_AGE_MS;
 }
 
-/** Test seam: this registry is module state by design (one per api process). */
-export function resetSseStallRegistryForTests(): void {
-  silentStreamMarks.clear();
-}
-
 /**
  * Byte-counting passthrough for an SSE response body. Forwards chunks
  * untouched, preserves backpressure (one upstream read per `pull`), and calls

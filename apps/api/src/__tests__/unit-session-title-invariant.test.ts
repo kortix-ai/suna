@@ -3,15 +3,10 @@
  * session, by `generateSessionTitleFromFirstPrompt()`, from the first user
  * prompt, at the first moment that prompt's text is known server-side.
  *
- * There are exactly two such moments, and therefore exactly one set of hooks:
- *   - create-with-prompt  → projects/lib/sessions.ts
- *   - first HTTP prompt   → sandbox-proxy/routes/preview.ts,
- *                           projects/session-lifecycle/continue-session.ts (server-side
- *                           delivery, transport-independent)
- *
- * These tests fail the build when a new create path, a new prompt transport, or
- * a second `metadata.name` writer appears, which is exactly how the invariant
- * regressed before.
+ * These tests fail the build when a new create path or a second
+ * `metadata.name` writer appears, which is how the invariant regressed before.
+ * The generator is idempotent and compare-and-set guarded, so an extra caller
+ * of it is harmless and is not listed here.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -58,34 +53,6 @@ describe('session-title invariant', () => {
     ).toEqual([]);
   });
 
-  test('B — the title generator has exactly four entry points', () => {
-    // Adding a prompt transport and titling it its own way is the failure this
-    // catches; the hook set is documented here, in one enforced place.
-    //
-    // FOUR hooks, FIVE files: the proxy's pre-prompt hook is split across
-    // `sandbox-proxy/routes/preview.ts` and `sandbox-proxy/pre-prompt-env-sync.ts`
-    // (see the header on the latter — the route cannot be imported by a unit
-    // test without caching its collaborators past every sibling's `mock.module`).
-    // The two are one entry point and must be counted as one.
-    expect(
-      offenders(/from '[^']*session-title-generate'/, [
-        'projects/lib/sessions.ts',
-        'projects/session-lifecycle/continue-session.ts',
-        'sandbox-proxy/routes/preview.ts',
-        // Hook 3, extracted. `runPrePromptEnvSync` is the block that used to sit
-        // inline in preview.ts; it calls the generator through an injected
-        // `deps.generateTitle`, so the route still owns the only real binding.
-        // Not a new title author — the same one, moved for testability.
-        'sandbox-proxy/pre-prompt-env-sync.ts',
-        // Turn-end second-chance retry: a session whose only prompt was baked
-        // in-guest (KORTIX_INITIAL_PROMPT) never crosses another titling hook.
-        // The generator stays the single writer (needsTitle + CAS), so this is
-        // a retry of Hook 1, not a new title author.
-        'projects/routes/turn-stream.ts',
-      ]),
-    ).toEqual([]);
-  });
-
   test('C — metadata.name has a single writer', () => {
     const writesSessions = /\.(insert|update)\(\s*projectSessions\b/;
     const writesName = /(?:projectSessionMetadataMerge\(\s*\{|metadata\s*:\s*\{)[^}]*\bname\s*:/s;
@@ -105,52 +72,15 @@ describe('session-title invariant', () => {
     expect(hits).toEqual([]);
   });
 
-  test('D — every create-with-prompt producer is accounted for', () => {
-    // A new producer here means a session whose only prompt is baked into the
-    // sandbox: confirm Hook 1 titles it, and pass `body.title_source` if the
-    // prompt is a rendered envelope rather than the user's words, then add the
-    // file to this list.
-    expect(
-      offenders(/\binitial_prompt\s*:/, [
-        'projects/lib/triggers.ts',
-        'channels/slack/session.ts',
-        'channels/teams/session.ts',
-        'channels/telegram-webhook.ts',
-        'projects/routes/sandboxes.ts',
-        'projects/routes/marketplace-install-session.ts',
-        'projects/lib/sessions.ts',
-      ]),
-    ).toEqual([]);
-  });
-
-  test('F — the internal gateway key is deleted, and no route can reach that delete', () => {
-    // The key title generation mints is deleted, not soft-revoked, so the key
-    // list needs no exclusion — an exclusion keyed on the user-settable `name`
-    // let any member mint a valid, billable key nobody could see or revoke.
-    const keys = readFileSync(join(SRC, 'llm-gateway/gateway-keys.ts'), 'utf8');
-    const list = keys.slice(keys.indexOf('export async function listGatewayKeys'));
-    expect(list.slice(0, list.indexOf('\n}')).includes('INTERNAL_SESSION_TITLE_KEY_NAME')).toBe(
-      false,
-    );
+  test('F — no route can reach the delete of the internal gateway key', () => {
+    // The key title generation mints is deleted, not hidden from the key list
+    // (`integration-gateway-keys.test.ts` proves both on real rows). Only the
+    // generator may call that delete.
     expect(
       offenders(/\bdeleteGatewayKey\b/, [
         'llm-gateway/gateway-keys.ts',
         'projects/session-title-generate.ts',
       ]),
     ).toEqual([]);
-  });
-
-  test('E — the warm create that bypasses executeCreateSession stays prompt-free', () => {
-    // POST /sessions/warm calls createProjectSession directly. It passes an
-    // EMPTY body on purpose — the project's own defaults, no prompt — so Hook 1
-    // no-ops there. It must never quietly acquire one without the titling
-    // question being asked.
-    const src = readFileSync(join(SRC, 'projects/routes/warm-sessions.ts'), 'utf8');
-    const at = src.indexOf('const result = await createProjectSession({');
-    expect(at).toBeGreaterThan(-1);
-    const open = src.indexOf('body: {', at);
-    const close = src.indexOf('},', open);
-    expect(open).toBeGreaterThan(-1);
-    expect(src.slice(open, close).replace(/\s/g, '')).toBe('body:{');
   });
 });

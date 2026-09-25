@@ -97,15 +97,6 @@ export class WireTranscript {
     return this.order.length
   }
 
-  /** The newest user message id, or null. */
-  newestUserId(): string | null {
-    for (let i = this.order.length - 1; i >= 0; i--) {
-      const m = this.messages.get(this.order[i]!)
-      if (m?.info.role === 'user') return m.info.id
-    }
-    return null
-  }
-
   /** Replace the store from a persisted dump (restart restore). */
   load(messages: WireMessage[]): void {
     this.messages.clear()
