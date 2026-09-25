@@ -78,9 +78,10 @@ opencode:
 # skills grants the runtime itself can't express, plus workspace (the git
 # boundary) and enabled. `file` names the agent's `.md`; everything else
 # (description, mode, permission, temperature, the prompt itself, …) lives
-# in that file — open it to see/change what the agent actually does. v2 is deny-by-default: an omitted connectors/
-# secrets/kortix_permissions/skills grant resolves to "none", so a scoped specialist
-# starts locked down. The starter's own `kortix` agent is deliberately
+# in that file — open it to see/change what the agent actually does.
+# v2 is deny-by-default: an omitted connectors/secrets/kortix_permissions/
+# skills grant resolves to "none", so a scoped specialist starts locked down.
+# The starter's own `kortix` agent is deliberately
 # granted "all" across the board so a fresh project is capable out of the
 # box — narrow it once you know what this project actually needs.
 agents:
