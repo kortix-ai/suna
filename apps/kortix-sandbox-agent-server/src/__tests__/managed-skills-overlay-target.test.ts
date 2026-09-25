@@ -10,14 +10,14 @@
  * `git status` showed ` M .kortix/opencode/skills/kortix-cli/SKILL.md` on a
  * session nobody had touched. OpenCode did not even read that directory.
  */
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '../config'
 import { createOpenCodeAssetsService } from '../harness/open-code/assets'
 import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
-import { serveTestConfigDir } from './helpers/boot-link'
+import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
 
 const roots: string[] = []
 
@@ -39,6 +39,11 @@ async function fixture(): Promise<{ cfg: Config; workspaceConfigDir: string; ima
   } as unknown as Config
   return { cfg, workspaceConfigDir, imageDefaultDir }
 }
+
+// `serveTestConfigDir` redirects KORTIX_BOOT_CONFIG_ROOT at a throwaway
+// directory. Put it back: the override belongs to this file, and every later
+// reader of `bootConfigRoot()` must see the real default again.
+afterAll(restoreTestConfigRoot)
 
 afterEach(async () => {
   resetConfigReleaseStateForTests()

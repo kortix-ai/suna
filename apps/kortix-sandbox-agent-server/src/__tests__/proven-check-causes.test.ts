@@ -10,10 +10,27 @@
  *   - a tool that throws at import: `/config` and `/agent` answer 200,
  *     `/experimental/tool/ids` answers 500 `{"name":"UnknownError",...}`.
  */
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { describeOpencodeError, provenCheck } from '../harness/open-code/proven-check'
 
-const RELEASE = '/opt/kortix/config/17bf9646cb9e494d7bcef3b1c9994782ec42c5630996a05cb6416a5e320105d5'
+// `describeOpencodeError` strips a leading `bootLinkPath()`, and that reads
+// `KORTIX_BOOT_CONFIG_ROOT` on every call. The expectations below hold for ONE
+// root, so this file pins it instead of inheriting whatever the process has:
+// in CI run 36153691220 (packages lane) the boot link resolved elsewhere and
+// the file was named `boot/opencode.jsonc`. The pin closes the whole class —
+// a leaked override from another file, a lane-level variable, an `.env` — and
+// costs nothing: the daemon's own default is this path.
+const BOOT_CONFIG_ROOT = '/opt/kortix/config'
+const savedBootConfigRoot = process.env.KORTIX_BOOT_CONFIG_ROOT
+beforeAll(() => {
+  process.env.KORTIX_BOOT_CONFIG_ROOT = BOOT_CONFIG_ROOT
+})
+afterAll(() => {
+  if (savedBootConfigRoot === undefined) delete process.env.KORTIX_BOOT_CONFIG_ROOT
+  else process.env.KORTIX_BOOT_CONFIG_ROOT = savedBootConfigRoot
+})
+
+const RELEASE = `${BOOT_CONFIG_ROOT}/17bf9646cb9e494d7bcef3b1c9994782ec42c5630996a05cb6416a5e320105d5`
 const CONFIG_JSON_ERROR = {
   name: 'ConfigJsonError',
   data: {
@@ -60,11 +77,11 @@ describe('describeOpencodeError', () => {
     // a link to the release; OpenCode reports the path it read.
     const viaLink = {
       ...CONFIG_JSON_ERROR,
-      data: { ...CONFIG_JSON_ERROR.data, path: '/opt/kortix/config/boot/opencode.jsonc' },
+      data: { ...CONFIG_JSON_ERROR.data, path: `${BOOT_CONFIG_ROOT}/boot/opencode.jsonc` },
     }
     const cause = describeOpencodeError(400, JSON.stringify(viaLink), RELEASE)
     expect(cause.startsWith('ConfigJsonError in opencode.jsonc: ')).toBe(true)
-    const nested = { ...CONFIG_JSON_ERROR, data: { ...CONFIG_JSON_ERROR.data, path: '/opt/kortix/config/boot/agents/x.md' } }
+    const nested = { ...CONFIG_JSON_ERROR, data: { ...CONFIG_JSON_ERROR.data, path: `${BOOT_CONFIG_ROOT}/boot/agents/x.md` } }
     expect(describeOpencodeError(400, JSON.stringify(nested), RELEASE).startsWith('ConfigJsonError in agents/x.md')).toBe(true)
   })
 

@@ -149,12 +149,29 @@ const STATES: Array<{
   },
 ];
 
+/**
+ * The fallback chip the USER can see.
+ *
+ * A resumed session paints two header layers: the saved-session skeleton and
+ * the real chat underneath it. The dismissed layer stays mounted for the 300 ms
+ * crossfade (plus a 350 ms belt-and-braces unmount) behind `aria-hidden` and
+ * `inert` — see the dual-layer block in
+ * `apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx`.
+ * So `getByTestId('session-config-fallback-chip')` resolves to TWO elements
+ * inside that window, and a strict-mode violation throws at once instead of
+ * retrying: CI run 36153691220, browser-4 lane, all three attempts. A role
+ * query skips the `aria-hidden` layer and names exactly the chip on screen,
+ * which is also how the update badge beside it is already asserted.
+ */
+function fallbackChip(page: Page) {
+  return page.getByRole('button', { name: FALLBACK_LABEL, exact: true });
+}
+
 async function expectOnlyVisible(page: Page, visible: string | null) {
-  const locators: Record<string, ReturnType<Page['getByRole']> | ReturnType<Page['getByTestId']>> =
-    {
-      [UPDATE_LABEL]: page.getByRole('button', { name: UPDATE_LABEL, exact: true }),
-      [FALLBACK_LABEL]: page.getByTestId('session-config-fallback-chip'),
-    };
+  const locators: Record<string, ReturnType<Page['getByRole']>> = {
+    [UPDATE_LABEL]: page.getByRole('button', { name: UPDATE_LABEL, exact: true }),
+    [FALLBACK_LABEL]: fallbackChip(page),
+  };
   for (const [label, locator] of Object.entries(locators)) {
     if (label === visible) await expect(locator).toBeVisible();
     else await expect(locator).toHaveCount(0);
@@ -260,7 +277,7 @@ test('31 — session header renders every config release state from GET /config'
 
     await test.step('the fallback chip opens the reason, what runs now, and the failed release', async () => {
       await openWith(STATES[5].body);
-      await page.getByTestId('session-config-fallback-chip').click();
+      await fallbackChip(page).click();
       const detail = page.getByTestId('session-config-fallback-detail');
       await expect(detail).toBeVisible();
       await expect(detail.getByText('The new agent config failed to load', { exact: true })).toBeVisible();
@@ -286,7 +303,7 @@ test('31 — session header renders every config release state from GET /config'
           }),
         }),
       );
-      await page.getByTestId('session-config-fallback-chip').click();
+      await fallbackChip(page).click();
       const detail = page.getByTestId('session-config-fallback-detail');
       await expect(detail.getByText('The platform default config', { exact: true })).toBeVisible();
       await expect(detail.getByText('Failed release', { exact: true })).toHaveCount(0);
@@ -296,9 +313,9 @@ test('31 — session header renders every config release state from GET /config'
     await test.step('dark theme and a 720 × 480 window keep the chip inside the header', async () => {
       await page.emulateMedia({ colorScheme: 'dark' });
       await page.setViewportSize({ width: 720, height: 480 });
-      for (const [index, testId] of [[5, 'session-config-fallback-chip']] as const) {
+      for (const [index, name] of [[5, 'session-config-fallback-chip']] as const) {
         await openWith(STATES[index].body);
-        const chip = page.getByTestId(testId);
+        const chip = fallbackChip(page);
         await expect(chip).toBeVisible();
         const box = await chip.boundingBox();
         expect(box).not.toBeNull();
@@ -310,7 +327,7 @@ test('31 — session header renders every config release state from GET /config'
           .toBe(true);
         await page.screenshot({
           animations: 'disabled',
-          path: testInfo.outputPath(`${testId}-dark-720x480.png`),
+          path: testInfo.outputPath(`${name}-dark-720x480.png`),
         });
       }
     });

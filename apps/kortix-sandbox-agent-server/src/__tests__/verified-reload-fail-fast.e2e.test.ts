@@ -6,11 +6,11 @@
  * 2026-09-22): a syntax error in opencode.jsonc makes every directory route
  * answer 400 `ConfigJsonError`.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { serveTestConfigDir } from './helpers/boot-link'
+import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import { waitForOpencodeReady } from '../harness/open-code/lifecycle'
 import { createOpenCodeHarnessService } from '../harness/open-code/service'
@@ -46,6 +46,11 @@ console.log('opencode server listening on http://127.0.0.1:' + port)
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-reload-fail-fast-'))
 })
+
+// `serveTestConfigDir` redirects KORTIX_BOOT_CONFIG_ROOT at a throwaway
+// directory. Put it back: the override belongs to this file, and every later
+// reader of `bootConfigRoot()` must see the real default again.
+afterAll(restoreTestConfigRoot)
 
 afterEach(async () => {
   await stop?.()
