@@ -546,6 +546,21 @@ export async function settleOpenSandboxTurns(
   }
 }
 
+/** The backstop statement, built once so the index test EXPLAINs what ships. */
+export function settleOrphanedSandboxTurnsQuery(): SQL {
+  return sql`UPDATE kortix.session_turns t
+                SET state = 'ended',
+                    end_reason = coalesce(t.end_reason, 'runtime_gone'),
+                    ended_at = coalesce(t.ended_at, now()),
+                    updated_at = now()
+              WHERE t.state <> 'ended'
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM kortix.session_sandboxes s
+                   WHERE s.sandbox_id = t.sandbox_id
+                     AND s.status IN ('active', 'provisioning'))`;
+}
+
 /**
  * THE BACKSTOP: close every ledger row still open on a sandbox that is no
  * longer running, platform-wide.
@@ -568,18 +583,7 @@ export async function settleOpenSandboxTurns(
  */
 export async function settleOrphanedSandboxTurns(): Promise<number> {
   try {
-    const result = await execute(sql`
-      UPDATE kortix.session_turns t
-         SET state = 'ended',
-             end_reason = coalesce(t.end_reason, 'runtime_gone'),
-             ended_at = coalesce(t.ended_at, now()),
-             updated_at = now()
-       WHERE t.state <> 'ended'
-         AND NOT EXISTS (
-           SELECT 1
-             FROM kortix.session_sandboxes s
-            WHERE s.sandbox_id = t.sandbox_id
-              AND s.status IN ('active', 'provisioning'))`);
+    const result = await execute(settleOrphanedSandboxTurnsQuery());
     return (result as { count?: number } | null)?.count ?? 0;
   } catch (error) {
     console.warn(

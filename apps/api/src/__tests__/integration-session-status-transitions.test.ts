@@ -149,7 +149,10 @@ describe('stop (applyStoppedState)', () => {
       sandboxMetadata: {
         lastAliveAt: '2026-09-25T10:00:00.000Z',
         runtimeWakeId: 'wake-1',
+        runtimeWakeStartedAt: '2026-09-25T10:00:00.000Z',
+        activeTurn: { token: 'legacy-turn' },
         activeTurns: {},
+        lifecycleStopClaim: { token: 'claim-1' },
         pendingStopObservedAtMs: 1,
       },
     });
@@ -158,17 +161,29 @@ describe('stop (applyStoppedState)', () => {
       sessionId: f.sessionId,
       externalId: f.externalId,
       stopReason: 'manual',
-      metadata: { stoppedBy: 'user-1' },
+      // A nested stopReason never lands: the required top-level one is the
+      // single source of truth for why a box parked.
+      metadata: { stoppedBy: 'user-1', stopReason: 'run_cap' },
     });
     const { session, sandbox } = await read(f);
     expect(session.status).toBe('stopped');
     expect(sandbox.status).toBe('stopped');
     expect(sandbox.metadata.stopReason).toBe('manual');
+    expect(sandbox.metadata.stoppedAt).toEqual(expect.any(String));
     expect(sandbox.metadata.stoppedBy).toBe('user-1');
     expect(sandbox.metadata.lastAliveAt).toBe('2026-09-25T10:00:00.000Z');
-    expect(sandbox.metadata).not.toHaveProperty('runtimeWakeId');
-    expect(sandbox.metadata).not.toHaveProperty('activeTurns');
-    expect(sandbox.metadata).not.toHaveProperty('pendingStopObservedAtMs');
+    // The stop removes every in-flight wake key and all turn authority in the
+    // same statement, so a committed stop wins the start/stop race.
+    for (const key of [
+      'runtimeWakeId',
+      'runtimeWakeStartedAt',
+      'activeTurn',
+      'activeTurns',
+      'lifecycleStopClaim',
+      'pendingStopObservedAtMs',
+    ]) {
+      expect(sandbox.metadata).not.toHaveProperty(key);
+    }
   });
 
   test('keeps a dead-lettered `failed` session failed', async () => {
