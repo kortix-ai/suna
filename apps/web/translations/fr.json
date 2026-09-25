@@ -19312,7 +19312,17 @@
   },
   "commandPalette": {
     "title": "Palette de commandes",
-    "description": "Rechercher une commande à exécuter..."
+    "description": "Rechercher une commande à exécuter...",
+    "copyTitle": "Copier",
+    "copyEmail": "e-mail",
+    "copyUserId": "ID utilisateur",
+    "copyAccountId": "ID du compte",
+    "copyProjectId": "ID du projet",
+    "copySessionId": "ID de session",
+    "copySessionLink": "lien de la session",
+    "copyAction": "Copier {label}",
+    "copied": "Copié : {label}",
+    "copyFailed": "Impossible de copier dans le presse-papiers"
   },
   "personalWelcome": {
     "dismiss": "Fermer",
