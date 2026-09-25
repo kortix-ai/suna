@@ -4,7 +4,7 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import { cn } from '@/lib/utils';
 import { CheckIcon } from '@phosphor-icons/react';
-import { useState } from 'react';
+import React, { useState } from 'react';
 
 /**
  * The logo tile is white in both themes. Catalogue logos are third-party art
@@ -14,10 +14,56 @@ import { useState } from 'react';
  */
 const LOGO_TILE_BACKGROUND = 'bg-white';
 
+const TILE_SIZE = {
+  md: 'size-8 rounded-md',
+  xs: 'size-5 rounded-sm',
+} as const;
+
+/**
+ * One tile, used for BOTH marks, so the Kortix tile and the app tile are the
+ * same box: same size, same radius, same hairline edge.
+ *
+ * The edge is a ring on an overlay ABOVE the content, not a border (which
+ * shrinks a full-bleed logo) and not an outline (which sits 1px inside, so any
+ * logo pixel outside the rounded clip showed around it).
+ */
+function HandshakeTile({
+  size,
+  className,
+  children,
+}: {
+  size: keyof typeof TILE_SIZE;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        'relative flex shrink-0 items-center justify-center overflow-hidden',
+        TILE_SIZE[size],
+        className,
+      )}
+    >
+      {children}
+      <span
+        aria-hidden
+        className={cn(
+          'ring-border pointer-events-none absolute inset-0 ring-1 ring-inset',
+          TILE_SIZE[size],
+        )}
+      />
+    </span>
+  );
+}
+
 /**
  * The app's own logo, or its first letter when there is none (or it fails to
  * load). Never the generic plug: the whole point of the tile is to say WHICH
  * app, and a plug says only "some app".
+ *
+ * The `<img>` carries the radius itself. The tile's `overflow-hidden` alone did
+ * not contain it: WebKit skips a rounded overflow clip for a composited child
+ * (the card animates in), and the logo's square corners painted past the edge.
  */
 export function ConnectorAppMark({
   name,
@@ -26,22 +72,12 @@ export function ConnectorAppMark({
 }: {
   name: string;
   iconUrl: string | null;
-  size?: 'xs' | 'md';
+  size?: keyof typeof TILE_SIZE;
 }) {
   const [broken, setBroken] = useState(false);
   if (!iconUrl || broken) return <EntityAvatar label={name} size={size} />;
   return (
-    <span
-      className={cn(
-        'flex shrink-0 items-center justify-center overflow-hidden',
-        // An outline, not a border: it is painted over the image, so a full-bleed
-        // logo keeps the tile's exact size and a white-ground logo (Linear,
-        // Asana) still has an edge on a light card instead of floating.
-        'outline-border outline-1 -outline-offset-1',
-        LOGO_TILE_BACKGROUND,
-        size === 'md' ? 'size-8 rounded-md' : 'size-5 rounded-sm',
-      )}
-    >
+    <HandshakeTile size={size} className={LOGO_TILE_BACKGROUND}>
       {/* eslint-disable-next-line @next/next/no-img-element -- third-party catalog logo on an arbitrary host */}
       <img
         src={iconUrl}
@@ -49,9 +85,9 @@ export function ConnectorAppMark({
         referrerPolicy="no-referrer"
         draggable={false}
         onError={() => setBroken(true)}
-        className="size-full object-contain select-none"
+        className={cn('size-full object-contain select-none', TILE_SIZE[size])}
       />
-    </span>
+    </HandshakeTile>
   );
 }
 
@@ -62,6 +98,11 @@ export function ConnectorAppMark({
  *
  * `connected` puts a green check on the app's corner, so a settled card still
  * says which app it connected.
+ *
+ * Responsive by the CARD's width, not the viewport's: the chat column narrows
+ * with side panels open as much as on a phone. The card is the `@container/connect`
+ * (see `setup-link-button.tsx`). Below 28rem the Kortix tile and the bridge drop
+ * away and the app logo alone leads, which gives the title the room it needs.
  */
 export function ConnectorHandshake({
   name,
@@ -74,9 +115,9 @@ export function ConnectorHandshake({
 }) {
   return (
     <span className="flex shrink-0 items-center gap-1.5" aria-hidden>
-      <span className="bg-foreground text-background flex size-8 shrink-0 items-center justify-center rounded-md">
+      <HandshakeTile size="md" className="bg-foreground text-background hidden @md/connect:flex">
         <KortixLogo variant="icon" size={14} />
-      </span>
+      </HandshakeTile>
       {/*
         The bridge is one SVG, not five sized spans. Dots of 2–3px on the
         fractional spacing grid (`--spacing` is 0.23rem) land on sub-pixel
@@ -87,7 +128,7 @@ export function ConnectorHandshake({
         width="24"
         height="6"
         viewBox="0 0 24 6"
-        className="text-muted-foreground shrink-0"
+        className="text-muted-foreground hidden shrink-0 @md/connect:block"
         fill="currentColor"
       >
         <circle cx="2" cy="3" r="1" opacity="0.3" />

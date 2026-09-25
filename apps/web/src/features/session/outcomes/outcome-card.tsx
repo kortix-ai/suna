@@ -61,6 +61,7 @@ export const OutcomeCard = memo(function OutcomeCard({
   onOpen,
   icon,
   media,
+  titleClassName,
   actionVariant = 'outline',
   pending = false,
   className,
@@ -85,6 +86,12 @@ export const OutcomeCard = memo(function OutcomeCard({
    * over `icon`.
    */
   media?: React.ReactNode;
+  /**
+   * Extra classes on the title text. The default is one truncated line; the
+   * connect card lets its title wrap to two lines on a narrow card, where the
+   * app and project names are the whole point of the row.
+   */
+  titleClassName?: string;
   /**
    * The action button's variant. Defaults to `outline`, which is right for the
    * transcript: an outcome row is a RECORD, and a filled button on every one of
@@ -171,7 +178,9 @@ export const OutcomeCard = memo(function OutcomeCard({
       */}
       <ItemContent className="min-w-0 gap-0.5">
         <ItemTitle className="w-full">
-          <span className="truncate">{truncateOutcomeTitle(outcome.title)}</span>
+          <span className={cn('truncate', titleClassName)}>
+            {truncateOutcomeTitle(outcome.title)}
+          </span>
         </ItemTitle>
         <ItemDescription className="truncate text-xs">{outcomeMetaLine(outcome)}</ItemDescription>
       </ItemContent>

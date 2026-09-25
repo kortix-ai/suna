@@ -212,7 +212,10 @@ export function SetupLinkButton({
       actionVariant={settled ? 'outline' : 'default'}
       pending={pending}
       onOpen={() => setOpen(true)}
-      className="my-2"
+      // The query container for `ConnectorHandshake`'s narrow layout. Below
+      // 28rem the title wraps to two lines instead of cutting off the app name.
+      titleClassName="@max-md/connect:line-clamp-2 @max-md/connect:whitespace-normal"
+      className="@container/connect my-2"
     />
   );
 
