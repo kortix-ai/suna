@@ -137,10 +137,9 @@ export const RESPAWN_REQUIRED_ENV_NAMES = [
  * 208). Whether `POST /global/dispose` re-registers a server that was not
  * previously in the set is UNVERIFIED against the pinned opencode.
  *
- * Left alone rather than guessed at: adding it here breaks the tested
- * invariant in dispose-reload.test.ts ("every name spawnChild consumes outside
- * the config file is listed") and would buy an ~8s respawn for a case nobody
- * has measured. Resolve it with a live sandbox — enable the face mid-session,
+ * Left alone rather than guessed at: every name here is one spawnChild
+ * consumes OUTSIDE the config file, which this name is not, and adding it
+ * would buy an ~8s respawn for a case nobody has measured. Resolve it with a live sandbox — enable the face mid-session,
  * then ask opencode whether the server is registered — and update whichever
  * comment turns out to be false.
  */
@@ -1978,8 +1977,7 @@ export function createOpencodeLifecycle(
 
   /**
    * Signal a process GROUP and resolve once it is gone (or the hard-kill
-   * deadline passes). Extracted from stop() so the verified reload can retire
-   * the old opencode with the same discipline.
+   * deadline passes). stop() and the verified reload's retirement both use it.
    */
   function killProcessGroup(proc: ChildProcess, signal: NodeJS.Signals): Promise<void> {
     const killGroup = (sig: NodeJS.Signals) => {
@@ -2428,39 +2426,11 @@ export function createOpencodeLifecycle(
         readinessTimer = null
       }
       if (!child) return
-      const c = child
-      // Spawned with detached: true, so c.pid also identifies the process
-      // group opencode leads — signal the whole group (-pid), not just this
-      // direct child, so a grandchild opencode forks (e.g. its own `bun
-      // install` for the config dir) can't outlive the kill and race a
-      // freshly-spawned opencode's install into the same directory. Falls
-      // back to a plain child kill if the group signal itself throws.
-      const killGroup = (sig: NodeJS.Signals) => {
-        if (c.pid) {
-          try {
-            process.kill(-c.pid, sig)
-            return
-          } catch {}
-        }
-        c.kill(sig)
-      }
-      return new Promise<void>((resolve) => {
-        const onExit = () => resolve()
-        c.once('exit', onExit)
-        try {
-          killGroup(signal)
-        } catch {
-          resolve()
-          return
-        }
-        // Hard kill if the child (or its group) ignores SIGTERM.
-        setTimeout(() => {
-          try {
-            killGroup('SIGKILL')
-          } catch {}
-          resolve()
-        }, 5_000).unref()
-      })
+      // Spawned with detached: true, so the pid also names the process group
+      // OpenCode leads: signal the whole group, so a grandchild it forked (its
+      // own `bun install` for the config dir) cannot outlive the kill and race
+      // a fresh OpenCode's install into the same directory.
+      await killProcessGroup(child, signal)
     },
 
     async restart() {

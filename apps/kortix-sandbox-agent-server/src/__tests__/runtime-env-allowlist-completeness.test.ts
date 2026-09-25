@@ -37,7 +37,7 @@ const SECRET_CAPABILITIES_SRC = readFileSync(
   'utf8',
 )
 
-/** The allowlist body, parsed the same way `compiled-agent-config-env.test.ts` does. */
+/** The allowlist body in control.ts. */
 function runtimeEnvAllowlist(): Set<string> {
   const body = ENV_ROUTE.split('const OPENCODE_RUNTIME_ENV_NAMES = new Set([')[1]?.split('])')[0]
   expect(body).toBeTruthy()

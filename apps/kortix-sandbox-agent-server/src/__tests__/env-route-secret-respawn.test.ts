@@ -267,7 +267,7 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     // Pins CURRENT behaviour, which is not obviously the intended one.
     // `KORTIX_CONNECTORS_MCP_ENABLED` shapes `out.mcp` inside the config file,
     // so it follows the config-file rule and disposes rather than respawns —
-    // consistent with the invariant in dispose-reload.test.ts.
+    // consistent with RESPAWN_REQUIRED_ENV_NAMES (lifecycle.ts).
     //
     // But routes/env.ts:21 claims this variable "must restart OpenCode because
     // MCP servers are registered only at spawn". If that claim is right, the
