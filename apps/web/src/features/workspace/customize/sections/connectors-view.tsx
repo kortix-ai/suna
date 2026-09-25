@@ -13,6 +13,7 @@ import {
   PlugIcon as Plug,
   PlusIcon as Plus,
   MagnifyingGlassIcon as Search,
+  ShareNetworkIcon,
   UsersIcon as Users,
   XIcon as X,
   LightningIcon as Zap,
@@ -91,6 +92,7 @@ import {
   type ConnectorConfig,
   type ConnectorDraftInput,
   type ConnectorRequestAuthType,
+  connectionSharedWithEveryone,
   createConnector,
   deleteConnector,
   discoverConnectionOAuth2,
@@ -99,6 +101,7 @@ import {
   ensureProjectConnectorConnection,
   getConnectorConfig,
   getConnectStatus,
+  getProjectDetail,
   listAllConnections,
   listConnections,
   renameConnection,
@@ -117,7 +120,8 @@ import {
   startConnectionOAuth2DeviceAuthorization,
   updateConnectionCredential,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import {
   buildEasyConnectConnectorDraft,
   buildEmailConnectorConnectionSlug,
@@ -152,7 +156,7 @@ import {
 } from './connector-oauth2-auto';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { DiscoverCatalogue } from './discover-catalogue';
-import { connectorConnectionRows } from './view/connector-connections';
+import { connectorConnectionRows, sharedAudienceSummary } from './view/connector-connections';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
@@ -232,6 +236,7 @@ function ConnectionRow({
   onRename,
   onStartSession,
   onSetCredential,
+  onShare,
   pending,
   disabled = false,
 }: {
@@ -248,15 +253,19 @@ function ConnectionRow({
    *  account instead of a connector-wide one; managed (Composio/Pipedream)
    *  providers re-authorize through OAuth instead, so this is omitted there. */
   onSetCredential?: () => void;
+  /** Open the share dialog: who may use this SHARED account. */
+  onShare?: () => void;
   pending: boolean;
   disabled?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSharing = useTranslations('accessSharing');
   const isProjectAuthorization = connection.owner_type === 'project';
   const active = connection.status === 'active';
   // Only the owner of a connection may change it: your own personal connection,
   // or, for a project authorization, a project manager.
   const mayMutate = isProjectAuthorization ? canManage : isMine;
+  const audience = sharedAudienceSummary(connection);
 
   const { copy } = useCopy({ successMessage: tI18nComplete.raw('text56ee71f3ece0') });
 
@@ -284,9 +293,15 @@ function ConnectionRow({
           )}
         </div>
         <InlineMeta>
-          {isProjectAuthorization
-            ? tI18nComplete.raw('text1c22fac2a9fd')
-            : tI18nComplete.raw('text1e1353702c42')}
+          {audience?.kind === 'narrowed'
+            ? audience.more > 0
+              ? tSharing('sharedWithMore', { names: audience.names.join(', '), count: audience.more })
+              : tSharing('sharedWith', { names: audience.names.join(', ') })
+            : isProjectAuthorization
+              ? tI18nComplete.raw('text1c22fac2a9fd')
+              : tI18nComplete.raw('text1e1353702c42')}
+          {/* Listed only because the caller manages the project's connections. */}
+          {connection.usable === false ? tSharing('notSharedWithYou') : null}
           {active ? null : connection.status === 'revoked' ? 'Disconnected' : 'Error'}
           {/* WHO the account was authorized as. Hidden when the label already
               says it (finalize names a default-labelled account after it). */}
@@ -301,6 +316,19 @@ function ConnectionRow({
           </Hint>
         </InlineMeta>
       </div>
+      {isProjectAuthorization && mayMutate && onShare ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0 gap-1.5"
+          onClick={onShare}
+          disabled={pending || disabled}
+          aria-label={tSharing('shareTitle', { label: connection.label })}
+        >
+          <ShareNetworkIcon className="size-3.5 shrink-0" />
+          {tI18nComplete.raw('text29887a5ff984')}
+        </Button>
+      ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -378,6 +406,7 @@ function ConnectionOwnerGroup({
   onRename,
   onStartSession,
   onSetCredential,
+  onShare,
 }: {
   title: string;
   action: React.ReactNode;
@@ -393,6 +422,7 @@ function ConnectionOwnerGroup({
   onRename: (connection: Connection) => void;
   onStartSession?: (connection: Connection) => void;
   onSetCredential?: (connection: Connection) => void;
+  onShare?: (connection: Connection) => void;
 }) {
   return (
     <section className="space-y-4">
@@ -422,6 +452,7 @@ function ConnectionOwnerGroup({
               onRename={() => onRename(connection)}
               onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
               onSetCredential={onSetCredential ? () => onSetCredential(connection) : undefined}
+              onShare={onShare ? () => onShare(connection) : undefined}
             />
           ))}
         </ul>
@@ -468,6 +499,7 @@ export function ConnectionsList({
   disabled?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSharing = useTranslations('accessSharing');
   // A direct provider (openapi/http/mcp/graphql/…) has no hosted OAuth: "Add"
   // creates (or selects) the account and this then opens `SetCredentialModal`
   // for it — the same create-then-credential sequence `connector-modal.tsx`
@@ -484,6 +516,16 @@ export function ConnectionsList({
     connectionId: string;
     owner: ConnectionOwner;
   } | null>(null);
+  // The shared account whose audience the share dialog edits.
+  const [shareTarget, setShareTarget] = useState<Connection | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const accountId = useProjectAccountId(projectId);
+  const projectDetailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    enabled: canManageConnections,
+    ...contract('config'),
+  });
 
   const connectionsQuery = useQuery({
     queryKey: ['connections', projectId],
@@ -613,7 +655,7 @@ export function ConnectionsList({
   return (
     <div className="space-y-6">
       <ConnectionOwnerGroup
-        title={tI18nComplete.raw('text1c22fac2a9fd')}
+        title={tSharing('sharedAccountsTitle')}
         action={
           canManageConnections ? (
             <Button
@@ -645,7 +687,38 @@ export function ConnectionsList({
         onDisconnect={setConfirmDisconnect}
         onRename={openRename}
         onStartSession={onStartSession}
+        onShare={
+          accountId
+            ? (connection) => {
+                setShareTarget(connection);
+                setShareOpen(true);
+              }
+            : undefined
+        }
       />
+
+      {accountId && shareTarget ? (
+        <AccessDialog
+          key={shareTarget.connection_id}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          accountId={accountId}
+          scope={{
+            kind: 'project',
+            projectId,
+            projectName: projectDetailQuery.data?.project?.name ?? '',
+          }}
+          mode={{
+            kind: 'share',
+            object: { type: 'connection', id: shareTarget.connection_id, label: shareTarget.label },
+            current:
+              connectionsQuery.data?.connections.find(
+                (connection) => connection.connection_id === shareTarget.connection_id,
+              )?.shared_with ?? [],
+          }}
+          onDone={refresh}
+        />
+      ) : null}
 
       <ConnectionOwnerGroup
         title={tI18nComplete.raw('textc080649df657')}
