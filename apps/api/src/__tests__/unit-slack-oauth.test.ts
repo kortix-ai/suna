@@ -258,3 +258,26 @@ describe('Slack OAuth installer identity', () => {
     expect(linkCalls).toHaveLength(0);
   });
 });
+
+/**
+ * A bad or foreign state is refused the same way whether or not Slack OAuth
+ * is configured on this deployment, so the refusal never depends on setup.
+ */
+describe('Slack install completion checks the state before the server setup', () => {
+  test('without Slack OAuth configured, a malformed state is 400 and a foreign one 403; a valid one is 503', async () => {
+    const { config } = (await import('../config')) as { config: Record<string, unknown> };
+    const state = stateFromInstallUrl();
+    const original = config.SLACK_CLIENT_ID;
+    config.SLACK_CLIENT_ID = '';
+    try {
+      const run = (over: { state: string; userId?: string }) =>
+        oauth.completeSlackOauthInstall({ projectId: PROJECT_ID, userId: USER_ID, code: 'code-1', ...over });
+      expect(await run({ state: 'not-signed' })).toMatchObject({ ok: false, status: 400 });
+      expect(await run({ state, userId: 'someone-else' })).toMatchObject({ ok: false, status: 403 });
+      expect(await run({ state })).toMatchObject({ ok: false, status: 503 });
+      expect(saveCalls).toHaveLength(0);
+    } finally {
+      config.SLACK_CLIENT_ID = original;
+    }
+  });
+});

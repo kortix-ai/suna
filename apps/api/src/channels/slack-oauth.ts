@@ -97,13 +97,15 @@ export async function completeSlackOauthInstall(input: {
   code: string;
   state: string;
 }): Promise<InstallCompletion> {
+  // The state is checked first, so a bad or foreign state answers the same on
+  // every deployment; only a valid one learns whether Slack OAuth is set up.
+  const checked = stateForCaller(verifyState(input.state), input);
+  if (!checked.ok) return checked;
+  const payload = checked.state;
   const mode = slackOauthMode();
   if (!mode.available || !mode.clientId || !mode.clientSecret) {
     return { ok: false, status: 503, error: 'Slack OAuth is not configured on this server.' };
   }
-  const checked = stateForCaller(verifyState(input.state), input);
-  if (!checked.ok) return checked;
-  const payload = checked.state;
   const done = (qs: Record<string, string | undefined>): InstallCompletion => ({
     ok: true,
     redirectUrl: dashboardUrl({ projectId: payload.projectId, ...qs }),
