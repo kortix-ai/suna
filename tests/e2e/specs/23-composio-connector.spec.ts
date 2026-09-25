@@ -1,10 +1,13 @@
 import { expect, test } from "@playwright/test";
 
+import { loadEnv } from "../../src/core/env";
+import { setDatabaseEnterpriseDemo } from "../../src/fixtures/database-project";
 import { resolvePersonalAccountId } from "../helpers/accounts";
 import { createApiJsonClient, createApiResultClient } from "../helpers/http";
 import {
   type ManifestProject,
   createManifestProject,
+  fundAccount,
 } from "../helpers/manifest-project";
 import {
   type AuthSession,
@@ -520,6 +523,135 @@ test.describe("23 — Composio managed connector", () => {
     expect(
       readBack.connections.find((item) => item.connection_id === created.connection_id)?.label,
     ).toBe("Shared support inbox");
+    expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
+  });
+
+  test("narrows a shared account to a group from its Share dialog, then opens it to everyone again", async ({
+    page,
+  }) => {
+    // The same AccessDialog as "Grant access", in its `share` mode: who can use
+    // the account now, plus the principal picker. Groups need the rbac
+    // entitlement, which the enterprise demo turns on for this account.
+    await fundAccount(databaseUrl!, accountId);
+    await setDatabaseEnterpriseDemo(loadEnv(), accountId, true);
+    const runId = Date.now().toString(36);
+    const slug = `e2e-share-${runId}`;
+    const groupName = `Sales ${runId}`;
+    await api(
+      session.access_token,
+      "POST",
+      `/connectors/projects/${project.id}/connectors`,
+      { slug, provider: "mcp", url: "https://ke2e.kortix.test/mcp", auth: { type: "none" } },
+      200,
+    );
+    const shared = await api<{ connection_id: string }>(
+      session.access_token,
+      "POST",
+      `/projects/${project.id}/connections`,
+      { connector_alias: slug, owner_type: "project", label: "Team CRM" },
+      201,
+    );
+    const group = await api<{ group_id: string }>(
+      session.access_token,
+      "POST",
+      `/accounts/${accountId}/iam/groups`,
+      { name: groupName },
+      201,
+    );
+    const projectName = (
+      await api<{ name: string }>(session.access_token, "GET", `/projects/${project.id}`)
+    ).name;
+
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    const url = `/projects/${project.id}/customize/connectors?scope=connected&c=${slug}`;
+    await installBrowserSessionDirect(page, session, url, authOptions);
+    await selectAccountForUi(page, accountId);
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await dismissOnboarding(page);
+
+    const row = page.getByRole("listitem").filter({ hasText: "Team CRM" });
+    await expect(row).toBeVisible({ timeout: 60_000 });
+    await expect(row.getByText("Shared with the project")).toBeVisible();
+    await expect(page.getByText("Shared accounts", { exact: true })).toBeVisible();
+
+    // ── Narrow it to the group ───────────────────────────────────────────
+    await row.getByRole("button", { name: "Share Team CRM", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Share Team CRM", exact: true });
+    await expect(dialog).toBeVisible();
+    const audience = dialog.getByTestId("share-audience");
+    await expect(audience.getByText(`Everyone in ${projectName}`)).toBeVisible();
+    await expect(dialog.getByTestId("share-result")).toContainText(`Everyone in ${projectName} can use`);
+
+    await dialog.getByRole("button", { name: groupName }).click();
+    await expect(dialog.getByTestId("share-result")).toContainText("Only the people you chose");
+
+    const grantRequest = page.waitForRequest(
+      (request) =>
+        /\/v1\/accounts\/[^/]+\/iam\/assignments$/.test(request.url()) && request.method() === "POST",
+    );
+    const grantResponse = page.waitForResponse(
+      (response) =>
+        /\/v1\/accounts\/[^/]+\/iam\/assignments$/.test(response.url()) &&
+        response.request().method() === "POST",
+    );
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    expect((await grantRequest).postDataJSON()).toEqual(
+      expect.objectContaining({
+        principal_type: "group",
+        principal_id: group.group_id,
+        role_key: "agent-user",
+        scope_type: "project",
+        scope_id: project.id,
+        object_type: "connection",
+        object_id: shared.connection_id,
+      }),
+    );
+    const granted = await grantResponse;
+    expect(granted.status()).toBe(201);
+    const grantId = ((await granted.json()) as { assignment_id: string }).assignment_id;
+
+    await expect(dialog).not.toBeVisible();
+    await expect(page.getByText("Access updated")).toBeVisible();
+    await expect(row.getByText(`Shared with ${groupName}`)).toBeVisible();
+    // The owner manages the account but is not in the group.
+    await expect(row.getByText("Not shared with you")).toBeVisible();
+
+    const narrowed = await api<{
+      connections: Array<{
+        connection_id: string;
+        usable?: boolean;
+        shared_with?: Array<{ grant_id: string; principal_type: string; principal_id: string; label: string }>;
+      }>;
+    }>(session.access_token, "GET", `/projects/${project.id}/connections`);
+    const narrowedRow = narrowed.connections.find((c) => c.connection_id === shared.connection_id);
+    expect(narrowedRow?.usable).toBe(false);
+    expect(narrowedRow?.shared_with).toEqual([
+      expect.objectContaining({
+        grant_id: grantId,
+        principal_type: "group",
+        principal_id: group.group_id,
+        label: groupName,
+      }),
+    ]);
+
+    // ── Remove the group: everyone again ─────────────────────────────────
+    await row.getByRole("button", { name: "Share Team CRM", exact: true }).click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: `Remove ${groupName}`, exact: true }).click();
+    await expect(dialog.getByText("Removed when you save")).toBeVisible();
+    await expect(dialog.getByTestId("share-result")).toContainText(`Everyone in ${projectName} can use`);
+    const revokeResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/iam/assignments/${grantId}`) &&
+        response.request().method() === "DELETE",
+    );
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    expect((await revokeResponse).status()).toBe(200);
+    await expect(dialog).not.toBeVisible();
+    await expect(row.getByText("Shared with the project")).toBeVisible();
+    await expect(row.getByText("Not shared with you")).toHaveCount(0);
+
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
 
