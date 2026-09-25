@@ -7,7 +7,6 @@
  * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here).
  */
 import { flow } from '../core/flow';
-import { asPlatformAdmin } from '../fixtures/enterprise-demo';
 
 // PROJ-2 — BYO repo create. A non-GitHub repo_url is rejected at the
 // normalizeRepoUrl boundary (400) before any GitHub round-trip; MEMBER /
@@ -615,16 +614,14 @@ flow(
 // project visible (404) → project.customize.write (403) → project LLM gateway
 // enabled (404 llm_gateway_disabled). Same caller + same project state → same
 // status on both verbs. Every denial fires before model servability is
-// checked; the positive path grants the team managed models through the
-// run-scoped platform admin, so the flow needs no funded account.
+// checked. PROJ-27 covers the funded set/read/clear lifecycle; this local
+// flow proves an authorized writer reaches model validation and deletion.
 flow(
   'PROJ-37',
   {
     domain: 'projects',
     routes: [
       'PATCH /v1/projects/:projectId/experimental',
-      'POST /v1/admin/api/accounts/:id/managed-models',
-      'GET /v1/projects/:projectId/model-picker',
       'GET /v1/projects/:projectId/model-defaults',
       'PUT /v1/projects/:projectId/model-defaults',
       'DELETE /v1/projects/:projectId/model-defaults',
@@ -676,24 +673,12 @@ flow(
         (await del(ctx.P.NONMEMBER, project.id)).status([403, 404]);
       }
     });
-    await ctx.step('project manager sets, reads, and clears the project default while the gateway is on', async () => {
-      (await asPlatformAdmin(ctx).post(
-        '/v1/admin/api/accounts/:id/managed-models',
-        { override: true },
-        { params: { id: team.id } },
-      )).status(200).body().has('$.override', true);
-      const picker = await ctx.client
-        .as(manager)
-        .get('/v1/projects/:projectId/model-picker', { params: { projectId: gatewayOn.id } });
-      picker.status(200);
-      const models = picker.json<{ models?: Record<string, unknown> }>().models ?? {};
-      const model = Object.keys(models).find((id) => id !== 'auto' && !id.includes('/'));
-      if (!model) throw new Error(`model-picker returned no managed model: ${picker.text()}`);
-      (await put(manager, gatewayOn.id, model)).status(200)
-        .body().has('$.ok', true).has('$.scope', 'project').has('$.model', model);
+    await ctx.step('project manager reaches model validation and deletion while the gateway is on', async () => {
+      (await put(manager, gatewayOn.id)).status(409)
+        .body().has('$.code', 'model_not_servable');
       const read = () =>
         ctx.client.as(manager).get(path, { params: { projectId: gatewayOn.id } });
-      (await read()).status(200).body().has('$.projectDefault', model);
+      (await read()).status(200).body().has('$.projectDefault', null);
       (await del(manager, gatewayOn.id)).status(200).body().has('$.ok', true).has('$.scope', 'project');
       (await read()).status(200).body().has('$.projectDefault', null);
     });
