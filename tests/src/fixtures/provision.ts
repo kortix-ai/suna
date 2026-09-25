@@ -30,6 +30,11 @@ const RATE_LIMIT_BASE_DELAY_MS = Number(
  * (KE2E_PROVISION_RATE_LIMIT_BUDGET_MS). GitHub's secondary rate limit on
  * repository creation blocked a preview for > 4 min on 2026-09-22; a
  * 5-attempt count ran out first.
+ *
+ * The budget counts the wall-clock time spent in the shared cooldown, whoever
+ * set it. It used to count only this provision's own planned waits, so a
+ * provision held behind cooldowns that OTHER provisions kept extending had no
+ * bound at all.
  */
 const RATE_LIMIT_BUDGET_MS = Number(process.env.KE2E_PROVISION_RATE_LIMIT_BUDGET_MS ?? 15 * 60_000);
 /** Longest single wait a server-sent Retry-After may impose. */
@@ -45,17 +50,57 @@ const waiters: Array<() => void> = [];
 let nextRequestAt = 0;
 let pacingTail: Promise<void> = Promise.resolve();
 
-async function acquire(): Promise<void> {
+/** The error an abandoned provision rejects with. Nobody waits for it but tests. */
+function abandoned(signal: AbortSignal): Error {
+  const reason = signal.reason instanceof Error ? signal.reason.message : String(signal.reason ?? 'aborted');
+  return new Error(`project provision abandoned: its flow attempt ended (${reason})`);
+}
+
+/**
+ * Take a semaphore slot. A waiter whose flow attempt ends leaves the queue
+ * without ever holding a slot.
+ */
+async function acquire(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw abandoned(signal);
   if (active < MAX) {
     active++;
     return;
   }
-  await new Promise<void>((resolve) => waiters.push(resolve));
+  await new Promise<void>((resolve, reject) => {
+    const grant = () => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    const onAbort = () => {
+      const index = waiters.indexOf(grant);
+      if (index >= 0) waiters.splice(index, 1);
+      reject(abandoned(signal!));
+    };
+    waiters.push(grant);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
   active++;
 }
 function release(): void {
   active--;
   waiters.shift()?.();
+}
+
+/** Sleep that ends early, with `abandoned`, when the flow attempt ends. */
+function sleepUnlessAborted(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) return Promise.reject(abandoned(signal));
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abandoned(signal));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 const RATE_LIMIT_RE = /rate limit|secondary rate|temporarily blocked|abuse/i;
@@ -133,9 +178,24 @@ export function serverRetryAfterMs(
   return ms === null ? null : Math.min(ms, MAX_RETRY_AFTER_MS);
 }
 
-async function awaitRateLimitCooldown(): Promise<void> {
+/**
+ * Wait out the shared cooldown within `budgetMs`. Returns the time actually
+ * waited, and `exceeded` when the cooldown still ahead does not fit the budget
+ * (the provision then gives up at once instead of sleeping and failing later).
+ */
+async function awaitRateLimitCooldown(
+  budgetMs: number,
+  signal?: AbortSignal,
+): Promise<{ waitedMs: number; exceeded: false } | { waitedMs: number; exceeded: true; aheadMs: number }> {
+  const started = Date.now();
   // Loop: another provision can extend the cooldown while this one sleeps.
-  while (rateLimitedUntil > Date.now()) await sleep(rateLimitedUntil - Date.now());
+  while (rateLimitedUntil > Date.now()) {
+    const aheadMs = rateLimitedUntil - Date.now();
+    const waitedMs = Date.now() - started;
+    if (waitedMs + aheadMs > budgetMs) return { waitedMs, exceeded: true, aheadMs };
+    await sleepUnlessAborted(aheadMs, signal);
+  }
+  return { waitedMs: Date.now() - started, exceeded: false };
 }
 
 /**
@@ -152,8 +212,10 @@ async function awaitRateLimitCooldown(): Promise<void> {
 export async function provisionProject(
   client: Client,
   body: Record<string, unknown>,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<string> {
-  await acquire();
+  const { signal } = opts;
+  await acquire(signal);
   try {
     let lastFailure = '';
     let attempts = 0;
@@ -161,10 +223,21 @@ export async function provisionProject(
     let rateLimitAttempts = 0;
     let rateLimitWaitedMs = 0;
     for (;;) {
+      const cooldown = await awaitRateLimitCooldown(RATE_LIMIT_BUDGET_MS - rateLimitWaitedMs, signal);
+      rateLimitWaitedMs += cooldown.waitedMs;
+      if (cooldown.exceeded) {
+        throw new Error(
+          `project provision gave up after ${attempts} attempt(s): the shared GitHub rate-limit cooldown ` +
+            `(${Math.ceil(cooldown.aheadMs / 1000)} s ahead) exceeds the remaining budget ` +
+            `(${Math.max(0, Math.floor((RATE_LIMIT_BUDGET_MS - rateLimitWaitedMs) / 1000))} s of ` +
+            `KE2E_PROVISION_RATE_LIMIT_BUDGET_MS=${RATE_LIMIT_BUDGET_MS})` +
+            (lastFailure ? `; last response ${lastFailure}` : ''),
+        );
+      }
+      if (signal?.aborted) throw abandoned(signal);
       attempts += 1;
       let r: Awaited<ReturnType<Client['post']>>;
       try {
-        await awaitRateLimitCooldown();
         await paceProvisionRequest();
         r = await client.post('/v1/projects/provision', body, {
           timeoutMs: PROVISION_REQUEST_TIMEOUT_MS,
@@ -174,7 +247,7 @@ export async function provisionProject(
         if (!isKe2eRetryableError(error) || failures >= MAX_PROVISION_ATTEMPTS) {
           throw error;
         }
-        await sleep(retryDelayMs(failures - 1, false));
+        await sleepUnlessAborted(retryDelayMs(failures - 1, false), signal);
         continue;
       }
 
@@ -191,14 +264,16 @@ export async function provisionProject(
         const waitMs =
           serverWait === null ? backoff : serverWait + Math.round(Math.random() * 15_000);
         rateLimitAttempts += 1;
-        if (rateLimitWaitedMs + waitMs > RATE_LIMIT_BUDGET_MS) break;
-        rateLimitWaitedMs += waitMs;
+        // Every provision shares the cooldown, even one that is about to give
+        // up: the limit is per credential. The wait itself is counted when
+        // awaitRateLimitCooldown actually spends it.
         rateLimitedUntil = Math.max(rateLimitedUntil, Date.now() + waitMs);
+        if (rateLimitWaitedMs + waitMs > RATE_LIMIT_BUDGET_MS) break;
         continue;
       }
       failures += 1;
       if (!isRetryableProvisionStatus(r.statusCode) || failures >= MAX_PROVISION_ATTEMPTS) break;
-      await sleep(retryDelayMs(failures - 1, false));
+      await sleepUnlessAborted(retryDelayMs(failures - 1, false), signal);
     }
     throw new Error(
       `project provision returned no id after ${attempts} attempt(s): ${lastFailure}`,

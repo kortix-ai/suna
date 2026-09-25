@@ -262,7 +262,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
   });
 });
 
-// P0 REGRESSION GUARD: POST /projects/provision (r1.ts) stamps
+// P0 REGRESSION GUARD: POST /projects/provision (projects.ts) stamps
 // `metadata.require_declared_agents = true` on every new project — so a fresh
 // project is ALWAYS subject to this gate from birth, with no DB-side
 // `metadata.default_agent` mirror set (sessions.ts's `projectDefaultAgent` is
@@ -294,7 +294,7 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
     const declaredDefault = declaredDefaultAgent(loaded);
     expect(loaded.specs.map((spec) => spec.name)).toContain(declaredDefault);
 
-    // Mirrors r1.ts /projects/provision exactly: subject=true (the metadata
+    // Mirrors projects.ts /projects/provision exactly: subject=true (the metadata
     // stamp), and no project.metadata.default_agent mirror set yet.
     const governed = resolveGovernedAgentGrant('default', loaded, {
       subject: true,

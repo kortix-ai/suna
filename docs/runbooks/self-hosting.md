@@ -412,6 +412,19 @@ Existing Pipedream deployments remain supported as a rollback path. Configure
 all three legacy credentials with `CONNECTOR_AUTH_PROVIDER=pipedream` only when
 rolling back from Composio.
 
+Connectors reach public endpoints only. The API resolves every connector
+endpoint (`base_url`, an OpenAPI `servers[0].url`, an MCP URL, a Postman
+request URL) on each call and refuses a private, loopback, or link-local
+address, on every redirect hop too. To let connectors call an internal API
+on your network, list its exact hostnames or IP addresses:
+
+```bash
+kortix self-host env set KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS=api.internal.example,10.0.4.12
+```
+
+Only the listed hosts are exempt. A redirect from a listed host to any other
+private address is still refused.
+
 `kortix self-host env ls` lists every key (secrets masked); `kortix self-host
 doctor` validates the rendered Compose config without applying anything.
 

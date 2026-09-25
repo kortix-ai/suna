@@ -2,6 +2,7 @@ import { LocalTime } from '@/components/ui/local-time';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { WrenchIcon as Wrench } from '@/lib/icons/ssr';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
+import { maintenanceReturnPath } from '@/lib/maintenance-return-path';
 import { getTranslations } from '@/i18n/get-translations';
 import { redirect } from 'next/navigation';
 
@@ -21,16 +22,6 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-// Only allow same-origin relative paths as a redirect target. Blocks
-// protocol-relative (`//evil.com`) and backslash tricks so the `from` param
-// can't be turned into an open redirect.
-function safeInternalPath(from?: string): string {
-  if (!from || !from.startsWith('/') || from.startsWith('//') || from.startsWith('/\\')) {
-    return '/';
-  }
-  return from;
-}
-
 export default async function MaintenancePage({
   searchParams,
 }: {
@@ -46,7 +37,7 @@ export default async function MaintenancePage({
   // full lockdown is lifted, instead of being stranded here forever.
   if (config.level !== 'blocking') {
     const { from } = await searchParams;
-    redirect(safeInternalPath(from));
+    redirect(maintenanceReturnPath(from));
   }
 
   const title = config.title || "We'll be right back";

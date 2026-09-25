@@ -21,6 +21,46 @@ linked, not inlined.
 
 ## Register
 
+### A cancelled controller does not stop detached work on a reused remote host (2026-09-24)
+
+**Rule:** Before a controller launches work on a reused remote host, stop the
+previous detached process group. Controller cancellation is not a remote
+lifecycle signal. **Trigger surface:** preview deploys and remote test workers.
+**Near-miss:** A cancelled preview suite continued creating cloud session boxes
+and held the next deploy behind its lock. **Enforcer:** the Platinum deploy
+sends `TERM`, waits 10 seconds, then sends `KILL`; `sandbox-preview.test.ts`
+asserts the anchored process match and both signals.
+
+### Turning workers off in a stack also turns off the deadline reaper; a shared provider org needs an owner tag on every child box (2026-09-24)
+
+**Rule:** A stack that sets `KORTIX_WORKERS_ENABLED=false` runs no project
+maintenance, so `deadline_at` never stops an idle session box and the
+provider's idle timer is the only stop. Never disable workers in a stack that
+creates real sandboxes. When several stacks with separate databases share one
+provider org and one `kortix.env` tag, stamp every child box with its owning
+stack (`KORTIX_INSTANCE_ID` -> `kortix.instance`) BEFORE enabling an orphan
+reaper: an unscoped reaper stops every other stack's live boxes, because they
+have no row in its database. **Trigger surface:** any `KORTIX_*_ENABLED` change
+in `tests/src/core/preview-stack.ts` or a self-host profile; any provider
+listing used to stop or delete boxes.
+
+**Incident:** 2026-09-23/24. Preview APIs ran with workers off since #6347
+(2026-08-10). 87 idle 4 GB preview session boxes (348 GB, 42 idle > 6 h) plus
+9 preview hosts filled the shared 524288 MB Platinum pool. Every preview deploy,
+every preview session and every dev session returned `429 org resource pool
+exhausted`. Evidence from the provider listing: of 262 stopped preview session
+boxes, 85 stopped at 700-740 min idle (the 720 min native timer), versus 4144 of
+4779 dev boxes at < 20 min (the deadline reaper). The session boxes carried no
+tag naming their preview, so teardown could not find them either.
+
+**Enforcers:** `previewWorkerEnvironment()` enables maintenance only with an
+instance id (`tests/unit/preview-stack.test.ts`); `providerBoxBelongsToThisInstance`
+lists only exactly-stamped boxes (`platinum-list-managed.test.ts`); teardown,
+PR-preview replacement, every deploy and the daily reconcile stop owned,
+orphaned and > 6 h idle preview session boxes, never other envs and never hosts
+(`preview-session-reaper.test.ts`, `preview-session-teardown.test.ts`); each
+deploy logs pool usage and names the top consumers on a `429`.
+
 ### An identity claim is only as trusted as whoever controls its source (2026-09-24)
 
 **Rule:** Before an email, id or scope from a request decides whose identity or
@@ -873,7 +913,7 @@ control or CLI command that clears it, for every caller who can hit it
 missing UI. *Incident:* a `user`-strategy connector had no connect flow
 anywhere — no shared account to offer, so the card rendered a button-less
 refusal and the composer spun on "Thinking" forever. *Enforcer:*
-`apps/api/src/projects/routes/r8-session-prompts.test.ts:377` ("queues the
+`apps/api/src/projects/routes/session-prompts.test.ts` ("queues the
 prompt even when the project has an unconnected connector"); the denial's
 `connect_url` remedy: `apps/api/src/connectors/principal-access.ts:110-114`.
 
@@ -2230,7 +2270,8 @@ one billing period on every drained per-seat account. Fixed in PR #7080.
 balance-to-number decisions outside the decision layer, no billing prose in
 components, the bypass stays deleted on both sides of the wire);
 `billing-state.test.ts` sweeps every Stripe status x plan class against the
-universal floor; `settle-credits.test.ts` pins the settlement contract.
+universal floor; `tests/migration/wallet-ledger.test.ts` pins the settlement
+contract (`wallet.settle`) against real PostgreSQL.
 
 ### Keep lazy optional dependencies type-lazy across shared-source imports (2026-08-28)
 
@@ -6502,7 +6543,7 @@ each delivery attempt. Inspect stored bindings when the resolved scope omits
 a disabled connector; a resolved scope is not a list of all stored bindings.
 
 **Enforcement.** `SESS-29` exercises refusal, Stop, fresh GET, and Resume through
-HTTP with PostgreSQL read-back. `r8-session-prompts.test.ts` covers admission
+HTTP with PostgreSQL read-back. `session-prompts.test.ts` covers admission
 refusals and reload. `queued-continue-inbox-delivery.test.ts` proves a connector
 refusal sends once and Stop prevents a second POST after a transient failure.
 Production recovery removed the stale binding through the session scope API.

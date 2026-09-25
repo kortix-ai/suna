@@ -5,7 +5,7 @@
  * SOURCE-LEVEL guard on the route's WIRING for `exclude_session_id`. Hermetic
  * (reads the file as text, no database) so it runs under the default
  * `bun test` gate (`scripts/test.sh`'s fake-env mode), same shape as
- * `../r1-provision-idempotency.test.ts`.
+ * `./projects-provision-idempotency.test.ts`.
  *
  * The BEHAVIORAL proof — `findWarmProjectSession` actually skipping the
  * excluded id against a real Postgres — lives in

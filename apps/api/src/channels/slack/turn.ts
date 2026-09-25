@@ -662,7 +662,7 @@ export async function relayTurnAnswerDetailed(
 // The RUN does not stop — prod 2026-09-04 session d08cccb4 posted three steps,
 // went quiet, was closed at 30 minutes, and only finished at 09:06:28, 2h58m
 // after it started. `relayTurnAnswer` found no handle, returned false, and the
-// route answered the sandbox HTTP 200 `{ok:false}` (projects/routes/r4.ts), so
+// route answered the sandbox HTTP 200 `{ok:false}` (projects/routes/turn-stream.ts), so
 // the agent believed it had replied and the thread never saw a word of it.
 //
 // A Slack-started session carries everything needed to reach its own thread in

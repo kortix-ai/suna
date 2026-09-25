@@ -139,6 +139,11 @@ must change together.
 - Keep a failed product-test sandbox. Do not hide its failure with fallback.
 - Redeploy the environment in place on a push. Keep the `preview` label.
 - Delete the sandbox on unlabel or branch deletion. Closing the PR does not.
+- Tag every preview session box with its host: the preview API runs with
+  `KORTIX_INSTANCE_ID=<host sandbox name>` (Platinum `kortix.instance`) and its
+  deadline reaper on. Teardown and replacement stop the host's session boxes.
+  Each deploy and the daily reconcile stop session boxes whose host is gone or
+  that idled over 6 hours (`tests/src/core/preview-session-reaper.ts`).
 - Reconcile stale previews each day. Daytona reconciliation only deletes
   previews created before 2026-09-22.
 

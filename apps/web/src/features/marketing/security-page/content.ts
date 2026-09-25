@@ -307,7 +307,7 @@ export const control = {
 } as const;
 
 /* ── 5 · change request ────────────────────────────────────────────────────
-   Grounded in apps/api/src/projects/routes/r9.ts, which gates merge twice: the
+   Grounded in apps/api/src/projects/routes/change-request-actions.ts, which gates merge twice: the
    human capability `project.gitops.merge` and the per-agent `project.cr.merge`,
    which is DEFAULT-DENY. CORRECTION: "only a human can merge" is too strong —
    an admin can grant an agent that capability. The grant lives in kortix.yaml,

@@ -1,4 +1,4 @@
-import { resolveSessionOpencodeEndpoint } from './engine';
+import { resolveSessionOpencodeEndpoint } from './runtime-client';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 
 const WORKSPACE = '/workspace';

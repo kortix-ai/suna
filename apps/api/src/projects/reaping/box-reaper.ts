@@ -128,7 +128,7 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
   requeueAbandonedPrompt,
   promoteNextInboxRow,
   drainSessionLifecycleQueue: async (input) => {
-    const { drainSessionLifecycleQueue } = await import('../session-lifecycle/engine');
+    const { drainSessionLifecycleQueue } = await import('../session-lifecycle/drain');
     return drainSessionLifecycleQueue(input);
   },
 };
@@ -396,7 +396,7 @@ export async function reapAndReconcileSandboxes(
               // It used to skip the probe outright, and that made the drip below
               // unreachable for the incident's own shape: a boot prompt's record
               // is `delivering` until the daemon calls back `turn_accepted`
-              // (routes/r4.ts), a mute daemon never calls back, and an unprobed
+              // (routes/turn-stream.ts), a mute daemon never calls back, and an unprobed
               // record can never make `unreadableTurns === turns.length` hold
               // while `deadlineAt > now`. The two conditions were mutually
               // exclusive, so a box dying on the 15-minute boot floor mid-turn —

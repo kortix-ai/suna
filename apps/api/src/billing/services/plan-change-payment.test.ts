@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { GrantInput } from '../wallet';
 
 // Production price catalog: the legacy tier prices below only exist there.
 mock.module('../../config', () => ({
@@ -17,7 +18,7 @@ let activeMembers = 1;
 const stripeUpdates: Array<{ id: string; params: Record<string, any> }> = [];
 const itemUpdates: Array<{ id: string; params: Record<string, any> }> = [];
 const tierWrites: Array<Record<string, unknown>> = [];
-const grants: unknown[][] = [];
+const grants: GrantInput[] = [];
 
 mock.module('../../shared/stripe', () => ({
   getStripe: () => ({
@@ -65,9 +66,12 @@ mock.module('./account-write-owner', () => ({
   },
 }));
 
-mock.module('./credits', () => ({
-  grantCredits: async (...args: unknown[]) => {
-    grants.push(args);
+mock.module('../wallet', () => ({
+  wallet: {
+    grant: async (input: GrantInput) => {
+      grants.push(input);
+      return { replayed: false, ledgerId: null };
+    },
   },
 }));
 
@@ -154,9 +158,9 @@ describe('a plan upgrade activates only after its proration invoice is paid', ()
     expect(result.status).toBe('upgraded');
     expect(tierWrites.map((w) => w.tier)).toEqual(['tier_12_100']);
     expect(grants).toHaveLength(1);
-    expect(grants[0][1]).toBe(25);
-    expect(grants[0][2]).toBe('tier_grant');
-    expect(grants[0][5]).toBe('proration_grant:in_paid');
+    expect(grants[0].amount).toBe(25);
+    expect(grants[0].kind).toBe('tier_grant');
+    expect(grants[0].key).toEqual({ event: 'proration_grant:in_paid' });
   });
 
   test('a per-seat account cannot swap its seat price for a plan price', async () => {

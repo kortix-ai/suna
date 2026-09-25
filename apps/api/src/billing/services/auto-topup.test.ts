@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { GrantInput } from '../wallet';
 
 let account: Record<string, unknown> | null = null;
 let customer: { id: string } | null = { id: 'cus_test' };
@@ -7,7 +8,7 @@ let listedPaymentMethods: Array<{ id: string; type: string }> = [];
 let listedPaymentMethodParams: Record<string, unknown> | null = null;
 const updates: Array<Record<string, unknown>> = [];
 const paymentIntents: Array<Record<string, unknown>> = [];
-const grants: unknown[][] = [];
+const grants: GrantInput[] = [];
 let nextIntentStatus = 'succeeded';
 let existingIntents: Array<Record<string, unknown>> = [];
 let listIntentsFails = false;
@@ -36,9 +37,12 @@ mock.module('../repositories/customers', () => ({
   getCustomerByAccountId: async () => customer,
 }));
 
-mock.module('./credits', () => ({
-  grantCredits: async (...args: unknown[]) => {
-    grants.push(args);
+mock.module('../wallet', () => ({
+  wallet: {
+    grant: async (input: GrantInput) => {
+      grants.push(input);
+      return { replayed: false, ledgerId: null };
+    },
   },
 }));
 
@@ -197,8 +201,8 @@ describe('auto-topup on an asynchronous payment method', () => {
     await checkAndTriggerAutoTopup('acct-1');
 
     expect(grants).toHaveLength(1);
-    expect(grants[0]?.[1]).toBe(20);
-    expect(grants[0]?.[5]).toBe('pi_test');
+    expect(grants[0]?.amount).toBe(20);
+    expect(grants[0]?.key).toEqual({ event: 'pi_test' });
   });
 
   test('a processing charge is pending, not a failure: no grant, no failure count, auto-topup stays on', async () => {

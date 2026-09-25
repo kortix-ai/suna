@@ -2099,7 +2099,7 @@ export const sessionTurns = kortixSchema.table(
  * existed. The browser-side IndexedDB mirror that used to cover this was
  * deleted because its freshness test could not see a turn ENDING, so it painted
  * a stale thread as live. This mirror inverts that: the SERVER writes it
- * BECAUSE a turn ended (`turn-stream` kind `end`/`turn_end`, routes/r4.ts), so
+ * BECAUSE a turn ended (`turn-stream` kind `end`/`turn_end`, routes/turn-stream.ts), so
  * freshness is a property of the write, not a client-side guess.
  *
  * Identity is the whole point. Rows are keyed by the OpenCode message id — the
@@ -3284,9 +3284,19 @@ export const usageEvents = kortixSchema.table(
     streaming: boolean('streaming').default(false).notNull(),
     upstreamStatus: integer('upstream_status'),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    /**
+     * The LLM gateway request this row settles. Set only by gateway usage
+     * settlement; unique when present, so a retried settlement of one request
+     * finds its first row instead of writing (and debiting) a second one.
+     * NULL on rows written before the column existed and on non-gateway usage.
+     */
+    requestId: text('request_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    uniqueIndex('uniq_usage_events_request_id')
+      .on(table.requestId)
+      .where(sql`${table.requestId} is not null`),
     index('idx_usage_events_account_time').on(table.accountId, table.createdAt),
     index('idx_usage_events_project_time').on(table.projectId, table.createdAt),
     index('idx_usage_events_session').on(table.sessionId),
@@ -5947,6 +5957,29 @@ export const connectorProjectSettings = kortixSchema.table('connector_project_se
   defaultMode: connectorDefaultModeEnum('default_mode').default('allow_all').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * Write fence for connector sync: one row per project and materialized item.
+ *
+ * `scope` is `project` (project policies and settings) or `connector:<slug>`
+ * (one connector's row, actions, and policies, or its removal). A sync records
+ * when it started before it reads kortix.yaml, and each write advances its
+ * scope's row to that time inside the write transaction. When a sync that
+ * started later has already written a scope, the older sync skips that scope:
+ * it read a manifest no newer than the one already applied. The row lock also
+ * serializes concurrent writes to one scope.
+ */
+export const connectorSyncFences = kortixSchema.table(
+  'connector_sync_fences',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    scope: text('scope').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.scope] })],
+);
 
 /** Audit + approval ledger for every connector call. */
 export const connectorCalls = kortixSchema.table(

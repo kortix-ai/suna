@@ -46,7 +46,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *    skills injected into every session at boot (`kortix-cli` is in both lists,
  *    so 19 distinct). 2 agents ship: `kortix` and `memory-reflector`.
  *  - MARKETPLACE: ships, labelled beta, ON by default. But the deterministic
- *    installer WAS REMOVED (`apps/api/src/projects/routes/r10.ts`): "The
+ *    installer WAS REMOVED (`apps/api/src/projects/routes/marketplace-install-session.ts`): "The
  *    deterministic install/lock/update/remove engine … has been removed …
  *    Adding a marketplace item to an existing project is now always an agent
  *    import." So: one click to ADD, and what happens next is an agent session

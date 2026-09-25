@@ -4,7 +4,7 @@
 // rejected by the billing gate ("team wallet is out of credits") went through
 // `markTriggerExecutionFailed` with NO way to say "permanent" — so the execution
 // was retried five times over ~30s, each attempt re-running `createSession` →
-// `checkBillingActive` → the atomic-hold `deductCredits` only to fail identically.
+// `checkBillingActive` → the atomic-hold `wallet.debit` only to fail identically.
 // The failure only became visible (and distinguishable) after the full retry
 // ladder. Passing `terminal: true` dead-letters on the FIRST failure so the
 // trigger runtime row shows `failed` + the machine-readable reason immediately.

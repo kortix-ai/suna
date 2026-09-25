@@ -8,7 +8,7 @@ import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './stor
  * The inbox's row operations — everything `GET/DELETE/retry/hold …/prompts`
  * does to `kortix.session_lifecycle_commands`.
  *
- * They live here rather than inline in `routes/r8.ts` for one reason: every one
+ * They live here rather than inline in `routes/session-prompts.ts` for one reason: every one
  * of them has to carry the INBOX SCOPE, and a scope that is re-typed at four
  * call sites is a scope that will be forgotten at one of them. It already was:
  * `continue_session` is also how triggers, Slack and approval-resume deliver,

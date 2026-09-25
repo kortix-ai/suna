@@ -358,7 +358,7 @@ mock.module('../shared/db', () => ({
           if (table === projects) updatedProjectSets.push(values);
           // Real drizzle's UPDATE builder is thenable at every chain step
           // (a caller may `.catch()` it directly without `.returning()` —
-          // see r1.ts's best-effort default_agent metadata mirror write, and
+          // see projects.ts's best-effort default_agent metadata mirror write, and
           // the several other `.where(...).catch(() => {})` call sites this
           // mirrors), so this stub must be too: a real Promise (which
           // supplies `.then`/`.catch`) that ALSO exposes `.returning()` for
