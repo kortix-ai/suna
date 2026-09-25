@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
   GitHubApiError,
+  GitHubPersonalAccountCreateUnsupportedError,
+  createRepo,
   getRepositoryBranch,
   listOwnerRepositories,
   listRepositoryBranches,
@@ -187,5 +189,80 @@ describe('listOwnerRepositories — the managed-git PAT backend\'s repo lister',
 
     expect(repos.map((r) => r.full_name)).toEqual(['agent-kortix/demo']);
     expect(requests[0]).toBe('https://api.github.com/users/agent-kortix');
+  });
+});
+
+/**
+ * `POST /user/repos` is absent from GitHub's "Endpoints available for GitHub
+ * App installation access tokens"; `POST /orgs/{org}/repos` is present. So an
+ * installation token can never create a repository under a personal owner —
+ * GitHub answers `403 Resource not accessible by integration`, which prod
+ * surfaced verbatim on `POST /projects/create-repo`.
+ *
+ * The rule lives beside the endpoint choice in `createRepo`, so EVERY caller is
+ * covered: the route, and `git-backends/github.ts`'s managed provision, whose
+ * `managedAdminAuth` also returns `source: 'app_installation'` for a personal
+ * owner. A PAT is unaffected — a classic/fine-grained token may create a repo
+ * for its own user.
+ */
+describe('createRepo under a personal owner', () => {
+  test('an installation token is refused before any request to GitHub', async () => {
+    let called = false;
+    globalThis.fetch = (async (_input: string | URL | Request) => {
+      called = true;
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+
+    const promise = createRepo({
+      name: 'company',
+      auth: { token: 't', source: 'app_installation', owner: 'octo-person', ownerType: 'User' },
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(GitHubPersonalAccountCreateUnsupportedError);
+    await promise.catch((error: GitHubPersonalAccountCreateUnsupportedError) => {
+      expect(error.owner).toBe('octo-person');
+      expect(error.message).toContain('octo-person');
+      expect(error.message).toMatch(/import/i);
+    });
+    expect(called).toBe(false);
+  });
+
+  test('a PAT still creates the repository through /user/repos', async () => {
+    const paths: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      paths.push(String(input instanceof Request ? input.url : input));
+      return new Response(JSON.stringify({ full_name: 'octo-person/company' }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const repo = await createRepo({
+      name: 'company',
+      auth: { token: 't', source: 'pat', owner: 'octo-person', ownerType: 'User' },
+    });
+
+    expect(repo.full_name).toBe('octo-person/company');
+    expect(paths).toHaveLength(1);
+    expect(paths[0]).toContain('/user/repos');
+  });
+
+  test('an organization owner is untouched by the rule', async () => {
+    const paths: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      paths.push(String(input instanceof Request ? input.url : input));
+      return new Response(JSON.stringify({ full_name: 'acme/company' }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const repo = await createRepo({
+      name: 'company',
+      auth: { token: 't', source: 'app_installation', owner: 'acme', ownerType: 'Organization' },
+    });
+
+    expect(repo.full_name).toBe('acme/company');
+    expect(paths[0]).toContain('/orgs/acme/repos');
   });
 });

@@ -1026,6 +1026,28 @@ async function resolveDefaultOwner(auth?: GitHubAuthContext): Promise<{ owner: s
   return { owner: me.login, isOrg: false };
 }
 
+/**
+ * A repository create was asked for under a PERSONAL GitHub owner with a GitHub
+ * App installation token. GitHub does not accept that token on
+ * `POST /user/repos` — the endpoint is absent from its "Endpoints available for
+ * GitHub App installation access tokens", while `POST /orgs/{org}/repos` is
+ * present — so it answers `403 Resource not accessible by integration`.
+ *
+ * Thrown before the request, so callers map one typed cause instead of
+ * pattern-matching GitHub's 403 text.
+ */
+export class GitHubPersonalAccountCreateUnsupportedError extends Error {
+  readonly code = 'github_personal_account_create_unsupported';
+
+  constructor(readonly owner: string) {
+    super(
+      `GitHub does not let the Kortix app create repositories in the personal account ${owner}. ` +
+        'Create the repository on GitHub, then import it.',
+    );
+    this.name = 'GitHubPersonalAccountCreateUnsupportedError';
+  }
+}
+
 export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
   const ownerInput = input.owner?.trim();
   if (input.auth?.owner && ownerInput && ownerInput.toLowerCase() !== input.auth.owner.toLowerCase()) {
@@ -1040,6 +1062,13 @@ export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
     private: input.isPrivate ?? true,
     auto_init: input.autoInit ?? true,
   };
+
+  // `/user/repos` is the only endpoint that can create under a personal owner,
+  // and an installation token is not allowed to call it. A PAT is, so the rule
+  // is about the credential, not the owner.
+  if (!target.isOrg && input.auth?.source === 'app_installation') {
+    throw new GitHubPersonalAccountCreateUnsupportedError(target.owner);
+  }
 
   const path = target.isOrg ? `/orgs/${target.owner}/repos` : '/user/repos';
   return ghFetch<GitHubRepo>(path, {

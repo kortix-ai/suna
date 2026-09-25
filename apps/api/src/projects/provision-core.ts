@@ -29,7 +29,8 @@ import {
   pushVerifiedSeed,
 } from './managed-repo-seed';
 import { normalizeStarterTemplateId } from './starter';
-import { GitHubApiError } from './github';
+import {
+  GitHubPersonalAccountCreateUnsupportedError, GitHubApiError } from './github';
 import {
   buildProjectSeedFiles,
   buildProjectSeedFilesFromItem,
@@ -119,6 +120,13 @@ export interface ProvisionResult {
  */
 export function createRepoFailureResult(error: unknown): ProvisionResult {
   const message = (error as Error)?.message || 'Failed to provision managed repo';
+  // The instance backend is an App installed on a personal account, which can
+  // never create a repository (`GitHubPersonalAccountCreateUnsupportedError`).
+  // Deterministic for that owner, so it is a 409 with the typed code — a 502
+  // reaches the browser as a 503 and reads as "managed git isn't set up".
+  if (error instanceof GitHubPersonalAccountCreateUnsupportedError) {
+    return { status: 409, body: { error: message, code: error.code } };
+  }
   if (error instanceof GitHubApiError && error.retryAfterSeconds !== undefined) {
     return {
       status: 503,

@@ -84,8 +84,17 @@ mock.module('../lib/git', () => ({
   getProjectGitConnection: async () => null,
 }));
 
-const mockCreateRepo = mock(async (input: { name: string }) => fakeRepo(currentOwner.login, input.name));
 const realGithub = await import('../github');
+
+// The real `createRepo` refuses this case itself (`../github.test.ts` pins
+// that). Here the mock reproduces its typed refusal, so this file tests what
+// the ROUTE does with it: a 409 carrying the code, and nothing registered.
+const mockCreateRepo = mock(async (input: { name: string }) => {
+  if (currentOwner.type === 'User') {
+    throw new realGithub.GitHubPersonalAccountCreateUnsupportedError(currentOwner.login);
+  }
+  return fakeRepo(currentOwner.login, input.name);
+});
 mock.module('../github', () => ({
   ...realGithub,
   createRepo: mockCreateRepo,
@@ -144,12 +153,12 @@ describe('POST /create-repo — GitHub owner type', () => {
 
     expect(res.status).toBe(409);
     expect(body.code).toBe('github_personal_account_create_unsupported');
+    expect(mockCreateRepo).toHaveBeenCalledTimes(1);
     // A sentence a user can act on, never GitHub's raw API text.
     expect(body.error).toContain('octo-person');
     expect(body.error).toMatch(/import/i);
     expect(body.error).not.toContain('/user/repos');
     expect(body.error).not.toContain('Resource not accessible');
-    expect(mockCreateRepo).not.toHaveBeenCalled();
     expect(mockRegisterGitHub).not.toHaveBeenCalled();
   });
 

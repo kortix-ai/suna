@@ -298,9 +298,11 @@ export function messageFor(error: unknown): string {
 
 /**
  * `POST /projects/create-repo`'s 409 for a personal GitHub account: GitHub does
- * not accept the App installation token on `POST /user/repos`
- * (`apps/api/src/projects/routes/r2.ts`). The owner does not change between
- * attempts, so a retry fails the same way.
+ * not accept the App installation token on `POST /user/repos`, so `createRepo`
+ * refuses before the request (`apps/api/src/projects/github.ts`'s
+ * `GitHubPersonalAccountCreateUnsupportedError`). The owner does not change
+ * between attempts, so a retry fails the same way. `POST /projects/provision`
+ * answers the same code when the INSTANCE backend sits on a personal account.
  */
 const GITHUB_PERSONAL_ACCOUNT_CREATE_UNSUPPORTED = 'github_personal_account_create_unsupported';
 

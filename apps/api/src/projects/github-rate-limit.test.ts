@@ -5,7 +5,12 @@
 // cannot back off correctly without it.
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { GitHubApiError, createRepo, githubRetryAfterSeconds } from './github';
+import {
+  GitHubApiError,
+  GitHubPersonalAccountCreateUnsupportedError,
+  createRepo,
+  githubRetryAfterSeconds,
+} from './github';
 import { createRepoFailureResult } from './provision-core';
 
 const originalFetch = globalThis.fetch;
@@ -80,5 +85,26 @@ describe('createRepoFailureResult', () => {
     );
     expect(result.status).toBe(502);
     expect(result.headers).toBeUndefined();
+  });
+});
+
+/**
+ * `managedAdminAuth` (`git-backends/github.ts`) returns `source:
+ * 'app_installation'` whenever the instance backend is an App install — and
+ * that install may sit on a personal account. `createRepo` refuses that
+ * combination, so managed provision must report the same deterministic 409 the
+ * create-repo route does, not the retryable 502 an upstream fault gets. A 502
+ * reaches the browser as a 503 (edge rewrite) and reads as "managed git isn't
+ * set up", which is a different, wrong instruction.
+ */
+describe('createRepoFailureResult: personal owner on an installation token', () => {
+  test('is a 409 carrying the typed code, never a 502', () => {
+    const result = createRepoFailureResult(
+      new GitHubPersonalAccountCreateUnsupportedError('octo-person'),
+    );
+    const body = result.body as { error?: string; code?: string };
+    expect(result.status).toBe(409);
+    expect(body.code).toBe('github_personal_account_create_unsupported');
+    expect(body.error).toContain('octo-person');
   });
 });

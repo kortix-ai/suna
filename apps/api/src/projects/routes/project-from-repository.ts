@@ -5,7 +5,12 @@ import { auth, errors, json } from '../../openapi';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isSelfHostOperator } from '../../shared/platform-roles';
 import { managedGithubToken } from '../git-backends';
-import { commitFile, createRepo, getFileSha } from '../github';
+import {
+  GitHubPersonalAccountCreateUnsupportedError,
+  commitFile,
+  createRepo,
+  getFileSha,
+} from '../github';
 import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -294,19 +299,6 @@ projectsApp.openapi(
       install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
     }, 409);
   }
-  // A personal owner needs `POST /user/repos`, which GitHub does not accept
-  // from an App installation token ("Resource not accessible by integration";
-  // only `POST /orgs/{org}/repos` is on GitHub's installation-token list).
-  // Refuse before any upstream call instead of passing GitHub's 403 through.
-  if (githubAuth.auth.ownerType === 'User') {
-    return c.json({
-      error:
-        `GitHub does not let the Kortix app create repositories in the personal account ${githubAuth.auth.owner}. ` +
-        'Create the repository on GitHub, then import it.',
-      code: 'github_personal_account_create_unsupported',
-    }, 409);
-  }
-
   // create-repo always provisions a fresh GitHub repo, so block before we
   // create anything upstream — a straight count, no idempotent re-link.
   const createRepoQuota = await enforceProjectQuota(c, scope.accountId);
@@ -329,6 +321,12 @@ projectsApp.openapi(
     } catch (error) {
       lastRepoError = error;
       if (isRepoNameTakenError(error)) continue; // name taken — try the next suffix
+      // A personal owner on an installation token: `createRepo` refuses before
+      // it calls GitHub. Deterministic for this owner, so it is a 409 the
+      // client can branch on, not the retryable 502 an upstream fault gets.
+      if (error instanceof GitHubPersonalAccountCreateUnsupportedError) {
+        return c.json({ error: error.message, code: error.code }, 409);
+      }
       return c.json({ error: (error as Error).message || 'Failed to create GitHub repository' }, 502);
     }
   }
