@@ -22,8 +22,8 @@ describe('session restart URL contract', () => {
 
     expect(replacementStart).toBeGreaterThan(-1);
     expect(inPlaceStart).toBeGreaterThan(replacementStart);
-    expect(source.slice(replacementStart, inPlaceStart)).toContain('clearSandboxUrl: true');
-    expect(source.slice(inPlaceStart)).not.toContain('clearSandboxUrl: true');
+    expect(source.slice(replacementStart, inPlaceStart)).toContain('sandboxUrl: null');
+    expect(source.slice(inPlaceStart)).not.toContain('sandboxUrl: null');
   });
 
   test('starts a fresh runtime clock and removes stale OpenCode clocks', () => {

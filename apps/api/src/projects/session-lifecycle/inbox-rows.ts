@@ -1,6 +1,7 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import { inboxOrderBy } from './inbox-order';
 import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
 
@@ -519,7 +520,7 @@ export async function claimDueSessionInboxSiblings(input: {
         status: 'running',
         attempts: row.attempts + 1,
         lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + 5 * 60_000),
+        lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
         updatedAt: now,
       })
       .where(
