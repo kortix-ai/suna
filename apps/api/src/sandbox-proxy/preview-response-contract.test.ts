@@ -55,6 +55,16 @@ describe('what each caller is told about an unreachable port', () => {
       expect(res.status).toBe(c.status);
       expect(res.headers.get('content-type')).toContain('application/json');
       expect(res.headers.get('x-kortix-proxy-hop')).toBe('upstream_port');
+      // The failing hop's own status byte, wire and body: a null upstreamStatus
+      // (connection refused, never reached the app) omits the header and reports
+      // `upstream_status: null`; a defined one (the app itself answered with an
+      // error) round-trips verbatim on both.
+      const expectedUpstreamStatus = c.opts.upstreamStatus;
+      expect(res.headers.get('x-kortix-upstream-status')).toBe(
+        expectedUpstreamStatus === null ? null : String(expectedUpstreamStatus),
+      );
+      const body = await res.json();
+      expect(body.upstream_status).toBe(expectedUpstreamStatus);
     });
   }
 
