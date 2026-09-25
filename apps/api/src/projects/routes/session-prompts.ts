@@ -21,6 +21,7 @@ import {
   retryInboxPrompt,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
+import { markTurnStopRequested } from '../sandbox-turn-lifecycle';
 import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/runtime-client';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
@@ -594,6 +595,21 @@ projectsApp.openapi(
       return c.json({ error: 'held must be a boolean' }, 400);
     }
 
+    // A HOLD IS A STOP SOMEBODY ASKED FOR. Stamp it on the open turn before
+    // anything this Stop sends can reach OpenCode. The hold is the Stop's FIRST
+    // request, and its settle (below) can abort the box before the client's
+    // own abort leaves the browser. That settle abort does not pass the
+    // sandbox proxy that stamps `UserStop`, so without this stamp the turn
+    // closed on a bare "Aborted" frame and the user's own Stop read as
+    // "stopped before it finished" (prod 2026-09-25). The ledger keeps the
+    // stamp only over an abort: a turn that completes drops it, and a named
+    // cause replaces it. Scoped to the session's root OpenCode session, like
+    // the proxy stamp. The write never throws.
+    if (body.held) {
+      await markTurnStopRequested(sessionId, 'UserStop', {
+        opencodeSessionId: visible.row.opencodeSessionId ?? null,
+      });
+    }
     await holdInboxPrompts(sessionId, body.held);
     if (body.held) await disarmAllQuickQueueInterrupt(sessionId, loaded.userId);
     // After the write, before the read-back — either instant orders this
