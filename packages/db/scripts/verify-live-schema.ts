@@ -16,7 +16,9 @@
  *   1. TABLES, COLUMNS, ENUM VALUES — must be present on live.
  *   2. INDEXES — every index definition must exist on live, under any name
  *      (a renamed index with the same definition passes). An INVALID index on
- *      live (a failed CONCURRENTLY build) is drift.
+ *      live (a failed CONCURRENTLY build) is drift. Only indexes on base
+ *      tables are compared: an index on a leftover materialized view is
+ *      neither drift nor counted.
  *   3. CONSTRAINTS — every PRIMARY KEY / UNIQUE / FOREIGN KEY / CHECK / EXCLUDE
  *      definition must exist on live, under any name. A constraint that is
  *      valid on canonical but NOT VALID on live is drift.
@@ -24,7 +26,8 @@
  * All three are PRESENCE checks (canonical ⊆ live): EXTRA objects on live are
  * printed as information and never fail, because a legacy database carries
  * leftovers. Definitions are compared after removing schema qualification,
- * the object name, casts and parentheses (see definitionKey). Known, deliberate gaps are listed with their evidence in
+ * the object name, casts and parentheses (see definitionKey). Known,
+ * deliberate gaps are listed with their evidence in
  * verify-live-schema-waivers.ts and reported as waived.
  *
  * Run it read-only against any environment (see MIGRATIONS.md "Verify a live
@@ -33,75 +36,17 @@
  *   CANONICAL_DB_URL=<freshly migrated db>  LIVE_DB_URL=<target>  bun scripts/verify-live-schema.ts
  *   # or: bun scripts/verify-live-schema.ts --canonical <url> --live <url>
  *
- * The live connection only runs catalog queries inside BEGIN READ ONLY.
+ * Both databases are read through catalog.ts `readDatabase`: one catalog
+ * query and one ledger query each, on a read-only session. The script writes
+ * nothing.
  *
- * Exit 0 = nothing missing (waivers aside).  Exit 1 = drift.  Exit 2 = usage/connection error.
+ * Exit 0 = nothing missing (waivers aside).  Exit 1 = drift.
+ * Exit 2 = usage error, connection error, or a ledger the role cannot read.
  */
-import pg from 'pg';
+import { type Catalog, type CatalogConstraint, type CatalogIndex, readDatabase } from './catalog';
 import { LIVE_SCHEMA_WAIVERS, type LiveSchemaWaivers } from './verify-live-schema-waivers';
 
-export type SchemaObjects = { tables: Set<string>; columns: Set<string>; enumValues: Set<string> };
-
-export interface IndexObject {
-  table: string;
-  /** Definition without its name or schema qualification: `CREATE INDEX ON t USING btree (a)`. */
-  definition: string;
-  valid: boolean;
-}
-
-export interface ConstraintObject {
-  table: string;
-  /** p, u, f, c or x */
-  type: string;
-  /** pg_get_constraintdef without schema qualification or a trailing NOT VALID. */
-  definition: string;
-  validated: boolean;
-}
-
-export interface CatalogObjects extends SchemaObjects {
-  /** index name -> definition. Includes the indexes that back PK/UNIQUE constraints. */
-  indexes: Map<string, IndexObject>;
-  /** constraint name -> definition. NOT NULL is not a pg_constraint row before PostgreSQL 18. */
-  constraints: Map<string, ConstraintObject>;
-  /** Applied migration names, from kortix_migrations.pgmigrations (empty if the table is absent). */
-  migrations: Set<string>;
-}
-
 const SCHEMA = 'kortix';
-
-const OBJECTS_SQL = `
-  SELECT 'T'::text AS k, table_name::text AS a, ''::text AS b, ''::text AS c, ''::text AS d
-    FROM information_schema.tables
-   WHERE table_schema = $1 AND table_type = 'BASE TABLE'
-  UNION ALL
-  SELECT 'C', table_name::text, column_name::text, '', ''
-    FROM information_schema.columns
-   WHERE table_schema = $1
-  UNION ALL
-  SELECT 'E', t.typname::text, e.enumlabel::text, '', ''
-    FROM pg_type t
-    JOIN pg_enum e ON e.enumtypid = t.oid
-    JOIN pg_namespace n ON n.oid = t.typnamespace
-   WHERE n.nspname = $1
-  UNION ALL
-  SELECT 'I', i.relname::text, t.relname::text, pg_get_indexdef(x.indexrelid), x.indisvalid::text
-    FROM pg_index x
-    JOIN pg_class i ON i.oid = x.indexrelid
-    JOIN pg_class t ON t.oid = x.indrelid
-    JOIN pg_namespace n ON n.oid = t.relnamespace
-   WHERE n.nspname = $1 AND t.relkind IN ('r', 'p')
-  UNION ALL
-  SELECT 'K', c.conname::text, t.relname::text, c.contype::text || ':' || c.convalidated::text, pg_get_constraintdef(c.oid)
-    FROM pg_constraint c
-    JOIN pg_class t ON t.oid = c.conrelid
-    JOIN pg_namespace n ON n.oid = t.relnamespace
-   WHERE n.nspname = $1 AND c.contype IN ('p', 'u', 'f', 'c', 'x')
-`;
-
-const MIGRATIONS_SQL = `
-  SELECT name FROM kortix_migrations.pgmigrations
-   WHERE to_regclass('kortix_migrations.pgmigrations') IS NOT NULL
-`;
 
 /** Remove the schema qualification that renders differently per search_path. */
 export function unqualify(sql: string): string {
@@ -132,60 +77,58 @@ export function definitionKey(def: string): string {
   return def.replace(CAST, '').replace(/[()]/g, '').replace(/\s+/g, ' ').trim();
 }
 
-type Row = { k: string; a: string; b: string; c: string; d: string };
-
-export function catalogFromRows(rows: Row[], migrations: string[] = []): CatalogObjects {
-  const out: CatalogObjects = {
-    tables: new Set(),
-    columns: new Set(),
-    enumValues: new Set(),
-    indexes: new Map(),
-    constraints: new Map(),
-    migrations: new Set(migrations),
-  };
-  for (const r of rows) {
-    if (r.k === 'T') out.tables.add(r.a);
-    else if (r.k === 'C') out.columns.add(`${r.a}.${r.b}`);
-    else if (r.k === 'E') out.enumValues.add(`${r.a}.${r.b}`);
-    else if (r.k === 'I') out.indexes.set(r.a, { table: r.b, definition: normalizeIndexDef(r.c), valid: r.d === 'true' });
-    else if (r.k === 'K') {
-      const [type, validated] = r.c.split(':');
-      out.constraints.set(r.a, {
-        table: r.b,
-        type: type!,
-        definition: normalizeConstraintDef(r.d),
-        validated: validated === 'true',
-      });
-    }
-  }
-  return out;
+/** The base tables (relkind r or p): the relations whose objects the migrations guarantee. */
+function tablesOf(catalog: Catalog): Set<string> {
+  return new Set([...catalog.relations].filter(([, kind]) => kind === 'table').map(([name]) => name));
 }
 
-export async function readCatalog(databaseUrl: string, { readOnly = false } = {}): Promise<CatalogObjects> {
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
-  try {
-    if (readOnly) await client.query('BEGIN READ ONLY');
-    const { rows } = await client.query<Row>(OBJECTS_SQL, [SCHEMA]);
-    const migrations = await client.query<{ name: string }>(MIGRATIONS_SQL).then(
-      (r) => r.rows.map((m) => m.name),
-      () => [] as string[],
-    );
-    if (readOnly) await client.query('ROLLBACK');
-    return catalogFromRows(rows, migrations);
-  } finally {
-    await client.end();
-  }
+/**
+ * The objects this gate compares for one database. `main` derives it once per
+ * database with `comparedObjects`; every comparison takes it, never a raw
+ * `Catalog`.
+ */
+export interface ComparedObjects {
+  /** Base tables (relkind r or p). */
+  tables: Set<string>;
+  /** `relation.column` for every relation, views included (the catalog's, unchanged). */
+  columns: Set<string>;
+  /** `enum_type.label` (the catalog's, unchanged). */
+  enumValues: Set<string>;
+  /** Indexes on those tables. `definition` is `normalizeIndexDef` of the catalog's. */
+  indexes: Map<string, CatalogIndex>;
+  /** Every constraint. `definition` is `normalizeConstraintDef` of the catalog's. */
+  constraints: Map<string, CatalogConstraint>;
 }
 
-/** Back-compat for callers of the presence-only reader. */
-export async function readSchemaObjects(databaseUrl: string): Promise<SchemaObjects> {
-  const { tables, columns, enumValues } = await readCatalog(databaseUrl);
-  return { tables, columns, enumValues };
+/**
+ * Pure: the base tables of `catalog`, its columns and enum values, the indexes
+ * on those tables, and every constraint, with each index and constraint
+ * definition normalized. Indexes on materialized views are left out: the
+ * migrations guarantee only table objects.
+ */
+export function comparedObjects(catalog: Catalog): ComparedObjects {
+  const tables = tablesOf(catalog);
+  const indexes = new Map<string, CatalogIndex>();
+  for (const [name, index] of catalog.indexes) {
+    if (tables.has(index.table)) indexes.set(name, { ...index, definition: normalizeIndexDef(index.definition) });
+  }
+  const constraints = new Map<string, CatalogConstraint>();
+  for (const [name, c] of catalog.constraints) {
+    constraints.set(name, { ...c, definition: normalizeConstraintDef(c.definition) });
+  }
+  return { tables, columns: catalog.columns, enumValues: catalog.enumValues, indexes, constraints };
+}
+
+/** Pure: the count line printed for one database. */
+export function countsLine({ tables, columns, enumValues, indexes, constraints }: ComparedObjects): string {
+  return (
+    `${tables.size} tables, ${columns.size} columns, ${enumValues.size} enum values, ` +
+    `${indexes.size} indexes, ${constraints.size} constraints.`
+  );
 }
 
 /** Pure: tables/columns/enum values in `canonical` that are absent from `live`. */
-export function diffMissing(canonical: SchemaObjects, live: SchemaObjects): {
+export function diffMissing(canonical: ComparedObjects, live: ComparedObjects): {
   missingTables: string[];
   missingColumns: string[];
   missingEnumValues: string[];
@@ -223,8 +166,8 @@ export interface StructureDrift {
  * both sides (a missing table is reported by diffMissing, not here).
  */
 export function diffStructure(
-  canonical: CatalogObjects,
-  live: CatalogObjects,
+  canonical: ComparedObjects,
+  live: ComparedObjects,
   waivers: LiveSchemaWaivers = LIVE_SCHEMA_WAIVERS,
 ): StructureDrift {
   const drift: StructureDrift = {
@@ -253,8 +196,8 @@ export function diffStructure(
     }
   }
 
-  const constraintKey = (c: ConstraintObject) => `${c.table}|${c.type}|${definitionKey(c.definition)}`;
-  const liveConstraints = new Map<string, ConstraintObject>();
+  const constraintKey = (c: CatalogConstraint) => `${c.table}|${c.type}|${definitionKey(c.definition)}`;
+  const liveConstraints = new Map<string, CatalogConstraint>();
   for (const c of live.constraints.values()) {
     const key = constraintKey(c);
     // Prefer a validated copy when two live constraints share a definition.
@@ -288,10 +231,14 @@ export function diffStructure(
   return drift;
 }
 
-/** Pure: migrations canonical applied that live has not (their objects show as missing until then). */
-export function pendingMigrations(canonical: CatalogObjects, live: CatalogObjects): string[] {
-  if (live.migrations.size === 0) return [];
-  return [...canonical.migrations].filter((m) => !live.migrations.has(m)).sort();
+/**
+ * Pure: migrations canonical applied that live has not (their objects show as
+ * missing until then). A live database without a ledger reports nothing.
+ */
+export function pendingMigrations(canonicalLedger: readonly string[], liveLedger: readonly string[]): string[] {
+  if (liveLedger.length === 0) return [];
+  const applied = new Set(liveLedger);
+  return canonicalLedger.filter((m) => !applied.has(m)).sort();
 }
 
 function resolveUrls(argv: string[]): { canonical: string; live: string } {
@@ -319,18 +266,17 @@ function section(title: string, lines: string[], sink: (line: string) => void) {
 
 async function main() {
   const { canonical, live } = resolveUrls(process.argv.slice(2));
-  const [canon, target] = await Promise.all([readCatalog(canonical), readCatalog(live, { readOnly: true })]);
+  const [canon, target] = await Promise.all([readDatabase(canonical, SCHEMA), readDatabase(live, SCHEMA)]);
 
-  const presence = diffMissing(canon, target);
-  const structure = diffStructure(canon, target);
-  const pending = pendingMigrations(canon, target);
+  // Each database's objects are derived once; every comparison below reads these.
+  const canonObjects = comparedObjects(canon.catalog);
+  const targetObjects = comparedObjects(target.catalog);
 
-  console.log(
-    `Canonical: ${canon.tables.size} tables, ${canon.columns.size} columns, ${canon.enumValues.size} enum values, ` +
-      `${canon.indexes.size} indexes, ${canon.constraints.size} constraints.\n` +
-      `Live:      ${target.tables.size} tables, ${target.columns.size} columns, ${target.enumValues.size} enum values, ` +
-      `${target.indexes.size} indexes, ${target.constraints.size} constraints.`,
-  );
+  const presence = diffMissing(canonObjects, targetObjects);
+  const structure = diffStructure(canonObjects, targetObjects);
+  const pending = pendingMigrations(canon.ledger, target.ledger);
+
+  console.log(`Canonical: ${countsLine(canonObjects)}\nLive:      ${countsLine(targetObjects)}`);
   section(
     'NOTE — migrations applied on canonical but not on live; objects they create are reported as missing until they run',
     pending,
