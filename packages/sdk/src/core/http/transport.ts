@@ -68,36 +68,49 @@ export function isAdminBypassEnabled(): boolean {
   return adminBypassEnabled;
 }
 
-function toRecord(headers: HeadersInit | undefined): Record<string, string> {
-  if (!headers) return {};
-  if (headers instanceof Headers) return Object.fromEntries(headers.entries());
-  if (Array.isArray(headers)) return Object.fromEntries(headers);
-  return { ...(headers as Record<string, string>) };
+// The headers of one request, as a plain record: the wire shape a URL request
+// has always carried, with the names as the caller spelled them. Header names
+// are case-insensitive, as in `Headers`: `setHeader` replaces a name in any
+// case, so no name goes out twice with two values joined.
+
+function entriesOf(headers: HeadersInit | undefined): Array<[string, string]> {
+  if (!headers) return [];
+  if (headers instanceof Headers || Array.isArray(headers)) return [...new Headers(headers).entries()];
+  return Object.entries(headers);
 }
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {
-  return Object.keys(headers).some((key) => key.toLowerCase() === name);
+  const lower = name.toLowerCase();
+  return Object.keys(headers).some((key) => key.toLowerCase() === lower);
+}
+
+function setHeader(headers: Record<string, string>, name: string, value: string): void {
+  const lower = name.toLowerCase();
+  for (const key of Object.keys(headers)) if (key.toLowerCase() === lower) delete headers[key];
+  headers[name] = value;
 }
 
 /** The caller's headers: the `Request`'s own, then `init.headers` over them. */
 function callerHeaders(input: RequestInfo | URL, init: RequestInit): Record<string, string> {
-  const base = input instanceof Request ? toRecord(input.headers) : {};
-  return Object.assign(base, toRecord(init.headers));
+  const headers: Record<string, string> = {};
+  const sources = [input instanceof Request ? input.headers : undefined, init.headers];
+  for (const [name, value] of sources.flatMap(entriesOf)) setHeader(headers, name, value);
+  return headers;
 }
 
 /**
  * The caller's headers plus the platform policy. A caller's own
- * `Authorization` or `X-Kortix-Client` wins. Act-as is attached after the
- * caller's headers so a call site cannot drop it, except on the admin console,
- * which the API never impersonates (see `shouldAttachImpersonation`).
+ * `Authorization` or `X-Kortix-Client` wins. Admin bypass and act-as replace
+ * the caller's value, so a call site cannot drop them; the admin console is
+ * never impersonated (see `shouldAttachImpersonation`).
  */
 function withPlatformHeaders(url: string, base: Record<string, string>, token: string): Record<string, string> {
   const headers = { ...base };
   const clientSource = normalizeClientSource(platformConfig().clientSource);
-  if (clientSource && !hasHeader(headers, 'x-kortix-client')) headers['X-Kortix-Client'] = clientSource;
-  if (adminBypassEnabled) headers['x-kortix-admin-bypass'] = '1';
-  Object.assign(headers, impersonationHeaders(url));
-  if (!hasHeader(headers, 'authorization')) headers.Authorization = `Bearer ${token}`;
+  if (clientSource && !hasHeader(headers, 'x-kortix-client')) setHeader(headers, 'X-Kortix-Client', clientSource);
+  if (adminBypassEnabled) setHeader(headers, 'x-kortix-admin-bypass', '1');
+  for (const [name, value] of Object.entries(impersonationHeaders(url))) setHeader(headers, name, value);
+  if (!hasHeader(headers, 'authorization')) setHeader(headers, 'Authorization', `Bearer ${token}`);
   return headers;
 }
 

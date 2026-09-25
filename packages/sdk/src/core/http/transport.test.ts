@@ -106,6 +106,50 @@ describe('send: header policy', () => {
     expect(raw).toEqual({ 'Content-Type': 'application/json', Authorization: 'Bearer tok1' });
   });
 
+  test('init.headers override a Request header in another case, as one value', async () => {
+    const response = await authenticatedFetch(
+      new Request('http://backend.test/v1/x', { headers: { 'Content-Type': 'application/json' } }),
+      { headers: { 'Content-Type': 'text/plain' } },
+    );
+    expect(response.status).toBe(200);
+    expect(seen[0].headers.get('content-type')).toBe('text/plain');
+  });
+
+  test('the platform policy replaces a caller header in another case, as one value', async () => {
+    setAdminBypass(true);
+    setImpersonationSession(live());
+    await send(
+      new Request('http://backend.test/v1/p/ext-1/8000/session', {
+        headers: { 'X-Kortix-Admin-Bypass': '0', 'x-kortix-impersonate': 'stale' },
+      }),
+    );
+    expect(seen[0].headers.get('x-kortix-admin-bypass')).toBe('1');
+    expect(seen[0].headers.get('x-kortix-impersonate')).toBe('grant-1');
+  });
+
+  test('a URL request record holds each header name once, whatever its case', async () => {
+    let raw: HeadersInit | undefined;
+    configureKortix({
+      backendUrl: 'http://backend.test/v1',
+      getToken: async () => 'tok1',
+      fetch: async (_input, init) => {
+        raw = init?.headers;
+        return new Response('{}');
+      },
+    });
+    setAdminBypass(true);
+    setImpersonationSession(live());
+    await send('http://backend.test/v1/p/ext-1/8000/session', {
+      headers: { 'content-type': 'application/json', 'X-KORTIX-ADMIN-BYPASS': '0', 'x-kortix-impersonate': 'stale' },
+    });
+    expect(raw).toEqual({
+      'content-type': 'application/json',
+      'x-kortix-admin-bypass': '1',
+      'X-Kortix-Impersonate': 'grant-1',
+      Authorization: 'Bearer tok1',
+    });
+  });
+
   test('a Request input keeps its body and gets the headers on the Request', async () => {
     await send(
       new Request('http://backend.test/v1/p/ext/8000/session/s/message', {
