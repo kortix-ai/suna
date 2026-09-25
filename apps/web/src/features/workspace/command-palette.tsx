@@ -146,8 +146,6 @@ import {
   HashIcon as Hash,
   ChatCircleIcon as MessageCircle,
   MinusIcon as Minus,
-  SidebarSimpleIcon as PanelLeftClose,
-  SidebarSimpleIcon as PanelLeftIcon,
   MagnifyingGlassIcon as Search,
   TextAlignLeftIcon as TextAlignLeft,
   UsersIcon as UsersSolid,
@@ -156,6 +154,10 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { useTheme } from 'next-themes';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  SidebarToggle as PanelLeftClose,
+  SidebarToggle as PanelLeftIcon,
+} from '@/features/icon/icons/sidebar-toggle';
 
 type PalettePage =
   | 'root'
