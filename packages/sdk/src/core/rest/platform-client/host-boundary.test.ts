@@ -18,8 +18,40 @@ afterEach(() => {
 });
 
 const boundary = await import('./host-boundary');
+import type { SecretSetupLinkSubmitResult } from './host-boundary';
 
 describe('host boundary transport', () => {
+  test('secret submit returns the names the requesting agent will not receive', async () => {
+    responseFactory = () =>
+      Response.json({
+        ok: true,
+        saved: ['API_KEY'],
+        agent: 'analyst',
+        withheld: [{ name: 'API_KEY', reason: 'agent_grant' }],
+      });
+    const result: SecretSetupLinkSubmitResult = await boundary.submitSecretSetupLink(
+      'secret-token',
+      { API_KEY: 'value' },
+      { backendUrl: 'https://api.example.test/v1' },
+    );
+
+    expect(requests[0]?.url).toBe('https://api.example.test/v1/setup-links/secret/secret-token');
+    expect(result.saved).toEqual(['API_KEY']);
+    expect(result.agent).toBe('analyst');
+    expect(result.withheld?.[0]?.reason).toBe('agent_grant');
+  });
+
+  test('secret submit from an older server carries no withheld names', async () => {
+    responseFactory = () => Response.json({ ok: true, saved: ['API_KEY'] });
+    const result = await boundary.submitSecretSetupLink(
+      'secret-token',
+      { API_KEY: 'value' },
+      { backendUrl: 'https://api.example.test/v1' },
+    );
+
+    expect(result.withheld).toBeUndefined();
+  });
+
   test('public marketplace reads accept explicit cache options', async () => {
     responseFactory = () => Response.json({ items: [{ id: 'skill-1' }] });
     const result = await boundary.listPublicMarketplaceItems(
