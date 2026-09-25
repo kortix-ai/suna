@@ -200,7 +200,7 @@ that are too low. 104 prod turns in 59 sessions across 4 accounts, from
 **Enforcement.** `tests/spec/wire-message-id.vectors.json` (API and SDK);
 `packages/sdk/src/core/turns/display-order.test.ts` (prod-shaped ids, the
 wrap); `apps/cli/src/commands/sessions-queue.test.ts`; API tests for POST
-stamping, drain floors, and proxy repair (`forward-prompt-wire-id.test.ts`).
+stamping, drain floors, and proxy repair (`sandbox-proxy/routes/forward.test.ts`).
 PR #7597.
 
 ### A guest fix in the boot path must also reach sandboxes that only resume (2026-09-24)
@@ -407,9 +407,10 @@ opencode's blocking `question` call is a separate POST to
 posted the card and then hung until its box parked — strictly worse than the
 prose it replaced, because the user sees the question and answers a turn that
 never finishes. Caught while verifying a claim in the PR description, after
-merge, before anyone hit it. **Enforcers:** `channelRelayContext()` now accepts
-either platform, asserted by `question-relay-scope.test.ts` (a Teams session
-must count as a channel; the sentinel must come from `channelLabel()`), and
+merge, before anyone hit it. **Enforcers:** `sessionChannel()` (daemon
+`relay-context.ts`) accepts either platform, asserted by the daemon's
+`question-relay.test.ts` for both harness adapters (a Teams session must count
+as a channel; the sentinel names the channel it was posted to), and
 `unit-channel-question-guidance.test.ts` asserts the two platforms differ ON
 PURPOSE until sandboxes carry the fixed daemon.
 
@@ -1349,8 +1350,8 @@ request got another customer's agent (`chief-of-staff`, the first
 344 tokens in unrelated projects lost CLI and connector access; the admin project
 list showed global session counts per project. *Automation:*
 `sql-correlated-subquery-guard.test.ts` fails on any raw subquery that references
-a `@kortix/db` table column it does not select from; `backend-load-sandbox-sql.test.ts`
-pins the rendered join; `isLaunchableAgentName` + the proxy/re-mint guards refuse
+a `@kortix/db` table column it does not select from;
+`integration-correlated-subquery-isolation.test.ts` proves the `loadSandbox` join on real rows; `isLaunchableAgentName` + the proxy/re-mint guards refuse
 any agent name the session's own manifest does not declare.
 
 ### Renaming or replacing the default agent is TWO writes — the manifest AND `project.metadata.default_agent`, which wins (2026-09-15)
@@ -3537,8 +3538,8 @@ then; 0 gateway log rows ever. PR #6576.
 *Enforcer:* `managed-fallback-sync.test.ts` (bundled table vs `MANAGED_MODELS`
 drift — cited here since 2026-08-19 but ABSENT on `main` until 2026-08-27, when
 adding `glm-5.3-flash` found the gap; it now lives in
-`apps/kortix-sandbox-agent-server/src/__tests__/` and fails on a missing,
-misnamed, mis-sized, or mis-priced bundled entry), `managed-model-overlay.test.ts` (stale file + live overlay; failed
+`apps/api/src/llm-gateway/models/` and fails on a missing, extra, misnamed,
+mis-sized, or mis-priced bundled entry), the daemon's `opencode-catalog.test.ts` (stale file + live overlay; failed
 fetch → bundled floor; await cap), `managed-scope.test.ts`; web: sync-store
 per-turn `session.error` tests. Not enforced: a live "picker ⊆ guest provider
 map" assertion after deploy — run the dev sweep by hand until it exists.
@@ -5364,8 +5365,8 @@ inode; the next restart booted the stub ("Still waking this session up").
 2. Version changes reach a box only through the runtime-assets manifest and
    `installOpencodeVersion` (`pnpm add -g --allow-build=opencode-ai`).
 
-*Automation:* `connector-mcp-config.test.ts` — "always disables OpenCode
-autoupdate".
+*Automation:* `opencode-config-composition.test.ts` — "always disables
+OpenCode autoupdate".
 
 ## A boot budget measures lack of progress, not wall-clock
 
@@ -5389,7 +5390,7 @@ install had already landed.
 3. Do not "fix" a slow legitimate boot by raising the fixed budget; expose the
    progress and budget that.
 
-*Automation:* `unit-session-restart-url-contract.test.ts` ("progress-aware
+*Automation:* `session-lifecycle/readiness-clocks.test.ts` ("progress-aware
 OpenCode boot budget"), `boot-phase.test.ts`, `proxy-auth.test.ts` ("names the
 boot phase").
 
@@ -5427,7 +5428,8 @@ restarting it under the boot; and the PATH launcher on two boxes was the
    to) the postinstall stub; resolution falls through to the managed links.
    Conservative: anything unreadable is not a stub.
 
-*Automation:* `refresh-converge-guard.test.ts`, `opencode-binary.test.ts`.
+*Automation:* `refresh-route.test.ts` (runtime-assets convergence only for a
+serving runtime), `opencode-binary.test.ts`.
 
 ## Window inline images inside the sandbox; the edge is too late
 
@@ -5770,8 +5772,10 @@ consumed by a `/start` branch that returned before any provider call. Only
 *Automation:* `apps/api/src/projects/routes/stopped-wake-result.test.ts` (the
 10-hour replay, both stamps, the ladder, the evidence),
 `session-lifecycle/runtime-wake-fence.test.ts` (progress-aware budget, hard cap,
-cooldown ladder), `session-lifecycle/runtime-wake-billing-invariant.test.ts`
-(the 2026-08-17 mid-turn park and the compute-close exemption stay intact),
+cooldown ladder, the lease boundary), `reaping/sandbox-state-sync.test.ts`
+(the 2026-08-17 mid-turn park needs a confirmed second stopped read),
+`projects/sandbox-reaper.test.ts` (`decideComputeClose`: a fresh wake fence is
+not billable-stop proof),
 `session-lifecycle/stopped-observation-followup.test.ts` (bounded confirmation),
 `session-lifecycle/start-envelope.test.ts` (one envelope per open state).
 
@@ -5788,8 +5792,8 @@ unreachable-runtime class separately from the refusal class, keep the work
 queued with a runtime-scaled backoff, spend no dead-letter budget on it, and
 re-arm it on the event you are actually waiting for.** *Enforcer:*
 `deliver.test.ts` (stopped/parked → `unreachable`, missing → `no-session`) and
-`runtime-unreachable-park.test.ts` (bounded budget, backoff ladder, fresh
-idempotency key, Stop survives as a hold).
+`integration-lifecycle-command-lease.test.ts` (bounded budget, backoff ladder,
+fresh idempotency key, Stop survives as a hold, re-arm skips a held row).
 
 ### A provider's "resume" is not a promise that your processes come back (2026-08-26)
 
@@ -5869,8 +5873,8 @@ deterministically doomed, regardless of progress.**
    `console.warn`s fails invisibly — which is the likeliest reason the
    ready-path clear never cleared anything in production.
 
-*Automation:* `unit-session-restart-url-contract.test.ts` — "an automatic rung
-never inherits the previous attempt boot budget" (8 tests, including "a stub
+*Automation:* `session-lifecycle/readiness-clocks.test.ts` — "an automatic rung
+never inherits the previous attempt boot budget" (including "a stub
 launcher that changes phase for ever is still caught at the cap" and
 "who resets the retry accounting"); `e2e-project-session-contract.test.ts` —
 "the automatic rung re-baselines the boot clocks but KEEPS the failure
@@ -7313,3 +7317,60 @@ in the hold route before the settle can abort (`session-prompts.test.ts`,
 `inbox-hold-settle.test.ts`, `integration-sandbox-turn-lifecycle.test.ts`).
 Root fix upstream: an `InstanceState` must not cache an interrupt-only exit.
 Unblock recipe for a stuck box: `POST /v1/p/<external_id>/8000/instance/dispose`.
+
+### 2026-09-25 — A sweep that reads silence as death kills healthy runs
+
+**Incident.** A prod Slack run posted one `slack step`, then worked for 30
+minutes without another. Two `task` subagents made model calls every minute,
+with 0 gateway failures. At 30m56s the Slack stale-turn sweep closed the
+thread as "Run timed out — it may have stalled or run out of credits" and
+aborted the runtime turn (`MessageAbortedError`), killing both subagents.
+Estimate over the previous 30 days: 40 of 71 Slack turns longer than 30
+minutes had a relay gap over 30 minutes before their answer. Each had its
+thread closed. From 2026-09-21 (`e43253cb2f`) the sweep also aborted the run.
+The Teams sweep had the same defect. It got a liveness check on 2026-09-23;
+the Slack sweep did not.
+
+**Cause.** The sweep's only liveness signal was `chat_turn_streams.updated_at`.
+Only channel relays (`slack step`, `slack send`) write that column. The run's
+own work writes nothing there. The same shape as the 2026-09-05 `expires_at`
+reaper: a liveness TTL that only one caller refreshes.
+
+**Rule.** A reaper that closes or aborts a run asks the lifecycle authority
+(`sessionHoldsLiveTurn` → `session_sandboxes.metadata.activeTurns`) first. The
+silence of a UI surface is never proof of death. A fix to one channel's sweep
+is ported to every channel's sweep in the same change.
+
+**Enforcement.** `apps/api/src/__tests__/unit-slack-turn-sweep.test.ts` and
+`unit-teams-turn.test.ts`: a stale turn the runtime still holds is touched,
+not closed, and not aborted. An unreadable authority counts as not live.
+
+### 2026-09-25 — "Accepted" read right after an async submit sees nothing yet
+
+**Incident.** Found while tracing the sweep kill above. On prod, 1,580 of
+1,604 session-creating first turns in 7 days ended `abandoned`, and none was
+ever accepted. The same holds every day back to the ledger's first rows
+(2026-08-19). A median of 12.6 s after start, the ledger dropped the turn while
+OpenCode ran it. In 7 days, 125 such turns demonstrably kept working, 75 for
+more than 10 minutes. With no authority on record, every reader of "is this
+session working?" saw the first turn as idle: the stale-turn sweeps, the
+inbox, and `GET .../turn`.
+
+**Cause.** Boot calls `prompt_async`, then reconciles acceptance at once.
+`prompt_async` answers `204` before OpenCode writes the user message and
+before its loop marks the root busy. On 1.18.23 against a cold instance the
+message is absent at +11 ms, and the root is busy only about 300 ms later
+(1 s on prod). The reconcile read "absent / unanswered" as proof the prompt was
+dropped and sent `turn_abandoned`. The later `turn_begin` could not re-adopt
+the turn, because the ledger already knew that message.
+
+**Rule.** After an asynchronous submit, "not visible yet" is `unknown`, never
+terminal. Only the party that made the submit may wait on it, and only for a
+bounded grace. Absence is proof only when no one has submitted in this
+process's lifetime.
+
+**Enforcement.** `apps/kortix-sandbox-agent-server/src/__tests__/initial-turn-lifecycle.test.ts`:
+absent and unanswered stay `unknown` while this boot awaits pickup, then
+promote on busy. Both are abandoned after the 15-minute grace. A reused root
+stays abandoned at once. A busy frame promotes the pending first turn before
+any `turn_begin`.

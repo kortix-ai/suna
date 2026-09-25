@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { decideParkedRuntime } from './parked-runtime-verification';
 
 /**
- * Incident 2026-08-12 (Platinum deleted sbx_01KZP370WDB8DGYNAQM1B875VR while it
- * held a completed backup). The Kortix-side finding this file exists for:
+ * Incident 2026-08-12 (Platinum deleted a parked sandbox while it held a
+ * completed backup). The Kortix-side finding this file exists for:
  *
  * NOTHING EVER RE-VERIFIED A PARKED SANDBOX. The box reaper's candidate
  * predicate is `status = 'active'` (reaping/box-queries.ts), and the wake

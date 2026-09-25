@@ -187,9 +187,8 @@ this case on every surface:
 You cannot widen your own grant. Tell the human the exact fix: **Customize →
 Agents → `<your agent>` → Secrets → enable the secret** (or, from their own CLI,
 `kortix secrets grant <NAME> --agent <your agent>`). Kortix pushes the change
-to this session when it is saved, and the human's next message re-syncs it
-regardless. You cannot run `kortix secrets sync` yourself (it returns `403` to
-agent sessions).
+to this session when it is saved. Run `kortix secrets sync` to pull it into
+this session right away, then continue.
 
 ---
 

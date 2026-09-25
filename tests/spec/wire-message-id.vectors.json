@@ -1,5 +1,5 @@
 {
-  "note": "Frozen contract for the OpenCode wire message-id clock, asserted by BOTH apps/api (src/projects/wire-message-id.test.ts) and packages/sdk (src/react/use-opencode-sessions/messages.test.ts). Two implementations exist on purpose: apps/api has no @kortix/sdk dependency, and the SDK's minter reads the browser sync store. A divergence between them silently drops turns — OpenCode decides 'has this prompt already been answered?' by id order — so it must fail two suites, not zero.",
+  "note": "Frozen contract for the OpenCode wire message-id clock, asserted by apps/api (src/projects/wire-message-id.test.ts), packages/sdk (src/core/session/wire-message-id.test.ts) and the sandbox daemon's pi harness (apps/kortix-sandbox-agent-server/src/__tests__/pi-wire-id.test.ts). Three implementations exist on purpose: apps/api has no @kortix/sdk dependency, the SDK's minter reads the browser sync store, and the daemon ships inside the sandbox image. A divergence between them silently drops turns — OpenCode decides 'has this prompt already been answered?' by id order — so it must fail a suite, not zero.",
   "format": "msg_ + the low 48 bits of (clockMs * 0x1000) as 12 lowercase hex chars + 14 random base62 chars",
   "timeScaleHex": "1000",
   "timeMaskHex": "ffffffffffff",

@@ -194,7 +194,7 @@ async function readPluginPin(depsDir: string): Promise<string | null> {
   }
 }
 
-export async function refreshOpencodePluginPin(
+async function refreshOpencodePluginPin(
   depsDir: string,
   version: string,
 ): Promise<'updated' | 'current' | 'absent' | 'failed'> {

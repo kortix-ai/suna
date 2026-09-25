@@ -420,10 +420,9 @@ export function secretSubmittedPrompt(
   const plural = saved.length === 1 ? 'value' : 'values';
   const text =
     `The secret ${plural} for ${saved.join(', ')} ${saved.length === 1 ? 'was' : 'were'} just ` +
-    'submitted through the intake link and saved to this project. Sync is in flight: a variable ' +
-    'not visible in your environment yet arrives with the next message (agent sessions cannot ' +
-    'run `kortix secrets sync`). Continue the task that was blocked on it. Do not mint a new ' +
-    'intake link for these names.';
+    'submitted through the intake link and saved to this project. Sync is in flight — run ' +
+    '`kortix secrets sync` if a variable is not visible in your environment yet, then continue ' +
+    'the task that was blocked on it. Do not mint a new intake link for these names.';
   if (!reach || reach.withheld.length === 0) return text;
   return (
     `${text} ${withheldSecretsFix(reach.agent, reach.withheld)} ` +

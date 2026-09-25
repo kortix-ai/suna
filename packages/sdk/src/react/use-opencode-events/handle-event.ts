@@ -20,7 +20,7 @@ import {
   SESSION_SYNC_PAGE_SIZE,
   type SessionSyncReason,
 } from '../../core/session-sync/session-sync-controller';
-import { fileContentKeys, fileListKeys, gitStatusKeys } from '../file-keys';
+import { binaryBlobKeys, fileContentKeys, fileListKeys, gitStatusKeys } from '../file-keys';
 import { ptyKeys } from '../use-opencode-pty';
 import { type MessageWithParts, opencodeKeys, type Session } from '../use-opencode-sessions';
 import { applyPartDiagnostics } from './diagnostics';
@@ -100,6 +100,25 @@ export function createEventHandler(deps: {
     }
     const session = queryClient.getQueryData<Session>(opencodeKeys.runtimeSession(sessionID));
     return session?.title || undefined;
+  }
+
+  // The agent's turn just settled, so any file it touched may have moved.
+  // `file.edited` does not fire for every agent write (shell redirects,
+  // generated binaries), so the turn end is the one reliable moment to drop
+  // every open file view: the Changes panel, the file tree, and an open
+  // viewer's text or binary content. No `type` filter on purpose: every match
+  // is marked stale, so a file closed mid-turn refetches when it reopens;
+  // only what is on screen refetches now (`refetchType` defaults to active).
+  function invalidateWorkspaceFilesAfterTurn() {
+    for (const queryKey of [
+      gitStatusKeys.all,
+      opencodeKeys.vcsDiffAll(),
+      fileListKeys.all,
+      fileContentKeys.all,
+      binaryBlobKeys.all,
+    ]) {
+      queryClient.invalidateQueries({ queryKey });
+    }
   }
 
   function handleEvent(event: OpenCodeEvent) {
@@ -333,21 +352,7 @@ export function createEventHandler(deps: {
           const prevStatus = useSyncStore.getState().sessionStatus[sessionID];
           if (status.type === 'idle' && prevStatus && prevStatus.type !== 'idle') {
             notifyTaskComplete(sessionID, getSessionTitle(sessionID));
-            // Agent finished editing files — refresh the Changes panel.
-            // Nothing else invalidates git status for agent-driven edits,
-            // so without this the panel shows stale diff state.
-            queryClient.invalidateQueries({
-              queryKey: gitStatusKeys.all,
-              type: 'active',
-            });
-            queryClient.invalidateQueries({
-              queryKey: opencodeKeys.vcsDiffAll(),
-              type: 'active',
-            });
-            queryClient.invalidateQueries({
-              queryKey: fileListKeys.all,
-              type: 'active',
-            });
+            invalidateWorkspaceFilesAfterTurn();
           }
         }
         break;
@@ -359,21 +364,7 @@ export function createEventHandler(deps: {
           const prevStatus = useSyncStore.getState().sessionStatus[sessionID];
           if (prevStatus && prevStatus.type !== 'idle') {
             notifyTaskComplete(sessionID, getSessionTitle(sessionID));
-            // Agent finished editing files — refresh the Changes panel.
-            // Nothing else invalidates git status for agent-driven edits,
-            // so without this the panel shows stale diff state.
-            queryClient.invalidateQueries({
-              queryKey: gitStatusKeys.all,
-              type: 'active',
-            });
-            queryClient.invalidateQueries({
-              queryKey: opencodeKeys.vcsDiffAll(),
-              type: 'active',
-            });
-            queryClient.invalidateQueries({
-              queryKey: fileListKeys.all,
-              type: 'active',
-            });
+            invalidateWorkspaceFilesAfterTurn();
           }
         }
         break;
@@ -667,6 +658,10 @@ export function createEventHandler(deps: {
         if (fileProps.file) {
           queryClient.invalidateQueries({
             queryKey: fileContentKeys.all,
+            type: 'active',
+          });
+          queryClient.invalidateQueries({
+            queryKey: binaryBlobKeys.all,
             type: 'active',
           });
         }

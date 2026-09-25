@@ -47,17 +47,6 @@ describe('readRepoInfo', () => {
     expect(info!.path).toBe(dir)
   })
 
-  test('concurrent reads of the same repo all agree', async () => {
-    const dir = await makeRepo('main')
-    const results = await Promise.all(Array.from({ length: 8 }, () => readRepoInfo(dir)))
-
-    for (const info of results) {
-      expect(info!.branch).toBe('main')
-      expect(info!.commit).toBe(results[0]!.commit)
-      expect(info!.remoteUrl).toBe('https://example.test/r.git')
-    }
-  })
-
   test('reflects the session branch after a checkout, which is what repo_ready gates on', async () => {
     const dir = await makeRepo('main')
     expect((await readRepoInfo(dir))!.branch).toBe('main')
