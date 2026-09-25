@@ -1,5 +1,6 @@
 import {
   emitJson,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -438,11 +439,6 @@ function sandboxRmLocal(slug: string | undefined): number {
 function stateCell(state: string, ready: boolean): string {
   const color = ready ? C.green : state === 'error' ? C.red : state === 'missing' ? C.faded : C.yellow;
   return `${color}${pad(state, 11)}${C.reset}`;
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }
 
 function trim(s: string, max: number): string {

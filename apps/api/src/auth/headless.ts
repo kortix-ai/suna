@@ -19,7 +19,7 @@ import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { auditLoginFail } from '../shared/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
 import { ssoEnforcedForEmail } from '../repositories/sso';
-import { clientIpFromHeaders } from '../shared/client-ip';
+import { requestClientIp, requestClientKey } from '../shared/client-ip';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 
@@ -41,13 +41,8 @@ const SessionResponse = z.object({ session: SessionSchema, user: UserSchema });
 const Email = z.string().email().max(320);
 const OTP_TYPES = ['magiclink', 'signup', 'recovery', 'email', 'email_change'] as const;
 
-// Trusted-proxy rule: the leftmost X-Forwarded-For entry is caller-written.
-function clientIp(c: Context): string | null {
-  return clientIpFromHeaders((name) => c.req.header(name));
-}
-
 function throttled(c: Context): Response | null {
-  const key = clientIp(c) ?? 'unknown';
+  const key = requestClientKey(c);
   const verdict = limiter.check(key, IP_POLICY);
   if (verdict.allowed) return null;
   return c.json(
@@ -137,7 +132,7 @@ headlessAuthRouter.openapi(
     const body = c.req.valid('json');
     const result = await gotrue<Record<string, unknown>>('/signup', {
       body: { email: body.email.trim().toLowerCase(), password: body.password, data: body.data ?? {} },
-      clientIp: clientIp(c),
+      clientIp: requestClientIp(c),
       query: { redirect_to: safeRedirect(body.redirect_to) },
     });
     if (!result.ok) {
@@ -170,7 +165,7 @@ headlessAuthRouter.openapi(
     if (denied) return denied;
     const result = await gotrue<Record<string, unknown>>('/token', {
       body: { email: body.email.trim().toLowerCase(), password: body.password },
-      clientIp: clientIp(c),
+      clientIp: requestClientIp(c),
       query: { grant_type: 'password' },
     });
     if (!result.ok) {
@@ -213,7 +208,7 @@ headlessAuthRouter.openapi(
     if (denied) return denied;
     const result = await gotrue('/otp', {
       body: { email: body.email.trim().toLowerCase(), create_user: body.create_user ?? true, data: body.data ?? {} },
-      clientIp: clientIp(c),
+      clientIp: requestClientIp(c),
       query: { redirect_to: safeRedirect(body.redirect_to) },
     });
     if (!result.ok) return upstreamError(c, result);
@@ -249,7 +244,7 @@ headlessAuthRouter.openapi(
     if (denied) return denied;
     const result = await gotrue<Record<string, unknown>>('/verify', {
       body: { email: body.email.trim().toLowerCase(), token: body.token.trim(), type: body.type },
-      clientIp: clientIp(c),
+      clientIp: requestClientIp(c),
     });
     if (!result.ok) {
       auditLoginFail({ c, reason: `otp_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
@@ -326,7 +321,7 @@ headlessAuthRouter.openapi(
     const body = c.req.valid('json');
     const result = await gotrue<Record<string, unknown>>('/token', {
       body: { auth_code: body.code, code_verifier: body.code_verifier },
-      clientIp: clientIp(c),
+      clientIp: requestClientIp(c),
       query: { grant_type: 'pkce' },
     });
     if (!result.ok) {
@@ -354,7 +349,7 @@ headlessAuthRouter.openapi(
     const body = c.req.valid('json');
     const result = await gotrue<Record<string, unknown>>('/token', {
       body: { refresh_token: body.refresh_token },
-      clientIp: clientIp(c),
+      clientIp: requestClientIp(c),
       query: { grant_type: 'refresh_token' },
     });
     if (!result.ok) return upstreamError(c, result);
@@ -392,7 +387,7 @@ headlessAuthRouter.openapi(
     const body = c.req.valid('json');
     const result = await gotrue<{ url?: string }>('/sso', {
       body: { domain: body.domain.trim().toLowerCase() },
-      clientIp: clientIp(c),
+      clientIp: requestClientIp(c),
       query: { redirect_to: safeRedirect(body.redirect_to) },
     });
     // A domain with no provider is an ordinary answer, not a fault — pass
@@ -418,7 +413,7 @@ headlessAuthRouter.openapi(
     const body = c.req.valid('json');
     const result = await gotrue('/recover', {
       body: { email: body.email.trim().toLowerCase() },
-      clientIp: clientIp(c),
+      clientIp: requestClientIp(c),
       query: { redirect_to: safeRedirect(body.redirect_to) },
     });
     // Never reveal whether the address exists: GoTrue already answers 200 for

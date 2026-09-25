@@ -9,7 +9,7 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash } from 'node:crypto';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientKey } from '../shared/client-ip';
 import { connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type Context, Hono, type Next } from 'hono';
@@ -30,7 +30,7 @@ import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
 import { watchConnectorCompletion } from './connector-completion-watch';
-import { composioConfigured } from '../connectors/composio';
+import { composioConfigured, composioToolkitLogo } from '../connectors/composio';
 import { connectorConnectedPrompt, notifyConnectorSession } from '../connectors/notify-session';
 
 // The connector half of the notification moved to connectors/notify-session.ts so the
@@ -49,15 +49,10 @@ const setupLinksPublicApp = new Hono();
 const TOKEN_LIKE_REGEX = /^ksl_[A-Za-z0-9_-]{8,512}$/;
 const setupLinkLimiter = new TokenBucketRateLimiter('setup_link');
 
-// Trusted-proxy rule: the leftmost X-Forwarded-For entry is caller-written.
-function clientIp(c: Context) {
-  return requestClientIp(c);
-}
-
 function createSetupLinkRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
     const rawToken = c.req.param('token');
-    const key = rawToken && TOKEN_LIKE_REGEX.test(rawToken) ? rawToken : `ip:${clientIp(c)}`;
+    const key = rawToken && TOKEN_LIKE_REGEX.test(rawToken) ? rawToken : `ip:${requestClientKey(c)}`;
     // Never persist the raw bearer token (it's a live capability) — audit on a
     // truncated hash so hits on the same link/attempt are still correlatable.
     const resourceId = rawToken
@@ -174,14 +169,50 @@ setupLinksPublicApp.get('/connectors/:token', async (c) => {
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'connector') return c.json({ error: 'Wrong link type' }, 400);
 
+  const [name, identity] = await Promise.all([
+    projectName(resolved.projectId),
+    connectorIdentity(resolved.projectId, resolved.payload.slug, resolved.payload.app),
+  ]);
   return c.json({
     kind: 'connector',
-    project_name: await projectName(resolved.projectId),
+    project_name: name,
     slug: resolved.payload.slug,
     app: resolved.payload.app,
+    name: identity.name,
+    icon_url: identity.iconUrl,
     expires_at: new Date(resolved.payload.exp).toISOString(),
   });
 });
+
+/**
+ * The display name and logo the in-chat card shows, so a connect link reads
+ * "Connect Google Calendar" with its logo instead of a generic plug.
+ *
+ * The name comes from the project's connector row. The logo is the row's
+ * `config.icon_url` when set, else the Composio catalogue logo for the link's
+ * app — the same image the connectors catalogue shows. Connectors an agent adds
+ * store no `icon_url`, so the catalogue is the source for almost every link.
+ * Both are `null` when nothing is known; the card then shows a monogram.
+ */
+async function connectorIdentity(
+  projectId: string,
+  slug: string,
+  app: string | null,
+): Promise<{ name: string | null; iconUrl: string | null }> {
+  const [row] = await db
+    .select({ name: connectors.name, config: connectors.config })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+    .limit(1);
+  const stored = (row?.config as { icon_url?: unknown } | null | undefined)?.icon_url;
+  const iconUrl =
+    typeof stored === 'string' && stored.length > 0
+      ? stored
+      : app
+        ? await composioToolkitLogo(app)
+        : null;
+  return { name: row?.name ?? null, iconUrl };
+}
 
 /**
  * Shared gate for the two connector consume routes: resolve the token, confirm

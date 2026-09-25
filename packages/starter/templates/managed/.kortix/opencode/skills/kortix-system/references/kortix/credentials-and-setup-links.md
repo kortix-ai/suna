@@ -127,6 +127,29 @@ not mint a new `connect` link — list them with `accounts` instead and pass
 
 ---
 
+## How to write the links in your reply
+
+The web app turns every setup link into a card that already shows the app's
+logo, its name, the project, and a Connect button. Give each link its own line
+and let the card do the talking:
+
+```
+I need two apps connected for the report:
+
+https://<app>/connect/ksl_…
+https://<app>/connect/ksl_…
+```
+
+- **Never put setup links in a table.** An `App | Link` table repeats what the
+  card already says. The web app lifts such links out of a table or list, but a
+  table with extra columns stays a table and the link shrinks to an inline chip.
+- One line of "what this is for" above the links is enough. Do not restate the
+  app name next to each link.
+- In Slack or Telegram the same lines are tappable URLs, so this format works
+  everywhere.
+
+---
+
 ## After you surface the link
 
 The smooth flow is:

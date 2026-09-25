@@ -67,7 +67,6 @@ const BINDING = {
 
 function startServer(opts: { emailEnabled?: boolean } = {}): string {
   const emailEnabled = opts.emailEnabled ?? true;
-  let botName: string | undefined;
   server = Bun.serve({
     port: 0,
     fetch: async (req) => {
@@ -77,11 +76,7 @@ function startServer(opts: { emailEnabled?: boolean } = {}): string {
       const p = url.pathname.replace(`/v1/projects/${PROJECT}`, '');
 
       if (p === '' && req.method === 'GET') {
-        return Response.json({
-          project_id: PROJECT,
-          name: 'Channels',
-          metadata: botName ? { meet: { bot_name: botName } } : {},
-        });
+        return Response.json({ project_id: PROJECT, name: 'Channels', metadata: {} });
       }
       if (p === '/channels/teams/installation' && req.method === 'DELETE') {
         return Response.json({ status: 'disconnected' });
@@ -133,10 +128,6 @@ function startServer(opts: { emailEnabled?: boolean } = {}): string {
       if (p === '/channels/bindings/bind_missing' && req.method === 'PATCH') {
         return Response.json({ error: 'Binding not found' }, { status: 404 });
       }
-      if (p === '/channels/meet/name' && req.method === 'PUT') {
-        botName = String((body as { name: string }).name).trim().slice(0, 80) || 'Kortix';
-        return Response.json({ ok: true, bot_name: botName });
-      }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
   });
@@ -178,7 +169,7 @@ async function runCli(args: string[], configFile?: string) {
   return { code, stdout, stderr };
 }
 
-describe('kortix channels — email, bindings, voice, teams disconnect', () => {
+describe('kortix channels — email, bindings, teams disconnect', () => {
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-channels-parity-'));
     process.env = { ...ORIGINAL_ENV };
@@ -192,14 +183,14 @@ describe('kortix channels — email, bindings, voice, teams disconnect', () => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  test('--help documents email, bindings, bind and voice', async () => {
+  test('--help documents email, bindings and bind', async () => {
     const r = await runCli(['channels', '--help']);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('email connect');
     expect(r.stdout).toContain('email policy');
     expect(r.stdout).toContain('bindings [ls]');
     expect(r.stdout).toContain('bind <bindingId>');
-    expect(r.stdout).toContain('voice name <text>');
+    expect(r.stdout).not.toContain('voice');
     expect(r.stdout).toContain('project.connector.write');
   });
 
@@ -416,30 +407,10 @@ describe('kortix channels — email, bindings, voice, teams disconnect', () => {
     expect(r.stderr).toContain('Binding not found');
   });
 
-  test('voice name writes the name and --show reads it back off the project row', async () => {
-    const config = writeConfig(startServer());
-    const before = await runCli(['channels', 'voice', 'name', '--show', '--project', PROJECT], config);
-    expect(before.code).toBe(0);
-    expect(before.stdout).toContain('Kortix (default)');
-
-    const set = await runCli(
-      ['channels', 'voice', 'name', 'Acme', 'Support', '--project', PROJECT],
-      config,
-    );
-    expect(set.code).toBe(0);
-    expect(calls.at(-1)).toEqual({
-      method: 'PUT',
-      path: `/v1/projects/${PROJECT}/channels/meet/name`,
-      query: '',
-      body: { name: 'Acme Support' },
-    });
-    expect(set.stdout).toContain('Voice bot name → Acme Support');
-
-    const after = await runCli(
-      ['channels', 'voice', 'name', '--show', '--project', PROJECT, '--json'],
-      config,
-    );
-    expect(JSON.parse(after.stdout)).toEqual({ bot_name: 'Acme Support', is_default: false });
+  test('the removed voice subcommand is an unknown subcommand', async () => {
+    const r = await runCli(['channels', 'voice', 'name', 'x', '--project', PROJECT]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('unknown subcommand "voice"');
   });
 
   test('an unknown email action exits 2', async () => {

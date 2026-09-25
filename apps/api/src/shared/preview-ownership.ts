@@ -26,6 +26,7 @@ import { hasAccountSessionOversight } from '../iam/session-oversight';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
+import { isUuid } from './validate';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -218,8 +219,6 @@ function cacheKey(previewSandboxId: string, userId: string): string {
   return `${previewSandboxId}:${userId}`;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Resolve the real session sandbox uuid + owning account/project from a
  * `previewSandboxId`, which can be either a uuid (sandboxId / externalId) or
@@ -234,7 +233,7 @@ async function resolveSandboxRef(
     projectId: sessionSandboxes.projectId,
   };
 
-  const idCondition = UUID_RE.test(previewSandboxId)
+  const idCondition = isUuid(previewSandboxId)
     ? or(
         eq(sessionSandboxes.externalId, previewSandboxId),
         eq(sessionSandboxes.sandboxId, previewSandboxId),

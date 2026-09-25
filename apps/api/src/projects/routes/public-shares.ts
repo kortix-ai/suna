@@ -9,7 +9,8 @@ import {
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/session-access';
-import { UUID_V4_REGEX, readBody } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/previews
@@ -34,7 +35,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -70,7 +71,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -102,9 +103,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Minting, not revoking: a public share link is unauthenticated, so this is
@@ -161,7 +162,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const shareId = c.req.param('shareId');
-    if (!UUID_V4_REGEX.test(sessionId) || !UUID_V4_REGEX.test(shareId)) {
+    if (!isUuid(sessionId) || !isUuid(shareId)) {
       return c.json({ error: 'Invalid id' }, 400);
     }
 

@@ -37,9 +37,9 @@ import {
   isSystemProjectSecretName,
   loadSecretViewsForUser,
   normalizeString,
-  readBody,
   type SecretAgentGrantConfig,
 } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import {
   SecretWriteResultSchema,
   type SecretDeliverySync,
@@ -197,7 +197,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
@@ -653,7 +653,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Spec 2026-09-22 §2.3: an agent-principal session writes a personal

@@ -95,6 +95,29 @@ describe('host boundary transport', () => {
     expect(requests[1]?.init?.headers).not.toHaveProperty('Authorization');
   });
 
+  test('connector setup-link info carries the app display name and icon', async () => {
+    responseFactory = () =>
+      Response.json({
+        kind: 'connector',
+        project_name: 'Project 1',
+        slug: 'miro',
+        app: 'miro',
+        name: 'Miro',
+        icon_url: 'https://cdn.example.test/miro.svg',
+        expires_at: '2026-10-01T00:00:00.000Z',
+      });
+
+    const info = await boundary.getConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    const identity: { name: string | null | undefined; icon: string | null | undefined } = {
+      name: info.name,
+      icon: info.icon_url,
+    };
+    expect(identity).toEqual({ name: 'Miro', icon: 'https://cdn.example.test/miro.svg' });
+  });
+
   test('connector setup-link finalize POSTs anonymously and returns the connected flag', async () => {
     responseFactory = () => Response.json({ connected: true });
 

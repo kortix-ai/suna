@@ -8,7 +8,8 @@ import { and, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { projectWebhooksApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
-import { UUID_V4_REGEX, requestAuditContext } from '../lib/serializers';
+import { requestAuditContext } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 import {
   validateWebhookSecretConfiguration,
@@ -25,7 +26,7 @@ projectWebhooksApp.use('/projects/:projectId/:slug', createProjectWebhookRateLim
 projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
-  if (!UUID_V4_REGEX.test(projectId)) return c.json({ error: 'Invalid project id' }, 400);
+  if (!isUuid(projectId)) return c.json({ error: 'Invalid project id' }, 400);
   if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
     return c.json({ error: 'Invalid trigger slug' }, 400);
   }

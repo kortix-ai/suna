@@ -27,7 +27,7 @@ import {
 } from '../lib/access';
 import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 // GET /v1/projects/:projectId/access
 // Lists every account member and their explicit/effective project access.
@@ -381,7 +381,7 @@ projectsApp.openapi(
   // stricter gate here.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const role = parseAssignableProjectRole(body.role);
   if (!role) return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
   const expires = parseExpiresAtBody(body.expires_at);

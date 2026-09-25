@@ -24,7 +24,8 @@ import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed }
 import { AnyObject, projectsApp } from '../lib/app';
 import { parseConnectorConnectOwner } from '../lib/connection-access';
 import { PROJECT_ACTIONS } from '../../iam';
-import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString, readBody } from '../lib/serializers';
+import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 function frontendBase(): string {
   return (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
@@ -52,7 +53,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     // Floor 'read'; project.secret.write is the real gate — the same leaf as
     // POST /secrets. Was 'manage' → project.write, so unchecking secret.write
     // did nothing here.
@@ -158,7 +159,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     // Floor 'read'; project.connector.write is the real gate (minting a Pipedream
     // Quick Connect link is a connector operation). Was 'manage' → project.write.
     const loaded = await loadProjectForUser(c, projectId, 'read');
