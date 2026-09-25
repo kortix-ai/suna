@@ -768,6 +768,47 @@ const PRIVILEGED_RPCS: Array<[string, Record<string, string>]> = [
   ],
 ];
 
+// The complete argument set of each private wallet function (none has
+// defaults). With a partial set PostgREST answers 404 PGRST202 before it checks
+// privileges, which would say nothing about reachability. The amounts are 0 and
+// the account is the nil uuid, so even a regression that let the call through
+// could move no credit.
+const WALLET_FUNCTIONS: Array<[string, Record<string, unknown>]> = [
+  [
+    'grant_credits',
+    {
+      p_account_id: NIL_UUID,
+      p_amount: 0,
+      p_is_expiring: false,
+      p_description: 'sec-k',
+      p_expires_at: null,
+      p_type: null,
+      p_stripe_event_id: null,
+      p_idempotency_key: null,
+    },
+  ],
+  [
+    'debit_credits',
+    {
+      p_account_id: NIL_UUID,
+      p_amount: 0,
+      p_enforce_floor: true,
+      p_description: 'sec-k',
+      p_ledger_type: 'sec-k',
+      p_idempotency_key: null,
+    },
+  ],
+  [
+    'reset_expiring_credits',
+    {
+      p_account_id: NIL_UUID,
+      p_new_credits: 0,
+      p_description: 'sec-k',
+      p_stripe_event_id: null,
+    },
+  ],
+];
+
 flow('SEC-K', { domain: 'security', routes: [] }, async (ctx) => {
   const base = ctx.env.supabaseUrl;
   const anonKey = ctx.env.supabaseAnonKey;
@@ -807,7 +848,7 @@ flow('SEC-K', { domain: 'security', routes: [] }, async (ctx) => {
     await ctx.step(
       `${who}: the private kortix_wallet functions are not reachable`,
       async () => {
-        for (const fn of ['grant_credits', 'debit_credits', 'reset_expiring_credits']) {
+        for (const [fn, args] of WALLET_FUNCTIONS) {
           const res = await fetch(`${base}/rest/v1/rpc/${fn}`, {
             method: 'POST',
             headers: {
@@ -816,7 +857,7 @@ flow('SEC-K', { domain: 'security', routes: [] }, async (ctx) => {
               'content-profile': 'kortix_wallet',
               'content-type': 'application/json',
             },
-            body: JSON.stringify({ p_account_id: NIL_UUID }),
+            body: JSON.stringify(args),
           });
           const body = await res.text();
           // 406 PGRST106 = schema not exposed; 401/403 42501 = exposed but no grant.
