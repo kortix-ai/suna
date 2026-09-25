@@ -221,6 +221,8 @@ The human-in-the-loop surface an agent's write/destructive tool calls gate on, p
 
 `IAM-41` **Project-scoped assignments stay in the project's account** — `POST /accounts/:id/iam/assignments` with a `scope_id` whose project belongs to another account → 404 `project not found in this account`, for a project role and for an object grant alike, even when the caller owns (and is super-admin of) the account in the URL. No row is stored in either account, and the caller gains no access to the project. The project's own account still grants roles on it → 201. The same rule holds at the storage layer (`role_assignments_project_account_guard` trigger), and the engine's object-grant and project-role readers only count rows written in the project's own account.
 
+`IAM-43` **Everyone in the project** — `POST /accounts/:id/iam/assignments {principal_type:'project', principal_id:<project>, role_key:'agent-user', scope_type:'project', scope_id:<project>, object_type:'agent', object_id:<agent>}` → 201 grants ONE agent to everyone with access to the project. Before the grant a project member's `GET /projects/:id` lists no agents (agents are closed at the member tier); after it, the same read lists that agent. An account member with no project role still reaches nothing. `GET /projects/:id/resource-grants` lists the grant with `principal_type:'project'` and the project's name as `principal_label`; `GET /projects/:id/access` gives every member a `resource_grants` entry with `source:'project'` and creates no group entry. A `project` principal is refused as a role (`role_key:'member'`), on another project (`principal_id ≠ scope_id`), or without an object → 400; a plain member writing it → 403. Deleting the grant (`DELETE /projects/:id/resource-grants/:grantId`) closes the agent to the member again.
+
 `IAM-42` **Demoting an owner ends the super-admin bypass** — an owner makes a co-founder owner and super-admin; demoting that owner to `member` (`PATCH /accounts/:id/members/:userId`) clears `is_super_admin` in the same call and records `iam.member.super_admin.revoke`. The demoted member cannot grant themselves `owner` again (`POST …/iam/assignments` → 403). A super-admin flag granted while the principal is not an owner survives a role change that removes no owner role.
 
 ### SSO identity trust (which email an IdP may vouch for)
@@ -854,6 +856,28 @@ connector's sole active project-owned account. Only `PUT
 connector's accounts (`user` = member-owned accounts only); the `PUT
 …/authorization-strategy` route is a deprecation no-op (CONN-13) and no client
 sends the key on create.
+
+`CONN-28` **A shared account narrowed to an audience.** A project-owned
+connection with no `connection` grant is usable by every project member, as
+before; `GET /projects/:id/connections` returns it with `shared_with:[]` and
+`usable:true`. A connections manager narrows it with `POST
+/accounts/:id/iam/assignments {principal_type:'group'|'user'|'project',
+role_key:'agent-user', scope_type:'project', object_type:'connection',
+object_id:<connection_id>}` → 201. A plain member writing that grant → 403
+(the writer needs `project.connector.connections.manage`); naming a private
+(member-owned) connection or an unknown id → 404. After a group grant, a member
+of the group still lists the account (`usable:true`, `shared_with` naming the
+group by label); a member outside the group no longer lists it; the account
+owner, outside the group but managing connections, lists it with
+`usable:false`. A grant to the project (`principal_type:'project'`) opens it to
+everyone again beside the group grant. `DELETE
+/projects/:id/resource-grants/:grantId` (the agent/skill route) cannot delete a
+connection grant → 404; `DELETE /accounts/:id/iam/assignments/:assignmentId`
+does. With every grant revoked the account is everyone's again. A narrowed
+account follows the personal-account rules — humans in the audience, private
+sessions only, never an unattended service account — which
+`integration-connection-audience.test.ts` pins against real PostgreSQL through
+the gateway's own resolution functions.
 
 ---
 

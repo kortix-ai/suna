@@ -4,6 +4,7 @@
  * per-connector sharing/agent-scope — retired 2026-07-06, see
  * spec/end-to-end.md §24). Maps to spec §24 (CONN-1..5, 7-9, 12-14).
  */
+import { assert } from '../core/expect';
 import { flow } from '../core/flow';
 import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 
@@ -3272,5 +3273,206 @@ flow(
       await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [p.id, yamlSlug]).catch(() => {});
       await db.end().catch(() => {});
     }
+  },
+);
+
+flow(
+  'CONN-28',
+  {
+    domain: 'connectors',
+    routes: [
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/projects/:projectId/connections',
+      'POST /v1/projects/:projectId/connections/me',
+      'GET /v1/projects/:projectId/connections',
+      'POST /v1/accounts/:accountId/iam/groups',
+      'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'DELETE /v1/accounts/:accountId/iam/assignments/:assignmentId',
+      'DELETE /v1/projects/:projectId/resource-grants/:grantId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project({ managedGit: true });
+    const inSales = await team.addMember('member');
+    const outsideSales = await team.addMember('member');
+    const slug = `ke2e-share-${Date.now().toString(36)}`;
+    const accountParams = { accountId: team.id };
+    const projectParams = { projectId: project.id };
+
+    const listed = async (who: typeof inSales) => {
+      const r = await ctx.client.as(who).get('/v1/projects/:projectId/connections', {
+        params: projectParams,
+      });
+      r.status(200);
+      return r.json<any>().connections as any[];
+    };
+    const grantBody = (principal: { type: string; id: string }, objectId: string) => ({
+      principal_type: principal.type,
+      principal_id: principal.id,
+      role_key: 'agent-user',
+      scope_type: 'project',
+      scope_id: project.id,
+      object_type: 'connection',
+      object_id: objectId,
+    });
+    const grant = (who: typeof inSales, principal: { type: string; id: string }, objectId: string) =>
+      ctx.client
+        .as(who)
+        .post('/v1/accounts/:accountId/iam/assignments', grantBody(principal, objectId), {
+          params: accountParams,
+        });
+
+    await ctx.step('both members get a project member role', async () => {
+      await team.grantProjectRole(project.id, inSales.userId!, 'member');
+      await team.grantProjectRole(project.id, outsideSales.userId!, 'member');
+    });
+
+    let connectionId = '';
+    await ctx.step('the owner seeds a connector and one shared account on it', async () => {
+      const connector = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/connectors/projects/:projectId/connectors',
+        { slug, provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } },
+        { params: projectParams },
+      );
+      connector.status(200).body().has('$.ok', true);
+      const shared = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/connections',
+        { connector_alias: slug, owner_type: 'project', label: 'Sales CRM' },
+        { params: projectParams },
+      );
+      shared.status(201).body().has('$.owner_type', 'project');
+      connectionId = shared.json<any>().connection_id;
+    });
+
+    await ctx.step('with no grant every member lists it as usable, shared with no one in particular', async () => {
+      const row = (await listed(outsideSales)).find((c) => c.connection_id === connectionId);
+      assert({
+        kind: 'body',
+        description: 'an un-narrowed shared account is everyone’s',
+        pass: row?.usable === true && Array.isArray(row?.shared_with) && row.shared_with.length === 0,
+        expected: { usable: true, shared_with: [] },
+        actual: row,
+      });
+    });
+
+    let groupId = '';
+    await ctx.step('the owner creates a Sales group holding one member', async () => {
+      const g = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/accounts/:accountId/iam/groups', { name: ctx.fixtures.name('sales') }, {
+          params: accountParams,
+        });
+      g.status(201);
+      groupId = g.json<any>().group_id;
+      const add = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups/:groupId/members',
+        { userId: inSales.userId! },
+        { params: { ...accountParams, groupId } },
+      );
+      add.status(200).body().has('$.added', 1);
+    });
+
+    await ctx.step('a plain member cannot narrow a shared account → 403', async () => {
+      (await grant(inSales, { type: 'group', id: groupId }, connectionId)).status(403);
+    });
+
+    await ctx.step('a grant naming a private account or an unknown id → 404', async () => {
+      const mine = await ctx.client.as(inSales).post(
+        '/v1/projects/:projectId/connections/me',
+        { connector_alias: slug, label: 'Mine' },
+        { params: projectParams },
+      );
+      mine.status([200, 201]).body().has('$.owner_type', 'member');
+      for (const objectId of [mine.json<any>().connection_id as string, crypto.randomUUID()]) {
+        (await grant(ctx.P.OWNER, { type: 'group', id: groupId }, objectId)).status(404);
+      }
+    });
+
+    let groupGrantId = '';
+    await ctx.step('the owner narrows the shared account to the Sales group → 201', async () => {
+      const r = await grant(ctx.P.OWNER, { type: 'group', id: groupId }, connectionId);
+      r.status(201).body().has('$.object_type', 'connection').has('$.object_id', connectionId);
+      groupGrantId = r.json<any>().assignment_id;
+    });
+
+    await ctx.step(
+      'Sales still uses it; the member outside Sales no longer sees it; the owner sees it only to manage it',
+      async () => {
+        const salesRow = (await listed(inSales)).find((c) => c.connection_id === connectionId);
+        assert({
+          kind: 'body',
+          description: 'a group member lists the narrowed account, naming the group',
+          pass:
+            salesRow?.usable === true &&
+            salesRow?.shared_with?.length === 1 &&
+            salesRow.shared_with[0].principal_type === 'group' &&
+            salesRow.shared_with[0].principal_id === groupId &&
+            salesRow.shared_with[0].grant_id === groupGrantId,
+          expected: { usable: true, shared_with: [{ principal_type: 'group', principal_id: groupId }] },
+          actual: salesRow,
+        });
+        const outsideRow = (await listed(outsideSales)).find((c) => c.connection_id === connectionId);
+        assert({
+          kind: 'body',
+          description: 'a member outside the audience does not list it',
+          pass: outsideRow === undefined,
+          expected: undefined,
+          actual: outsideRow,
+        });
+        const ownerRow = (await listed(ctx.P.OWNER)).find((c) => c.connection_id === connectionId);
+        assert({
+          kind: 'body',
+          description: 'the owner, outside the group, lists it only to manage it',
+          pass: ownerRow?.usable === false,
+          expected: { usable: false },
+          actual: ownerRow,
+        });
+      },
+    );
+
+    await ctx.step('the agent/skill grant route cannot delete a connection grant → 404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/projects/:projectId/resource-grants/:grantId', {
+          params: { ...projectParams, grantId: groupGrantId },
+        });
+      r.status(404);
+    });
+
+    let everyoneGrantId = '';
+    await ctx.step('a grant to everyone in the project opens it again, beside the group grant', async () => {
+      const r = await grant(ctx.P.OWNER, { type: 'project', id: project.id }, connectionId);
+      r.status(201).body().has('$.principal_type', 'project');
+      everyoneGrantId = r.json<any>().assignment_id;
+      const row = (await listed(outsideSales)).find((c) => c.connection_id === connectionId);
+      assert({
+        kind: 'body',
+        description: 'everyone lists it again',
+        pass: row?.usable === true,
+        expected: { usable: true },
+        actual: row,
+      });
+    });
+
+    await ctx.step('revoking every grant leaves the account everyone’s, with no grant listed', async () => {
+      for (const assignmentId of [everyoneGrantId, groupGrantId]) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+            params: { ...accountParams, assignmentId },
+          });
+        r.status(200).body().has('$.revoked', true);
+      }
+      const row = (await listed(outsideSales)).find((c) => c.connection_id === connectionId);
+      assert({
+        kind: 'body',
+        description: 'no grant left: usable by everyone, shared_with empty',
+        pass: row?.usable === true && row?.shared_with?.length === 0,
+        expected: { usable: true, shared_with: [] },
+        actual: row,
+      });
+    });
   },
 );
