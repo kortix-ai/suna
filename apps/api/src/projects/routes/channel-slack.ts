@@ -7,9 +7,11 @@ import {
   loadSlackInstall,
   saveSlackInstall,
 } from '../../channels/install-store';
-import { buildSlackInstallUrl } from '../../channels/slack-oauth';
+import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/core/install-completion';
+import { buildSlackInstallUrl, completeSlackOauthInstall } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
+import { bindChatThread } from '../../channels/core/threads';
+import { resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -89,6 +91,57 @@ projectsApp.openapi(
     } catch {
       return c.json({ oauth_available: false, install_url: null });
     }
+  },
+);
+
+// POST /v1/projects/:projectId/channels/slack/oauth/complete
+// The web completion page posts the provider's {code, state} here with the
+// signed-in user's bearer. The install lands only when the signed state names
+// this caller and this project (see channels/install-completion.ts).
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/slack/oauth/complete',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/slack/oauth/complete',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: InstallCompletionBody } } },
+    },
+    responses: {
+      200: json(z.object({ redirect_url: z.string() }), 'OK'),
+      ...errors(400, 403, 404, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Same gate as the manual connect route: installing a Slack app is a
+    // connector-write capability.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    const body = InstallCompletionBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) {
+      return c.json({ error: 'Missing code or state', code: INSTALL_STATE_INVALID }, 400);
+    }
+    const result = await completeSlackOauthInstall({
+      projectId,
+      userId: loaded.userId,
+      code: body.data.code,
+      state: body.data.state,
+    });
+    if (!result.ok) {
+      return c.json({ error: result.error, ...(result.code ? { code: result.code } : {}) }, result.status);
+    }
+    return c.json({ redirect_url: result.redirectUrl });
   },
 );
 
@@ -418,7 +471,7 @@ projectsApp.openapi(
         400,
       );
     }
-    await bindChatThread({ projectId, workspaceId, threadId: threadTs, sessionId });
+    await bindChatThread({ platform: 'slack', projectId, workspaceId, threadId: threadTs, sessionId });
     return c.json({ ok: true, bound: true, channel, thread_ts: threadTs });
   },
 );
