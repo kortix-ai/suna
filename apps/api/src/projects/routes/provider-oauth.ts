@@ -198,6 +198,7 @@ async function reconnectCodexAccountResource(input: {
     valueEnc: encryptAccountSecret(accountId, value),
     active: true,
     cooldownUntil: null,
+    needsReauthAt: null,
     updatedAt: new Date(),
   }).where(and(
     eq(accountSecretResources.accountId, accountId),

@@ -97,6 +97,14 @@ export function noManagedModelsError(model: string, tierIsPaid: boolean): Gatewa
  * final "no candidates at all" response to surface instead of the one-size-
  * fits-all "No upstream configured for model X".
  */
+/** Names the selected ChatGPT accounts whose login failed, three at most. */
+function selectedAccountsNeedReconnection(labels: string[]): string {
+  if (labels.length === 1) return `The ChatGPT account "${labels[0]}" needs reconnection.`;
+  const named = labels.slice(0, 3).map((label) => `"${label}"`).join(', ');
+  const more = labels.length > 3 ? ` and ${labels.length - 3} more` : '';
+  return `${labels.length} selected ChatGPT accounts need reconnection: ${named}${more}.`;
+}
+
 export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
@@ -153,26 +161,29 @@ export async function resolveCandidates(
         );
       }
       const candidates = [];
-      let expired = false;
+      const failed: string[] = [];
       for (const secret of selectedPool.secrets) {
         try {
           const accountCredential = await resolveCodexAccountCredential({
             projectId: principal.projectId, accountId: principal.accountId,
             sessionId: principal.sessionId ?? null, userId: principal.userId,
-            secretId: secret.secretId, value: secret.value,
+            secretId: secret.secretId, value: secret.value, updatedAt: secret.updatedAt,
           });
-          if (!accountCredential) { expired = true; continue; }
+          if (!accountCredential) { failed.push(secret.label); continue; }
           candidates.push({ ...codexDescriptor(accountCredential, effectiveModel),
             credentialRef: secret.secretId, poolSecretId: secret.secretId });
         } catch (err) {
           if (!(err instanceof CodexRefreshError)) throw err;
-          expired = true;
+          failed.push(secret.label);
         }
       }
       if (candidates.length) return candidates;
-      throw new GatewayResolutionError(expired ? 'provider_reauth_required' : 'provider_not_connected',
-        expired ? 'The selected ChatGPT connections need reconnection.' : 'No ChatGPT connection is available.',
-        'Reconnect a selected ChatGPT account or select another granted connection.');
+      if (!failed.length) {
+        throw new GatewayResolutionError('provider_not_connected', 'No ChatGPT connection is available.',
+          'Reconnect a selected ChatGPT account or select another granted connection.');
+      }
+      throw new GatewayResolutionError('provider_reauth_required', selectedAccountsNeedReconnection(failed),
+        `Reconnect ${failed.length === 1 ? 'it' : 'them'} in your ChatGPT accounts, or select another granted connection in session settings.`);
     }
     if (pooledEnabled && personalUserId && !principal.keyId) {
       const personal = await resolveDefaultCodexAccountSecret(principal.accountId, principal.projectId, personalUserId);
@@ -187,15 +198,15 @@ export async function resolveCandidates(
           const credential = await resolveCodexAccountCredential({
             projectId: principal.projectId, accountId: principal.accountId,
             sessionId: principal.sessionId ?? null, userId: principal.userId,
-            secretId: personal.secretId, value: personal.value,
+            secretId: personal.secretId, value: personal.value, updatedAt: personal.updatedAt,
           });
           if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId }];
         } catch (err) {
           if (!(err instanceof CodexRefreshError)) throw err;
         }
         throw new GatewayResolutionError('provider_reauth_required',
-          'Your ChatGPT connection needs reconnection.',
-          'Reconnect your ChatGPT account in Models, then retry.');
+          `Your ChatGPT account "${personal.label}" needs reconnection.`,
+          'Reconnect it in your ChatGPT accounts, then retry.');
       }
     }
     let credential: Awaited<ReturnType<typeof resolveCodexCredential>>;
@@ -265,8 +276,9 @@ export async function resolveCandidates(
         `The running agent cannot use ${provider} keys.`,
         `Add ${byok.envVar} to the agent's secret grant, or choose another agent.`);
     }
+    // A pooled key this API cannot decrypt is skipped, as if it were not selected.
     const keys = selectedPool?.configured
-      ? selectedPool.secrets.map((secret) => ({ identifier: secret.secretId, value: secret.value }))
+      ? selectedPool.secrets.flatMap((secret) => secret.value === null ? [] : [{ identifier: secret.secretId, value: secret.value }])
       : await resolveProjectSecretsForConsumer({
           projectId: principal.projectId,
           accountId: principal.accountId,

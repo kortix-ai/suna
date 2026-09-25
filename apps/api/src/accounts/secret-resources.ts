@@ -16,6 +16,8 @@ const View = z.object({
   access_mode: z.enum(['project', 'members']), label: z.string(), provider_id: z.string().nullable(),
   name: z.string(), consumer: z.string(), strategy: z.string(), active: z.boolean(),
   cooldown_until: z.string().nullable(),
+  /** When the stored login first stopped working; null while it works. */
+  needs_reauth_at: z.string().nullable(),
   created_by: z.string(), created_at: z.string(), updated_at: z.string(),
   granted_user_ids: z.array(z.string()), can_use: z.boolean(),
 });
@@ -48,6 +50,7 @@ async function view(row: typeof accountSecretResources.$inferSelect, actorId: st
     access_mode: row.accessMode as 'project' | 'members', label: row.label, provider_id: row.providerId,
     name: row.name, consumer: row.consumer, strategy: row.strategy, active: row.active,
     cooldown_until: row.cooldownUntil?.toISOString() ?? null,
+    needs_reauth_at: row.needsReauthAt?.toISOString() ?? null,
     created_by: row.createdBy, created_at: row.createdAt.toISOString(), updated_at: row.updatedAt.toISOString(),
     granted_user_ids: grants.map((grant) => grant.userId),
     can_use: row.projectId
@@ -181,7 +184,7 @@ export function registerSecretResourceRoutes() {
     }
     const parsed = z.object({ value: z.string().min(1).max(65536) }).safeParse(await readBody(c));
     if (!parsed.success) return c.json({ error: 'Invalid value' }, 400);
-    const [updated] = await db.update(accountSecretResources).set({ valueEnc: encryptAccountSecret(accountId, parsed.data.value), cooldownUntil: null, updatedAt: new Date() })
+    const [updated] = await db.update(accountSecretResources).set({ valueEnc: encryptAccountSecret(accountId, parsed.data.value), cooldownUntil: null, needsReauthAt: null, updatedAt: new Date() })
       .where(eq(accountSecretResources.secretId, row.secretId)).returning();
     return c.json(await view(updated!, userId));
   });
