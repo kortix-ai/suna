@@ -130,7 +130,7 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter', () => 
       await settle();
       expect(recorded[0]).toMatchObject({ provider: 'kortix', model: model.id });
       expect(morphSelected ? ['morph', 'openrouter'] : ['openrouter'])
-        .toContain(recorded[0].upstream?.provider);
+        .toContain(recorded[0].upstream?.provider ?? '');
       expect(recorded[0].finalCost).toBeGreaterThan(0);
     }, 120_000);
   }
