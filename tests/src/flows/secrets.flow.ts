@@ -427,6 +427,130 @@ flow('SEC-POOL-5', {
   });
 });
 
+// SEC-POOL-6 — a ChatGPT account whose stored login stopped working is marked
+// for reconnection by the gateway, on a real turn request. Nothing here calls
+// OpenAI: a stored login this API cannot read is a permanent failure, the same
+// as a refresh OpenAI rejects (that path is covered by the credential unit tests).
+flow('SEC-POOL-6', {
+  domain: 'secrets', requires: ['database'],
+  routes: [
+    'PATCH /v1/projects/:projectId/features',
+    'GET /v1/projects/:projectId/model-picker',
+    'POST /v1/accounts/tokens',
+    'GET /v1/accounts/:accountId/secret-resources',
+    'PUT /v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId',
+    'POST /v1/llm/chat/completions',
+    'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
+  ],
+}, async (ctx) => {
+  const { Client: PgClient } = await import('pg');
+  const { randomUUID } = await import('node:crypto');
+  const team = await ctx.fixtures.team();
+  const project = await team.project({ seed: true, allowAllSecrets: true });
+  const member = await team.addMember('member');
+  await team.grantProjectRole(project.id, member.userId!, 'user');
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const asMember = ctx.client.as(member);
+  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
+  }
+  const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: member.userId! });
+  const minted = await asMember.post('/v1/accounts/tokens', { name: 'ChatGPT reconnection', account_id: team.id });
+  minted.status(201);
+  const credential = minted.json<{ token_id: string; secret_key: string }>();
+
+  // Two ChatGPT accounts of the member, written the way a completed poll writes
+  // them, except that the stored login is unreadable. The older one is a day old.
+  const newer = randomUUID();
+  const older = randomUUID();
+  const databaseUrl = ctx.env.databaseUrl!;
+  const database = new PgClient({ connectionString: databaseUrl,
+    ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+  await database.connect();
+  try {
+    await database.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [sessionId, team.id, project.id]);
+    await database.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5 WHERE token_id = $1', [
+      credential.token_id, project.id, sessionId,
+      JSON.stringify({ agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' }), team.id,
+    ]);
+    for (const [secretId, label, age] of [[newer, 'ChatGPT · Newer', '0 seconds'], [older, 'ChatGPT · Older', '1 day']]) {
+      await database.query(`INSERT INTO kortix.account_secret_resources
+        (secret_id, account_id, project_id, access_mode, label, provider_id, name, value_enc, consumer, strategy, created_by, created_at, updated_at)
+        VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', 'v1:not:a:login', 'llm_gateway', 'broker', $5,
+          now() - $6::interval, now() - $6::interval)`,
+      [secretId, team.id, project.id, label, member.userId!, age]);
+      await database.query('INSERT INTO kortix.account_secret_grants (secret_id, account_id, user_id, granted_by) VALUES ($1, $2, $3, $3)',
+        [secretId, team.id, member.userId!]);
+    }
+  } finally { await database.end(); }
+
+  const caller = ctx.client.withBearer(credential.secret_key, 'BOUND_SESSION');
+  const listPath = `/v1/accounts/:accountId/secret-resources?project_id=${project.id}`;
+  const params = { accountId: team.id };
+  const marks = async (client: typeof owner) => {
+    const listed = await client.get(listPath, { params });
+    listed.status(200);
+    const secrets = listed.json<{ secrets: Array<{ secret_id: string; needs_reauth_at: string | null }> }>().secrets;
+    return Object.fromEntries([newer, older].map((id) => {
+      const secret = secrets.find((candidate) => candidate.secret_id === id);
+      if (!secret) throw new Error(`ChatGPT account ${id} is not listed`);
+      if (!('needs_reauth_at' in secret)) throw new Error('the list omits needs_reauth_at');
+      return [id, secret.needs_reauth_at];
+    }));
+  };
+  let model = '';
+  await ctx.step('the member picker offers a ChatGPT model, and no account is marked yet', async () => {
+    const picker = await asMember.get('/v1/projects/:projectId/model-picker', { params: { projectId: project.id } });
+    picker.status(200);
+    const id = Object.keys(picker.json<{ models: Record<string, unknown> }>().models).find((candidate) => /^(?:kortix\/)?codex\//.test(candidate));
+    if (!id) throw new Error('the member picker offers no ChatGPT model');
+    model = id.replace(/^kortix\//, '');
+    const marked = await marks(asMember);
+    if (marked[newer] !== null || marked[older] !== null) throw new Error(`accounts marked before any turn: ${JSON.stringify(marked)}`);
+  });
+  const turn = () => caller.post('/v1/llm/chat/completions', { model, messages: [{ role: 'user', content: 'Reply with OK.' }] });
+
+  let firstMark = '';
+  await ctx.step('a turn on the default account fails naming it, and marks only that account', async () => {
+    (await turn()).status(400).body()
+      .has('$.error.code', 'provider_reauth_required')
+      .has('$.error.message', 'Your ChatGPT account "ChatGPT · Newer" needs reconnection.');
+    const marked = await marks(asMember);
+    if (!marked[newer] || Number.isNaN(Date.parse(marked[newer]!))) throw new Error(`the failing account is not marked: ${JSON.stringify(marked)}`);
+    if (marked[older] !== null) throw new Error('an account that was never tried is marked');
+    firstMark = marked[newer]!;
+  });
+
+  await ctx.step('the default then prefers the account that is not marked, and a repeat keeps the first time', async () => {
+    (await turn()).status(400).body()
+      .has('$.error.code', 'provider_reauth_required')
+      .has('$.error.message', 'Your ChatGPT account "ChatGPT · Older" needs reconnection.');
+    (await turn()).status(400);
+    const marked = await marks(asMember);
+    if (!marked[older]) throw new Error('the second account is not marked');
+    if (marked[newer] !== firstMark) throw new Error(`a repeated failure moved the first mark: ${firstMark} -> ${marked[newer]}`);
+  });
+
+  await ctx.step('a session selection names every selected account that failed', async () => {
+    (await asMember.put('/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId', { secret_ids: [newer, older] },
+      { params: { projectId: project.id, sessionId, providerId: 'codex' } })).status(200);
+    (await turn()).status(400).body()
+      .has('$.error.code', 'provider_reauth_required')
+      .has('$.error.message', '2 selected ChatGPT accounts need reconnection: "ChatGPT · Newer", "ChatGPT · Older".');
+  });
+
+  await ctx.step('the owner sees the member accounts marked too', async () => {
+    const marked = await marks(owner);
+    if (!marked[newer] || !marked[older]) throw new Error(`the owner does not see the marks: ${JSON.stringify(marked)}`);
+  });
+
+  await ctx.step('the member deletes both accounts', async () => {
+    for (const secretId of [newer, older]) {
+      (await asMember.del('/v1/accounts/:accountId/secret-resources/:secretId', { params: { accountId: team.id, secretId } })).status(200);
+    }
+  });
+});
+
 flow('SEC-POOL-3', {
   domain: 'secrets', requires: ['database'],
   routes: [
