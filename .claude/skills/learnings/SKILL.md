@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Keep a long-running supervisor inside one decrypted environment (2026-09-25)
+
+**Rule:** Start one `dotenvx run` around the supervisor loop. Do not start one
+`dotenvx` process per batch. **Trigger surface:** LaunchAgents and daemons that
+repeat an encrypted-environment command. **Incident:** The batch child exited,
+but its per-batch `dotenvx` parent retained a network socket for 17 hours and
+blocked the next batch. **Enforcement:** both provider-transfer supervisors now
+run their loops inside one persistent encrypted environment.
+
 ### A completed batch must release its supervisor slot (2026-09-24)
 
 **Rule:** Require a completion marker and process exit from each batch child.
