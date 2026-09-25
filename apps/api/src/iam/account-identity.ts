@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { invalidateIamCacheForUser } from './cache-invalidation';
+import { emailTrustedSql } from './email-trust';
 
 export interface AccountIdentityResolution {
   userId: string | null;
@@ -11,6 +12,11 @@ export interface AccountIdentityResolution {
  * Resolve the one Auth UUID that represents an email inside an account.
  * The account's configured SSO provider wins, then its active directory link,
  * then an existing account membership. Equal-priority duplicates fail closed.
+ *
+ * An SSO identity from ANOTHER account's IdP is a candidate only when that IdP
+ * verified the email's domain (iam/email-trust.ts). Otherwise any entitled
+ * admin could pre-register an address through their own IdP and be added in
+ * its owner's place.
  */
 export async function resolveAccountIdentityByEmail(
   accountId: string,
@@ -41,6 +47,7 @@ export async function resolveAccountIdentityByEmail(
       LEFT JOIN kortix.account_memberships membership
         ON membership.account_id=${accountId}::uuid AND membership.user_id=u.id
       WHERE lower(trim(u.email))=${normalizedEmail}
+        AND ${emailTrustedSql(sql`u`, accountId)}
     ), best AS (
       SELECT min(priority) AS priority FROM candidates
     )
@@ -379,6 +386,49 @@ async function reconcileOneAccountIdentity(
     WHERE account_id=${accountId}::uuid AND user_id=${sourceUserId}::uuid
   `);
   invalidateIamCacheForUser(sourceUserId);
+}
+
+/**
+ * The subset of `sourceUserIds` that SAML JIT may merge into an IdP identity.
+ *
+ * A merge moves the source's roles, grants and personal credentials. JIT runs
+ * on an email the IdP asserts, so it merges only when the IdP proved control of
+ * that email's domain, and never an owner or a super-admin of the account:
+ * those keep their own identity, and the IdP identity joins as its own member.
+ */
+export async function identitiesMergeableIntoSso(
+  accountId: string,
+  sourceUserIds: readonly string[],
+  args: { emailTrusted: boolean },
+): Promise<{ mergeable: string[]; protectedIds: string[] }> {
+  const ids = [...new Set(sourceUserIds)];
+  if (ids.length === 0) return { mergeable: [], protectedIds: [] };
+  if (!args.emailTrusted) return { mergeable: [], protectedIds: ids };
+  const rows = (await db.execute(sql`
+    SELECT DISTINCT candidate.user_id::text AS user_id
+    FROM unnest(${`{${ids.join(',')}}`}::uuid[]) AS candidate(user_id)
+    WHERE EXISTS (
+        SELECT 1 FROM kortix.account_memberships membership
+        WHERE membership.account_id=${accountId}::uuid
+          AND membership.user_id=candidate.user_id
+          AND membership.is_super_admin
+      )
+      OR EXISTS (
+        SELECT 1 FROM kortix.role_assignments assignment
+        JOIN kortix.iam_roles role_row ON role_row.role_id=assignment.role_id
+        WHERE assignment.account_id=${accountId}::uuid
+          AND assignment.principal_type='user'
+          AND assignment.principal_id=candidate.user_id
+          AND assignment.scope_type='account'
+          AND role_row.account_id IS NULL
+          AND role_row.key='owner'
+      )
+  `)) as unknown as Array<{ user_id: string }>;
+  const protectedIds = new Set(rows.map((row) => row.user_id));
+  return {
+    mergeable: ids.filter((id) => !protectedIds.has(id)),
+    protectedIds: ids.filter((id) => protectedIds.has(id)),
+  };
 }
 
 /**

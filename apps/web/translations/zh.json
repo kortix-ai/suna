@@ -102,6 +102,7 @@
     "providerKeys": "提供商密钥",
     "chooseSharedKeys": "选择此会话可以使用的共享密钥。",
     "sessionKeyPool": "会话密钥池",
+    "sharedSessionKeys": "此会话已与项目共享，因此这里只能使用与整个项目共享的密钥。授予您的密钥可在您的私有会话中使用。",
     "projectDefaultShort": "项目默认值",
     "rateLimitDescription": "当提供商触发速率限制时，网关会轮换使用已选密钥。",
     "enableGateway": "在项目设置中启用 LLM 网关以使用密钥池。",
@@ -1598,6 +1599,7 @@
     "backToProject": "返回项目",
     "delete": "删除会话",
     "failedLabel": "会话失败",
+    "loadingConversation": "正在加载对话",
     "prompt": {
       "queueFailed": "无法将已保存的提示词加入队列",
       "unavailable": "没有可用的已保存提示词。",
@@ -6225,7 +6227,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "所有 Worker 执行当前已暂停。"
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "无内容"
+      "line1115JsxTextNoContent": "无内容",
+      "loadRemoteImage": "从 {host} 加载图片"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "按 Enter 启动..."
@@ -19146,8 +19149,22 @@
       "textbda3fcd4343c": "已查看层级配置",
       "text30cef615e8e3": "已查看交易摘要",
       "textd2c6127fc332": "已查看版本差异",
+      "text8cc0d84b66bb": "预览了 Slack 身份链接",
+      "text508b43cc4545": "预览了 Teams 身份链接",
+      "text467f597e95b0": "已验证 SSO 域名",
+      "text8295f9d4861b": "已设置账户 SSO 域名验证",
       "text7beaff63a7d3": "已下载项目配置归档",
       "text5176d59f25fd": "已解析会话配置发布"
+    },
+    "publicShareConfirm": {
+      "title": "创建公开链接？",
+      "description": "任何拥有此链接的人都无需登录即可查看。链接在你撤销之前一直有效。",
+      "confirm": "创建链接"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} 账户",
+      "chatWorkspace": "{service} 工作区",
+      "checking": "正在检查链接…"
     }
   },
   "projectOnboarding": {
@@ -20159,5 +20176,18 @@
   },
   "connectorsAppReturn": {
     "done": "完成。返回 Kortix 应用"
+  },
+  "ssoDomainVerification": {
+    "title": "域名验证",
+    "verified": "已验证",
+    "unverified": "未验证",
+    "verifiedDescription": "您的身份提供商在 {domain} 上受信任。强制 SSO 适用于此域名。",
+    "unverifiedDescription": "添加此 DNS TXT 记录以证明您控制 {domain}。在此之前，SSO 登录仅在此账户内有效，强制 SSO 不生效。",
+    "recordName": "名称",
+    "recordValue": "值",
+    "verify": "验证域名",
+    "verifiedToast": "域名已验证",
+    "failedToast": "域名尚未验证",
+    "enforceNeedsVerification": "请先验证域名。强制 SSO 仅适用于已验证的域名。"
   }
 }

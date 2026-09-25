@@ -79,6 +79,23 @@ mock.module('../llm-gateway/models/picker', () => ({
     id === 'anthropic/claude-opus-4-8' ? 'Claude Opus 4.8' : id,
 }));
 
+// `/kortix models` and `/kortix model` delegate to slack/model-choice.ts,
+// whose list, checks and copy are pinned in unit-slack-model-choice.
+const modelCalls: Array<{ fn: string; ctx: unknown; choice?: string }> = [];
+const pickerResponse = { response_type: 'ephemeral', blocks: [{ type: 'header', text: { type: 'plain_text', text: 'Models' } }] };
+mock.module('../channels/slack/model-choice', () => ({
+  buildSlackModelsResponse: async (c: unknown) => {
+    modelCalls.push({ fn: 'list', ctx: c });
+    return pickerResponse;
+  },
+  applySlackModelChoice: async (c: unknown, choice: string) => {
+    modelCalls.push({ fn: 'apply', ctx: c, choice });
+    return `applied ${choice}`;
+  },
+  slackChannelIsDm: (id: string) => id.startsWith('D'),
+  slackModelScope: async () => null,
+}));
+
 // Identity layer — kept out of the db chain so it doesn't disturb dbResults
 // ordering. Controllable per-test via `identityRow`.
 let identityRow: { userId: string } | null = null;
@@ -171,52 +188,28 @@ describe('identity feature gated OFF', () => {
 });
 
 describe('/kortix models', () => {
-  test('renders a picker of recommended models + a project-default reset', async () => {
-    selection = { projectId: 'p1', agentName: null, opencodeModel: 'anthropic/claude-opus-4-8' };
+  test('shows the picker for the person who typed, in this channel', async () => {
+    modelCalls.length = 0;
     const resp = await handleSlashCommand('models', '', ctx);
-    const ids = actionIds(resp);
-    expect(ids).toContain('set_model_default');
-    expect(ids).toContain('set_model_anthropic/claude-opus-4-8');
-    // current model is marked
-    expect(allText(resp)).toContain('✓ ');
-  });
-  test('unbound channel → prompts to connect one', async () => {
-    selection = null;
-    const resp = await handleSlashCommand('models', '', ctx);
-    expect(allText(resp)).toContain('No project is connected to this channel yet');
+    expect(resp).toEqual(pickerResponse as never);
+    expect(modelCalls).toEqual([{ fn: 'list', ctx: expect.objectContaining({ teamId: 'T1', channelId: 'C1', slackUserId: 'U1', command: '/kortix' }) }]);
   });
 });
 
 describe('/kortix model <id>', () => {
-  // Shape is no longer the gate — servability is, so an id that cannot be
-  // served is refused whatever it looks like. The property under test is
-  // unchanged and is the one that matters: nothing unusable is ever stored.
-  test('refuses an unservable id without writing', async () => {
-    servable = false;
-    const resp = await handleSlashCommand('model', 'not-a-model', ctx);
-    expect(resp.text).toContain("isn't available for this workspace");
-    expect(setModelCalls.length).toBe(0);
-  });
-  test('still refuses an id with whitespace on shape alone', async () => {
-    const resp = await handleSlashCommand('model', 'not a model', ctx);
-    expect(resp.text).toContain("doesn't look like a model id");
-    expect(setModelCalls.length).toBe(0);
-  });
-  test('sets a valid id', async () => {
+  test('applies the choice as the person who typed, and answers in private', async () => {
+    modelCalls.length = 0;
     const resp = await handleSlashCommand('model', 'anthropic/claude-opus-4-8', ctx);
-    expect(setModelCalls).toEqual(['kortix/anthropic/claude-opus-4-8']);
-    expect(resp.text).toContain('set to');
+    expect(resp).toEqual({ response_type: 'ephemeral', text: 'applied anthropic/claude-opus-4-8' });
+    expect(modelCalls).toEqual([
+      { fn: 'apply', ctx: expect.objectContaining({ teamId: 'T1', channelId: 'C1', slackUserId: 'U1' }), choice: 'anthropic/claude-opus-4-8' },
+    ]);
   });
-  test('"default" clears the override', async () => {
-    const resp = await handleSlashCommand('model', 'default', ctx);
-    expect(setModelCalls).toEqual([null]);
-    expect(resp.text).toContain('reset');
-  });
-  test('unbound channel → prompts to connect one, no write', async () => {
-    selection = null;
-    const resp = await handleSlashCommand('model', 'anthropic/claude-opus-4-8', ctx);
-    expect(resp.text).toContain('Connect a project first');
-    expect(setModelCalls.length).toBe(0);
+
+  test('no id → the picker', async () => {
+    modelCalls.length = 0;
+    await handleSlashCommand('model', '  ', ctx);
+    expect(modelCalls.map((c) => c.fn)).toEqual(['list']);
   });
 });
 

@@ -2,39 +2,24 @@ import { expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 import { captureSessionTranscriptMirror } from '../projects/lib/session-transcript-capture';
-import { createAuthUser, deleteAuthUser } from '../../../../tests/e2e/helpers/session-auth';
 import {
-  createDatabaseProject,
-  createDatabaseSession,
-  deleteDatabaseProject,
-} from '../../../../tests/src/fixtures/database-project';
-import { loadEnv } from '../../../../tests/src/core/env';
+  localTestDatabaseUrl,
+  removeSeeded,
+  seedProject,
+  seedSession,
+  type SeededProject,
+} from './helpers/integration-fixtures';
 
 test('complete capture persists all pages, retries, serializes writes, and retains history when disabled', async () => {
-  const env = loadEnv();
-  if (!env.databaseUrl || env.target !== 'local')
-    throw new Error('Run against the local test database');
-  const user = await createAuthUser(`capture-${randomUUID()}@example.test`, {
-    supabaseUrl: env.supabaseUrl,
-    password: 'TranscriptCapture123!',
-  });
-  const db = new Client({ connectionString: env.databaseUrl });
+  const db = new Client({ connectionString: localTestDatabaseUrl() });
   await db.connect();
-  const accountId = randomUUID();
-  let projectId = '';
+  let project: SeededProject | undefined;
   try {
-    await db.query('INSERT INTO kortix.accounts (account_id, name) VALUES ($1,$2)', [
-      accountId,
-      'Transcript capture test',
-    ]);
-    const project = await createDatabaseProject(env, {
-      accountId,
-      userId: user.id,
-      name: 'Transcript capture',
+    project = await seedProject('transcript-capture-test', {
       metadata: { experimental: { session_transcript_history: true } },
     });
-    projectId = project.id;
-    const sessionId = await createDatabaseSession(env, { projectId, accountId, userId: user.id });
+    const projectId = project.project_id;
+    const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_capture';
     await db.query(
       'UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1',
@@ -50,12 +35,19 @@ test('complete capture persists all pages, retries, serializes writes, and retai
         },
         parts: [{ id: `prt_${index}`, type: 'text', text }],
       }));
+    // `complete: true` is a walk that read every page. Only such a read may
+    // raise `head_complete` or delete a vanished id (7f81e09242).
     let attempts = 0;
     const result = await captureSessionTranscriptMirror(sessionId, {
       readMessages: async (_id, options) => {
         expect(options?.fullHistory).toBe(true);
         if (++attempts < 3) throw new Error('transient runtime failure');
-        return { opencodeSessionId: root, payload: messages(620), headComplete: true };
+        return {
+          opencodeSessionId: root,
+          payload: messages(620),
+          headComplete: true,
+          complete: true,
+        };
       },
     });
     expect(attempts).toBe(3);
@@ -75,6 +67,7 @@ test('complete capture persists all pages, retries, serializes writes, and retai
         opencodeSessionId: root,
         payload: messages(620),
         headComplete: true,
+        complete: true,
       }),
     });
     expect(rerun?.captured).toBe(620);
@@ -95,13 +88,23 @@ test('complete capture persists all pages, retries, serializes writes, and retai
     const first = captureSessionTranscriptMirror(sessionId, {
       readMessages: async () => {
         await held;
-        return { opencodeSessionId: root, payload: messages(621, 'First'), headComplete: true };
+        return {
+          opencodeSessionId: root,
+          payload: messages(621, 'First'),
+          headComplete: true,
+          complete: true,
+        };
       },
     });
     const second = captureSessionTranscriptMirror(sessionId, {
       readMessages: async () => {
         secondRead = true;
-        return { opencodeSessionId: root, payload: messages(622, 'Second'), headComplete: true };
+        return {
+          opencodeSessionId: root,
+          payload: messages(622, 'Second'),
+          headComplete: true,
+          complete: true,
+        };
       },
     });
     await Promise.resolve();
@@ -140,6 +143,7 @@ test('complete capture persists all pages, retries, serializes writes, and retai
         opencodeSessionId: 'ses_replaced',
         payload: [],
         headComplete: true,
+        complete: true,
       }),
     });
     expect(stale).toBeNull();
@@ -149,43 +153,26 @@ test('complete capture persists all pages, retries, serializes writes, and retai
         opencodeSessionId: root,
         payload: [],
         headComplete: true,
+        complete: true,
       }),
     });
     expect(empty).toEqual({ captured: 0, head_complete: true, pruned: 0 });
     expect(await count()).toBe(0);
   } finally {
-    if (projectId) await deleteDatabaseProject(env, projectId);
-    await db.query('DELETE FROM kortix.accounts WHERE account_id=$1', [accountId]);
+    if (project) await removeSeeded([project]);
     await db.end();
-    await deleteAuthUser(user.id, { supabaseUrl: env.supabaseUrl });
   }
 }, 20_000);
 
 test('a turn writes only what changed, and only what vanished is deleted', async () => {
-  const env = loadEnv();
-  if (!env.databaseUrl || env.target !== 'local')
-    throw new Error('Run against the local test database');
-  const user = await createAuthUser(`capture-delta-${randomUUID()}@example.test`, {
-    supabaseUrl: env.supabaseUrl,
-    password: 'TranscriptCapture123!',
-  });
-  const db = new Client({ connectionString: env.databaseUrl });
+  const db = new Client({ connectionString: localTestDatabaseUrl() });
   await db.connect();
-  const accountId = randomUUID();
-  let projectId = '';
+  let project: SeededProject | undefined;
   try {
-    await db.query('INSERT INTO kortix.accounts (account_id, name) VALUES ($1,$2)', [
-      accountId,
-      'Transcript capture delta test',
-    ]);
-    const project = await createDatabaseProject(env, {
-      accountId,
-      userId: user.id,
-      name: 'Transcript capture delta',
+    project = await seedProject('transcript-capture-delta-test', {
       metadata: { experimental: { session_transcript_history: true } },
     });
-    projectId = project.id;
-    const sessionId = await createDatabaseSession(env, { projectId, accountId, userId: user.id });
+    const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_delta';
     await db.query(
       'UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1',
@@ -208,7 +195,12 @@ test('a turn writes only what changed, and only what vanished is deleted', async
         ],
       }));
     const read = (payload: unknown[]) => ({
-      readMessages: async () => ({ opencodeSessionId: root, payload, headComplete: true }),
+      readMessages: async () => ({
+        opencodeSessionId: root,
+        payload,
+        headComplete: true,
+        complete: true,
+      }),
     });
     const capturedAts = async (): Promise<Map<string, string>> =>
       new Map(
@@ -271,9 +263,7 @@ test('a turn writes only what changed, and only what vanished is deleted', async
     expect(survivors[0]).toBe('msg_000000000000');
     expect(survivors.at(-1)).toBe('msg_000000000039');
   } finally {
-    if (projectId) await deleteDatabaseProject(env, projectId);
-    await db.query('DELETE FROM kortix.accounts WHERE account_id=$1', [accountId]);
+    if (project) await removeSeeded([project]);
     await db.end();
-    await deleteAuthUser(user.id, { supabaseUrl: env.supabaseUrl });
   }
 }, 20_000);

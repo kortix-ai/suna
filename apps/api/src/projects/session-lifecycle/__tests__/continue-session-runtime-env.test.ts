@@ -1,5 +1,5 @@
 // A channel follow-up must enable its OpenCode runtime features before the
-// prompt is delivered. This test isolates engine.ts because Bun mocks are
+// prompt is delivered. This test isolates continue-session.ts because Bun mocks are
 // process-global; run this file separately from other engine mock tests.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projects } from '@kortix/db';
@@ -18,7 +18,7 @@ mock.module('../../../config', () => ({
 mock.module('../../../shared/db', () => ({
   // `mock.module` replaces the WHOLE module: every export the import graph
   // reaches must exist here. `hasDatabase` entered this test's graph when
-  // engine.ts started importing opencode-mapping (staged-revert check).
+  // runtime-client.ts imports opencode-mapping (staged-revert check).
   hasDatabase: false,
   db: {
     select: () => ({
@@ -44,7 +44,13 @@ mock.module('../../../shared/db', () => ({
         }),
       }),
     }),
-    update: () => ({ set: () => ({ where: async () => {} }) }),
+    update: () => ({
+      set: () => ({
+        // Awaitable, and `.returning()` for the on_behalf_of clear an email
+        // delivery runs (no token to clear here).
+        where: () => Object.assign(Promise.resolve(), { returning: async () => [] }),
+      }),
+    }),
   },
 }));
 
@@ -67,7 +73,7 @@ mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
   // Complete-module stand-ins: every export the (growing) import graph
   // reaches must exist, or the whole file dies with "Export named X not
-  // found". `resolveServiceKey` is reached via engine.ts → opencode-mapping.
+  // found". `resolveServiceKey` is reached via runtime-client.ts → opencode-mapping.
   resolveServiceKey: async () => 'service-key-1',
 }));
 
@@ -127,7 +133,7 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   // The landing proof requeues a prompt the runtime never showed (fresh
-  // attempt, fresh idempotency key). `engine.ts` imports it by name, so every
+  // attempt, fresh idempotency key). `queued-continue.ts` imports it by name, so every
   // store mock has to carry it or the engine import fails outright. Nothing in
   // this file fails a landing.
   requeueUnlandedPrompt: async () => {
@@ -151,7 +157,7 @@ mock.module('../store', () => ({
   },
 }));
 
-const { continueSession } = await import('../engine');
+const { continueSession } = await import('../continue-session');
 
 beforeEach(() => {
   events.length = 0;

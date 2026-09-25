@@ -152,7 +152,7 @@ export function __resetPromptModelSignatureCacheForTests(): void {
  *   - the LLM-gateway mode and base URL.
  *   - `args.opencodeEnv` — an explicit runtime-env push a caller asked this
  *     same call to carry (e.g. a channel follow-up's `KORTIX_CONNECTORS_MCP_ENABLED`,
- *     see `continueSession`/engine.ts). Omitting it would silently drop that
+ *     see `continueSession`/continue-session.ts). Omitting it would silently drop that
  *     caller's request to apply its own change.
  *
  * Keys of `opencodeEnv` are sorted so caller-side object literal order never

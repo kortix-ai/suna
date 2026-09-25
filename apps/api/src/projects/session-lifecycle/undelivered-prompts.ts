@@ -20,11 +20,11 @@
 
 import { logger } from '../../lib/logger';
 import { DEDUPE_TTL_MS } from '../../sandbox-proxy/prompt-dedupe';
-import { drainSessionLifecycleQueue } from './engine';
+import { drainSessionLifecycleQueue } from './drain';
 
 // F3: derived from `prompt-dedupe.ts`'s `DEDUPE_TTL_MS`, not independently
 // hardcoded. The no-blind-repost guarantee documented on
-// `executeQueuedContinue` (engine.ts) requires this starvation window to
+// `executeQueuedContinue` (queued-continue.ts) requires this starvation window to
 // never exceed the dedupe cache's TTL — a starved row swept and re-drained
 // AFTER its delivery claim already expired would re-POST blind, with no
 // cache entry left to catch the duplicate. Importing the same constant makes

@@ -31,6 +31,8 @@ interface World {
     | 'action_not_found'
     | 'needs_auth'
     | 'missing_auth_token';
+  /** What the file-upload proxy answers with, to reproduce a structured denial. */
+  uploadDenial: Record<string, unknown> | null;
 }
 
 let world: World;
@@ -140,6 +142,7 @@ beforeEach(() => {
     downloads: [],
     manifests: [],
     reservedFailure: null,
+    uploadDenial: null,
   };
   server = Bun.serve({
     port: 0,
@@ -180,6 +183,7 @@ beforeEach(() => {
 
       if (url.pathname === `/v1/projects/${PROJECT}/channels/slack/file/upload`) {
         const body = (await req.json()) as Record<string, unknown>;
+        if (world.uploadDenial) return json(world.uploadDenial, 403);
         world.uploads.push(body);
         return json({ ok: true, files: [{ id: 'F1', name: body.filename }] });
       }
@@ -420,5 +424,35 @@ describe('slack CLI', () => {
     expect(world.connector.map((c) => `${c.connector}.${c.action}`)).toEqual([
       `${SLACK_CHANNEL_CONNECTOR_SLUG}.get_thread`,
     ]);
+  });
+
+  test('surfaces a structured upload denial instead of "HTTP 403: true"', async () => {
+    // `slack send --file` posts through the platform upload proxy. A denied
+    // project capability answers with the structured denial body
+    // `{ error: true, message, code, action }` (iam/denial-message.ts); reading
+    // the boolean `error` as the message printed `HTTP 403: true` and hid the
+    // reason. An agent debugged a real delivery regression off that.
+    world.uploadDenial = {
+      error: true,
+      message:
+        'This agent session is not granted "project.connector.write". Add it to the agent\'s kortix_permissions in kortix.yaml and merge the change.',
+      status: 403,
+      code: 'agent_scope_insufficient',
+      action: 'project.connector.write',
+    };
+    const uploadPath = join(tempDir, 'denied-evidence.txt');
+    writeFileSync(uploadPath, 'evidence');
+    const out = asObject(
+      await runSlack(['send', '--channel', 'C1', '--file', uploadPath, '--text', 'Evidence'], {
+        ok: false,
+      }),
+    );
+    expect(out).toMatchObject({
+      ok: false,
+      error:
+        'HTTP 403: This agent session is not granted "project.connector.write". Add it to the agent\'s kortix_permissions in kortix.yaml and merge the change.',
+    });
+    expect(String(out.error)).not.toContain('403: true');
+    expect(world.uploads).toHaveLength(0);
   });
 });

@@ -16,6 +16,7 @@
     "FEATURE_FLAG_KEYS",
     "FEATURE_NOT_SUPPORTED_CODE",
     "FILE_VERBS",
+    "FileExistsError",
     "HeadlessAuthError",
     "HostBoundaryError",
     "IMPERSONATION_HEADER",
@@ -722,6 +723,8 @@
     "pollProjectProviderOAuth",
     "previewGatewayRoute",
     "previewMfaRequired",
+    "previewSlackIdentity",
+    "previewTeamsIdentity",
     "probeEffectivePermission",
     "probeEffectivePermissions",
     "probePreviewPort",
@@ -983,6 +986,7 @@
     "validateToken",
     "verifyGatewayProvider",
     "verifyOtp",
+    "verifySsoDomain",
     "wakeEscalationAttemptSummary",
     "wakeEscalationNote",
     "wakeProgressFingerprint",
@@ -1170,6 +1174,7 @@
     "replyToPermission",
     "replyToQuestion",
     "requestRuntimeReconnect",
+    "resetIdentityState",
     "resetPrefetchState",
     "resetSessionPermissions",
     "resolveCurrentAgentName",
@@ -2001,6 +2006,8 @@
     "pollProjectProviderOAuth",
     "previewGatewayRoute",
     "previewMfaRequired",
+    "previewSlackIdentity",
+    "previewTeamsIdentity",
     "probeEffectivePermission",
     "probeEffectivePermissions",
     "projectSessionStartSeed",
@@ -2150,7 +2157,8 @@
     "validateProjectManifest",
     "validateReferralCode",
     "validateToken",
-    "verifyGatewayProvider"
+    "verifyGatewayProvider",
+    "verifySsoDomain"
   ],
   "./feature-flags": [
     "featureFlags",
@@ -2265,6 +2273,7 @@
     "openEventStream"
   ],
   "./files": [
+    "FileExistsError",
     "SANDBOX_FS_ROOTS",
     "copyFile",
     "createFile",

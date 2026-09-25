@@ -128,24 +128,24 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   // The landing proof requeues a prompt the runtime never showed (fresh
-  // attempt, fresh idempotency key). `engine.ts` imports it by name, so every
+  // attempt, fresh idempotency key). `queued-continue.ts` imports it by name, so every
   // store mock has to carry it or the engine import fails outright. Nothing in
   // this file fails a landing.
   requeueUnlandedPrompt: async () => {
     throw new Error('not expected: this test never fails a landing proof');
   },
   markInboxDeliveryStarted: async () => {},
-  markCommandFailed: async (commandId: string, message: string, opts: unknown) => {
+  markCommandFailed: async ({ commandId }: { commandId: string }, message: string, opts: unknown) => {
     failedCalls.push({ commandId, message, opts });
   },
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
-  markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
+  markCommandForwarded: async ({ commandId }: { commandId: string }, sessionId: string, wireMessageId: string) => {
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
   },
   markCommandSucceeded: async (
-    commandId: string,
+    { commandId }: { commandId: string },
     result: unknown,
     sessionId?: string | null,
   ) => {
@@ -173,7 +173,7 @@ mock.module('../../opencode-mapping', () => ({
   },
 }));
 
-// The wake path now converges the box before every delivery (engine.ts
+// The wake path now converges the box before every delivery (continue-session.ts
 // `continueSession`): it reads the service key and ingress and calls
 // `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
 // the wire, not about the sync (see continue-session-env-sync.test.ts).
@@ -187,7 +187,7 @@ mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
 
-const { executeQueuedContinue } = await import('../engine');
+const { executeQueuedContinue } = await import('../queued-continue');
 
 const originalFetch = globalThis.fetch;
 

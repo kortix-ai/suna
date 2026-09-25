@@ -21,6 +21,109 @@ linked, not inlined.
 
 ## Register
 
+### A scheduled workflow runs as the last person who edited its cron line (2026-09-25)
+
+**Rule:** When someone leaves the org, list every workflow whose scheduled runs
+carry their login, and change each cron line in a PR. GitHub dispatches a
+`schedule` as the user who last changed that line and stops dispatching once
+that user loses repository access. The workflow still reads `active`, so
+`gh workflow list` shows nothing wrong. **Trigger surface:** offboarding, or a
+nightly job whose newest run is weeks old.
+
+**Incident:** `db-drift.yml` last ran on schedule 2026-08-04 and
+`security-scan.yml` on 2026-08-03. Both runs' `actor` was the author of the
+2026-06-21 cron lines, who is no longer an org member (`GET
+/orgs/<org>/members/<login>` → 404). Every other scheduled workflow ran as a
+current member and kept running. Seven weeks of drift checks and CVE scans did
+not run, and nothing reported it. **Check:** for each scheduled workflow, `gh
+run list --workflow <file> --event schedule --limit 1 --json databaseId`, then
+`gh api repos/<repo>/actions/runs/<id> --jq .actor.login`, and compare the date
+with the cron. **Enforcer:** none; the check above is manual.
+
+### A live-schema check that ignores indexes and constraints passes a crippled table (2026-09-25)
+
+**Rule:** Verify a live environment against a freshly migrated database for
+index DEFINITIONS and constraint definitions, not only tables and columns. A
+faked baseline copies the ledger, not the objects. **Trigger surface:** faking
+or re-baselining an environment, or triaging a slow query on prod only.
+**Incident:** prod `credit_ledger` (2.7M rows) had 4 of its 15 indexes, and
+`account_memberships` had no primary key. `verify-live-schema.ts` reported OK
+because it compared tables and columns only. Account-scoped ledger reads ran
+2.0 s mean (4,804 calls); prod-only because dev/staging ran the real baseline.
+**Enforcer:** `verify-live-schema.ts` now fails on missing index/constraint
+definitions (waivers with evidence in `verify-live-schema-waivers.ts`), PR #7635.
+
+### A declared index is not a built index; kortix.ts is checked against the migrated catalog (2026-09-25)
+
+**Rule:** Every index, unique constraint, table and view in `kortix.ts` must
+exist in a freshly migrated database, and the reverse. Declaring an index in
+`kortix.ts` builds nothing: build it in a `.concurrent.ts` migration in the
+same PR. Declare a compatibility view with `.view(...).existing()`, never as a
+table. **Trigger surface:** any edit to `packages/db/src/schema/kortix.ts` or
+an index migration. **Near-miss:** `kortix.ts` declared
+`uniq_sandbox_compute_sessions_one_open` from 2026-07-16; no migration built
+it until 2026-09-24, so compute metering's de-duplication could never fire.
+Eight RBAC compatibility views were declared as tables. Found by a codebase
+audit. **Enforcer:** `packages/db/scripts/schema-contract.ts` in the
+`shadow-db` job of `db-migrations.yml`; exceptions only on
+`schema-contract-sql-only.ts`, which can only shrink.
+
+### A cancelled controller does not stop detached work on a reused remote host (2026-09-24)
+
+**Rule:** Before a controller launches work on a reused remote host, stop the
+previous detached process group. Controller cancellation is not a remote
+lifecycle signal. **Trigger surface:** preview deploys and remote test workers.
+**Near-miss:** A cancelled preview suite continued creating cloud session boxes
+and held the next deploy behind its lock. **Enforcer:** the Platinum deploy
+sends `TERM`, waits 10 seconds, then sends `KILL`; `sandbox-preview.test.ts`
+asserts the anchored process match and both signals.
+
+### Turning workers off in a stack also turns off the deadline reaper; a shared provider org needs an owner tag on every child box (2026-09-24)
+
+**Rule:** A stack that sets `KORTIX_WORKERS_ENABLED=false` runs no project
+maintenance, so `deadline_at` never stops an idle session box and the
+provider's idle timer is the only stop. Never disable workers in a stack that
+creates real sandboxes. When several stacks with separate databases share one
+provider org and one `kortix.env` tag, stamp every child box with its owning
+stack (`KORTIX_INSTANCE_ID` -> `kortix.instance`) BEFORE enabling an orphan
+reaper: an unscoped reaper stops every other stack's live boxes, because they
+have no row in its database. **Trigger surface:** any `KORTIX_*_ENABLED` change
+in `tests/src/core/preview-stack.ts` or a self-host profile; any provider
+listing used to stop or delete boxes.
+
+**Incident:** 2026-09-23/24. Preview APIs ran with workers off since #6347
+(2026-08-10). 87 idle 4 GB preview session boxes (348 GB, 42 idle > 6 h) plus
+9 preview hosts filled the shared 524288 MB Platinum pool. Every preview deploy,
+every preview session and every dev session returned `429 org resource pool
+exhausted`. Evidence from the provider listing: of 262 stopped preview session
+boxes, 85 stopped at 700-740 min idle (the 720 min native timer), versus 4144 of
+4779 dev boxes at < 20 min (the deadline reaper). The session boxes carried no
+tag naming their preview, so teardown could not find them either.
+
+**Enforcers:** `previewWorkerEnvironment()` enables maintenance only with an
+instance id (`tests/unit/preview-stack.test.ts`); `providerBoxBelongsToThisInstance`
+lists only exactly-stamped boxes (`platinum-list-managed.test.ts`); teardown,
+PR-preview replacement, every deploy and the daily reconcile stop owned,
+orphaned and > 6 h idle preview session boxes, never other envs and never hosts
+(`preview-session-reaper.test.ts`, `preview-session-teardown.test.ts`); each
+deploy logs pool usage and names the top consumers on a `429`.
+
+### An identity claim is only as trusted as whoever controls its source (2026-09-24)
+
+**Rule:** Before an email, id or scope from a request decides whose identity or
+which tenant a write touches, name who controls that value. An email a SAML IdP
+asserts is controlled by the account admin who configured the IdP, so it proves
+nothing outside that account until the account verified the domain
+(`iam/email-trust.ts`). A `scope_id` in a body is controlled by the caller, so a
+write authorized against the URL account must prove the scope belongs to it.
+**Near-miss:** a codebase audit found invite matching, add-by-email and SAML
+identity merge keyed on IdP-asserted emails, `enforce_sso` honoured on unverified
+domains, and project-scoped assignments accepted for another account's project.
+Fixed before any known use, PR #7615.
+**Enforcers:** flows `SSO-1`, `SSO-2`, `SSO-3`, `IAM-41`, `IAM-42`;
+`integration-iam-sso-sync.test.ts`; trigger
+`role_assignments_project_account_guard`.
+
 ### Client database roles get no privileged grant; a blanket grant is an open door (2026-09-24)
 
 **Rule:** Never `GRANT ... ON ALL FUNCTIONS` or `ON ALL TABLES` to `anon`,
@@ -90,6 +193,16 @@ started a second Platinum keepalive through a copied, unlocked `pt-ka.lock`.
 `infra/test/pt-tmp-migrate.test.sh` (byte parity with the host-agent copy),
 `guest_tmp_test.go`; kortixd `resources.test.ts` names RAM-backed files in the
 guard's stop reason.
+
+### A model check that says "usable" must use the scope the gateway uses, or a chat pins a model that fails every turn (2026-09-24)
+
+**Rule:** Every check made before a request — a picker list, a servability probe, a create-time validation, a per-message replacement check — resolves with the personal-key scope the gateway uses at request time (`resolveSessionPersonalOwner`, `personalUserId`). When a change narrows what a session may reach, find every such check of that resource and move it in the same PR.
+
+**Incident (dev, 2026-09-24):** #7563 made agents their own principal by default, so a shared session no longer reaches one person's ChatGPT connection. Teams channel sessions pinned to `codex/*` then failed every message with "Connect Codex to use this model". The per-message check (`channelTurnModel`) still counted the sender's own connection, so it never replaced the model, and `/model` changed only new sessions. PR #7593.
+
+**Follow-up (dev, 2026-09-25):** the same gap sat in `PUT /sessions/:id/model` and `PUT …/provider-secret-pools`: a session shared with the project accepted its owner's own ChatGPT connection and member-granted keys. Both now check with the session's gateway scope, and the web key editor lists only keys the session can use.
+
+**Enforcement:** `unit-channel-model-access.test.ts` (a follow-up in a shared session is checked with `personalUserId: null`), `unit-channel-vision-model.test.ts` (probe inputs and cache key carry the scope), `default-model.test.ts` (a shared session's default is checked without personal keys), `unit-session-model-keys.test.ts` (model change), `provider-secret-pools.test.ts` (a shared session refuses a member-granted key), flow `SEC-POOL-2` (`403 SHARED_SESSION_PERSONAL_KEY`, `400 INVALID_SESSION_MODEL`).
 
 ### A background job runs its tick as a named worker, or its changes read as API traffic (2026-09-24)
 
@@ -857,7 +970,7 @@ control or CLI command that clears it, for every caller who can hit it
 missing UI. *Incident:* a `user`-strategy connector had no connect flow
 anywhere — no shared account to offer, so the card rendered a button-less
 refusal and the composer spun on "Thinking" forever. *Enforcer:*
-`apps/api/src/projects/routes/r8-session-prompts.test.ts:377` ("queues the
+`apps/api/src/projects/routes/session-prompts.test.ts` ("queues the
 prompt even when the project has an unconnected connector"); the denial's
 `connect_url` remedy: `apps/api/src/connectors/principal-access.ts:110-114`.
 
@@ -2214,7 +2327,8 @@ one billing period on every drained per-seat account. Fixed in PR #7080.
 balance-to-number decisions outside the decision layer, no billing prose in
 components, the bypass stays deleted on both sides of the wire);
 `billing-state.test.ts` sweeps every Stripe status x plan class against the
-universal floor; `settle-credits.test.ts` pins the settlement contract.
+universal floor; `tests/migration/wallet-ledger.test.ts` pins the settlement
+contract (`wallet.settle`) against real PostgreSQL.
 
 ### Keep lazy optional dependencies type-lazy across shared-source imports (2026-08-28)
 
@@ -6486,7 +6600,7 @@ each delivery attempt. Inspect stored bindings when the resolved scope omits
 a disabled connector; a resolved scope is not a list of all stored bindings.
 
 **Enforcement.** `SESS-29` exercises refusal, Stop, fresh GET, and Resume through
-HTTP with PostgreSQL read-back. `r8-session-prompts.test.ts` covers admission
+HTTP with PostgreSQL read-back. `session-prompts.test.ts` covers admission
 refusals and reload. `queued-continue-inbox-delivery.test.ts` proves a connector
 refusal sends once and Stop prevents a second POST after a transient failure.
 Production recovery removed the stale binding through the session scope API.
@@ -7065,6 +7179,35 @@ endpoint provider and linked openrouter.ai.
 `packages/llm-gateway/src/pipeline/simple-handler.test.ts` (failover and
 public-identity suites), `apps/api/src/llm-gateway/__tests__/gateway.live.test.ts`
 (real Morph + OpenRouter). PR #7589.
+
+### 2026-09-25 — A dry run that calls up() is not read-only; status reads the ledger, never the runner
+
+**Near-miss.** `pnpm migrate:status` was documented as "dry-run, writes nothing",
+and the failed-deploy drill in `packages/db/MIGRATIONS.md` sent operators to run
+it against prod. It called node-pg-migrate 8.0.4 `runner({ dryRun: true })`.
+That dry run takes the advisory lock, creates the ledger schema and table if
+absent, sends `BEGIN` and `COMMIT` unconditionally, and calls every pending
+migration's `up()`. Only SQL collected through `pgm.sql()` is skipped. The
+statements `up()` runs itself through `pgm.db.query()` execute and commit; four
+batched `.concurrent.ts` data passes do that. A disposable PostgreSQL proved it:
+the old status committed a pending migration's `INSERT` (`n: 1`, expected `0`).
+Found while wiring the DB suites into CI (#7636). No known run against a
+database with such a migration pending.
+
+**Rule.** A command that claims to write nothing must not call code that can
+write. "Dry run" describes what a library chooses to skip, not what it runs:
+read the implementation before you document it as read-only. A status check
+reads the ledger itself, inside `BEGIN READ ONLY`, on a session opened with
+`default_transaction_read_only = on`, and refuses to run when that setting
+did not take.
+
+**Enforcement.** `packages/db/scripts/migration-status.integration.test.ts`
+(real PostgreSQL: a pending `pgm.db.query` INSERT stays unwritten and is
+reported pending; no ledger is created on an empty database; the session
+refuses writes even when the URL's `options=` turns read-only off; the real CLI
+lists every migration on an empty database and creates no schema). It failed
+on the old status (3 of 5). `migration-status.test.ts` pins that `migrate.ts`
+has no `dryRun` and that the status path never calls `runner(`.
 
 ### 2026-09-18 — The platform never writes a session's tracked working tree
 

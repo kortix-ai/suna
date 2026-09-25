@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   FileContentRenderer,
   FileSourceProvider,
+  framePolicy,
   getFileCategory,
   type BinaryBlobResult,
   type FileContent,
@@ -159,13 +160,14 @@ export function PublicFileShareView({
   );
 
   // HTML renders from the proxy URL directly so its relative assets resolve.
+  // It is a file the sender's agent wrote: a `document` frame, opaque origin.
   if (isHtmlFile) {
     return (
       <iframe
         title={fileName}
         src={fileUrl}
         className={SHARE_FILE_IFRAME_CLASS}
-        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads"
+        sandbox={framePolicy('document', fileUrl).sandbox}
       />
     );
   }

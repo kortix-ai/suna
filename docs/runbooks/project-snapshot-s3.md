@@ -46,7 +46,7 @@ which is why their blobs ride in the boot pack).
 | Leader worker | `apps/api/src/git-proxy/project-snapshot-worker.ts` (started in `startSingletonWorkers`) |
 | Descriptor route | `GET /v1/git/{project}.git/project-snapshot?sha=` in `apps/api/src/git-proxy/index.ts` |
 | Env pin | `apps/api/src/projects/lib/session-runtime-env.ts` |
-| Enqueue sites | registration (`project-registration.ts`), proxy push (`git-proxy/index.ts`), CR merge (`routes/r9.ts`), session-create miss (`lib/sessions.ts`) |
+| Enqueue sites | registration (`project-registration.ts`), proxy push (`git-proxy/index.ts`), CR merge (`routes/change-request-actions.ts`), session-create miss (`lib/sessions.ts`) |
 | Ledger table | `kortix.project_snapshot_archives` (migration `20260912214610636_project_snapshot_archives.sql`) |
 | Supervisor coordinator | `apps/kortix-sandbox-agent-server/src/config-provider/config-provider.ts` |
 | Supervisor transports | `config-provider/git/git-config-provider.ts`, `config-provider/s3/s3-config-provider.ts` |

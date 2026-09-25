@@ -1,20 +1,16 @@
 import { config } from '../../config';
 import { formatRelativeTime, sessionWebUrl } from '../slack/util';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
-import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
-import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
-import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
-import { toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
-import { channelModelContext } from '../slack/model-gate';
+import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import {
   currentChannelSelection,
   loadProjectAgentGovernance,
   setChannelAgent,
   setChannelConversationPolicy,
-  setChannelModel,
 } from '../slack/selection';
 import { buildAgentsPicker } from './agent-picker';
 import { stopTeamsTurn } from './stop';
+import { applyTeamsModelChoice, buildTeamsModelsCard, statusModel } from './model-choice';
 import { messageAfterFreshStart, startFreshTeamsConversation } from './fresh-start';
 import { createOrJoinTeamsConversationSession } from './session';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
@@ -64,8 +60,11 @@ export async function handleTeamsCommand(input: {
   activity: TeamsActivity;
   tenantId: string;
   projectId: string;
+  /** Per-project (BYO) bot: session lookups stay inside `projectId`. */
+  projectScoped?: boolean;
 }): Promise<boolean> {
   const ref = conversationRef(input.activity, input.projectId);
+  const sessionProjectId = input.projectScoped ? input.projectId : undefined;
   if (!ref) return false;
   const { verb, arg } = input.command;
   const conversationId = ref.conversationId;
@@ -100,7 +99,7 @@ export async function handleTeamsCommand(input: {
       case 'cancel': {
         // The live card's Stop button is the primary lever; this is the one
         // that still works after the card has scrolled out of reach.
-        const session = await conversationSession(input.tenantId, conversationId);
+        const session = await conversationSession(input.tenantId, conversationId, sessionProjectId);
         if (!session) {
           await post(buildNoticeCard('Nothing is running in this conversation.'));
           return true;
@@ -133,6 +132,7 @@ export async function handleTeamsCommand(input: {
           scope: conversationScope(input.activity),
           teamsUserId: userId ?? '',
           channelPolicy: selection?.conversationPolicy ?? null,
+          projectId: sessionProjectId,
         });
         if (!outcome.reset) {
           await post(buildNoticeCard(outcome.notice));
@@ -161,15 +161,19 @@ export async function handleTeamsCommand(input: {
       case 'status':
       case 'config':
       case 'settings':
-        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId));
+        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId, sessionProjectId));
         return true;
       case 'models':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
-        await post(await buildModelsCard(ctx));
+        await post(await buildTeamsModelsCard(input.activity, input.tenantId, conversationId));
         return true;
       case 'model':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
-        await post(await setModel(ctx, arg));
+        await post(
+          arg.trim()
+            ? await applyTeamsModelChoice(input.activity, input.tenantId, conversationId, arg, sessionProjectId)
+            : await buildTeamsModelsCard(input.activity, input.tenantId, conversationId),
+        );
         return true;
       case 'agents':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
@@ -235,11 +239,13 @@ async function buildStatusCard(
   tenantId: string,
   conversationId: string,
   projectId: string,
+  sessionProjectId?: string,
 ) {
-  const [selection, projects, session] = await Promise.all([
+  const [selection, projects, session, gatewayOn] = await Promise.all([
     currentChannelSelection(ctx),
     listTenantProjects(tenantId).catch(() => []),
-    conversationSession(tenantId, conversationId).catch(() => null),
+    conversationSession(tenantId, conversationId, sessionProjectId).catch(() => null),
+    projectLlmGatewayEnabledById(projectId).catch(() => true),
   ]);
   const projectName = projects.find((p) => p.projectId === projectId)?.name ?? projectId;
   return buildPanelCard({
@@ -248,7 +254,7 @@ async function buildStatusCard(
     rows: [
       { label: 'Project', value: projectName },
       { label: 'Agent', value: selection?.agentName || 'default' },
-      { label: 'Model', value: selection?.opencodeModel ? labelForModelRef(selection.opencodeModel) : 'project default' },
+      { label: 'Model', value: statusModel(selection?.opencodeModel ?? null, session, gatewayOn) },
       // The run itself. `/status` was the one place a user looks to answer
       // "what is this conversation doing", and it answered everything except
       // that — so a run that had quietly stopped looked identical to one still
@@ -319,85 +325,6 @@ async function buildWhoamiCard(
     ],
     url: `${dashboardBase()}/projects/${projectId}`,
   });
-}
-
-async function buildModelsCard(ctx: ReturnType<typeof teamsChannelCtx>) {
-  const gate = await channelModelContext(ctx);
-  if (!gate) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
-  const selection = await currentChannelSelection(ctx);
-  const current = selection?.opencodeModel ?? null;
-  // Native mode: no gateway picker catalog — the channel model is a native
-  // `provider/model` ref set directly.
-  if (!gate.llmGatewayEnabled) {
-    return buildNoticeCard(
-      current
-        ? `This conversation uses \`${current}\`. This project runs native OpenCode models (LLM gateway off) — set any connected provider's model with \`/model provider/model\`, or \`/model default\` to reset.`
-        : 'This conversation uses the project default (resolved by OpenCode in the sandbox). This project runs native OpenCode models (LLM gateway off) — set any connected provider\'s model with `/model provider/model`, e.g. `/model anthropic/claude-sonnet-4-6`.',
-      '🧠',
-    );
-  }
-  const isCurrent = (id: string) => !!current && toWireModel(current) === toWireModel(id);
-
-  const { models, projectDefault } = await listPickerModels({
-    projectId: gate.projectId,
-    userId: gate.ownerUserId,
-    accountId: gate.accountId,
-    freeManagedOnly: gate.freeManagedOnly,
-    agentName: selection?.agentName ?? null,
-  });
-
-  const options: SelectOption[] = [
-    { label: 'Project default', hint: projectDefault.label ?? undefined, current: !current, data: { model: '' } },
-    ...models.slice(0, 6).map((m) => ({
-      label: m.label,
-      hint: m.id,
-      current: isCurrent(m.id),
-      data: { model: m.id },
-    })),
-  ];
-
-  return buildSelectCard({
-    emoji: '🧠',
-    title: 'Model',
-    subtitle: current ? `Currently ${labelForModelRef(current)}` : 'Currently the project default',
-    verb: 'teams_set_model',
-    options,
-    footer: 'Or set any provider/model-id you have connected in Kortix: `/model anthropic/claude-sonnet-4.6`.',
-  });
-}
-
-async function setModel(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
-  const id = arg.trim();
-  if (!id) return buildModelsCard(ctx);
-  const gate = await channelModelContext(ctx);
-  if (!gate) return buildNoticeCard('Connect a project to this conversation first.');
-  if (id.toLowerCase() === 'default') {
-    await setChannelModel(ctx, null);
-    return buildNoticeCard('Model reset to the project default.');
-  }
-  // Native mode (gateway off): no gateway catalog — accept a native
-  // `provider/model` ref verbatim.
-  if (!gate.llmGatewayEnabled) {
-    const nativeShapeError = validateNativeOpencodeModelRef(id);
-    if (nativeShapeError) {
-      return buildNoticeCard(`\`${id}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`, e.g. \`anthropic/claude-sonnet-4-6\`.`);
-    }
-    await setChannelModel(ctx, id);
-    return buildNoticeCard(`Model set to \`${id}\`. New sessions will use it.`);
-  }
-  const servable = await isModelServableForAccount({
-    userId: gate.ownerUserId,
-    accountId: gate.accountId,
-    projectId: gate.projectId,
-    freeModelsOnly: gate.freeManagedOnly,
-    model: id,
-  });
-  if (!servable) {
-    return buildNoticeCard(`\`${id}\` isn't available here. Pick one with /models or connect that provider in Kortix.`);
-  }
-  const stored = toOpencodeModelRef(id);
-  await setChannelModel(ctx, stored);
-  return buildNoticeCard(`Model set to ${labelForModelRef(stored)}. New sessions will use it.`);
 }
 
 async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {

@@ -8,7 +8,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
-import { connectors, projectSessions, projectSessionConnectorBindings, serviceAccounts } from '@kortix/db';
+import { projectSessions, projectSessionConnectorBindings, serviceAccounts, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability, projectCapabilityAllowed } from '../lib/access';
@@ -22,13 +22,15 @@ import { assertAgentScope } from '../../iam/agent-scope';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape, validateNativeOpencodeModelRef } from '../lib/session-model-change';
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
-import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/connector-alias';
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
 import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
 import { resolveSessionPersonalOwner } from '../lib/personal-resources';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { checkSessionModelChange } from '../lib/session-model-keys';
+import { validateProviderSecretPool } from './provider-secret-pools';
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -643,14 +645,48 @@ projectsApp.openapi(
       nextModel = trimmed;
     } else {
       const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
-      const servable = await isModelServableForAccount({
-        userId: visible.row.createdBy ?? loaded.userId,
+      const owner = visible.row.createdBy ?? loaded.userId;
+      // Checked in the key scope the gateway uses for this session, with the
+      // pooled keys it selects (lib/session-model-keys.ts).
+      const { servable, selected } = await checkSessionModelChange({
         accountId: loaded.row.accountId,
         projectId,
         sessionId,
+        owner,
+        caller: loaded.userId,
         freeModelsOnly,
         model: trimmed,
+        mayPool:
+          resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
+          !visible.ownerIsMachine &&
+          Boolean(visible.row.createdBy),
+        hasSelection: async (providerId) => {
+          const [existing] = await db
+            .select({ sessionId: sessionProviderSecretPools.sessionId })
+            .from(sessionProviderSecretPools)
+            .where(and(eq(sessionProviderSecretPools.sessionId, sessionId), eq(sessionProviderSecretPools.providerId, providerId)))
+            .limit(1);
+          return Boolean(existing);
+        },
+        callerMaySelect: async (providerId, secretIds) =>
+          !(await validateProviderSecretPool({
+            accountId: loaded.row.accountId,
+            projectId,
+            repoUrl: loaded.row.repoUrl,
+            defaultBranch: loaded.row.defaultBranch,
+            manifestPath: loaded.row.manifestPath,
+            agentName: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
+            userId: loaded.userId,
+            providerId,
+            ids: secretIds,
+          })),
       });
+      if (selected) {
+        await db
+          .insert(sessionProviderSecretPools)
+          .values({ sessionId, providerId: selected.providerId, secretIds: selected.secretIds })
+          .onConflictDoNothing({ target: [sessionProviderSecretPools.sessionId, sessionProviderSecretPools.providerId] });
+      }
       if (!servable) {
         return c.json(
           {

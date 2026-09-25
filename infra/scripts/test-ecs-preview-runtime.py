@@ -578,7 +578,13 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn("autoArchiveDays: 0,", PREVIEW_CORE)
         self.assertIn("autoDeleteDays: 0,", PREVIEW_CORE)
         self.assertIn("branchEnvSandboxName(input.branchEnv)", PREVIEW_CORE)
-        self.assertIn("selectTeardownSandboxIds(await allPlatinumPreviewSandboxes(api), input)", PREVIEW_PROVIDERS)
+        # Teardown takes one provider snapshot, selects the owned host, stops
+        # the host's child session boxes, then deletes the host. The old exact
+        # one-line assertion rejected this stronger lifecycle because listing
+        # moved into a local variable.
+        self.assertIn("const sandboxes = await allPlatinumPreviewSandboxes(api);", PREVIEW_PROVIDERS)
+        self.assertIn("const owned = selectTeardownSandboxIds(sandboxes, input);", PREVIEW_PROVIDERS)
+        self.assertIn("await stopPreviewSessionsOf(api, sandboxes, ownedNames);", PREVIEW_PROVIDERS)
         self.assertIn("PREVIEW_BRANCH_ENV", job("teardown"))
 
     def test_a_failed_pull_request_query_never_reads_as_no_active_previews(self):

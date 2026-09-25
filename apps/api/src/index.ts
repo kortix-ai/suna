@@ -1049,9 +1049,10 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 
 // Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
 // session title + sanitized transcript for a valid session public-share
-// (any resource type SESS-13's CRUD creates); backs the logged-out
-// `/share/[shareId]` viewer (apps/web). No auth, no client-side sandbox
-// access — the API reads the sandbox's OpenCode daemon server-side.
+// (any resource type SESS-13's CRUD creates); exposed through the SDK's
+// `getPublicSessionShare` / `getPublicSessionShareMessages`. The web app has
+// no page for it. No auth, no client-side sandbox access — the API reads the
+// sandbox's OpenCode daemon server-side.
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
@@ -1838,11 +1839,8 @@ async function dispatchInbound(
     // Include the source address so an unauthenticated attacker who learns a
     // tunnelId cannot consume the real machine's reconnect budget.
     const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-    const clientIp =
-      req.headers.get('cf-connecting-ip')?.trim() ||
-      req.headers.get('x-real-ip')?.trim() ||
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      'unknown';
+    const { clientIpFromHeaders } = await import('./shared/client-ip');
+    const clientIp = clientIpFromHeaders((name) => req.headers.get(name)) ?? 'unknown';
     const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
     if (!wsIpRateCheck.allowed) {
       return new Response(

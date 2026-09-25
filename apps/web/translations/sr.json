@@ -102,6 +102,7 @@
     "providerKeys": "Кључеви провајдера",
     "chooseSharedKeys": "Изаберите дељене кључеве које ова сесија може да користи.",
     "sessionKeyPool": "Скуп кључева сесије",
+    "sharedSessionKeys": "Ова сесија је дељена са пројектом, па овде раде само кључеви дељени са целим пројектом. Кључеви додељени вама раде у вашим приватним сесијама.",
     "projectDefaultShort": "Подразумевано за пројекат",
     "rateLimitDescription": "Мрежни пролаз мења изабране кључеве када провајдер пријави ограничење захтева.",
     "enableGateway": "Укључите LLM мрежни пролаз у подешавањима пројекта да бисте користили скупове кључева.",
@@ -1598,6 +1599,7 @@
     "backToProject": "Назад на пројекат",
     "delete": "Обриши сесију",
     "failedLabel": "Неуспешна сесија",
+    "loadingConversation": "Учитавање разговора",
     "prompt": {
       "queueFailed": "Није могуће ставити сачувани упит у ред",
       "unavailable": "Сачувани упит није доступан.",
@@ -6225,7 +6227,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Сва Воркер извршења су тренутно паузирана."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Нема садржаја"
+      "line1115JsxTextNoContent": "Нема садржаја",
+      "loadRemoteImage": "Учитај слику са {host}"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Притисните Enter да покренете..."
@@ -19146,8 +19149,22 @@
       "textbda3fcd4343c": "Конфигурације нивоа прегледане",
       "text30cef615e8e3": "Сажетак трансакција прегледан",
       "textd2c6127fc332": "Разлике између верзија прегледане",
+      "text8cc0d84b66bb": "Прегледан линк за Slack идентитет",
+      "text508b43cc4545": "Прегледан линк за Teams идентитет",
+      "text467f597e95b0": "SSO домен је верификован",
+      "text8295f9d4861b": "Постављена верификација SSO домена налога",
       "text7beaff63a7d3": "Архива конфигурације пројекта преузета",
       "text5176d59f25fd": "Издање конфигурације сесије разрешено"
+    },
+    "publicShareConfirm": {
+      "title": "Направити јавни линк?",
+      "description": "Свако ко има линк може ово да види без пријаве. Линк остаје активан док га не опозовеш.",
+      "confirm": "Направи линк"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} налог",
+      "chatWorkspace": "{service} радни простор",
+      "checking": "Провера линка…"
     }
   },
   "projectOnboarding": {
@@ -20159,5 +20176,18 @@
   },
   "connectorsAppReturn": {
     "done": "Gotovo. Nazad u Kortix aplikaciju"
+  },
+  "ssoDomainVerification": {
+    "title": "Верификација домена",
+    "verified": "Верификовано",
+    "unverified": "Није верификовано",
+    "verifiedDescription": "Вашем добављачу идентитета се верује за {domain}. Обавезни SSO важи за овај домен.",
+    "unverifiedDescription": "Додајте овај DNS TXT запис да докажете да контролишете {domain}. До тада SSO пријава ради само унутар овог налога, а обавезни SSO нема ефекта.",
+    "recordName": "Назив",
+    "recordValue": "Вредност",
+    "verify": "Верификуј домен",
+    "verifiedToast": "Домен је верификован",
+    "failedToast": "Домен још није верификован",
+    "enforceNeedsVerification": "Прво верификујте домен. Обавезни SSO важи само за верификовани домен."
   }
 }

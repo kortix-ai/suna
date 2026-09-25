@@ -874,7 +874,7 @@ describe('session_turns ledger', () => {
     expect(await abandonSandboxTurn({ sandboxId: SANDBOX_ID }, t('ledger-abandon'))).toBe(true);
 
     // Every failed delivery takes this path (preview.ts 3xx/401/503/4xx/
-    // unreachable, r4.ts turn_abandoned). Leaving the row 'delivering' makes
+    // unreachable, turn-stream.ts turn_abandoned). Leaving the row 'delivering' makes
     // the ledger claim a turn is running for ever.
     expect((await readRow()).metadata.activeTurns).toEqual({});
     expect(await readTurn(t('ledger-abandon'))).toMatchObject({

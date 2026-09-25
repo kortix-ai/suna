@@ -11,6 +11,7 @@ import {
   looksLikeFilePath,
   looksLikeUrl,
   normalizeLanguage,
+  remoteImageHost,
   shouldUseNextLink,
 } from './unified-markdown-utils';
 
@@ -235,3 +236,29 @@ describe('looksLikeFilePath', () => {
   });
 });
 
+describe('remoteImageHost', () => {
+  test('an absolute http(s) image on another host is remote', () => {
+    expect(remoteImageHost('https://images.example.com/a.png')).toBe('images.example.com');
+  });
+
+  test('protocol-relative, backslash, padded and mixed-case forms resolve to their host', () => {
+    expect(remoteImageHost('//images.example.com/a.png')).toBe('images.example.com');
+    expect(remoteImageHost('\\\\images.example.com/a.png')).toBe('images.example.com');
+    expect(remoteImageHost('/\\images.example.com/a.png')).toBe('images.example.com');
+    expect(remoteImageHost('  https://images.example.com/a.png')).toBe('images.example.com');
+    expect(remoteImageHost('HtTpS://Images.Example.com/a.png')).toBe('images.example.com');
+  });
+
+  test('relative, data: and blob: sources are not remote', () => {
+    expect(remoteImageHost('/static/a.png')).toBeNull();
+    expect(remoteImageHost('a.png')).toBeNull();
+    expect(remoteImageHost('data:image/png;base64,AAAA')).toBeNull();
+    expect(remoteImageHost('blob:https://page.invalid/1234')).toBeNull();
+  });
+
+  test('a source the sandbox proxy rewrote is the session file, not a third party', () => {
+    expect(
+      remoteImageHost('http://localhost:3000/a.png', 'https://api.example.com/v1/p/sbx/3000/a.png'),
+    ).toBeNull();
+  });
+});

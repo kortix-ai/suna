@@ -102,6 +102,7 @@
     "providerKeys": "Chaves de fornecedor",
     "chooseSharedKeys": "Escolha as chaves partilhadas que esta sessão pode usar.",
     "sessionKeyPool": "Conjunto de chaves da sessão",
+    "sharedSessionKeys": "Esta sessão está partilhada com o projeto, por isso aqui só funcionam as chaves partilhadas com todo o projeto. As chaves atribuídas a si funcionam nas suas sessões privadas.",
     "projectDefaultShort": "Padrão do projeto",
     "rateLimitDescription": "O gateway alterna entre as chaves selecionadas quando um fornecedor indica um limite de pedidos.",
     "enableGateway": "Ative o gateway LLM nas definições do projeto para usar conjuntos de chaves.",
@@ -1598,6 +1599,7 @@
     "backToProject": "Voltar ao projeto",
     "delete": "Excluir sessão",
     "failedLabel": "Sessão com falha",
+    "loadingConversation": "Carregando a conversa",
     "prompt": {
       "queueFailed": "Não foi possível adicionar o prompt salvo à fila",
       "unavailable": "Nenhum prompt salvo está disponível.",
@@ -6225,7 +6227,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Todas as execuções do Worker estão pausadas no momento."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Sem conteúdo"
+      "line1115JsxTextNoContent": "Sem conteúdo",
+      "loadRemoteImage": "Carregar imagem de {host}"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Pressione Enter para iniciar..."
@@ -19146,8 +19149,22 @@
       "textbda3fcd4343c": "Configurações de nível visualizadas",
       "text30cef615e8e3": "Resumo de transações visualizado",
       "textd2c6127fc332": "Diff de versões visualizado",
+      "text8cc0d84b66bb": "Link de identidade do Slack pré-visualizado",
+      "text508b43cc4545": "Link de identidade do Teams pré-visualizado",
+      "text467f597e95b0": "Domínio SSO verificado",
+      "text8295f9d4861b": "Verificação do domínio SSO da conta definida",
       "text7beaff63a7d3": "Arquivo de configuração do projeto baixado",
       "text5176d59f25fd": "Versão de configuração da sessão resolvida"
+    },
+    "publicShareConfirm": {
+      "title": "Criar um link público?",
+      "description": "Qualquer pessoa com o link pode ver isto sem iniciar sessão. O link fica ativo até você revogá-lo.",
+      "confirm": "Criar link"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "Conta do {service}",
+      "chatWorkspace": "Workspace do {service}",
+      "checking": "Verificando o link…"
     }
   },
   "projectOnboarding": {
@@ -20159,5 +20176,18 @@
   },
   "connectorsAppReturn": {
     "done": "Pronto. Voltar ao app Kortix"
+  },
+  "ssoDomainVerification": {
+    "title": "Verificação do domínio",
+    "verified": "Verificado",
+    "unverified": "Não verificado",
+    "verifiedDescription": "Seu provedor de identidade é confiável para {domain}. Exigir SSO se aplica a este domínio.",
+    "unverifiedDescription": "Adicione este registro DNS TXT para provar que você controla {domain}. Até lá, o login com SSO funciona apenas nesta conta, e exigir SSO não tem efeito.",
+    "recordName": "Nome",
+    "recordValue": "Valor",
+    "verify": "Verificar domínio",
+    "verifiedToast": "Domínio verificado",
+    "failedToast": "Domínio ainda não verificado",
+    "enforceNeedsVerification": "Verifique o domínio primeiro. Exigir SSO se aplica apenas a um domínio verificado."
   }
 }

@@ -50,6 +50,14 @@ export function clearOpencodeEnsureGuard(): void {
 export interface CanonicalOpenCodeSession {
   /** The authoritative pinned root id (server-managed), or null while resolving. */
   rootSessionId: string | null;
+  /**
+   * No control-plane read that could still supply the pin is outstanding: the
+   * root is known, or the session row has answered (without a pin, or with an
+   * error). While this is false, a null `rootSessionId` means "not yet", not
+   * "none" — only once it is true can a caller conclude that nothing but the
+   * runtime itself can name the root.
+   */
+  pinSettled: boolean;
   /** The sandbox's live OpenCode session list (read-only) for ?oc + UI. */
   sessions: Session[];
   isLoading: boolean;
@@ -130,6 +138,8 @@ export function useCanonicalOpenCodeSession(params: {
 
   return {
     rootSessionId,
+    pinSettled:
+      rootSessionId !== null || (projectSessionQuery.isFetched && !projectSessionQuery.isFetching),
     sessions: sessionsQuery.data ?? [],
     isLoading: sessionsQuery.isLoading,
     isError: sessionsQuery.isError,

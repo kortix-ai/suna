@@ -31,6 +31,7 @@ import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { upsertResourceGrant } from '../iam/resource-grants';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -58,11 +59,11 @@ beforeAll(async () => {
     name: 'member-prompt-gate-test-project',
     repoUrl: 'https://example.com/member-prompt-gate-test.git',
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);
@@ -142,20 +143,20 @@ const base = `/v1/projects/${PROJECT}/sessions/${SESSION}`;
 const wireMessageId = () =>
   `msg_${Date.now().toString(16).padStart(12, '0').slice(-12)}aAbBcCdDeEfF12`;
 
-const R8_SRC = await Bun.file(
-  new URL('../projects/routes/r8.ts', import.meta.url).pathname,
+const PROMPTS_SRC = await Bun.file(
+  new URL('../projects/routes/session-prompts.ts', import.meta.url).pathname,
 ).text();
 
 /**
  * The `loadProjectForUser` floor of one registered handler, selected by method
- * + OpenAPI path. Scoped per handler: r8.ts registers 17 routes across three
- * different floors, so a whole-file match would read a neighbour's.
+ * + OpenAPI path. Scoped per handler: session-prompts.ts registers several
+ * routes, so a whole-file match would read a neighbour's.
  */
 function handlerFloor(method: string, path: string): string {
-  const block = R8_SRC.split('projectsApp.openapi(').find(
+  const block = PROMPTS_SRC.split('projectsApp.openapi(').find(
     (b) => b.includes(`method: '${method.toLowerCase()}'`) && b.includes(`path: '${path}'`),
   );
-  if (!block) throw new Error(`no ${method} ${path} handler found in r8.ts`);
+  if (!block) throw new Error(`no ${method} ${path} handler found in session-prompts.ts`);
   const floor = block.match(/loadProjectForUser\(c, projectId, '(\w+)'\)/);
   if (!floor) throw new Error(`no loadProjectForUser floor in ${method} ${path}`);
   return floor[1]!;

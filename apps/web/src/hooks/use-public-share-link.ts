@@ -17,10 +17,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * have access.
  */
 
-import {
-  type CreateSessionPublicShareInput,
-  createSessionPublicShare,
-} from '@kortix/sdk';
+import { type CreateSessionPublicShareInput, createSessionPublicShare } from '@kortix/sdk';
 import { useProjectSession } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
@@ -54,6 +51,9 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
   const { data: session } = useProjectSession(projectId, sessionId);
   const canManageSharing = session?.can_manage_sharing !== false;
   const [copied, setCopied] = useState(false);
+  // A public link is an anonymous credential. Every request to create one is
+  // confirmed first (`PublicShareLinkConfirm`); nothing is minted on the click.
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -76,6 +76,7 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
       await navigator.clipboard.writeText(publicUrl);
       return publicUrl;
     },
+    onSettled: () => setConfirmOpen(false),
     onSuccess: () => {
       // The management list is the only way to revoke a link, so it must never
       // lag behind a mint — a link you can't see is a link you can't revoke.
@@ -95,7 +96,17 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
   });
 
   return {
-    copyLink: () => mutation.mutate(),
+    /** Ask to create a public link. Opens the confirmation; mints nothing. */
+    copyLink: () => setConfirmOpen(true),
+    /** Props for `PublicShareLinkConfirm`, which every caller renders. */
+    confirmation: {
+      open: confirmOpen,
+      onOpenChange: (open: boolean) => {
+        if (!mutation.isPending) setConfirmOpen(open);
+      },
+      onConfirm: () => mutation.mutate(),
+      isPending: mutation.isPending,
+    },
     isPending: mutation.isPending,
     copied,
     canShare: !!projectId && !!sessionId && !!input && canManageSharing,

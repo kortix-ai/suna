@@ -41,6 +41,8 @@ const getModelPricing = mock(
 mock.module('../../router/config/model-pricing', () => ({ getModelPricing }));
 
 const {
+  bedrockByokBaseUrl,
+  isAwsRegion,
   livePricing,
   managedCandidates,
   stripBedrockInferenceProfilePrefix,
@@ -303,4 +305,27 @@ test('managed GLM pins CoreWeave and enforces ZDR without fallback', () => {
     resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits',
     bodyExtras: { provider: { only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
   })]);
+});
+
+describe('bedrockByokBaseUrl', () => {
+  test.each(['us-east-1', 'eu-central-2', 'ap-southeast-4', 'us-gov-west-1', 'il-central-1', 'ca-west-1'])(
+    'accepts the region %s',
+    (region) => {
+      expect(isAwsRegion(region)).toBe(true);
+      expect(bedrockByokBaseUrl(region)).toBe(`https://bedrock-runtime.${region}.amazonaws.com`);
+    },
+  );
+
+  test.each(['x@example.test/', 'example.test#', 'us-east-1.example.test', 'us-east-1/', 'US-EAST-1', 'us_east_1', '10.0.0.5:8443'])(
+    'refuses %s, which is not a region name',
+    (region) => {
+      expect(isAwsRegion(region)).toBe(false);
+      expect(() => bedrockByokBaseUrl(region)).toThrow('AWS_REGION is not a valid AWS region name');
+    },
+  );
+
+  test('an unset region uses us-east-1', () => {
+    expect(bedrockByokBaseUrl(null)).toBe('https://bedrock-runtime.us-east-1.amazonaws.com');
+    expect(bedrockByokBaseUrl('  ')).toBe('https://bedrock-runtime.us-east-1.amazonaws.com');
+  });
 });

@@ -27,6 +27,7 @@ import {
   normalizeBedrockInferenceProfileRegion,
   stripBedrockInferenceProfilePrefix,
 } from './descriptors';
+import { isAwsRegion } from './aws-region';
 
 // Bedrock is the one native-transport BYOK provider whose credential is
 // multi-field (see apps/web/src/lib/llm-providers.ts's env-vars-per-provider
@@ -301,7 +302,16 @@ export async function resolveCandidates(
       // Bedrock's project-scoped region also feeds the AI-SDK engine's Bedrock
       // provider (descriptor.region); resolve it once for both baseUrl + region.
       const bedrockRegion =
-        byok.kind === 'bedrock' ? await readGatewaySecret(BEDROCK_REGION_ENV_VAR) : undefined;
+        byok.kind === 'bedrock'
+          ? (await readGatewaySecret(BEDROCK_REGION_ENV_VAR))?.trim() || undefined
+          : undefined;
+      if (bedrockRegion && !isAwsRegion(bedrockRegion)) {
+        throw new GatewayResolutionError(
+          'provider_not_connected',
+          `The project's AWS_REGION secret is not an AWS region name.`,
+          'Set AWS_REGION to a region such as us-east-1, or remove it to use us-east-1.',
+        );
+      }
       const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
       // Bedrock invoke id: normalize a wrong-geography cross-region
       // inference-profile prefix (e.g. a `jp.` pick that got stored as an

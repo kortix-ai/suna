@@ -158,22 +158,59 @@ flow(
       }, { params: { projectId: project.id } });
       refused.status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
     });
-    await ctx.step('manager selection requires grants for the session owner', async () => {
+    await ctx.step('a model on pooled keys needs no key list: create and model change select every usable key', async () => {
+      // The CLI, the SDK and chat channels name only a model. This used to
+      // answer 400 INVALID_SESSION_MODEL; an explicit empty list above still does.
+      const created = await owner.post('/v1/projects/:projectId/sessions', {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params: { projectId: project.id } });
+      if (ctx.env.target === 'local') {
+        created.status(503).body().has('$.code', 'KORTIX_URL_UNREACHABLE');
+      } else {
+        created.status(201);
+        const createdId = created.json<any>().session_id;
+        ctx.track('session', createdId, { projectId: project.id });
+        (await owner.get(poolPath, { params: { ...poolParams, sessionId: createdId } })).status(200).body().has('$.secret_ids', ids);
+      }
+      (await owner.put(poolPath, { secret_ids: null }, { params: poolParams })).status(200).body().has('$.configured', false);
+      (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params: poolParams })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
+      (await owner.get(poolPath, { params: poolParams })).status(200).body().has('$.configured', true).has('$.secret_ids', ids);
+    });
+    await ctx.step('a shared session uses only keys shared with the whole project', async () => {
       await team.grantProjectRole(project.id, member.userId!, 'member');
       const memberSession = await createDatabaseSession(ctx.env, {
         projectId: project.id, accountId: team.id, userId: member.userId!, visibility: 'project',
       });
       const params = { ...poolParams, sessionId: memberSession };
       (await owner.put(poolPath, { secret_ids: ids }, { params })).status(403);
-      (await owner.get(poolPath, { params })).status(200).body().has('$.configured', false);
       for (const secretId of ids) {
         (await owner.put(`${resourcePath}/:secretId/grants/:userId`, {}, {
           params: { ...resourceParams, secretId, userId: member.userId! },
         })).status(200);
       }
-      (await owner.put(poolPath, { secret_ids: ids }, { params })).status(200);
-      (await ctx.client.as(member).get(poolPath, { params })).status(200).body().has('$.secret_ids', ids);
+      // Granted to the member, but the session is shared: the gateway serves it
+      // with no personal user, so a member-granted key would never be used.
+      (await owner.put(poolPath, { secret_ids: ids }, { params })).status(403)
+        .body().has('$.code', 'SHARED_SESSION_PERSONAL_KEY');
+      (await ctx.client.as(member).put(poolPath, { secret_ids: ids }, { params })).status(403)
+        .body().has('$.code', 'SHARED_SESSION_PERSONAL_KEY');
+      (await owner.get(poolPath, { params })).status(200).body().has('$.configured', false);
+      // A model only those keys reach is refused, not accepted and then failed on every turn.
       (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params })).status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
+    });
+    await ctx.step('a private session selects keys granted to its owner', async () => {
+      const privateSession = await createDatabaseSession(ctx.env, {
+        projectId: project.id, accountId: team.id, userId: member.userId!, visibility: 'private',
+      });
+      const params = { ...poolParams, sessionId: privateSession };
+      const asMember = ctx.client.as(member);
+      (await asMember.put(poolPath, { secret_ids: ids }, { params })).status(200);
+      (await asMember.get(poolPath, { params })).status(200).body().has('$.secret_ids', ids);
+      (await asMember.put('/v1/projects/:projectId/sessions/:sessionId/model', {
         opencode_model: 'anthropic/claude-sonnet-4.6',
       }, { params })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
     });

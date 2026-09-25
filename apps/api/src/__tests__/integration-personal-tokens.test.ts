@@ -18,6 +18,7 @@ import { accountMembers, accountTokens, accounts, projects, serviceAccounts } fr
 import { db } from '../shared/db';
 import { listAccountTokens, listPersonalAccountTokens } from '../repositories/account-tokens';
 import { isTruthyFlag } from '../accounts/core/tokens';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const ME = crypto.randomUUID();
@@ -49,7 +50,7 @@ beforeAll(async () => {
     name: 'p1',
     repoUrl: 'https://example.com/p1.git',
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { userId: ME, accountId: ACCOUNT, accountRole: 'owner' },
     { userId: SOMEONE_ELSE, accountId: ACCOUNT, accountRole: 'member' },
   ]);

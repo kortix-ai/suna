@@ -9,13 +9,12 @@ import {
   listProjectAgents,
   setChannelAgent,
   setChannelConversationPolicy,
-  setChannelModel,
 } from './selection';
 import { channelModelContext } from './model-gate';
-import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
-import { isModelServableForAccount, resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
-import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
-import { chooseEffectiveAgent, toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
+import { applySlackModelChoice, buildSlackModelsResponse } from './model-choice';
+import { labelForModelRef } from '../../llm-gateway/models/picker';
+import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
+import { chooseEffectiveAgent } from '../../llm-gateway/resolution/effective';
 import { buildSlackLoginUrl } from './login';
 import { findBotUserIdByName, isBotUser } from '../slack-api';
 import { loadSlackTokenForProject } from '../install-store';
@@ -1055,157 +1054,12 @@ async function slashSetAgent(ctx: SlashCtx, arg: string): Promise<SlashResponse>
 // ── Models ───────────────────────────────────────────────────────────────────
 
 async function slashModels(ctx: SlashCtx): Promise<SlashResponse> {
-  const gate = await channelModelContext(ctx);
-  if (!gate) {
-    return {
-      response_type: 'ephemeral',
-      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project is connected to this channel yet.*\nRun \`${ctx.command}\` to connect one, then pick a model.` } }],
-    };
-  }
-  const selection = await currentChannelSelection(ctx);
-  const current = selection?.opencodeModel ?? null;
-  // Native mode: the gateway picker catalog does not exist for this project.
-  // The channel model is a native `provider/model` ref set directly.
-  if (!gate.llmGatewayEnabled) {
-    return {
-      response_type: 'ephemeral',
-      blocks: [
-        { type: 'header', text: { type: 'plain_text', text: 'Models', emoji: true } },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: current
-              ? `This channel uses \`${escapeMrkdwn(current)}\`.`
-              : 'This channel uses the *project default* (resolved by OpenCode in the sandbox).',
-          },
-        },
-        {
-          type: 'context',
-          elements: [
-            {
-              type: 'mrkdwn',
-              text: `This project runs native OpenCode models (LLM gateway off). Set any connected provider's model with \`${ctx.command} model provider/model\` (e.g. \`anthropic/claude-sonnet-4-6\`), or \`${ctx.command} model default\` to reset.`,
-            },
-          ],
-        },
-      ],
-    };
-  }
-  const isCurrent = (id: string) => !!current && toWireModel(current) === toWireModel(id);
-
-  // The REAL served catalog — managed models + the project's connected BYOK
-  // providers — plus the resolved project default. No hardcoded list, so a pick
-  // can never 404.
-  const { models, projectDefault } = await listPickerModels({
-    projectId: gate.projectId,
-    userId: gate.ownerUserId,
-    accountId: gate.accountId,
-    freeManagedOnly: gate.freeManagedOnly,
-    agentName: selection?.agentName ?? null,
-  });
-
-  const blocks: Array<Record<string, unknown>> = [
-    { type: 'header', text: { type: 'plain_text', text: 'Models', emoji: true } },
-    {
-      type: 'context',
-      elements: [
-        {
-          type: 'mrkdwn',
-          text: current
-            ? `This channel uses *${escapeMrkdwn(labelForModelRef(current))}*.`
-            : `This channel uses the *project default*${projectDefault.label ? ` (${escapeMrkdwn(projectDefault.label)})` : ''}.`,
-        },
-      ],
-    },
-  ];
-
-  // "Project default" clears the per-channel override.
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: `${current ? '' : '✓ '}*Use project default*${projectDefault.label ? `  ·  _${escapeMrkdwn(projectDefault.label)}_` : ''}`,
-    },
-    accessory: {
-      type: 'button',
-      text: { type: 'plain_text', text: current ? 'Reset' : '✓ Current', emoji: true },
-      style: current ? 'primary' : undefined,
-      action_id: 'set_model_default',
-      value: JSON.stringify({ c: ctx.channelId, m: '' }),
-    },
-  });
-
-  for (const m of models) {
-    const cur = isCurrent(m.id);
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: `${cur ? '✓ ' : ''}*${escapeMrkdwn(m.label)}*${m.hint ? `  ·  _${escapeMrkdwn(m.hint)}_` : ''}\n\`${escapeMrkdwn(m.id)}\`` },
-      accessory: {
-        type: 'button',
-        text: { type: 'plain_text', text: cur ? '✓ Current' : 'Use this', emoji: true },
-        style: cur ? undefined : 'primary',
-        action_id: `set_model_${m.id}`.slice(0, 250),
-        value: JSON.stringify({ c: ctx.channelId, m: m.id }),
-      },
-    });
-  }
-  blocks.push({
-    type: 'context',
-    elements: [{ type: 'mrkdwn', text: `Any model works: \`${ctx.command} model provider/model-id\` (must be a managed model or a provider you've connected).` }],
-  });
-  return { response_type: 'ephemeral', blocks };
+  return buildSlackModelsResponse(ctx);
 }
 
 async function slashSetModel(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
-  const id = arg.trim();
-  if (!id) return slashModels(ctx);
-  const gate = await channelModelContext(ctx);
-  if (!gate) {
-    return { response_type: 'ephemeral', text: `Connect a project first — run \`${ctx.command}\`.` };
-  }
-  if (id.toLowerCase() === 'default') {
-    const ok = await setChannelModel(ctx, null);
-    if (!ok) return { response_type: 'ephemeral', text: `Connect a project first — run \`${ctx.command}\`.` };
-    return { response_type: 'ephemeral', text: 'Model reset to the project default.' };
-  }
-  if (/\s/.test(id)) {
-    return { response_type: 'ephemeral', text: `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/deepseek-v4.1-flash\` or \`deepseek-v4.1-flash\`).` };
-  }
-  // Two paths on the project's `llm_gateway` flag (same fork as session
-  // create). Gateway OFF: OpenCode owns the catalog — enforce the native
-  // `provider/model` shape and store verbatim, no gateway servability probe.
-  if (!gate.llmGatewayEnabled) {
-    const nativeShapeError = validateNativeOpencodeModelRef(id);
-    if (nativeShapeError) {
-      return {
-        response_type: 'ephemeral',
-        text: `\`${escapeMrkdwn(id)}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`, e.g. \`anthropic/claude-sonnet-4-6\`.`,
-      };
-    }
-    const ok = await setChannelModel(ctx, id);
-    if (!ok) return { response_type: 'ephemeral', text: `Connect a project first — run \`${ctx.command}\`.` };
-    return { response_type: 'ephemeral', text: `Model for this channel set to \`${escapeMrkdwn(id)}\`. New sessions will use it.` };
-  }
-  // The servability check is the real gate — never store a model that would 404
-  // at request time, whatever shape the id is.
-  const servable = await isModelServableForAccount({
-    userId: gate.ownerUserId,
-    accountId: gate.accountId,
-    projectId: gate.projectId,
-    freeModelsOnly: gate.freeManagedOnly,
-    model: id,
-  });
-  if (!servable) {
-    return {
-      response_type: 'ephemeral',
-      text: `\`${escapeMrkdwn(id)}\` isn't available for this workspace. Pick one from \`${ctx.command} models\`, or connect that provider's API key in Kortix first.`,
-    };
-  }
-  const stored = toOpencodeModelRef(id);
-  const ok = await setChannelModel(ctx, stored);
-  if (!ok) return { response_type: 'ephemeral', text: `Connect a project first — run \`${ctx.command}\`.` };
-  return { response_type: 'ephemeral', text: `Model for this channel set to *${escapeMrkdwn(labelForModelRef(stored))}* (\`${escapeMrkdwn(stored)}\`). New sessions will use it.` };
+  if (!arg.trim()) return slashModels(ctx);
+  return { response_type: 'ephemeral', text: await applySlackModelChoice(ctx, arg) };
 }
 
 export async function listWorkspaceProjects(teamId: string): Promise<Array<{ projectId: string; name: string; repoUrl: string }>> {

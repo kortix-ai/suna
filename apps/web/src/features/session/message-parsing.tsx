@@ -90,7 +90,8 @@ export function parseSessionReferences(text: string): {
   let cleaned = text.replace(
     /<session_ref\s+id="([^"]*?)"\s+title="([^"]*?)"\s*\/>/g,
     (_, id, title) => {
-      sessions.push({ id, title });
+      // `buildSessionRef` escapes both attributes; undo it here.
+      sessions.push({ id: unescapeAttr(id), title: unescapeAttr(title) });
       return '';
     },
   );
@@ -119,6 +120,7 @@ export interface ParsedProjectRef {
 function unescapeAttr(v: string): string {
   return v
     .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');

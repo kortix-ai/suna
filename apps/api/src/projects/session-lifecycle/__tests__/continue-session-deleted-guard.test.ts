@@ -10,9 +10,9 @@
 // happens, and — as a regression guard for the check itself — that a normal
 // (non-deleted) stopped session still takes the revival path.
 //
-// This file mocks the heavier engine.ts dependencies to a throwing stub —
+// This file mocks the heavier continue-session.ts dependencies to a throwing stub —
 // never actually exercised by either test below (both return before those
-// call sites would be reached), they only need to exist so engine.ts's
+// call sites would be reached), they only need to exist so continue-session.ts's
 // top-level imports resolve. `./deliver` and `./await-stage` are deliberately
 // NOT mocked here: both are pure (type-only imports, no db/config), their own
 // dedicated test files (deliver.test.ts, await-terminal-stage.test.ts) import
@@ -48,9 +48,12 @@ mock.module('../../../shared/db', () => ({
     }),
     update: (table: unknown) => ({
       set: (updates: Record<string, unknown>) => ({
-        where: async () => {
-          updateCalls.push({ table, updates });
-        },
+        where: () => ({
+          returning: async () => {
+            updateCalls.push({ table, updates });
+            return [{ sessionId: SESSION_ID }];
+          },
+        }),
       }),
     }),
   },
@@ -93,7 +96,7 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   // The landing proof requeues a prompt the runtime never showed (fresh
-  // attempt, fresh idempotency key). `engine.ts` imports it by name, so every
+  // attempt, fresh idempotency key). `queued-continue.ts` imports it by name, so every
   // store mock has to carry it or the engine import fails outright. Nothing in
   // this file fails a landing.
   requeueUnlandedPrompt: async () => {
@@ -123,7 +126,7 @@ mock.module('../store', () => ({
   },
 }));
 
-const { continueSession } = await import('../engine');
+const { continueSession } = await import('../continue-session');
 
 beforeEach(() => {
   sessionRow = null;

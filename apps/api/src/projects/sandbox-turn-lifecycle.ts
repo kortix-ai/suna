@@ -208,7 +208,7 @@ function endedLedgerTurns(value: unknown): EndedTurnRecord[] {
  * bound JS array as a record and Postgres rejects `cannot cast type record to
  * text[]`. Every value is still a bound parameter.
  */
-/** What the daemon said went wrong, as `routes/r4.ts` reads it off an end frame. */
+/** What the daemon said went wrong, as `routes/turn-stream.ts` reads it off an end frame. */
 export interface SandboxTurnEndError {
   name?: string;
   message?: string;

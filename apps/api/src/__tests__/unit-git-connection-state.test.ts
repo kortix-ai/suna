@@ -12,7 +12,7 @@ import { describe, expect, test } from 'bun:test';
 
 const gitSource = await Bun.file(new URL('../projects/lib/git.ts', import.meta.url)).text();
 const routeSource = await Bun.file(
-  new URL('../projects/routes/r1.ts', import.meta.url),
+  new URL('../projects/routes/project-git.ts', import.meta.url),
 ).text();
 const githubAppSource = await Bun.file(
   new URL('../platform/routes/github-app.ts', import.meta.url),

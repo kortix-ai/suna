@@ -114,7 +114,7 @@ test.describe("19 — Feature flags UI", () => {
   // capability gate itself is unit-covered by the `canEdit` fail-closed logic
   // in experimental-tab.tsx and enforced server-side by
   // `assertProjectCapability(PROJECT_CUSTOMIZE_WRITE)` on
-  // `PATCH /projects/:id/features` (apps/api/src/projects/routes/r6.ts).
+  // `PATCH /projects/:id/features` (apps/api/src/projects/routes/project-settings.ts).
   test("lists every available flag, toggles one through PATCH /features, and persists it", async ({
     page,
   }) => {

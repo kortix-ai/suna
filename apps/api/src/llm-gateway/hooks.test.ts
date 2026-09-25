@@ -62,6 +62,7 @@ mock.module('./resolution/default-model', () => ({
 
 mock.module('./budgets', () => ({
   checkBudget: async () => ({ exceeded: false }),
+  releaseBudgetReservation: () => {},
 }));
 
 // A minimal stand-in for the real `BillingGateError` (HTTPException + `.reason`)

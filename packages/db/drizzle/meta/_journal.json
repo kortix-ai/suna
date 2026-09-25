@@ -558,8 +558,36 @@
     {
       "idx": 79,
       "version": "7",
-      "when": 1790280301131,
-      "tag": "20260924200501_config_release_quarantine",
+      "when": 1790288304214,
+      "tag": "20260924221824_connector_sync_fences_and_usage_request_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1790298012393,
+      "tag": "20260925010012_sso_domain_verification",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790301779036,
+      "tag": "20260925020259_schema_contract_declarations",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790305502458,
+      "tag": "20260925030502_perf_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790333774831,
+      "tag": "20260925105614_config_release_quarantine",
       "breakpoints": true
     }
   ]

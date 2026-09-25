@@ -15,6 +15,7 @@ import { createConnectionsRouter } from '../tunnel/routes/connections';
 import { createPermissionRequestsRouter } from '../tunnel/routes/permission-requests';
 import { createPermissionsRouter } from '../tunnel/routes/permissions';
 import { createRpcRouter } from '../tunnel/routes/rpc';
+import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
 const ORGANIZATION = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
@@ -50,7 +51,7 @@ async function listConnectionIds(userId: string): Promise<string[]> {
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ORGANIZATION, name: 'tunnel-ownership-test' });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { accountId: ORGANIZATION, userId: OWNER, accountRole: 'owner' },
     { accountId: ORGANIZATION, userId: ADMIN, accountRole: 'admin' },
     { accountId: ORGANIZATION, userId: MEMBER, accountRole: 'member' },
@@ -83,7 +84,7 @@ afterAll(async () => {
   if (ids.length > 0) {
     await db.delete(tunnelConnections).where(inArray(tunnelConnections.tunnelId, ids));
   }
-  await db.delete(accountMembers).where(eq(accountMembers.accountId, ORGANIZATION));
+  await deleteFromView(db, accountMembers, eq(accountMembers.accountId, ORGANIZATION));
   await db.delete(accounts).where(eq(accounts.accountId, ORGANIZATION));
 });
 
