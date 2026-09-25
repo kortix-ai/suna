@@ -435,7 +435,10 @@ export async function convergeAssetsInBackground(
       deps.forget(sessionId);
       return 'scheduled';
     }
-    void deps.probe(sessionId);
+    // Detached AND swallowed: a probe that rejects must not surface as an
+    // unhandled rejection on a path whose whole contract is that a turn never
+    // notices it.
+    void deps.probe(sessionId).catch(() => undefined);
     return 'probe-scheduled';
   } catch {
     // A turn is never affected by this lane, including by its own failures.
