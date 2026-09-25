@@ -33,6 +33,36 @@ export async function createPendingTeamsAuthMessage(input: {
   }
 }
 
+/**
+ * The display name on the Teams message a login link was issued for, without
+ * consuming it. Used by the consent screen to name the account being linked.
+ */
+export async function peekPendingTeamsAuthSenderName(input: {
+  pendingId: string | undefined;
+  tenantId: string;
+  teamsUserId: string;
+}): Promise<string | null> {
+  if (!input.pendingId || !input.tenantId || !input.teamsUserId) return null;
+  try {
+    const [row] = await db
+      .select({ event: chatPendingAuthMessages.event })
+      .from(chatPendingAuthMessages)
+      .where(
+        and(
+          eq(chatPendingAuthMessages.pendingId, input.pendingId),
+          eq(chatPendingAuthMessages.workspaceId, input.tenantId),
+          eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
+          gt(chatPendingAuthMessages.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+    const name = (row?.event as unknown as TeamsActivity | undefined)?.from?.name;
+    return typeof name === 'string' && name.trim() ? name.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function consumePendingTeamsAuthMessage(input: {
   pendingId: string | undefined;
   tenantId: string;

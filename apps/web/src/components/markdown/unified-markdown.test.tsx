@@ -401,3 +401,92 @@ describe('UnifiedMarkdown — reference-style links', () => {
     expect(text).not.toContain('https://kortix.com/docs');
   });
 });
+
+// ─── Raw HTML from content no Kortix user wrote ─────────────────────────────
+// Scraped pages, connector tool output and public share transcripts all reach
+// this renderer with raw HTML enabled. The sanitizer keeps structure and text,
+// never presentation: an inline `style` or a class name from the content could
+// place an element over the app (`position:fixed`, `fixed inset-0 z-50`).
+// KaTeX and code highlighting still render: they run after the sanitizer.
+// ────────────────────────────────────────────────────────────────────────────
+
+const OVERLAY_HTML = [
+  '<div style="position:fixed;inset:0;z-index:2147483647" class="fixed inset-0 z-50">',
+  '<a href="https://example.invalid/login">Sign in</a>',
+  '</div>',
+  '<span style="position:fixed;top:0" class="fixed top-0">banner</span>',
+  '<section style="position:fixed" class="fixed">section</section>',
+].join('\n');
+
+describe('UnifiedMarkdown — raw HTML presentation attributes', () => {
+  test('drops inline style from raw HTML elements', () => {
+    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={OVERLAY_HTML} />));
+
+    expect(html).toContain('Sign in');
+    expect(html).toContain('banner');
+    expect(html).not.toContain('position:fixed');
+    expect(html).not.toContain('z-index');
+  });
+
+  test('drops class names from raw HTML elements', () => {
+    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={OVERLAY_HTML} />));
+    const classTokens = [...html.matchAll(/class="([^"]*)"/g)].flatMap((m) => m[1].split(/\s+/));
+
+    expect(classTokens).not.toContain('fixed');
+    expect(classTokens).not.toContain('inset-0');
+    expect(classTokens).not.toContain('z-50');
+  });
+
+  test('still renders inline and display math', () => {
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown content={'Inline $x^2$ here.\n\n$$\n\\frac{a}{b}\n$$\n'} />),
+    );
+
+    expect(html).toContain('class="katex"');
+    expect(html).toContain('class="katex-display"');
+  });
+
+  test('keeps the fence language for code highlighting', () => {
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown content={'```ts\nconst a = 1;\n```\n'} />),
+    );
+
+    // The label is derived from the `language-ts` class the sanitizer kept.
+    // The code text itself may already be split into highlight spans.
+    expect(html).toContain('>typescript</span>');
+  });
+});
+
+describe('UnifiedMarkdown — remote images', () => {
+  const IMAGE_MD = '![chart](https://images.example.com/chart.png)\n';
+
+  test('loads a remote image by default', () => {
+    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={IMAGE_MD} />));
+
+    expect(html).toContain('<img');
+    expect(html).toContain('https://images.example.com/chart.png');
+  });
+
+  test('does not load a remote image when remote images are blocked', () => {
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown content={IMAGE_MD} remoteImages="click-to-load" />),
+    );
+
+    expect(html).not.toContain('<img');
+    expect(html).toContain('chart');
+    expect(html).toContain('images.example.com');
+  });
+
+  test('blocks remote images inside raw HTML too', () => {
+    const html = renderToStaticMarkup(
+      withIntl(
+        <UnifiedMarkdown
+          content={'<p><img src="https://images.example.com/beacon.gif" alt="b"></p>\n'}
+          remoteImages="click-to-load"
+        />,
+      ),
+    );
+
+    expect(html).not.toContain('<img');
+  });
+});

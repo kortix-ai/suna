@@ -1057,6 +1057,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `CHN-28` An anonymous caller cannot bind a Slack identity.
 `CHN-29` A project Slack app's signed events, commands, and interactions stay inside that project and the workspace its install proved. A request naming another workspace is refused, and an interaction naming another project changes nothing there.
 `CHN-30` An agent binds a Slack thread only to its own session. A sibling session in the same project is refused, and nothing is written.
+`CHN-31` The Slack and Teams identity previews name the chat account a login link would link only for a signed-in caller with a token that verifies; anonymous callers get `401`, a forged token never names an account, and a missing token is a validation error.
 `CHN-T1` A project member reads the Microsoft Teams installation state.
 `CHN-T2` A project member reads the Microsoft Teams channel mode.
 `CHN-T3` A project manager starts Microsoft Teams connection. Invalid input and unauthorized callers are rejected.

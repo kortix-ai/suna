@@ -106,7 +106,12 @@ function ScrapeResultItem({ result }: { result: ScrapeResult }) {
       <DisclosureContent className="p-0">
         <DisclosureBody className="px-2 pb-2">
           <div className={cn('text-foreground/80 text-xs', MD_FLUSH_CLASSES)}>
-            <UnifiedMarkdown content={content} isStreaming={false} allowHtml={allowHtml} />
+            <UnifiedMarkdown
+              content={content}
+              isStreaming={false}
+              allowHtml={allowHtml}
+              remoteImages="click-to-load"
+            />
           </div>
         </DisclosureBody>
       </DisclosureContent>

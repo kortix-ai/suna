@@ -27,7 +27,8 @@ import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-ur
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { looksLikeMarkdown } from '@/lib/markdown-detect';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
-import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { getAgentContentIframeSandbox } from '@/lib/security/iframe-sandbox';
+import { privilegedFrameOrigins } from '@/lib/security/privileged-frame-origins';
 import { cn } from '@/lib/utils';
 import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata, getActiveSessionContext } from '@/lib/utils/session-context';
@@ -344,7 +345,12 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
           src={previewUrl}
           title={displayLabel}
           className="bg-secondary absolute inset-0 h-full w-full border-0"
-          sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
+          // The agent chose what this frame shows. On a per-sandbox preview
+          // origin it keeps same-origin; on this app's or the API's origin
+          // (the path proxy) it runs with an opaque origin, like HtmlPreview.
+          sandbox={getAgentContentIframeSandbox(previewUrl, {
+            privilegedOrigins: privilegedFrameOrigins(),
+          })}
           onLoad={onLoad}
           onError={onError}
         />
@@ -707,7 +713,11 @@ export function ToolOutputFallback({
   return (
     <ToolOutputCard copyText={output}>
       <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
-        <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+        <UnifiedMarkdown
+          content={output}
+          isStreaming={isStreaming}
+          remoteImages="click-to-load"
+        />
       </div>
     </ToolOutputCard>
   );
@@ -794,7 +804,7 @@ export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; ma
     <ToolOutputCard copyText={output}>
       {isMarkdown ? (
         <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
-          <UnifiedMarkdown content={text} />
+          <UnifiedMarkdown content={text} remoteImages="click-to-load" />
         </div>
       ) : (
         <pre className="text-muted-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">

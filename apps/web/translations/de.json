@@ -6226,7 +6226,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Alle Worker-Ausführungen sind derzeit pausiert."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Kein Inhalt"
+      "line1115JsxTextNoContent": "Kein Inhalt",
+      "loadRemoteImage": "Bild von {host} laden"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Drücke Enter zum Starten..."
@@ -19136,8 +19137,20 @@
       "textbda3fcd4343c": "Stufenkonfigurationen angezeigt",
       "text30cef615e8e3": "Transaktionsübersicht angezeigt",
       "textd2c6127fc332": "Versions-Diff angezeigt",
+      "text8cc0d84b66bb": "Slack-Identitätslink angesehen",
+      "text508b43cc4545": "Teams-Identitätslink angesehen",
       "text467f597e95b0": "SSO-Domain verifiziert",
       "text8295f9d4861b": "SSO-Domain-Verifizierung des Kontos gesetzt"
+    },
+    "publicShareConfirm": {
+      "title": "Öffentlichen Link erstellen?",
+      "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",
+      "confirm": "Link erstellen"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service}-Konto",
+      "chatWorkspace": "{service}-Workspace",
+      "checking": "Link wird geprüft…"
     }
   },
   "projectOnboarding": {

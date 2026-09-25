@@ -6226,7 +6226,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Сва Воркер извршења су тренутно паузирана."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Нема садржаја"
+      "line1115JsxTextNoContent": "Нема садржаја",
+      "loadRemoteImage": "Учитај слику са {host}"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Притисните Enter да покренете..."
@@ -19136,8 +19137,20 @@
       "textbda3fcd4343c": "Конфигурације нивоа прегледане",
       "text30cef615e8e3": "Сажетак трансакција прегледан",
       "textd2c6127fc332": "Разлике између верзија прегледане",
+      "text8cc0d84b66bb": "Прегледан линк за Slack идентитет",
+      "text508b43cc4545": "Прегледан линк за Teams идентитет",
       "text467f597e95b0": "SSO домен је верификован",
       "text8295f9d4861b": "Постављена верификација SSO домена налога"
+    },
+    "publicShareConfirm": {
+      "title": "Направити јавни линк?",
+      "description": "Свако ко има линк може ово да види без пријаве. Линк остаје активан док га не опозовеш.",
+      "confirm": "Направи линк"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} налог",
+      "chatWorkspace": "{service} радни простор",
+      "checking": "Провера линка…"
     }
   },
   "projectOnboarding": {

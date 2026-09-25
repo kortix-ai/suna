@@ -6226,7 +6226,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "現在、すべてのWorker実行は一時停止されています。"
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "コンテンツなし"
+      "line1115JsxTextNoContent": "コンテンツなし",
+      "loadRemoteImage": "{host} から画像を読み込む"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Enterキーを押して起動..."
@@ -19136,8 +19137,20 @@
       "textbda3fcd4343c": "ティア設定を表示しました",
       "text30cef615e8e3": "取引の概要を表示しました",
       "textd2c6127fc332": "バージョンの差分を表示しました",
+      "text8cc0d84b66bb": "Slack ID リンクをプレビュー",
+      "text508b43cc4545": "Teams ID リンクをプレビュー",
       "text467f597e95b0": "SSO ドメインを検証しました",
       "text8295f9d4861b": "アカウントの SSO ドメイン検証を設定しました"
+    },
+    "publicShareConfirm": {
+      "title": "公開リンクを作成しますか？",
+      "description": "リンクを知っている人は誰でもサインインせずに閲覧できます。リンクは取り消すまで有効です。",
+      "confirm": "リンクを作成"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} アカウント",
+      "chatWorkspace": "{service} ワークスペース",
+      "checking": "リンクを確認中…"
     }
   },
   "projectOnboarding": {

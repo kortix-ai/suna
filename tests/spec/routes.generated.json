@@ -964,11 +964,19 @@
     },
     {
       "method": "POST",
+      "path": "/v1/channels/slack/identity/preview"
+    },
+    {
+      "method": "POST",
       "path": "/v1/channels/teams/identity/bind"
     },
     {
       "method": "GET",
       "path": "/v1/channels/teams/identity/login/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/channels/teams/identity/preview"
     },
     {
       "method": "POST",

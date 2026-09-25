@@ -93,7 +93,12 @@ import { mintWireMessageId } from '@/lib/session/wire-message-id';
 import { sendIdsFor, useFailedSendStore, useFailedSends, type SendIds } from '@/lib/session/failed-sends';
 import { optimisticUserParts } from '@/lib/session/optimistic-parts';
 import { draftKey } from '@/lib/session/composer-draft';
-import { interruptedTurnIds, rewindHiddenMessageIds, webSpace } from '@/lib/session/user-message';
+import {
+  buildSessionRefsBlock,
+  interruptedTurnIds,
+  rewindHiddenMessageIds,
+  webSpace,
+} from '@/lib/session/user-message';
 import {
   hasCompactionTurn as findCompactionTurn,
   isSuppressedFailedCompaction,
@@ -548,10 +553,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       let finalText = text;
       const sessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value);
       if (sessionMentions && sessionMentions.length > 0) {
-        const refs = sessionMentions
-          .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
-          .join('\n');
-        finalText = `${text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
+        const block = buildSessionRefsBlock(
+          sessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })),
+        );
+        finalText = `${text}\n\n${block}`;
       }
 
       // Optimistic user message
