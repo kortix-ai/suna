@@ -81,17 +81,11 @@ mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'service-key-1',
 }));
 
+const syncInputs: Array<Record<string, unknown>> = [];
 mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async (input: Record<string, unknown>) => {
     events.push('sync');
-    expect(input).toMatchObject({
-      projectId: PROJECT_ID,
-      sessionId: SESSION_ID,
-      serviceKey: 'service-key-1',
-      previewUrl: 'https://sandbox.test',
-      providerName: 'daytona',
-      opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
-    });
+    syncInputs.push(input);
   },
 }));
 
@@ -161,18 +155,35 @@ const { continueSession } = await import('../continue-session');
 
 beforeEach(() => {
   events.length = 0;
+  syncInputs.length = 0;
 });
 
+// Every delivery converges the box before the prompt goes out: a box whose
+// boot-time gateway URL, secrets or model catalog went stale would otherwise
+// run the prompt against them. A channel follow-up also enables its own
+// OpenCode runtime features in the same sync.
 describe('continueSession runtime env', () => {
-  test('syncs OpenCode env after runtime readiness and before prompt delivery', async () => {
+  test.each([
+    ['a channel follow-up with an opencodeEnv override', { KORTIX_CONNECTORS_MCP_ENABLED: '1' }],
+    ['an ordinary prompt', undefined],
+  ])('%s syncs the box after readiness and before the prompt', async (_label, opencodeEnv) => {
     expect(
       await continueSession({
         source: 'email',
         sessionId: SESSION_ID,
         text: 'new email',
-        opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
+        ...(opencodeEnv ? { opencodeEnv } : {}),
       }),
     ).toBe('delivered');
     expect(events).toEqual(['open', 'sync', 'prompt']);
+    expect(syncInputs[0]).toMatchObject({
+      projectId: PROJECT_ID,
+      sessionId: SESSION_ID,
+      serviceKey: 'service-key-1',
+      previewUrl: 'https://sandbox.test',
+      providerName: 'daytona',
+    });
+    if (opencodeEnv) expect(syncInputs[0]?.opencodeEnv).toEqual(opencodeEnv);
+    else expect(syncInputs[0]?.opencodeEnv).toBeUndefined();
   });
 });

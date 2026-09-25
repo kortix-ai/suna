@@ -643,7 +643,7 @@ This page lists 679 route actions and 64 other events.
 | --- | --- | --- |
 | `sandbox.boot_timeline.create` | Recorded sandbox boot timeline | `POST /v1/platform/boot-timeline` |
 | `sandbox.health.read` | Viewed sandbox health | `GET /v1/projects/:projectId/sandbox-health` |
-| `sandbox.port.proxy` | Accessed sandbox port | `/v1/p/:sandboxId/:port/*`, any method (also `/v1/p/:sandboxId/:port`, any method) |
+| `sandbox.port.proxy` | Accessed sandbox port | `/v1/p/:sandboxId/:port/*`, any method |
 | `sandbox.port.websocket.connect` | Opened sandbox port WebSocket | before the API router |
 | `sandbox.port_share.create` | Created sandbox port share link | `POST /v1/p/share` |
 | `sandbox.port_share.list` | Listed sandbox port share links | `GET /v1/p/share` |

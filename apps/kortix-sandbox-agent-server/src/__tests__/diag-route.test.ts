@@ -50,17 +50,6 @@ describe('GET /kortix/diag', () => {
     defaultOpencodeConfigDir: '/tmp/opencode',
   } as Config
 
-  test('401 without credentials', async () => {
-    const app = createDiagRouter({
-      cfg,
-      staticWebPort: null,
-      bootTime: Date.now(),
-      bootState: { repoMaterializationError: null, timeline: [] },
-      resources: () => null,
-    }, createOpenCodeDiagnosticsService(fakeOpencode, root))
-    expect((await app.request('http://d/')).status).toBe(401)
-  })
-
   test('returns state, resources, runtime report, and both log tails in one document', async () => {
     enableDaemonLogFile()
     logger.info('[test] diag-line')

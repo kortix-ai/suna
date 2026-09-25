@@ -10,8 +10,8 @@
 // trigger runtime row shows `failed` + the machine-readable reason immediately.
 //
 // Mocks `../../shared/db` via `mock.module` — process-global in bun:test, so run
-// this file in its own `bun test <file>` invocation, same caveat as
-// ../session-lifecycle/__tests__/dead-letter-marks-session-failed.test.ts.
+// this file in its own `bun test <file>` invocation (the repo runner's
+// `--isolate` already does).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectTriggerExecutions } from '@kortix/db';
 import type { TriggerExecutionRow } from '../trigger-execution-store';

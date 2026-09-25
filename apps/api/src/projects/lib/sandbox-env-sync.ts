@@ -820,9 +820,24 @@ export const propagateProjectSecretsToActiveSandboxes = createCoalescedRunner<
   },
 });
 
+/**
+ * Re-push ONE session's secrets into its own sandbox — what an agent session
+ * gets from `POST /secrets/sync`. It is the same per-session work the
+ * pre-prompt env sync does on every prompt, so it grants the agent nothing new;
+ * it only lets the agent pull a just-changed secret or grant mid-turn. It never
+ * touches another session's box: the project-wide fan-out stays a person's
+ * action (d649d08932, finding F6). Not coalesced — one box, one push.
+ */
+export function syncSessionSecretsToSandbox(
+  projectId: string,
+  sessionId: string,
+): Promise<ProjectSecretPropagationResult> {
+  return runProjectSecretPropagation(projectId, { sessionId });
+}
+
 async function runProjectSecretPropagation(
   projectId: string,
-  opts?: { refreshModels?: boolean },
+  opts?: { refreshModels?: boolean; sessionId?: string },
 ): Promise<ProjectSecretPropagationResult> {
   const report: ProjectSecretPropagationResult = {
     ok: true,
@@ -843,11 +858,21 @@ async function runProjectSecretPropagation(
         metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
+      .where(
+        and(
+          eq(sessionSandboxes.projectId, projectId),
+          eq(sessionSandboxes.status, 'active'),
+          ...(opts?.sessionId ? [eq(sessionSandboxes.sessionId, opts.sessionId)] : []),
+        ),
+      );
     // INSTANCE SCOPE (shared local DB — ../instance-scope.ts): a box another
     // API instance provisioned must not receive THIS instance's env (its
     // `KORTIX_URL`-derived gateway URL). No-op when KORTIX_INSTANCE_ID is unset.
-    const rows = allRows.filter((r) => sandboxBelongsToThisInstance(r.metadata));
+    // A session-scoped sync re-checks the session in code too: the guarantee
+    // that it never reaches another session's box must not rest on one WHERE.
+    const rows = allRows
+      .filter((r) => sandboxBelongsToThisInstance(r.metadata))
+      .filter((r) => !opts?.sessionId || r.sessionId === opts.sessionId);
 
     report.active_sandboxes = rows.length;
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);

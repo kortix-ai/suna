@@ -17,7 +17,6 @@ import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentTool, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel, TextContent, UserMessage } from '@earendil-works/pi-ai'
 import type { HarnessState } from '../lifecycle-contract'
-import type { ProjectEnvStore } from '../../project-env'
 import { kortixEventBus } from '../../kortix-event-bus'
 import { logger } from '../../logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '../../secret-capabilities'
@@ -153,10 +152,8 @@ export interface PiRuntimeHooks {
 export interface PiRuntimeOptions {
   cfg: PiConfig
   sessionId: string
-  projectEnv?: ProjectEnvStore
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
-  now?: () => number
 }
 
 interface Turn {
@@ -218,7 +215,7 @@ export class PiRuntime {
   constructor(opts: PiRuntimeOptions) {
     this.cfg = opts.cfg
     this.env = opts.env ?? process.env
-    this.now = opts.now ?? (() => Date.now())
+    this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
     this.rootId = mintRootId(opts.sessionId)
     this.createdAt = this.now()
@@ -267,8 +264,6 @@ export class PiRuntime {
       this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
       this.agentName = this.resolveAgentName()
       this.models = await createPiModels({
-        mode: this.cfg.piModelMode,
-        fauxScript: this.cfg.piFauxScript,
         env: this.env,
         defaultModelRef: this.env.KORTIX_OPENCODE_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
       })
@@ -359,8 +354,6 @@ export class PiRuntime {
     this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
     this.agentName = this.resolveAgentName()
     this.models = await createPiModels({
-      mode: this.cfg.piModelMode,
-      fauxScript: this.cfg.piFauxScript,
       env: this.env,
       defaultModelRef: this.env.KORTIX_OPENCODE_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
     })
@@ -784,7 +777,7 @@ export class PiRuntime {
         variants: Object.fromEntries(Object.keys(entry.variants ?? {}).map((v) => [v, {}])),
       }
     }
-    const provider = { id: providerID, name: providerID === 'faux' ? 'Faux' : 'Kortix', source: 'config', env: [], options: {}, models }
+    const provider = { id: providerID, name: 'Kortix', source: 'config', env: [], options: {}, models }
     return {
       all: [provider],
       default: selected ? { [providerID]: selected.modelID } : {},

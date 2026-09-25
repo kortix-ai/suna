@@ -22,32 +22,32 @@ describe('dropUndeclaredPromptAgent', () => {
     const logged: unknown[] = [];
     const result = await dropUndeclaredPromptAgent({
       ...context,
-      body: encode({ parts: [{ type: 'text', text: 'hi' }], agent: 'chief-of-staff', model: 'm' }),
+      body: encode({ parts: [{ type: 'text', text: 'hi' }], agent: 'foreign-agent', model: 'm' }),
       headers: json,
-      sessionAgent: 'galileo',
-      isLaunchable: async (name) => name === 'galileo',
+      sessionAgent: 'project-agent',
+      isLaunchable: async (name) => name === 'project-agent',
       log: (entry) => logged.push(entry),
     });
 
-    expect(result.droppedAgent).toBe('chief-of-staff');
+    expect(result.droppedAgent).toBe('foreign-agent');
     expect(result.requestedAgent).toBeNull();
     expect(decode(result.body)).toEqual({ parts: [{ type: 'text', text: 'hi' }], model: 'm' });
     expect(logged).toHaveLength(1);
     expect(logged[0]).toMatchObject({
-      requestedAgent: 'chief-of-staff',
-      sessionAgent: 'galileo',
+      requestedAgent: 'foreign-agent',
+      sessionAgent: 'project-agent',
       sandboxAuthored: false,
       userAgent: 'Mozilla/5.0',
     });
   });
 
   test('a declared agent passes through untouched', async () => {
-    const body = encode({ parts: [], agent: 'galileo-admin' });
+    const body = encode({ parts: [], agent: 'project-admin' });
     const result = await dropUndeclaredPromptAgent({
       ...context,
       body,
       headers: json,
-      sessionAgent: 'galileo',
+      sessionAgent: 'project-agent',
       isLaunchable: async () => true,
       log: () => {
         throw new Error('must not log');
@@ -55,7 +55,7 @@ describe('dropUndeclaredPromptAgent', () => {
     });
 
     expect(result.droppedAgent).toBeNull();
-    expect(result.requestedAgent).toBe('galileo-admin');
+    expect(result.requestedAgent).toBe('project-admin');
     expect(result.body).toBe(body);
   });
 
@@ -67,9 +67,9 @@ describe('dropUndeclaredPromptAgent', () => {
     };
     const same = await dropUndeclaredPromptAgent({
       ...context,
-      body: encode({ agent: 'galileo' }),
+      body: encode({ agent: 'project-agent' }),
       headers: json,
-      sessionAgent: 'galileo',
+      sessionAgent: 'project-agent',
       isLaunchable,
       log: () => {},
     });
@@ -77,29 +77,29 @@ describe('dropUndeclaredPromptAgent', () => {
       ...context,
       body: encode({ parts: [] }),
       headers: json,
-      sessionAgent: 'galileo',
+      sessionAgent: 'project-agent',
       isLaunchable,
       log: () => {},
     });
 
     expect(reads).toBe(0);
-    expect(same.requestedAgent).toBe('galileo');
+    expect(same.requestedAgent).toBe('project-agent');
     expect(none.requestedAgent).toBeNull();
   });
 
   test('a launchability read that throws drops the agent: fail closed', async () => {
     const result = await dropUndeclaredPromptAgent({
       ...context,
-      body: encode({ agent: 'chief-of-staff' }),
+      body: encode({ agent: 'foreign-agent' }),
       headers: json,
-      sessionAgent: 'galileo',
+      sessionAgent: 'project-agent',
       isLaunchable: async () => {
         throw new Error('git mirror unavailable');
       },
       log: () => {},
     });
 
-    expect(result.droppedAgent).toBe('chief-of-staff');
+    expect(result.droppedAgent).toBe('foreign-agent');
     expect(decode(result.body)).toEqual({});
   });
 });

@@ -5,6 +5,8 @@ import { join } from 'node:path'
 
 import { ensureOpencodeConfigDeps } from '../harness/open-code/opencode-config-deps'
 
+const STARTER_GITIGNORE = join(import.meta.dir, '../../../../packages/starter/templates/base/.gitignore')
+
 async function exists(p: string): Promise<boolean> {
   try {
     await stat(p)
@@ -268,10 +270,10 @@ describe('ensureOpencodeConfigDeps working-tree cleanliness', () => {
     const repo = join(root, 'repo')
     const configDir = join(repo, '.kortix', 'opencode')
     await mkdir(configDir, { recursive: true })
-    // packages/starter/templates/base/.gitignore ignores the sentinel; opencode
-    // itself writes <configDir>/.gitignore covering node_modules on every config
-    // load. Both are runtime state and must never be committed.
-    await writeFile(join(repo, '.gitignore'), 'node_modules\n.kortix/opencode/package-lock.json\n')
+    // The starter template's own ignore rules: they must cover the sentinel
+    // and the dependency tree, so a template change that drops either rule
+    // fails here rather than dirtying every session checkout.
+    await writeFile(join(repo, '.gitignore'), await readFile(STARTER_GITIGNORE, 'utf8'))
     await writeFile(
       join(configDir, 'package.json'),
       `${JSON.stringify(
@@ -331,6 +333,15 @@ describe('ensureOpencodeConfigDeps working-tree cleanliness', () => {
       await writeFile(join(bakedDir, 'bun.lock'), '{"lockfileVersion":1,"starter":true}\n')
 
       await ensureOpencodeConfigDeps(configDir, { bakedDir })
+      // The linked path leaves a `node_modules` SYMLINK, which the starter's
+      // `node_modules/` rule (directories only) does not match. What hides it
+      // is the `.gitignore` OpenCode writes into its config dir on config load
+      // (claim carried from the original fixture; not verified against the
+      // pinned OpenCode — tracked as a follow-up). Model that write here, and
+      // only here, so the staged rows above prove the template alone.
+      await writeFile(join(configDir, '.gitignore'), 'node_modules\n')
+      await git(repo, 'add', '.kortix/opencode/.gitignore')
+      await git(repo, 'commit', '-qm', 'opencode config gitignore')
 
       expect(await readlink(join(configDir, 'node_modules'))).toBe(join(bakedDir, 'node_modules'))
       const packageLock = JSON.parse(await readFile(join(configDir, 'package-lock.json'), 'utf8'))

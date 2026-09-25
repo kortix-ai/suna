@@ -140,20 +140,24 @@ describe('secrets_egress gates entering egress delivery', () => {
 describe('POST /:projectId/secrets/sync', () => {
   const src = handlerSource('post', '/{projectId}/secrets/sync');
 
-  test('refuses an agent session outright', () => {
-    expect(src).toContain('isProjectSessionPrincipal(c)');
-    expect(src).toContain(GUARD_MESSAGE);
-    expect(src).toContain('403');
-    // The CLI renders this code as "a human must do this", not as a
-    // kortix_permissions edit that could never unlock the route.
-    expect(src).toContain("code: 'agent_human_only_action'");
+  // An agent session may pull its OWN session (the per-prompt env sync, on
+  // demand) but never trigger the project-wide re-mint (F6). The agent branch
+  // must return before the project-wide propagation is reachable.
+  test('an agent session is routed to its own session, never the project fan-out', () => {
+    const agentBranch = src.indexOf('isProjectSessionPrincipal(c)');
+    const ownSession = src.indexOf('syncSessionSecretsToSandbox(projectId, sessionId)');
+    const projectWide = src.indexOf('propagateProjectSecretsToActiveSandboxes(projectId)');
+    expect(agentBranch).toBeGreaterThan(-1);
+    expect(ownSession).toBeGreaterThan(agentBranch);
+    expect(projectWide).toBeGreaterThan(ownSession);
+    // The agent branch returns its own-session result before the fan-out.
+    const agentBlock = src.slice(agentBranch, projectWide);
+    expect(agentBlock).toContain('return c.json(await syncSessionSecretsToSandbox(projectId, sessionId))');
+    expect(agentBlock).not.toContain('propagateProjectSecretsToActiveSandboxes');
   });
 
-  test('rejects the agent BEFORE the re-mint propagation runs', () => {
-    const guard = src.indexOf(GUARD_MESSAGE);
-    const propagate = src.indexOf('propagateProjectSecretsToActiveSandboxes(projectId)');
-    expect(guard).toBeGreaterThan(-1);
-    expect(propagate).toBeGreaterThan(-1);
-    expect(guard).toBeLessThan(propagate);
+  test('a session-less agent token is refused with a code the CLI renders', () => {
+    expect(src).toContain("code: 'agent_human_only_action'");
+    expect(src).toContain('403');
   });
 });

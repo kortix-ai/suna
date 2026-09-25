@@ -239,36 +239,6 @@ describe('POST /file/import', () => {
     }
   })
 
-  it('cancels the download when its declared length exceeds the descriptor', async () => {
-    let canceled = false
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(bytes)
-      },
-      cancel() {
-        canceled = true
-      },
-    })
-    globalThis.fetch = Object.assign(
-      async (input: Parameters<typeof fetch>[0]) =>
-        String(input).startsWith('http://api.test/')
-          ? Response.json(descriptor())
-          : new Response(body, {
-              headers: { 'Content-Length': String(bytes.byteLength + 1) },
-            }),
-      { preconnect: originalFetch.preconnect },
-    )
-
-    const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
-      command_id: COMMAND_ID,
-      attachment_id: ATTACHMENT_ID,
-      part_index: 0,
-    })
-
-    assertImportFailureWarning(response)
-    expect(canceled).toBe(true)
-  })
-
   it('cancels the download and removes partial bytes after a filesystem write failure', async () => {
     let canceled = false
     const writeSpy = interceptTemporaryWrites(async ({ call, bytes, writeOriginal }) => {
@@ -406,9 +376,18 @@ describe('POST /file/import', () => {
     }
   })
 
-  it('rejects a declared or streamed body larger than the descriptor', async () => {
+  it('rejects a declared or streamed body larger than the descriptor, and cancels the declared one', async () => {
+    let canceled = false
+    const declared = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes)
+      },
+      cancel() {
+        canceled = true
+      },
+    })
     for (const download of [
-      new Response(bytes, { headers: { 'Content-Length': String(bytes.byteLength + 1) } }),
+      new Response(declared, { headers: { 'Content-Length': String(bytes.byteLength + 1) } }),
       new Response(new Uint8Array([...bytes, 0])),
     ]) {
       globalThis.fetch = Object.assign(
@@ -426,6 +405,7 @@ describe('POST /file/import', () => {
       expect(await fs.stat(targetPath()).then(() => true).catch(() => false)).toBe(false)
       expect(await fs.readdir(path.dirname(targetPath())).catch(() => [])).toEqual([])
     }
+    expect(canceled).toBe(true)
   })
 
   it('does not download again when the existing file matches size and digest', async () => {

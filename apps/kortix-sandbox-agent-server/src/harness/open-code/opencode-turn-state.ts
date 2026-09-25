@@ -1,8 +1,5 @@
-import { readFileSync } from 'node:fs'
-
 import { logger } from '../../logger'
-import { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
-export { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
+import { readOpenCodeSessionPin } from './runtime-state'
 
 /**
  * Is opencode mid-turn, and did a turn get orphaned?
@@ -25,16 +22,6 @@ export { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
  * wake-ups) leave a USER row as the newest row while the assistant streams. The
  * old `msgs[msgs.length - 1]` read that as "no turn running, prompt dropped".
  */
-/**
- * The canonical opencode root, or null when nothing is pinned yet.
- *
- * The value goes into a URL, so it is shape-checked rather than trusted: the pin
- * file is daemon-written and 0600, but "a file decides part of an outbound
- * request" is worth closing off regardless of who writes it today. opencode ids
- * are `ses_` + base-ish chars; anything else is treated as no pin at all.
- */
-const OPENCODE_SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/
-
 /**
  * How many of a root's NEWEST messages a turn probe reads.
  *
@@ -90,19 +77,6 @@ async function opencodeMessageExists(
     // read as "the prompt is on record".
     const body = (await res.json().catch(() => null)) as { info?: { id?: unknown } } | null
     return body?.info?.id === messageId ? true : null
-  } catch {
-    return null
-  }
-}
-
-export function readPinnedSessionId(): string | null {
-  try {
-    const id = readFileSync(OPENCODE_SESSION_PIN_PATH, 'utf8').trim()
-    if (!OPENCODE_SESSION_ID.test(id)) {
-      if (id.length > 0) logger.warn('[turn-state] ignoring a malformed pinned session id')
-      return null
-    }
-    return id
   } catch {
     return null
   }
@@ -237,11 +211,8 @@ export async function inspectOpencodeRoot(
 export async function opencodeTurnInFlight(
   baseUrl: string,
   workspace: string,
-  /** The root to ask about. Defaults to the pinned one; passed explicitly by
-   *  tests, which have no pin file. */
-  rootSessionId: string | null = readPinnedSessionId(),
 ): Promise<boolean | null> {
-  const sessionId = rootSessionId
+  const sessionId = readOpenCodeSessionPin()
   if (!sessionId) return false
   try {
     // ASK, don't infer. `/session/status` is OpenCode's own answer to this
@@ -410,8 +381,8 @@ export async function observeOpencodeDelivery(
     // SAME loop still streams the older turn's steps; and between two steps of
     // one turn the latest assistant message reads completed while tools run
     // and the next step's message does not exist yet. Both shapes read
-    // "terminal" here and were: live incident 2026-08-20 (SampleCo session
-    // d1b74954) — the reaper destroyed a streaming turn's authority at
+    // "terminal" here and were: live incident 2026-08-20 (a customer
+    // session) — the reaper destroyed a streaming turn's authority at
     // 12:48:51Z on the newer-user rule; its step completed at 12:48:54Z. So no
     // terminal verdict leaves this function while the root itself reports
     // busy, and an unreadable status is unknown, never terminal.

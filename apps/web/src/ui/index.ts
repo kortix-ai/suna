@@ -62,6 +62,7 @@ export {
   getTurnCost,
   getTurnError,
   getTurnErrorDetails,
+  getTurnErrorRawText,
   getTurnStatus,
   getWorkingState,
   groupMessagesIntoTurns,

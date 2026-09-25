@@ -253,7 +253,7 @@ test('a malformed staged native image is refused at the door', () => {
     { type: 'text', text: 'hi' },
     { type: 'file', mime: 'image/jpeg', filename: 'p.jpg', url: 'data:image/jpeg;base64,not*base64' },
   ]);
-  expect('error' in out).toBe(true);
+  expect(out).toEqual({ error: 'file "p.jpg" has malformed staged data' });
 });
 
 test('a native image that is a remote URL is still admitted', () => {

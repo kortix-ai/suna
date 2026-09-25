@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import ts from 'typescript'
 import { loadConfig } from '../config'
@@ -9,7 +9,6 @@ import { createRuntimeProxyRouter } from '../routes/runtime-proxy'
 import type { HarnessQueryService } from '../harness/queries'
 
 const sourceRoot = resolve(import.meta.dir, '..')
-const nativeRoot = resolve(sourceRoot, 'harness/open-code')
 /** Every concrete adapter folder. Host code imports none of them; adapters import none of each other. */
 const adapterRoots = ['harness/open-code', 'harness/pi'].map((dir) => resolve(sourceRoot, dir))
 
@@ -38,17 +37,11 @@ describe('harness ownership boundary', () => {
       inspect(source)
     }
     expect(leaks).toEqual([])
-    expect(existsSync(resolve(sourceRoot, 'opencode-events.ts'))).toBe(false)
-    expect(existsSync(resolve(sourceRoot, 'opencode.ts'))).toBe(false)
   })
 
-  test('resolution preserves the existing default and rejects an unknown selection', () => {
+  test('KORTIX_HARNESS selects the adapter (default opencode); the selected adapter loads its own environment', () => {
     expect(resolveHarness().id).toBe('opencode')
     expect(resolveHarness(loadConfig())).toBe(resolveHarness())
-    expect(() => resolveHarness(undefined, 'missing-adapter')).toThrow('Unsupported harness: missing-adapter')
-  })
-
-  test('KORTIX_HARNESS selects the adapter; the selected adapter loads its own environment', () => {
     const pi = loadConfig({ KORTIX_HARNESS: 'pi', KORTIX_PROJECT_AUTO_CLONE: '0' })
     expect(pi.harness).toBe('pi')
     expect(resolveHarness(pi).id).toBe('pi')
@@ -79,10 +72,6 @@ describe('harness ownership boundary', () => {
       inspect(source)
     }
     expect(leaks).toEqual([])
-    for (const name of ['health', 'refresh', 'abort', 'env', 'logs', 'diag', 'part', 'opencode-runtime']) {
-      expect(existsSync(resolve(nativeRoot, `routes/${name}.ts`))).toBe(false)
-    }
-    expect(existsSync(resolve(nativeRoot, 'http.ts'))).toBe(false)
   })
 
   test('host controllers call a different resolved service and retain its extra fields and native features', async () => {

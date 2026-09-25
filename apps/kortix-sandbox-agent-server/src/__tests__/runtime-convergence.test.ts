@@ -19,7 +19,6 @@ import {
 } from '../runtime-assets'
 import {
   createOpenCodeAssetsService,
-  refreshOpencodePluginPin,
   type OpenCodeAssetsOptions,
   type OpenCodeAssetsRuntime,
 } from '../harness/open-code/assets'
@@ -652,11 +651,6 @@ describe('opencode convergence — idle only', () => {
     expect(result.opencode).toBe('skipped')
     expect(result.reasons?.opencode).toBe('no opencode runtime in this process')
   })
-
-  test('refreshOpencodePluginPin reports an absent dependency dir instead of failing', async () => {
-    const ws = await workspace()
-    expect(await refreshOpencodePluginPin(ws.depsDir, '1.18.19')).toBe('absent')
-  })
 })
 
 describe('v1 compatibility', () => {
@@ -715,150 +709,48 @@ describe('requestAgentSwapIfIdle', () => {
     expect(AGENT_SWAP_EXIT_CODE).toBe(75)
   })
 
-  test('never exits across a live turn', async () => {
+  // Every reason the daemon keeps running instead of taking the swap. Exiting
+  // takes the harness, the proxy and every PTY down, so "cannot tell" is busy.
+  const busyPty = () => true
+  const throwingPty = () => {
+    throw new Error('registry unavailable')
+  }
+  test.each([
+    ['a live turn', { turn: true }, 'turn-in-flight'],
+    ['unreadable turn state', { turn: null }, 'turn-state-unknown'],
+    ['a registered blocker (an open PTY)', { blocker: busyPty }, 'attached'],
+    ['a blocker that throws', { blocker: throwingPty }, 'attached'],
+    ['nothing staged', { staged: 'none' }, 'nothing-staged'],
+    ['a digest side-car without its binary', { staged: 'sidecar-only' }, 'nothing-staged'],
+    ['a pinned box', { pinned: true }, 'pinned'],
+    ['no turn oracle configured', { configured: false }, 'not-configured'],
+    // The boot reconcile fires seconds after opencode is ready, the moment a
+    // first prompt arrives. The supervisor promotes before every launch anyway.
+    ['a freshly booted daemon', { uptimeMs: 20_000 }, 'too-young'],
+  ] as const)('%s keeps the daemon running', async (_name, row, decision) => {
+    const input = row as {
+      turn?: boolean | null
+      blocker?: () => boolean
+      staged?: 'none' | 'sidecar-only'
+      pinned?: boolean
+      configured?: boolean
+      uptimeMs?: number
+    }
     const ws = await workspace()
-    await stage(ws)
+    if (input.staged === 'sidecar-only') await Bun.write(ws.agentNextSha, `${sha(AGENT_BYTES)}\n`)
+    else if (input.staged !== 'none') await stage(ws)
+    if (input.pinned) await Bun.write(ws.agentPinned, '')
+    if (input.blocker) registerAgentSwapBlocker('pty', input.blocker)
     const exits: number[] = []
 
-    const decision = await requestAgentSwapIfIdle({
+    const result = await requestAgentSwapIfIdle({
       agentStateDir: ws.stateDir,
-      uptimeMs: 10 * 60_000,
-      turnInFlight: async () => true,
+      uptimeMs: input.uptimeMs ?? 10 * 60_000,
+      ...(input.configured === false ? {} : { turnInFlight: async () => ('turn' in input ? (input.turn as boolean | null) : false) }),
       exit: (code) => exits.push(code),
     })
 
-    expect(decision).toBe('turn-in-flight')
-    expect(exits).toEqual([])
-  })
-
-  test('unreadable turn state counts as busy', async () => {
-    const ws = await workspace()
-    await stage(ws)
-    const exits: number[] = []
-
-    const decision = await requestAgentSwapIfIdle({
-      agentStateDir: ws.stateDir,
-      uptimeMs: 10 * 60_000,
-      turnInFlight: async () => null,
-      exit: (code) => exits.push(code),
-    })
-
-    expect(decision).toBe('turn-state-unknown')
-    expect(exits).toEqual([])
-  })
-
-  test('a registered blocker (an open PTY) defers the swap', async () => {
-    const ws = await workspace()
-    await stage(ws)
-    const exits: number[] = []
-    registerAgentSwapBlocker('pty', () => true)
-
-    const decision = await requestAgentSwapIfIdle({
-      agentStateDir: ws.stateDir,
-      uptimeMs: 10 * 60_000,
-      turnInFlight: async () => false,
-      exit: (code) => exits.push(code),
-    })
-
-    expect(decision).toBe('attached')
-    expect(exits).toEqual([])
-  })
-
-  test('a blocker that throws counts as busy', async () => {
-    const ws = await workspace()
-    await stage(ws)
-    const exits: number[] = []
-    registerAgentSwapBlocker('pty', () => {
-      throw new Error('registry unavailable')
-    })
-
-    const decision = await requestAgentSwapIfIdle({
-      agentStateDir: ws.stateDir,
-      uptimeMs: 10 * 60_000,
-      turnInFlight: async () => false,
-      exit: (code) => exits.push(code),
-    })
-
-    expect(decision).toBe('attached')
-    expect(exits).toEqual([])
-  })
-
-  test('nothing staged → nothing requested', async () => {
-    const ws = await workspace()
-    const exits: number[] = []
-
-    const decision = await requestAgentSwapIfIdle({
-      agentStateDir: ws.stateDir,
-      uptimeMs: 10 * 60_000,
-      turnInFlight: async () => false,
-      exit: (code) => exits.push(code),
-    })
-
-    expect(decision).toBe('nothing-staged')
-    expect(exits).toEqual([])
-  })
-
-  test('a digest side-car without its binary is not a staged update', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.agentNextSha, `${sha(AGENT_BYTES)}\n`)
-    const exits: number[] = []
-
-    const decision = await requestAgentSwapIfIdle({
-      agentStateDir: ws.stateDir,
-      uptimeMs: 10 * 60_000,
-      turnInFlight: async () => false,
-      exit: (code) => exits.push(code),
-    })
-
-    expect(decision).toBe('nothing-staged')
-    expect(exits).toEqual([])
-  })
-
-  test('a pinned box does not ask for a restart it would waste', async () => {
-    const ws = await workspace()
-    await stage(ws)
-    await Bun.write(ws.agentPinned, '')
-    const exits: number[] = []
-
-    const decision = await requestAgentSwapIfIdle({
-      agentStateDir: ws.stateDir,
-      uptimeMs: 10 * 60_000,
-      turnInFlight: async () => false,
-      exit: (code) => exits.push(code),
-    })
-
-    expect(decision).toBe('pinned')
-    expect(exits).toEqual([])
-  })
-
-  test('an unconfigured daemon never exits on its own', async () => {
-    const ws = await workspace()
-    await stage(ws)
-
-    const decision = await requestAgentSwapIfIdle({
-      agentStateDir: ws.stateDir,
-      uptimeMs: 10 * 60_000,
-    })
-
-    expect(decision).toBe('not-configured')
-  })
-
-  test('a freshly booted daemon never restarts itself on the session-start path', async () => {
-    const ws = await workspace()
-    await stage(ws)
-    const exits: number[] = []
-
-    // The boot reconcile fires seconds after opencode is ready — the moment a
-    // user sends their first prompt and the frontend polls readiness. The
-    // supervisor promotes before every launch anyway, so waiting costs nothing.
-    const decision = await requestAgentSwapIfIdle({
-      agentStateDir: ws.stateDir,
-      uptimeMs: 20_000,
-      turnInFlight: async () => false,
-      exit: (code) => exits.push(code),
-    })
-
-    expect(decision).toBe('too-young')
+    expect(result).toBe(decision)
     expect(exits).toEqual([])
   })
 })
@@ -872,9 +764,14 @@ describe('runtime convergence report', () => {
   beforeEach(() => {
     resetRuntimeConvergenceReportForTests()
   })
+  const reportDir = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rcr-'))
+    dirs.push(dir)
+    return dir
+  }
 
   test('starts empty — a box that has never reconciled must not look converged', async () => {
-    const report = await runtimeConvergenceReport(mkdtempSync(join(tmpdir(), 'rcr-')))
+    const report = await runtimeConvergenceReport(reportDir())
     expect(report.build).toBeNull()
     expect(report.at).toBeNull()
     expect(report.agentSwapPending).toBe(false)
@@ -890,7 +787,7 @@ describe('runtime convergence report', () => {
       build: 1787241641,
       agentSwapPending: true,
     })
-    const report = await runtimeConvergenceReport(mkdtempSync(join(tmpdir(), 'rcr-')))
+    const report = await runtimeConvergenceReport(reportDir())
     expect(report.build).toBe(1787241641)
     expect(report.components).toEqual({
       cli: 'current',
@@ -904,7 +801,7 @@ describe('runtime convergence report', () => {
 
   test('omits agent/opencode for a v1 manifest instead of claiming they were skipped', async () => {
     noteRuntimeConvergence({ cli: 'current', skills: 'current' })
-    const report = await runtimeConvergenceReport(mkdtempSync(join(tmpdir(), 'rcr-')))
+    const report = await runtimeConvergenceReport(reportDir())
     expect(report.components).toEqual({ cli: 'current', skills: 'current' })
     expect(report.build).toBeNull()
   })
@@ -913,7 +810,7 @@ describe('runtime convergence report', () => {
     // The SUPERVISOR writes agent.pinned between daemon runs, so a value cached
     // at reconcile time is stale exactly when someone is looking: the first
     // health check after a rollback.
-    const dir = mkdtempSync(join(tmpdir(), 'rcr-'))
+    const dir = reportDir()
     noteRuntimeConvergence({ cli: 'current', skills: 'current', build: 7 })
     expect((await runtimeConvergenceReport(dir)).pinned).toBe(false)
     writeFileSync(join(dir, 'agent.pinned'), '')

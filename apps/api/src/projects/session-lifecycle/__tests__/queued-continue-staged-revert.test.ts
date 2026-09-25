@@ -19,7 +19,7 @@
 //     rather than dropped. See the `inbox prompts across a staged revert` block
 //     at the bottom of this file.
 //
-// Same mocking caveat as ../__tests__/continue-session-title.test.ts:
+// Same mocking caveat as ./continue-session.test.ts:
 // `mock.module` is process-global in bun:test, so this file must run on its
 // own (the repo's `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -176,7 +176,7 @@ mock.module('../../opencode-mapping', () => ({
 // The wake path now converges the box before every delivery (continue-session.ts
 // `continueSession`): it reads the service key and ingress and calls
 // `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
-// the wire, not about the sync (see continue-session-env-sync.test.ts).
+// the wire, not about the sync (see continue-session-runtime-env.test.ts).
 mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'svc-key-1',
 }));
@@ -369,15 +369,8 @@ describe('executeQueuedContinue — inbox prompts across a staged revert', () =>
     expect(succeededCalls).toEqual([]);
     expect(failedCalls).toEqual([]);
     expect(events).toContain('prompt');
-  });
-
-  test('the guard does not even read the sandbox for a never-waited inbox row', async () => {
-    // A read that cannot change the outcome is a 5s timeout on the delivery
-    // path of every single composer send.
-    sessionInfoBody = { id: OC_SESSION_ID, revert: { messageID: 'msg-99' } };
-
-    await executeQueuedContinue(inboxRow());
-
+    // The guard never even reads the sandbox for a never-waited inbox row: a
+    // read that cannot change the outcome is a 5s timeout on every send.
     expect(events.some((e) => e.startsWith('fetch:'))).toBe(false);
   });
 

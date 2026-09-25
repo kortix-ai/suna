@@ -12,7 +12,7 @@ import { requiresRespawn, type Opencode } from './lifecycle'
 import { reconcileProjectEnv } from '../../project-env'
 import { readRepoInfo, refreshRepo, syncWorkspaceToBase } from '../../git'
 import { scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
-import { readPinnedOpencodeSessionId } from './boot'
+import { readOpenCodeSessionPin } from './runtime-state'
 import type { QuickQueueInterrupt } from './quick-queue-interrupt'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
@@ -138,16 +138,11 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
   })
 }
 
-/** Runtime-assets reconciliation must not restart a runtime during boot. */
 /** `repo=0`: report the checkout as it is; nothing is fetched or pulled. */
 async function unchangedRepo(projectTarget: string) {
   const info = await readRepoInfo(projectTarget)
   if (!info) throw new Error('project repo is not materialized')
   return { before: info, after: info }
-}
-
-export function refreshMayConvergeRuntime(runtimeState: string): boolean {
-  return runtimeState === 'ok'
 }
 
 /** Native control operations. HTTP parsing, authorization and status mapping stay in routes. */
@@ -348,7 +343,7 @@ export function createOpenCodeControlService(
           // API's start budget expired on both boxes). main.ts schedules the
           // post-boot pass itself once `opencode-ready` is marked; this call is
           // for a box that is already up.
-          if (refreshMayConvergeRuntime(opencode.getState())) scheduleRuntimeAssetsReconcile(cfg)
+          if (opencode.getState() === 'ok') scheduleRuntimeAssetsReconcile(cfg)
           return {
             // The repo work succeeded either way; `reload.outcome` carries whether
             // the new config actually took. Reporting ok:false here would hide a
@@ -382,7 +377,7 @@ export function createOpenCodeControlService(
         // always fetched from the API; nothing here takes one as input.
         convergeConfig: () => convergeConfigRelease({ cfg, opencode }),
         async abort() {
-          const sessionId = readPinnedOpencodeSessionId()
+          const sessionId = readOpenCodeSessionPin()
           if (!sessionId) {
             return { outcome: 'not-pinned', body: { ok: false, error: 'No opencode session pinned.' } }
           }
