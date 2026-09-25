@@ -15,10 +15,13 @@ import {
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import {
+  type ConnectionAudienceReach,
   type ConnectionOwnerType,
   connectionIsReachable,
   isTrustedManagedChannelAuthorization,
 } from '../lib/connection-access';
+import { audiencePersonId, loadConnectionAudience } from '../lib/connection-audience';
+import { loadConnectionSharing } from '../lib/connection-sharing';
 import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
 import { requestAgentPrincipalReach } from '../lib/personal-resources';
 import { readJsonObject } from '../../shared/http-body';
@@ -63,7 +66,9 @@ function mayReadConnection(
    *  enumerate every other end-user's connection and then bind it. */
   sessionBoundConnectionIds: ReadonlySet<string> | null,
   /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
-  agentPrincipal: AgentPrincipalReach | null = null,
+  agentPrincipal: AgentPrincipalReach | null,
+  /** A shared account's audience for the person this call acts for. */
+  audience: ConnectionAudienceReach,
 ): boolean {
   if (!sessionMayEnumerateConnection(connection, sessionBoundConnectionIds)) return false;
   return connectionIsReachable({
@@ -72,6 +77,7 @@ function mayReadConnection(
     actingUserId: userId,
     actingPrincipalIsServiceAccount,
     agentPrincipal,
+    audience,
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: connection.providerType,
       platform:
@@ -205,18 +211,66 @@ projectsApp.openapi(
       .from(connectorConnections)
       .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
       .where(eq(connectorConnections.projectId, projectId));
+    const audienceOf = await loadConnectionAudience({
+      projectId,
+      accountId: loaded.row.accountId,
+      userId: audiencePersonId({
+        actingUserId: loaded.userId,
+        actingPrincipalIsServiceAccount,
+        agentPrincipal: agentReach,
+      }),
+    });
+    const listed = rows.map((connection) => {
+      const audience = audienceOf(connection.connectionId);
+      return {
+        connection,
+        audience,
+        usable: mayReadConnection(
+          connection,
+          loaded.userId,
+          actingPrincipalIsServiceAccount,
+          sessionBoundConnectionIds,
+          agentReach,
+          audience,
+        ),
+      };
+    });
+    // A shared account narrowed to an audience the caller is outside of stays
+    // listed for a person who manages the project's connections, marked
+    // `usable: false`, so they can widen it again. A session-bound token (a
+    // sandbox) never sees it: it could not use it anyway.
+    const outsideAudience = listed.some(
+      (item) => !item.usable && item.connection.ownerType === 'project' && item.audience === 'out',
+    );
+    const mayManage =
+      outsideAudience &&
+      !callerSessionId &&
+      (await projectCapabilityAllowed(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+      ));
+    const sharing = await loadConnectionSharing({
+      projectId,
+      accountId: loaded.row.accountId,
+      projectName: loaded.row.name,
+    });
     return c.json({
-      connections: rows
-        .filter((connection) =>
-          mayReadConnection(
-            connection,
-            loaded.userId,
-            actingPrincipalIsServiceAccount,
-            sessionBoundConnectionIds,
-            agentReach,
-          ),
+      connections: listed
+        .filter(
+          (item) =>
+            item.usable ||
+            (mayManage && item.connection.ownerType === 'project' && item.audience === 'out'),
         )
-        .map(serializeConnection),
+        .map((item) => ({
+          ...serializeConnection(item.connection),
+          ...(item.connection.ownerType === 'project'
+            ? { shared_with: sharing.get(item.connection.connectionId) ?? [] }
+            : {}),
+          usable: item.usable,
+        })),
     });
   },
 );
@@ -476,6 +530,9 @@ projectsApp.openapi(
         actingUserId: loaded.userId,
         actingPrincipalIsServiceAccount: c.get('authType') === 'service_account',
         agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
+        // Creating or reconciling an account manages it; a shared one already
+        // required the manage capability above.
+        audience: 'open',
       })
     ) {
       return c.json(

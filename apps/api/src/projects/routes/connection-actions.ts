@@ -58,6 +58,9 @@ function mayMutateConnection(
     actingUserId: userId,
     actingPrincipalIsServiceAccount,
     agentPrincipal,
+    // Mutating a shared account manages it; `mayManageSystemConnections`
+    // below is the gate, whoever the account's audience names.
+    audience: 'open',
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: connection.providerType,
       platform:

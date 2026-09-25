@@ -11,7 +11,7 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/session-access';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
-import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
+import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/previews
 // Human-friendly preview candidates. The frontend should pass the active
@@ -115,7 +115,7 @@ projectsApp.openapi(
     if (!guard.ok) return sessionAccessDenied(c, guard);
     const visible = guard.session;
     if (
-      await sessionHasMemberConnectorBinding({
+      await sessionHasPersonalConnectorBinding({
         accountId: visible.row.accountId,
         projectId,
         sessionId,

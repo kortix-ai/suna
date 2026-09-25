@@ -9,7 +9,7 @@ import {
   projectSessions,
   serviceAccounts,
 } from '@kortix/db';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
 import {
   canonicalConnectorAlias,
   publicConnectorAlias,
@@ -28,8 +28,10 @@ import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import {
   connectionIsReachable,
+  connectionNeedsPrivateSession,
   isTrustedManagedChannelAuthorization,
 } from './connection-access';
+import { audiencePersonId, loadConnectionAudience } from './connection-audience';
 import { projectSecretIsConfiguredForConsumer } from '../secrets';
 
 export interface ValidatedSessionConnectorBinding {
@@ -38,6 +40,9 @@ export interface ValidatedSessionConnectorBinding {
   connectorId: string;
   ownerType: 'project' | 'agent' | 'member' | 'subject' | 'external';
   ownerId: string | null;
+  /** A private account, or a shared one narrowed to an audience: the session
+   *  that binds it must stay private (`connectionNeedsPrivateSession`). */
+  personal: boolean;
 }
 
 export interface ResolvedSessionConnectorConnection {
@@ -304,6 +309,11 @@ export async function validateSessionConnectorBindings(input: {
 > {
   if (!input.bindings) return { ok: true, bindings: [] };
 
+  const audienceOf = await loadConnectionAudience({
+    projectId: input.projectId,
+    accountId: input.accountId,
+    userId: audiencePersonId(input),
+  });
   const validated: ValidatedSessionConnectorBinding[] = [];
   for (const [requestedAlias, binding] of Object.entries(input.bindings)) {
     const alias = canonicalConnectorAlias(requestedAlias);
@@ -366,6 +376,7 @@ export async function validateSessionConnectorBindings(input: {
       status: row.status,
       metadata: row.metadata,
     };
+    const audience = audienceOf(row.connectionId);
     if (
       !connectionIsReachable({
         ownerType: connection.ownerType,
@@ -373,6 +384,7 @@ export async function validateSessionConnectorBindings(input: {
         actingUserId: input.actingUserId,
         actingPrincipalIsServiceAccount: input.actingPrincipalIsServiceAccount,
         trustedManagedSystem: trustedManagedAuthorization(connector, connection),
+        audience,
       })
     ) {
       return {
@@ -415,6 +427,7 @@ export async function validateSessionConnectorBindings(input: {
       connectorId: row.connectorId,
       ownerType: row.ownerType,
       ownerId: row.ownerId,
+      personal: connectionNeedsPrivateSession(row.ownerType, audience),
     });
   }
   return { ok: true, bindings: validated };
@@ -445,10 +458,18 @@ export async function persistSessionConnectorBindings(input: {
 export function sessionConnectorBindingsRequirePrivateVisibility(
   bindings: readonly ValidatedSessionConnectorBinding[],
 ): boolean {
-  return bindings.some((binding) => binding.ownerType === 'member');
+  return bindings.some((binding) => binding.personal);
 }
 
-export async function sessionHasMemberConnectorBinding(input: {
+/**
+ * Does this session hold a personal binding — a private account, or a shared
+ * one narrowed to an audience? Such a session cannot become shared: every
+ * other viewer could then make the agent act as that account.
+ *
+ * "Narrowed" is read from the grant store in SQL (a live `connection` grant
+ * and no grant to everyone), the same rule `audienceReachOf` applies.
+ */
+export async function sessionHasPersonalConnectorBinding(input: {
   accountId: string;
   projectId: string;
   sessionId: string;
@@ -465,12 +486,30 @@ export async function sessionHasMemberConnectorBinding(input: {
         eq(projectSessionConnectorBindings.sessionId, input.sessionId),
         eq(projectSessionConnectorBindings.accountId, input.accountId),
         eq(projectSessionConnectorBindings.projectId, input.projectId),
-        eq(connectorConnections.ownerType, 'member'),
+        or(
+          eq(connectorConnections.ownerType, 'member'),
+          and(eq(connectorConnections.ownerType, 'project'), narrowedSharedConnection),
+        ),
       ),
     )
     .limit(1);
   return Boolean(row);
 }
+
+const liveConnectionGrant = sql`
+  ra.scope_type = 'project'
+  and ra.scope_id = ${connectorConnections.projectId}
+  and ra.object_type = 'connection'
+  and ra.object_id = ${connectorConnections.connectionId}::text
+  and (ra.expires_at is null or ra.expires_at > now())`;
+
+/** A shared account with a live `connection` grant and none to everyone. */
+const narrowedSharedConnection = sql`(
+  exists (select 1 from kortix.role_assignments ra where ${liveConnectionGrant})
+  and not exists (
+    select 1 from kortix.role_assignments ra where ${liveConnectionGrant} and ra.principal_type = 'project'
+  )
+)`;
 
 /** The personal-resource scope of an agent-principal caller (spec §2.3). */
 export interface AgentPrincipalPersonalScope {
@@ -618,11 +657,22 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
         status: bound.connectionStatus,
         metadata: bound.metadata,
       };
+      const audience = (
+        await loadConnectionAudience({
+          projectId: input.projectId,
+          accountId: input.accountId,
+          userId: audiencePersonId({
+            actingUserId,
+            actingPrincipalIsServiceAccount,
+            agentPrincipal: input.agentPrincipal,
+          }),
+        })
+      )(connection.connectionId);
       if (
         !connector.enabled ||
         connector.status !== 'active' ||
         connection.status !== 'active' ||
-        (connection.ownerType === 'member' && visibility !== 'private') ||
+        (connectionNeedsPrivateSession(connection.ownerType, audience) && visibility !== 'private') ||
         !connectionIsReachable({
           ownerType: connection.ownerType,
           ownerId: connection.ownerId,
@@ -632,6 +682,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
           agentPrincipal: input.agentPrincipal
             ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
             : null,
+          audience,
         }) ||
         !(await connectorConnectionIsConnected({ connector, connection }))
       ) {
@@ -800,6 +851,15 @@ export async function listEntitledConnectorConnections(input: {
     )
     .orderBy(desc(connectorConnections.isDefault), connectorConnections.connectionId);
 
+  const audienceOf = await loadConnectionAudience({
+    projectId: input.projectId,
+    accountId: input.accountId,
+    userId: audiencePersonId({
+      actingUserId,
+      actingPrincipalIsServiceAccount,
+      agentPrincipal: input.agentPrincipal,
+    }),
+  });
   const entitled: EntitledConnectorConnection[] = [];
   for (const row of rows) {
     const connection: ConnectorConnectionRow = {
@@ -810,6 +870,7 @@ export async function listEntitledConnectorConnections(input: {
       status: row.status,
       metadata: row.metadata,
     };
+    const audience = audienceOf(row.connectionId);
     if (
       !connectionIsReachable({
         ownerType: connection.ownerType,
@@ -820,11 +881,12 @@ export async function listEntitledConnectorConnections(input: {
         agentPrincipal: input.agentPrincipal
           ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
           : null,
+        audience,
       })
     ) {
       continue;
     }
-    if (connection.ownerType === 'member' && visibility !== 'private') continue;
+    if (connectionNeedsPrivateSession(connection.ownerType, audience) && visibility !== 'private') continue;
     if (!(await connectorConnectionIsConnected({ connector, connection }))) continue;
     entitled.push({
       connectionId: row.connectionId,

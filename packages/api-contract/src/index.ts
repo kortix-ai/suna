@@ -479,6 +479,21 @@ export const ConnectionMetadataSchema = z
       });
     }
   });
+/**
+ * One grant that names who may use a shared account. `project` = everyone with
+ * access to the project (`principal_id` is the project id).
+ */
+export const ConnectionShareSchema = z.object({
+  /** The `role_assignments` id; revoke it to take this audience away. */
+  grant_id: z.string().uuid(),
+  principal_type: z.enum(['member', 'group', 'project']),
+  principal_id: z.string(),
+  /** A member's email, a group's name, or the project's name. */
+  label: z.string(),
+  expires_at: z.string().nullable(),
+});
+export type ConnectionShare = z.infer<typeof ConnectionShareSchema>;
+
 export const ConnectionSchema = z.object({
   connection_id: z.string().uuid(),
   connector_alias: z.string(),
@@ -494,6 +509,18 @@ export const ConnectionSchema = z.object({
    * provider exposes none or the connection holds no authorized account.
    */
   connected_as: z.string().nullable().optional(),
+  /**
+   * Who may use a shared (`owner_type: project`) account. Empty, or holding a
+   * `project` grant, means everyone in the project; otherwise only the named
+   * members and groups, in private sessions. Absent on every other owner type.
+   */
+  shared_with: z.array(ConnectionShareSchema).optional(),
+  /**
+   * `false` = the caller is outside this shared account's audience and sees it
+   * only because they manage the project's connections. It cannot be bound to
+   * a session. Absent on older servers: treat as `true`.
+   */
+  usable: z.boolean().optional(),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
 

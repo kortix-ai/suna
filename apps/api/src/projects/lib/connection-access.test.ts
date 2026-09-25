@@ -1,18 +1,78 @@
 import { describe, expect, test } from 'bun:test';
 import {
   connectionIsReachable,
+  connectionNeedsPrivateSession,
   isTrustedManagedChannelAuthorization,
 } from './connection-access';
 
 const human = {
   actingUserId: 'user-1',
   actingPrincipalIsServiceAccount: false,
+  audience: 'open' as const,
 };
 
 const serviceAccount = {
   actingUserId: '',
   actingPrincipalIsServiceAccount: true,
+  audience: 'open' as const,
 };
+
+describe('a shared account narrowed to an audience', () => {
+  // `in` / `out` are resolved for the person the call acts for; `open` means
+  // nobody narrowed the account, or it is shared with everyone in the project.
+  test('open: every principal that may use the connector, as before', () => {
+    expect(connectionIsReachable({ ownerType: 'project', ownerId: null, ...human })).toBe(true);
+    expect(connectionIsReachable({ ownerType: 'project', ownerId: null, ...serviceAccount })).toBe(true);
+  });
+
+  test('narrowed: only a human the audience names', () => {
+    expect(
+      connectionIsReachable({ ownerType: 'project', ownerId: null, ...human, audience: 'in' }),
+    ).toBe(true);
+    expect(
+      connectionIsReachable({ ownerType: 'project', ownerId: null, ...human, audience: 'out' }),
+    ).toBe(false);
+  });
+
+  test('narrowed: an unattended service account reaches it never, even when "in"', () => {
+    expect(
+      connectionIsReachable({ ownerType: 'project', ownerId: null, ...serviceAccount, audience: 'in' }),
+    ).toBe(false);
+    expect(
+      connectionIsReachable({ ownerType: 'project', ownerId: null, ...serviceAccount, audience: 'out' }),
+    ).toBe(false);
+  });
+
+  test('narrowed: an agent principal reaches it only for a named human, in a private session', () => {
+    const agent = (visibility: 'private' | 'project', onBehalfOfUserId: string | null) => ({
+      ownerType: 'project' as const,
+      ownerId: null,
+      actingUserId: 'sa-1',
+      actingPrincipalIsServiceAccount: true,
+      agentPrincipal: { onBehalfOfUserId, visibility },
+    });
+    expect(connectionIsReachable({ ...agent('private', 'user-1'), audience: 'in' })).toBe(true);
+    expect(connectionIsReachable({ ...agent('project', 'user-1'), audience: 'in' })).toBe(false);
+    expect(connectionIsReachable({ ...agent('private', 'user-1'), audience: 'out' })).toBe(false);
+    expect(connectionIsReachable({ ...agent('private', null), audience: 'in' })).toBe(false);
+    // An open shared account stays reachable by an agent principal in any session.
+    expect(connectionIsReachable({ ...agent('project', null), audience: 'open' })).toBe(true);
+  });
+
+  test('the audience never widens a private account', () => {
+    expect(
+      connectionIsReachable({ ownerType: 'member', ownerId: 'user-2', ...human, audience: 'in' }),
+    ).toBe(false);
+  });
+
+  test('a narrowed shared account needs a private session, like a personal one', () => {
+    expect(connectionNeedsPrivateSession('member', 'open')).toBe(true);
+    expect(connectionNeedsPrivateSession('project', 'in')).toBe(true);
+    expect(connectionNeedsPrivateSession('project', 'out')).toBe(true);
+    expect(connectionNeedsPrivateSession('project', 'open')).toBe(false);
+    expect(connectionNeedsPrivateSession('external', 'open')).toBe(false);
+  });
+});
 
 describe('connection reachability', () => {
   test('a project-owned account is reachable by every principal that may use the connector', () => {
@@ -42,6 +102,7 @@ describe('connection reachability', () => {
         ownerId: 'user-1',
         actingUserId: 'user-1',
         actingPrincipalIsServiceAccount: true,
+        audience: 'open',
       }),
     ).toBe(false);
   });
@@ -55,6 +116,7 @@ describe('connection reachability', () => {
         ownerId: '',
         actingUserId: '',
         actingPrincipalIsServiceAccount: false,
+        audience: 'open',
       }),
     ).toBe(false);
     expect(
@@ -63,6 +125,7 @@ describe('connection reachability', () => {
         ownerId: null,
         actingUserId: '',
         actingPrincipalIsServiceAccount: false,
+        audience: 'open',
       }),
     ).toBe(false);
   });
@@ -123,6 +186,7 @@ describe('connection reachability for an agent-principal session', () => {
   const agentSession = (onBehalfOfUserId: string | null, visibility: 'private' | 'project' | 'restricted' | null) => ({
     actingUserId: '',
     actingPrincipalIsServiceAccount: true,
+    audience: 'open' as const,
     agentPrincipal: { onBehalfOfUserId, visibility },
   });
 
@@ -162,6 +226,7 @@ describe('connection reachability for an agent-principal session', () => {
         ownerId: 'user-1',
         actingUserId: 'user-1',
         actingPrincipalIsServiceAccount: false,
+        audience: 'open',
         agentPrincipal: { onBehalfOfUserId: null, visibility: 'private' },
       }),
     ).toBe(false);

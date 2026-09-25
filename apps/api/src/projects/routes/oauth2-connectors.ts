@@ -109,6 +109,8 @@ async function loadMutableConnection(c: any, projectId: string, connectionId: st
     actingPrincipalIsServiceAccount: serviceAccount,
     // Spec 2026-09-22 §2.3: an agent-principal session keys on on_behalf_of.
     agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
+    // Authorizing a shared account manages it; `mayManage` below is the gate.
+    audience: 'open',
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: connection.providerType,
       platform:

@@ -79,6 +79,9 @@ async function authorizationCanCompleteOAuth(
     ownerId: authorization.ownerId,
     actingUserId: initiatedBy,
     actingPrincipalIsServiceAccount: false,
+    // Completing an authorization manages the account; the initiate route
+    // already required the manage capability for a shared one.
+    audience: 'open',
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: authorization.providerType,
       platform:
