@@ -75,7 +75,6 @@ const UUID_ALLOW: Record<string, string> = {
   'shared/validate.ts': 'the one implementation',
   // TODO(follow-up): convert once each open change lands.
   'connectors/db-deps.ts': 'open PR #7236 edits this file',
-  'projects/routes/channel-teams.ts': 'open PR #7633 edits this file',
   'iam/sso-sync.ts': 'open SSO identity work edits this file',
 };
 

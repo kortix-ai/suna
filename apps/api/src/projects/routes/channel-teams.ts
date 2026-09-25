@@ -22,6 +22,7 @@ import { auth, errors, json } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';
+import { isUuid } from '../../shared/validate';
 
 function teamsPublicBaseUrl(): string | undefined {
   return config.KORTIX_URL?.startsWith('https://') ? config.KORTIX_URL : undefined;
@@ -201,10 +202,8 @@ projectsApp.openapi(
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
     const tenantId = body.tenant_id?.trim();
-    const isGuid = (v: string) =>
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
     const isDomain = (v: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v);
-    if (!tenantId || (!isGuid(tenantId) && !isDomain(tenantId))) {
+    if (!tenantId || (!isUuid(tenantId) && !isDomain(tenantId))) {
       return c.json(
         { error: 'tenant_id is required and must be an Azure AD tenant GUID or domain' },
         400,
@@ -219,7 +218,7 @@ projectsApp.openapi(
         400,
       );
     }
-    if (appId && !isGuid(appId)) {
+    if (appId && !isUuid(appId)) {
       return c.json({ error: 'app_id must be an Azure AD application (client) GUID' }, 400);
     }
 
