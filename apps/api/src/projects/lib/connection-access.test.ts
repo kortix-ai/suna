@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type ConnectionReachabilityRow,
   connectionIsReachable,
   connectionNeedsPrivateSession,
+  connectionRowIsReachable,
   isTrustedManagedChannelAuthorization,
 } from './connection-access';
 
@@ -102,7 +104,7 @@ describe('connection reachability', () => {
         ownerId: 'user-1',
         actingUserId: 'user-1',
         actingPrincipalIsServiceAccount: true,
-        audience: 'open',
+        audience: 'open' as const,
       }),
     ).toBe(false);
   });
@@ -116,7 +118,7 @@ describe('connection reachability', () => {
         ownerId: '',
         actingUserId: '',
         actingPrincipalIsServiceAccount: false,
-        audience: 'open',
+        audience: 'open' as const,
       }),
     ).toBe(false);
     expect(
@@ -125,7 +127,7 @@ describe('connection reachability', () => {
         ownerId: null,
         actingUserId: '',
         actingPrincipalIsServiceAccount: false,
-        audience: 'open',
+        audience: 'open' as const,
       }),
     ).toBe(false);
   });
@@ -226,7 +228,7 @@ describe('connection reachability for an agent-principal session', () => {
         ownerId: 'user-1',
         actingUserId: 'user-1',
         actingPrincipalIsServiceAccount: false,
-        audience: 'open',
+        audience: 'open' as const,
         agentPrincipal: { onBehalfOfUserId: null, visibility: 'private' },
       }),
     ).toBe(false);
@@ -239,6 +241,97 @@ describe('connection reachability for an agent-principal session', () => {
     for (const ownerType of ['agent', 'subject'] as const) {
       expect(
         connectionIsReachable({ ownerType, ownerId: 'user-1', ...agentSession('user-1', 'private') }),
+      ).toBe(false);
+    }
+  });
+});
+
+// `connectionRowIsReachable` is the one adapter from a loaded row (joined to its
+// connector) to `connectionIsReachable`. The mutation rule, the connection list,
+// OAuth completion and session bindings all ask through it.
+describe('connection row reachability', () => {
+  const memberRow = (ownerId: string | null): ConnectionReachabilityRow => ({
+    ownerType: 'member',
+    ownerId,
+    metadata: {},
+    providerType: 'mcp',
+    connectorConfig: {},
+  });
+  const managedChannelRow = (
+    overrides: Partial<ConnectionReachabilityRow> = {},
+  ): ConnectionReachabilityRow => ({
+    ownerType: 'external',
+    ownerId: 'agentmail:inbox-1',
+    metadata: { channel_connection: true, inbox_id: 'inbox-1' },
+    providerType: 'channel',
+    connectorConfig: { platform: 'email' },
+    ...overrides,
+  });
+  const humanActor = (userId: string) => ({ userId, isServiceAccount: false, agentPrincipal: null });
+  const serviceActor = { userId: '', isServiceAccount: true, agentPrincipal: null };
+
+  test('a project row is reachable by a human and a service account', () => {
+    const row: ConnectionReachabilityRow = { ...memberRow(null), ownerType: 'project' };
+    expect(connectionRowIsReachable(row, humanActor('user-1'), 'open')).toBe(true);
+    expect(connectionRowIsReachable(row, serviceActor, 'open')).toBe(true);
+  });
+
+  test('a member row is reachable only by its human owner', () => {
+    expect(connectionRowIsReachable(memberRow('user-1'), humanActor('user-1'), 'open')).toBe(true);
+    expect(connectionRowIsReachable(memberRow('user-1'), humanActor('user-2'), 'open')).toBe(false);
+    expect(connectionRowIsReachable(memberRow('user-1'), { ...serviceActor, userId: 'user-1' }, 'open')).toBe(
+      false,
+    );
+    expect(connectionRowIsReachable(memberRow(''), serviceActor, 'open')).toBe(false);
+  });
+
+  test('the managed-channel exception comes from the row and its connector config', () => {
+    expect(connectionRowIsReachable(managedChannelRow(), humanActor('user-1'), 'open')).toBe(true);
+    expect(connectionRowIsReachable(managedChannelRow(), serviceActor, 'open')).toBe(true);
+    // A non-string platform is no platform.
+    expect(
+      connectionRowIsReachable(
+        managedChannelRow({ connectorConfig: { platform: ['email'] } }),
+        humanActor('user-1'), 'open'
+      ),
+    ).toBe(false);
+    expect(
+      connectionRowIsReachable(managedChannelRow({ connectorConfig: {} }), humanActor('user-1'), 'open'),
+    ).toBe(false);
+    expect(
+      connectionRowIsReachable(managedChannelRow({ providerType: 'http' }), humanActor('user-1'), 'open'),
+    ).toBe(false);
+    expect(
+      connectionRowIsReachable(
+        managedChannelRow({ ownerId: 'agentmail:another-inbox' }),
+        humanActor('user-1'), 'open'
+      ),
+    ).toBe(false);
+  });
+
+  test('an agent principal reaches only its on-behalf-of human in a private session', () => {
+    const agent = (onBehalfOfUserId: string | null, visibility: 'private' | 'project') => ({
+      userId: 'user-2',
+      isServiceAccount: true,
+      agentPrincipal: { onBehalfOfUserId, visibility },
+    });
+    expect(connectionRowIsReachable(memberRow('user-1'), agent('user-1', 'private'), 'open')).toBe(true);
+    expect(connectionRowIsReachable(memberRow('user-1'), agent('user-1', 'project'), 'open')).toBe(false);
+    expect(connectionRowIsReachable(memberRow('user-1'), agent(null, 'private'), 'open')).toBe(false);
+    expect(connectionRowIsReachable(memberRow('user-2'), agent('user-1', 'private'), 'open')).toBe(false);
+  });
+
+  test('a narrowed project row follows the audience: in for a human, never a service account', () => {
+    const row: ConnectionReachabilityRow = { ...memberRow(null), ownerType: 'project' };
+    expect(connectionRowIsReachable(row, humanActor('user-1'), 'in')).toBe(true);
+    expect(connectionRowIsReachable(row, humanActor('user-1'), 'out')).toBe(false);
+    expect(connectionRowIsReachable(row, serviceActor, 'in')).toBe(false);
+  });
+
+  test('agent and subject rows stay unreachable', () => {
+    for (const ownerType of ['agent', 'subject'] as const) {
+      expect(
+        connectionRowIsReachable({ ...memberRow('user-1'), ownerType }, humanActor('user-1'), 'open'),
       ).toBe(false);
     }
   });

@@ -204,6 +204,13 @@ export interface ConnectorSetupLinkInfo {
   project_name: string;
   slug: string;
   app: string | null;
+  /**
+   * The connector's display name ("Google Calendar"), so a card can name the
+   * app before it is opened. Optional: servers older than this field omit it.
+   */
+  name?: string | null;
+  /** The app's logo. `null` when the catalog has none; absent on older servers. */
+  icon_url?: string | null;
   expires_at: string;
 }
 

@@ -60,6 +60,8 @@ export const OutcomeCard = memo(function OutcomeCard({
   index,
   onOpen,
   icon,
+  media,
+  titleClassName,
   actionVariant = 'outline',
   pending = false,
   className,
@@ -77,6 +79,19 @@ export const OutcomeCard = memo(function OutcomeCard({
    * the kind decides, which is what every transcript card does.
    */
   icon?: Icon;
+  /**
+   * Replaces the tinted glyph tile entirely, for a row whose subject has its own
+   * picture. `setup-links/setup-link-button.tsx` passes the Kortix ↔ app
+   * handshake (two logos), which a single `Icon` cannot draw. Takes precedence
+   * over `icon`.
+   */
+  media?: React.ReactNode;
+  /**
+   * Extra classes on the title text. The default is one truncated line; the
+   * connect card lets its title wrap to two lines on a narrow card, where the
+   * app and project names are the whole point of the row.
+   */
+  titleClassName?: string;
   /**
    * The action button's variant. Defaults to `outline`, which is right for the
    * transcript: an outcome row is a RECORD, and a filled button on every one of
@@ -135,15 +150,17 @@ export const OutcomeCard = memo(function OutcomeCard({
           'group-has-[[data-slot=item-description]]/item:self-center',
         )}
       >
-        <span
-          className={cn(
-            'flex size-9 shrink-0 items-center justify-center rounded-sm ring-1',
-            tint.ring,
-            tint.bg,
-          )}
-        >
-          <Glyph weight="fill" className={cn('size-5', tint.fg)} />
-        </span>
+        {media ?? (
+          <span
+            className={cn(
+              'flex size-9 shrink-0 items-center justify-center rounded-sm ring-1',
+              tint.ring,
+              tint.bg,
+            )}
+          >
+            <Glyph weight="fill" className={cn('size-5', tint.fg)} />
+          </span>
+        )}
       </ItemMedia>
 
       {/*
@@ -161,7 +178,9 @@ export const OutcomeCard = memo(function OutcomeCard({
       */}
       <ItemContent className="min-w-0 gap-0.5">
         <ItemTitle className="w-full">
-          <span className="truncate">{truncateOutcomeTitle(outcome.title)}</span>
+          <span className={cn('truncate', titleClassName)}>
+            {truncateOutcomeTitle(outcome.title)}
+          </span>
         </ItemTitle>
         <ItemDescription className="truncate text-xs">{outcomeMetaLine(outcome)}</ItemDescription>
       </ItemContent>

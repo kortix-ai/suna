@@ -27,6 +27,12 @@ export type ConnectionOwnerType =
   | 'subject'
   | 'external';
 
+/** Agent-principal session reach: its on-behalf-of human and its own session visibility. */
+export interface ConnectionAgentPrincipalReach {
+  onBehalfOfUserId: string | null;
+  visibility: 'private' | 'project' | 'restricted' | null;
+}
+
 /**
  * A SHARED (`project`-owned) account's audience, resolved for the ONE person a
  * call acts for (`agentPrincipal.onBehalfOfUserId` under an agent principal,
@@ -84,10 +90,7 @@ export function connectionIsReachable(input: {
   actingUserId: string;
   actingPrincipalIsServiceAccount: boolean;
   trustedManagedSystem?: boolean;
-  agentPrincipal?: {
-    onBehalfOfUserId: string | null;
-    visibility: 'private' | 'project' | 'restricted' | null;
-  } | null;
+  agentPrincipal?: ConnectionAgentPrincipalReach | null;
   /**
    * The row's audience for the person this call acts for. Required so a new
    * call site cannot forget it: a path that MANAGES an account (rename,
@@ -148,6 +151,54 @@ export function isTrustedManagedChannelAuthorization(input: {
     inboxId.length > 0 &&
     input.ownerId === `agentmail:${inboxId}`
   );
+}
+
+/** The columns of a `connector_connections` row joined to its connector that
+ *  decide reachability. */
+export interface ConnectionReachabilityRow {
+  ownerType: ConnectionOwnerType;
+  ownerId: string | null;
+  metadata: Record<string, unknown>;
+  providerType: string;
+  connectorConfig: Record<string, unknown>;
+}
+
+/** The principal asking to reach a connection row. */
+export interface ConnectionReachabilityActor {
+  userId: string;
+  isServiceAccount: boolean;
+  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
+  agentPrincipal: ConnectionAgentPrincipalReach | null;
+}
+
+/**
+ * `connectionIsReachable` for a loaded connection row. It derives the
+ * trusted-managed-channel exception from the row and its connector config, so
+ * every caller that holds a row asks the same question the same way.
+ * `audience` is the row's audience for this actor (`'open'` on a path that
+ * manages the account rather than uses it).
+ */
+export function connectionRowIsReachable(
+  row: ConnectionReachabilityRow,
+  actor: ConnectionReachabilityActor,
+  audience: ConnectionAudienceReach,
+): boolean {
+  return connectionIsReachable({
+    ownerType: row.ownerType,
+    ownerId: row.ownerId,
+    actingUserId: actor.userId,
+    actingPrincipalIsServiceAccount: actor.isServiceAccount,
+    agentPrincipal: actor.agentPrincipal,
+    audience,
+    trustedManagedSystem: isTrustedManagedChannelAuthorization({
+      providerType: row.providerType,
+      platform:
+        typeof row.connectorConfig.platform === 'string' ? row.connectorConfig.platform : null,
+      ownerType: row.ownerType,
+      ownerId: row.ownerId,
+      metadata: row.metadata,
+    }),
+  });
 }
 
 /**

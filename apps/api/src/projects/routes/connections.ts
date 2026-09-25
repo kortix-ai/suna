@@ -17,8 +17,9 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import {
   type ConnectionAudienceReach,
   type ConnectionOwnerType,
+  type ConnectionReachabilityActor,
   connectionIsReachable,
-  isTrustedManagedChannelAuthorization,
+  connectionRowIsReachable,
 } from '../lib/connection-access';
 import { audiencePersonId, loadConnectionAudience } from '../lib/connection-audience';
 import { loadConnectionSharing } from '../lib/connection-sharing';
@@ -27,8 +28,6 @@ import { requestAgentPrincipalReach } from '../lib/personal-resources';
 import { readJsonObject } from '../../shared/http-body';
 import { canonicalConnectorAlias } from '../lib/session-connector-bindings';
 import { ConnectionViewSchema, serializeConnection } from '../lib/connection-view';
-
-type AgentPrincipalReach = Awaited<ReturnType<typeof requestAgentPrincipalReach>>;
 
 /**
  * The owner/admin roster shape is narrower than Connection.
@@ -58,37 +57,17 @@ function mayReadConnection(
     providerType: string;
     connectorConfig: Record<string, unknown>;
   },
-  userId: string,
-  actingPrincipalIsServiceAccount: boolean,
+  actor: ConnectionReachabilityActor,
   /** Connection ids the CALLER'S session is bound to, or null when the caller is
    *  not session-bound. See connector-connection-visibility.ts: a sandbox's token
    *  carries the WRAPPER's user id, so without this every end-user's agent could
    *  enumerate every other end-user's connection and then bind it. */
   sessionBoundConnectionIds: ReadonlySet<string> | null,
-  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
-  agentPrincipal: AgentPrincipalReach | null,
   /** A shared account's audience for the person this call acts for. */
   audience: ConnectionAudienceReach,
 ): boolean {
   if (!sessionMayEnumerateConnection(connection, sessionBoundConnectionIds)) return false;
-  return connectionIsReachable({
-    ownerType: connection.ownerType,
-    ownerId: connection.ownerId,
-    actingUserId: userId,
-    actingPrincipalIsServiceAccount,
-    agentPrincipal,
-    audience,
-    trustedManagedSystem: isTrustedManagedChannelAuthorization({
-      providerType: connection.providerType,
-      platform:
-        typeof connection.connectorConfig.platform === 'string'
-          ? connection.connectorConfig.platform
-          : null,
-      ownerType: connection.ownerType,
-      ownerId: connection.ownerId,
-      metadata: connection.metadata,
-    }),
-  });
+  return connectionRowIsReachable(connection, actor, audience);
 }
 
 async function reconcileConnectionRow(input: {
@@ -176,8 +155,11 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
-    const agentReach = await requestAgentPrincipalReach(c, loaded.actor);
+    const actor: ConnectionReachabilityActor = {
+      userId: loaded.userId,
+      isServiceAccount: c.get('authType') === 'service_account',
+      agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
+    };
     // A sandbox connector token is bound to ONE session. Load what that session was
     // actually GIVEN so the enumeration below can be narrowed to it. null for
     // every non-session caller, which leaves the operator's view unchanged.
@@ -215,9 +197,9 @@ projectsApp.openapi(
       projectId,
       accountId: loaded.row.accountId,
       userId: audiencePersonId({
-        actingUserId: loaded.userId,
-        actingPrincipalIsServiceAccount,
-        agentPrincipal: agentReach,
+        actingUserId: actor.userId,
+        actingPrincipalIsServiceAccount: actor.isServiceAccount,
+        agentPrincipal: actor.agentPrincipal,
       }),
     });
     const listed = rows.map((connection) => {
@@ -225,14 +207,7 @@ projectsApp.openapi(
       return {
         connection,
         audience,
-        usable: mayReadConnection(
-          connection,
-          loaded.userId,
-          actingPrincipalIsServiceAccount,
-          sessionBoundConnectionIds,
-          agentReach,
-          audience,
-        ),
+        usable: mayReadConnection(connection, actor, sessionBoundConnectionIds, audience),
       };
     });
     // A shared account narrowed to an audience the caller is outside of stays

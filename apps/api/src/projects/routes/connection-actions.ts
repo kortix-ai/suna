@@ -4,7 +4,7 @@ import {
   RenameConnectionInputSchema,
   UpdateConnectionCredentialInputSchema,
 } from '@kortix/api-contract';
-import { connectorConnections, connectors } from '@kortix/db';
+import { connectorConnections } from '@kortix/db';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import {
   connectionIsEffectiveProjectDefault,
@@ -21,128 +21,13 @@ import {
   pipedreamConnectUrl,
 } from '../../connectors/pipedream';
 import { rematerializeCatalogAfterCredentialUpdate } from '../../connectors/sync';
-import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
-import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import {
-  type ConnectionOwnerType,
-  connectionIsReachable,
-  isTrustedManagedChannelAuthorization,
-} from '../lib/connection-access';
-import { requestAgentPrincipalReach } from '../lib/personal-resources';
+import { loadMutableConnection } from '../lib/connection-mutation';
 import { readJsonObject } from '../../shared/http-body';
 import { ConnectionViewSchema, serializeConnection } from '../lib/connection-view';
-
-type AgentPrincipalReach = Awaited<ReturnType<typeof requestAgentPrincipalReach>>;
-
-function mayMutateConnection(
-  connection: {
-    ownerType: ConnectionOwnerType;
-    ownerId: string | null;
-    metadata: Record<string, unknown>;
-    providerType: string;
-    connectorConfig: Record<string, unknown>;
-  },
-  userId: string,
-  actingPrincipalIsServiceAccount: boolean,
-  mayManageSystemConnections: boolean,
-  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
-  agentPrincipal: AgentPrincipalReach | null = null,
-): boolean {
-  const reachable = connectionIsReachable({
-    ownerType: connection.ownerType,
-    ownerId: connection.ownerId,
-    actingUserId: userId,
-    actingPrincipalIsServiceAccount,
-    agentPrincipal,
-    // Mutating a shared account manages it; `mayManageSystemConnections`
-    // below is the gate, whoever the account's audience names.
-    audience: 'open',
-    trustedManagedSystem: isTrustedManagedChannelAuthorization({
-      providerType: connection.providerType,
-      platform:
-        typeof connection.connectorConfig.platform === 'string'
-          ? connection.connectorConfig.platform
-          : null,
-      ownerType: connection.ownerType,
-      ownerId: connection.ownerId,
-      metadata: connection.metadata,
-    }),
-  });
-  if (!reachable) return false;
-  // Your own private account is yours to administer — reachability already
-  // proved the owner is the caller. Everything shared with the project is
-  // administration and needs the connections-manage capability.
-  return connection.ownerType === 'member' || mayManageSystemConnections;
-}
-
-/**
- * The connection a caller may mutate, or `null`. `null` answers 404 so a
- * caller cannot probe for connections they cannot reach. A member may always
- * mutate their own private connection. Every other connection needs
- * `project.connector.connections.manage`.
- */
-async function loadMutableConnection(
-  c: any,
-  loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>,
-  projectId: string,
-  connectionId: string,
-) {
-  const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
-  const mayManageSystemConnections = await projectCapabilityAllowed(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
-  );
-  const [connection] = await db
-    .select({
-      connectorId: connectorConnections.connectorId,
-      ownerType: connectorConnections.ownerType,
-      ownerId: connectorConnections.ownerId,
-      isDefault: connectorConnections.isDefault,
-      label: connectorConnections.label,
-      metadata: connectorConnections.metadata,
-      providerType: connectors.providerType,
-      connectorConfig: connectors.config,
-      connectorAlias: connectors.slug,
-      status: connectorConnections.status,
-    })
-    .from(connectorConnections)
-    .innerJoin(
-      connectors,
-      and(
-        eq(connectors.connectorId, connectorConnections.connectorId),
-        eq(connectors.accountId, connectorConnections.accountId),
-        eq(connectors.projectId, connectorConnections.projectId),
-      ),
-    )
-    .where(
-      and(
-        eq(connectorConnections.connectionId, connectionId),
-        eq(connectorConnections.projectId, projectId),
-        eq(connectorConnections.accountId, loaded.row.accountId),
-      ),
-    )
-    .limit(1);
-  if (!connection) return null;
-  if (
-    !mayMutateConnection(
-      connection,
-      loaded.userId,
-      actingPrincipalIsServiceAccount,
-      mayManageSystemConnections,
-      await requestAgentPrincipalReach(c, loaded.actor),
-    )
-  ) {
-    return null;
-  }
-  return connection;
-}
 
 projectsApp.openapi(
   createRoute({
@@ -168,13 +53,12 @@ projectsApp.openapi(
     const body = await readJsonObject(c);
     const validated = validateConnectionLabel(body.label);
     if (!validated.ok) return c.json({ error: validated.error }, 400);
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const connection = await loadMutableConnection(c, loaded, projectId, connectionId);
-    if (!connection) return c.json({ error: 'Not found' }, 404);
+    const mutable = await loadMutableConnection(c, projectId, connectionId);
+    if (!mutable) return c.json({ error: 'Not found' }, 404);
+    const { connection } = mutable;
     const label = validated.label;
     if (label === connection.label) {
-      return c.json(serializeConnection({ ...connection, connectionId }), 200);
+      return c.json(serializeConnection(connection), 200);
     }
     // `--account <label>` matches case-insensitively, so two accounts of one
     // owner that differ only by case could not be told apart. The unique
@@ -211,7 +95,7 @@ projectsApp.openapi(
       }
       throw error;
     }
-    return c.json(serializeConnection({ ...connection, connectionId, label }), 200);
+    return c.json(serializeConnection({ ...connection, label }), 200);
   },
 );
 
@@ -244,10 +128,9 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const connectionId = c.req.param('connectionId');
-      const loaded = await loadProjectForUser(c, projectId, 'read');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const connection = await loadMutableConnection(c, loaded, projectId, connectionId);
-      if (!connection) return c.json({ error: 'Not found' }, 404);
+      const mutable = await loadMutableConnection(c, projectId, connectionId);
+      if (!mutable) return c.json({ error: 'Not found' }, 404);
+      const { loaded, connection } = mutable;
       if (operation === 'credential') {
         const body = await readJsonObject(c);
         const parsed = UpdateConnectionCredentialInputSchema.safeParse(body);
@@ -397,56 +280,9 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const connectionId = c.req.param('connectionId');
-      const loaded = await loadProjectForUser(c, projectId, 'read');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
-      const mayManageSystemConnections = await projectCapabilityAllowed(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
-      );
-      const [connection] = await db
-        .select({
-          connectorId: connectorConnections.connectorId,
-          ownerType: connectorConnections.ownerType,
-          ownerId: connectorConnections.ownerId,
-          isDefault: connectorConnections.isDefault,
-          metadata: connectorConnections.metadata,
-          connectorAlias: connectors.slug,
-          providerType: connectors.providerType,
-          connectorConfig: connectors.config,
-          })
-        .from(connectorConnections)
-        .innerJoin(
-          connectors,
-          and(
-            eq(connectors.connectorId, connectorConnections.connectorId),
-            eq(connectors.accountId, connectorConnections.accountId),
-            eq(connectors.projectId, connectorConnections.projectId),
-          ),
-        )
-        .where(
-          and(
-            eq(connectorConnections.connectionId, connectionId),
-            eq(connectorConnections.projectId, projectId),
-            eq(connectorConnections.accountId, loaded.row.accountId),
-          ),
-        )
-        .limit(1);
-      if (
-        !connection ||
-        !mayMutateConnection(
-          connection,
-          loaded.userId,
-          actingPrincipalIsServiceAccount,
-          mayManageSystemConnections,
-          await requestAgentPrincipalReach(c, loaded.actor),
-        )
-      ) {
-        return c.json({ error: 'Not found' }, 404);
-      }
+      const mutable = await loadMutableConnection(c, projectId, connectionId);
+      if (!mutable) return c.json({ error: 'Not found' }, 404);
+      const { loaded, connection } = mutable;
       // INVARIANT (2026-09-16, account_required rule): a project-owned
       // connection with nothing PINNED is still blocked here when it is the
       // connector's sole active project-owned row — it is the connector's

@@ -27,9 +27,10 @@ import {
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import {
-  connectionIsReachable,
+  type ConnectionAudienceReach,
+  type ConnectionReachabilityActor,
   connectionNeedsPrivateSession,
-  isTrustedManagedChannelAuthorization,
+  connectionRowIsReachable,
 } from './connection-access';
 import { audiencePersonId, loadConnectionAudience } from './connection-audience';
 import { projectSecretIsConfiguredForConsumer } from '../secrets';
@@ -155,17 +156,23 @@ export async function connectorConnectionIsConnected(input: {
     : false;
 }
 
-function trustedManagedAuthorization(
+function sessionConnectionIsReachable(
   connector: ConnectorRequirementRow,
   connection: ConnectorConnectionRow,
+  actor: ConnectionReachabilityActor,
+  audience: ConnectionAudienceReach,
 ): boolean {
-  return isTrustedManagedChannelAuthorization({
-    providerType: connector.providerType,
-    platform: connectorPlatform(connector.config),
-    ownerType: connection.ownerType,
-    ownerId: connection.ownerId,
-    metadata: connection.metadata,
-  });
+  return connectionRowIsReachable(
+    {
+      ownerType: connection.ownerType,
+      ownerId: connection.ownerId,
+      metadata: connection.metadata,
+      providerType: connector.providerType,
+      connectorConfig: connector.config,
+    },
+    actor,
+    audience,
+  );
 }
 
 /**
@@ -378,14 +385,16 @@ export async function validateSessionConnectorBindings(input: {
     };
     const audience = audienceOf(row.connectionId);
     if (
-      !connectionIsReachable({
-        ownerType: connection.ownerType,
-        ownerId: connection.ownerId,
-        actingUserId: input.actingUserId,
-        actingPrincipalIsServiceAccount: input.actingPrincipalIsServiceAccount,
-        trustedManagedSystem: trustedManagedAuthorization(connector, connection),
+      !sessionConnectionIsReachable(
+        connector,
+        connection,
+        {
+          userId: input.actingUserId,
+          isServiceAccount: input.actingPrincipalIsServiceAccount,
+          agentPrincipal: null,
+        },
         audience,
-      })
+      )
     ) {
       return {
         ok: false,
@@ -673,17 +682,18 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
         connector.status !== 'active' ||
         connection.status !== 'active' ||
         (connectionNeedsPrivateSession(connection.ownerType, audience) && visibility !== 'private') ||
-        !connectionIsReachable({
-          ownerType: connection.ownerType,
-          ownerId: connection.ownerId,
-          actingUserId,
-          actingPrincipalIsServiceAccount,
-          trustedManagedSystem: trustedManagedAuthorization(connector, connection),
-          agentPrincipal: input.agentPrincipal
-            ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
-            : null,
+        !sessionConnectionIsReachable(
+          connector,
+          connection,
+          {
+            userId: actingUserId,
+            isServiceAccount: actingPrincipalIsServiceAccount,
+            agentPrincipal: input.agentPrincipal
+              ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
+              : null,
+          },
           audience,
-        }) ||
+        ) ||
         !(await connectorConnectionIsConnected({ connector, connection }))
       ) {
         return { kind: 'none' };
@@ -756,7 +766,7 @@ export async function resolveSessionConnectorConnection(
  * an unselected call takes the first entry exactly as before.
  *
  * Entitlement is three filters: the row's reachability for this principal
- * (`connectionIsReachable`), the session's visibility (a member-owned account
+ * (`connectionRowIsReachable`), the session's visibility (a member-owned account
  * never leaks into a shared session), and whether the account is genuinely
  * connected.
  *
@@ -872,17 +882,18 @@ export async function listEntitledConnectorConnections(input: {
     };
     const audience = audienceOf(row.connectionId);
     if (
-      !connectionIsReachable({
-        ownerType: connection.ownerType,
-        ownerId: connection.ownerId,
-        actingUserId,
-        actingPrincipalIsServiceAccount,
-        trustedManagedSystem: trustedManagedAuthorization(connector, connection),
-        agentPrincipal: input.agentPrincipal
-          ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
-          : null,
+      !sessionConnectionIsReachable(
+        connector,
+        connection,
+        {
+          userId: actingUserId,
+          isServiceAccount: actingPrincipalIsServiceAccount,
+          agentPrincipal: input.agentPrincipal
+            ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
+            : null,
+        },
         audience,
-      })
+      )
     ) {
       continue;
     }

@@ -6,7 +6,7 @@ import {
   OAuth2DiscoveryInputSchema,
   OAuth2ResourceDiscoveryInputSchema,
 } from '@kortix/api-contract';
-import { connectorConnections, connectors } from '@kortix/db';
+import { connectors } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { ensureDefaultConnection } from '../../connectors/credentials';
@@ -27,11 +27,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { db } from '../../shared/db';
 import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import {
-  connectionIsReachable,
-  isTrustedManagedChannelAuthorization,
-} from '../lib/connection-access';
-import { requestAgentPrincipalReach } from '../lib/personal-resources';
+import { loadMutableConnection } from '../lib/connection-mutation';
 import { readJsonObject } from '../../shared/http-body';
 
 function callbackUrl(requestUrl: string): string {
@@ -59,73 +55,6 @@ function allowedRedirectUri(value: string | undefined, projectId: string): strin
     throw new Error('redirect URI path is not allowed');
   }
   return uri.href;
-}
-
-async function loadMutableConnection(c: any, projectId: string, connectionId: string) {
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return null;
-  const [connection] = await db
-    .select({
-      accountId: connectorConnections.accountId,
-      projectId: connectorConnections.projectId,
-      connectorId: connectorConnections.connectorId,
-      connectionId: connectorConnections.connectionId,
-      ownerType: connectorConnections.ownerType,
-      ownerId: connectorConnections.ownerId,
-      metadata: connectorConnections.metadata,
-      providerType: connectors.providerType,
-      connectorConfig: connectors.config,
-    })
-    .from(connectorConnections)
-    .innerJoin(
-      connectors,
-      and(
-        eq(connectors.connectorId, connectorConnections.connectorId),
-        eq(connectors.accountId, connectorConnections.accountId),
-        eq(connectors.projectId, connectorConnections.projectId),
-      ),
-    )
-    .where(
-      and(
-        eq(connectorConnections.connectionId, connectionId),
-        eq(connectorConnections.projectId, projectId),
-        eq(connectorConnections.accountId, loaded.row.accountId),
-      ),
-    )
-    .limit(1);
-  if (!connection) return null;
-  const serviceAccount = c.get('authType') === 'service_account';
-  const mayManage = await projectCapabilityAllowed(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
-  );
-  const reachable = connectionIsReachable({
-    ownerType: connection.ownerType,
-    ownerId: connection.ownerId,
-    actingUserId: loaded.userId,
-    actingPrincipalIsServiceAccount: serviceAccount,
-    // Spec 2026-09-22 §2.3: an agent-principal session keys on on_behalf_of.
-    agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
-    // Authorizing a shared account manages it; `mayManage` below is the gate.
-    audience: 'open',
-    trustedManagedSystem: isTrustedManagedChannelAuthorization({
-      providerType: connection.providerType,
-      platform:
-        typeof connection.connectorConfig.platform === 'string'
-          ? connection.connectorConfig.platform
-          : null,
-      ownerType: connection.ownerType,
-      ownerId: connection.ownerId,
-      metadata: connection.metadata,
-    }),
-  });
-  // Same rule as `mayMutateConnection` in connection-actions.ts: your own private account is
-  // yours; anything shared with the project needs the manage capability.
-  const allowed = reachable && (connection.ownerType === 'member' || mayManage);
-  return allowed ? { loaded, connection } : null;
 }
 
 projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c: any) => {
