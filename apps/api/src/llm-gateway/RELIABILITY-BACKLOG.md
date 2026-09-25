@@ -25,12 +25,14 @@ managed fallback with tier gating), real unit tests on the core pipeline.
 4. **Total-request deadline** — `resilience/retry.ts`
    `withRetry` now enforces a wall-clock `deadlineMs` (default **240s**) across
    all attempts + backoff, capping the old `3 × 120s ≈ 6min` worst case. Slow
-   single attempts are unaffected. *(test: retry.test.ts)*
+   single attempts are unaffected. *(The cap is now `DEADLINE_MS` in
+   `retry.ts`, 120 min. Retry behaviour is proven through its one caller in
+   `apps/llm-gateway/src/clients/api-client.test.ts`; no test drives the cap.)*
 
 5. **Sliding-window circuit breaker** — `resilience/circuit-breaker.ts`
    Failures now age out of a rolling `windowMs` (default **60s**), so only a
    genuine burst (`failureThreshold` within the window) trips it — a slow drip
-   over hours never does. *(test: retry.test.ts)*
+   over hours never does. *(The breaker module has since been removed.)*
 
 6. **Codex refresh grace period** — `credentials/codex.ts` + `codex-core.ts`
    A refresh blip (OpenAI auth briefly unreachable) no longer fails every Codex
