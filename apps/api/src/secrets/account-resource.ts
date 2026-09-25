@@ -79,23 +79,26 @@ export interface UsableGatewaySecret {
   accessMode: string;
 }
 
-/**
- * The gateway keys a member may select in this project, oldest first. Never
- * reads a value. `grantUserId` as in `listGrantedGatewaySecretNames`.
- *
- * A key cooling down after a rate limit is still listed: it belongs to the
- * pool, and the gateway skips it only until its cooldown ends.
- */
-export async function listUsableGatewaySecrets(input: {
+/** Which active gateway keys to read, and whose member grants count. */
+export interface GatewaySecretQuery {
   accountId: string;
   projectId: string;
-  userId: string;
-  grantUserId?: string | null;
+  /**
+   * The only user whose member grants count: a key shared with members is
+   * usable only when granted to this user. Null counts no grant: only keys
+   * shared with the whole project (spec 2026-09-22 §2.3).
+   */
+  grantUserId: string | null;
   providerId?: string;
-}): Promise<UsableGatewaySecret[]> {
-  const grantUserId = input.grantUserId === undefined ? input.userId : input.grantUserId;
-  if (!(await memberMayReadProject(input.accountId, input.projectId, input.userId))) return [];
-  const rows = await db.select({
+  /** Only keys stored under this key name. */
+  name?: string;
+  /** Only these keys. */
+  ids?: string[];
+}
+
+/** The active gateway keys `q` names, oldest first, each with `q.grantUserId`'s grant when one exists. */
+function gatewaySecretRows(q: GatewaySecretQuery) {
+  return db.select({
     secretId: accountSecretResources.secretId,
     providerId: accountSecretResources.providerId,
     name: accountSecretResources.name,
@@ -106,25 +109,63 @@ export async function listUsableGatewaySecrets(input: {
   }).from(accountSecretResources)
     .leftJoin(accountSecretGrants, and(
       eq(accountSecretGrants.secretId, accountSecretResources.secretId),
-      grantUserId ? eq(accountSecretGrants.userId, grantUserId) : sql`false`,
+      q.grantUserId ? eq(accountSecretGrants.userId, q.grantUserId) : sql`false`,
     ))
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId)))
     .where(and(
-      eq(accountSecretResources.accountId, input.accountId),
+      eq(accountSecretResources.accountId, q.accountId),
       eq(accountSecretResources.consumer, 'llm_gateway'),
       eq(accountSecretResources.active, true),
-      ...(input.providerId ? [eq(accountSecretResources.providerId, input.providerId)] : []),
+      ...(q.providerId ? [eq(accountSecretResources.providerId, q.providerId)] : []),
+      ...(q.name ? [eq(accountSecretResources.name, q.name)] : []),
+      ...(q.ids ? [inArray(accountSecretResources.secretId, q.ids)] : []),
     ))
-    .orderBy(asc(accountSecretResources.createdAt), asc(accountSecretResources.secretId));
+    .orderBy(asc(accountSecretResources.createdAt), asc(accountSecretResources.secretId))
+    .$dynamic();
+}
+
+/** The rows usable in `q.projectId` with `q.grantUserId`'s grants, each key once. */
+function usableRows(
+  q: GatewaySecretQuery,
+  rows: Array<UsableGatewaySecret & { projectId: string | null; grantUserId: string | null }>,
+): UsableGatewaySecret[] {
   const seen = new Set<string>();
   const usable: UsableGatewaySecret[] = [];
   for (const row of rows) {
     if (seen.has(row.secretId)) continue;
-    if (!secretUsableInProject(row, input.projectId, personalKeyGranted(row.grantUserId, grantUserId))) continue;
+    if (!secretUsableInProject(row, q.projectId, personalKeyGranted(row.grantUserId, q.grantUserId))) continue;
     seen.add(row.secretId);
     usable.push({ secretId: row.secretId, providerId: row.providerId, name: row.name, label: row.label, accessMode: row.accessMode });
   }
   return usable;
+}
+
+/**
+ * The gateway keys usable in the project with `grantUserId`'s member grants,
+ * oldest first. Never reads a value.
+ *
+ * Checks the keys, not a principal: the caller has already authorized whoever
+ * acts. A principal that must read the project uses `listUsableGatewaySecrets`.
+ */
+export async function queryUsableGatewaySecrets(q: GatewaySecretQuery): Promise<UsableGatewaySecret[]> {
+  return usableRows(q, await gatewaySecretRows(q));
+}
+
+/**
+ * The gateway keys an account member may select in this project, oldest
+ * first: `userId` must read the project and have an `account_members` row.
+ * Never reads a value. `grantUserId` as in `listGrantedGatewaySecretNames`.
+ *
+ * A key cooling down after a rate limit is still listed: it belongs to the
+ * pool, and the gateway skips it only until its cooldown ends.
+ */
+export async function listUsableGatewaySecrets(input: Omit<GatewaySecretQuery, 'grantUserId'> & {
+  userId: string;
+  grantUserId?: string | null;
+}): Promise<UsableGatewaySecret[]> {
+  const q = { ...input, grantUserId: input.grantUserId === undefined ? input.userId : input.grantUserId };
+  if (!(await memberMayReadProject(input.accountId, input.projectId, input.userId))) return [];
+  return usableRows(q, await gatewaySecretRows(q)
+    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId))));
 }
 
 /** An unconfigured session uses the caller's newest personal ChatGPT connection. */

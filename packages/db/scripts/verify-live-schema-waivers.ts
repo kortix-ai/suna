@@ -1,4 +1,6 @@
 /**
+ * Waives verify-live-schema.ts only: an entry means a live database may lack the object (schema-contract-sql-only.ts means kortix.ts does not declare it).
+ *
  * Indexes and constraints the migrations build that a live database may lack
  * on purpose. `scripts/verify-live-schema.ts` reports each of these as waived
  * instead of failing. Everything else the migrations build must exist on the

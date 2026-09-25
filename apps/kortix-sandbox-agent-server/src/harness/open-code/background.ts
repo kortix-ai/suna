@@ -4,6 +4,7 @@ import { logger } from '../../logger'
 import { sandboxRelayContext } from '../../relay-context'
 import { startResourceMonitor, type ResourceMonitor } from '../../resources'
 import type { Opencode } from './lifecycle'
+import { noteOpencodeStopRequested } from './instance-guard'
 import { OPENCODE_HOME } from './paths'
 import { defaultSidecarDir, opencodeDbPath, runAttachmentOffloadPass } from './attachment-offload'
 import {
@@ -57,6 +58,7 @@ export function createOpenCodeQuickQueueInterrupt(
       const url =
         `${opencode.getInternalUrl()}/session/${encodeURIComponent(input.opencodeSessionId)}/abort` +
         `?directory=${encodeURIComponent(cfg.workspace)}`
+      noteOpencodeStopRequested(input.opencodeSessionId, 'quick-queue')
       const response = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(10_000) })
       if (response.ok) logger.info('[quick-queue] interrupted at tool boundary', {
         promptId: input.promptId, messageId: input.messageId,
@@ -138,6 +140,7 @@ export function startOpenCodeBackground(
           `${opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/abort` +
           `?directory=${encodeURIComponent(cfg.workspace)}`
         logger.error('[resources] memory guard aborting the running turn', { sessionId, reason })
+        noteOpencodeStopRequested(sessionId, 'memory-guard')
         const res = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(10_000) })
         return res.ok
       },

@@ -58,7 +58,7 @@ describe('POST /sessions/warm threads exclude_session_id into the reuse lookup',
   });
 
   test('the body is read and exclude_session_id normalized before the reuse lookup', () => {
-    const bodyRead = route.indexOf('readBody(c)');
+    const bodyRead = route.indexOf('readJsonObject(c)');
     const normalized = route.indexOf('normalizeString(body.exclude_session_id)');
     const lookup = route.indexOf('findWarmProjectSession(');
     expect(bodyRead).toBeGreaterThan(-1);

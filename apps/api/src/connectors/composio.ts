@@ -196,6 +196,11 @@ interface ToolkitMeta {
   categories: string[];
 }
 
+/** What the cache holds per toolkit: the enrichment, plus the catalogue logo. */
+interface CachedToolkit extends ToolkitMeta {
+  logo: string | null;
+}
+
 /**
  * The paged browse response, plus the two fields the provider's paged endpoint
  * omits. Declared rather than inferred so a caller that groups by `categories`
@@ -209,19 +214,20 @@ const TOOLKIT_META_TTL_MS = 6 * 60 * 60_000;
 
 const toolkitMetaCache = new WeakMap<
   ComposioRuntime,
-  { at: number; bySlug: Promise<Map<string, ToolkitMeta>> }
+  { at: number; bySlug: Promise<Map<string, CachedToolkit>> }
 >();
 
-async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, ToolkitMeta>> {
+async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, CachedToolkit>> {
   const cached = toolkitMetaCache.get(runtime);
   if (cached && Date.now() - cached.at < TOOLKIT_META_TTL_MS) return cached.bySlug;
   if (!runtime.toolkits) return new Map();
 
   const bySlug = (async () => {
     const page = await runtime.toolkits!.get({ limit: 1000 });
-    const map = new Map<string, ToolkitMeta>();
+    const map = new Map<string, CachedToolkit>();
     for (const toolkit of page) {
       map.set(toolkit.slug.toLowerCase(), {
+        logo: toolkit.meta?.logo ?? null,
         description: toolkit.meta?.description ?? null,
         categories: (toolkit.meta?.categories ?? []).map((category) => category.slug),
       });
@@ -237,6 +243,28 @@ async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, 
     toolkitMetaCache.delete(runtime);
     console.warn('[composio] toolkit metadata unavailable, serving catalogue unenriched:', err);
     return new Map();
+  }
+}
+
+/**
+ * The logo the connectors catalogue shows for a Composio toolkit, by slug.
+ *
+ * A connector an agent adds stores no `icon_url` in its config, so without this
+ * its connect card fell back to a monogram while the catalogue showed the real
+ * logo. Served from the same 6-hour toolkit cache as the catalogue enrichment:
+ * one provider request per process, not one per card.
+ *
+ * `null` when Composio is not configured, the toolkit is past the 1000-item
+ * cache cap, or the provider fails. Never throws: a missing logo is a monogram,
+ * not an error.
+ */
+export async function composioToolkitLogo(toolkit: string): Promise<string | null> {
+  if (!composioConfigured()) return null;
+  try {
+    const bySlug = await toolkitMetaBySlug(getComposioRuntime());
+    return bySlug.get(toolkit.trim().toLowerCase())?.logo ?? null;
+  } catch {
+    return null;
   }
 }
 

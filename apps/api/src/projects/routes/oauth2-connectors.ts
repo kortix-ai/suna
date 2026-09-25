@@ -6,7 +6,7 @@ import {
   OAuth2DiscoveryInputSchema,
   OAuth2ResourceDiscoveryInputSchema,
 } from '@kortix/api-contract';
-import { connectorConnections, connectors } from '@kortix/db';
+import { connectors } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { ensureDefaultConnection } from '../../connectors/credentials';
@@ -27,12 +27,8 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { db } from '../../shared/db';
 import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import {
-  connectionIsReachable,
-  isTrustedManagedChannelAuthorization,
-} from '../lib/connection-access';
-import { requestAgentPrincipalReach } from '../lib/personal-resources';
-import { readBody } from '../lib/serializers';
+import { loadMutableConnection } from '../lib/connection-mutation';
+import { readJsonObject } from '../../shared/http-body';
 
 function callbackUrl(requestUrl: string): string {
   return nativeOAuth2CallbackUrl(requestUrl, config.KORTIX_URL);
@@ -59,71 +55,6 @@ function allowedRedirectUri(value: string | undefined, projectId: string): strin
     throw new Error('redirect URI path is not allowed');
   }
   return uri.href;
-}
-
-async function loadMutableConnection(c: any, projectId: string, connectionId: string) {
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return null;
-  const [connection] = await db
-    .select({
-      accountId: connectorConnections.accountId,
-      projectId: connectorConnections.projectId,
-      connectorId: connectorConnections.connectorId,
-      connectionId: connectorConnections.connectionId,
-      ownerType: connectorConnections.ownerType,
-      ownerId: connectorConnections.ownerId,
-      metadata: connectorConnections.metadata,
-      providerType: connectors.providerType,
-      connectorConfig: connectors.config,
-    })
-    .from(connectorConnections)
-    .innerJoin(
-      connectors,
-      and(
-        eq(connectors.connectorId, connectorConnections.connectorId),
-        eq(connectors.accountId, connectorConnections.accountId),
-        eq(connectors.projectId, connectorConnections.projectId),
-      ),
-    )
-    .where(
-      and(
-        eq(connectorConnections.connectionId, connectionId),
-        eq(connectorConnections.projectId, projectId),
-        eq(connectorConnections.accountId, loaded.row.accountId),
-      ),
-    )
-    .limit(1);
-  if (!connection) return null;
-  const serviceAccount = c.get('authType') === 'service_account';
-  const mayManage = await projectCapabilityAllowed(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
-  );
-  const reachable = connectionIsReachable({
-    ownerType: connection.ownerType,
-    ownerId: connection.ownerId,
-    actingUserId: loaded.userId,
-    actingPrincipalIsServiceAccount: serviceAccount,
-    // Spec 2026-09-22 §2.3: an agent-principal session keys on on_behalf_of.
-    agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
-    trustedManagedSystem: isTrustedManagedChannelAuthorization({
-      providerType: connection.providerType,
-      platform:
-        typeof connection.connectorConfig.platform === 'string'
-          ? connection.connectorConfig.platform
-          : null,
-      ownerType: connection.ownerType,
-      ownerId: connection.ownerId,
-      metadata: connection.metadata,
-    }),
-  });
-  // Same rule as `mayMutateConnection` in connection-actions.ts: your own private account is
-  // yours; anything shared with the project needs the manage capability.
-  const allowed = reachable && (connection.ownerType === 'member' || mayManage);
-  return allowed ? { loaded, connection } : null;
 }
 
 projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c: any) => {
@@ -168,7 +99,7 @@ projectsApp.put('/:projectId/connections/:connectionId/oauth2/application', asyn
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
-  const parsed = OAuth2ApplicationInputSchema.safeParse(await readBody(c));
+  const parsed = OAuth2ApplicationInputSchema.safeParse(await readJsonObject(c));
   if (!parsed.success) {
     return c.json(
       {
@@ -197,7 +128,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/discover', async 
   if (!(await loadMutableConnection(c, projectId, connectionId))) {
     return c.json({ error: 'Not found' }, 404);
   }
-  const parsed = OAuth2DiscoveryInputSchema.safeParse(await readBody(c));
+  const parsed = OAuth2DiscoveryInputSchema.safeParse(await readJsonObject(c));
   if (!parsed.success) return c.json({ error: 'invalid discovery URL' }, 400);
   try {
     return c.json({
@@ -221,7 +152,7 @@ projectsApp.post(
     if (!(await loadMutableConnection(c, projectId, connectionId))) {
       return c.json({ error: 'Not found' }, 404);
     }
-    const parsed = OAuth2ResourceDiscoveryInputSchema.safeParse((await readBody(c)) ?? {});
+    const parsed = OAuth2ResourceDiscoveryInputSchema.safeParse(await readJsonObject(c));
     if (!parsed.success) return c.json({ error: 'invalid resource URL' }, 400);
     try {
       return c.json({
@@ -243,7 +174,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/register', async 
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
-  const parsed = OAuth2ClientRegistrationInputSchema.safeParse(await readBody(c));
+  const parsed = OAuth2ClientRegistrationInputSchema.safeParse(await readJsonObject(c));
   if (!parsed.success) {
     return c.json(
       { error: parsed.error.issues[0]?.message ?? 'invalid client registration input' },
@@ -268,7 +199,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/authorize', async
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
-  const parsed = OAuth2AuthorizationStartInputSchema.safeParse(await readBody(c));
+  const parsed = OAuth2AuthorizationStartInputSchema.safeParse(await readJsonObject(c));
   if (!parsed.success) return c.json({ error: 'invalid authorization input' }, 400);
   try {
     const successRedirectUri = allowedRedirectUri(parsed.data.success_redirect_uri, projectId);
@@ -295,7 +226,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/device', async (c
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
-  const parsed = OAuth2DeviceAuthorizationStartInputSchema.safeParse(await readBody(c));
+  const parsed = OAuth2DeviceAuthorizationStartInputSchema.safeParse(await readJsonObject(c));
   if (!parsed.success) return c.json({ error: 'invalid device authorization input' }, 400);
   try {
     const started = await createDeviceAuthorizationSession({

@@ -604,6 +604,9 @@ importers:
       expo-sharing:
         specifier: ~56.0.26
         version: 56.0.26(expo@56.0.22)(react-native@0.85.3)(react@19.2.3)(typescript@5.9.3)
+      expo-speech-recognition:
+        specifier: 56.0.4
+        version: 56.0.4(expo@56.0.22)(react-native@0.85.3)(react@19.2.3)
       expo-splash-screen:
         specifier: ~56.0.15
         version: 56.0.15(expo@56.0.22)(typescript@5.9.3)
@@ -912,9 +915,6 @@ importers:
       '@glideapps/glide-data-grid':
         specifier: 6.0.4-alpha24
         version: 6.0.4-alpha24(lodash@4.18.1)(marked@15.0.12)(react-dom@19.3.0)(react-responsive-carousel@3.2.23)(react@19.3.0)
-      '@hookform/resolvers':
-        specifier: ^5.2.1
-        version: 5.9.1(ajv@8.18.0)(react-hook-form@7.88.0)(zod@3.25.76)
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../../packages/llm-catalog
@@ -1272,9 +1272,6 @@ importers:
       react-dom:
         specifier: ^19.2.0
         version: 19.3.0(react@19.3.0)
-      react-hook-form:
-        specifier: ^7.62.0
-        version: 7.88.0(react@19.3.0)
       react-i18next:
         specifier: ^17.0.9
         version: 17.0.14(i18next@26.4.2)(react-dom@19.3.0)(react@19.3.0)(typescript@5.9.3)
@@ -6250,90 +6247,6 @@ packages:
       zod: ^3.25.0 || ^4.0.0
     dependencies:
       hono: 4.12.34
-      zod: 3.25.76
-    dev: false
-
-  /@hookform/resolvers@5.9.1(ajv@8.18.0)(react-hook-form@7.88.0)(zod@3.25.76):
-    resolution: {integrity: sha512-7b7vsbraJxKgjVSA1Nur9tLwj539WGJUBLA7QNvXnFoT2pM5Z7G+6rlukk4B2/QrTZy6huRtH6wKeESPKuIr6w==}
-    peerDependencies:
-      '@sinclair/typebox': '>=0.25.24'
-      '@standard-schema/spec': ^1.0.0
-      '@typeschema/main': '>=0.13.7'
-      '@vinejs/vine': ^2.0.0 || ^3.0.0 || ^4.0.0
-      ajv: 8.18.0
-      ajv-errors: ^3.0.0
-      ajv-formats: ^2.1.1
-      arktype: ^2.0.0
-      ata-validator: ^1.2.0
-      class-transformer: '>=0.4.0'
-      class-validator: '>=0.12.0'
-      computed-types: ^1.0.0
-      effect: ^3.10.3
-      fluentvalidation-ts: ^3.0.0
-      fp-ts: ^2.7.0
-      io-ts: ^2.0.0
-      joi: ^17.0.0 || ^18.0.0
-      nope-validator: '>=0.12.0'
-      react-hook-form: ^7.55.0
-      superstruct: '>=0.12.0'
-      typanion: ^3.3.2
-      valibot: '>=0.31.0 || ^1.0.0-beta.4 || ^1.0.0-rc'
-      vest: '>=6.0.0'
-      yup: ^1.0.0
-      zod: ^3.25.0 || ^4.0.0
-    peerDependenciesMeta:
-      '@sinclair/typebox':
-        optional: true
-      '@standard-schema/spec':
-        optional: true
-      '@typeschema/main':
-        optional: true
-      '@vinejs/vine':
-        optional: true
-      ajv:
-        optional: true
-      ajv-errors:
-        optional: true
-      ajv-formats:
-        optional: true
-      arktype:
-        optional: true
-      ata-validator:
-        optional: true
-      class-transformer:
-        optional: true
-      class-validator:
-        optional: true
-      computed-types:
-        optional: true
-      effect:
-        optional: true
-      fluentvalidation-ts:
-        optional: true
-      fp-ts:
-        optional: true
-      io-ts:
-        optional: true
-      joi:
-        optional: true
-      nope-validator:
-        optional: true
-      superstruct:
-        optional: true
-      typanion:
-        optional: true
-      valibot:
-        optional: true
-      vest:
-        optional: true
-      yup:
-        optional: true
-      zod:
-        optional: true
-    dependencies:
-      '@standard-schema/utils': 0.3.0
-      ajv: 8.18.0
-      react-hook-form: 7.88.0(react@19.3.0)
       zod: 3.25.76
     dev: false
 
@@ -20433,6 +20346,18 @@ packages:
       - typescript
     dev: false
 
+  /expo-speech-recognition@56.0.4(expo@56.0.22)(react-native@0.85.3)(react@19.2.3):
+    resolution: {integrity: sha512-6Sh6aeKSG4W81TYfHUL8sgOxO++YrUi5Zhpmu5tiWurm6NP5hFL1SHd6+GbtV7Fyo4Cc35AofR9QxiSROZMJcQ==}
+    peerDependencies:
+      expo: '*'
+      react: '*'
+      react-native: '*'
+    dependencies:
+      expo: 56.0.22(@babel/core@7.29.7)(@expo/dom-webview@56.0.6)(@expo/metro-runtime@56.0.21)(expo-router@56.2.21)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-webview@13.16.1)(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3)(typescript@5.9.3)
+      react: 19.2.3
+      react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
+    dev: false
+
   /expo-splash-screen@56.0.15(expo@56.0.22)(typescript@5.9.3):
     resolution: {integrity: sha512-z2fmhPFx/ZYxWo7Roy8+uKr+Y+R6o11Ejd6zGgI4JWyXYN2A6P3+Hp3nKlGkip/hBT4TXiIw+54JCQNC3D3oKQ==}
     peerDependencies:
@@ -27359,15 +27284,6 @@ packages:
       react: '>=17.0.0'
     dependencies:
       react: 19.2.3
-
-  /react-hook-form@7.88.0(react@19.3.0):
-    resolution: {integrity: sha512-QRaLOWhX93YCnMiRfnOFRSwWXZNt8qhm2JTZwypoDvKpSffTJHmpzMXt8U6PV5UThvL3IiiLDUWe2nHMtz6Mmw==}
-    engines: {node: '>=18.0.0'}
-    peerDependencies:
-      react: ^16.8.0 || ^17 || ^18 || ^19
-    dependencies:
-      react: 19.3.0
-    dev: false
 
   /react-html-attributes@1.4.6:
     resolution: {integrity: sha512-uS3MmThNKFH2EZUQQw4k5pIcU7XIr208UE5dktrj/GOH1CMagqxDl4DCLpt3o2l9x+IB5nVYBeN3Cr4IutBXAg==}

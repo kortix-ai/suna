@@ -18,8 +18,7 @@
  */
 import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../shared/db';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isUuid } from '../shared/validate';
 
 /**
  * SQL expression: the Supabase `sso_providers` id an Auth user row signed in
@@ -76,7 +75,7 @@ export function emailTrustedSql(user: SQL, ownAccountId?: string): SQL {
  * carries `is_sso_user` for PAT and service callers too.
  */
 export async function trustedEmailForUser(userId: string | null | undefined): Promise<string> {
-  if (!userId || !UUID_RE.test(userId)) return '';
+  if (!isUuid(userId)) return '';
   const rows = (await db.execute(sql`
     SELECT lower(trim(u.email)) AS email, ${emailTrustedSql(sql`u`)} AS trusted
     FROM auth.users u
