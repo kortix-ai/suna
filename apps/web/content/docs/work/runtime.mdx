@@ -287,8 +287,9 @@ Kortix appends this layer on top of your Dockerfile's final stage.
 - `opencode-ai`, the `bun` runtime, and `agent-browser` with a baked Chromium build.
 - The `kortix-agent` daemon, the `kortix` CLI, and the entrypoint script.
 - `ENV KORTIX_WORKSPACE=/workspace`, `WORKDIR /workspace`, `EXPOSE 8000`, and the entrypoint that starts the daemon.
+- A shell hook at `/etc/profile.d/zz-kortix.sh`, sourced from `/etc/bash.bashrc` too. It puts the Kortix tool directories back on `PATH` in terminal shells and loads the project secrets. Debian's `/etc/profile` resets `PATH` for login shells; without the hook, `opencode`, `pnpm`, `python`, and `bun` are not found in the terminal.
 
-Everything you install in your own Dockerfile stays on `PATH`. Kortix does not remove or relocate it.
+Everything you install in your own Dockerfile stays on `PATH`. Kortix does not remove or relocate it. The shell hook only adds the missing Kortix directories to the front of `PATH`. It keeps every other entry in its position.
 
 ### Constraints
 

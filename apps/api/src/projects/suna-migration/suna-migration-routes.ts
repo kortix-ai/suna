@@ -19,6 +19,7 @@ import { json, errors, auth, ErrorSchema } from '../../openapi';
 import { startSunaMigration, latestSunaMigration, PHASE_ORDER } from './suna-migration-runner';
 import { sunaAccountMigrations, type Database } from '@kortix/db';
 import { withTimeout } from '../../shared/with-timeout';
+import { readJsonObject } from '../../shared/http-body';
 
 type Row = typeof sunaAccountMigrations.$inferSelect;
 
@@ -139,14 +140,14 @@ export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
     }),
     async (c: any) => {
       const accountId = await resolveScopedAccountId(c, 'body');
-      const body = await c.req.json().catch(() => ({}));
+      const body = await readJsonObject(c);
       if ((await countSunaProjects(accountId)) === 0) {
         return c.json({ error: 'No Suna projects found for this account' }, 400);
       }
       const { migration, created } = await startSunaMigration({
         database: db, accountId,
-        limit: typeof body?.limit === 'number' ? body.limit : undefined,
-        offset: typeof body?.offset === 'number' ? body.offset : undefined,
+        limit: typeof body.limit === 'number' ? body.limit : undefined,
+        offset: typeof body.offset === 'number' ? body.offset : undefined,
       });
       return c.json({ created, migration: serialize(migration) }, created ? 202 : 200);
     },

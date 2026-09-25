@@ -20,10 +20,9 @@
  *   bogus API key so live suites do not create real inboxes unless a specific
  *   positive flow opts in.
  */
-import { createHmac, randomUUID } from "node:crypto";
-import { Client as PgClient } from "pg";
-import type { FlowContext } from "../core/types";
+import { randomUUID } from "node:crypto";
 import { flow } from "../core/flow";
+import { slackSigned, withDb } from "../fixtures/chat";
 import { waitFor } from "../core/poll";
 import { CliSandbox } from "../fixtures/cli";
 
@@ -1128,26 +1127,6 @@ flow(
   },
 );
 
-async function withDb<T>(ctx: FlowContext, run: (db: PgClient) => Promise<T>): Promise<T> {
-  const db = new PgClient({ connectionString: ctx.env.databaseUrl! });
-  await db.connect();
-  try {
-    return await run(db);
-  } finally {
-    await db.end().catch(() => {});
-  }
-}
-
-/** Slack's v0 request signature over a raw body, with the given signing secret. */
-function slackSigned(secret: string, body: string, contentType: string) {
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const signature = `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${body}`).digest("hex")}`;
-  return {
-    raw: true as const,
-    headers: { "content-type": contentType, "x-slack-request-timestamp": timestamp, "x-slack-signature": signature },
-  };
-}
-
 // CHN-29 — A per-project (BYO) Slack app is signed with a secret its project
 // admin chose, so a valid signature proves only who sent the request, not what
 // the body names. Every signed callback must stay inside the project in the
@@ -1554,6 +1533,13 @@ flow(
 
       await ctx.step(`A ${service} preview without a token is a validation error`, async () => {
         const r = await ctx.client.as(ctx.P.OWNER).post(path, {});
+        r.status([400, 404, 503]);
+      });
+
+      await ctx.step(`A ${service} preview whose token is not a string is a validation error`, async () => {
+        // No JSON content-type, so the route schema does not run and the
+        // handler must check the field type itself.
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, '{"token":1}', { raw: true });
         r.status([400, 404, 503]);
       });
     }

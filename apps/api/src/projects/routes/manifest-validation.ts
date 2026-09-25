@@ -4,6 +4,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
+import { readJsonObject } from '../../shared/http-body';
 
 // ─── Manifest validation ──────────────────────────────────────────────────
 // One schema, exercised in three places: the CLI (`kortix ship` pre-flight +
@@ -42,8 +43,7 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  let body: { raw?: unknown; format?: unknown } = {};
-  try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
+  const body = await readJsonObject(c);
   const raw = typeof body.raw === 'string' ? body.raw : null;
   if (!raw) {
     return c.json({ error: 'Missing `raw` (manifest string) in body.' }, 400);

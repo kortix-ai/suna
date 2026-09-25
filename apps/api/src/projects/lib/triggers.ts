@@ -63,10 +63,10 @@ import {
   type ProjectRow,
   type RequestAuditContext,
   deriveKortixApiRoot,
-  isPlainObject,
   normalizeBoolean,
   normalizeString,
 } from './serializers';
+import { isPlainObject } from '../../shared/json';
 
 /**
  * Who asked for this fire. `monitor` is the third trigger type's source

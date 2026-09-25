@@ -80,6 +80,8 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Committed and pushed session changes': 'text3fa61f9b89da',
   'Completed GitHub App installation': 'textb042c5e25839',
   'Completed GitHub identity verification': 'text0b8c3490736f',
+  'Completed Microsoft Teams install': 'text83c0e255d4bb',
+  'Completed Slack app install': 'textf887cb0e6800',
   'Completed Slack app installation': 'textabfd567fd685',
   'Completed Teams app installation': 'text43cb6ad3e1c1',
   'Completed a social sign-in': 'texta7ba7f8526d0',

@@ -9,7 +9,8 @@ import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam, readBody, HttpError } from './helpers';
+import { auditIam, HttpError } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 
 // ─── Session policy ───────────────────────────────────────────────────────
 // Per-account ceilings on session age + idle gap. Null on either field
@@ -70,7 +71,7 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   // Accept null → clear, undefined → leave untouched, number → set.
   function parseLimit(key: string, value: unknown): number | null | undefined {
     if (value === undefined) return undefined;
@@ -317,7 +318,7 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
 
   function parseDays(key: string, value: unknown, max: number): number | null | undefined {
     if (value === undefined) return undefined;

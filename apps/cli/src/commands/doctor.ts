@@ -4,7 +4,7 @@ import { ApiError } from '../api/client.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
 import type { MeResponse, ProjectSummary } from '../api/types.ts';
-import { resolveProjectContext, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { resolveProjectContext, shortId, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { loadLink } from '../project-link.ts';
 import { C, help, status } from '../style.ts';
 
@@ -209,10 +209,6 @@ function parseFlags(argv: string[]): DoctorFlags {
   }
   if (rest.length > 0) throw new Error(`unknown option "${rest[0]}"`);
   return flags;
-}
-
-function shortId(id: string): string {
-  return id.split('-')[0] ?? id;
 }
 
 function describe(err: unknown): string {

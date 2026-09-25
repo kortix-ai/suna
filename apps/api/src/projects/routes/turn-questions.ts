@@ -21,7 +21,7 @@ import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from 
 import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 // POST /v1/projects/:projectId/turn-question
 // Sandbox-to-apps/api relay for opencode's `question.asked` event. The
@@ -319,8 +319,8 @@ projectsApp.openapi(
     );
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
-    const body = await readBody(c);
-    const answers = (body as { answers?: unknown }).answers;
+    const body = await readJsonObject(c);
+    const answers = body.answers;
     if (!Array.isArray(answers) || answers.length === 0) {
       return c.json({ error: 'answers must be a non-empty array' }, 400);
     }

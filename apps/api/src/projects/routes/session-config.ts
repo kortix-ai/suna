@@ -11,7 +11,8 @@ import { and, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, readBody } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { mayChangeSessionModel } from '../lib/session-model-change';
@@ -43,7 +44,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -175,7 +176,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -198,7 +199,7 @@ projectsApp.openapi(
       );
     }
 
-    const body = (await readBody(c)) as { refresh_repo?: unknown; force?: unknown };
+    const body = await readJsonObject(c);
 
     const result = await reloadSessionConfig({
       projectId,
@@ -208,8 +209,8 @@ projectsApp.openapi(
       defaultBranch: loaded.row.defaultBranch,
       manifestPath: loaded.row.manifestPath,
       baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
-      refreshRepo: body?.refresh_repo !== false,
-      force: body?.force === true,
+      refreshRepo: body.refresh_repo !== false,
+      force: body.force === true,
     });
     // A reload restarts opencode, which ENDS the turn in flight. Refused by
     // default rather than discarding someone's work without saying so.
@@ -261,7 +262,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -282,7 +283,7 @@ projectsApp.openapi(
       );
     }
 
-    const body = (await readBody(c)) as { refresh_repo?: unknown; force?: unknown };
+    const body = await readJsonObject(c);
 
     return new Response(
       new ReadableStream({
@@ -307,8 +308,8 @@ projectsApp.openapi(
               defaultBranch: loaded.row.defaultBranch,
               manifestPath: loaded.row.manifestPath,
               baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
-              refreshRepo: body?.refresh_repo !== false,
-              force: body?.force === true,
+              refreshRepo: body.refresh_repo !== false,
+              force: body.force === true,
               onPhase: (phase) => write({ type: 'phase', phase }),
             });
 

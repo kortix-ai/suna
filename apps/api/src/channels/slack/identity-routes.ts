@@ -26,7 +26,8 @@ import { getSlackUserDisplayName } from '../slack-api';
 import { spawnAgentTurn } from './dispatch';
 import { consumePendingSlackAuthMessage, replaceSlackAuthPromptConnected } from './auth-resume';
 import { verifyLoginState } from './login';
-import { isAccountMember, linkSlackIdentity } from './identity';
+import { chatUser, isAccountMember, linkChatIdentity } from '../core/identity';
+import { readJsonObject } from '../../shared/http-body';
 
 export const slackIdentityApp = makeOpenApiApp();
 
@@ -90,7 +91,8 @@ slackIdentityApp.openapi(
   }),
   async (c: any) => {
     if (!config.SLACK_REQUIRE_USER_IDENTITY) return c.json({ error: 'Not found' }, 404);
-    const { token } = (await c.req.json().catch(() => ({}))) as { token?: string };
+    const body = await readJsonObject(c);
+    const token = typeof body.token === 'string' ? body.token : '';
     if (!token) return c.json({ error: 'Missing token' }, 400);
 
     const payload = verifyLoginState(token);
@@ -143,7 +145,8 @@ slackIdentityApp.openapi(
     // Whole feature is flag-gated — the bind endpoint is inert when off.
     if (!config.SLACK_REQUIRE_USER_IDENTITY) return c.json({ error: 'Not found' }, 404);
     const userId = c.get('userId') as string;
-    const { token } = (await c.req.json().catch(() => ({}))) as { token?: string };
+    const body = await readJsonObject(c);
+    const token = typeof body.token === 'string' ? body.token : '';
     if (!token) return c.json({ error: 'Missing token' }, 400);
 
     const payload = verifyLoginState(token);
@@ -167,10 +170,10 @@ slackIdentityApp.openapi(
     // Link regardless of membership. Connecting your Kortix account is decoupled
     // from having access: we establish WHO this Slack user is so a non-member can
     // request access right in the thread. This is safe — the link grants nothing
-    // on its own; the runtime gate (resolveSlackActor) still requires membership
+    // on its own; the runtime gate (resolveChatActor) still requires membership
     // before any agent runs, so a linked non-member can do nothing until an admin
     // approves. The workspace-must-be-connected check above still stands.
-    await linkSlackIdentity({ teamId: payload.teamId, slackUserId: payload.slackUserId, userId });
+    await linkChatIdentity(chatUser('slack', payload.teamId, payload.slackUserId), userId);
 
     const pending = await consumePendingSlackAuthMessage({
       pendingId: payload.pendingId,
