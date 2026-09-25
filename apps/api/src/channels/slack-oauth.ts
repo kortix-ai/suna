@@ -11,7 +11,7 @@ import {
   installHandoffUrl,
   stateForCaller,
   type InstallCompletion,
-} from './install-completion';
+} from './core/install-completion';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { makeOpenApiApp, errors } from '../openapi';
 import { signChannelToken, verifyChannelToken } from './core/signed-token';

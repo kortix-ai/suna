@@ -7,10 +7,11 @@ import {
   loadSlackInstall,
   saveSlackInstall,
 } from '../../channels/install-store';
-import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/install-completion';
+import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/core/install-completion';
 import { buildSlackInstallUrl, completeSlackOauthInstall } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
+import { bindChatThread } from '../../channels/core/threads';
+import { resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -470,7 +471,7 @@ projectsApp.openapi(
         400,
       );
     }
-    await bindChatThread({ projectId, workspaceId, threadId: threadTs, sessionId });
+    await bindChatThread({ platform: 'slack', projectId, workspaceId, threadId: threadTs, sessionId });
     return c.json({ ok: true, bound: true, channel, thread_ts: threadTs });
   },
 );

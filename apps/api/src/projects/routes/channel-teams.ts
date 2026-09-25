@@ -10,7 +10,7 @@ import { resolveBaseUrl } from '../../channels/slack-manifest';
 import { proveTeamsTenant, teamsChannelEnabled } from '../../channels/teams-auth';
 import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
-import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/install-completion';
+import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/core/install-completion';
 import { completeTeamsOauthInstall, teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
 import { listTeamsPostTargets, postToTeamsConversation } from '../../channels/teams/post';

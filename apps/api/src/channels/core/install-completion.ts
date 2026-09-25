@@ -1,5 +1,5 @@
 import { z } from '@hono/zod-openapi';
-import { config } from '../config';
+import { config } from '../../config';
 
 /**
  * The OAuth install hand-off shared by Slack and Teams.

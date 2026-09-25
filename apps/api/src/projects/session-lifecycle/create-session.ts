@@ -5,7 +5,7 @@
 
 import { projectSessions, projects, serviceAccounts } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { bindChatThread } from '../../channels/slack/binding';
+import { bindChatThread } from '../../channels/core/threads';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
 import { db } from '../../shared/db';

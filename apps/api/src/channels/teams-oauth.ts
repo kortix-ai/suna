@@ -10,7 +10,7 @@ import {
 } from './install-store';
 import { publishTeamsAppToCatalog } from './teams/catalog';
 import { signChannelToken, verifyChannelToken } from './core/signed-token';
-import { frontendBase, installHandoffUrl, stateForCaller, type InstallCompletion } from './install-completion';
+import { frontendBase, installHandoffUrl, stateForCaller, type InstallCompletion } from './core/install-completion';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
