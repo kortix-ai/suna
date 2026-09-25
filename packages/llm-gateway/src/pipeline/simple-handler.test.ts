@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { GatewayHooks, GatewayTrace, UpstreamDescriptor, UsageEvent } from '../domain';
-import {
-  handleChatCompletions,
-  streamErrorTraceStatus,
-  upstreamHeadersTimeoutMs,
-  withUpstreamHeadersTimeout,
-  retryWithoutReasoningEffortPossible,
-} from './simple-handler';
+import { upstreamHeadersTimeoutMs, withUpstreamHeadersTimeout } from './dispatch';
+import { handleChatCompletions, streamErrorTraceStatus } from './simple-handler';
 
 const principal = { userId: 'user', accountId: 'account', projectId: 'project' };
 const primary: UpstreamDescriptor = {
@@ -27,8 +22,8 @@ function hooks(usage: UsageEvent[], traces: GatewayTrace[]): GatewayHooks {
     resolveRoute: async () => ({
       policyId: 'route',
       primaryModel: 'primary-model',
-      fallbackModels: ['fallback-model'],
-      fallbackOn: 'any-error',
+      fallbackModels: [],
+      fallbackOn: 'transient',
     }),
     resolveUpstream: async () => [primary, fallback],
     assertBillingActive: async () => {},
@@ -359,6 +354,52 @@ describe('simple gateway pipeline', () => {
     expect(usage[0]).toMatchObject({ model: 'global.xai.grok-4.6' });
   });
 
+  test('a Bedrock model that refuses reasoning_effort is retried once without it', async () => {
+    const traces: GatewayTrace[] = [];
+    const sent: Array<Record<string, unknown>> = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks([], traces),
+          resolveUpstream: async () => [
+            { ...primary, provider: 'amazon-bedrock', kind: 'bedrock', resolvedModel: 'openai.effort-probe' },
+          ],
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async (_input, init) => {
+          sent.push(JSON.parse(String(init.body)));
+          if (sent.length === 1) {
+            return new Response(
+              JSON.stringify({ message: 'unknown_parameter: reasoning_effort is not supported' }),
+              { status: 400, headers: { 'content-type': 'application/json' } },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              output: { message: { role: 'assistant', content: [{ text: 'ok' }] } },
+              stopReason: 'end_turn',
+              usage: { inputTokens: 3, outputTokens: 1, totalTokens: 4 },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        },
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({
+          model: 'amazon-bedrock/openai.effort-probe',
+          reasoning_effort: 'high',
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(sent).toHaveLength(2);
+    expect(JSON.stringify(sent[0])).toContain('high');
+    expect(JSON.stringify(sent[1])).not.toContain('high');
+    expect(traces[0]).toMatchObject({ ok: true, attempts: 2 });
+  });
+
   test('a Bedrock 400 that is NOT the on-demand refusal is passed through with no retry', async () => {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
@@ -636,16 +677,6 @@ describe('simple gateway pipeline', () => {
     expect(sse.headers.get('content-length')).toBeNull();
     expect(sse.headers.get('content-type')).toBe('text/event-stream');
     expect(await sse.text()).toContain('[DONE]');
-  });
-});
-
-describe('retryWithoutReasoningEffortPossible', () => {
-  const bedrock: UpstreamDescriptor = { ...primary, provider: 'amazon-bedrock', kind: 'bedrock', resolvedModel: 'global.openai.gpt-5.6-sol' };
-  test('only a Bedrock candidate carrying reasoning_effort qualifies', () => {
-    expect(retryWithoutReasoningEffortPossible({ reasoning_effort: 'max' }, bedrock)).toBe(true);
-    expect(retryWithoutReasoningEffortPossible({}, bedrock)).toBe(false);
-    expect(retryWithoutReasoningEffortPossible({ reasoning_effort: 'max' }, primary)).toBe(false);
-    expect(retryWithoutReasoningEffortPossible(null, bedrock)).toBe(false);
   });
 });
 
