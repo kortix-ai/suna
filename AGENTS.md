@@ -557,7 +557,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   browser and drops the open page.
 - Routes are auth-gated (`/dashboard`, `/projects/*` → redirect to `/auth`
   unauthenticated); sign in first (seed a user as above, then log in via the
-  `/auth` form). On a PR preview, the magic link arrives in `<origin>/_mailpit`
+  `/auth` form). On a PR preview, the magic link arrives in the preview's Mailpit API
+  (`<origin>/_mailpit/api/v1`)
   (the **contributing** skill has the script).
 - Next.js dev compiles routes on first hit — first navigation to a cold route
   can take 30–60s; warm it with `curl` or use a generous navigation timeout.

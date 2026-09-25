@@ -52,8 +52,8 @@ The skill covers each step with its commands and completion check.
 - The preview origin appears in the sticky PR comment and in the `preview/pr-<N>` GitHub
   deployment. `.agents/skills/contributing/scripts/preview-origin.sh <pr> --wait` prints it
   once the head commit is live.
-- Sign in with a synthetic email. The magic link arrives in the preview's own Mailpit at
-  `<origin>/_mailpit`. `.agents/skills/contributing/scripts/preview-sign-in.sh <origin>
+- Sign in with a synthetic email. The magic link arrives in the preview's own Mailpit
+  (API: `<origin>/_mailpit/api/v1/messages`). `.agents/skills/contributing/scripts/preview-sign-in.sh <origin>
   <agent-browser-session>` does the whole sign-in.
 - Previews run only for branches of this repository, and the label needs write access.
 - Full reference: `.agents/skills/contributing/references/preview-environments.md`.

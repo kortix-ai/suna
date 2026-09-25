@@ -96,7 +96,9 @@ ab() { agent-browser --session "$SESSION" "$@"; }
 
 mkdir -p output/pr
 ab set viewport 1440 900
-ab record start output/pr/demo.mp4 "$S/<changed route>" --cursor
+ab open "$S/<changed route>"
+ab wait --load networkidle          # record a rendered page, not a hydrating one
+ab record start output/pr/demo.mp4 --cursor
 #   Drive the change: `ab snapshot -i`, then `ab click @eN`, `ab fill @eN …`.
 #   Put `ab wait 800` between actions so a person can follow.
 ab record stop
@@ -119,7 +121,17 @@ Rules for the video:
   `https://github.com/kortix-ai/suna/blob/<branch>/<path>`. Or state in the PR why a video
   adds nothing.
 
-Done when `output/pr/demo.mp4` exists, plays, and shows the change end to end.
+Look at the video before you attach it. Extract four frames and read them:
+
+```bash
+for t in 1 5 10 15; do ffmpeg -v error -y -ss $t -i output/pr/demo.mp4 -frames:v 1 -vf scale=720:-1 output/pr/frame-$t.png; done
+```
+
+Blank frames mean the page had not rendered, or it cannot render (for example the Mailpit
+web UI on a preview). An oversized pointer means the page's CSS broke the `--cursor`
+overlay: record that page without `--cursor`.
+
+Done when the frames show the change from start to result, with only synthetic data.
 
 ### 6. Attach the video to the PR
 

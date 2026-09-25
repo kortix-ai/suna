@@ -25,8 +25,8 @@ Paths on the origin:
 | `/v1/*`, `/health` | API |
 | `/auth/v1/*`, `/rest/v1/*`, `/storage/v1/*` | Supabase |
 | `/_gateway/*` | LLM gateway |
-| `/_mailpit/` | Mailpit: every email the preview sends (UI and `/_mailpit/api/v1/*`) |
-| `/_tests/` | HTML report of the last `--target-full` run |
+| `/_mailpit/api/v1/*` | Mailpit API: every email the preview sends. The web UI at `/_mailpit/` renders blank because its assets load from `/dist/`, outside the prefix. Use the API. |
+| `/_tests/` | `--target-full` reports, one folder per run |
 
 ## Find the origin
 
