@@ -34,6 +34,7 @@ import { fetchChangeRequests } from '@/features/project-files/api/change-request
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
+import { useAuth } from '@/features/providers/auth-provider';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
 import { DiffDialog } from '@/features/session/diff-dialog';
@@ -77,6 +78,7 @@ import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import {
@@ -136,24 +138,25 @@ import {
   ArrowUpIcon as ArrowUp,
   RobotIcon as Bot,
   CheckIcon as Check,
+  CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
   ArrowElbowDownLeftIcon as CornerDownLeft,
   CpuIcon as Cpu,
-  GitDiffIcon as FileDiff,
   FileTextIcon as FileText,
   FlaskIcon as Flask,
-  GitBranchIcon as FolderGit2,
   HashIcon as Hash,
   ChatCircleIcon as MessageCircle,
   MinusIcon as Minus,
   MagnifyingGlassIcon as Search,
   TextAlignLeftIcon as TextAlignLeft,
   UsersIcon as UsersSolid,
+  XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from 'next-themes';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   SidebarToggle as PanelLeftClose,
   SidebarToggle as PanelLeftIcon,
@@ -170,6 +173,24 @@ type PalettePage =
   | 'density'
   | 'changes'
   | 'flags';
+
+/**
+ * The palette's one empty state: a line of muted text, and an optional smaller
+ * hint under it. No glyph, no tile — the query the person just typed is the
+ * context, and the row they were looking for is the only thing worth drawing.
+ * Every page renders this, so "nothing here" reads the same everywhere.
+ */
+function PaletteEmpty({ children, hint }: { children: React.ReactNode; hint?: React.ReactNode }) {
+  return (
+    <div cmdk-empty="" className="flex flex-col items-center gap-1 px-4 py-8 text-center">
+      <p className="text-muted-foreground text-sm">{children}</p>
+      {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
+    </div>
+  );
+}
+
+/** A value ⌘K search can copy: shown as "Copy <label>", matched on `keywords`. */
+type CopyItem = { id: string; label: string; value: string; keywords: string };
 
 function sanitizeCmdkValue(value: string): string {
   return value
@@ -413,28 +434,23 @@ function FileSearchPage({
 
   if (!effectiveQuery) {
     return (
-      <div className="flex flex-col items-center gap-3 py-12">
-        <div className="space-y-1 text-center">
-          <p className="text-muted-foreground/60 text-sm">
-            {tHardcodedUi.raw(
-              'componentsCommandPalette.line183JsxTextSearchFilesInThisProjectSRepo',
-            )}
-          </p>
-          <p className="text-muted-foreground/30 text-xs">
+      <PaletteEmpty
+        hint={
+          <>
             {tHardcodedUi.raw('componentsCommandPalette.line185JsxTextPrefixWith')}{' '}
-            <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
-              {tHardcodedUi.raw('componentsCommandPalette.line186JsxTextText')}
-            </kbd>{' '}
+            <Kbd>{tHardcodedUi.raw('componentsCommandPalette.line186JsxTextText')}</Kbd>{' '}
             {tHardcodedUi.raw('componentsCommandPalette.line186JsxTextToSearchFileContents')}
-          </p>
-        </div>
-      </div>
+          </>
+        }
+      >
+        {tHardcodedUi.raw('componentsCommandPalette.line183JsxTextSearchFilesInThisProjectSRepo')}
+      </PaletteEmpty>
     );
   }
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-10">
+      <div className="flex items-center justify-center gap-2 py-8">
         <TextShimmer>
           {isContentSearch
             ? tHardcodedUi.raw('i18nComplete.textde0825bcf9bc')
@@ -446,18 +462,13 @@ function FileSearchPage({
 
   if (!hasResults) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-          <Search className="text-muted-foreground size-4" />
-        </div>
-        <span className="text-muted-foreground text-sm">
-          {tHardcodedUi.raw('i18nComplete.text1ea442a134b2')}{' '}
-          {isContentSearch ? tHardcodedUi.raw('i18nComplete.text7aea792d4556') : 'files'}{' '}
-          {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextFor')}
-          {effectiveQuery}
-          {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextText')}
-        </span>
-      </div>
+      <PaletteEmpty>
+        {tHardcodedUi.raw('i18nComplete.text1ea442a134b2')}{' '}
+        {isContentSearch ? tHardcodedUi.raw('i18nComplete.text7aea792d4556') : 'files'}{' '}
+        {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextFor')}
+        {effectiveQuery}
+        {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextText')}
+      </PaletteEmpty>
     );
   }
 
@@ -568,7 +579,7 @@ function ChangeRequestsPage({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-10">
+      <div className="flex items-center justify-center gap-2 py-8">
         <TextShimmer>{tI18nComplete.raw('text73d66adbfd39')}</TextShimmer>
       </div>
     );
@@ -576,16 +587,11 @@ function ChangeRequestsPage({
 
   if (changeRequests.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-          <FileDiff className="text-muted-foreground size-4" />
-        </div>
-        <span className="text-muted-foreground/60 text-sm">
-          {query.trim()
-            ? tI18nComplete('textd717d6d02f4f', { value0: query.trim() })
-            : tI18nComplete.raw('text1a60b0977a4f')}
-        </span>
-      </div>
+      <PaletteEmpty>
+        {query.trim()
+          ? tI18nComplete('textd717d6d02f4f', { value0: query.trim() })
+          : tI18nComplete.raw('text1a60b0977a4f')}
+      </PaletteEmpty>
     );
   }
 
@@ -706,7 +712,7 @@ function FeatureFlagsPage({
 
   if (projectQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-10">
+      <div className="flex items-center justify-center gap-2 py-8">
         <TextShimmer>{tI18nComplete.raw('text38839cc3827c')}</TextShimmer>
       </div>
     );
@@ -714,16 +720,11 @@ function FeatureFlagsPage({
 
   if (features.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-          <Flask className="text-muted-foreground size-4" />
-        </div>
-        <span className="text-muted-foreground/60 text-sm">
-          {query.trim()
-            ? tI18nComplete('textdb41b06d8460', { value0: query.trim() })
-            : tI18nComplete.raw('textcc5de74822b5')}
-        </span>
-      </div>
+      <PaletteEmpty>
+        {query.trim()
+          ? tI18nComplete('textdb41b06d8460', { value0: query.trim() })
+          : tI18nComplete.raw('textcc5de74822b5')}
+      </PaletteEmpty>
     );
   }
 
@@ -776,6 +777,8 @@ function FeatureFlagsPage({
 export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPalette = useTranslations('commandPalette');
+  const { user } = useAuth();
   const tSettingsRail = useTranslations('settings.rail');
   const densityPageOptions = useLocalizedUiCatalog(DENSITY_PAGE_OPTIONS);
   const [open, setOpen] = useState(false);
@@ -790,8 +793,6 @@ export function CommandPalette() {
   // Never cleared: `performSignOut` ends on a document load, so this component
   // is discarded rather than re-rendered.
   const [loggingOut, setLoggingOut] = useState(false);
-  const [backScale, setBackScale] = useState(false);
-  const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reopenPaletteRef = useRef(false);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
@@ -940,31 +941,14 @@ export function CommandPalette() {
 
   const close = useCallback(() => setOpen(false), []);
 
-  const triggerBackScale = useCallback(() => {
-    setBackScale(true);
-    if (backScaleTimeout.current) clearTimeout(backScaleTimeout.current);
-    backScaleTimeout.current = setTimeout(() => setBackScale(false), 130);
+  const goToPage = useCallback((p: PalettePage, preserveQuery?: boolean) => {
+    setPage(p);
+    if (!preserveQuery) setQuery('');
   }, []);
-
-  const goToPage = useCallback(
-    (p: PalettePage, preserveQuery?: boolean) => {
-      setPage(p);
-      if (!preserveQuery) setQuery('');
-      triggerBackScale();
-    },
-    [triggerBackScale],
-  );
 
   const goBack = useCallback(() => {
     setPage('root');
     setQuery('');
-    triggerBackScale();
-  }, [triggerBackScale]);
-
-  useEffect(() => {
-    return () => {
-      if (backScaleTimeout.current) clearTimeout(backScaleTimeout.current);
-    };
   }, []);
 
   const handleOpenTerminal = useCallback(async () => {
@@ -1554,10 +1538,81 @@ export function CommandPalette() {
     preloadAccountHub();
   }, [open, projectId, inviteMembersAccountId]);
 
+  /**
+   * The identifiers people paste into support threads, CLI flags, and bug
+   * reports. Each row exists only when its value does: off a session there
+   * is no session id to offer, and a row that copies nothing is worse than
+   * no row. The session link is read from the address bar at copy time, not
+   * here, so a query string or tab change since render is kept.
+   */
+  const copyItems = useMemo(() => {
+    const items: CopyItem[] = [
+      {
+        id: 'email',
+        label: tPalette('copyEmail'),
+        value: user?.email ?? '',
+        keywords: 'email mail address me',
+      },
+      { id: 'user-id', label: tPalette('copyUserId'), value: user?.id ?? '', keywords: 'user id me' },
+      {
+        id: 'account-id',
+        label: tPalette('copyAccountId'),
+        value: activeAccountId ?? '',
+        keywords: 'account id team organization org',
+      },
+      {
+        id: 'project-id',
+        label: tPalette('copyProjectId'),
+        value: projectId ?? '',
+        keywords: 'project id',
+      },
+      {
+        id: 'session-id',
+        label: tPalette('copySessionId'),
+        value: currentSessionId ?? '',
+        keywords: 'session id sandbox',
+      },
+      {
+        id: 'session-link',
+        label: tPalette('copySessionLink'),
+        value: currentSessionId ? pathname : '',
+        keywords: 'session link url share',
+      },
+    ];
+    return items.filter((item) => item.value);
+  }, [tPalette, user?.email, user?.id, activeAccountId, projectId, currentSessionId, pathname]);
+
+  // Copy rows ride along with ordinary root search: "email" offers the email,
+  // "project" offers the project id under the projects it finds, "session" the
+  // session id and link. Every typed word must START a keyword (or a word of
+  // the label), so one stray letter does not light up six rows. They render
+  // after the other groups — the thing searched for stays the first pick, and
+  // the copy is one arrow away.
+  const rootCopyResults = useMemo(() => {
+    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [];
+    return copyItems.filter((item) => {
+      const vocabulary = `copy ${item.keywords} ${item.label}`.toLowerCase().split(/\s+/);
+      return words.every((word) => vocabulary.some((candidate) => candidate.startsWith(word)));
+    });
+  }, [copyItems, query]);
+
+  const handleCopyValue = useCallback(
+    async (item: CopyItem) => {
+      const text = item.id === 'session-link' ? window.location.href : item.value;
+      const ok = await copyToClipboard(text);
+      if (ok) successToast(tPalette('copied', { label: item.label }));
+      else errorToast(tPalette('copyFailed'));
+      close();
+    },
+    [tPalette, close],
+  );
+
   const hasSessionResults = rootSessionResults.length > 0;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
   const hasSettingsResults = settingsResultCount > 0;
   const hasAnyResults =
+    rootCopyResults.length > 0 ||
     hasNavResults ||
     hasSessionResults ||
     hasWorkspaceResults ||
@@ -1840,8 +1895,7 @@ export function CommandPalette() {
     // After `setOpen(true)`, because the close already ran the effect that
     // resets `page` to 'root'.
     setPage('changes');
-    triggerBackScale();
-  }, [triggerBackScale]);
+  }, []);
 
   /** The 'flags' page's fallback when the caller may not write feature flags:
    *  the Settings overlay's Feature flags tab, the pane the picker mirrors. */
@@ -1856,10 +1910,9 @@ export function CommandPalette() {
       if (!overlayOpen && reopenPaletteRef.current) {
         reopenPaletteRef.current = false;
         setOpen(true);
-        triggerBackScale();
       }
     },
-    [triggerBackScale],
+    [],
   );
 
   const handleOpenProviderModal = useCallback(() => {
@@ -2103,7 +2156,8 @@ export function CommandPalette() {
       rootSessionResults.length +
       rootWorkspaceRows.length +
       sessionActionItems.length +
-      settingsResultCount
+      settingsResultCount +
+      rootCopyResults.length
     );
   }, [
     page,
@@ -2119,6 +2173,7 @@ export function CommandPalette() {
     filteredAccountsList,
     filteredProjectSessionsList,
     filteredDensityOptions,
+    rootCopyResults,
   ]);
 
   const placeholder = useMemo(() => {
@@ -2152,20 +2207,54 @@ export function CommandPalette() {
       <CommandDialog
         open={open}
         onOpenChange={setOpen}
-        className={cn(
-          'duration-normal origin-center transition-transform ease-in-out sm:max-w-[680px]',
-          backScale && 'scale-[0.99]',
-        )}
+        // Pinned at 17vh, not centred: the input stays put while the list
+        // under it grows or shrinks between pages, so the eye never has to
+        // re-find the field after a page change.
+        className="top-[17vh] translate-y-0 sm:max-w-[600px]"
         showCloseButton={false}
       >
         <CommandInput
           ref={inputRef}
+          leftElement={
+            page === 'root' || !pageTitle ? (
+              <Search className="text-muted-foreground size-4 shrink-0" />
+            ) : (
+              <button
+                type="button"
+                aria-label={tI18nComplete.raw('text76900f1bfd16')}
+                title={tI18nComplete.raw('text76900f1bfd16')}
+                onClick={() => {
+                  goBack();
+                  inputRef.current?.focus();
+                }}
+                className="text-muted-foreground hover:bg-hover hover:text-foreground -ml-1 flex size-6 shrink-0 items-center justify-center rounded-md"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+            )
+          }
+          rightElement={
+            query ? (
+              <button
+                type="button"
+                aria-label={tI18nComplete.raw('text3b7ea51793e9')}
+                title={tI18nComplete.raw('text3b7ea51793e9')}
+                onClick={() => {
+                  setQuery('');
+                  inputRef.current?.focus();
+                }}
+                className="text-muted-foreground hover:bg-hover hover:text-foreground -mr-1 flex size-6 shrink-0 items-center justify-center rounded-md"
+              >
+                <X className="size-4" />
+              </button>
+            ) : null
+          }
           placeholder={placeholder}
           value={query}
           onValueChange={setQuery}
         />
 
-        <FadedScrollArea fadeColor="from-popover" className="max-h-[min(60vh,380px)] min-h-[400px]">
+        <FadedScrollArea fadeColor="from-popover" className="max-h-[min(60vh,380px)]">
           <CommandList className="max-h-none overflow-visible">
             {page === 'root' && (
               <>
@@ -2208,6 +2297,15 @@ export function CommandPalette() {
                               {item.id === 'review-changes' && openChangeRequestCount > 0 && (
                                 <span className="text-muted-foreground/40 text-xs tabular-nums">
                                   {openChangeRequestCount}
+                                </span>
+                              )}
+                              {submenuPage === 'density' && (
+                                <span className="text-muted-foreground/40 text-xs">
+                                  {
+                                    densityPageOptions.find(
+                                      (option) => option.id === conversationDensity,
+                                    )?.label
+                                  }
                                 </span>
                               )}
                               {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
@@ -2551,33 +2649,45 @@ export function CommandPalette() {
                       </CommandGroup>
                     )}
 
+                    {rootCopyResults.length > 0 && (
+                      <CommandGroup heading={tPalette('copyTitle')} forceMount>
+                        {rootCopyResults.map((item) => (
+                          <CommandItem
+                            key={item.id}
+                            value={sanitizeCmdkValue(`copy-${item.id} ${item.keywords}`)}
+                            onSelect={() => void handleCopyValue(item)}
+                          >
+                            <Copy className="text-muted-foreground shrink-0" />
+                            <span className="shrink-0">
+                              {tPalette('copyAction', { label: item.label })}
+                            </span>
+                            <span className="text-muted-foreground min-w-0 flex-1 truncate text-right font-mono text-xs">
+                              {item.value}
+                            </span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+
                     {showNoResults && (
-                      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-                          <Search className="text-muted-foreground size-4" />
-                        </div>
-                        <div className="text-center">
-                          <span className="text-muted-foreground/60 text-sm">
-                            {tHardcodedUi.raw(
-                              'componentsCommandPalette.line1462JsxTextNoResultsFor',
-                            )}
-                            {query.trim()}
-                            {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextText')}
-                          </span>
-                          {/* The "Search files" half of this hint points at a
-                              row that only exists on a session — see the
-                              `currentSessionId` guards above. Off a session it
-                              named a control that was not on screen, so the
-                              generic half is all that is offered there. */}
-                          <p className="text-muted-foreground/30 mt-1 text-xs">
-                            {currentSessionId
-                              ? tHardcodedUi.raw(
-                                  'componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm',
-                                )
-                              : tHardcodedUi.raw('i18nComplete.textce18e358bf01')}
-                          </p>
-                        </div>
-                      </div>
+                      // The "Search files" half of the hint points at a row
+                      // that only exists on a session — see the
+                      // `currentSessionId` guards above. Off a session it
+                      // named a control that was not on screen, so the
+                      // generic half is all that is offered there.
+                      <PaletteEmpty
+                        hint={
+                          currentSessionId
+                            ? tHardcodedUi.raw(
+                                'componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm',
+                              )
+                            : tHardcodedUi.raw('i18nComplete.textce18e358bf01')
+                        }
+                      >
+                        {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextNoResultsFor')}
+                        {query.trim()}
+                        {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextText')}
+                      </PaletteEmpty>
                     )}
                   </>
                 )}
@@ -2670,16 +2780,11 @@ export function CommandPalette() {
                 )}
 
                 {filteredAgents.length === 0 && (
-                  <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                    <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-                      <Bot className="text-muted-foreground size-4" />
-                    </div>
-                    <span className="text-muted-foreground/60 text-sm">
-                      {query
-                        ? tI18nComplete('text20caf3bcf39b', { value0: query })
-                        : tHardcodedUi.raw('i18nComplete.textda9108359944')}
-                    </span>
-                  </div>
+                  <PaletteEmpty>
+                    {query
+                      ? tI18nComplete('text20caf3bcf39b', { value0: query })
+                      : tHardcodedUi.raw('i18nComplete.textda9108359944')}
+                  </PaletteEmpty>
                 )}
               </>
             )}
@@ -2747,14 +2852,11 @@ export function CommandPalette() {
                 ))}
 
                 {visibleModels.length === 0 && (
-                  <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                    <Cpu className="text-muted-foreground/30 size-5" />
-                    <span className="text-muted-foreground/60 text-sm">
-                      {query
-                        ? tI18nComplete('textfc89d36d845d', { value0: query })
-                        : tHardcodedUi.raw('i18nComplete.texta5a9895b0241')}
-                    </span>
-                  </div>
+                  <PaletteEmpty>
+                    {query
+                      ? tI18nComplete('textfc89d36d845d', { value0: query })
+                      : tHardcodedUi.raw('i18nComplete.texta5a9895b0241')}
+                  </PaletteEmpty>
                 )}
               </>
             )}
@@ -2799,24 +2901,19 @@ export function CommandPalette() {
                   </CommandGroup>
                 ))
               ) : (
-                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  {workspacesLoading ? (
-                    <Loading className="text-muted-foreground/60 size-5" />
-                  ) : (
-                    <>
-                      <FolderGit2 className="text-muted-foreground/30 size-5" />
-                      <span className="text-muted-foreground/60 text-sm">
-                        {/* Same two strings the sidebar's empty state uses.
-                            "No workspaces yet" over a list that simply has not
-                            arrived is a lie the sidebar already learned not to
-                            tell — hence the loading branch above. */}
-                        {query
-                          ? tI18nComplete('textbe27a86a69e5', { value0: query })
-                          : tHardcodedUi.raw('i18nComplete.text97d0b1171f3e')}
-                      </span>
-                    </>
-                  )}
-                </div>
+                workspacesLoading ? (
+                  // "No workspaces yet" over a list that has not arrived is a
+                  // lie the sidebar already learned not to tell.
+                  <div className="flex justify-center py-8">
+                    <Loading className="text-muted-foreground size-4" />
+                  </div>
+                ) : (
+                  <PaletteEmpty>
+                    {query
+                      ? tI18nComplete('textbe27a86a69e5', { value0: query })
+                      : tHardcodedUi.raw('i18nComplete.text97d0b1171f3e')}
+                  </PaletteEmpty>
+                )
               ))}
 
             {page === 'accounts' &&
@@ -2843,14 +2940,11 @@ export function CommandPalette() {
                   })}
                 </CommandGroup>
               ) : (
-                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <UsersSolid weight="fill" className="text-muted-foreground size-5" />
-                  <span className="text-muted-foreground/60 text-sm">
-                    {query
-                      ? tI18nComplete('text7433280153b9', { value0: query })
-                      : tHardcodedUi.raw('i18nComplete.text177116ee5177')}
-                  </span>
-                </div>
+                <PaletteEmpty>
+                  {query
+                    ? tI18nComplete('text7433280153b9', { value0: query })
+                    : tHardcodedUi.raw('i18nComplete.text177116ee5177')}
+                </PaletteEmpty>
               ))}
 
             {page === 'density' &&
@@ -2881,12 +2975,7 @@ export function CommandPalette() {
                   })}
                 </CommandGroup>
               ) : (
-                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <TextAlignLeft className="text-muted-foreground/30 size-5" />
-                  <span className="text-muted-foreground/60 text-sm">
-                    {tI18nComplete('textec0ea7563cde', { value0: query })}
-                  </span>
-                </div>
+                <PaletteEmpty>{tI18nComplete('textec0ea7563cde', { value0: query })}</PaletteEmpty>
               ))}
 
             {page === 'sessions' &&
@@ -2913,16 +3002,11 @@ export function CommandPalette() {
                   ))}
                 </CommandGroup>
               ) : (
-                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-                    <MessageCircle className="text-muted-foreground size-5" />
-                  </div>
-                  <span className="text-muted-foreground text-sm">
-                    {query
-                      ? tI18nComplete('text6e51f320662f', { value0: query })
-                      : tHardcodedUi.raw('i18nComplete.textf502267deff4')}
-                  </span>
-                </div>
+                <PaletteEmpty>
+                  {query
+                    ? tI18nComplete('text6e51f320662f', { value0: query })
+                    : tHardcodedUi.raw('i18nComplete.textf502267deff4')}
+                </PaletteEmpty>
               ))}
 
             {page === 'changes' && projectId && (
@@ -2961,12 +3045,20 @@ export function CommandPalette() {
               </span>
             </div>
           )}
-          {totalSearchResults > 0 && (
-            <span className="ml-auto tabular-nums">
-              {totalSearchResults} {tHardcodedUi.raw('i18nComplete.textf6a214f7a5fc')}
-              {totalSearchResults !== 1 ? 's' : ''}
-            </span>
-          )}
+          <div className="ml-auto flex items-center gap-4">
+            {totalSearchResults > 0 && (
+              <span className="tabular-nums">
+                {totalSearchResults} {tHardcodedUi.raw('i18nComplete.textf6a214f7a5fc')}
+                {totalSearchResults !== 1 ? 's' : ''}
+              </span>
+            )}
+            {page !== 'root' && (
+              <div className="flex items-center gap-1">
+                <Kbd>{tI18nComplete.raw('text177b7cb06867')}</Kbd>
+                <span>{tI18nComplete.raw('text3c482346f375')}</span>
+              </div>
+            )}
+          </div>
         </CommandFooter>
       </CommandDialog>
 

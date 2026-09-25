@@ -72,7 +72,7 @@ import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { installShutdownHandlers } from '../../shutdown'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { startStaticWebServer } from '../../static-web'
-import { opencodeDeliveryInFlight, opencodeTurnInFlight } from './opencode-turn-state'
+import { observeOpencodeDelivery, opencodeTurnInFlight } from './opencode-turn-state'
 import type { HarnessBootContext } from '../harness'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
@@ -807,11 +807,17 @@ async function startSessionRuntime(
   }
   const onSessionStatus = (opencodeSessionId: string, statusType: string) => {
     if (statusType !== 'busy' && statusType !== 'retry') return
-    void relayTurnBeginToApi(opencodeSessionId, opencode, cfg).catch((err) =>
+    void relayTurnBeginAfterInitialAcceptance({
+      initialAcceptancePending: initialTurnAcceptancePending,
+      reconcileInitialAcceptance: reconcileInitialTurnAcceptance,
+      relayTurnBegin: () => relayTurnBeginToApi(opencodeSessionId, opencode, cfg),
+    }).catch((err) =>
       logger.warn('[opencode-events] turn-begin relay failed', { err: (err as Error).message }),
     )
   }
   let initialTurnAcceptanceSettled = false
+  const initialTurnAcceptancePending = () =>
+    !initialTurnAcceptanceSettled && claimedInitialTurn !== null
   let initialTurnAcceptanceInFlight = false
   const reconcileInitialTurnAcceptance = async () => {
     if (initialTurnAcceptanceSettled || initialTurnAcceptanceInFlight) return
@@ -827,6 +833,11 @@ async function startSessionRuntime(
         opencodeSessionId,
         messageId,
         turnToken,
+        {
+          awaitingPickup:
+            bootState.initialPromptDeliveredAtMs != null &&
+            Date.now() - bootState.initialPromptDeliveredAtMs < INITIAL_TURN_PICKUP_GRACE_MS,
+        },
       )
       // `unknown` grants no authority. Retry it on the next 30-second
       // reconciliation tick. `inactive` means the exact message is absent or
@@ -1574,6 +1585,7 @@ export async function publishInitialOpenCodeSessionAfterPrompt(
   deliver: () => Promise<void>,
 ): Promise<void> {
   await deliver()
+  bootState.initialPromptDeliveredAtMs = Date.now()
   bootState.initialOpenCodeSessionId = sessionId
 }
 
@@ -2392,6 +2404,14 @@ export async function relayInitialTurnAbandonedToApi(turnToken: string): Promise
 export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unknown'
 
 /**
+ * How long a first prompt THIS boot delivered may stay absent or unanswered
+ * before boot calls it abandoned. Matches the control plane's delivery grace
+ * (`KORTIX_SANDBOX_TURN_DELIVERY_GRACE_MINUTES`, 15 min): the `delivering`
+ * record expires on that grace anyway, so a longer wait buys nothing.
+ */
+export const INITIAL_TURN_PICKUP_GRACE_MS = 15 * 60_000
+
+/**
  * Promote daemon-delivered authority only after OpenCode exposes the exact
  * client-minted user message as queued or running.
  *
@@ -2405,20 +2425,38 @@ export async function reconcileInitialTurnAcceptanceToApi(
   opencodeSessionId: string,
   messageId: string,
   turnToken: string,
+  options: { awaitingPickup?: boolean } = {},
 ): Promise<InitialTurnAcceptanceReconciliation> {
-  const inFlight = await opencodeDeliveryInFlight(
+  const observation = await observeOpencodeDelivery(
     opencodeBaseUrl,
     workspace,
     opencodeSessionId,
     messageId,
   )
-  if (inFlight === null) return 'unknown'
-  if (!inFlight) {
-    await relayInitialTurnAbandonedToApi(turnToken)
-    return 'inactive'
+  if (observation.inFlight === null) return 'unknown'
+  if (observation.inFlight) {
+    await relayInitialTurnAcceptedToApi(opencodeSessionId, messageId, turnToken)
+    return 'accepted'
   }
-  await relayInitialTurnAcceptedToApi(opencodeSessionId, messageId, turnToken)
-  return 'accepted'
+  // THIS boot just delivered the prompt, and OpenCode has not picked it up
+  // yet. `prompt_async` answers 204 before OpenCode writes the user message
+  // (absent at +11 ms on 1.18.23) and before its loop marks the root busy
+  // (busy at +308 ms). Boot reconciles right after delivery, so both shapes
+  // are the normal start of a first turn, not proof it was dropped. Reading
+  // them as abandoned stripped the turn authority from ~99% of session-
+  // creating first turns on prod from 2026-08-19: the ledger said `abandoned`
+  // ~12 s in, `turn_begin` could not re-adopt a known message, and the stale-
+  // turn sweeps saw a running first turn as idle. Retry on the reconcile tick
+  // until the pickup grace ends. A prompt an EARLIER boot delivered keeps the
+  // immediate verdict: on a reused root, absence is proof.
+  if (
+    options.awaitingPickup &&
+    (observation.end === 'abandoned' || observation.orphanedPrompt === true)
+  ) {
+    return 'unknown'
+  }
+  await relayInitialTurnAbandonedToApi(turnToken)
+  return 'inactive'
 }
 
 /**
@@ -2689,6 +2727,26 @@ const turnBeginRelaysInFlight = new Set<string>()
 export function __resetRelayedTurnBegins(): void {
   relayedTurnBegins.clear()
   turnBeginRelaysInFlight.clear()
+}
+
+/**
+ * What a busy/retry frame does. Busy is the pickup the first turn's acceptance
+ * waits for, so it promotes the token apps/api minted before the box existed
+ * now, not on the next reconcile tick. While that record is unsettled,
+ * `turn_begin` must not run: the ledger has no row for the first message yet,
+ * so the API would adopt it under a second token beside the pending one.
+ */
+export async function relayTurnBeginAfterInitialAcceptance(input: {
+  initialAcceptancePending: () => boolean
+  reconcileInitialAcceptance: () => Promise<void>
+  relayTurnBegin: () => Promise<void>
+}): Promise<'relayed' | 'deferred'> {
+  if (input.initialAcceptancePending()) {
+    await input.reconcileInitialAcceptance()
+    if (input.initialAcceptancePending()) return 'deferred'
+  }
+  await input.relayTurnBegin()
+  return 'relayed'
 }
 
 /**

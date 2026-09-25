@@ -19193,6 +19193,11 @@
       "expired": "此安装链接无效或已过期。请从项目中重新开始安装。",
       "failed": "无法完成安装。请从项目中重新开始。",
       "backToProject": "返回项目"
+    },
+    "secretIntakeWithheld": {
+      "title": "已保存，但 {agent} 暂时无法读取",
+      "grant": "{count, plural, other {# 个密钥}}（{names}）不在智能体 {agent} 的密钥中。请打开 自定义 → Agents → {agent} → 密钥 并启用{count, plural, =1 {它} other {它们}}。",
+      "allowlist": "{count, plural, other {# 个密钥}}（{names}）不在此会话的密钥范围内。请启动新会话以使用{count, plural, =1 {它} other {它们}}。"
     }
   },
   "projectOnboarding": {
@@ -19307,7 +19312,17 @@
   },
   "commandPalette": {
     "title": "命令面板",
-    "description": "搜索要运行的命令..."
+    "description": "搜索要运行的命令...",
+    "copyTitle": "复制",
+    "copyEmail": "邮箱",
+    "copyUserId": "用户 ID",
+    "copyAccountId": "账户 ID",
+    "copyProjectId": "项目 ID",
+    "copySessionId": "会话 ID",
+    "copySessionLink": "会话链接",
+    "copyAction": "复制{label}",
+    "copied": "已复制{label}",
+    "copyFailed": "无法复制到剪贴板"
   },
   "personalWelcome": {
     "dismiss": "关闭",
