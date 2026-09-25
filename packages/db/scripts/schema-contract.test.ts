@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as kortix from '../src/schema/kortix';
-import { type SchemaContract, declaredContract, diffContract } from './schema-contract';
+import { catalogFromRow } from './catalog';
+import { type SchemaContract, declaredContract, diffContract, liveContract } from './schema-contract';
 import { SQL_ONLY, type SqlOnlyList } from './schema-contract-sql-only';
 
 function contract(parts: Partial<{
@@ -140,6 +141,54 @@ describe('diffContract', () => {
   test('an INVALID index is drift', () => {
     expect(diffContract(ledger, ledger, NONE, ['uniq_key'])).toEqual([
       'uniq_key: index is INVALID (a failed CONCURRENTLY build)',
+    ]);
+  });
+});
+
+describe('liveContract(catalog) — synthetic catalog rows', () => {
+  const row = (extra: { columns?: string[]; indexes?: Array<{ name: string; unique?: boolean; valid?: boolean }> } = {}) =>
+    catalogFromRow({
+      relations: [{ name: 'credit_ledger', kind: 'table', columns: ['id', 'idempotency_key', ...(extra.columns ?? [])] }],
+      enums: [],
+      indexes: [
+        { name: 'uniq_key', table: 'credit_ledger', definition: 'CREATE UNIQUE INDEX uniq_key ON kortix.credit_ledger USING btree (idempotency_key)', unique: true, valid: true, backsConstraint: false },
+        // The index behind the unique constraint and the primary key is the constraint, not an index.
+        { name: 'kortix_unique_stripe_event', table: 'credit_ledger', definition: 'x', unique: true, valid: true, backsConstraint: true },
+        { name: 'credit_ledger_pkey', table: 'credit_ledger', definition: 'x', unique: true, valid: true, backsConstraint: true },
+        ...(extra.indexes ?? []).map(({ name, unique = false, valid = true }) => ({
+          name, table: 'credit_ledger', definition: 'x', unique, valid, backsConstraint: false,
+        })),
+      ],
+      constraints: [
+        { name: 'kortix_unique_stripe_event', table: 'credit_ledger', type: 'u', definition: 'UNIQUE (stripe_event_id)', validated: true },
+        { name: 'credit_ledger_pkey', table: 'credit_ledger', type: 'p', definition: 'PRIMARY KEY (id)', validated: true },
+      ],
+    });
+
+  test('projects relations, columns, standalone indexes and unique constraints', () => {
+    expect(liveContract(row())).toEqual({ contract: ledger, invalid: [] });
+  });
+
+  test('a missing column is drift', () => {
+    const declared: SchemaContract = { ...ledger, columns: new Set([...ledger.columns, 'credit_ledger.amount']) };
+    expect(diffContract(declared, liveContract(row()).contract, NONE)).toEqual([
+      'credit_ledger.amount: declared column does not exist',
+    ]);
+  });
+
+  test('an extra index is drift, and a SQL-only one is accepted', () => {
+    const { contract: live } = liveContract(row({ indexes: [{ name: 'idx_extra' }] }));
+    expect(diffContract(ledger, live, NONE)).toEqual([
+      'idx_extra: the database has this index on credit_ledger, but kortix.ts does not declare it',
+    ]);
+    expect(diffContract(ledger, live, { ...NONE, indexes: { idx_extra: 'legacy' } })).toEqual([]);
+  });
+
+  test('an INVALID index is returned for the drift report', () => {
+    const { contract: live, invalid } = liveContract(row({ indexes: [{ name: 'idx_extra', valid: false }] }));
+    expect(invalid).toEqual(['idx_extra']);
+    expect(diffContract(ledger, live, { ...NONE, indexes: { idx_extra: 'legacy' } }, invalid)).toEqual([
+      'idx_extra: index is INVALID (a failed CONCURRENTLY build)',
     ]);
   });
 });
