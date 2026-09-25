@@ -102,6 +102,7 @@
     "providerKeys": "提供商密钥",
     "chooseSharedKeys": "选择此会话可以使用的共享密钥。",
     "sessionKeyPool": "会话密钥池",
+    "sharedSessionKeys": "此会话已与项目共享，因此这里只能使用与整个项目共享的密钥。授予您的密钥可在您的私有会话中使用。",
     "projectDefaultShort": "项目默认值",
     "rateLimitDescription": "当提供商触发速率限制时，网关会轮换使用已选密钥。",
     "enableGateway": "在项目设置中启用 LLM 网关以使用密钥池。",

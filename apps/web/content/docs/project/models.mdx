@@ -183,6 +183,12 @@ For a new session, the selection is sent with the first prompt.
   still show that provider so you can reset it.
 - A failed read shows **Try again**. It never appears as an inherited selection.
 
+A session lists only the keys it can use when it runs: keys shared with the
+whole project, and, in your own private session, keys granted to you. A session
+shared with the project never uses a key granted to one member, so the list
+leaves those keys out and saving one is refused. Changing a shared session to a
+model that only such keys reach is refused too, instead of failing every turn.
+
 ### Sessions that name only a model
 
 The CLI, the SDK, and Teams and Slack name a model but no keys. When that model
@@ -208,8 +214,10 @@ separate named connection in this project. **Everyone in this project** can use
 it by default. Use **Manage access → Specific members** to restrict access.
 
 A session can select multiple granted ChatGPT accounts. Without a selection,
-the member's newest usable connection is the default. Another member's shared
-connection requires an explicit selection. The legacy project login remains
+the member's newest usable connection is the default in their own private
+session. A session shared with the project never uses a member's own
+connection: select a connection shared with the whole project for it. Another
+member's shared connection requires an explicit selection. The legacy project login remains
 available when the member has no usable connection of their own. A shared
 gateway key cannot borrow its creator's private ChatGPT connection.
 

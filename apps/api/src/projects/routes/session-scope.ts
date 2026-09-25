@@ -22,7 +22,6 @@ import { assertAgentScope } from '../../iam/agent-scope';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape, validateNativeOpencodeModelRef } from '../lib/session-model-change';
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
-import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/connector-alias';
@@ -30,7 +29,7 @@ import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-re
 import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
 import { resolveSessionPersonalOwner } from '../lib/personal-resources';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { providerKeyOf, usableProviderKeys } from '../../secrets/provider-key-selection';
+import { checkSessionModelChange } from '../lib/session-model-keys';
 import { validateProviderSecretPool } from './provider-secret-pools';
 projectsApp.openapi(
   createRoute({
@@ -647,46 +646,46 @@ projectsApp.openapi(
     } else {
       const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
       const owner = visible.row.createdBy ?? loaded.userId;
-      let servable = await isModelServableForAccount({
-        userId: owner,
+      // Checked in the key scope the gateway uses for this session, with the
+      // pooled keys it selects (lib/session-model-keys.ts).
+      const { servable, selected } = await checkSessionModelChange({
         accountId: loaded.row.accountId,
         projectId,
         sessionId,
+        owner,
+        caller: loaded.userId,
         freeModelsOnly,
         model: trimmed,
-      });
-      // A model reached only through pooled keys needs the session to select
-      // them. A session with no selection for that provider gets every key
-      // it may use there, so they rotate — the keys the web offers. A
-      // selection made on purpose, an empty one included, is left alone.
-      const selected = !servable && resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
-        !visible.ownerIsMachine && visible.row.createdBy
-        ? await keysForModelChange({
+        mayPool:
+          resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
+          !visible.ownerIsMachine &&
+          Boolean(visible.row.createdBy),
+        hasSelection: async (providerId) => {
+          const [existing] = await db
+            .select({ sessionId: sessionProviderSecretPools.sessionId })
+            .from(sessionProviderSecretPools)
+            .where(and(eq(sessionProviderSecretPools.sessionId, sessionId), eq(sessionProviderSecretPools.providerId, providerId)))
+            .limit(1);
+          return Boolean(existing);
+        },
+        callerMaySelect: async (providerId, secretIds) =>
+          !(await validateProviderSecretPool({
             accountId: loaded.row.accountId,
-            project: loaded.row,
-            sessionId,
+            projectId,
+            repoUrl: loaded.row.repoUrl,
+            defaultBranch: loaded.row.defaultBranch,
+            manifestPath: loaded.row.manifestPath,
             agentName: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
-            owner,
-            caller: loaded.userId,
-            model: trimmed,
-          }).catch(() => null)
-        : null;
+            userId: loaded.userId,
+            providerId,
+            ids: secretIds,
+          })),
+      });
       if (selected) {
-        servable = await isModelServableForAccount({
-          userId: owner,
-          accountId: loaded.row.accountId,
-          projectId,
-          sessionId,
-          freeModelsOnly,
-          model: trimmed,
-          providerSecretPools: { [selected.providerId]: selected.secretIds },
-        });
-        if (servable) {
-          await db
-            .insert(sessionProviderSecretPools)
-            .values({ sessionId, providerId: selected.providerId, secretIds: selected.secretIds })
-            .onConflictDoNothing({ target: [sessionProviderSecretPools.sessionId, sessionProviderSecretPools.providerId] });
-        }
+        await db
+          .insert(sessionProviderSecretPools)
+          .values({ sessionId, providerId: selected.providerId, secretIds: selected.secretIds })
+          .onConflictDoNothing({ target: [sessionProviderSecretPools.sessionId, sessionProviderSecretPools.providerId] });
       }
       if (!servable) {
         return c.json(
@@ -732,62 +731,3 @@ projectsApp.openapi(
     return c.json(modelChangeResult({ model: nextModel, needsPush: true, push }));
   },
 );
-
-/**
- * The keys a model change selects for a session that has none for the new
- * model's provider: every pooled key the session's owner may use there,
- * personal ones only when the session acts for its owner in private (spec
- * 2026-09-22 §2.3) and the owner is the one changing it. The session's agent
- * must be allowed the key, and so must the caller — the same checks as
- * `PUT …/provider-secret-pools/{providerId}`. Null when there is nothing to
- * select, or the session already has a selection for that provider.
- */
-async function keysForModelChange(input: {
-  accountId: string;
-  project: { projectId: string; repoUrl: string; defaultBranch: string | null; manifestPath: string | null };
-  sessionId: string;
-  agentName: string;
-  owner: string;
-  caller: string;
-  model: string;
-}): Promise<{ providerId: string; secretIds: string[] } | null> {
-  const provider = providerKeyOf(input.model);
-  if (!provider) return null;
-  const [existing] = await db
-    .select({ sessionId: sessionProviderSecretPools.sessionId })
-    .from(sessionProviderSecretPools)
-    .where(and(eq(sessionProviderSecretPools.sessionId, input.sessionId), eq(sessionProviderSecretPools.providerId, provider.providerId)))
-    .limit(1);
-  if (existing) return null;
-  const personal = input.caller === input.owner
-    ? await resolveSessionPersonalOwner({
-        projectId: input.project.projectId,
-        accountId: input.accountId,
-        sessionId: input.sessionId,
-        legacyUserId: input.owner,
-      })
-    : null;
-  const selection = await usableProviderKeys({
-    accountId: input.accountId,
-    projectId: input.project.projectId,
-    userId: input.owner,
-    grantUserId: personal,
-    model: input.model,
-  });
-  if (!selection) return null;
-  for (const userId of new Set([input.caller, input.owner])) {
-    const invalid = await validateProviderSecretPool({
-      accountId: input.accountId,
-      projectId: input.project.projectId,
-      repoUrl: input.project.repoUrl,
-      defaultBranch: input.project.defaultBranch,
-      manifestPath: input.project.manifestPath,
-      agentName: input.agentName,
-      userId,
-      providerId: selection.providerId,
-      ids: selection.secretIds,
-    });
-    if (invalid) return null;
-  }
-  return { providerId: selection.providerId, secretIds: selection.secretIds };
-}
