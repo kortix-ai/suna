@@ -605,13 +605,7 @@ bodies are unchanged):
 
 | File | Stock | App |
 | --- | --- | --- |
-| `accordion.tsx` | `ChevronDown` | `CaretDownIcon as ChevronDown` |
-| `alert.tsx` | `type LucideIcon` | `type AppIcon` (also the `icon` prop type) |
-| `checkbox.tsx` | `Check` | `CheckIcon as Check` |
-| `context-menu.tsx` | `Check, ChevronDown, ChevronRight, ChevronUp` | `CheckIcon`, `CaretDownIcon`, `CaretRightIcon`, `CaretUpIcon` aliased |
 | `dialog.tsx` | `X` | `XIcon as X` |
-| `dropdown-menu.tsx` | same as context-menu | same as context-menu |
-| `menubar.tsx` | same as context-menu | same as context-menu |
 | `select.tsx` | `Check, ChevronDown, ChevronDownIcon, ChevronUpIcon` | `CheckIcon`, `CaretDownIcon` (×2), `CaretUpIcon` aliased |
 
 One non-import line: `checkbox.tsx` drops
