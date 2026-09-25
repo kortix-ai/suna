@@ -19175,7 +19175,8 @@
       "text467f597e95b0": "Dominio SSO verificado",
       "text8295f9d4861b": "Verificación del dominio SSO de la cuenta establecida",
       "text7beaff63a7d3": "Archivo de configuración del proyecto descargado",
-      "text5176d59f25fd": "Versión de configuración de la sesión resuelta"
+      "text5176d59f25fd": "Versión de configuración de la sesión resuelta",
+      "textefbec00903d5": "URL de MCP"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

@@ -1,36 +1,23 @@
 'use client';
 
 import { PlugIcon } from '@phosphor-icons/react';
-import Image from 'next/image';
 import type { ReactNode } from 'react';
 
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { ConnectorLogoTile } from '@/features/workspace/capabilities/connectors/connector-identity';
 import { cn } from '@/lib/utils';
 
 /**
  * The icon tile for a connector that does not exist yet. `ConnectorAppIcon`
- * (`connectors-view.tsx:729`) needs an `AdminConnector`; the add flow has a
- * catalogue app — an image URL and a name, nothing more. Same 40px bordered
- * tile, same `object-contain` treatment, so the two are indistinguishable on
+ * (`capabilities/connectors/connector-identity.tsx`) needs an `AdminConnector`;
+ * the add flow has a catalogue app — an image URL and a name, nothing more.
+ * Both paint through `ConnectorLogoTile`, so the two are indistinguishable on
  * screen.
  */
 export function ConnectorConnectionIcon({ src, name }: { src?: string | null; name: string }) {
-  if (src) {
-    return (
-      <span className="border-border/60 bg-card relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-sm border">
-        <Image
-          src={src}
-          alt=""
-          referrerPolicy="no-referrer"
-          fill
-          sizes="40px"
-          className="object-contain"
-          unoptimized
-        />
-      </span>
-    );
-  }
-  return <EntityAvatar icon={PlugIcon} size="lg" label={name} />;
+  const glyphTile = <EntityAvatar icon={PlugIcon} size="lg" label={name} />;
+  if (src) return <ConnectorLogoTile src={src} size="lg" fallback={glyphTile} />;
+  return glyphTile;
 }
 
 /**

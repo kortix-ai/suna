@@ -9,6 +9,8 @@ const INTEGRATIONS_BASE_URL = 'https://integrations.sh';
 const DEFAULT_TTL_MS = 15 * 60_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_PAGE_SIZE = 48;
+/** How long an unreachable catalogue is left alone before the icon index retries it. */
+const ICON_INDEX_RETRY_MS = 5 * 60_000;
 const MAX_PAGE_SIZE = 96;
 
 const OFFICIAL_SURFACE_ENRICHMENTS: Record<string, ConnectorSurfaceVariant[]> = {
@@ -300,6 +302,8 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
   const now = options.now ?? Date.now;
   let indexCache: { items: ConnectorCatalogItem[]; at: number } | null = null;
   let indexRequest: Promise<ConnectorCatalogItem[]> | null = null;
+  let iconIndex: { items: ConnectorCatalogItem[]; icons: Map<string, string> } | null = null;
+  let iconIndexFailedAt: number | null = null;
   const surfaceCache = new Map<string, { value: ConnectorSurfaceVariant[]; at: number }>();
   const surfaceRequests = new Map<string, Promise<ConnectorSurfaceVariant[]>>();
 
@@ -463,6 +467,46 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       };
     },
 
+    /**
+     * Domain -> the icon Discover shows for that domain's card.
+     *
+     * The connector list reads this to give an existing OpenAPI, MCP, GraphQL
+     * or HTTP connector the same logo its catalogue card has
+     * (`connector-icon.ts`). When a domain has several records (one per
+     * surface), the most popular record's icon wins, which is the card the
+     * browse page leads with.
+     *
+     * Never throws. An unreachable catalogue yields an empty map and is not
+     * asked again for `ICON_INDEX_RETRY_MS`, so an offline deployment pays the
+     * failed fetch once per window, not once per connector list.
+     */
+    async iconsByDomain(): Promise<ReadonlyMap<string, string>> {
+      if (iconIndexFailedAt !== null && now() - iconIndexFailedAt < ICON_INDEX_RETRY_MS) {
+        return iconIndex?.icons ?? new Map();
+      }
+      let items: ConnectorCatalogItem[];
+      try {
+        items = await loadIndex();
+        iconIndexFailedAt = null;
+      } catch {
+        iconIndexFailedAt = now();
+        return iconIndex?.icons ?? new Map();
+      }
+      if (iconIndex?.items === items) return iconIndex.icons;
+      const best = new Map<string, { icon: string; popularity: number }>();
+      for (const item of items) {
+        if (!item.icon) continue;
+        const popularity = item.popularity ?? -1;
+        const current = best.get(item.domain);
+        if (!current || popularity > current.popularity) {
+          best.set(item.domain, { icon: item.icon, popularity });
+        }
+      }
+      const icons = new Map([...best].map(([domain, entry]) => [domain, entry.icon]));
+      iconIndex = { items, icons };
+      return icons;
+    },
+
     async detail(id: string): Promise<ConnectorCatalogDetail> {
       const items = await loadIndex();
       const item = items.find((candidate) => candidate.id === id);
@@ -481,3 +525,4 @@ const catalog = createConnectorCatalog();
 export const listConnectorCatalog = catalog.list;
 export const connectorCatalogSections = catalog.sections;
 export const getConnectorCatalogDetail = catalog.detail;
+export const connectorCatalogIconsByDomain = catalog.iconsByDomain;

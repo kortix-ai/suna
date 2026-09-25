@@ -71,6 +71,7 @@ import { connectorAttachmentStore } from './attachments';
 import { computerProfileSpec } from './computer-materialize';
 import { COMPUTER_SLUG, computerLabel } from './computers';
 import { hideSupersededSlack } from './channel-rules';
+import { resolveConnectorIcons } from './connector-icon';
 import { buildAdminConnectorViews } from './connector-list';
 import { notifyConnectorSession } from './notify-session';
 import { validateConnectorSecretBinding } from './connector-secret-binding';
@@ -1485,6 +1486,7 @@ async function listConnectors(
     authorizedComposioSlugs,
     validBoundSecrets,
     accountsByConnectorEntries,
+    resolvedIcons,
   ] =
     await Promise.all([
       db
@@ -1579,6 +1581,20 @@ async function listConnectors(
           return [row.connectorId, accounts] as const;
         }),
       ),
+      // Logos for connectors sync stored none for (everything but Pipedream),
+      // from the same Composio toolkit cache and Discover catalogue the
+      // catalogue tab renders. Bounded and never throws — see connector-icon.ts.
+      resolveConnectorIcons(
+        conns
+          .filter(
+            (row) => typeof (row.config as { icon_url?: unknown } | null)?.icon_url !== 'string',
+          )
+          .map((row) => ({
+            slug: row.slug,
+            provider: row.providerType,
+            config: row.config as Record<string, unknown> | null,
+          })),
+      ),
     ]);
   const accountsByConnector = new Map(accountsByConnectorEntries);
   // `authorization_strategy` is a DERIVED SUMMARY now, not a setting. The
@@ -1650,7 +1666,10 @@ async function listConnectors(
       name: row.name,
       provider: row.providerType,
       platform: channelPlatform(row.config),
-      iconUrl: typeof config?.icon_url === 'string' ? config.icon_url : null,
+      iconUrl:
+        typeof config?.icon_url === 'string'
+          ? config.icon_url
+          : (resolvedIcons.get(row.slug) ?? null),
       // A composio connector whose authorization never completed reports
       // `needs_auth` rather than the stored `active`. The gateway already
       // refuses every call on such a connector, so reporting `active` made the

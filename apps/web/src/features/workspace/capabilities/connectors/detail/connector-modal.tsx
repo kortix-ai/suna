@@ -4,18 +4,20 @@ import { useTranslations } from '@/i18n/use-translations';
 import {
   type AdminConnector,
   type Connection,
+  getConnectorConfig,
   listConnections,
   listPipedreamApps,
   reconcileConnection,
   reconcileMemberConnection,
   setConnectorName,
 } from '@kortix/sdk';
-import { useProjectAccountId } from '@kortix/sdk/react';
+import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { CheckIcon, KeyIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
+import { CopyButton } from '@/components/markdown/copy-button';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
@@ -53,6 +55,7 @@ import { foldKey } from '@/features/workspace/capabilities/connectors/catalog/ca
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { ConnectorAccounts } from './connector-accounts';
+import { connectorMcpUrl } from './connector-mcp-url';
 import { ConnectorSettings } from './connector-settings';
 import { CONNECTOR_TAB_LABEL, type ConnectorTab, connectorTabs } from './connector-tabs';
 import { ConnectorTools } from './connector-tools';
@@ -164,6 +167,46 @@ function ConnectorModalSkeleton() {
         </div>
       </ModalBody>
     </>
+  );
+}
+
+/**
+ * The MCP server URL of an `mcp` connector, visible and copyable in the
+ * header, so it can be reused in another MCP client or checked against the
+ * provider's docs without opening Settings.
+ *
+ * Writers only: it reads `getConnectorConfig`, which the API gates on
+ * `project.connector.write`. Some hosted MCP servers put an access token in
+ * the URL path, so the list route (read tier) deliberately does not carry it.
+ * Shares its query key with the Settings tab's `ConnectionSection`, so opening
+ * both costs one request.
+ */
+function ConnectorMcpUrlRow({
+  projectId,
+  connector,
+}: {
+  projectId: string;
+  connector: AdminConnector;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const configQuery = useQuery({
+    queryKey: qk.project.connectorConfig(projectId, connector.slug),
+    queryFn: () => getConnectorConfig(projectId, connector.slug),
+    ...contract('config'),
+  });
+  const url = connectorMcpUrl(connector, configQuery.data);
+  if (!url) return null;
+  return (
+    <div
+      className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs"
+      data-testid="connector-mcp-url"
+    >
+      <span className="shrink-0">{tI18nComplete.raw('textefbec00903d5')}</span>
+      <code className="text-foreground min-w-0 truncate font-mono" title={url}>
+        {url}
+      </code>
+      <CopyButton code={url} size="sm" hintSide="bottom" />
+    </div>
   );
 }
 
@@ -365,6 +408,9 @@ function ConnectorModalBody({
           </div>
           {appDescription ? (
             <p className="text-muted-foreground text-sm text-pretty">{appDescription}</p>
+          ) : null}
+          {canWrite && connector.provider === 'mcp' ? (
+            <ConnectorMcpUrlRow projectId={projectId} connector={connector} />
           ) : null}
         </div>
 

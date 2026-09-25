@@ -19175,7 +19175,8 @@
       "text467f597e95b0": "已验证 SSO 域名",
       "text8295f9d4861b": "已设置账户 SSO 域名验证",
       "text7beaff63a7d3": "已下载项目配置归档",
-      "text5176d59f25fd": "已解析会话配置发布"
+      "text5176d59f25fd": "已解析会话配置发布",
+      "textefbec00903d5": "MCP URL"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

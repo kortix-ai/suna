@@ -6,6 +6,7 @@ const sourcePath = join(import.meta.dir, 'connectors-view.tsx');
 const source = [
   readFileSync(sourcePath, 'utf8'),
   readFileSync(join(import.meta.dir, 'discover-catalogue.tsx'), 'utf8'),
+  readFileSync(join(import.meta.dir, '../../capabilities/connectors/slack-logo.tsx'), 'utf8'),
 ].join('\n');
 
 describe('Slack channel connector catalogue', () => {

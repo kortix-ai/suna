@@ -1,9 +1,11 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type { AdminConnector } from '@kortix/sdk';
 import {
   CubeIcon as Boxes,
   CheckIcon,
+  EnvelopeSimpleIcon as Envelope,
   GlobeIcon as Globe,
   type Icon as LucideIcon,
   ChatIcon as MessageSquare,
@@ -11,13 +13,15 @@ import {
   PlugIcon as Plug,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import Image from 'next/image';
+import { type ReactNode, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { connectorSetupStatus } from '@/features/workspace/customize/sections/connector-connection-form';
 import { cn } from '@/lib/utils';
+import { type ConnectorGlyph, connectorIconFace } from './connector-icon-face';
+import { SlackLogo } from './slack-logo';
 
 /**
  * How a connector presents itself — its icon tile and its status pill.
@@ -30,24 +34,64 @@ import { cn } from '@/lib/utils';
  * two small components from there put that entire graph in this route's client
  * chunk — an ES module is all-or-nothing to the bundler.
  *
- * `PROVIDER_ICON` and the tile-size helper came along because nothing else in
+ * `GLYPH_ICON` and the tile-size helper came along because nothing else in
  * the old file used them.
  */
 
-const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
-  composio: Plug,
-  pipedream: Zap,
+const GLYPH_ICON: Record<ConnectorGlyph, LucideIcon> = {
+  app: Plug,
+  automation: Zap,
   mcp: Boxes,
-  openapi: Globe,
-  postman: Globe,
-  graphql: Globe,
-  http: Globe,
-  channel: MessageSquare,
+  web: Globe,
+  chat: MessageSquare,
+  email: Envelope,
   computer: Monitor,
 };
 
 function appIconTileClass(size: 'sm' | 'lg'): string {
   return size === 'lg' ? 'size-10 rounded-md' : 'size-6 rounded-sm';
+}
+
+/**
+ * A logo in the connector icon tile, or `fallback` when the image fails.
+ *
+ * The one tile every connector surface paints a logo in: the connectors grid
+ * and detail header (`ConnectorAppIcon`) and the add flow
+ * (`ConnectorConnectionIcon`), so an app looks the same before and after it is
+ * connected. Logos are third-party URLs (Composio, Pipedream, integrations.sh);
+ * one that 404s or is blocked falls back to the glyph tile instead of leaving
+ * an empty bordered box.
+ */
+export function ConnectorLogoTile({
+  src,
+  fallback,
+  size = 'lg',
+}: {
+  src: string;
+  fallback: ReactNode;
+  size?: 'sm' | 'lg';
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  if (failedSrc === src) return <>{fallback}</>;
+  return (
+    <span
+      className={cn(
+        'border-border/60 bg-card relative flex shrink-0 items-center justify-center overflow-hidden border',
+        appIconTileClass(size),
+      )}
+    >
+      <Image
+        src={src}
+        alt=""
+        referrerPolicy="no-referrer"
+        fill
+        sizes={size === 'lg' ? '40px' : '28px'}
+        className="object-contain"
+        unoptimized
+        onError={() => setFailedSrc(src)}
+      />
+    </span>
+  );
 }
 
 export function ConnectorAppIcon({
@@ -57,36 +101,31 @@ export function ConnectorAppIcon({
   connector: AdminConnector;
   size?: 'sm' | 'lg';
 }) {
-  const imgSrc = connector.iconUrl ?? null;
-
-  if (imgSrc) {
-    return (
-      <span
-        className={cn(
-          'border-border/60 bg-card flex shrink-0 items-center justify-center overflow-hidden border',
-          'relative',
-          appIconTileClass(size),
-        )}
-      >
-        <Image
-          src={imgSrc}
-          alt=""
-          referrerPolicy="no-referrer"
-          fill
-          sizes={size === 'lg' ? '40px' : '28px'}
-          className="object-contain"
-          unoptimized
-        />
-      </span>
-    );
-  }
-  return (
+  const face = connectorIconFace(connector);
+  const glyphTile = (
     <EntityAvatar
-      icon={PROVIDER_ICON[connector.provider] ?? Plug}
+      icon={GLYPH_ICON[face.kind === 'glyph' ? face.glyph : 'app']}
       size={size}
       label={connector.name}
     />
   );
+
+  if (face.kind === 'image') {
+    return <ConnectorLogoTile src={face.src} size={size} fallback={glyphTile} />;
+  }
+  if (face.kind === 'slack') {
+    return (
+      <span
+        className={cn(
+          'border-border/60 bg-card flex shrink-0 items-center justify-center border',
+          appIconTileClass(size),
+        )}
+      >
+        <SlackLogo className={size === 'lg' ? 'size-5' : 'size-3.5'} />
+      </span>
+    );
+  }
+  return glyphTile;
 }
 
 /**

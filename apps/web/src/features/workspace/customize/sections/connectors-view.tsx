@@ -63,6 +63,7 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
+import { SlackLogo } from '@/features/workspace/capabilities/connectors/slack-logo';
 import {
   type EmailInstallation,
   type EmailSenderPolicy,
@@ -155,7 +156,6 @@ import { DiscoverCatalogue } from './discover-catalogue';
 import { connectorConnectionRows } from './view/connector-connections';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
-const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
 
 function SaveBar({
   dirty,
@@ -2144,28 +2144,6 @@ function ChannelCatalogue({
       {emailChannelEnabled && <AddEmailConnectionCard projectId={projectId} onAdded={onAdded} />}
       <AddSlackConnectionCard projectId={projectId} onAdded={onAdded} />
     </div>
-  );
-}
-
-/**
- * The real Slack logo — the single Slack mark used everywhere across the
- * connectors + channels surface (catalogue cards, channel cards, connect flow),
- * so Slack always reads as Slack and never as a generic glyph. Sized by
- * `className`; defaults to `size-4`.
- */
-export function SlackLogo({ className }: { className?: string }) {
-  return (
-    <span className={cn('relative inline-flex size-4 shrink-0', className)}>
-      <Image
-        src={SLACK_ICON_SRC}
-        alt=""
-        referrerPolicy="no-referrer"
-        fill
-        sizes="32px"
-        className="object-contain"
-        unoptimized
-      />
-    </span>
   );
 }
 
