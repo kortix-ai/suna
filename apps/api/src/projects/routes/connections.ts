@@ -17,7 +17,7 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import {
   type ConnectionOwnerType,
   connectionIsReachable,
-  isTrustedManagedChannelAuthorization,
+  connectionRowIsReachable,
 } from '../lib/connection-access';
 import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
 import { requestAgentPrincipalReach } from '../lib/personal-resources';
@@ -66,22 +66,10 @@ function mayReadConnection(
   agentPrincipal: AgentPrincipalReach | null = null,
 ): boolean {
   if (!sessionMayEnumerateConnection(connection, sessionBoundConnectionIds)) return false;
-  return connectionIsReachable({
-    ownerType: connection.ownerType,
-    ownerId: connection.ownerId,
-    actingUserId: userId,
-    actingPrincipalIsServiceAccount,
+  return connectionRowIsReachable(connection, {
+    userId,
+    isServiceAccount: actingPrincipalIsServiceAccount,
     agentPrincipal,
-    trustedManagedSystem: isTrustedManagedChannelAuthorization({
-      providerType: connection.providerType,
-      platform:
-        typeof connection.connectorConfig.platform === 'string'
-          ? connection.connectorConfig.platform
-          : null,
-      ownerType: connection.ownerType,
-      ownerId: connection.ownerId,
-      metadata: connection.metadata,
-    }),
   });
 }
 

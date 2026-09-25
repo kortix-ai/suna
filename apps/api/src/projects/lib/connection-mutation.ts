@@ -8,71 +8,44 @@ import { and, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../../iam';
 import { db } from '../../shared/db';
-import { type loadProjectForUser, projectCapabilityAllowed } from './access';
+import { loadProjectForUser, projectCapabilityAllowed } from './access';
 import {
-  type ConnectionOwnerType,
-  connectionIsReachable,
-  isTrustedManagedChannelAuthorization,
+  type ConnectionReachabilityActor,
+  type ConnectionReachabilityRow,
+  connectionRowIsReachable,
 } from './connection-access';
 import { requestAgentPrincipalReach } from './personal-resources';
 
-type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
-
-export interface ConnectionMutationActor {
-  userId: string;
-  isServiceAccount: boolean;
+export interface ConnectionMutationActor extends ConnectionReachabilityActor {
   /** The caller holds `project.connector.connections.manage`. */
   mayManageSystemConnections: boolean;
-  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
-  agentPrincipal: Awaited<ReturnType<typeof requestAgentPrincipalReach>>;
 }
 
 /**
- * The caller must reach the connection (`connectionIsReachable`). Your own
+ * The caller must reach the connection (`connectionRowIsReachable`). Your own
  * private account is then yours to administer: reachability already proved
  * the owner is the caller. Every other reachable connection is shared with
  * the project, so it needs the connections-manage capability.
  */
 export function mayMutateConnection(
-  connection: {
-    ownerType: ConnectionOwnerType;
-    ownerId: string | null;
-    metadata: Record<string, unknown>;
-    providerType: string;
-    connectorConfig: Record<string, unknown>;
-  },
+  connection: ConnectionReachabilityRow,
   actor: ConnectionMutationActor,
 ): boolean {
-  const reachable = connectionIsReachable({
-    ownerType: connection.ownerType,
-    ownerId: connection.ownerId,
-    actingUserId: actor.userId,
-    actingPrincipalIsServiceAccount: actor.isServiceAccount,
-    agentPrincipal: actor.agentPrincipal,
-    trustedManagedSystem: isTrustedManagedChannelAuthorization({
-      providerType: connection.providerType,
-      platform:
-        typeof connection.connectorConfig.platform === 'string'
-          ? connection.connectorConfig.platform
-          : null,
-      ownerType: connection.ownerType,
-      ownerId: connection.ownerId,
-      metadata: connection.metadata,
-    }),
-  });
-  return reachable && (connection.ownerType === 'member' || actor.mayManageSystemConnections);
+  return (
+    connectionRowIsReachable(connection, actor) &&
+    (connection.ownerType === 'member' || actor.mayManageSystemConnections)
+  );
 }
 
 /**
- * The connection the caller may mutate, or `null`. Callers answer `null` with
- * 404, so a caller cannot probe for connections they cannot reach.
+ * The project and the connection the caller may mutate, or `null`. The
+ * project load needs only `read`: the mutation rule above is the gate. Callers
+ * answer `null` with 404, so a caller cannot probe for connections they cannot
+ * reach.
  */
-export async function loadMutableConnection(
-  c: Context,
-  loaded: LoadedProject,
-  projectId: string,
-  connectionId: string,
-) {
+export async function loadMutableConnection(c: Context, projectId: string, connectionId: string) {
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return null;
   const [connection] = await db
     .select({
       accountId: connectorConnections.accountId,
@@ -123,5 +96,5 @@ export async function loadMutableConnection(
     mayManageSystemConnections,
     agentPrincipal,
   };
-  return mayMutateConnection(connection, actor) ? connection : null;
+  return mayMutateConnection(connection, actor) ? { loaded, connection } : null;
 }

@@ -8,7 +8,6 @@ import {
 } from '@kortix/api-contract';
 import { connectors } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { config } from '../../config';
 import { ensureDefaultConnection } from '../../connectors/credentials';
 import { nativeOAuth2CallbackUrl } from '../../connectors/oauth2-callback-url';
@@ -58,13 +57,6 @@ function allowedRedirectUri(value: string | undefined, projectId: string): strin
   return uri.href;
 }
 
-async function loadConnectionForMutation(c: Context, projectId: string, connectionId: string) {
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return null;
-  const connection = await loadMutableConnection(c, loaded, projectId, connectionId);
-  return connection ? { loaded, connection } : null;
-}
-
 projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c: any) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
@@ -105,7 +97,7 @@ projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c: any
 projectsApp.put('/:projectId/connections/:connectionId/oauth2/application', async (c: any) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
-  const mutable = await loadConnectionForMutation(c, projectId, connectionId);
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
   const parsed = OAuth2ApplicationInputSchema.safeParse(await readBody(c));
   if (!parsed.success) {
@@ -123,7 +115,7 @@ projectsApp.put('/:projectId/connections/:connectionId/oauth2/application', asyn
 projectsApp.get('/:projectId/connections/:connectionId/oauth2/application', async (c: any) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
-  const mutable = await loadConnectionForMutation(c, projectId, connectionId);
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
   const loaded = await loadOAuth2Application(connectionId);
   if (!loaded) return c.json({ error: 'OAuth2 application is not configured' }, 404);
@@ -133,7 +125,7 @@ projectsApp.get('/:projectId/connections/:connectionId/oauth2/application', asyn
 projectsApp.post('/:projectId/connections/:connectionId/oauth2/discover', async (c: any) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
-  if (!(await loadConnectionForMutation(c, projectId, connectionId))) {
+  if (!(await loadMutableConnection(c, projectId, connectionId))) {
     return c.json({ error: 'Not found' }, 404);
   }
   const parsed = OAuth2DiscoveryInputSchema.safeParse(await readBody(c));
@@ -157,7 +149,7 @@ projectsApp.post(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const connectionId = c.req.param('connectionId');
-    if (!(await loadConnectionForMutation(c, projectId, connectionId))) {
+    if (!(await loadMutableConnection(c, projectId, connectionId))) {
       return c.json({ error: 'Not found' }, 404);
     }
     const parsed = OAuth2ResourceDiscoveryInputSchema.safeParse((await readBody(c)) ?? {});
@@ -180,7 +172,7 @@ projectsApp.post(
 projectsApp.post('/:projectId/connections/:connectionId/oauth2/register', async (c: any) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
-  const mutable = await loadConnectionForMutation(c, projectId, connectionId);
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
   const parsed = OAuth2ClientRegistrationInputSchema.safeParse(await readBody(c));
   if (!parsed.success) {
@@ -205,7 +197,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/register', async 
 projectsApp.post('/:projectId/connections/:connectionId/oauth2/authorize', async (c: any) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
-  const mutable = await loadConnectionForMutation(c, projectId, connectionId);
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
   const parsed = OAuth2AuthorizationStartInputSchema.safeParse(await readBody(c));
   if (!parsed.success) return c.json({ error: 'invalid authorization input' }, 400);
@@ -232,7 +224,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/authorize', async
 projectsApp.post('/:projectId/connections/:connectionId/oauth2/device', async (c: any) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
-  const mutable = await loadConnectionForMutation(c, projectId, connectionId);
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
   const parsed = OAuth2DeviceAuthorizationStartInputSchema.safeParse(await readBody(c));
   if (!parsed.success) return c.json({ error: 'invalid device authorization input' }, 400);
@@ -262,7 +254,7 @@ projectsApp.post(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const connectionId = c.req.param('connectionId');
-    const mutable = await loadConnectionForMutation(c, projectId, connectionId);
+    const mutable = await loadMutableConnection(c, projectId, connectionId);
     if (!mutable) return c.json({ error: 'Not found' }, 404);
     try {
       return c.json(
@@ -281,7 +273,7 @@ projectsApp.post(
 projectsApp.get('/:projectId/connections/:connectionId/oauth2/status', async (c: any) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
-  if (!(await loadConnectionForMutation(c, projectId, connectionId))) {
+  if (!(await loadMutableConnection(c, projectId, connectionId))) {
     return c.json({ error: 'Not found' }, 404);
   }
   return c.json(await oauth2ConnectionStatus(connectionId));

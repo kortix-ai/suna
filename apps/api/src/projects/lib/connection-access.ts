@@ -49,16 +49,18 @@ export type ConnectionOwnerType =
  * `ownerId === onBehalfOfUserId` AND the session is `private`. An unattended
  * run (`onBehalfOfUserId` null) and a shared session reach no member row.
  */
+export interface ConnectionAgentPrincipalReach {
+  onBehalfOfUserId: string | null;
+  visibility: 'private' | 'project' | 'restricted' | null;
+}
+
 export function connectionIsReachable(input: {
   ownerType: ConnectionOwnerType;
   ownerId: string | null;
   actingUserId: string;
   actingPrincipalIsServiceAccount: boolean;
   trustedManagedSystem?: boolean;
-  agentPrincipal?: {
-    onBehalfOfUserId: string | null;
-    visibility: 'private' | 'project' | 'restricted' | null;
-  } | null;
+  agentPrincipal?: ConnectionAgentPrincipalReach | null;
 }): boolean {
   if (input.trustedManagedSystem === true) return true;
   if (input.ownerType === 'project') return true;
@@ -100,6 +102,50 @@ export function isTrustedManagedChannelAuthorization(input: {
     inboxId.length > 0 &&
     input.ownerId === `agentmail:${inboxId}`
   );
+}
+
+/** The columns of a `connector_connections` row joined to its connector that
+ *  decide reachability. */
+export interface ConnectionReachabilityRow {
+  ownerType: ConnectionOwnerType;
+  ownerId: string | null;
+  metadata: Record<string, unknown>;
+  providerType: string;
+  connectorConfig: Record<string, unknown>;
+}
+
+/** The principal asking to reach a connection row. */
+export interface ConnectionReachabilityActor {
+  userId: string;
+  isServiceAccount: boolean;
+  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
+  agentPrincipal: ConnectionAgentPrincipalReach | null;
+}
+
+/**
+ * `connectionIsReachable` for a loaded connection row. It derives the
+ * trusted-managed-channel exception from the row and its connector config, so
+ * every caller that holds a row asks the same question the same way.
+ */
+export function connectionRowIsReachable(
+  row: ConnectionReachabilityRow,
+  actor: ConnectionReachabilityActor,
+): boolean {
+  return connectionIsReachable({
+    ownerType: row.ownerType,
+    ownerId: row.ownerId,
+    actingUserId: actor.userId,
+    actingPrincipalIsServiceAccount: actor.isServiceAccount,
+    agentPrincipal: actor.agentPrincipal,
+    trustedManagedSystem: isTrustedManagedChannelAuthorization({
+      providerType: row.providerType,
+      platform:
+        typeof row.connectorConfig.platform === 'string' ? row.connectorConfig.platform : null,
+      ownerType: row.ownerType,
+      ownerId: row.ownerId,
+      metadata: row.metadata,
+    }),
+  });
 }
 
 /**

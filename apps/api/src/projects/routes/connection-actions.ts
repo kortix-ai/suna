@@ -24,7 +24,6 @@ import { rematerializeCatalogAfterCredentialUpdate } from '../../connectors/sync
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
-import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { loadMutableConnection } from '../lib/connection-mutation';
 import { readBody } from '../lib/serializers';
@@ -54,10 +53,9 @@ projectsApp.openapi(
     const body = await readBody(c);
     const validated = validateConnectionLabel(body?.label);
     if (!validated.ok) return c.json({ error: validated.error }, 400);
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const connection = await loadMutableConnection(c, loaded, projectId, connectionId);
-    if (!connection) return c.json({ error: 'Not found' }, 404);
+    const mutable = await loadMutableConnection(c, projectId, connectionId);
+    if (!mutable) return c.json({ error: 'Not found' }, 404);
+    const { connection } = mutable;
     const label = validated.label;
     if (label === connection.label) {
       return c.json(serializeConnection(connection), 200);
@@ -130,10 +128,9 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const connectionId = c.req.param('connectionId');
-      const loaded = await loadProjectForUser(c, projectId, 'read');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const connection = await loadMutableConnection(c, loaded, projectId, connectionId);
-      if (!connection) return c.json({ error: 'Not found' }, 404);
+      const mutable = await loadMutableConnection(c, projectId, connectionId);
+      if (!mutable) return c.json({ error: 'Not found' }, 404);
+      const { loaded, connection } = mutable;
       if (operation === 'credential') {
         const body = await readBody(c);
         const parsed = UpdateConnectionCredentialInputSchema.safeParse(body);
@@ -283,10 +280,9 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const connectionId = c.req.param('connectionId');
-      const loaded = await loadProjectForUser(c, projectId, 'read');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const connection = await loadMutableConnection(c, loaded, projectId, connectionId);
-      if (!connection) return c.json({ error: 'Not found' }, 404);
+      const mutable = await loadMutableConnection(c, projectId, connectionId);
+      if (!mutable) return c.json({ error: 'Not found' }, 404);
+      const { loaded, connection } = mutable;
       // INVARIANT (2026-09-16, account_required rule): a project-owned
       // connection with nothing PINNED is still blocked here when it is the
       // connector's sole active project-owned row — it is the connector's
