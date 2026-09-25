@@ -1594,13 +1594,23 @@ describe('response_format end-to-end — the built model call actually receives 
     totalTokens: 10,
   };
 
-  it('a json_object request reaches doGenerate as responseFormat:{type:"json"} (no schema) and the model text is valid JSON', async () => {
+  const schema = { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] };
+
+  it.each([
+    ['a json_object request', { type: 'json_object' }, { type: 'json' }, '{"ok":true}'],
+    [
+      'a json_schema request',
+      { type: 'json_schema', json_schema: { name: 'person', schema } },
+      { type: 'json', schema, name: 'person', description: undefined },
+      '{"name":"kortix"}',
+    ],
+  ] as const)('%s reaches doGenerate with its responseFormat and the model text is valid JSON', async (_name, responseFormat, expected, text) => {
     let seenResponseFormat: unknown;
     const mock = new MockLanguageModelV4({
       doGenerate: async (options) => {
         seenResponseFormat = options.responseFormat;
         return {
-          content: [{ type: 'text', text: '{"ok":true}' }],
+          content: [{ type: 'text', text }],
           finishReason: { unified: 'stop', raw: undefined },
           usage,
           warnings: [],
@@ -1611,7 +1621,7 @@ describe('response_format end-to-end — the built model call actually receives 
     const args = buildAiSdkArgs(
       {
         messages: [{ role: 'user', content: 'give me json' }],
-        response_format: { type: 'json_object' },
+        response_format: responseFormat,
       },
       'openai',
     );
@@ -1620,11 +1630,12 @@ describe('response_format end-to-end — the built model call actually receives 
       system: args.system,
       messages: args.messages,
       output: args.output,
+      providerOptions: args.providerOptions,
       maxRetries: 0,
     });
 
-    expect(seenResponseFormat).toEqual({ type: 'json' });
-    expect(result.text).toBe('{"ok":true}');
+    expect(seenResponseFormat).toEqual(expected);
+    expect(result.text).toBe(text);
     expect(() => JSON.parse(result.text)).not.toThrow();
   });
 });

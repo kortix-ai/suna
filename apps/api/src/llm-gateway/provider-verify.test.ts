@@ -2,7 +2,7 @@
 // verdict the provider UI renders. Resolution is injected; the completion
 // runs through the real `callUpstream` with `globalThis.fetch` stubbed, so
 // each row exercises the same transport a real turn uses.
-import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
 import type { AuthedPrincipal, UpstreamDescriptor } from '@kortix/llm-gateway';
 import { verifyProviderConnection, type ProviderVerifyDeps } from './provider-verify';
@@ -31,14 +31,26 @@ const ANTHROPIC: UpstreamDescriptor = {
 };
 
 const realFetch = globalThis.fetch;
-let fetchCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
+let fetchCalls: Array<{ url: string; body: Record<string, unknown>; signal: AbortSignal | null | undefined }> = [];
 
-function stubFetch(answer: () => Response | Promise<Response>): void {
+function stubFetch(answer: (init?: RequestInit) => Response | Promise<Response>): void {
   fetchCalls = [];
   globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-    fetchCalls.push({ url: String(input), body: JSON.parse(String(init?.body ?? '{}')) });
-    return answer();
+    fetchCalls.push({ url: String(input), body: JSON.parse(String(init?.body ?? '{}')), signal: init?.signal });
+    return answer(init);
   }) as unknown as typeof fetch;
+}
+
+const ANTHROPIC_DEPS = deps({
+  pickVerificationModel: () => 'anthropic/claude-haiku-4-5',
+  resolveCandidates: async () => [ANTHROPIC],
+});
+
+function anthropicError(status: number, type: string, message: string): Response {
+  return new Response(JSON.stringify({ type: 'error', error: { type, message } }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 function deps(overrides: Partial<ProviderVerifyDeps> = {}): Partial<ProviderVerifyDeps> {
@@ -53,6 +65,7 @@ const errorBody = (message: string) => JSON.stringify({ error: { message } });
 
 afterEach(() => {
   globalThis.fetch = realFetch;
+  mock.restore();
 });
 
 describe('verifyProviderConnection before the upstream call', () => {
@@ -115,6 +128,9 @@ describe('verifyProviderConnection upstream verdicts', () => {
       stream: false,
       max_tokens: 16,
     });
+    // The ping carries the verification timeout, so a hung provider cannot
+    // leave "Verifying…" spinning.
+    expect(fetchCalls[0]?.signal).toBeInstanceOf(AbortSignal);
   });
 
   test.each([
@@ -129,37 +145,54 @@ describe('verifyProviderConnection upstream verdicts', () => {
     expect(await verifyProviderConnection(PRINCIPAL, 'openai', deps())).toEqual({ status: verdict, message });
   });
 
-  test('an AI SDK upstream rejecting the key throws, and the verdict is invalid with its message', async () => {
-    stubFetch(
-      () =>
-        new Response(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }), {
-          status: 401,
-          headers: { 'content-type': 'application/json' },
-        }),
-    );
+  // The AI SDK transport THROWS an UpstreamHttpError for a non-2xx answer, so
+  // these rows reach the thrown-error verdicts, not the `!response.ok` ones.
+  test.each([
+    ['a 401 is invalid', 401, 'authentication_error', 'invalid x-api-key', 'invalid', 'invalid x-api-key'],
+    ['a 403 is invalid', 403, 'permission_error', 'key lacks model access', 'invalid', 'key lacks model access'],
+    ['a 429 is unknown', 429, 'rate_limit_error', 'slow down', 'unknown', "Rate limited while verifying — couldn't confirm the key."],
+    ['a 400 is unknown', 400, 'invalid_request_error', 'max_tokens too small', 'unknown', 'max_tokens too small'],
+    ['a 500 is unknown', 500, 'api_error', 'internal failure', 'unknown', 'internal failure'],
+  ] as const)('an AI SDK upstream answering %s', async (_name, status, type, upstreamMessage, verdict, message) => {
+    stubFetch(() => anthropicError(status, type, upstreamMessage));
 
-    const result = await verifyProviderConnection(
-      PRINCIPAL,
-      'anthropic',
-      deps({ pickVerificationModel: () => 'anthropic/claude-haiku-4-5', resolveCandidates: async () => [ANTHROPIC] }),
-    );
-
-    expect(result).toEqual({ status: 'invalid', message: 'invalid x-api-key' });
+    expect(await verifyProviderConnection(PRINCIPAL, 'anthropic', ANTHROPIC_DEPS)).toEqual({ status: verdict, message });
     expect(fetchCalls).toHaveLength(1);
   });
 
+  // The verification timeout fires while the fetch is in flight. The direct
+  // transport rejects with the signal's TimeoutError; the AI SDK transport
+  // rethrows a ClientAbortError. Both are the same verdict.
   test.each([
-    [
-      'a timed-out fetch',
-      () => new DOMException('The operation timed out.', 'TimeoutError'),
-      "Verification timed out — couldn't confirm the key.",
-    ],
-    ['a network failure', () => new TypeError('fetch failed: connection refused'), 'fetch failed: connection refused'],
-  ] as const)('%s is unknown', async (_name, failure, message) => {
+    ['an openai-compatible', 'openai', deps()],
+    ['an AI SDK', 'anthropic', ANTHROPIC_DEPS],
+  ] as const)('%s upstream that outlives the verification timeout is unknown', async (_name, providerId, overrides) => {
+    const verificationTimeout = new AbortController();
+    spyOn(AbortSignal, 'timeout').mockImplementationOnce(() => verificationTimeout.signal);
+    stubFetch(
+      (init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) return reject(new Error('the ping carried no abort signal'));
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          verificationTimeout.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+        }),
+    );
+
+    expect(await verifyProviderConnection(PRINCIPAL, providerId, overrides)).toEqual({
+      status: 'unknown',
+      message: "Verification timed out — couldn't confirm the key.",
+    });
+  });
+
+  test('a network failure is unknown with its message', async () => {
     stubFetch(() => {
-      throw failure();
+      throw new TypeError('fetch failed: connection refused');
     });
 
-    expect(await verifyProviderConnection(PRINCIPAL, 'openai', deps())).toEqual({ status: 'unknown', message });
+    expect(await verifyProviderConnection(PRINCIPAL, 'openai', deps())).toEqual({
+      status: 'unknown',
+      message: 'fetch failed: connection refused',
+    });
   });
 });

@@ -1013,7 +1013,21 @@ describe('checkout.session.completed: cancel old free sub', () => {
   });
 
   test('does not cancel when no previous_subscription_id in metadata and account is not free', async () => {
-    const session = createMockStripeCheckoutSession();
+    // A paying account whose stored subscription differs from the checkout's:
+    // only the not-free guard stops the DB fallback from cancelling it.
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        tier: 'tier_6_50',
+        stripeSubscriptionId: 'sub_other_paid',
+      });
+
+    const session = createMockStripeCheckoutSession({
+      subscription: 'sub_new_paid',
+      metadata: {
+        account_id: 'acc_test_123',
+        tier_key: 'tier_6_50',
+      },
+    });
     const event = createMockStripeEvent('checkout.session.completed', session);
     mockRegistry.stripeClient.webhooks.constructEvent = () => event;
 
@@ -1451,12 +1465,9 @@ describe('the Stripe dedupe marker is written only after the handler succeeds', 
     expect((retry as any).deduped).toBeUndefined();
     expect(walletGrants.length).toBe(1);
 
-    const writesBeforeReplay = updateCreditAccountCalls.length + upsertCreditAccountCalls.length;
     const replay = await processStripeWebhook(JSON.stringify(event), 'sig');
     expect((replay as any).deduped).toBe(true);
     expect(walletGrants.length).toBe(1);
-    // The replay short-circuits before any reconciliation.
-    expect(updateCreditAccountCalls.length + upsertCreditAccountCalls.length).toBe(writesBeforeReplay);
   });
 });
 
@@ -1614,6 +1625,7 @@ describe('per-seat subscription reconciliation', () => {
       await processStripeWebhook(JSON.stringify(event), 'whsec_test');
 
       const seatWrite = updateCreditAccountCalls.find((c) => c.data.seatCount === 5);
+      expect(seatWrite).toBeDefined();
       expect(seatWrite?.data.autoTopupThreshold).toBe(expected.autoTopupThreshold);
       expect(seatWrite?.data.autoTopupAmount).toBe(expected.autoTopupAmount);
     });

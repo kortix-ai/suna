@@ -246,6 +246,11 @@ describe('dispatch: one attempt plan', () => {
       fallbackModels: ['f'],
       fallbackOn: 'any-error',
     });
+    // Dispatch itself stops: callUpstream's own pre-check would also hold the
+    // fetch count at 1, but only dispatch's stop keeps the second candidate
+    // from being attempted.
+    expect(outcome.attempts).toBe(1);
+    expect(outcome.candidatesTried).toHaveLength(1);
     expect(sent).toHaveLength(1);
     expect(outcome.error).toBeInstanceOf(DOMException);
   });

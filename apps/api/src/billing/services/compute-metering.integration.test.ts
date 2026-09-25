@@ -343,6 +343,19 @@ withDb('compute metering on PostgreSQL', () => {
       expect(ledger[0]!.amount).toBeCloseTo(-HOURLY / 60, 4);
     });
 
+    // Stop, hibernate, and delete paths call pause/end best-effort, often for a
+    // sandbox that never opened a window or whose window is already closed.
+    test('pause and end of a sandbox without an open window write nothing', async () => {
+      const accountId = await account({ billingModel: 'per_seat' });
+      const sandboxId = await sandbox(accountId);
+
+      await expect(pauseComputeSession(sandboxId)).resolves.toBeUndefined();
+      await expect(endComputeSession(sandboxId)).resolves.toBeUndefined();
+
+      expect(await windowsOf(sandboxId)).toEqual([]);
+      expect(await ledgerOf(accountId)).toEqual([]);
+    });
+
     test('two concurrent closes settle one window and close it at its own cursor', async () => {
       const accountId = await account({ billingModel: 'per_seat' });
       const sandboxId = await sandbox(accountId);

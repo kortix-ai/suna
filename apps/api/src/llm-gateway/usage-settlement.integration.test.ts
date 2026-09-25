@@ -161,6 +161,21 @@ withDb('gateway usage settlement is idempotent per request', () => {
         idempotencyKey: `llm-hold-refund:${id}`,
       }),
     ]);
+    // The refund returns money the customer already owned: it is non-expiring
+    // credit, so the next renewal's expiring-credit reset cannot wipe it.
+    const [grant] = await db
+      .select({ isExpiring: creditLedger.isExpiring, expiresAt: creditLedger.expiresAt })
+      .from(creditLedger)
+      .where(eq(creditLedger.accountId, accountId));
+    expect(grant).toEqual({ isExpiring: false, expiresAt: null });
+    const [account] = await db
+      .select({ expiring: creditAccounts.expiringCredits, nonExpiring: creditAccounts.nonExpiringCredits })
+      .from(creditAccounts)
+      .where(eq(creditAccounts.accountId, accountId));
+    expect({ expiring: Number(account!.expiring), nonExpiring: Number(account!.nonExpiring) }).toEqual({
+      expiring: 0,
+      nonExpiring: 10.009,
+    });
   });
 
   // The provider bills the customer's own key; Kortix never charges it, even
