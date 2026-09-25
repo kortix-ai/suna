@@ -163,7 +163,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const connectionId = c.req.param('connectionId');
     const body = await readJsonObject(c);
-    const validated = validateConnectionLabel(body?.label);
+    const validated = validateConnectionLabel(body.label);
     if (!validated.ok) return c.json({ error: validated.error }, 400);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -252,7 +252,7 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
           return c.json(
             {
               error:
-                body?.oauth2 != null
+                body.oauth2 != null
                   ? (parsed.error.issues[0]?.message ?? 'invalid OAuth2 credential')
                   : 'value is required',
             },

@@ -124,7 +124,7 @@ projectsApp.openapi(
       manifestPath: loaded.row.manifestPath,
       baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
       refreshRepo: body.refresh_repo !== false,
-      force: body?.force === true,
+      force: body.force === true,
     });
     // A reload restarts opencode, which ENDS the turn in flight. Refused by
     // default rather than discarding someone's work without saying so.
@@ -223,7 +223,7 @@ projectsApp.openapi(
               manifestPath: loaded.row.manifestPath,
               baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
               refreshRepo: body.refresh_repo !== false,
-              force: body?.force === true,
+              force: body.force === true,
               onPhase: (phase) => write({ type: 'phase', phase }),
             });
 

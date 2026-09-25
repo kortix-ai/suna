@@ -1636,7 +1636,7 @@ adminApp.openapi(
   }),
   async (c: any) => {
     const body = await readJsonObject(c);
-    const value = { enabled: body?.enabled === true };
+    const value = { enabled: body.enabled === true };
     const { db } = await import('../shared/db');
     const { platformSettings } = await import('@kortix/db');
     const { PROVIDER_FALLBACK_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');

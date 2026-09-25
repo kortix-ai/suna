@@ -620,7 +620,7 @@ projectsApp.openapi(
     }
 
     const body = await readJsonObject(c);
-    const requested = typeof body?.opencode_model === 'string' ? body.opencode_model : '';
+    const requested = typeof body.opencode_model === 'string' ? body.opencode_model : '';
     const shapeError = validateModelChangeShape(requested);
     if (shapeError) {
       return c.json({ error: shapeError.message, code: shapeError.code }, 400);

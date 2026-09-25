@@ -91,7 +91,7 @@ async function handleMarketplaceInstallSession(c: any) {
   if (gate) return gate;
 
   const body = await readJsonObject(c);
-  const id = typeof body?.id === 'string' ? body.id.trim() : '';
+  const id = typeof body.id === 'string' ? body.id.trim() : '';
   if (!id) return c.json({ error: 'id is required' }, 400);
 
   const entry = await getCatalogEntry(id);

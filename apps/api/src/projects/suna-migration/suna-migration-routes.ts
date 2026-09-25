@@ -146,8 +146,8 @@ export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
       }
       const { migration, created } = await startSunaMigration({
         database: db, accountId,
-        limit: typeof body?.limit === 'number' ? body.limit : undefined,
-        offset: typeof body?.offset === 'number' ? body.offset : undefined,
+        limit: typeof body.limit === 'number' ? body.limit : undefined,
+        offset: typeof body.offset === 'number' ? body.offset : undefined,
       });
       return c.json({ created, migration: serialize(migration) }, created ? 202 : 200);
     },
