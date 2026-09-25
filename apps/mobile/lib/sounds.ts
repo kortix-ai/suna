@@ -1,23 +1,21 @@
 import { createAudioPlayer, setAudioModeAsync, type AudioSource } from 'expo-audio';
-import { useSoundStore, type SoundEvent } from '@/stores/sound-store';
+import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-store';
+import { resolveSoundAsset } from '@/lib/sounds-resolve';
 
 // ---------------------------------------------------------------------------
-// Bundled assets — only files that actually exist on disk.
-// Missing events (error, notification) fall back to completion.mp3.
-// The opencode pack has no files yet, so it falls back to kortix.
+// Bundled assets — the Kortix sound palette. Every event has its own file,
+// no fallback needed.
 // ---------------------------------------------------------------------------
 
-const KORTIX_ASSETS: Partial<Record<SoundEvent, AudioSource>> = {
-  completion: require('@/assets/sounds/kortix/completion.mp3'),
-  send: require('@/assets/sounds/kortix/send.mp3'),
+const KORTIX_ASSETS: Record<SoundEvent, AudioSource> = {
+  completion: require('@/assets/sounds/kortix/kortix_complete.wav'),
+  notification: require('@/assets/sounds/kortix/kortix_attention.wav'),
+  error: require('@/assets/sounds/kortix/kortix_error.wav'),
+  send: require('@/assets/sounds/kortix/kortix_send.wav'),
 };
 
-function resolveAsset(pack: string, event: SoundEvent): AudioSource | null {
-  if (pack === 'kortix') {
-    return KORTIX_ASSETS[event] ?? KORTIX_ASSETS.completion ?? null;
-  }
-  // opencode pack has no files yet — returns null (no sound)
-  return null;
+function resolveAsset(pack: SoundPack, event: SoundEvent): AudioSource | null {
+  return resolveSoundAsset(KORTIX_ASSETS, pack, event);
 }
 
 // ---------------------------------------------------------------------------

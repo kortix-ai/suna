@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 export type SoundEvent = 'completion' | 'error' | 'notification' | 'send';
-export type SoundPack = 'off' | 'opencode' | 'kortix';
+export type SoundPack = 'off' | 'kortix';
 
 export interface SoundPreferences {
   pack: SoundPack;
@@ -72,6 +72,22 @@ export const useSoundStore = create<SoundState>()(
       partialize: (state) => ({
         preferences: state.preferences,
       }),
+      // v1: the silent `opencode` pack is removed from the UI. Any persisted
+      // `pack` other than 'off' migrates to 'kortix' — including 'opencode'
+      // and any other unknown value.
+      version: 1,
+      migrate: (persistedState) => {
+        const persisted = persistedState as { preferences?: Partial<SoundPreferences> } | null;
+        const persistedPack = persisted?.preferences?.pack as SoundPack | undefined;
+        const pack: SoundPack = persistedPack === 'off' ? 'off' : 'kortix';
+        return {
+          preferences: {
+            ...DEFAULT_PREFERENCES,
+            ...persisted?.preferences,
+            pack,
+          },
+        };
+      },
     },
   ),
 );
