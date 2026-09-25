@@ -17,7 +17,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * gives for free.
  */
 
-import { DotsThreeOutlineIcon } from '@phosphor-icons/react';
+import { DotsThreeIcon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -82,7 +82,7 @@ export function SessionTurnMeta({
           data-testid="session-turn-meta-trigger"
           className={cn(className)}
         >
-          <DotsThreeOutlineIcon weight="fill" className="text-foreground/70 size-[1.05rem]" />
+          <DotsThreeIcon weight="bold" className="text-foreground/70 size-5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent

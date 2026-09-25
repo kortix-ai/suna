@@ -62,9 +62,11 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Expo Dev Launcher uses the local network to discover and connect to development servers running on your computer.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Kortix needs microphone access to record videos with audio. For example, you can record a video to share with the AI Worker for analysis and save it to your conversation history.</string>
+	<string>Kortix uses the microphone when you dictate a message and when you record a video to attach to a conversation.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Kortix needs access to your photo library so you can select and share images in your saved conversations with the AI Worker. For example, you can attach screenshots, documents, or images for review—all stored in your personalized conversation history.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Kortix turns your speech into text when you dictate a message.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
