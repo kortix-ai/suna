@@ -5,7 +5,7 @@
  * and manifest fetching are all exercised without touching real Slack.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,7 @@ import { SLACK_CHANNEL_CONNECTOR_SLUG } from '../connectors/channels';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const CLI_ENTRY = resolve(REPO_ROOT, 'apps/sandbox/slack-cli/channels/slack.ts');
+const TEAMS_CLI_ENTRY = resolve(REPO_ROOT, 'apps/sandbox/slack-cli/channels/teams.ts');
 const CONNECTOR_CLI_ENTRY = resolve(REPO_ROOT, 'apps/cli/src/index.ts');
 
 const PROJECT = 'proj-slack-cli';
@@ -31,8 +32,21 @@ interface World {
     | 'action_not_found'
     | 'needs_auth'
     | 'missing_auth_token';
-  /** What the file-upload proxy answers with, to reproduce a structured denial. */
-  uploadDenial: Record<string, unknown> | null;
+  /** What the file, upload, and conversations routes answer with (403), to
+   *  reproduce the API's structured denial. */
+  denial: Record<string, unknown> | null;
+}
+
+// The API's structured denial (apps/api/src/iam/denial-message.ts): `error` is
+// a boolean flag and the reason is in `message`.
+function structuredDenial(action: string): Record<string, unknown> {
+  return {
+    error: true,
+    message: `This agent session is not granted "${action}". Add it to the agent's kortix_permissions in kortix.yaml and merge the change.`,
+    status: 403,
+    code: 'agent_scope_insufficient',
+    action,
+  };
 }
 
 let world: World;
@@ -102,10 +116,13 @@ function asObject(value: CliOutput): CliObject {
   return value as CliObject;
 }
 
-async function runSlack(args: string[], opts: { ok?: boolean } = {}): Promise<CliOutput> {
+async function runSlack(
+  args: string[],
+  opts: { ok?: boolean; entry?: string } = {},
+): Promise<CliOutput> {
   const expectOk = opts.ok ?? true;
   const proc = Bun.spawn({
-    cmd: ['bun', CLI_ENTRY, ...args],
+    cmd: ['bun', opts.entry ?? CLI_ENTRY, ...args],
     cwd: REPO_ROOT,
     env: {
       PATH: process.env.PATH,
@@ -142,7 +159,7 @@ beforeEach(() => {
     downloads: [],
     manifests: [],
     reservedFailure: null,
-    uploadDenial: null,
+    denial: null,
   };
   server = Bun.serve({
     port: 0,
@@ -183,14 +200,25 @@ beforeEach(() => {
 
       if (url.pathname === `/v1/projects/${PROJECT}/channels/slack/file/upload`) {
         const body = (await req.json()) as Record<string, unknown>;
-        if (world.uploadDenial) return json(world.uploadDenial, 403);
+        if (world.denial) return json(world.denial, 403);
         world.uploads.push(body);
         return json({ ok: true, files: [{ id: 'F1', name: body.filename }] });
       }
 
-      if (url.pathname === `/v1/projects/${PROJECT}/channels/slack/file`) {
+      const download = url.pathname.match(
+        new RegExp(`^/v1/projects/${PROJECT}/channels/(slack|teams)/file$`),
+      );
+      if (download) {
+        if (world.denial) return json(world.denial, 403);
         world.downloads.push(url.searchParams.get('url') ?? '');
-        return new Response('downloaded from slack', { status: 200 });
+        return new Response(`downloaded from ${download[1]}`, { status: 200 });
+      }
+
+      if (url.pathname === `/v1/projects/${PROJECT}/channels/teams/conversations`) {
+        if (world.denial) return json(world.denial, 403);
+        return json({
+          conversations: [{ conversationId: 'a:1', name: 'General', type: 'channel' }],
+        });
       }
 
       if (url.pathname === `/v1/webhooks/slack/${PROJECT}/manifest`) {
@@ -432,14 +460,7 @@ describe('slack CLI', () => {
     // `{ error: true, message, code, action }` (iam/denial-message.ts); reading
     // the boolean `error` as the message printed `HTTP 403: true` and hid the
     // reason. An agent debugged a real delivery regression off that.
-    world.uploadDenial = {
-      error: true,
-      message:
-        'This agent session is not granted "project.connector.write". Add it to the agent\'s kortix_permissions in kortix.yaml and merge the change.',
-      status: 403,
-      code: 'agent_scope_insufficient',
-      action: 'project.connector.write',
-    };
+    world.denial = structuredDenial('project.connector.write');
     const uploadPath = join(tempDir, 'denied-evidence.txt');
     writeFileSync(uploadPath, 'evidence');
     const out = asObject(
@@ -454,5 +475,61 @@ describe('slack CLI', () => {
     });
     expect(String(out.error)).not.toContain('403: true');
     expect(world.uploads).toHaveLength(0);
+  });
+
+  test('surfaces a structured download denial instead of the boolean error field', async () => {
+    // `slack download` and `teams download` fetch through the platform file
+    // proxy. A denied capability answers with `{ error: true, message, … }`;
+    // the reason must reach the agent, never the bare boolean.
+    world.denial = structuredDenial('project.connector.read');
+    for (const entry of [CLI_ENTRY, TEAMS_CLI_ENTRY]) {
+      const outPath = join(tempDir, 'denied', 'file.bin');
+      const out = asObject(
+        await runSlack(['download', '--url', 'https://files.example.com/F1', '--out', outPath], {
+          ok: false,
+          entry,
+        }),
+      );
+      expect(out).toMatchObject({
+        ok: false,
+        error: `Download failed: HTTP 403: ${world.denial.message}`,
+        code: 'API_ERROR',
+        status: 403,
+      });
+      expect(String(out.error)).not.toContain('true');
+      expect(existsSync(outPath)).toBe(false);
+    }
+    expect(world.downloads).toHaveLength(0);
+  }, 30_000);
+
+  test('teams download writes the file owner-only at the resolved path', async () => {
+    const outPath = join(tempDir, 'teams', 'attachment.txt');
+    const out = asObject(
+      await runSlack(
+        ['download', '--url', 'https://files.example.com/T1', '--out', `${outPath}  `],
+        { entry: TEAMS_CLI_ENTRY },
+      ),
+    );
+    expect(out).toEqual({ ok: true, path: outPath, size: 21 });
+    expect(readFileSync(outPath, 'utf8')).toBe('downloaded from teams');
+    expect(statSync(outPath).mode & 0o777).toBe(0o600);
+    expect(world.downloads).toEqual(['https://files.example.com/T1']);
+  });
+
+  test('teams conversations lists targets and surfaces a structured denial', async () => {
+    const listed = asObject(await runSlack(['conversations'], { entry: TEAMS_CLI_ENTRY }));
+    expect(listed).toEqual({
+      conversations: [{ conversationId: 'a:1', name: 'General', type: 'channel' }],
+    });
+
+    world.denial = structuredDenial('project.read');
+    const denied = asObject(
+      await runSlack(['conversations'], { ok: false, entry: TEAMS_CLI_ENTRY }),
+    );
+    expect(denied).toMatchObject({
+      ok: false,
+      error: `HTTP 403: ${world.denial.message}`,
+      status: 403,
+    });
   });
 });
