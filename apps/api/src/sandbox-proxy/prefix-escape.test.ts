@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { resolvePrefixEscape } from './prefix-escape';
 
 const ORIGIN = 'https://dev-api.kortix.com';
-const PREVIEW = `${ORIGIN}/v1/p/sbx_01M0G4HXCM32BX5R1GPYZDYC1H/8081/`;
+const PREVIEW = `${ORIGIN}/v1/p/sbx_01AAAAAAAAAAAAAAAAAAAAAAAA/8081/`;
 
 function navigation(path: string, extra: Record<string, string> = {}, method = 'GET') {
   return {
@@ -20,20 +20,20 @@ function navigation(path: string, extra: Record<string, string> = {}, method = '
 describe('resolvePrefixEscape', () => {
   it('sends a root-absolute link click back into the preview prefix', () => {
     expect(resolvePrefixEscape(navigation('/learn'))).toEqual({
-      location: '/v1/p/sbx_01M0G4HXCM32BX5R1GPYZDYC1H/8081/learn',
+      location: '/v1/p/sbx_01AAAAAAAAAAAAAAAAAAAAAAAA/8081/learn',
       status: 302,
     });
   });
 
   it('preserves the query string', () => {
     expect(resolvePrefixEscape(navigation('/learn?tab=2&q=a%20b'))?.location).toBe(
-      '/v1/p/sbx_01M0G4HXCM32BX5R1GPYZDYC1H/8081/learn?tab=2&q=a%20b',
+      '/v1/p/sbx_01AAAAAAAAAAAAAAAAAAAAAAAA/8081/learn?tab=2&q=a%20b',
     );
   });
 
   it('keeps the method on a form POST by answering 307', () => {
     expect(resolvePrefixEscape(navigation('/submit', {}, 'POST'))).toEqual({
-      location: '/v1/p/sbx_01M0G4HXCM32BX5R1GPYZDYC1H/8081/submit',
+      location: '/v1/p/sbx_01AAAAAAAAAAAAAAAAAAAAAAAA/8081/submit',
       status: 307,
     });
   });

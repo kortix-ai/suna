@@ -171,42 +171,9 @@ afterAll(() => {
   mock.restore();
 });
 
-test('a prompt naming an agent the caller is not scoped to is refused 403 BEFORE any re-mint', async () => {
-  authorizeAllowed = false;
-
-  const response = await prompt('nda-turnaround');
-
-  expect(response.status).toBe(403);
-  expect(await response.json()).toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
-  // The whole point: the re-mint is what hands over B's grant, so it must not run.
-  expect(remintCalls).toEqual([]);
-  expect(envSyncCalls).toEqual([]);
-  expect(upstreamCalls).toBe(0);
-});
-
-test('the gate asks for project.agent.read on the REQUESTED agent as a resource', async () => {
-  await prompt('nda-turnaround');
-
-  expect(authorizeCalls).toEqual([
-    {
-      action: 'project.agent.read',
-      target: {
-        type: 'project',
-        id: 'proj-1',
-        resource: { type: 'agent', id: 'nda-turnaround' },
-      },
-    },
-  ]);
-});
-
-test('an authorized switch still re-mints and forwards', async () => {
-  const response = await prompt('nda-turnaround');
-
-  expect(response.status).toBe(200);
-  expect(remintCalls).toEqual([{ requestedAgent: 'nda-turnaround' }]);
-  expect(upstreamCalls).toBe(1);
-});
-
+// The authorization decision itself (scoped out → 403 before the re-mint,
+// scoped in → re-mint and forward, the own-agent exemption) runs on the real
+// IAM engine in __tests__/integration-preview-agent-authz.test.ts.
 test('an ordinary turn with no agent field pays for no authorization round-trip', async () => {
   const response = await prompt();
 
@@ -215,19 +182,20 @@ test('an ordinary turn with no agent field pays for no authorization round-trip'
   expect(upstreamCalls).toBe(1);
 });
 
-test('the non-binding "default" sentinel is not a switch and is not gated', async () => {
-  const response = await prompt('default');
+// The sentinel echo stays free, whatever the session is bound to: asking for
+// 'default' is asking for this session's own agent, so there is no concrete
+// agent to authorize and no round-trip to pay for.
+test.each(['pipeline-hygiene', 'default'])(
+  'the non-binding "default" sentinel is not a switch and is not gated (session agent %s)',
+  async (sessionAgent) => {
+    sessionAgentName = sessionAgent;
 
-  expect(response.status).toBe(200);
-  expect(authorizeCalls).toEqual([]);
-});
+    const response = await prompt('default');
 
-test('naming the session own agent is not a switch and is not gated', async () => {
-  const response = await prompt('pipeline-hygiene');
-
-  expect(response.status).toBe(200);
-  expect(authorizeCalls).toEqual([]);
-});
+    expect(response.status).toBe(200);
+    expect(authorizeCalls).toEqual([]);
+  },
+);
 
 // REGRESSION (CWE-863). A `default`-bound session used to skip this gate
 // entirely: `isConcreteAgentSwitch` carved out `sessionAgent === 'default'`, so
@@ -261,24 +229,12 @@ test('a default-bound session still runs a concrete agent once authorized', asyn
   expect(upstreamCalls).toBe(1);
 });
 
-// The sentinel echo must stay free: asking for 'default' is asking for this
-// session's own agent, so there is no concrete agent to authorize and no
-// round-trip to pay for.
-test('a default-bound session naming the sentinel is still not gated', async () => {
-  sessionAgentName = 'default';
-
-  const response = await prompt('default');
-
-  expect(response.status).toBe(200);
-  expect(authorizeCalls).toEqual([]);
-});
-
 // ── INC-2026-09-15: an agent this project does not declare never reaches a gate ──
 
 test('a prompt naming an agent the project does not declare is delivered as the session agent', async () => {
-  undeclaredAgents.add('chief-of-staff');
+  undeclaredAgents.add('foreign-agent');
 
-  const response = await prompt('chief-of-staff');
+  const response = await prompt('foreign-agent');
 
   expect(response.status).toBe(200);
   // Not an authorization question: the name is not this project's at all.
@@ -295,7 +251,7 @@ test('a prompt naming an agent the project does not declare is delivered as the 
 });
 
 test('a declared agent switch is untouched by the guard', async () => {
-  undeclaredAgents.add('chief-of-staff');
+  undeclaredAgents.add('foreign-agent');
 
   const response = await prompt('nda-turnaround');
 

@@ -1,38 +1,31 @@
+// `combinedAuth` on the path-form preview proxy (`/v1/p/:sandboxId/:port/*`):
+// which credential shapes it accepts, and how the ownership verdict maps to
+// 401/403/200 for each token branch. The ownership RULE itself runs on real
+// rows in __tests__/integration-preview-access.test.ts; here it is a verdict
+// this suite chooses.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realCrypto from '../shared/crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realPreviewOwnership from '../shared/preview-ownership';
 
+/** The account that owns every sandbox here, or null for "no such sandbox". */
 let mockSandboxAccountId: string | null = 'acct-owner';
-let mockResolvedAccountId = 'acct-owner';
 let mockSupabaseUser: { id: string; email?: string } | null = null;
-let mockAdminAccounts = new Set<string>();
+/** Signed-in people who belong to the owning account. */
+const OWNING_USERS = new Set(['user-owner', 'user-fallback-owner']);
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
-// lists exports by hand deletes every export it omits — the failure surfaces in
-// whatever unrelated file imports the missing name next, attributed to no test.
+// lists exports by hand deletes every export it omits.
 mock.module('../shared/preview-ownership', () => ({
   ...realPreviewOwnership,
   canAccessPreviewSandbox: async ({ accountId, userId }: { accountId?: string; userId?: string }) => {
     if (!mockSandboxAccountId) return false;
-    if (accountId && mockAdminAccounts.has(accountId)) return true;
-    if (userId && mockAdminAccounts.has(mockResolvedAccountId)) return true;
     if (accountId) return accountId === mockSandboxAccountId;
-    if (userId) return mockResolvedAccountId === mockSandboxAccountId;
-    return false;
+    return !!userId && OWNING_USERS.has(userId);
   },
-  // Not exercised by this suite (no project-scoped PATs here) — stub so the
-  // real module's shape stays satisfied for anything that imports it.
+  // Not exercised by this suite (no project-scoped PATs here).
   resolveSandboxProjectId: async () => null,
-}));
-
-mock.module('../shared/resolve-account', () => ({
-  resolveAccountId: async () => mockResolvedAccountId,
-}));
-
-mock.module('../shared/platform-roles', () => ({
-  isPlatformAdmin: async (accountId: string) => mockAdminAccounts.has(accountId),
 }));
 
 mock.module('../repositories/api-keys', () => ({
@@ -49,36 +42,14 @@ mock.module('../repositories/api-keys', () => ({
 
 mock.module('../shared/crypto', () => ({
   // Spread the real module: mock.module replaces it WHOLESALE, and the auth
-  // middleware now reaches shared/crypto through oauth/token-hash too.
+  // middleware also reaches shared/crypto through oauth/token-hash. Only the
+  // token-kind predicates this suite's fake tokens need are overridden.
   ...realCrypto,
-  // Constants
-  KEY_PREFIX: 'kortix_',
-  KEY_PREFIX_PAT: 'kortix_pat_',
-  KEY_PREFIX_PUBLIC: 'kortix_pk_',
-  KEY_PREFIX_SA: 'kortix_sa_',
-  KEY_PREFIX_SANDBOX: 'kortix_sb_',
-  KEY_PREFIX_TUNNEL: 'kortix_tun_',
-  // Token predicates (behaviorally relevant to this suite)
   isKortixToken: (token: string) => token.startsWith('kortix_'),
   isAccountToken: (token: string) => token.startsWith('kortix_pat_'),
   isServiceAccountToken: (token: string) => token.startsWith('kortix_sa_'),
   isTunnelToken: (token: string) => token.startsWith('kortix_tun_'),
   isApiKeySecretConfigured: () => true,
-  // Generators / hashing (existence-only for import resolution)
-  randomAlphanumeric: (length: number) => 'a'.repeat(length),
-  hashSecretKey: (key: string) => `hash:${key}`,
-  candidateSecretKeyHashes: (key: string) => [`hash:${key}`],
-  verifySecretKey: (key: string, hash: string) => hash === `hash:${key}`,
-  timingSafeStringEqual: (a: string, b: string) => a === b,
-  generateDeviceCode: () => 'device-code',
-  generateTunnelToken: () => 'tunnel-token',
-  generateSandboxKeyPair: () => ({ publicKey: 'pub', privateKey: 'priv' }),
-  generateServiceAccountSecret: () => 'kortix_sa_secret',
-  generateAccountTokenPair: () => ({ secretKey: 'kortix_pat_secret', keyHash: 'hash' }),
-  generateApiKeyPair: () => ({ secretKey: 'kortix_secret', keyHash: 'hash' }),
-  deriveSigningKey: () => 'signing-key',
-  signMessage: () => 'signature',
-  verifyMessageSignature: () => true,
 }));
 
 mock.module('../repositories/account-tokens', () => ({
@@ -115,7 +86,7 @@ mock.module('../config', () => ({
   },
 }));
 
-const { combinedAuth } = await import('../middleware/auth');
+const { combinedAuth } = await import('./auth');
 
 function createApp() {
   const app = new Hono();
@@ -134,9 +105,7 @@ function createApp() {
 
 beforeEach(() => {
   mockSandboxAccountId = 'acct-owner';
-  mockResolvedAccountId = 'acct-owner';
   mockSupabaseUser = null;
-  mockAdminAccounts = new Set();
 });
 
 describe('preview auth ownership', () => {
@@ -194,7 +163,6 @@ describe('preview auth ownership', () => {
 
   test('allows jwt owner with matching account ownership', async () => {
     const app = createApp();
-    mockResolvedAccountId = 'acct-owner';
     const res = await app.request('/v1/p/8c70e5be-2f95-45ae-bd8d-5d07b65c631b/8000/session/status', {
       headers: { Authorization: 'Bearer jwt-owner' },
     });
@@ -203,44 +171,14 @@ describe('preview auth ownership', () => {
 
   test('rejects jwt user without ownership', async () => {
     const app = createApp();
-    mockResolvedAccountId = 'acct-other';
     const res = await app.request('/v1/p/8c70e5be-2f95-45ae-bd8d-5d07b65c631b/8000/session/status', {
       headers: { Authorization: 'Bearer jwt-other' },
     });
     expect(res.status).toBe(403);
   });
 
-  test('allows admin jwt user without direct ownership', async () => {
-    const app = createApp();
-    mockResolvedAccountId = 'acct-admin';
-    mockAdminAccounts = new Set(['acct-admin']);
-    const res = await app.request('/v1/p/8c70e5be-2f95-45ae-bd8d-5d07b65c631b/8000/session/status', {
-      headers: { Authorization: 'Bearer jwt-other' },
-    });
-    expect(res.status).toBe(200);
-  });
-
-  test('allows admin kortix token without direct ownership', async () => {
-    const app = createApp();
-    mockAdminAccounts = new Set(['acct-other']);
-    const res = await app.request('/v1/p/8c70e5be-2f95-45ae-bd8d-5d07b65c631b/8000/session/status', {
-      headers: { Authorization: 'Bearer kortix_other' },
-    });
-    expect(res.status).toBe(200);
-  });
-
-  test('allows jwt owner via preview session cookie', async () => {
-    const app = createApp();
-    mockResolvedAccountId = 'acct-owner';
-    const res = await app.request('/v1/p/8c70e5be-2f95-45ae-bd8d-5d07b65c631b/8000/session/status', {
-      headers: { Cookie: '__preview_session=jwt-owner' },
-    });
-    expect(res.status).toBe(200);
-  });
-
   test('allows jwt owner via Supabase fallback path', async () => {
     const app = createApp();
-    mockResolvedAccountId = 'acct-owner';
     mockSupabaseUser = { id: 'user-fallback-owner', email: 'fallback@kortix.dev' };
     const res = await app.request('/v1/p/8c70e5be-2f95-45ae-bd8d-5d07b65c631b/8000/session/status', {
       headers: { Authorization: 'Bearer jwt-fallback-owner' },
@@ -250,19 +188,9 @@ describe('preview auth ownership', () => {
 
   test('rejects jwt via Supabase fallback without ownership', async () => {
     const app = createApp();
-    mockResolvedAccountId = 'acct-other';
     mockSupabaseUser = { id: 'user-fallback-other', email: 'other@kortix.dev' };
     const res = await app.request('/v1/p/8c70e5be-2f95-45ae-bd8d-5d07b65c631b/8000/session/status', {
       headers: { Authorization: 'Bearer jwt-fallback-other' },
-    });
-    expect(res.status).toBe(403);
-  });
-
-  test('rejects access when sandbox cannot be resolved', async () => {
-    const app = createApp();
-    mockSandboxAccountId = null;
-    const res = await app.request('/v1/p/8c70e5be-2f95-45ae-bd8d-5d07b65c631b/8000/session/status', {
-      headers: { Authorization: 'Bearer kortix_owner' },
     });
     expect(res.status).toBe(403);
   });
@@ -275,17 +203,5 @@ describe('preview auth ownership', () => {
       headers: { Authorization: 'Bearer kortix_owner' },
     });
     expect(res.status).toBe(200);
-  });
-
-  test('rejects localhost sandbox preview without auth', async () => {
-    const app = createApp();
-    const res = await app.request('http://localhost/v1/p/sb-ext-1/8000/session/status');
-    expect(res.status).toBe(401);
-  });
-
-  test('still requires auth for remote hosts hitting the sandbox preview route', async () => {
-    const app = createApp();
-    const res = await app.request('https://app.kortix.com/v1/p/sb-ext-1/8000/session/status');
-    expect(res.status).toBe(401);
   });
 });

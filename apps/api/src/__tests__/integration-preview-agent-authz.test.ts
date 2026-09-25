@@ -206,6 +206,17 @@ beforeAll(async () => {
     principalId: scopedIn,
     grantedBy: owner,
   });
+  // The session's own agent is scoped away from `scopedOut` too, so the
+  // own-agent exemption is the only reason that member may still run it.
+  await upsertResourceGrant({
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    resourceType: 'agent',
+    resourceId: SESSION_AGENT,
+    principalType: 'member',
+    principalId: scopedIn,
+    grantedBy: owner,
+  });
 });
 
 afterAll(async () => {
@@ -256,7 +267,7 @@ test('an account owner keeps the implicit-Manager bypass over resource scoping',
   expect(remintCalls).toEqual([SCOPED_AGENT]);
 });
 
-test('the scoped-out member can still run the session own agent', async () => {
+test('the scoped-out member can still run the session own agent, though it is scoped away', async () => {
   const response = await promptAs(scopedOut, SESSION_AGENT);
 
   expect(response.status).toBe(200);
