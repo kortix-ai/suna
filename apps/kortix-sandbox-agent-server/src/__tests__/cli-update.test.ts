@@ -1,17 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
-  AGENT_SWAP_EXIT_CODE,
   detectSupervised,
   parseFlags,
   performRollback,
   performSupervisorRollback,
   performUpdate,
-  type ResolvedTarget,
   type SpawnDeps,
   type UpdateOptions,
 } from '../cli'
@@ -21,10 +19,13 @@ function sha(bytes: Buffer | string): string {
 }
 
 let dir: string
+let servers: Array<ReturnType<typeof Bun.serve>> = []
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'kortixd-cli-'))
 })
 afterEach(() => {
+  for (const server of servers) server.stop(true)
+  servers = []
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -43,8 +44,30 @@ function baseOpts(overrides: Partial<UpdateOptions>): UpdateOptions {
   }
 }
 
-function resolveTo(bytes: Buffer): (o: UpdateOptions) => Promise<ResolvedTarget> {
-  return async () => ({ sha256: sha(bytes), bytes, source: 'file' })
+/**
+ * A fake Kortix API serving the runtime-assets manifest and the agent binary
+ * over a real socket: the boot path `kortixd update` takes. `claimed` is the
+ * digest the manifest states (defaults to the bytes' own).
+ */
+function serve(bytes: Buffer, claimed = sha(bytes)): Partial<UpdateOptions> & { downloads: string[] } {
+  const downloads: string[] = []
+  const server = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    fetch(req) {
+      const path = new URL(req.url).pathname
+      if (path === '/v1/runtime-assets/manifest') {
+        return Response.json({ components: { agent: { sha256: claimed, path: '/v1/runtime-assets/agent' } } })
+      }
+      if (path === '/v1/runtime-assets/agent') {
+        downloads.push(req.headers.get('authorization') ?? '')
+        return new Response(bytes)
+      }
+      return new Response('not found', { status: 404 })
+    },
+  })
+  servers.push(server)
+  return { apiUrl: `http://127.0.0.1:${server.port}/v1`, token: 'agent-token', downloads }
 }
 
 describe('parseFlags', () => {
@@ -58,21 +81,27 @@ describe('parseFlags', () => {
 })
 
 describe('performUpdate', () => {
-  test('no-op when the current binary already matches the target digest', async () => {
+  test.each([false, true])('no-op when the current binary already matches the target (supervised: %p)', async (supervised) => {
     const current = Buffer.from('BINARY-V1')
     writeFileSync(join(dir, 'kortixd'), current)
-    const res = await performUpdate(baseOpts({ resolveTarget: resolveTo(current) }))
+    const stateDir = join(dir, 'state')
+    const api = serve(current)
+    const res = await performUpdate(baseOpts({ ...api, supervised, stateDir }))
     expect(res.outcome).toBe('current')
     expect(res.code).toBe(0)
-    // The running binary is untouched and no .prev appears.
+    // Nothing downloaded, the running binary is untouched, nothing staged.
+    expect(api.downloads).toEqual([])
     expect(readFileSync(join(dir, 'kortixd')).toString()).toBe('BINARY-V1')
     expect(existsSync(join(dir, 'kortixd.prev'))).toBe(false)
+    expect(existsSync(join(stateDir, 'agent.next'))).toBe(false)
   })
 
   test('happy path: swaps in the new binary and keeps .prev', async () => {
     writeFileSync(join(dir, 'kortixd'), Buffer.from('BINARY-V1'))
     const next = Buffer.from('BINARY-V2')
-    const res = await performUpdate(baseOpts({ resolveTarget: resolveTo(next) }))
+    const api = serve(next)
+    const res = await performUpdate(baseOpts(api))
+    expect(api.downloads).toEqual(['Bearer agent-token'])
     expect(res.outcome).toBe('updated')
     expect(res.code).toBe(0)
     expect(readFileSync(join(dir, 'kortixd')).toString()).toBe('BINARY-V2')
@@ -82,13 +111,8 @@ describe('performUpdate', () => {
   test('digest mismatch: nothing is swapped', async () => {
     writeFileSync(join(dir, 'kortixd'), Buffer.from('BINARY-V1'))
     const next = Buffer.from('BINARY-V2')
-    // Claim a digest that does not describe the bytes.
-    const badResolve = async (): Promise<ResolvedTarget> => ({
-      sha256: sha(Buffer.from('SOMETHING-ELSE')),
-      bytes: next,
-      source: 'file',
-    })
-    const res = await performUpdate(baseOpts({ resolveTarget: badResolve }))
+    // The manifest claims a digest that does not describe the bytes served.
+    const res = await performUpdate(baseOpts(serve(next, sha(Buffer.from('SOMETHING-ELSE')))))
     expect(res.outcome).toBe('failed')
     expect(res.code).toBe(1)
     expect(readFileSync(join(dir, 'kortixd')).toString()).toBe('BINARY-V1')
@@ -100,7 +124,7 @@ describe('performUpdate', () => {
     const next = Buffer.from('BINARY-V2-BROKEN')
     // Any candidate that is not the live target path fails its smoke test.
     const spawn = spawnWith((bin) => (bin.endsWith('kortixd') ? 0 : 1))
-    const res = await performUpdate(baseOpts({ resolveTarget: resolveTo(next), spawn }))
+    const res = await performUpdate(baseOpts({ ...serve(next), spawn }))
     expect(res.outcome).toBe('failed')
     expect(res.code).toBe(1)
     expect(readFileSync(join(dir, 'kortixd')).toString()).toBe('BINARY-V1')
@@ -113,7 +137,7 @@ describe('performUpdate', () => {
     // The candidate passes as a temp file (pre-swap), but the live target path
     // fails (post-swap). This is the auto-rollback branch.
     const spawn = spawnWith((bin) => (bin.endsWith('kortixd') ? 1 : 0))
-    const res = await performUpdate(baseOpts({ resolveTarget: resolveTo(next), spawn }))
+    const res = await performUpdate(baseOpts({ ...serve(next), spawn }))
     expect(res.outcome).toBe('failed')
     expect(res.code).toBe(1)
     // Rolled back: the live binary is the original, and .prev is consumed.
@@ -126,21 +150,33 @@ describe('performUpdate', () => {
     const next = Buffer.from('BINARY-V2-BROKEN')
     const spawn = spawnWith((bin) => (bin.endsWith('kortixd') ? 0 : 1)) // candidate fails
     const res = await performUpdate(
-      baseOpts({ resolveTarget: resolveTo(next), spawn, bestEffort: true }),
+      baseOpts({ ...serve(next), spawn, bestEffort: true }),
     )
     expect(res.outcome).toBe('failed')
     expect(res.code).toBe(0) // boot proceeds to serve
     expect(readFileSync(join(dir, 'kortixd')).toString()).toBe('BINARY-V1')
   })
 
-  test('no-op update never re-hashes: uses the digest cache', async () => {
-    const current = Buffer.from('BINARY-V1')
-    writeFileSync(join(dir, 'kortixd'), current)
-    const opts = baseOpts({ resolveTarget: resolveTo(current) })
-    await performUpdate(opts)
-    // The cache file now exists and records the digest.
-    const cache = JSON.parse(readFileSync(opts.statePath, 'utf8'))
-    expect(cache.current.sha256).toBe(sha(current))
+  test('the no-op check trusts the (path, size, mtime) digest cache and re-hashes on a new mtime', async () => {
+    const target = join(dir, 'kortixd')
+    writeFileSync(target, Buffer.from('BINARY-V1'))
+    const next = Buffer.from('BINARY-V2')
+    // A cache entry that claims the on-disk bytes are already the target build.
+    const st = statSync(target)
+    const statePath = join(dir, '.state.json')
+    writeFileSync(
+      statePath,
+      JSON.stringify({ current: { path: target, size: st.size, mtimeMs: Math.trunc(st.mtimeMs), sha256: sha(next) } }),
+    )
+    const hit = await performUpdate(baseOpts({ ...serve(next), statePath }))
+    expect(hit.outcome).toBe('current')
+
+    // Same bytes, new mtime: the cache misses and the real digest decides.
+    const later = new Date(st.mtimeMs + 5_000)
+    utimesSync(target, later, later)
+    const miss = await performUpdate(baseOpts({ ...serve(next), statePath }))
+    expect(miss.outcome).toBe('updated')
+    expect(readFileSync(target).toString()).toBe('BINARY-V2')
   })
 })
 
@@ -151,29 +187,18 @@ describe('performUpdate — supervised (in-sandbox staging)', () => {
     const next = Buffer.from('BINARY-V2')
     const stateDir = join(dir, 'state')
     const res = await performUpdate(
-      baseOpts({ resolveTarget: resolveTo(next), supervised: true, stateDir }),
+      baseOpts({ ...serve(next), supervised: true, stateDir }),
     )
-    // Asks the caller to exit 75 so the supervisor performs the swap.
+    // Asks the caller to exit 75 so the supervisor performs the swap. The
+    // literal is the contract: apps/sandbox/entrypoint.sh reads SWAP_CODE=75.
     expect(res.outcome).toBe('staged')
-    expect(res.code).toBe(AGENT_SWAP_EXIT_CODE)
+    expect(res.code).toBe(75)
     // The live binary is UNTOUCHED — kortixd never self-swaps in-sandbox.
     expect(readFileSync(join(dir, 'kortixd')).toString()).toBe('BINARY-V1')
     expect(existsSync(join(dir, 'kortixd.prev'))).toBe(false)
     // The staged slot the supervisor reads holds the verified V2 + its digest.
     expect(readFileSync(join(stateDir, 'agent.next')).toString()).toBe('BINARY-V2')
     expect(readFileSync(join(stateDir, 'agent.next.sha256'), 'utf8').trim()).toBe(sha(next))
-  })
-
-  test('no-op when the running binary already matches the target', async () => {
-    const current = Buffer.from('BINARY-V1')
-    writeFileSync(join(dir, 'kortixd'), current)
-    const stateDir = join(dir, 'state')
-    const res = await performUpdate(
-      baseOpts({ resolveTarget: resolveTo(current), supervised: true, stateDir }),
-    )
-    expect(res.outcome).toBe('current')
-    expect(res.code).toBe(0)
-    expect(existsSync(join(stateDir, 'agent.next'))).toBe(false)
   })
 
   test('a candidate that fails its smoke test is never staged', async () => {
@@ -184,7 +209,7 @@ describe('performUpdate — supervised (in-sandbox staging)', () => {
     // the staged temp file is a candidate, so it fails.
     const spawn = spawnWith((bin) => (bin.endsWith('kortixd') ? 0 : 1))
     const res = await performUpdate(
-      baseOpts({ resolveTarget: resolveTo(next), supervised: true, stateDir, spawn }),
+      baseOpts({ ...serve(next), supervised: true, stateDir, spawn }),
     )
     expect(res.outcome).toBe('failed')
     expect(existsSync(join(stateDir, 'agent.next'))).toBe(false)
@@ -196,13 +221,13 @@ describe('performUpdate — supervised (in-sandbox staging)', () => {
     const next = Buffer.from('BINARY-V2')
     const stateDir = join(dir, 'state')
     // First pass stages it.
-    await performUpdate(baseOpts({ resolveTarget: resolveTo(next), supervised: true, stateDir }))
+    await performUpdate(baseOpts({ ...serve(next), supervised: true, stateDir }))
     // Second pass: agent.next.sha256 already matches → staged, exit 75.
     const res = await performUpdate(
-      baseOpts({ resolveTarget: resolveTo(next), supervised: true, stateDir }),
+      baseOpts({ ...serve(next), supervised: true, stateDir }),
     )
     expect(res.outcome).toBe('staged')
-    expect(res.code).toBe(AGENT_SWAP_EXIT_CODE)
+    expect(res.code).toBe(75)
     expect(res.message).toBe('already staged')
   })
 })

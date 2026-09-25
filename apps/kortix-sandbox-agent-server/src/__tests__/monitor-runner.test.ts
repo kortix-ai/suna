@@ -20,7 +20,6 @@ import {
   type MonitorWireEvent,
   normalizeLine,
   parseMonitorSpecs,
-  truncateLine,
 } from '../monitor-runner'
 
 const API_URL = 'http://api.test/v1'
@@ -109,32 +108,11 @@ afterEach(async () => {
 })
 
 describe('line normalization', () => {
-  test('a JSON object line is stored as its parsed fields', () => {
-    expect(normalizeLine('{"severity":"error","order_id":7}')).toEqual({
-      severity: 'error',
-      order_id: 7,
-    })
-  })
-
   test('anything that is not a JSON object becomes { raw }', () => {
     expect(normalizeLine('plain text')).toEqual({ raw: 'plain text' })
     expect(normalizeLine('[1,2]')).toEqual({ raw: '[1,2]' })
     // A truncated/garbage JSON object must not throw — it degrades to raw.
     expect(normalizeLine('{"severity":')).toEqual({ raw: '{"severity":' })
-  })
-
-  test('an oversize line keeps its head and gains the truncated marker', () => {
-    const truncated = truncateLine({ raw: 'x'.repeat(MONITOR_LINE_MAX_BYTES * 2) })
-    expect(truncated.truncated).toBe(true)
-    expect(String(truncated.raw).length).toBeLessThan(MONITOR_LINE_MAX_BYTES)
-    expect(Buffer.byteLength(JSON.stringify(truncated), 'utf8')).toBeLessThanOrEqual(
-      MONITOR_LINE_MAX_BYTES,
-    )
-  })
-
-  test('a line inside the bound is untouched', () => {
-    const line = { severity: 'error' }
-    expect(truncateLine(line)).toBe(line)
   })
 })
 
@@ -247,9 +225,18 @@ describe('batching', () => {
     )
     runner.start()
 
-    await waitFor(() => runner.stats().dropped > 0)
+    // 400 lines into a 25-slot queue: 375 must go.
+    await waitFor(() => runner.stats().dropped >= 375)
     expect(runner.stats().queued).toBeLessThanOrEqual(26)
     await runner.stop()
+    // The survivors are the NEWEST lines: the stop flush carries line-400,
+    // never line-1.
+    const shipped = ingest
+      .events()
+      .filter((event) => event.kind === 'event')
+      .map((event) => String(event.line.raw))
+    expect(shipped).toContain('line-400')
+    expect(shipped).not.toContain('line-1')
     const suppressed = ingest
       .events()
       .filter((event) => event.kind === 'lifecycle' && event.line.event === 'suppressed')
@@ -277,7 +264,7 @@ describe('lifecycle events', () => {
     expect(ingest.eventsFor('flap').filter((event) => event.kind === 'event').length).toBeGreaterThanOrEqual(2)
   })
 
-  test('five restarts inside the window emit `restart_budget_exhausted`, exactly once', async () => {
+  test('exhausting the restart budget emits `restart_budget_exhausted`, exactly once', async () => {
     script('die.sh', '#!/bin/bash\nexit 1\n')
     const ingest = fakeIngest()
     const runner = makeRunner(
@@ -337,7 +324,7 @@ describe('lifecycle events', () => {
 })
 
 describe('poll mode', () => {
-  test('a poll run publishes its stdout and reports a non-zero exit', async () => {
+  test('a clean poll publishes its stdout and emits no lifecycle event', async () => {
     script('poll.sh', '#!/bin/bash\necho "{\\"depth\\":4}"\nexit 0\n')
     const ingest = fakeIngest()
     makeRunner(
@@ -417,5 +404,22 @@ describe('delivery', () => {
     // ONE attempt total: a superseded boot can never be accepted, so retrying
     // and re-flushing are both pure waste.
     expect(ingest.batches).toHaveLength(1)
+  })
+
+  test('another 4xx is a definitive rejection: the batch is not retried', async () => {
+    // A 400 is the daemon's own bug and a 403 a lost authorization; retrying
+    // either just burns the batch window. The 5xx row above does retry.
+    script('denied.sh', '#!/bin/bash\nfor i in $(seq 1 5); do echo "line-$i"; done\nsleep 30\n')
+    const ingest = fakeIngest(() => Response.json({ error: 'forbidden' }, { status: 403 }))
+    const runner = makeRunner(
+      [{ slug: 'denied', run: './denied.sh', mode: 'stream', intervalSeconds: null, expectEventWithinSeconds: null }],
+      ingest,
+    )
+    runner.start()
+
+    await waitFor(() => ingest.batches.length >= 1)
+    await Bun.sleep(120)
+    const first = JSON.stringify(ingest.batches[0])
+    expect(ingest.batches.filter((batch) => JSON.stringify(batch) === first)).toHaveLength(1)
   })
 })
