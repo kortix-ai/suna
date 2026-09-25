@@ -1,5 +1,6 @@
 import {
   emitJson,
+  fail,
   missing,
   resolveProjectContext,
   surfaceApiError,
@@ -749,7 +750,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const owner: 'me' | 'project' | undefined =
           f.owner === 'me' || f.owner === 'project' ? f.owner : undefined;
         if (f.owner !== undefined && owner === undefined) {
-          return invalid('--owner must be me or project');
+          return fail('--owner must be me or project');
         }
         const resp = await ctx.client.post<{
           provider: string;
@@ -1285,7 +1286,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           if (!match) return missing('a <match> (tool name, glob, or /regex/)');
           if (!action) return missing('an action: allow | ask | block');
           const parsedConditions = parsePolicyConditions(conditions);
-          if ('error' in parsedConditions) return invalid(parsedConditions.error);
+          if ('error' in parsedConditions) return fail(parsedConditions.error);
           const currentProject = await loadProject();
           const next = [
             ...currentProject.policies.filter((p) => p.match !== match),
@@ -1454,10 +1455,10 @@ async function runConnections(input: {
       if (!connectorAlias) return missing('a connector slug');
       if (!label) return missing('a connection label');
       if (mine && (flags.owner || flags.ownerId)) {
-        return invalid('--mine cannot be combined with --owner or --owner-id');
+        return fail('--mine cannot be combined with --owner or --owner-id');
       }
       const metadata = parseMetadata(flags.metadata);
-      if (metadata instanceof Error) return invalid(metadata.message);
+      if (metadata instanceof Error) return fail(metadata.message);
       const body: Record<string, unknown> = {
         connector_alias: connectorAlias,
         label,
@@ -1469,10 +1470,10 @@ async function runConnections(input: {
       } else {
         const ownerType = flags.owner ?? 'project';
         if (!['project', 'agent', 'member', 'subject', 'external'].includes(ownerType)) {
-          return invalid('--owner must be project, agent, member, subject, or external');
+          return fail('--owner must be project, agent, member, subject, or external');
         }
         if (ownerType === 'project' && flags.ownerId) {
-          return invalid('--owner-id is not valid for a project connection');
+          return fail('--owner-id is not valid for a project connection');
         }
         if (ownerType !== 'project' && !flags.ownerId) {
           return missing('--owner-id for a non-project connection');
@@ -1501,7 +1502,7 @@ async function runConnections(input: {
       } else if (!value) {
         value = await promptSecret(`  value for connection ${C.bold}${connectionId}${C.reset}`);
       }
-      if (!value) return invalid('No value provided.');
+      if (!value) return fail('No value provided.');
       const response = await ctx.client.put<{ ok: true }>(
         `${base}/${encodeURIComponent(connectionId)}/credential`,
         { value },
@@ -1982,11 +1983,6 @@ function accountsCell(connector: Pick<AdminConnector, 'accounts'>): string {
   const ordered = [...accounts].sort((a, b) => Number(b.is_default) - Number(a.is_default));
   const names = ordered.map((a) => `${a.label}${a.is_default ? '*' : ''}`).join(', ');
   return `${accounts.length} · ${names}`;
-}
-
-function invalid(message: string): number {
-  process.stderr.write(`${status.err(message)}\n`);
-  return 2;
 }
 
 function trim(s: string, max: number): string {
