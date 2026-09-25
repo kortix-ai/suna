@@ -13,7 +13,7 @@ import {
 } from '../github';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { resolveProjectAccount } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import {
@@ -94,7 +94,22 @@ projectsApp.openapi(
 },
 );
 
-async function upsertAccountGitHubInstallation(
+/**
+ * One row per `(account_id, owner_login)`.
+ *
+ * Reconnecting the App mints a NEW installation id for the same owner, and the
+ * retired id answers 404 on `/access_tokens` forever after. Conflicting on
+ * `(account_id, installation_id)` alone left both rows in place, both labelled
+ * `github.com/<owner>`, and a create could pick the dead one — which is how a
+ * user who had just reconnected was told to reconnect (prod, 2026-09-25).
+ *
+ * The delete and the insert share one transaction: a reader never sees an
+ * account with zero connections to an owner it is connected to.
+ *
+ * Exported for `__tests__/integration-github-installation-dedupe.test.ts`,
+ * which drives it against the real table.
+ */
+export async function upsertAccountGitHubInstallation(
   accountId: string,
   installationId: string,
   installation: GitHubAppInstallation,
@@ -107,23 +122,21 @@ async function upsertAccountGitHubInstallation(
   const ownerType =
     normalizeString(installation.account?.type) ?? installation.target_type ?? 'Organization';
   const now = new Date();
-  const [row] = await db
-    .insert(accountGithubInstallations)
-    .values({
-      accountId,
-      installationId,
-      ownerLogin,
-      ownerType,
-      repositorySelection: installation.repository_selection ?? null,
-      permissions: installation.permissions ?? {},
-      metadata: {
-        html_url: installation.html_url ?? null,
-      },
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [accountGithubInstallations.accountId, accountGithubInstallations.installationId],
-      set: {
+  const row = await db.transaction(async (tx) => {
+    await tx
+      .delete(accountGithubInstallations)
+      .where(
+        and(
+          eq(accountGithubInstallations.accountId, accountId),
+          eq(accountGithubInstallations.ownerLogin, ownerLogin),
+          ne(accountGithubInstallations.installationId, installationId),
+        ),
+      );
+    const [inserted] = await tx
+      .insert(accountGithubInstallations)
+      .values({
+        accountId,
+        installationId,
         ownerLogin,
         ownerType,
         repositorySelection: installation.repository_selection ?? null,
@@ -132,9 +145,23 @@ async function upsertAccountGitHubInstallation(
           html_url: installation.html_url ?? null,
         },
         updatedAt: now,
-      },
-    })
-    .returning();
+      })
+      .onConflictDoUpdate({
+        target: [accountGithubInstallations.accountId, accountGithubInstallations.installationId],
+        set: {
+          ownerLogin,
+          ownerType,
+          repositorySelection: installation.repository_selection ?? null,
+          permissions: installation.permissions ?? {},
+          metadata: {
+            html_url: installation.html_url ?? null,
+          },
+          updatedAt: now,
+        },
+      })
+      .returning();
+    return inserted;
+  });
 
   if (!row) throw new Error('Failed to save the GitHub installation');
   return row;

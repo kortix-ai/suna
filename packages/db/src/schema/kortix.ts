@@ -373,6 +373,15 @@ export const accountGithubInstallations = kortixSchema.table(
       table.accountId,
       table.installationId,
     ),
+    // One connection per (account, owner). A reconnect mints a NEW installation
+    // id for the same owner, so the index above admits the retired row too —
+    // both render as `github.com/<owner>` and a create could pick the dead one
+    // (prod, 2026-09-25). Built by
+    // 20260925164209388_github_installations_one_per_owner_index.concurrent.ts.
+    uniqueIndex('uniq_account_github_installations_owner').on(
+      table.accountId,
+      table.ownerLogin,
+    ),
     index('idx_account_github_installations_owner').on(table.ownerLogin),
   ],
 );
