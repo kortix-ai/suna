@@ -39,6 +39,11 @@ export interface StreamObservation {
 const HEARTBEAT = new TextEncoder().encode(': keep-alive\n\n');
 const DEFAULT_HEARTBEAT_MS = 10_000;
 const DEFAULT_INACTIVITY_MS = 90 * 60_000;
+// The relay must hold an incomplete line to decide whether the next complete
+// JSON chunk needs an event boundary. Bound that hold for a provider that never
+// sends a newline; an 8 MiB single SSE line is already outside normal model
+// output and cannot be safely rewritten for a managed model.
+const MAX_SSE_LINE_CHARS = 8 * 1024 * 1024;
 
 function completeJsonDataLine(line: string): boolean {
   if (!line.startsWith('data:')) return false;
@@ -85,12 +90,18 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
     const buffered = carry + text;
     const cut = buffered.lastIndexOf('\n') + 1;
     carry = buffered.slice(cut);
+    if (carry.length > MAX_SSE_LINE_CHARS) {
+      throw new Error(`provider SSE line exceeded ${MAX_SSE_LINE_CHARS} characters`);
+    }
     if (cut === 0) return false;
     const lines = buffered.slice(0, cut);
     let output = '';
     let start = 0;
     for (let end = lines.indexOf('\n'); end >= 0; end = lines.indexOf('\n', start)) {
       const line = lines.slice(start, end + 1);
+      if (line.length > MAX_SSE_LINE_CHARS) {
+        throw new Error(`provider SSE line exceeded ${MAX_SSE_LINE_CHARS} characters`);
+      }
       const complete = completeJsonDataLine(line);
       if (complete && previousDataLineEnding) {
         // OpenAI chat-completion chunks are independent SSE events. Some

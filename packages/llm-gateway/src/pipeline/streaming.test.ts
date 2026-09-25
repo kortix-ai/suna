@@ -87,6 +87,20 @@ describe('relayStream', () => {
     expect(output).toBe(text + '\r\n');
   });
 
+  test('bounds an upstream line that never terminates', async () => {
+    let settledError: unknown;
+    const stream = relayStream({
+      upstreamBody: new ReadableStream({
+        start(controller) { controller.enqueue(encoder.encode('data: ' + 'x'.repeat(8 * 1024 * 1024))); controller.close(); },
+      }),
+      requestId: 'req_unterminated',
+      logger: { warn() {}, error() {} },
+      settle: async (_usage, error) => { settledError = error; },
+    });
+    await expect(new Response(stream).text()).rejects.toThrow('provider SSE line exceeded');
+    expect(settledError).toMatchObject({ code: 'upstream_stream_error' });
+  });
+
   test('relays provider bytes unchanged and settles usage once', async () => {
     const text =
       'data: {"choices":[{"delta":{"content":"hello"}}]}\n\n' +
