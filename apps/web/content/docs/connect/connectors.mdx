@@ -41,6 +41,51 @@ Each account's `owner_type` decides who may run a call as it:
 Multiple connectors can reference the same provider app. Use separate
 connectors when one app needs different policies.
 
+### Choose who can use a shared account
+
+A shared account is usable by everyone in the project until you narrow it.
+Open the connector in **Customize → Connectors**, then select **Share** on the
+account row. The dialog is the same **Grant access** dialog used for agents. It
+lists who can use the account now, and you add:
+
+- **Everyone in the project** — the default.
+- **Groups** — every member of each group.
+- **People** — one member each. Pick only yourself to keep the account to you.
+
+Nothing changes until you select **Save**. Removing the last group or person
+makes the account usable by everyone again; the dialog states the result before
+you save.
+
+A narrowed account follows the private-account rules, with its audience in
+place of the owner:
+
+- Only a person in the audience can use it, and only in a private session.
+- A service account (an agent or a trigger acting unattended) never uses it.
+- A session that binds it cannot be shared.
+
+A person outside the audience does not see the account. A person who manages
+the project's connections still sees it, marked **Not shared with you**, so
+they can change who can use it.
+
+Each audience entry is one `connection` object assignment in the grant store:
+
+```text
+POST   /accounts/{accountId}/iam/assignments
+       {"principal_type": "group", "principal_id": "<group-id>",
+        "role_key": "agent-user", "scope_type": "project", "scope_id": "<project-id>",
+        "object_type": "connection", "object_id": "<connection-id>"}
+DELETE /accounts/{accountId}/iam/assignments/{assignmentId}
+```
+
+- `principal_type` is `user`, `group`, or `project` (everyone in the project;
+  `principal_id` is the project id).
+- Granting or revoking one needs `project.connector.connections.manage`.
+- Only a shared account can be narrowed. A private account, or an id that is
+  not a connection in this project, answers `404`.
+- `GET /projects/{projectId}/connections` returns each shared account's grants
+  in `shared_with`, and `usable: false` on an account the caller sees only to
+  manage it. The session picker offers only usable accounts.
+
 ### Which identity an account acts as
 
 An account's `label` is a name chosen before authorization. It does not say
