@@ -11,7 +11,7 @@ import {
 import { normalizeString } from '../../projects/lib/serializers';
 import { chooseEffectiveAgent } from '../../llm-gateway/resolution/effective';
 import { EVENT_DEDUPE_TTL_MS } from './app';
-import { buildAgentUnavailablePickerBlocks, loadScopedChannelAgents } from './commands';
+import { buildAgentUnavailablePickerBlocks, loadScopedChannelAgents } from './agent-picker';
 import { currentChannelSelection } from './selection';
 import { startErrorMessage } from './start-error';
 import {

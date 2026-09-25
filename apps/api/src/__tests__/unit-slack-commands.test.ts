@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Slash command handlers for agent/model selection + session visibility.
 
@@ -11,8 +12,16 @@ function makeChain(): any {
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
   return chain;
 }
+let deletes = 0;
 mock.module('../shared/db', () => ({
-  db: { select: () => makeChain(), update: () => makeChain() },
+  db: {
+    select: () => makeChain(),
+    update: () => makeChain(),
+    delete: () => {
+      deletes++;
+      return makeChain();
+    },
+  },
   hasDatabase: () => true,
 }));
 
@@ -22,6 +31,7 @@ let setAgentResult: { ok: true } | { ok: false; reason: 'no_binding' | 'unknown_
 let setModelResult = true;
 const setAgentCalls: Array<string | null> = [];
 const setModelCalls: Array<string | null> = [];
+const setPolicyCalls: string[] = [];
 mock.module('../channels/slack/selection', () => ({
   currentChannelSelection: async () => selection,
   setChannelAgent: async (_ctx: unknown, a: string | null) => { setAgentCalls.push(a); return setAgentResult; },
@@ -33,7 +43,7 @@ mock.module('../channels/slack/selection', () => ({
   ],
   isValidModelId: (s: string) => { const i = s.indexOf('/'); return i > 0 && i < s.length - 1 && !/\s/.test(s); },
   modelLabel: (id: string) => (id === 'anthropic/claude-opus-4-8' ? 'Claude Opus 4.8' : id),
-  setChannelConversationPolicy: async () => undefined,
+  setChannelConversationPolicy: async (_ctx: unknown, p: string) => { setPolicyCalls.push(p); return true; },
 }));
 
 // Model decisions no longer read a hardcoded RECOMMENDED_MODELS list off the
@@ -80,15 +90,24 @@ mock.module('../llm-gateway/models/picker', () => ({
 }));
 
 // Identity layer — kept out of the db chain so it doesn't disturb dbResults
-// ordering. Controllable per-test via `identityRow`.
+// ordering. Controllable per-test via `identityRow` and `settingsActor`.
 let identityRow: { userId: string } | null = null;
-mock.module('../channels/slack/identity', () => ({
-  lookupSlackIdentity: async () => identityRow,
-  linkSlackIdentity: async () => {},
-  resolveSlackActor: async () => ({ userId: 'user-1' }),
-  revokeSlackIdentity: async () => true,
-  lookupSlackUserIdForKortixUser: async () => null,
-}));
+let settingsActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
+const actorChecks: Array<{ projectId: string; action: string }> = [];
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({
+  
+  lookupChatIdentity: async () => identityRow,
+  linkChatIdentity: async () => {},
+  revokeChatIdentity: async () => true,
+  lookupChatUserForKortixUser: async () => null,
+  resolveChatActor: async () => ({ userId: 'user-1' }),
+  resolveProjectChatActor: async (_user: unknown, projectId: string, action: string) => {
+    actorChecks.push({ projectId, action });
+    return settingsActor;
+  },
+}),
+);
 mock.module('../accounts/core/app', () => ({
   lookupEmailsByUserIds: async (ids: string[]) =>
     new Map(ids.map((id) => [id, `${id}@example.com`])),
@@ -121,6 +140,10 @@ beforeEach(() => {
   setModelResult = true;
   setAgentCalls.length = 0;
   setModelCalls.length = 0;
+  setPolicyCalls.length = 0;
+  settingsActor = { userId: 'user-1' };
+  actorChecks.length = 0;
+  deletes = 0;
   servable = true;
 });
 
@@ -290,5 +313,53 @@ describe('/kortix whoami', () => {
     const txt = allText(resp);
     expect(txt).toContain('reviewer');
     expect(txt).toContain('Claude Opus 4.8');
+  });
+});
+
+/**
+ * A channel's project, agent, model and policy are project settings. Changing
+ * one from Slack needs what the web binding editor needs: a linked Kortix
+ * account with `project.connector.write` on the channel's project (project
+ * managers, account owners and admins).
+ */
+describe('channel settings need a linked project manager', () => {
+  test('a linked member without the capability cannot change the model; nothing is written', async () => {
+    settingsActor = { reason: 'not_member' };
+    const resp = await handleSlashCommand('model', 'default', ctx);
+    expect(resp.text).toContain('Only a project manager');
+    expect(setModelCalls).toEqual([]);
+    expect(actorChecks).toEqual([{ projectId: 'p1', action: 'project.connector.write' }]);
+  });
+
+  test('an unlinked caller cannot change the agent; nothing is written', async () => {
+    settingsActor = { reason: 'unlinked' };
+    const resp = await handleSlashCommand('agent', 'reviewer', ctx);
+    expect(resp.text).toContain('Connect your Kortix account first');
+    expect(setAgentCalls).toEqual([]);
+  });
+
+  test('a caller without the capability cannot change the session policy', async () => {
+    settingsActor = { reason: 'not_member' };
+    const resp = await handleSlashCommand('policy', 'owner_only', ctx);
+    expect(resp.text).toContain('Only a project manager');
+    expect(setPolicyCalls).toEqual([]);
+  });
+
+  test('a caller without the capability cannot unbind the channel; nothing is deleted', async () => {
+    settingsActor = { reason: 'not_member' };
+    const resp = await handleSlashCommand('unbind', '', ctx);
+    expect(resp.text).toContain('Only a project manager');
+    expect(deletes).toBe(0);
+  });
+
+  test('a project manager changes each setting', async () => {
+    expect((await handleSlashCommand('model', 'default', ctx)).text).toContain('reset');
+    expect((await handleSlashCommand('agent', 'reviewer', ctx)).text).toContain('reviewer');
+    expect((await handleSlashCommand('policy', 'owner_only', ctx)).text).toContain('policy set to');
+    expect(allText(await handleSlashCommand('unbind', '', ctx))).toContain('Unbound');
+    expect(setModelCalls).toEqual([null]);
+    expect(setAgentCalls).toEqual(['reviewer']);
+    expect(setPolicyCalls).toEqual(['owner_only']);
+    expect(deletes).toBe(1);
   });
 });

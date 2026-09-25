@@ -69,12 +69,14 @@ mock.module('../channels/slack-api', () => ({
 const {
   connectAccountBlocks,
   requestAccessBlocks,
-  createSlackAccessRequest,
   notifyAdminsOfAccessRequest,
   postIdentityPrompt,
 } = await import(
   '../channels/slack/identity'
 );
+const { chatUser, createChatAccessRequest } = await import('../channels/core/identity');
+const createSlackAccessRequest = (input: { teamId: string; slackUserId: string; projectId: string }) =>
+  createChatAccessRequest(chatUser('slack', input.teamId, input.slackUserId), input.projectId);
 
 afterAll(() => mock.restore());
 beforeEach(() => {
@@ -196,7 +198,7 @@ describe('notifyAdminsOfAccessRequest', () => {
   test('links admins directly to the project Members review surface', async () => {
     dbResults = [
       [{ name: 'Slack Auth' }], // email notification project lookup
-      [{ slackUserId: 'UADMIN' }], // lookupSlackUserIdForKortixUser
+      [{ platformUserId: 'UADMIN' }], // lookupChatUserForKortixUser
     ];
 
     await notifyAdminsOfAccessRequest({

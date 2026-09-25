@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 import { TEAMS_FORM_VERB } from '../channels/teams/cards';
 
@@ -17,11 +18,17 @@ const PROJECT = 'proj-1';
 
 mock.module('../channels/teams/identity', () => ({
   teamsUserId: () => '29:presser',
-  resolveTeamsActor: async () => ({ userId: 'user-1' }),
-  createTeamsAccessRequest: async () => null,
   notifyAdminsOfTeamsAccessRequest: async () => {},
-  lookupTeamsIdentity: async () => ({ userId: 'user-1' }),
 }));
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({
+  
+  resolveChatActor: async () => ({ userId: 'user-1' }),
+  createChatAccessRequest: async () => null,
+  resolveProjectChatActor: async () => ({ userId: 'user-1' }),
+  lookupChatIdentity: async () => ({ userId: 'user-1' }),
+}),
+);
 
 mock.module('../channels/teams/binding', () => ({
   resolveConversationProject: async () => PROJECT,

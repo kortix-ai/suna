@@ -15,7 +15,8 @@ import { buildAgentUnavailableCard } from './agent-picker';
 import { resolveAgentGrant } from '../../projects/agents';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
-import { postTeamsIdentityPrompt, resolveTeamsActor, teamsUserId } from './identity';
+import { postTeamsIdentityPrompt, teamsUserId } from './identity';
+import { chatUser, resolveChatActor } from '../core/identity';
 import {
   buildTeamsTurnEnv,
   closeAbandonedTurn,
@@ -70,7 +71,7 @@ async function resolveTeamsTurnActor(
   }
 
   const senderId = teamsUserId(activity);
-  const actor = await resolveTeamsActor(tenantId, senderId ?? '', accountId, projectId);
+  const actor = await resolveChatActor(chatUser('teams', tenantId, senderId ?? ''), { projectId, accountId });
   if ('userId' in actor) return actor.userId;
 
   // The live card is already on screen (it goes out before identity is

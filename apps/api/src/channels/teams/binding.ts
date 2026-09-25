@@ -184,14 +184,6 @@ export async function ensureTeamsConversationBinding(input: {
   return true;
 }
 
-export async function setConversationProject(input: {
-  tenantId: string;
-  conversationId: string;
-  projectId: string;
-}): Promise<boolean> {
-  return ensureTeamsConversationBinding(input);
-}
-
 export interface TeamsConversationSession {
   sessionId: string;
   status: string | null;

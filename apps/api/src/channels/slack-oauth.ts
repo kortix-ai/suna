@@ -6,7 +6,7 @@ import { db } from '../shared/db';
 import { config } from '../config';
 import { slackOauthMode } from './slack-oauth-mode';
 import { saveSlackOauthInstall } from './install-store';
-import { linkSlackIdentity } from './slack/identity';
+import { chatUser, linkChatIdentity } from './core/identity';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { makeOpenApiApp, errors } from '../openapi';
 import { signChannelToken, verifyChannelToken } from './core/signed-token';
@@ -149,11 +149,7 @@ slackOauthApp.openapi(
   // the per-user identity feature is enabled (the whole feature is flag-gated).
   if (config.SLACK_REQUIRE_USER_IDENTITY && tokenJson.authed_user?.id) {
     try {
-      await linkSlackIdentity({
-        teamId: tokenJson.team.id,
-        slackUserId: tokenJson.authed_user.id,
-        userId: payload.userId,
-      });
+      await linkChatIdentity(chatUser('slack', tokenJson.team.id, tokenJson.authed_user.id), payload.userId);
     } catch (err) {
       console.warn('[slack-oauth] installer identity seed failed', {
         projectId: payload.projectId,

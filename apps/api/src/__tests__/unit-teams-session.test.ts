@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 /**
  * Time-to-first-card. On dev (2026-09-18) the "Working on it…" card showed a
@@ -125,18 +126,23 @@ mock.module('../channels/teams/turn', () => ({
 
 mock.module('../channels/teams/identity', () => ({
   teamsUserId: () => 'aad-user-1',
-  // Reached by the AGENT_NOT_DECLARED recovery picker, which scopes its list
-  // to the pressing user.
-  lookupTeamsIdentity: async () => null,
-  resolveTeamsActor: async () => {
-    calls.push('resolveTeamsActor');
-    return actor;
-  },
   postTeamsIdentityPrompt: async (input: Record<string, unknown>) => {
     calls.push('postTeamsIdentityPrompt');
     prompts.push(input);
   },
 }));
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({
+  
+  // Reached by the AGENT_NOT_DECLARED recovery picker, which scopes its list
+  // to the pressing user.
+  lookupChatIdentity: async () => null,
+  resolveChatActor: async () => {
+    calls.push('resolveChatActor');
+    return actor;
+  },
+}),
+);
 
 const bindings: Array<Record<string, unknown>> = [];
 mock.module('../channels/teams/binding', () => ({
@@ -228,7 +234,7 @@ describe('createOrJoinTeamsConversationSession — the live card goes out first'
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
 
     expect(calls.indexOf('startTurn')).toBeGreaterThanOrEqual(0);
-    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveTeamsActor'));
+    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveChatActor'));
     expect(calls.filter((c) => c === 'startTurn')).toHaveLength(1);
     expect(created).toHaveLength(1);
     expect(created[0].userId).toBe('user-1');
@@ -242,7 +248,7 @@ describe('createOrJoinTeamsConversationSession — the live card goes out first'
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
 
     expect(calls.filter((c) => c === 'startTurn')).toHaveLength(1);
-    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveTeamsActor'));
+    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveChatActor'));
     expect(continued).toHaveLength(1);
     expect(continued[0].sessionId).toBe('sess-existing');
     expect(created).toHaveLength(0);
@@ -254,7 +260,7 @@ describe('createOrJoinTeamsConversationSession — the live card goes out first'
 
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
 
-    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveTeamsActor'));
+    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveChatActor'));
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toMatchObject({ reason: 'unlinked', replaceActivityId: 'live-card-1' });
     expect(created).toHaveLength(0);
@@ -393,7 +399,7 @@ describe('join policy on a follow-up', () => {
       teamsUserId: 'aad-user-1',
       actorUserId: 'user-1',
     });
-    expect(calls.indexOf('resolveTeamsActor')).toBeLessThan(calls.indexOf('continueSession'));
+    expect(calls.indexOf('resolveChatActor')).toBeLessThan(calls.indexOf('continueSession'));
   });
 
   test('not allowed: the requester\'s live card becomes the notice, nothing is delivered, the session is untouched', async () => {
@@ -652,7 +658,7 @@ describe('createOrJoinTeamsConversationSession — a session owned by another pr
     });
 
     expect(calls).not.toContain('startTurn');
-    expect(calls).not.toContain('resolveTeamsActor');
+    expect(calls).not.toContain('resolveChatActor');
     expect(continued).toHaveLength(0);
     expect(created).toHaveLength(0);
   });

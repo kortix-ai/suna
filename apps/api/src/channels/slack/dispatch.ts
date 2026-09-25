@@ -27,7 +27,8 @@ import {
 } from './session';
 import { ensureSlackThreadParticipant } from './participants';
 import { currentChannelSelection } from './selection';
-import { postIdentityPrompt, resolveSlackActor } from './identity';
+import { postIdentityPrompt } from './identity';
+import { chatUser, resolveChatActor } from '../core/identity';
 import { resolveProjectAutomationActor } from '../../projects/session-lifecycle';
 import {
   deleteTurn,
@@ -703,7 +704,7 @@ export async function dispatchSlackEvent(
         .limit(1);
       if (!project) return;
       const slackUserId = event.user ?? '';
-      const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
+      const actor = await resolveChatActor(chatUser('slack', teamId, slackUserId), { projectId, accountId: project.accountId });
       if ('reason' in actor) {
         // Same reason as the main path below: a bot cannot read a prompt
         // addressed to it. See `<cmd> link-bot`.
@@ -766,7 +767,7 @@ export async function spawnAgentTurn(
   let actorUserId: string;
   if (config.SLACK_REQUIRE_USER_IDENTITY) {
     const slackUserId = event.user ?? '';
-    const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
+    const actor = await resolveChatActor(chatUser('slack', teamId, slackUserId), { projectId, accountId: project.accountId });
     if ('reason' in actor) {
       // A BOT cannot act on this. postIdentityPrompt posts an ephemeral AND a DM
       // to slackUserId, so for a bot sender both land where no human will ever
