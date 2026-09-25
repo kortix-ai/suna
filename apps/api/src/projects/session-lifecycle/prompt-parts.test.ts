@@ -64,6 +64,13 @@ describe('sanitizeInboxPromptParts', () => {
     ).toEqual({ error: 'attachment_id must be a UUID' });
   });
 
+  test('accepts an attachment_id of any uuid version', () => {
+    const attachment_id = 'a7100000-0000-0000-0000-000000000001';
+    expect(sanitizeInboxPromptParts([{ type: 'file', attachment_id }])).toEqual({
+      parts: [{ type: 'file', attachment_id }],
+    });
+  });
+
   test('keeps the known fields of text and file parts, drops everything else', () => {
     const result = sanitizeInboxPromptParts([
       { type: 'text', text: 'hello', evil: 'dropped' },

@@ -56,6 +56,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import { abortRuntimeTurn } from './abort-runtime-turn';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
 import { resolveSessionOpencodeEndpoint } from './runtime-client';
 import {
@@ -132,7 +133,7 @@ export interface HoldSettleDeps {
   now: () => number;
 }
 
-const liveDeps: HoldSettleDeps = {
+export const liveHoldSettleDeps: HoldSettleDeps = {
   async countClaimed(sessionId) {
     const [row] = await db
       .select({ n: sql<number>`count(*)::int` })
@@ -169,17 +170,11 @@ const liveDeps: HoldSettleDeps = {
     if (!res.ok) return null;
     return parsePlacementTip(await res.json().catch(() => null));
   },
-  async abort(sessionId) {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return false;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/abort?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
-    return res.ok;
-  },
+  // This abort is part of the Stop the user pressed, and it does not pass the
+  // sandbox proxy that stamps `UserStop`. It also runs before the client's own
+  // abort in the common case, so it stamps the open turn itself. A turn a late
+  // delivery opened after the hold is stopped by this call alone.
+  abort: (sessionId) => abortRuntimeTurn(sessionId, { requestedStop: true }),
   async removeMessage(sessionId, messageId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
     if (!resolved) return false;
@@ -250,7 +245,7 @@ export interface HoldSettlement {
 
 export async function settleInboxHoldAfterStop(
   sessionId: string,
-  deps: HoldSettleDeps = liveDeps,
+  deps: HoldSettleDeps = liveHoldSettleDeps,
 ): Promise<HoldSettlement> {
   const out: HoldSettlement = {
     waitedMs: 0,
