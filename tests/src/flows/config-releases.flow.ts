@@ -86,7 +86,8 @@ interface Fixture {
     ownerUserId?: string;
   }): Promise<SessionToken>;
   descriptor(secret: string | null, sessionId: string, body?: unknown): Promise<{ status: number; body: any }>;
-  download(secret: string | null, treeId: string): Promise<{ status: number; bytes: Buffer; source: string | null }>;
+  /** `query` is the archive URL's query string (a composed release tree carries `?commit=`). */
+  download(secret: string | null, treeId: string, query?: string): Promise<{ status: number; bytes: Buffer; source: string | null }>;
   /** Commit files onto the base branch of the project repository. Returns the new tip. */
   commit(files: Record<string, string>, message: string): Promise<string>;
   /** Open another project's repository with the same credential. */
@@ -366,8 +367,8 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       } catch {}
       return { status: response.status, body: parsed };
     },
-    async download(secret, treeId) {
-      const response = await fetch(`${origin}/v1/projects/${project.id}/config-archives/${treeId}`, {
+    async download(secret, treeId, query = '') {
+      const response = await fetch(`${origin}/v1/projects/${project.id}/config-archives/${treeId}${query}`, {
         headers: secret ? { Authorization: `Bearer ${secret}` } : {},
         redirect: 'manual',
         signal: AbortSignal.timeout(60_000),
@@ -656,6 +657,30 @@ flow(
         }
         const download = await fixture.download(restricted.secret, descriptor.config_tree_id!);
         if (download.status !== 403) throw new Error(`restricted download: expected 403, got ${download.status}`);
+      });
+
+      await ctx.step('a root skills/ folder joins the release, and its archive is rebuilt from the commit its URL names', async () => {
+        const tip = await fixture.commit(
+          { 'skills/root-demo/SKILL.md': '---\nname: root-demo\ndescription: root layout\n---\nRoot skill.\n' },
+          'root layout skill',
+        );
+        const r = await fixture.descriptor(own.secret, own.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        const composed = r.body as Descriptor;
+        if (composed.source_commit !== tip) throw new Error(`source_commit ${composed.source_commit} is not the tip ${tip}`);
+        const query = `?commit=${tip}`;
+        if (composed.archive?.url !== `/v1/projects/${fixture.projectId}/config-archives/${composed.config_tree_id}${query}`) {
+          throw new Error(`archive url ${composed.archive?.url}`);
+        }
+        const download = await fixture.download(own.secret, composed.config_tree_id!, query);
+        if (download.status !== 200) throw new Error(`expected 200, got ${download.status}`);
+        const files = await assertArchiveMatches(composed, download.bytes);
+        for (const path of ['skills/root-demo/SKILL.md', 'skills/demo/SKILL.md', 'agents/kortix.md', 'opencode.json']) {
+          if (!files.has(path)) throw new Error(`archive lacks ${path}`);
+        }
+        // The composed tree is in no mirror: without its commit the route cannot vouch for it.
+        const bare = await fixture.download(own.secret, composed.config_tree_id!);
+        if (bare.status !== 404) throw new Error(`download without the commit: expected 404, got ${bare.status}`);
       });
     } finally {
       await fixture.cleanup();
