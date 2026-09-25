@@ -777,7 +777,7 @@ describe('session_turns ledger dual-write', () => {
 
     // Without this the row beginSandboxTurn inserted stays 'delivering' for
     // ever, and every failed delivery (preview.ts 3xx/401/503/4xx/unreachable,
-    // r4.ts turn_abandoned) leaves one behind.
+    // turn-stream.ts turn_abandoned) leaves one behind.
     expect(executed).toHaveLength(2);
     expect(executed[1]).toContain('INSERT INTO kortix.session_turns');
     expect(executed[1]).toContain('abandoned');

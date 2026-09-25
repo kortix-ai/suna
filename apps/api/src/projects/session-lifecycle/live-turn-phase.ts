@@ -58,8 +58,8 @@ export const LIVE_TURN_PHASE_PAGE_LIMIT = 8;
  *  the prompt steered into a streaming essay, and sat unread for minutes. A
  *  late right answer costs a few seconds; an on-time wrong one costs the whole
  *  stream. The read holds only this session's lane: lanes of one drain run
- *  concurrently (`engine.ts`), each POST kicks its own targeted drain
- *  (`routes/r8.ts`), and a drain already waits far longer for a cold box. */
+ *  concurrently (`drain.ts`), each POST kicks its own targeted drain
+ *  (`routes/session-prompts.ts`), and a drain already waits far longer for a cold box. */
 export const LIVE_TURN_PHASE_READ_TIMEOUT_MS = 6_000;
 
 const WORKSPACE = '/workspace';
@@ -154,7 +154,7 @@ export function liveTurnPhaseFromPage(page: unknown, turnMessageId: string): Liv
 
 export interface LiveTurnPhaseReadDeps {
   /** The signed proxy endpoint + OpenCode root for the session
-   *  (`resolveSessionOpencodeEndpoint` in `engine.ts`). */
+   *  (`resolveSessionOpencodeEndpoint` in `runtime-client.ts`). */
   resolveEndpoint: (
     sessionId: string,
     actorUserId?: string | null,

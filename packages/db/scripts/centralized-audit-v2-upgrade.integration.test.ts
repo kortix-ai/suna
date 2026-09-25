@@ -6,7 +6,7 @@ import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
 
-const databaseUrl = process.env.AUDIT_V2_DATABASE_URL;
+const databaseUrl = process.env.TEST_DATABASE_ADMIN_URL;
 const migrationsDir = join(import.meta.dir, '..', 'migrations');
 const bootstrapPath = join(import.meta.dir, '..', 'drizzle', '0000_bootstrap.sql');
 

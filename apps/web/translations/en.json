@@ -35,7 +35,26 @@
     "connectAccount": "Connect account",
     "oauthWaiting": "Waiting for authorization…",
     "oauthExpired": "Authorization timed out. Try again.",
-    "oauthPrivateDescription": "New ChatGPT accounts are available to this project by default. You can restrict each account to selected members.",
+    "oauthPrivateDescription": "Use your ChatGPT Plus or Pro plan in this project. New accounts are private to you until you share them.",
+    "chatGptSubscription": "ChatGPT subscription",
+    "useYourChatGpt": "Use your ChatGPT subscription",
+    "manageChatGptAccounts": "Manage ChatGPT accounts",
+    "connect": "Connect",
+    "connectChatGpt": "Connect ChatGPT",
+    "noChatGptAccounts": "No ChatGPT accounts yet",
+    "oauthCreationDescription": "Sign in with your ChatGPT Plus or Pro account. Kortix stores the login encrypted and never shows it.",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "Only you",
+    "onlyYouDescription": "Only you can select it in a session.",
+    "onlyOwner": "Only {name}",
+    "shareRequiresPermission": "Sharing with others requires permission to manage project secrets.",
+    "accountConnected": "ChatGPT account connected",
+    "accountReconnected": "ChatGPT account reconnected",
+    "connectFailed": "ChatGPT authorization failed. Try again.",
+    "reconnectAccount": "Reconnect",
+    "reconnectTitle": "Reconnect {label}",
+    "reconnectDescription": "Sign in with ChatGPT again. The account keeps its name, access, and session selections.",
+    "needsReconnection": "Needs reconnection",
     "creationDescription": "The value stays encrypted. Choose who can use this connection before saving it.",
     "whoCanUse": "Who can use this connection?",
     "everyoneInProject": "Everyone in this project",
@@ -52,7 +71,7 @@
     "deleteError": "Secret could not be deleted",
     "accessError": "Access could not be changed",
     "sharedTitle": "Provider connections",
-    "sharedDescription": "Add multiple API keys and ChatGPT accounts. Everyone in this project can use each by default. Restrict access per connection and choose keys per session.",
+    "sharedDescription": "Add API keys and ChatGPT accounts. New ones are private to you until you share them. Choose which ones each session uses.",
     "legacyProjectKey": "Existing project key · Used when this session has no key selection",
     "keyCount": "{count, plural, one {# key} other {# keys}}",
     "providerKeysFor": "{provider} API keys",
@@ -104,6 +123,7 @@
     "providerKeys": "Provider keys",
     "chooseSharedKeys": "Choose the shared keys this session can use.",
     "sessionKeyPool": "Session key pool",
+    "sharedSessionKeys": "This session is shared with the project, so only keys shared with the whole project work here. Keys granted to you work in your private sessions.",
     "projectDefaultShort": "Project default",
     "rateLimitDescription": "The gateway rotates through selected keys when a provider reports a rate limit.",
     "enableGateway": "Enable LLM gateway in project settings to use pooled keys."
@@ -935,7 +955,7 @@
         },
         "pooled_provider_secrets": {
           "name": "Pooled Provider Secrets",
-          "description": "Share multiple provider keys with members and select a key pool for each session."
+          "description": "Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses."
         },
         "pi_worker": {
           "name": "Pi Worker Runtime (compiled)",
@@ -1594,6 +1614,7 @@
     "backToProject": "Back to project",
     "delete": "Delete session",
     "failedLabel": "Failed session",
+    "loadingConversation": "Loading conversation",
     "prompt": {
       "queueFailed": "Could not queue the saved prompt",
       "unavailable": "No saved prompt is available.",
@@ -6251,7 +6272,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "All Worker executions are currently paused."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "No content"
+      "line1115JsxTextNoContent": "No content",
+      "loadRemoteImage": "Load image from {host}"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Press Enter to boot..."
@@ -18708,7 +18730,9 @@
       "texta0bcee97cbb3": "Confirmed inline checkout",
       "text0b751a917c97": "Connected GitHub installation",
       "text8b7a8797d532": "Connected Microsoft Teams tenant",
+      "text83c0e255d4bb": "Completed Microsoft Teams install",
       "text17a8cf884e2a": "Connected Slack workspace",
+      "textf887cb0e6800": "Completed Slack app install",
       "textc7f9ec5ed69c": "Connected computer tunnel agent",
       "textafd58fcedeee": "Connected email inbox",
       "text2eda12b4ed38": "Connected existing GitHub App",
@@ -19171,7 +19195,28 @@
       "text2afef4702cc0": "Viewed system status banner",
       "textbda3fcd4343c": "Viewed tier configurations",
       "text30cef615e8e3": "Viewed transaction summary",
-      "textd2c6127fc332": "Viewed version diff"
+      "textd2c6127fc332": "Viewed version diff",
+      "text8cc0d84b66bb": "Previewed Slack identity link",
+      "text508b43cc4545": "Previewed Teams identity link",
+      "text467f597e95b0": "Verified SSO domain",
+      "text8295f9d4861b": "Set account SSO domain verification"
+    },
+    "publicShareConfirm": {
+      "title": "Create a public link?",
+      "description": "Anyone with the link can view this without signing in. The link stays active until you revoke it.",
+      "confirm": "Create link"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} account",
+      "chatWorkspace": "{service} workspace",
+      "checking": "Checking link…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} was not connected",
+      "mismatch": "This install was started from another Kortix account or for another project. Sign in with that account, or start the install again from the project.",
+      "expired": "This install link is invalid or has expired. Start the install again from the project.",
+      "failed": "The install could not be finished. Start it again from the project.",
+      "backToProject": "Back to the project"
     }
   },
   "projectOnboarding": {
@@ -20170,5 +20215,18 @@
   },
   "connectorsAppReturn": {
     "done": "Done. Back to the Kortix app"
+  },
+  "ssoDomainVerification": {
+    "title": "Domain verification",
+    "verified": "Verified",
+    "unverified": "Not verified",
+    "verifiedDescription": "Your identity provider is trusted for {domain}. Enforcing SSO applies to this domain.",
+    "unverifiedDescription": "Add this DNS TXT record to prove you control {domain}. Until then, SSO sign-in works only inside this account, and enforcing SSO has no effect.",
+    "recordName": "Name",
+    "recordValue": "Value",
+    "verify": "Verify domain",
+    "verifiedToast": "Domain verified",
+    "failedToast": "Domain not verified yet",
+    "enforceNeedsVerification": "Verify the domain first. Enforcing SSO applies only to a verified domain."
   }
 }

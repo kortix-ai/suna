@@ -9,7 +9,7 @@
 // `KORTIX_INSTANCE_ID` unset (every deployed env) nothing changes — not even
 // the metadata lookup runs.
 //
-// Same mocking caveat as the sibling engine.ts test files: `mock.module` is
+// Same mocking caveat as the sibling session-lifecycle test files: `mock.module` is
 // process-global in bun:test, so this file runs on its own under `--isolate`.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realInboxDeliveryHold from '../inbox-delivery-hold';
@@ -129,23 +129,23 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   // The landing proof requeues a prompt the runtime never showed (fresh
-  // attempt, fresh idempotency key). `engine.ts` imports it by name, so every
+  // attempt, fresh idempotency key). `queued-continue.ts` imports it by name, so every
   // store mock has to carry it or the engine import fails outright. Nothing in
   // this file fails a landing.
   requeueUnlandedPrompt: async () => {
     throw new Error('not expected: this test never fails a landing proof');
   },
   markInboxDeliveryStarted: async () => {},
-  markCommandFailed: async (commandId: string, message: string) => {
+  markCommandFailed: async ({ commandId }: { commandId: string }, message: string) => {
     failedCalls.push({ commandId, message });
   },
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
-  markCommandForwarded: async (commandId: string) => {
+  markCommandForwarded: async ({ commandId }: { commandId: string }) => {
     forwardedCalls.push(commandId);
   },
-  markCommandSucceeded: async (commandId: string) => {
+  markCommandSucceeded: async ({ commandId }: { commandId: string }) => {
     succeededCalls.push(commandId);
   },
   withNextDeliveryAttempt: (payload: unknown) => payload,
@@ -165,7 +165,7 @@ mock.module('../instance-release', () => ({
     return sessionMetadataBySession;
   },
   releaseCommandToOwningInstance: async (
-    commandId: string,
+    { commandId }: { commandId: string },
     opts: { availableAt: Date; owner: string | null },
   ) => {
     releases.push({ commandId, availableAt: opts.availableAt, owner: opts.owner });
@@ -193,7 +193,7 @@ mock.module('../inbox-delivery-hold', () => ({
   commitInboxPost: (commandId: string) => realInboxDeliveryHold.assertInboxDeliveryActive(commandId),
 }));
 
-const { drainSessionLifecycleQueue } = await import('../engine');
+const { drainSessionLifecycleQueue } = await import('../drain');
 
 function row(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecycleCommandRow {
   const now = new Date(NOW_MS);

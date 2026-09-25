@@ -31,7 +31,7 @@ import {
 } from './session-transcript-attachments';
 import { sessionAttachmentStore } from './session-attachments';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/engine';
+import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/runtime-client';
 import {
   MIRROR_CAPTURE_LIMIT,
   MIRROR_MAX_MESSAGES,

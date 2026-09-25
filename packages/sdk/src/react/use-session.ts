@@ -74,8 +74,6 @@ import { formatModelString } from './use-opencode-local';
 import {
   type AbortSettlement,
   type PromptPart,
-  abortInFlightDeliveries,
-  awaitAbortSettlement,
   opencodeKeys,
   rejectQuestion as rejectQuestionApi,
   replyToPermission,
@@ -93,10 +91,12 @@ import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
+import { resolveSavedTranscript } from '../core/session-sync/saved-transcript';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
 import { type SessionTurnObservation, useSessionWorking } from './use-session-working';
+import { cancelSessionTurn } from './session-stop';
 import { useVisibleAgents } from './use-visible-agents';
 
 /** Coarse session lifecycle for the host's top-level gating. */
@@ -899,6 +899,7 @@ const DISABLED_CHAT_ENGINE_SYNC = {
   retryTranscript: () => {},
   isBusy: false,
   isLoading: false,
+  mirrorState: 'idle' as ReturnType<typeof useSessionSync>['mirrorState'],
   diffs: [] as ReturnType<typeof useSessionSync>['diffs'],
   todos: [] as ReturnType<typeof useSessionSync>['todos'],
   hasOlder: false,
@@ -1165,8 +1166,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // other's. Nothing clears it on a server answer and nothing needs to — an
   // observation the server could make AFTER accepting the send outranks it —
   // so only the paths that know nothing is coming drop it.
-  const { noteSendReceipt, acceptSendReceipt, clearSendReceipt, noteAbortReceipt, settleAbortReceipt } =
-    useSessionWorkingStore.getState();
+  const { noteSendReceipt, acceptSendReceipt, clearSendReceipt } = useSessionWorkingStore.getState();
 
   // Always call the hook (rules-of-hooks) so it stays in the same position
   // every render, but starve it with an empty session id when the chat engine
@@ -1219,6 +1219,24 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     () => messagesBeforeRewind(sync.messages, restRewind),
     [sync.messages, restRewind],
   );
+  // 5a. Can this session show its saved conversation before the computer
+  // wakes? A host paints placeholder rows while the answer is `loading` and
+  // its boot screen only on `none` — see `core/session-sync/saved-transcript`.
+  const savedTranscript = resolveSavedTranscript({
+    enabled: startEnabled && chatEngine,
+    hasMessages: sync.messages.length > 0,
+    history: !transcriptHistoryEnabled
+      ? transcriptHistoryFlag.isLoading
+        ? 'loading'
+        : 'off'
+      : transcriptHistory.isLoading
+        ? 'loading'
+        : transcriptHistory.envelope
+          ? 'present'
+          : 'absent',
+    mirror: sync.mirrorState,
+    root: ocSessionId ? 'known' : canonicalSession.pinSettled ? 'unknown' : 'pending',
+  });
 
   useEffect(() => {
     setRewindPending(false);
@@ -1500,42 +1518,31 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     }
   };
 
-  // The one true cancel: abort the run AND drop any pending prompt + open
-  // prompts. Returns a promise that settles once the abort is acknowledged —
-  // the mutation resolved (and, per `abortOpenCodeSession`, the session's
-  // status was re-read to confirm idle), the mutation failed after its own
-  // retries, or a bounded ~5s timeout elapsed. See `AbortSettlement`.
+  // The one true cancel: hold the prompt inbox, abort the run, and drop any
+  // pending prompt + open prompts. Returns a promise that settles once the
+  // abort is acknowledged — the mutation resolved (and, per
+  // `abortOpenCodeSession`, the session's status was re-read to confirm idle),
+  // the mutation failed after its own retries, or a bounded ~5s timeout
+  // elapsed. See `AbortSettlement`.
   //
-  // T9: `abortInFlightDeliveries` runs FIRST, synchronously — a prompt
-  // still retrying its boot/wake backoff when the user hits Stop must never
-  // land after this point and run against the old text. The optimistic UI
-  // (busy → idle, questions/permissions cleared) still updates instantly;
-  // only the returned promise is new — a caller that never awaits it sees
-  // exactly the same synchronous effects as before.
+  // `cancelSessionTurn` is `stopWithReceipt`, the Stop `useSessionSend` uses:
+  // it files the abort receipt and cancels a delivery still in its boot/wake
+  // backoff synchronously (T9), then holds the session's prompt inbox (bounded
+  // by `STOP_HOLD_DEADLINE_MS`) BEFORE the abort. Without the hold, a prompt
+  // queued during the turn was redelivered as soon as the abort dropped the
+  // runtime's queue, and Stop started the next turn. The optimistic UI
+  // (questions/permissions cleared, composer idle) still updates instantly.
   const cancel = (): Promise<AbortSettlement> => {
-    if (runtimeActionReady) {
-      clearSendReceipt(sessionId);
-      // The stop's own receipt. The cancel needs a round trip through the
-      // control plane and the daemon before turn authority is released, so
-      // every `/turn` read issued before it settles still reports the doomed
-      // turn — including the one the optimistic idle frame below triggers.
-      // Without this the composer flipped Send back to Stop ~120ms after the
-      // click and stayed there for the whole abort. See `AbortReceipt`.
-      noteAbortReceipt(sessionId, Date.now());
-      // No fabricated idle frame here: the receipt above IS the optimistic
-      // idle, with provenance and a bound. A fabricated frame outranked the
-      // control plane's `/turn` answer in `projectWorking` for the whole
-      // abort round-trip — the laundering this migration removes.
-      abortInFlightDeliveries(ocSessionId);
-    }
+    const settlement = cancelSessionTurn({
+      projectId,
+      sessionId,
+      runtimeSessionId: ocSessionId,
+      runtimeActionReady,
+      runAbort: () => abortMutation.mutateAsync(ocSessionId),
+    });
     questions.forEach((q) => removeQuestion(q.id));
     permissions.forEach((p) => removePermission(p.id));
     setSendState(IDLE_SEND_STATE);
-    if (!runtimeActionReady) return Promise.resolve({ status: 'skipped' });
-    const settlement = awaitAbortSettlement(() => abortMutation.mutateAsync(ocSessionId));
-    // `awaitAbortSettlement` never rejects — it resolves with how the abort
-    // ended. A timeout is not an acknowledgement.
-    void settlement.then((result) => settleAbortReceipt(sessionId, Date.now(), result.status));
     return settlement;
   };
 
@@ -1653,6 +1660,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     isBusy: working.state === 'working',
     isCompacting,
     isLoading: sync.isLoading,
+    /**
+     * Can the saved conversation show before the computer wakes?
+     * `loading` — a saved copy may still paint (show placeholder rows);
+     * `shown` — messages are in the store; `none` — nothing can paint until
+     * the runtime answers (show the boot screen). An unknown is `loading`,
+     * never `none`.
+     */
+    savedTranscript,
     isError: terminal || !!startError || !!runtimeSessionError,
     /** Whether there are open interactive prompts (questions/permissions). */
     hasPending: questions.length > 0 || permissions.length > 0,

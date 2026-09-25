@@ -31,6 +31,7 @@ import {
 } from '@/features/session/provisioning-failure';
 import { isFirstPromptRow } from '@/features/session/queue-projection';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
+import { SavedSessionSkeleton } from '@/features/session/saved-session-skeleton';
 import { useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
@@ -55,7 +56,9 @@ import {
   SessionStartingLoader,
 } from '@/features/session/session-starting-loader';
 import {
+  hasOrExpectsTranscript,
   resolveBootPresentation,
+  resolveResumeOverlay,
   resolveSessionOverlay,
   shouldForgetNewSessionHint,
   shouldMountSessionChat,
@@ -599,6 +602,22 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // conversation for the length of the wake — 5-240 s, the exact complaint.
   // Boot status becomes a compact banner above the thread instead.
   const bootPresentation = resolveBootPresentation({ overlay, hasTranscript });
+  // And for a session being RESUMED, which surface stands in for the chat:
+  // skeleton rows while its saved conversation is on its way (one round trip
+  // to the control plane), the boot screen only when there is nothing saved to
+  // read. See `useSession().savedTranscript`.
+  const resumeOverlay = resolveResumeOverlay({ savedTranscript: session.savedTranscript });
+  const expectsTranscript = hasOrExpectsTranscript({
+    hasTranscript,
+    savedTranscript: session.savedTranscript,
+  });
+  const resumeSkeleton = (
+    <SavedSessionSkeleton
+      projectId={projectId}
+      sessionId={sessionId}
+      stage={authLoading || !user ? 'provisioning' : startStage}
+    />
+  );
 
   // The overlay is DISMISSED for two reasons now, and both use the same 300ms
   // crossfade the chat layer was already painted underneath: the chat reported
@@ -656,7 +675,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // rather than being dropped.
   const showCachedTranscriptWhileDown = canRenderCachedTranscriptWhileSandboxDown({
     sandboxStatus: sandbox?.status,
-    hasCachedContent: hasTranscript,
+    // A saved copy still on its way counts too: for its one round trip the
+    // overlay shows skeleton rows, and only once it answers `none` do the
+    // restart card and the waking screen below get their turn.
+    hasCachedContent: expectsTranscript,
   });
   // Read the RAW `/start` stage, never `session.phase` — `phase` folds a
   // terminal stage together with a typed `/start` error and a transient
@@ -802,6 +824,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   })();
   const inner = (() => {
     if (sessionSwitchLoading) {
+      if (resumeOverlay === 'saved-skeleton') return resumeSkeleton;
       return (
         <HeaderlessSessionSurface>
           <SessionStartingLoader
@@ -1102,6 +1125,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                 hasTranscript={hasTranscript}
                 draftActive={!overlayDismissed}
               />
+            ) : resumeOverlay === 'saved-skeleton' ? (
+              resumeSkeleton
             ) : (
               <HeaderlessSessionSurface>
                 <SessionStartingLoader

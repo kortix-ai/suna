@@ -11,7 +11,7 @@ import type { ProjectSession } from '@kortix/sdk';
  * routes drop it: the warm CLAIM, in the same transaction that inserts the
  * first prompt (`apps/api/src/projects/routes/warm-sessions.ts`), and
  * `POST .../start` for a take that carried no prompt
- * (`dropWarmSessionMarkerOnAdopt`, `apps/api/src/projects/routes/r8.ts`).
+ * (`dropWarmSessionMarkerOnAdopt`, `apps/api/src/projects/routes/session-runtime.ts`).
  * That closes the gap for everyone ELSE reading the list, but the adopting
  * tab itself still has to wait for its own `invalidateQueries` refetch to
  * round-trip. This function is the zero-latency half: insert the row the

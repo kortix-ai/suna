@@ -187,6 +187,7 @@ import { useModelPricingLookup } from '@/lib/model-pricing';
 import {
   type AgentRefLike,
   type FileRefLike,
+  appendSessionRefs,
   buildAgentRefsBlock,
   buildFileRefsBlock,
 } from '@/lib/project-preamble';
@@ -523,7 +524,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
             return (
               <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
-                  <UnifiedMarkdown content={q.question} />
+                  <UnifiedMarkdown content={q.question} trust="agent" />
                 </div>
                 <p className="text-foreground text-sm font-medium text-pretty">{answerText}</p>
               </div>
@@ -4252,12 +4253,10 @@ export function SessionChat({
       ];
       let optimisticText = text;
       optimisticText = buildOptimisticPromptTextWithUploads(optimisticText, attachedFiles);
-      if (allOptimisticSessionMentions.length > 0) {
-        const refs = allOptimisticSessionMentions
-          .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
-          .join('\n');
-        optimisticText = `${optimisticText}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
-      }
+      optimisticText = appendSessionRefs(
+        optimisticText,
+        allOptimisticSessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })),
+      );
       if (fileMentionRefs.length > 0) {
         const block = buildFileRefsBlock(fileMentionRefs);
         if (block) optimisticText = `${optimisticText}\n\n${block}`;
@@ -4471,12 +4470,10 @@ export function SessionChat({
         }
 
         const allSessionMentions = [...trackedSessionMentions, ...rawSessionIdMentions];
-        if (allSessionMentions.length > 0) {
-          const refs = allSessionMentions
-            .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
-            .join('\n');
-          textPrompt.text = `${textPrompt.text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
-        }
+        textPrompt.text = appendSessionRefs(
+          textPrompt.text,
+          allSessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })),
+        );
         if (fileMentionRefs.length > 0) {
           const block = buildFileRefsBlock(fileMentionRefs);
           if (block) textPrompt.text = `${textPrompt.text}\n\n${block}`;

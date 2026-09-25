@@ -123,7 +123,7 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
  *
  * For every prompt that does NOT steer, the gap forwarding was removing is
  * gone by other means: `promoteNextInboxRow` is AWAITED on the daemon's own
- * `session.idle` relay (`routes/r4.ts`, "THE TURN ENDED — the session's next
+ * `session.idle` relay (`routes/turn-stream.ts`, "THE TURN ENDED — the session's next
  * queued prompt is admissible NOW"), and the backoff below is now a 2s-capped
  * fallback rather than the 30s ceiling that produced the measured dead air.
  * A queued message therefore goes out on the turn-end event, not on a clock.
@@ -307,12 +307,12 @@ export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
     return !!running;
   },
   async readLiveTurnPhase(sessionId, active, actorUserId) {
-    // `engine.ts` imports this module, so its endpoint resolution is reached
+    // `queued-continue.ts` imports this module, so `runtime-client.ts`'s endpoint resolution is reached
     // lazily — the same way `inbox-turn-recovery.ts` reaches `./store` — and
     // no static cycle exists. Bounded and fail-open inside `readLiveTurnPhase`.
     return readLiveTurnPhase(sessionId, active, actorUserId, {
       resolveEndpoint: async (id, actor) => {
-        const { resolveSessionOpencodeEndpoint } = await import('./engine');
+        const { resolveSessionOpencodeEndpoint } = await import('./runtime-client');
         return resolveSessionOpencodeEndpoint(id, actor);
       },
     });

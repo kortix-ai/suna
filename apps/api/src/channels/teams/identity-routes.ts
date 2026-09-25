@@ -7,8 +7,8 @@ import { combinedAuth } from '../../middleware/auth';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
 import { listProjectsForWorkspace, loadTeamsInstall } from '../install-store';
-import { consumePendingTeamsAuthMessage } from './auth-resume';
-import { isAccountMember, linkTeamsIdentity } from './identity';
+import { consumePendingTeamsAuthMessage, peekPendingTeamsAuthSenderName } from './auth-resume';
+import { chatUser, isAccountMember, linkChatIdentity } from '../core/identity';
 import { verifyTeamsLoginState } from './login';
 import { createOrJoinTeamsConversationSession } from './session';
 
@@ -45,6 +45,66 @@ teamsIdentityApp.openapi(
 );
 
 const BindBody = z.object({ token: z.string().min(1) });
+const PreviewResult = z.object({
+  service: z.literal('teams'),
+  workspaceName: z.string().nullable(),
+  chatUserId: z.string(),
+  chatUserName: z.string().nullable(),
+});
+
+// Which Teams account a login link would link, shown on the consent screen
+// BEFORE the user presses Connect. Read-only: it links nothing and consumes
+// nothing. Same token and tenant checks as /bind.
+teamsIdentityApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/preview',
+    tags: ['channels'],
+    summary: 'Show which Teams account a login token would link',
+    ...auth,
+    middleware: [combinedAuth] as const,
+    request: { body: { content: { 'application/json': { schema: BindBody } } } },
+    responses: {
+      200: json(PreviewResult, 'The Teams account behind the token'),
+      ...errors(400, 403, 404, 410, 503),
+    },
+  }),
+  async (c: Context) => {
+    if (!config.TEAMS_REQUIRE_USER_IDENTITY) return c.json({ error: 'Not found' }, 404);
+    if (!config.MICROSOFT_APP_PASSWORD) {
+      return c.json({ error: 'Teams identity binding is not configured on this server.' }, 503);
+    }
+    const { token } = (await c.req.json().catch(() => ({}))) as { token?: string };
+    if (!token) return c.json({ error: 'Missing token' }, 400);
+
+    const payload = verifyTeamsLoginState(token);
+    if (!payload)
+      return c.json(
+        { error: 'This link is invalid or has expired. Run the Teams login again.' },
+        410,
+      );
+
+    const projectIds = await listProjectsForWorkspace('teams', payload.tenantId);
+    if (projectIds.length === 0) {
+      return c.json({ error: 'This Teams tenant is not connected to any Kortix project.' }, 403);
+    }
+    const [install, chatUserName] = await Promise.all([
+      loadTeamsInstall(projectIds[0]!).catch(() => null),
+      peekPendingTeamsAuthSenderName({
+        pendingId: payload.pendingId,
+        tenantId: payload.tenantId,
+        teamsUserId: payload.teamsUserId,
+      }),
+    ]);
+    return c.json({
+      service: 'teams' as const,
+      workspaceName: install?.teamName ?? null,
+      chatUserId: payload.teamsUserId,
+      chatUserName,
+    });
+  },
+);
+
 const BindResult = z.object({
   ok: z.boolean(),
   workspaceName: z.string().nullable(),
@@ -91,11 +151,7 @@ teamsIdentityApp.openapi(
     const memberships = await Promise.all(accountIds.map((a) => isAccountMember(userId, a)));
     const hasAccess = memberships.some(Boolean);
 
-    await linkTeamsIdentity({
-      tenantId: payload.tenantId,
-      teamsUserId: payload.teamsUserId,
-      userId,
-    });
+    await linkChatIdentity(chatUser('teams', payload.tenantId, payload.teamsUserId), userId);
 
     const pending = await consumePendingTeamsAuthMessage({
       pendingId: payload.pendingId,

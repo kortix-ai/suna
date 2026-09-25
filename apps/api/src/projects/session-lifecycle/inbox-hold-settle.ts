@@ -59,7 +59,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
-import { resolveSessionOpencodeEndpoint } from './engine';
+import { resolveSessionOpencodeEndpoint } from './runtime-client';
 import {
   type PlacementTipMessage,
   parsePlacementTip,

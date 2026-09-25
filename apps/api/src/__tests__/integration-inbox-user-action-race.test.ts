@@ -45,6 +45,7 @@ import {
   markCommandForwarded,
   requeueForAdmission,
 } from '../projects/session-lifecycle/store';
+import type { CommandLease } from '../projects/session-lifecycle/command-lease';
 import { db } from '../shared/db';
 
 const SANDBOX_ID = crypto.randomUUID();
@@ -53,6 +54,21 @@ const ACCOUNT_ID = crypto.randomUUID();
 const PROJECT_ID = crypto.randomUUID();
 const WIRE_ID = 'msg_0198f3a1b2c4AbCdEfGhIjKlMn';
 const WORKER = 'race-it-worker';
+
+/**
+ * Claim `row` the way the drain does and return the lease its writes name.
+ * The writes that end a claim apply only to a `running` row under the same
+ * `locked_by`; a row a test already claimed keeps its worker.
+ */
+async function hold(row: { commandId: string }, worker = 'user-action-race-it'): Promise<CommandLease> {
+  const result = await db.execute(sql`
+    UPDATE kortix.session_lifecycle_commands
+       SET status = 'running', locked_by = COALESCE(locked_by, ${worker})
+     WHERE command_id = ${row.commandId}::uuid
+    RETURNING locked_by`);
+  const rows = (Array.isArray(result) ? result : (result as { rows: Array<{ locked_by: string }> }).rows) as Array<{ locked_by: string }>;
+  return { commandId: row.commandId, lockedBy: rows[0]?.locked_by ?? worker };
+}
 
 async function enqueue(
   clientMessageId: string,
@@ -91,6 +107,16 @@ async function setStatus(commandId: string, status: 'running' | 'queued') {
     UPDATE kortix.session_lifecycle_commands
        SET status = ${status}, locked_by = ${status === 'running' ? WORKER : null}
      WHERE command_id = ${commandId}::uuid`);
+}
+
+/**
+ * `forwarded_at` is stamped on the API's clock and the Stop on the database's
+ * (`now()`). A local Docker database runs a few ms behind the host, so a Stop
+ * issued within the same few ms reads as EARLIER than the delivery. A person's
+ * Stop comes seconds later; wait past the skew so the order is the real one.
+ */
+async function stopLaterThanDelivery(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 50));
 }
 
 async function setBox(status: 'active' | 'stopped', metadata: Record<string, unknown> = {}) {
@@ -190,7 +216,7 @@ describe('Stop holds the queue in one statement', () => {
     const row = await enqueue('race_held_due');
     await setStatus(row.commandId, 'running');
     await holdInboxPrompts(SESSION_ID, true);
-    await requeueForAdmission(row.commandId, 'turn_active', new Date(Date.now() - 1_000));
+    await requeueForAdmission(await hold(row), 'turn_active', new Date(Date.now() - 1_000));
 
     const claimed = await claimDueLifecycleCommands({
       workerId: WORKER,
@@ -283,7 +309,7 @@ describe('a send made BEFORE Stop whose POST lands AFTER it', () => {
     await setBox('active');
     const row = await enqueue('race_after_release', 'transcript');
     await setStatus(row.commandId, 'running');
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     await db.execute(sql`
       UPDATE kortix.session_lifecycle_commands
          SET result = result || '{"status":"delivered"}'::jsonb
@@ -301,7 +327,7 @@ describe('a stopped session is never woken by a requeue', () => {
   test('a stranded steer the Stop paused comes back HELD, not due', async () => {
     const row = await enqueue('race_strand_stop_paused', 'transcript');
     await setStatus(row.commandId, 'running');
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     await holdInboxPrompts(SESSION_ID, true);
     await setBox('active');
 
@@ -318,7 +344,7 @@ describe('a stopped session is never woken by a requeue', () => {
     // session minutes later.
     const row = await enqueue('race_strand_stopped_box', 'transcript');
     await setStatus(row.commandId, 'running');
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     await setBox('stopped');
 
     expect(await requeueStrandedPrompt(SESSION_ID, WIRE_ID)).toBe('requeued');
@@ -332,12 +358,13 @@ describe('a stopped session is never woken by a requeue', () => {
     // a person stopped the session after this prompt went out.
     const row = await enqueue('race_strand_delivered', 'transcript');
     await setStatus(row.commandId, 'running');
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     await db.execute(sql`
       UPDATE kortix.session_lifecycle_commands
          SET result = result || '{"status":"delivered"}'::jsonb
        WHERE command_id = ${row.commandId}::uuid`);
     await setBox('active');
+    await stopLaterThanDelivery();
     await holdInboxForRequestedStop(SESSION_ID);
 
     expect(await requeueStrandedPrompt(SESSION_ID, WIRE_ID)).toBe('requeued');
@@ -347,12 +374,13 @@ describe('a stopped session is never woken by a requeue', () => {
   test('the reaper hands back an accepted steer HELD when a person stopped after it went out', async () => {
     const row = await enqueue('race_reaper_delivered', 'transcript');
     await setStatus(row.commandId, 'running');
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     await db.execute(sql`
       UPDATE kortix.session_lifecycle_commands
          SET result = result || '{"status":"delivered"}'::jsonb
        WHERE command_id = ${row.commandId}::uuid`);
     await setBox('active');
+    await stopLaterThanDelivery();
     await holdInboxForRequestedStop(SESSION_ID);
 
     expect(
@@ -372,7 +400,7 @@ describe('a stopped session is never woken by a requeue', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     const row = await enqueue('race_after_stop', 'transcript');
     await setStatus(row.commandId, 'running');
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
 
     expect(await requeueStrandedPrompt(SESSION_ID, WIRE_ID)).toBe('requeued');
     expect((await readRow(row.commandId))?.result).not.toHaveProperty('held');
@@ -381,7 +409,7 @@ describe('a stopped session is never woken by a requeue', () => {
   test('a stranded steer of a live, unstopped session still comes back due', async () => {
     const row = await enqueue('race_strand_live', 'transcript');
     await setStatus(row.commandId, 'running');
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     await setBox('active');
 
     expect(await requeueStrandedPrompt(SESSION_ID, WIRE_ID)).toBe('requeued');
@@ -423,7 +451,7 @@ describe('Remove against a claimed row', () => {
     const row = await enqueue('race_recommit');
     await setStatus(row.commandId, 'running');
     await commitInboxPost(row.commandId);
-    await requeueForAdmission(row.commandId, 'turn_active', new Date(Date.now() - 1_000));
+    await requeueForAdmission(await hold(row), 'turn_active', new Date(Date.now() - 1_000));
 
     const [claimed] = await claimDueLifecycleCommands({
       workerId: WORKER,

@@ -519,14 +519,17 @@ Subcommands:
 
 Options:
   --name <name>        new: label (default: "cli · <project name>").
+  --expires-at <iso>   new: expiry (ISO-8601). Required when the account's PAT
+                       policy requires an expiry.
   --project <id>       Act on this project (default: linked/default).
   --host <name>        Use this logged-in host.
   --json               Machine-readable output.
   -y, --yes            rm: skip the confirmation.
   -h, --help           Show this help.
 
-ls needs project read; new and rm need project.credentials.issue. An
-agent-session token can neither mint nor revoke project tokens (403).
+ls needs project read; new and rm need project.credentials.issue. A
+session-bound token can neither mint nor revoke project tokens (403). The
+account's PAT policy (require expiry, maximum lifetime) applies to new tokens.
 `;
 
 interface CliTokenRow {
@@ -554,12 +557,14 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
   let projectArg: string | undefined;
   let hostArg: string | undefined;
   let tokenName: string | undefined;
+  let expiresAt: string | undefined;
   let json = false;
   let yes = false;
   try {
     projectArg = takeFlagValue(rest, ['--project', '-p']);
     hostArg = takeFlagValue(rest, ['--host']);
     tokenName = takeFlagValue(rest, ['--name']);
+    expiresAt = takeFlagValue(rest, ['--expires-at']);
     json = takeFlagBool(rest, ['--json']);
     yes = takeFlagBool(rest, ['-y', '--yes']);
   } catch (err) {
@@ -606,7 +611,10 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
   if (sub === 'new' || sub === 'create') {
     let created: CreatedCliToken;
     try {
-      created = await ctx.client.post<CreatedCliToken>(path, tokenName ? { name: tokenName } : {});
+      created = await ctx.client.post<CreatedCliToken>(path, {
+        ...(tokenName ? { name: tokenName } : {}),
+        ...(expiresAt ? { expires_at: expiresAt } : {}),
+      });
     } catch (err) {
       return surfaceApiError(err);
     }

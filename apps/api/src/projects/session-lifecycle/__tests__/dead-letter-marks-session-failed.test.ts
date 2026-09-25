@@ -19,6 +19,9 @@ import { projectSessions, projectTriggerRuntime, sessionLifecycleCommands } from
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 
+/** The claim the writes below hold: the row is `running` under this owner. */
+const LEASE = { commandId: 'cmd-1', lockedBy: 'worker-1' };
+
 let commandRow: Record<string, unknown> | null = null;
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 let insertCalls: Array<{ table: unknown; values: Record<string, unknown> }> = [];
@@ -98,7 +101,7 @@ describe('markCommandFailed — dead-letter is loud and parks the session', () =
   test('continue_session exhausting retries ships an error and marks the session failed', async () => {
     commandRow = baseCommandRow();
 
-    await markCommandFailed('cmd-1', 'delivery outcome: pending', {
+    await markCommandFailed(LEASE, 'delivery outcome: pending', {
       retryable: true,
       attempts: 5,
       sessionId: 'sess-1',
@@ -136,7 +139,7 @@ describe('markCommandFailed — dead-letter is loud and parks the session', () =
   test('a dead-letter without a trigger slug parks the session but does not touch the runtime row', async () => {
     commandRow = baseCommandRow({ payload: { text: 'run the report' } });
 
-    await markCommandFailed('cmd-1', 'delivery outcome: no-session', {
+    await markCommandFailed(LEASE, 'delivery outcome: no-session', {
       retryable: false,
       attempts: 1,
       sessionId: 'sess-1',
@@ -149,7 +152,7 @@ describe('markCommandFailed — dead-letter is loud and parks the session', () =
   test('non-retryable failure dead-letters on the first attempt', async () => {
     commandRow = baseCommandRow({ attempts: 1 });
 
-    await markCommandFailed('cmd-1', 'delivery outcome: no-session', {
+    await markCommandFailed(LEASE, 'delivery outcome: no-session', {
       retryable: false,
       attempts: 1,
       sessionId: 'sess-1',
@@ -162,7 +165,7 @@ describe('markCommandFailed — dead-letter is loud and parks the session', () =
   test('a retryable failure below the attempt cap only requeues — no error, no park', async () => {
     commandRow = baseCommandRow({ status: 'queued', attempts: 2 });
 
-    await markCommandFailed('cmd-1', 'delivery outcome: pending', {
+    await markCommandFailed(LEASE, 'delivery outcome: pending', {
       retryable: true,
       attempts: 2,
       sessionId: 'sess-1',
@@ -177,7 +180,7 @@ describe('markCommandFailed — dead-letter is loud and parks the session', () =
   test('a create_session dead-letter ships the error but never touches a session row', async () => {
     commandRow = baseCommandRow({ commandType: 'create_session', sessionId: null, payload: {} });
 
-    await markCommandFailed('cmd-1', 'Project not found', { retryable: false, attempts: 1 });
+    await markCommandFailed(LEASE, 'Project not found', { retryable: false, attempts: 1 });
 
     expect(errorLogs).toHaveLength(1);
     expect(errorLogs[0].context).toMatchObject({ command_type: 'create_session' });
@@ -200,7 +203,7 @@ describe('markCommandFailed — a dead-letter records WHY as a stable code', () 
   test('the producer\'s code is MERGED into result, so the row keeps its other markers', async () => {
     commandRow = baseCommandRow({ source: 'ui', payload: { text: 'hi', clientMessageId: 'q_1' } });
 
-    await markCommandFailed('cmd-1', 'prompt accepted by the runtime but never became a message', {
+    await markCommandFailed(LEASE, 'prompt accepted by the runtime but never became a message', {
       retryable: false,
       attempts: 1,
       sessionId: 'sess-1',
@@ -219,7 +222,7 @@ describe('markCommandFailed — a dead-letter records WHY as a stable code', () 
   test('a producer that does not know the cause records `unknown`', async () => {
     commandRow = baseCommandRow({ payload: { text: 'hi', clientMessageId: 'q_1' } });
 
-    await markCommandFailed('cmd-1', 'continue_session command missing sessionId or body', {
+    await markCommandFailed(LEASE, 'continue_session command missing sessionId or body', {
       retryable: false,
       attempts: 0,
     });
@@ -231,7 +234,7 @@ describe('markCommandFailed — a dead-letter records WHY as a stable code', () 
     commandRow = baseCommandRow({ commandType: 'create_session', sessionId: 'sess-1', payload: {} });
     const result = { status: 'created', session_id: 'sess-1', source: 'ui', post_create_error: 'boom' };
 
-    await markCommandFailed('cmd-1', 'boom', { retryable: true, attempts: 5, sessionId: 'sess-1', result });
+    await markCommandFailed(LEASE, 'boom', { retryable: true, attempts: 5, sessionId: 'sess-1', result });
 
     expect(commandUpdate().result).toEqual({ ...result, failure_code: 'unknown' });
   });
@@ -239,7 +242,7 @@ describe('markCommandFailed — a dead-letter records WHY as a stable code', () 
   test('a failure that is only re-queued records no code', async () => {
     commandRow = baseCommandRow({ status: 'queued', attempts: 2 });
 
-    await markCommandFailed('cmd-1', 'the session was not ready in time', {
+    await markCommandFailed(LEASE, 'the session was not ready in time', {
       retryable: true,
       attempts: 2,
       sessionId: 'sess-1',
@@ -249,7 +252,7 @@ describe('markCommandFailed — a dead-letter records WHY as a stable code', () 
 
     updateCalls = [];
     const result = { status: 'created', session_id: 'sess-1' };
-    await markCommandFailed('cmd-1', 'boom', { retryable: true, attempts: 2, result, failureCode: 'refused' });
+    await markCommandFailed(LEASE, 'boom', { retryable: true, attempts: 2, result, failureCode: 'refused' });
     expect(commandUpdate().result).toEqual(result);
   });
 });

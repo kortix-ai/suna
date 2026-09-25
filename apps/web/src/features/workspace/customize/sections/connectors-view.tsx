@@ -86,6 +86,7 @@ import { cn } from '@/lib/utils';
 import {
   type AdminConnector,
   type Connection,
+  type ConnectionCredentialInput,
   type ConnectorAuthDiscovery,
   type ConnectorConfig,
   type ConnectorDraftInput,
@@ -127,6 +128,10 @@ import {
   proposeConnectorConnectionSlug,
 } from './connector-connection-form';
 import { ConnectorConnectionModal } from './connector-connection-modal';
+import {
+  credentialWriteTarget,
+  oauth2DiscoveryConnectionKey,
+} from './connector-credential-target';
 import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
@@ -3412,7 +3417,11 @@ export function SetCredentialModal({
    * resolves (or creates) the connection first.
    */
   const discoveryQuery = useQuery({
-    queryKey: qk.project.connectorOAuth2Discovery(projectId, connector?.slug ?? ''),
+    queryKey: qk.project.connectorOAuth2Discovery(
+      projectId,
+      connector?.slug ?? '',
+      oauth2DiscoveryConnectionKey(owner, connectionId),
+    ),
     queryFn: async () => {
       const activeConnectionId = await resolveConnectionId();
       const result = await discoverConnectionOAuth2Resource(projectId, activeConnectionId);
@@ -3491,22 +3500,24 @@ export function SetCredentialModal({
       errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text46c9f3b7520f')),
   });
 
+  /** Write a static or `client_credentials` credential to the selected account. */
+  const writeCredential = async (input: ConnectionCredentialInput) => {
+    const target = credentialWriteTarget(owner, connectionId);
+    if (target.kind === 'connector-default') {
+      return setConnectorCredential(projectId, connector!.slug, input);
+    }
+    const targetConnectionId =
+      target.kind === 'connection' ? target.connectionId : await resolveConnectionId();
+    return updateConnectionCredential(projectId, targetConnectionId, input);
+  };
+
   const save = useMutation({
     mutationFn: async () => {
       if (credentialType === 'static') {
-        if (owner === 'me') {
-          return updateConnectionCredential(projectId, await resolveConnectionId(), {
-            value,
-          });
-        }
-        return setConnectorCredential(projectId, connector!.slug, value);
+        return writeCredential({ value });
       }
       if (application.grant === 'client_credentials') {
-        const oauth2Input = buildOAuth2CredentialInput(oauth2);
-        if (owner === 'me') {
-          return updateConnectionCredential(projectId, await resolveConnectionId(), oauth2Input);
-        }
-        return setConnectorCredential(projectId, connector!.slug, oauth2Input);
+        return writeCredential(buildOAuth2CredentialInput(oauth2));
       }
       const activeConnectionId = await resolveConnectionId();
       const resolvedApplication = effectiveApplication.discoveryUrl

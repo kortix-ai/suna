@@ -4,7 +4,7 @@
  * a human-initiated session, NULL for every unattended run.
  */
 import { describe, expect, test } from 'bun:test';
-import { decideSessionOnBehalfOf, promptClearsOnBehalfOf } from './on-behalf-of';
+import { channelPrompterForOnBehalfOf, decideSessionOnBehalfOf, promptClearsOnBehalfOf } from './on-behalf-of';
 
 const HUMAN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -76,5 +76,39 @@ describe('promptClearsOnBehalfOf', () => {
     expect(promptClearsOnBehalfOf({ onBehalfOfUserId: HUMAN, prompterUserId: HUMAN, prompterIsHuman: true })).toBe(false);
     expect(promptClearsOnBehalfOf({ onBehalfOfUserId: null, prompterUserId: OTHER, prompterIsHuman: true })).toBe(false);
     expect(promptClearsOnBehalfOf({ onBehalfOfUserId: HUMAN, prompterUserId: OTHER, prompterIsHuman: false })).toBe(false);
+  });
+});
+
+describe('channelPrompterForOnBehalfOf', () => {
+  const rule = (source: string, userId: string | null, linked = true) =>
+    channelPrompterForOnBehalfOf({
+      source,
+      userId,
+      slackRequiresUserIdentity: linked,
+      teamsRequiresUserIdentity: linked,
+    });
+
+  test('a trigger fire is a non-human prompter and clears any value', () => {
+    for (const source of ['trigger:webhook', 'trigger:cron', 'trigger:manual', 'trigger:monitor']) {
+      expect(rule(source, HUMAN)).toBeNull();
+    }
+  });
+
+  test('email and Telegram senders are never Kortix identities', () => {
+    expect(rule('email', HUMAN)).toBeNull();
+    expect(rule('telegram', HUMAN)).toBeNull();
+  });
+
+  test('a linked Slack/Teams sender is compared as that human; an unlinked one clears', () => {
+    expect(rule('slack', OTHER)).toBe(OTHER);
+    expect(rule('teams', OTHER)).toBe(OTHER);
+    expect(rule('slack', OTHER, false)).toBeNull();
+    expect(rule('teams', OTHER, false)).toBeNull();
+  });
+
+  test('HTTP prompts and platform notifications never clear here', () => {
+    for (const source of ['ui', 'mobile', 'cli', 'admin', 'system:approval-resume', 'system:connector-connected']) {
+      expect(rule(source, HUMAN)).toBeUndefined();
+    }
   });
 });

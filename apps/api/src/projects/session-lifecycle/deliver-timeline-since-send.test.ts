@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { readSendStartedAtMs, sinceSendMsByMark } from './engine';
+import { readSendStartedAtMs, sinceSendMsByMark } from './queued-continue';
 
 describe('readSendStartedAtMs', () => {
   test('reads a stored send instant from a queued payload', () => {

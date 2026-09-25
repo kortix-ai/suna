@@ -658,7 +658,7 @@ describe('admitInboxPrompt', () => {
     // Forwarding mid-turn was tried (4ee30a9c3b) to remove the wait between
     // queued messages, and this is the behaviour it bought. The wait it was
     // removing is gone anyway: `promoteNextInboxRow` is AWAITED on the
-    // daemon's own `session.idle` relay (`r4.ts`), and the backoff below is a
+    // daemon's own `session.idle` relay (`turn-stream.ts`), and the backoff below is a
     // 2s-capped fallback rather than the 30s ceiling that produced the
     // measured dead air.
     const box = { status: 'active', metadata: { activeTurns: { ...activeTurn('t1'), ...activeTurn('t2') } } };

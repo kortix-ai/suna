@@ -28,7 +28,13 @@
  * actually exists.
  */
 
-import { WIRE_MESSAGE_ID, mintWireMessageId, newestWireIdTime, wireIdTime } from '../projects/wire-message-id';
+import {
+  WIRE_MESSAGE_ID,
+  isWireIdAheadOf,
+  mintWireMessageId,
+  newestWireIdTime,
+  wireIdTime,
+} from '../projects/wire-message-id';
 
 /** Newest-N messages read before a delivery. Small on purpose: this sits on the
  *  delivery path of every direct send, and only the tip decides placement. */
@@ -101,7 +107,10 @@ export function repairPromptWireId(input: {
   const clientTime = wellFormed ? wireIdTime(clientId) : null;
   const stale =
     input.newestKnownTime !== null && clientTime !== null && clientTime <= input.newestKnownTime;
-  if (wellFormed && !stale) {
+  // Positive evidence without any read: no transcript placed an id this far
+  // ahead of the clock (the pre-fix CLI minted the HIGH bits, ~40 days out).
+  const farAhead = wellFormed && isWireIdAheadOf(clientId, input.nowMs);
+  if (wellFormed && !stale && !farAhead) {
     return { body, effectiveMessageId: clientId, outcome: 'kept' };
   }
 
@@ -145,6 +154,7 @@ export async function readNewestWireIdTime(input: {
     if (!Array.isArray(messages)) return null;
     return newestWireIdTime(
       messages.map((message) => (typeof message?.info?.id === 'string' ? message.info.id : null)),
+      Date.now(),
     );
   } catch {
     return null;

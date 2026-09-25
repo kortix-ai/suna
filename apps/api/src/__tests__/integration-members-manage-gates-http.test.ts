@@ -16,6 +16,7 @@ import { PROJECT_ACTIONS } from '../iam';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
+import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
 // These endpoints are the project-scoped members-governance surface (group
 // grants, resource grants, approvals, access requests). Each already asserts
@@ -69,13 +70,13 @@ beforeAll(async () => {
     name: 'session-contract-regression-group',
     createdBy: MANAGER,
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: WRITER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: CUSTOM, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
   ]);
@@ -92,7 +93,7 @@ beforeAll(async () => {
     { roleId: WRITER_ROLE, action: PROJECT_ACTIONS.PROJECT_READ },
     { roleId: WRITER_ROLE, action: PROJECT_ACTIONS.PROJECT_WRITE },
   ]);
-  await db.insert(iamPolicies).values({
+  await insertIntoView(db, iamPolicies, {
     accountId: ACCOUNT,
     principalType: 'member',
     principalId: WRITER,
@@ -112,7 +113,7 @@ beforeAll(async () => {
     { roleId: CUSTOM_ROLE, action: PROJECT_ACTIONS.PROJECT_READ },
     { roleId: CUSTOM_ROLE, action: PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE },
   ]);
-  await db.insert(iamPolicies).values({
+  await insertIntoView(db, iamPolicies, {
     accountId: ACCOUNT,
     principalType: 'member',
     principalId: CUSTOM,
@@ -126,10 +127,10 @@ afterAll(async () => {
   for (const tokenId of minted) {
     await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
   }
-  await db.delete(iamPolicies).where(eq(iamPolicies.accountId, ACCOUNT));
+  await deleteFromView(db, iamPolicies, eq(iamPolicies.accountId, ACCOUNT));
   await db.delete(iamRoleActions).where(eq(iamRoleActions.roleId, CUSTOM_ROLE));
   await db.delete(iamRoles).where(eq(iamRoles.accountId, ACCOUNT));
-  await db.delete(projectGroupGrants).where(eq(projectGroupGrants.accountId, ACCOUNT));
+  await deleteFromView(db, projectGroupGrants, eq(projectGroupGrants.accountId, ACCOUNT));
   await db.delete(accountGroups).where(eq(accountGroups.accountId, ACCOUNT));
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(creditAccounts).where(eq(creditAccounts.accountId, ACCOUNT));

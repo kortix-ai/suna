@@ -2,7 +2,7 @@
 
 Scope: the per-project `teams` feature flag (Settings → Feature flags →
 "Microsoft Teams"). Code: `apps/api/src/channels/teams/*`,
-`apps/api/src/channels/teams-*.ts`, `apps/api/src/projects/routes/r4.ts`
+`apps/api/src/channels/teams-*.ts`, `apps/api/src/projects/routes/channel-teams.ts`
 (`/channels/teams/*`), `apps/web/.../channels-view.tsx`,
 `teams-channel-panel.tsx`, `apps/cli/src/commands/channels.ts`,
 sandbox CLI `apps/sandbox/slack-cli/channels/teams.ts`, agent skill

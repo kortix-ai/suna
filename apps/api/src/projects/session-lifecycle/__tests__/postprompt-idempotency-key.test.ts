@@ -17,7 +17,7 @@
 // content hash" — so this alone restores both-deliver semantics without
 // touching the dedupe module itself.
 //
-// Same mocking caveat as the sibling engine.ts test files: `mock.module` is
+// Same mocking caveat as the sibling session-lifecycle test files: `mock.module` is
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -122,14 +122,14 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   // The landing proof requeues a prompt the runtime never showed (fresh
-  // attempt, fresh idempotency key). `engine.ts` imports it by name, so every
+  // attempt, fresh idempotency key). `queued-continue.ts` imports it by name, so every
   // store mock has to carry it or the engine import fails outright. Nothing in
   // this file fails a landing.
   requeueUnlandedPrompt: async () => {
     throw new Error('not expected: this test never fails a landing proof');
   },
   markInboxDeliveryStarted: async () => {},
-  markCommandFailed: async (commandId: string, message: string) => {
+  markCommandFailed: async ({ commandId }: { commandId: string }, message: string) => {
     failedCalls.push({ commandId, message });
   },
   markCommandQueued: async () => {
@@ -142,7 +142,7 @@ mock.module('../store', () => ({
   markCommandForwarded: async () => {
     throw new Error('not expected: a prompt with no wire id must not stay open');
   },
-  markCommandSucceeded: async (commandId: string, result: unknown) => {
+  markCommandSucceeded: async ({ commandId }: { commandId: string }, result: unknown) => {
     succeededCalls.push({ commandId, result });
   },
   // `inbox-rows.ts` imports this at module load, so the mock has to carry it or
@@ -164,7 +164,7 @@ mock.module('../../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => null,
 }));
 
-// The wake path now converges the box before every delivery (engine.ts
+// The wake path now converges the box before every delivery (continue-session.ts
 // `continueSession`): it reads the service key and ingress and calls
 // `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
 // the wire, not about the sync (see continue-session-env-sync.test.ts).
@@ -178,7 +178,8 @@ mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
 
-const { executeQueuedContinue, continueSession } = await import('../engine');
+const { executeQueuedContinue } = await import('../queued-continue');
+const { continueSession } = await import('../continue-session');
 
 function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecycleCommandRow {
   const now = new Date('2026-08-16T00:00:00.000Z');

@@ -1,6 +1,6 @@
 /**
  * Anonymous, read-only "view this session's conversation" surface for a
- * public share token — the backend half of `/share/[shareId]` (apps/web).
+ * public share token, read through the SDK's `getPublicSessionShare*`.
  *
  * Every public share created via the SESS-13 CRUD (`preview` or `file`
  * resource type) already proves that the session's owner chose to hand this

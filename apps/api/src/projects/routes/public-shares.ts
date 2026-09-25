@@ -1,5 +1,4 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { PUBLIC_SHARE_OWNER_ONLY_ERROR } from '../../connectors/share';
 import { auth, errors, json } from '../../openapi';
 import {
   DEFAULT_PREVIEW_CANDIDATES,
@@ -7,9 +6,9 @@ import {
   listPublicSharesForSession,
   revokePublicShare,
 } from '../../shared/session-public-shares';
-import { loadProjectForUser, loadSessionForSharing, loadVisibleSession } from '../lib/access';
+import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/session-access';
 import { UUID_V4_REGEX, readBody } from '../lib/serializers';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 
@@ -39,13 +38,8 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(
-      loaded,
-      sessionId,
-      c.get('sessionId') ?? null,
-      callerKortixSessionId(c),
-    );
-    if (!visible) return c.json({ error: 'Not found' }, 404);
+    const guard = await guardSession(c, loaded, sessionId, 'read');
+    if (!guard.ok) return sessionAccessDenied(c, guard);
 
     return c.json({
       candidates: DEFAULT_PREVIEW_CANDIDATES.map((candidate) => ({
@@ -80,11 +74,8 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageLifecycle) {
-      return c.json({ error: 'Only the session owner or a project manager can view public shares' }, 403);
-    }
+    const guard = await guardSessionSharing(c, loaded, sessionId, 'list');
+    if (!guard.ok) return sessionAccessDenied(c, guard);
 
     return c.json({ shares: await listPublicSharesForSession(sessionId) });
   },
@@ -116,14 +107,12 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
-    if (!visible) return c.json({ error: 'Not found' }, 404);
     // Minting, not revoking: a public share link is unauthenticated, so this is
     // the owner's call. A manager who cannot read the session cannot mint one
     // and read it through the link instead.
-    if (!visible.canManageSharing) {
-      return c.json({ error: PUBLIC_SHARE_OWNER_ONLY_ERROR }, 403);
-    }
+    const guard = await guardSessionSharing(c, loaded, sessionId, 'mint');
+    if (!guard.ok) return sessionAccessDenied(c, guard);
+    const visible = guard.session;
     if (
       await sessionHasMemberConnectorBinding({
         accountId: visible.row.accountId,
@@ -178,13 +167,10 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
-    if (!visible) return c.json({ error: 'Not found' }, 404);
     // Revoking only ever REMOVES access, so it stays manager-tier: a project
     // manager must be able to kill a leaking link without owning the session.
-    if (!visible.canManageLifecycle) {
-      return c.json({ error: 'Only the session owner or a project manager can revoke public shares' }, 403);
-    }
+    const guard = await guardSessionSharing(c, loaded, sessionId, 'revoke');
+    if (!guard.ok) return sessionAccessDenied(c, guard);
 
     const share = await revokePublicShare(sessionId, shareId);
     if (!share) return c.json({ error: 'Not found' }, 404);

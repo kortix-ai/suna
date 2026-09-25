@@ -1,6 +1,7 @@
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import { inboxOrderBy } from './inbox-order';
 import { clearUserStop, markUserStopRequested, readUserStop } from './stop-mark';
 import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
@@ -10,7 +11,7 @@ import { wireMessageIdMatches } from './wire-id-match';
  * The inbox's row operations — everything `GET/DELETE/retry/hold …/prompts`
  * does to `kortix.session_lifecycle_commands`.
  *
- * They live here rather than inline in `routes/r8.ts` for one reason: every one
+ * They live here rather than inline in `routes/session-prompts.ts` for one reason: every one
  * of them has to carry the INBOX SCOPE, and a scope that is re-typed at four
  * call sites is a scope that will be forgotten at one of them. It already was:
  * `continue_session` is also how triggers, Slack and approval-resume deliver,
@@ -154,7 +155,7 @@ function inboxRowWireIds(row: InboxSendOrderRow): string[] {
 
 /**
  * Which inbox row put each of these wire ids on the wire — the send-order
- * gate's lookup (`underPlacementKeepsSendOrder`, engine.ts).
+ * gate's lookup (`underPlacementKeepsSendOrder`, queued-continue.ts).
  *
  * One query over `inboxScope`, matched on every id column
  * (`wireMessageIdMatches`), newest row first so an id two rows ever shared
@@ -863,7 +864,7 @@ export async function claimDueSessionInboxSiblings(input: {
         // `claimDueLifecycleCommands`.
         result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'post_committed_at'`,
         lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + 5 * 60_000),
+        lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
         updatedAt: now,
       })
       .where(

@@ -54,6 +54,8 @@ import { useThemeStore } from '@/stores/theme-store';
 import { OtaUpdateManager } from '@/components/updates/OtaUpdateManager';
 import { subscribeOnlineStatus } from '@/lib/network/use-online-status';
 import { installHapticsGate } from '@/lib/haptics';
+import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
+import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { configureKortix } from '@kortix/sdk';
 import { API_URL, getAuthToken } from '@/api/config';
 import {
@@ -69,6 +71,12 @@ import {
 // Patch expo-haptics globally so every Haptics.* call across the app respects
 // the user's "Haptic Feedback" toggle in Settings → Sounds.
 installHapticsGate();
+
+// Dev only: URLs the local API hands back (attachment upload targets) point at
+// 127.0.0.1, which on a phone is the phone. Open them on the dev host instead.
+if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
+  installLoopbackRewrite(XMLHttpRequest, resolveLocalUrl);
+}
 
 // Wire the SDK's single app-specific seam once at startup, before any screen
 // mounts. `backendUrl`/`getToken` reuse mobile's own env resolution and

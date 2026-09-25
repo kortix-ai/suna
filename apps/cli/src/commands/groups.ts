@@ -1,6 +1,7 @@
 import type { ApiClient } from '../api/client.ts';
 import {
   emitJson,
+  missing,
   resolveAccountContext,
   surfaceApiError,
   takeFlagBool,
@@ -400,9 +401,4 @@ async function emailMap(client: ApiClient, accountId: string): Promise<Map<strin
     .catch(() => [] as AccountMemberRow[]);
   for (const m of members) if (m.email) out.set(m.user_id, m.email);
   return out;
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }

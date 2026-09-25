@@ -36,7 +36,11 @@ import {
 	type SessionTranscriptSyncEnvelope,
 	getSessionTranscriptSync,
 } from "../../core/rest/projects-client/sessions";
-import { claimOpenBundle, takeOpenBundleTranscript } from "../../core/session/open-bundle";
+import {
+	claimOpenBundle,
+	takeOpenBundleTranscript,
+	takeOpenBundleTranscriptAbsence,
+} from "../../core/session/open-bundle";
 
 /** How many mirrored messages a first paint asks for. Matches the sync
  *  controller's own initial tail, so the mirror and the read that replaces it
@@ -145,6 +149,10 @@ export async function loadSessionTranscriptMirror(input: {
 	if (claimed) await claimed;
 	const stashed = takeOpenBundleTranscript(scope.projectId, scope.sessionId);
 	if (stashed) return stashed;
+	// The bundle already answered that there is no saved copy. The transcript
+	// route would answer the same, one round trip later — and a host waiting
+	// on this answer shows placeholder rows until it lands.
+	if (takeOpenBundleTranscriptAbsence(scope.projectId, scope.sessionId)) return null;
 	try {
 		return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
 			limit: input.limit ?? MIRROR_HYDRATE_LIMIT,

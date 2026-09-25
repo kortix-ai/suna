@@ -253,7 +253,7 @@ describe('strandedPlacement', () => {
       ).toBe(true);
     });
 
-    // The ids behind the boolean. The drain's send-order gate (engine.ts)
+    // The ids behind the boolean. The drain's send-order gate (queued-continue.ts)
     // resolves each one to its inbox row: an open sibling above that was SENT
     // EARLIER than this prompt is a lifted id, not a later send, and this
     // prompt must not be placed under it (2026-09-22, sessions YO/134c0d27 on

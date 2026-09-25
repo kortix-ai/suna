@@ -55,6 +55,12 @@ export type SessionLifecycleStatus =
 export interface CreateSessionCommand {
   /** Internal retained-upload authority from an already accepted create command. */
   attachmentSourceCommandId?: string;
+  /**
+   * The durable `create_session` command this create executes. The new
+   * session id is written onto it in the session insert transaction, so a
+   * reclaimed command finds the session instead of creating a second one.
+   */
+  createCommandId?: string;
   source: SessionInvocationSource;
   project: ProjectRow;
   userId: string;
@@ -102,6 +108,12 @@ export interface QueuedCreateSessionPayload {
 export interface ContinueSessionCommand {
   source: SessionInvocationSource;
   sessionId: string;
+  /**
+   * The project the producer addressed. When present, delivery refuses a
+   * session of any other project (`no-session`): a queued command names its
+   * project and session in separate columns, and nothing else ties the two.
+   */
+  projectId?: string | null;
   /** Legacy plain-text form. Ignored when `parts` is present. */
   text: string;
   userId?: string | null;

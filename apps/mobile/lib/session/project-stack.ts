@@ -31,9 +31,9 @@ export const PROJECT_PAGE_ROUTE = 'page';
 
 /**
  * The pages that open as sub-pages: project Settings (from Settings) and its
- * Customize rows, Schedules and Secrets. Tab-store page ids.
+ * Customize rows, Schedules, Secrets and Members. Tab-store page ids.
  */
-export const SUB_PAGE_IDS = ['page:settings', 'page:schedules', 'page:secrets-nav'] as const;
+export const SUB_PAGE_IDS = ['page:settings', 'page:schedules', 'page:secrets-nav', 'page:members'] as const;
 export type SubPageId = (typeof SUB_PAGE_IDS)[number];
 
 /** True for a page id that opens as a sub-page (the `page` route's param). */

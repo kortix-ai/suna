@@ -15,7 +15,7 @@ import type { SessionLifecycleCommandRow } from './store';
  * reply for every message it takes, so two rows delivered back to back produced
  * two replies racing one transcript: "both rows reported delivered while the
  * first answer rendered under the second prompt" (the note on the drain's lane
- * loop in `engine.ts`), and the 2026-09-04 measurement where "tell me HI" and
+ * loop in `drain.ts`), and the 2026-09-04 measurement where "tell me HI" and
  * "tell me bye" behind a 13-step turn produced exactly one reply, "bye". The
  * primitive that removes both failures is `noReply` on `/prompt_async`
  * (OpenCode 1.18.23, `SessionPromptAsyncData`): the user message is PERSISTED
@@ -24,14 +24,16 @@ import type { SessionLifecycleCommandRow } from './store';
  * message, with all N in context. There is no second reply to render under the
  * wrong prompt.
  *
- * WHAT MAY BE GROUPED. Only the Quick Queue lane (`placement: 'transcript'`,
- * the Enter key). Queue List (`placement: 'composer'`, Cmd/Ctrl+Enter) is a
- * queue by definition — one at a time, its own turn, its own answer — and a row
- * with NO placement (a first prompt, an automation, an older producer) is not a
- * correction to work in flight either. Both END a group rather than joining it,
- * so a group never reorders anything relative to them. Quick Queue already
- * sorts ahead of Queue List (`inbox-order.ts` lane 0 vs 1), so in canonical
- * send order a composer row can only ever fall AFTER the group.
+ * WHAT MAY BE GROUPED. Rows of ONE lane: the Quick Queue lane
+ * (`placement: 'transcript'`, the Enter key) or the Queue List lane
+ * (`placement: 'composer'`, Cmd/Ctrl+Enter). Every Queue List row that waits
+ * when the running turn ends goes out as one group, in one reply. The two lanes
+ * never mix: a group is the leading run of `batch[0]`'s lane, and a row of the
+ * other lane ends it. A row with NO placement (a first prompt, an automation,
+ * an older producer) is not grouped and ends a group too, so a group never
+ * reorders anything relative to it. Quick Queue sorts ahead of Queue List
+ * (`inbox-order.ts` lane 0 vs 1), so a Queue List group can only follow a
+ * Quick Queue group, never interleave with it.
  *
  * A HELD row is deliberately out of the line — the user pressed Stop on it — so
  * it is never grouped, and it ends the group rather than being skipped over:

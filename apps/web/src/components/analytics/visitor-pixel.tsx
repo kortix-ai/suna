@@ -3,6 +3,7 @@
 import Script from 'next/script';
 import { useEffect, useState } from 'react';
 
+import { isAnalyticsExcludedPath } from '@/lib/analytics/gtm';
 import { isDesktop } from '@/lib/desktop';
 
 const VISITOR_PIXEL_SRC =
@@ -29,10 +30,20 @@ function isKortixSiteHost(hostname: string): boolean {
 export function VisitorPixel() {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
-    setEnabled(isKortixSiteHost(window.location.hostname) && !isDesktop());
+    // Same page gate as GTM, decided once per document; see google-tag-manager.tsx.
+    setEnabled(
+      isKortixSiteHost(window.location.hostname) &&
+        !isDesktop() &&
+        !isAnalyticsExcludedPath(window.location.pathname),
+    );
   }, []);
   if (!enabled) return null;
   return (
-    <Script id="visitor-pixel" src={VISITOR_PIXEL_SRC} strategy="lazyOnload" crossOrigin="anonymous" />
+    <Script
+      id="visitor-pixel"
+      src={VISITOR_PIXEL_SRC}
+      strategy="lazyOnload"
+      crossOrigin="anonymous"
+    />
   );
 }

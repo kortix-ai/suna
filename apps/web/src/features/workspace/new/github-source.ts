@@ -5,7 +5,7 @@
  * Select but `disabled`, and `canSubmit` additionally required
  * `source === 'managed'` — so both were dead options with an apology under
  * them. Nothing was missing on the server: `POST /projects/create-repo` and
- * `POST /projects/link-repository` (`apps/api/src/projects/routes/r2.ts`) are
+ * `POST /projects/link-repository` (`apps/api/src/projects/routes/project-from-repository.ts`) are
  * live, and `createProjectRepo` / `linkRepository` are exported from
  * `@kortix/sdk`. Only the client wiring was gone, deleted with
  * `project-create-modal.tsx` in #6276.
@@ -66,7 +66,7 @@ export function withRepositorySource(
  * A workspace name turned into a GitHub repository name.
  *
  * `POST /projects/create-repo` validates `name` against
- * `/^[a-zA-Z0-9._-]+$/` (`r2.ts`) — no spaces — while a workspace name is
+ * `/^[a-zA-Z0-9._-]+$/` (`project-from-repository.ts`) — no spaces — while a workspace name is
  * free text and routinely has them. The old create modal did this inline as
  * `values.name.trim().replace(/\s+/g, '-')`, which only covered spaces: a
  * name like `Ana's agents` still reached the route with an apostrophe and
@@ -136,14 +136,14 @@ export function iconPayload(state: NewWorkspaceFormState): Record<string, unknow
  *
  * `name` is the GITHUB repository name and `project_name` is the Kortix
  * workspace name — two different fields the route reads separately
- * (`r2.ts`: `name` is charset-validated then passed to `createRepo`,
+ * (`project-from-repository.ts`: `name` is charset-validated then passed to `createRepo`,
  * `project_name` falls back to `deriveProjectName(repo.full_name)`). Sending
  * only `name` was survivable in the old modal because its repo-name field WAS
  * the project name; here the user types a workspace name with spaces, so both
  * are sent and the workspace keeps the name that was typed.
  *
  * No `default_branch`. The route does not accept one — it reads
- * `repo.default_branch` off the repository GitHub just created (`r2.ts`) —
+ * `repo.default_branch` off the repository GitHub just created (`project-from-repository.ts`) —
  * so `/new` hides the branch field for this source rather than collecting a
  * value that would be silently dropped.
  */

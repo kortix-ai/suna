@@ -322,7 +322,7 @@ mock.module('../projects/github', () => ({
     expect(token).toBe('github-user-token');
     return { login: 'github-admin' };
   },
-  // r1.ts maps a failed verification to a status through this export.
+  // github-installations.ts maps a failed verification to a status through this export.
   githubVerificationStatus: () => 403 as const,
   getRepo: async (input: any) => ({
     id: input.owner === 'acme' ? 84 : 7,

@@ -17,6 +17,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { isKortixAppUrl } from '@/features/session/kortix-app-url';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
+import { PublicShareLinkConfirm } from '@/components/projects/public-share-link-confirm';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useSessionPublicShares } from '@/hooks/use-session-public-shares';
@@ -626,6 +627,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
         open={sharesOpen}
         onOpenChange={setSharesOpen}
       />
+      <PublicShareLinkConfirm confirmation={shareLink.confirmation} />
 
       {hasPreview ? (
         /* Iframe container */

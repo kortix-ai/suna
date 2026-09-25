@@ -3,7 +3,7 @@ import {
   updateCreditAccount,
 } from '../repositories/credit-accounts';
 import { getMonthlyCredits } from './tiers';
-import { resetExpiringCredits } from './credits';
+import { wallet } from '../wallet';
 export { calculateNextCreditGrant } from './credit-grant-schedule';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 
@@ -36,12 +36,12 @@ export async function processYearlyCreditRotation(): Promise<{
       const idempotencyKey = `yearly_rotation_${account.accountId}_${yearMonth}`;
 
       if (credits > 0) {
-        await resetExpiringCredits(
-          account.accountId,
-          credits,
-          `Yearly plan monthly credit rotation: ${credits} credits`,
-          idempotencyKey,
-        );
+        await wallet.reset({
+          accountId: account.accountId,
+          amount: credits,
+          description: `Yearly plan monthly credit rotation: ${credits} credits`,
+          key: { event: idempotencyKey },
+        });
       }
 
       const nextGrant = calculateNextCreditGrant(now);

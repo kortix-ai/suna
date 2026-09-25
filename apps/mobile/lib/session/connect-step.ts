@@ -83,3 +83,30 @@ function statusOf(error: unknown): number | null {
 function fail(title: string, message: string, detail?: string): ConnectStep {
   return { kind: 'fail', failure: detail ? { title, message, detail } : { title, message } };
 }
+
+/**
+ * The wait before `/start` poll `attempt + 1` while the runtime is not ready
+ * (COR-185): 300 ms after the first answer, 700 ms after the second, then
+ * 1.5 s. A warm or fast box is usually ready on the 2nd or 3rd answer, so a
+ * flat 1.5 s wait cost up to ~2 s before the thread opened. A failed request
+ * keeps its own flat 1.5 s wait in `ensureAndOpen`.
+ */
+export function startPollDelayMs(attempt: number): number {
+  if (attempt <= 1) return 300;
+  if (attempt === 2) return 700;
+  return 1_500;
+}
+
+/**
+ * Whether `ensureAndOpen` must await `GET <sandbox>/kortix/health` before it
+ * opens the thread (COR-185). `/start` answering `stage: 'ready'` with an
+ * OpenCode pin already proves the runtime is up, so the thread opens at once
+ * and the probe runs in the background (it still keeps the proxy route warm).
+ * Any other answer waits for the probe: it reports `boot_error`.
+ */
+export function shouldAwaitHealthProbe(start: {
+  stage: string;
+  opencode_session_id?: string | null;
+}): boolean {
+  return !(start.stage === 'ready' && Boolean(start.opencode_session_id));
+}

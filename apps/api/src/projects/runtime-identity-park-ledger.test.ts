@@ -24,6 +24,8 @@ let inTransaction = false;
 let liveSession = true;
 let liveSandbox = true;
 let providerStops = 0;
+/** Whether a transaction was open when the provider stop ran. */
+let stopsInTransaction = 0;
 let computeEnds = 0;
 let savepoints = 0;
 /** When set, every `tx.execute` fails with this message. */
@@ -104,6 +106,7 @@ mock.module('../platform/providers', () => ({
   getProvider: () => ({
     stop: async () => {
       providerStops += 1;
+      if (inTransaction) stopsInTransaction += 1;
     },
   }),
 }));
@@ -130,6 +133,7 @@ beforeEach(() => {
   liveSession = true;
   liveSandbox = true;
   providerStops = 0;
+  stopsInTransaction = 0;
   computeEnds = 0;
   savepoints = 0;
   executeThrows = null;
@@ -155,7 +159,12 @@ describe('parks outside applyStoppedState settle the turn ledger', () => {
       'runtime_boot_failed',
     );
 
-    expect(sandboxUpdates).toBe(1);
+    // The stop claim, then the park.
+    expect(sandboxUpdates).toBe(2);
+    // The provider stop runs between them, with no transaction open.
+    expect(providerStops).toBe(1);
+    expect(stopsInTransaction).toBe(0);
+    expect(computeEnds).toBe(1);
     expect(statements).toHaveLength(1);
     expect(statements[0]?.inTransaction).toBe(true);
     expect(statements[0]?.sql).toContain('UPDATE kortix.session_turns');
@@ -191,7 +200,7 @@ describe('parks outside applyStoppedState settle the turn ledger', () => {
 
   // The settle is savepoint-bounded so an observation-table failure cannot
   // abort the park transaction. parkEstablishedRuntime stops the provider only
-  // after this transaction's row CAS wins.
+  // after its stop claim wins, and parks the rows only after the stop.
   test('a ledger settle that throws leaves the park committed', async () => {
     executeThrows = 'canceling statement due to statement timeout';
     const error = console.error;
@@ -208,7 +217,7 @@ describe('parks outside applyStoppedState settle the turn ledger', () => {
       console.error = error;
     }
 
-    expect(sandboxUpdates).toBe(1);
+    expect(sandboxUpdates).toBe(2);
     expect(savepoints).toBe(1);
   });
 

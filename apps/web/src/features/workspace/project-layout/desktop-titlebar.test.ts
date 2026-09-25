@@ -365,6 +365,21 @@ describe('nothing re-hard-codes the band', () => {
     );
   });
 
+  test('the full-height root drag band never takes a DOM click from Back', () => {
+    // The strip is fixed at z-index 9999 and Back at z-50. A click in Back's
+    // no-drag rect reaches the page, and the page hit test picks the topmost
+    // box. The grown strip and its child must be transparent to that test, or
+    // Back is dead on auth, `/projects`, `/new`, and onboarding.
+    const grown = css.match(
+      /html\[data-desktop-platform='macos'\] body:not\(:has\(\[data-kx-titlebar-owner\]\)\) \.kx-desktop-chrome,\s*html\[data-desktop-platform='macos'\] body:not\(:has\(\[data-kx-titlebar-owner\]\)\) \.kx-desktop-chrome > \* \{([^}]*)\}/,
+    );
+    expect(grown?.[1]).toContain('pointer-events: none');
+    // Back stays below the strip in z-order; only pointer-events makes it
+    // reachable. Raising Back instead would leave every other control in the
+    // band covered.
+    expect(control).toContain('z-50');
+  });
+
   test('the session header takes the band offsets from the shared row class', () => {
     expect(sessionHeader).toContain('kx-titlebar-row');
     expect(sessionHeader).toContain('pt-[var(--kx-titlebar-control-top)]');

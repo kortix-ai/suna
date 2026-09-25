@@ -9,7 +9,7 @@
  *     family), not the resolved set; `PUT /model-enablement` replaces the WHOLE
  *     exception map, so every write here reads the current map first and merges
  *     into it. The gateway still serves a disabled model if a caller names it
- *     outright (apps/api/src/projects/routes/r4.ts:3070).
+ *     outright (apps/api/src/projects/routes/models.ts).
  *  2. DEFAULTS (`default`) — what `auto` resolves to, at project or account
  *     scope. The per-AGENT pin stays on `kortix agents model <agent> <id>`.
  *
@@ -18,6 +18,7 @@
 
 import {
   emitJson,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -35,7 +36,7 @@ interface PickerModel {
   tool_call?: boolean;
 }
 
-/** GET /projects/:id/model-picker (r4.ts:2983). */
+/** GET /projects/:id/model-picker (routes/models.ts). */
 interface ModelPicker {
   models: Record<string, PickerModel>;
   modelOverrides?: Record<string, boolean>;
@@ -43,7 +44,7 @@ interface ModelPicker {
   defaultModel?: string;
 }
 
-/** GET /projects/:id/model-defaults (r4.ts:3187). */
+/** GET /projects/:id/model-defaults (routes/models.ts). */
 interface ModelDefaults {
   platformDefault: string | null;
   accountDefault: string | null;
@@ -59,13 +60,19 @@ const HELP = help`Usage: kortix models <subcommand> [options]
 Which models this project offers, and which one it starts with. Same surface as
 the dashboard's Customize → Models.
 
+The list is yours: Kortix models, plus models you reach through a provider API
+key or a ChatGPT subscription — your own, one shared with you, or one shared
+with the whole project. \`kortix sessions new --model <id>\` runs such a model on
+every key you may use for it, and they rotate.
+
 A project stores only its EXCEPTIONS to the catalog default (the newest model of
 each family). \`enable\`/\`disable\` merge into that stored map; \`reset\` empties it.
 Enablement is display-only — it decides what pickers OFFER, never what the
 gateway serves.
 
 Subcommands:
-  ls [--json]                     List every model: state, origin, provider.
+  ls [--json]                     List every model: state, origin, how it is
+                                  paid for (VIA), provider.
   enable <model-id>...            Offer these models.
   disable <model-id>...           Stop offering them. The project default
                                   refuses with 409 — change the default first.
@@ -171,7 +178,7 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
   const idW = Math.min(44, Math.max(...rows.map(([id]) => id.length), 5));
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('MODEL', idW)}   STATE   ORIGIN     PROVIDER${C.reset}\n`,
+    `  ${C.dim}${pad('MODEL', idW)}   STATE   ORIGIN     ${pad('VIA', 8)}  PROVIDER${C.reset}\n`,
   );
   let enabledCount = 0;
   for (const [id, model] of rows) {
@@ -182,16 +189,29 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
     const state = on ? `${C.green}${pad('on', 6)}${C.reset}` : `${C.faded}${pad('off', 6)}${C.reset}`;
     const origin = id in overrides ? 'override' : 'default';
     process.stdout.write(
-      `${marker}${pad(trim(id, idW), idW)}   ${state}  ${pad(origin, 9)}  ${C.faded}${model.provider ?? '—'}${C.reset}\n`,
+      `${marker}${pad(trim(id, idW), idW)}   ${state}  ${pad(origin, 9)}  ${pad(paidVia(id, model.provider), 8)}  ${C.faded}${model.provider ?? '—'}${C.reset}\n`,
     );
   }
   const exceptions = Object.keys(overrides).length;
   process.stdout.write(
     `\n  ${C.dim}${enabledCount}/${rows.length} offered · ` +
       `${exceptions === 0 ? 'no exceptions (catalog default)' : `${exceptions} exception${exceptions === 1 ? '' : 's'}`} · ` +
-      `${C.reset}${C.green}●${C.reset}${C.dim} = project default (${picker.defaultModel ?? '—'})${C.reset}\n\n`,
+      `${C.reset}${C.green}●${C.reset}${C.dim} = project default (${picker.defaultModel ?? '—'})${C.reset}\n`,
   );
+  if (rows.some(([id, model]) => paidVia(id, model.provider) !== 'Kortix')) {
+    process.stdout.write(
+      `  ${C.dim}API key and ChatGPT models run on every key you may use for them; they rotate.${C.reset}\n`,
+    );
+  }
+  process.stdout.write('\n');
   return 0;
+}
+
+/** How a model is paid for: a ChatGPT subscription, a provider API key, or Kortix. */
+export function paidVia(id: string, provider: string | undefined): 'ChatGPT' | 'API key' | 'Kortix' {
+  if (id.startsWith('codex/') || provider === 'codex') return 'ChatGPT';
+  if (!id.includes('/') || provider === 'kortix') return 'Kortix';
+  return 'API key';
 }
 
 /**
@@ -312,11 +332,6 @@ function row(label: string, value: string | null): void {
   process.stdout.write(
     `  ${C.dim}${pad(label, 9)}${C.reset} ${value ? `${C.cyan}${value}${C.reset}` : `${C.faded}unset${C.reset}`}\n`,
   );
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }
 
 function trim(s: string, max: number): string {

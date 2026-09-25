@@ -10,6 +10,12 @@
 
 import type { MessageWithPartsLike, PartLike, PartWithMessage, ToolPartLike, TurnLike } from './types';
 import { isTextPart, isToolPart } from './parts';
+import {
+  WIRE_ID_CLOCK_TOLERANCE,
+  absoluteWireIdClockAt,
+  unwrapWireIdClock,
+  wireIdClock,
+} from '../session/wire-message-id';
 
 // ============================================================================
 // Internal wire shapes (structural casts, never exported)
@@ -67,8 +73,34 @@ interface TextPartLike extends PartLike {
  * it is the latest thing the user did — and two such are a TIE, so the stable
  * sort keeps the order the host handed them over in. Equal timestamps keep id
  * order.
+ *
+ * AN ID IS A POSITION ONLY WHILE IT AGREES WITH ITS OWN CLOCK. The id encodes
+ * the low 48 bits of `Date.now() * 0x1000`, so a placed message is ordered by
+ * that clock UNWRAPPED against its own `time.created` — which is what keeps a
+ * session spanning the 2026-08-14 wrap in order. Every correct mint sits within
+ * minutes of its timestamp. An id more than {@link WIRE_ID_CLOCK_TOLERANCE}
+ * (1 hour) away from it was not placed by any transcript — `kortix sessions
+ * send` minted the HIGH bits, ~40 days ahead, until 2026-09 — and falls back to
+ * the server's own order: `time.created`, then id (`MessageV2.page()`). Without
+ * this, every turn sent after such a prompt rendered ABOVE it. A placed message
+ * with no timestamp (an optimistic stub keyed by a wire id) is unwrapped
+ * against the newest timestamp in the list being sorted — the stub is the
+ * newest thing the user did — or, compared pairwise, against the current clock.
  */
 const WIRE_DISPLAY_ID = /^msg_[0-9a-f]{12}/;
+
+type DisplayOrdered = { info: { id: string; time?: { created?: number } } };
+
+/** The absolute id clock a placed message is ordered by. */
+function placedDisplayClock(message: DisplayOrdered, untimedAnchor: bigint): bigint {
+  const clock = wireIdClock(message.info.id) ?? BigInt(0);
+  const created = message.info.time?.created;
+  if (typeof created !== 'number') return unwrapWireIdClock(clock, untimedAnchor);
+  const own = absoluteWireIdClockAt(created);
+  const unwrapped = unwrapWireIdClock(clock, own);
+  const drift = unwrapped > own ? unwrapped - own : own - unwrapped;
+  return drift <= WIRE_ID_CLOCK_TOLERANCE ? unwrapped : own;
+}
 
 /** `0` for a message the server has placed, `1` for one only this tab knows. */
 function displaySegment(id: string): 0 | 1 {
@@ -83,13 +115,32 @@ export function compareMessagesForDisplay(
   a: { info: { id: string; time?: { created?: number } } },
   b: { info: { id: string; time?: { created?: number } } },
 ): number {
+  return compareForDisplayAt(a, b, absoluteWireIdClockAt(Date.now()));
+}
+
+/** The anchor untimed placed ids unwrap against: the list's newest timestamp. */
+function untimedAnchorOf(messages: readonly DisplayOrdered[]): bigint {
+  let newest: number | null = null;
+  for (const message of messages) {
+    const created = message.info.time?.created;
+    if (typeof created === 'number' && (newest === null || created > newest)) newest = created;
+  }
+  return absoluteWireIdClockAt(newest ?? Date.now());
+}
+
+function compareForDisplayAt(a: DisplayOrdered, b: DisplayOrdered, untimedAnchor: bigint): number {
   const segmentA = displaySegment(a.info.id);
   const segmentB = displaySegment(b.info.id);
   if (segmentA !== segmentB) return segmentA - segmentB;
 
   // Placed: the wire id is the position, and it is the only clock that agrees
   // with the loop that produced the messages.
-  if (segmentA === 0) return compareIds(a.info.id, b.info.id);
+  if (segmentA === 0) {
+    const clockA = placedDisplayClock(a, untimedAnchor);
+    const clockB = placedDisplayClock(b, untimedAnchor);
+    if (clockA !== clockB) return clockA < clockB ? -1 : 1;
+    return compareIds(a.info.id, b.info.id);
+  }
 
   // Local: the send instant is the only record of what the user did, and it is
   // this tab's own clock for both sides, so it is comparable. Untimed last.
@@ -140,13 +191,14 @@ export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
     options?.hidePartlessUserMessages === true &&
     msg.info.role === 'user' &&
     msg.parts.length === 0;
+  const untimedAnchor = untimedAnchorOf(input);
   const messages = [...input].filter((msg) => !isHiddenHusk(msg)).sort((a, b) => {
     const aPending = pendingOrder.get(a.info.id);
     const bPending = pendingOrder.get(b.info.id);
     if (aPending !== undefined && bPending !== undefined) return aPending - bPending;
     if (aPending !== undefined) return 1;
     if (bPending !== undefined) return -1;
-    return compareMessagesForDisplay(a, b);
+    return compareForDisplayAt(a, b, untimedAnchor);
   });
   const turns: TurnLike<M>[] = [];
   const turnsByUserMsgId = new Map<string, TurnLike<M>>();

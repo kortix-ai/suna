@@ -58,7 +58,7 @@
  *     was persisted — was created by a step that never read this prompt. When
  *     it is there, the drain deletes the stranded message and delivers again,
  *     above it. The same predicate runs at turn end for every still-open
- *     forwarded prompt (`routes/r4.ts` `turn-stream` `end`) — the safety net
+ *     forwarded prompt (`routes/turn-stream.ts` `turn-stream` `end`) — the safety net
  *     for a verify read that failed.
  *
  * THE STRAND SIGNATURE IS AN ID-ORDER CLAIM, AND ID ORDER IS NOT CHRONOLOGY.

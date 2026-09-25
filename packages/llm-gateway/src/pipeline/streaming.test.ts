@@ -48,4 +48,30 @@ describe('relayStream', () => {
     await reader.cancel();
     expect(cancelled).toBe(true);
   });
+
+  test('a client stop before the usage frame settles once with what was streamed', async () => {
+    const chunk = encoder.encode('data: {"choices":[{"delta":{"content":"' + 'x'.repeat(400) + '"}}]}\n\n');
+    const settlements: Array<{ usage: unknown; error: unknown; observed: unknown }> = [];
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(chunk);
+      },
+    });
+    const reader = relayStream({
+      upstreamBody: upstream,
+      requestId: 'req_3',
+      logger: console,
+      settle: async (usage, error, observed) => {
+        settlements.push({ usage, error, observed });
+      },
+    }).getReader();
+    await reader.read();
+    await reader.cancel();
+    expect(settlements).toHaveLength(1);
+    expect(settlements[0]).toMatchObject({
+      usage: null,
+      error: { code: 'client_aborted' },
+      observed: { outputChars: 400, clientStopped: true },
+    });
+  });
 });

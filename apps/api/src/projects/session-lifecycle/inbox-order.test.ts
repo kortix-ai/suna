@@ -71,7 +71,7 @@ describe('compareInboxSendOrder', () => {
   });
 });
 
-// The drain's send-order gate on under-placement (engine.ts). A first delivery
+// The drain's send-order gate on under-placement (queued-continue.ts). A first delivery
 // keeps its client id BELOW the open siblings above it only when every one of
 // them was SENT AFTER it — then the client id is its send position. A sibling
 // sent EARLIER whose id is above is a LIFTED id (`mintLivePlacement` places a

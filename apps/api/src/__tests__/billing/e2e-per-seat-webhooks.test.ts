@@ -4,8 +4,9 @@
 // events that carry a per-seat subscription item. Verifies:
 //   - seat_count gets reconciled from Stripe's quantity field
 //   - billing_model flips to 'per_seat'
-//   - a single seat_grant ledger entry is emitted for net additions
-//   - duplicate webhook delivery doesn't double-grant (idempotency)
+//   - a quantity change alone grants NO allowance: seats added mid-period are
+//     funded from the PAID proration invoice (proration-grants.ts), not here
+//   - duplicate webhook delivery is deduped
 //   - legacy customers (no per-seat item) are unaffected by the new logic
 
 import { describe, test, expect, beforeEach } from 'bun:test';
@@ -16,21 +17,22 @@ import {
   createMockStripeClient,
   mockRegistry,
   registerGlobalMocks,
-  registerCreditsMock,
+  registerWalletMock,
+  fakeWallet,
   resetMockRegistry,
+  installWebhookMarkerTable,
 } from './mocks';
 
 registerGlobalMocks();
-registerCreditsMock();
+registerWalletMock();
 
 const PER_SEAT_PRICE_PLACEHOLDER = 'price_PLACEHOLDER_PER_SEAT';
 
-let grantCreditsCalls: any[][] = [];
+const walletGrants = fakeWallet.calls.grant;
 let updateCalls: { accountId: string; data: any }[] = [];
 let upsertCalls: { accountId: string; data: any }[] = [];
 
 beforeEach(() => {
-  grantCreditsCalls = [];
   updateCalls = [];
   upsertCalls = [];
   resetMockRegistry();
@@ -51,10 +53,6 @@ beforeEach(() => {
   mockRegistry.upsertCreditAccount = async (accountId: string, data: any) => {
     upsertCalls.push({ accountId, data });
   };
-  mockRegistry.grantCredits = async (...args: any[]) => {
-    grantCreditsCalls.push(args);
-  };
-  mockRegistry.resetExpiringCredits = async () => {};
 
   // Default: per-seat account with 1 seat already.
   mockRegistry.getCreditAccount = async () =>
@@ -92,7 +90,7 @@ function perSeatSubscription(quantity: number, overrides: Record<string, any> = 
 }
 
 describe('per-seat webhook reconciliation', () => {
-  test('quantity 1 → 3: seat_count updates, one seat_grant of $50 emitted', async () => {
+  test('quantity 1 → 3: seat_count updates and no allowance is granted from the quantity change', async () => {
     const sub = perSeatSubscription(3);
     const event = createMockStripeEvent('customer.subscription.updated', sub);
 
@@ -105,19 +103,9 @@ describe('per-seat webhook reconciliation', () => {
     expect(persistedUpdate?.data.billingModel).toBe('per_seat');
     expect(persistedUpdate?.data.seatSubscriptionItemId).toBe('si_seat_123');
 
-    // Delta = 3 - 1 = 2 seats → grant $50 (INCLUDED_CREDITS_PER_SEAT_USD $25 × 2).
-    // NOT $80: the $40 seat PRICE is not the wallet allowance.
-    expect(grantCreditsCalls.length).toBe(1);
-    const [accountId, amount, type, , , idempotencyKey] = grantCreditsCalls[0];
-    expect(accountId).toBe('acc_test_123');
-    expect(amount).toBe(50);
-    expect(type).toBe('seat_grant');
-    expect(idempotencyKey).toBeDefined();
-    // Keyed on the seat count REACHED within this billing period, so a team that
-    // shrinks and regrows to 3 inside one cycle reuses the key instead of being
-    // funded twice for the same seat.
-    expect(String(idempotencyKey)).toContain(':seats:');
-    expect(String(idempotencyKey).endsWith(':3')).toBe(true);
+    // The added seats are funded when their proration invoice is PAID
+    // (invoice.paid, billing_reason subscription_update), never here.
+    expect(walletGrants.length).toBe(0);
   });
 
   test('auto-topup defaults rescale unless user customized', async () => {
@@ -133,7 +121,7 @@ describe('per-seat webhook reconciliation', () => {
     expect(persistedUpdate?.data.autoTopupAmount).toBe('100');
   });
 
-  test('quantity DECREASE: no grant emitted (Stripe credits the user via proration)', async () => {
+  test('quantity DECREASE: no grant emitted', async () => {
     // Start with 3 seats; drop to 1.
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
@@ -149,7 +137,7 @@ describe('per-seat webhook reconciliation', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'whsec_test');
 
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
     const persistedUpdate = updateCalls.find((c) => c.data.seatCount !== undefined);
     expect(persistedUpdate?.data.seatCount).toBe(1);
   });
@@ -160,14 +148,10 @@ describe('per-seat webhook reconciliation', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'whsec_test');
 
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
-  test('idempotency key is identical across redeliveries (DB-level dedup hook)', async () => {
-    // Real-world idempotency is enforced by the atomic_add_credits RPC via
-    // the idempotency_key on credit_ledger. The mock here just records the
-    // key, so we verify the CONTRACT — same event → same idempotency key
-    // → DB will dedup the actual grant in production.
+  test('redelivered quantity changes never grant allowance', async () => {
     const sub = perSeatSubscription(3);
     const eventA = createMockStripeEvent('customer.subscription.updated', sub);
     const eventB = createMockStripeEvent('customer.subscription.updated', sub);
@@ -175,11 +159,7 @@ describe('per-seat webhook reconciliation', () => {
     await processStripeWebhook(JSON.stringify(eventA), 'whsec_test');
     await processStripeWebhook(JSON.stringify(eventB), 'whsec_test');
 
-    expect(grantCreditsCalls.length).toBeGreaterThanOrEqual(1);
-    // All grant calls for this seat-count transition use the same key.
-    const keys = new Set(grantCreditsCalls.map((c) => c[5]));
-    expect(keys.size).toBe(1);
-    expect(String([...keys][0]).endsWith(':3')).toBe(true);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('legacy subscription (no per-seat item) — billing_model unchanged, no seat fields touched', async () => {
@@ -209,7 +189,7 @@ describe('per-seat webhook reconciliation', () => {
     await processStripeWebhook(JSON.stringify(event), 'whsec_test');
 
     // No seat grant for legacy customers.
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
     // No update should set seatCount / billingModel='per_seat'.
     const seatTouchingUpdate = updateCalls.find(
       (c) => c.data.seatCount !== undefined || c.data.billingModel === 'per_seat',
@@ -255,31 +235,10 @@ describe('per-seat webhook reconciliation', () => {
 
     const seatUpdate = updateCalls.find((c) => c.data.seatCount === 4);
     expect(seatUpdate).toBeDefined();
-    expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][1]).toBe(75); // delta 4-1=3 seats × $25 allowance = $75
+    expect(walletGrants.length).toBe(0);
   });
 
-  test('grant amount math is correct for various deltas', async () => {
-    const cases = [
-      { from: 1, to: 2, expectedGrant: 25 },
-      { from: 1, to: 5, expectedGrant: 100 },
-      { from: 1, to: 10, expectedGrant: 225 },
-    ];
-    for (const { from, to, expectedGrant } of cases) {
-      grantCreditsCalls = [];
-      mockRegistry.getCreditAccount = async () =>
-        createMockCreditAccount({
-          billingModel: 'per_seat',
-          seatCount: from,
-          seatSubscriptionItemId: 'si_seat_123',
-          stripeSubscriptionId: 'sub_seat_123',
-        });
-      const event = createMockStripeEvent('customer.subscription.updated', perSeatSubscription(to));
-      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
-      expect(grantCreditsCalls.length).toBe(1);
-      expect(grantCreditsCalls[0][1]).toBe(expectedGrant);
-    }
-  });
+
 });
 
 describe('legacy → per-seat adoption (regression)', () => {
@@ -337,9 +296,8 @@ describe('legacy → per-seat adoption (regression)', () => {
     expect(clobber).toBeUndefined();
   });
 
-  test('duplicate event delivery is deduped (recordWebhookEvent gate)', async () => {
-    let calls = 0;
-    mockRegistry.recordWebhookEvent = async () => { calls++; return calls === 1; };
+  test('duplicate event delivery is deduped (processed-marker gate)', async () => {
+    installWebhookMarkerTable();
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
         billingModel: 'per_seat', tier: 'per_seat', seatCount: 1,
@@ -349,26 +307,14 @@ describe('legacy → per-seat adoption (regression)', () => {
     const sub = perSeatSubscription(3);
     const event = createMockStripeEvent('customer.subscription.updated', sub);
     await processStripeWebhook(JSON.stringify(event), 'whsec_test');
-    await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+    const writesAfterFirst = updateCalls.length;
+    const second = await processStripeWebhook(JSON.stringify(event), 'whsec_test');
 
     // Second delivery short-circuits before any reconciliation.
-    expect(grantCreditsCalls.length).toBe(1);
+    expect((second as any).deduped).toBe(true);
+    expect(updateCalls.length).toBe(writesAfterFirst);
   });
 
-  // ── Enterprise + per-seat coexistence (contract-readiness regression) ──────
-  //
-  // A deal that is BOTH Enterprise (entitlements) AND per-seat (billing) — a
-  // flat Enterprise fee plus per-seat billing with pooled per-seat credits —
-  // must hold both at once. The previous webhook
-  // reconciliation unconditionally set `updates.tier = 'per_seat'` on any
-  // per-seat subscription item (webhooks.ts syncSubscriptionState), which
-  // clobbered a sales-assigned `tier='enterprise'` (or an
-  // `enterprise_entitled` account) on the very first per-seat webhook AND on
-  // every subsequent seat-quantity update, silently stripping SSO/SCIM/RBAC/
-  // audit. These tests lock the fix: the per-seat billing semantics
-  // (billing_model, seatCount, seat grant) are still reconciled, but `tier` is
-  // left untouched so the enterprise identity entitlements (sourced from
-  // `tier='enterprise'` or `enterprise_entitled`) survive.
   describe('enterprise + per-seat coexistence — tier not clobbered', () => {
     test('enterprise_entitled=true + per-seat sub update → billing_model reconciled, tier NOT set to per_seat', async () => {
       // The contracted shape: enterprise entitlements (via flag)
@@ -403,9 +349,9 @@ describe('legacy → per-seat adoption (regression)', () => {
       expect(persisted?.data.tier).toBeUndefined();
     });
 
-    test('enterprise_entitled=true + per-seat sub update → seat grant still emitted (delta funded)', async () => {
-      // The no-clobber guard must not break the per-seat credit grant: a
-      // seat-count increase still funds the new seats from the pooled wallet.
+    test('enterprise_entitled=true + per-seat sub update → seat count reconciled, no unpaid allowance', async () => {
+      // The no-clobber guard must not break seat reconciliation, and an
+      // enterprise-entitled account follows the same money-first seat rule.
       mockRegistry.getCreditAccount = async () =>
         createMockCreditAccount({
           tier: 'enterprise',
@@ -422,13 +368,9 @@ describe('legacy → per-seat adoption (regression)', () => {
 
       await processStripeWebhook(JSON.stringify(event), 'whsec_test');
 
-      // Delta = 5 - 2 = 3 seats → grant $75 (INCLUDED_CREDITS_PER_SEAT_USD $25 × 3).
-      expect(grantCreditsCalls.length).toBe(1);
-      const [, amount, type, , , idempotencyKey] = grantCreditsCalls[0];
-      expect(amount).toBe(75);
-      expect(type).toBe('seat_grant');
-      expect(String(idempotencyKey)).toContain(':seats:');
-      expect(String(idempotencyKey).endsWith(':5')).toBe(true);
+      const seatUpdate = updateCalls.find((c) => c.data.seatCount === 5);
+      expect(seatUpdate).toBeDefined();
+      expect(walletGrants.length).toBe(0);
     });
 
     test('tier=enterprise (no flag) + per-seat sub update → tier NOT clobbered', async () => {

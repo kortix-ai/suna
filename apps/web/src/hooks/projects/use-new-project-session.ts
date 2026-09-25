@@ -348,9 +348,10 @@ export function useNewProjectSession(projectId: string | undefined) {
           // The row exists — kick provisioning so it overlaps the navigation.
           // It also drops the server's `metadata.warm` marker, but only for a
           // PROMPT-LESS take: `dropWarmSessionMarkerOnAdopt`
-          // (apps/api/.../routes/warm-sessions.ts) runs behind a marker
-          // predicate the claim transaction has already made false. A send that
-          // carried a prompt had its marker dropped by the claim itself.
+          // (apps/api/.../routes/warm-sessions.ts, called from
+          // routes/session-runtime.ts) runs behind a marker predicate the claim
+          // transaction has already made false. A send that carried a prompt
+          // had its marker dropped by the claim itself.
           const started = prefetchSessionStart(queryClient, projectId, sessionId);
           if (adoptedWarmSession) {
             const replenish = () => {

@@ -38,6 +38,8 @@ function describeSql(expression: unknown): string {
   return chunks
     .map((chunk: any) => {
       if (typeof chunk === 'string') return chunk;
+      // A nested fragment: the strip list is its own SQL expression.
+      if (Array.isArray(chunk?.queryChunks)) return describeSql(chunk);
       if (Array.isArray(chunk?.value)) return chunk.value.join('');
       if (typeof chunk?.value === 'string') return chunk.value;
       return chunk?.name ?? '';
@@ -51,8 +53,11 @@ mock.module('../../../config', () => ({
 
 const updater = (table: unknown) => ({
   set: (updates: Record<string, unknown>) => ({
-    where: async () => {
+    // Awaitable, and chainable to `.returning()` (the status transitions).
+    where: () => {
       updateCalls.push({ table, updates, inTransaction });
+      const result = Promise.resolve([{ sandboxId: 'moved', sessionId: 'moved' }]);
+      return Object.assign(result, { returning: () => result });
     },
   }),
 });

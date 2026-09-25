@@ -82,7 +82,7 @@ export function shouldClaimPromptDelivery(path: string, hasIdempotencyKey: boole
 // longer than 60s on its own (see BOOT_BACKOFF_MS in the SDK's messages.ts,
 // which windows a client-side retry out to ~30s before this cache would even
 // see the repeat), and the API's own queued `continue_session` retry
-// (session-lifecycle/engine.ts, deliverWithRetry) can land a second attempt
+// (session-lifecycle/continue-session.ts, deliverWithRetry) can land a second attempt
 // well past the old TTL once the scheduler's drain tick is added on top. The
 // old 60s TTL let exactly that combination through as an un-deduped double
 // delivery. 10 minutes is not an arbitrary round number: it matches this
@@ -101,7 +101,7 @@ export function shouldClaimPromptDelivery(path: string, hasIdempotencyKey: boole
 // `DEDUPE_TTL_MS >= UNDELIVERED_PROMPT_STARVATION_MS`; deriving one from the
 // other makes that an invariant instead of a comment two files have to stay
 // in sync by hand. `session-lifecycle` already imports from `sandbox-proxy`
-// (engine.ts -> `../../sandbox-proxy/routes/preview`), so this follows the
+// (session-lifecycle/runtime-client.ts -> `../../sandbox-proxy/routes/preview`), so this follows the
 // SAME existing module-boundary direction rather than opening a new one.
 export const DEDUPE_TTL_MS = 10 * 60_000;
 const MAX_ENTRIES = 2_000;
@@ -188,7 +188,7 @@ export function promptDeliveryKey(opts: {
 }): string {
   // Scoped by sandbox + session like the two precedences below. A create
   // retry re-provisions onto a DIFFERENT session/sandbox while reusing the
-  // same command-scoped Idempotency-Key (session-lifecycle/engine.ts); an
+  // same command-scoped Idempotency-Key (session-lifecycle/create-session.ts); an
   // unscoped key let the first attempt's claim swallow the retry's delivery
   // to the new box — which genuinely never saw the prompt — as a "duplicate".
   const provided = opts.idempotencyKey?.trim();

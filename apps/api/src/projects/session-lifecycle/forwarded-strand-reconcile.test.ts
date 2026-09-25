@@ -149,7 +149,7 @@ describe('reconcileForwardedTurnsAtEnd', () => {
     expect(out.candidates).toBe(0);
   });
 
-  // THE SEND-ORDER GATE'S CONSEQUENCE AT TURN END. With the gate (engine.ts,
+  // THE SEND-ORDER GATE'S CONSEQUENCE AT TURN END. With the gate (queued-continue.ts,
   // `underPlacementKeepsSendOrder`) BRAVO — sent after ALPHA — is re-minted
   // ABOVE ALPHA's lifted id instead of under-placed below it. The merged
   // reply parents on BRAVO (newest by `time.created`), the relay names BRAVO,

@@ -12,7 +12,7 @@
  * Also covers the ONE surviving project-scoped marketplace route —
  * `POST /v1/projects/:projectId/marketplace/install-session`, the
  * agent-driven replacement for the deleted deterministic install engine
- * (apps/api/src/projects/routes/r10.ts). It kicks off a real session/agent
+ * (apps/api/src/projects/routes/marketplace-install-session.ts). It kicks off a real session/agent
  * once past validation, so — same convention as PROJ-13's OAuth `start` in
  * projects-misc.flow.ts — we assert the request-validation boundary only,
  * never drive the full flow.
@@ -246,7 +246,7 @@ flow(
 // ─── MKTP-11 — POST /v1/projects/:projectId/marketplace/install-session ───
 // Agent-driven replacement for the deleted deterministic per-project install
 // engine. Validates projectId access + body BEFORE spawning any real
-// session/agent (apps/api/src/projects/routes/r10.ts:134-163) — we assert
+// session/agent (apps/api/src/projects/routes/marketplace-install-session.ts) — we assert
 // that boundary only, matching PROJ-13's convention for similarly heavy
 // routes (projects-misc.flow.ts).
 flow(

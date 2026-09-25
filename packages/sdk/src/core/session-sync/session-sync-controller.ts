@@ -13,6 +13,21 @@ import { ApiError } from '../http/api/errors';
  * fully loaded and never pull at all, while a long one still opens bounded
  * instead of dragging its entire history over the sandbox proxy.
  */
+/**
+ * Default budget for one page read. A tail page can legitimately take 30-50 s
+ * (image-heavy parts, measured 2026-08-24), so this is a hang detector, not a
+ * latency target. It matches the SDK's default fetch timeout.
+ */
+const DEFAULT_READ_TIMEOUT_MS = 120_000;
+
+/** A page read that outlived its budget. Retryable; never a fact about the session. */
+class SessionSyncReadTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Session history read did not settle within ${timeoutMs}ms`);
+    this.name = 'SessionSyncReadTimeoutError';
+  }
+}
+
 /** First retry delay after a failed tail read, and the first turn-end settle delay. */
 const TAIL_RETRY_BASE_MS = 1_000;
 /** Ceiling for the retry backoff — a box that comes back is picked up within it. */
@@ -284,6 +299,17 @@ export interface SessionSyncControllerOptions {
    * healthy stream the hydrate is a no-op.
    */
   verifyIntervalMs?: number;
+  /**
+   * Max time one page read may take before it is abandoned. Default 120s.
+   *
+   * A read proxied to the sandbox can park forever: a wedged runtime or a
+   * stalled proxy hop accepts the request and never answers. Reads are
+   * single-flight, so without a bound that one read held the slot and every
+   * later repair — turn end, SSE gap, liveness poll — waited on it until the
+   * controller was destroyed. On expiry the read's signal is aborted, the slot
+   * is released, and the tail read is retried with backoff.
+   */
+  readTimeoutMs?: number;
 }
 
 export interface HttpSessionSyncControllerOptions extends Pick<
@@ -296,6 +322,7 @@ export interface HttpSessionSyncControllerOptions extends Pick<
   | 'scheduler'
   | 'livenessIntervalMs'
   | 'verifyIntervalMs'
+  | 'readTimeoutMs'
 > {
   baseUrl: string;
   getToken?: () => string | null | Promise<string | null>;
@@ -472,6 +499,7 @@ export class SessionSyncController {
   private readonly livenessIntervalMs: number;
   private readonly verifyIntervalMs: number;
   private readonly pollReadDeadlineMs: number;
+  private readonly readTimeoutMs: number;
   /** When the last tail read was ISSUED — see `verifyIntervalMs`. */
   private lastTailReadAt: number;
   /** Consecutive failed tail reads, for the retry backoff. Reset by success. */
@@ -517,6 +545,7 @@ export class SessionSyncController {
     this.livenessIntervalMs = options.livenessIntervalMs ?? 10_000;
     this.verifyIntervalMs = options.verifyIntervalMs ?? 30_000;
     this.pollReadDeadlineMs = this.livenessIntervalMs * POLL_READ_DEADLINE_LIVENESS_INTERVALS;
+    this.readTimeoutMs = options.readTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
     this.lastActivityAt = this.scheduler.now();
     this.lastTailReadAt = this.scheduler.now();
   }
@@ -883,13 +912,20 @@ export class SessionSyncController {
       if (this.destroyed) return;
       // A superseded/cancelled read is not a failure and never hydrates — it
       // must not paint an error over a live transcript, and it must not retry.
-      if (isAbortError(error) || signal.aborted) return;
+      // A read that outlived `readTimeoutMs` is not a cancel: it retries.
+      if (signal.aborted) return;
+      const timedOut = error instanceof SessionSyncReadTimeoutError;
+      if (!timedOut && isAbortError(error)) return;
       // A sandbox that is still waking is a RETRYABLE, "loading" state, not a
       // fault: the box may come up any second, so keep polling and keep the UI
       // on its loader. Only a genuine failure earns `error`. NEVER an
       // empty-`fresh` — `markLoaded` above ran only on success, so a failed
-      // read never records the session as an empty transcript.
-      this.update({ freshness: isSandboxNotReadyError(error) ? 'loading' : 'error' });
+      // read never records the session as an empty transcript. A read that
+      // outlived its budget says nothing about the session either: keep the
+      // `loading`/`stale` state `reconcile` set and retry.
+      if (!timedOut) {
+        this.update({ freshness: isSandboxNotReadyError(error) ? 'loading' : 'error' });
+      }
       if (error instanceof ApiError && (error.status === 404 || error.status === 410)) {
         this.tailUnavailable = true;
         this.cancelTailRetry();
@@ -976,14 +1012,16 @@ export class SessionSyncController {
   ): Promise<SessionSyncPage> {
     const startedAt = this.scheduler.now();
     try {
-      const page = await this.options.loadPage(
-        {
-          // The tail is what someone is waiting for; an older page is what they
-          // asked for. Different budgets — see SESSION_SYNC_TAIL_PAGE_SIZE.
-          limit: operation === 'tail' ? SESSION_SYNC_TAIL_PAGE_SIZE : SESSION_SYNC_PAGE_SIZE,
-          ...(before ? { before } : {}),
-        },
-        signal,
+      const page = await this.boundedRead(signal, (boundedSignal) =>
+        this.options.loadPage(
+          {
+            // The tail is what someone is waiting for; an older page is what they
+            // asked for. Different budgets — see SESSION_SYNC_TAIL_PAGE_SIZE.
+            limit: operation === 'tail' ? SESSION_SYNC_TAIL_PAGE_SIZE : SESSION_SYNC_PAGE_SIZE,
+            ...(before ? { before } : {}),
+          },
+          boundedSignal,
+        ),
       );
       this.options.onTelemetry?.({
         operation,
@@ -1007,6 +1045,35 @@ export class SessionSyncController {
       });
       throw error;
     }
+  }
+
+  /**
+   * Run one read under its own signal: aborted when `parent` aborts (the tail
+   * read's supersede / poll deadline / `destroy()`, or the controller-lifetime
+   * signal for an older page), and when `readTimeoutMs` elapses. The timeout
+   * also rejects the returned promise directly, so a loader that ignores its
+   * signal still releases the single-flight slot. A timeout does not abort
+   * `parent`, so the caller treats it as a retryable failure, not a cancel.
+   */
+  private boundedRead<T>(parent: AbortSignal, read: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const lifetime = parent;
+    const controller = new AbortController();
+    const onLifetimeAbort = () => controller.abort(lifetime.reason);
+    if (lifetime.aborted) controller.abort(lifetime.reason);
+    else lifetime.addEventListener('abort', onLifetimeAbort, { once: true });
+
+    let timer: unknown;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = this.startTimer(() => {
+        const error = new SessionSyncReadTimeoutError(this.readTimeoutMs);
+        reject(error);
+        controller.abort(error);
+      }, this.readTimeoutMs);
+    });
+    return Promise.race([read(controller.signal), deadline]).finally(() => {
+      this.cancelTimer(timer);
+      lifetime.removeEventListener('abort', onLifetimeAbort);
+    });
   }
 
   private async loadCompleteOlderTurn(before: string): Promise<SessionSyncPage> {

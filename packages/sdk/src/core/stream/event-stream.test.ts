@@ -1429,6 +1429,54 @@ describe('openEventStream resync after resubscribe', () => {
 
     handle.close();
   });
+  test('a failed reconnect keeps the resync owed until a subscription delivers its first frame, then resyncs once', async () => {
+    const clock = createFakeClock();
+    let connects = 0;
+    const { client, channels } = createConnectableClient(() => {
+      connects += 1;
+      if (connects === 2) throw new Error('GET /global/event → 503');
+    });
+    const gaps: number[] = [];
+    const infos: Array<{ contentLost: boolean }> = [];
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onGapRehydrate: (gapMs, info) => {
+        gaps.push(gapMs);
+        infos.push(info);
+      },
+      timers: clock,
+    });
+    await tick();
+
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    channels[0].end();
+    await tick();
+
+    // Attempt 2 fails: no subscription, no resync.
+    await clock.advance(250);
+    await tick();
+    expect(connects).toBe(2);
+    expect(gaps).toEqual([]);
+
+    // Attempt 3 connects after the 1 s backoff; its first frame resyncs once.
+    await clock.advance(1000);
+    await tick();
+    expect(connects).toBe(3);
+    expect(gaps).toEqual([]);
+    channels[1].push(serverConnected());
+    await tick();
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]).toBeLessThan(5_000);
+    // The content lost by attempt 1 survives the failed attempt 2.
+    expect(infos).toEqual([{ contentLost: true }]);
+
+    handle.close();
+  });
 });
 
 describe('openEventStream shared-stream fan-out (F5)', () => {

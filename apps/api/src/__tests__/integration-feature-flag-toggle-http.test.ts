@@ -4,6 +4,7 @@ import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
+import { insertIntoView } from './helpers/compat-views';
 
 // PATCH /v1/projects/:projectId/features (canonical) and .../experimental
 // (deprecated alias) drive the real HTTP route against the real DB. The two
@@ -45,10 +46,8 @@ beforeAll(async () => {
       metadata: { experimental: { apps: true } },
     },
   ]);
-  await db
-    .insert(accountMembers)
-    .values({ userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false });
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, accountMembers, { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false });
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
     { accountId: ACCOUNT, projectId: ARCHIVED, userId: MANAGER, projectRole: 'manager' },
   ]);
