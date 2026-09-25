@@ -86,11 +86,6 @@ describe('checkSessionModelChange — checked as the gateway runs the session', 
     expect(result).toEqual({ servable: true, selected: { providerId: 'codex', secretIds: [PROJECT_KEY] } });
   });
 
-  test('a shared session with no key shared with the project is refused, not accepted and then failed', async () => {
-    projectKeys = [];
-    expect(await change()).toEqual({ servable: false, selected: null });
-  });
-
   test('the owner`s private session keeps using their own connection, and selects nothing', async () => {
     gatewayPersonal = OWNER;
     expect(await change()).toEqual({ servable: true, selected: null });

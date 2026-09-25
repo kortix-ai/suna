@@ -14,7 +14,9 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
+import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
+import * as realSandboxRuntimeRefresh from '../projects/lib/sandbox-runtime-refresh';
 import * as realSessionAttachments from '../projects/lib/session-attachments';
 import { db } from '../shared/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
@@ -25,9 +27,18 @@ let onProviderStop: () => Promise<void> = async () => {};
 /** What the provider remove does. Reset after each delete case. */
 let onProviderRemove: () => Promise<void> = async () => {};
 let providerStatus = 'stopped';
+let providerStarts = 0;
+/** What the provider start waits on. A resume case gates it to race a writer. */
+let onProviderStart: () => Promise<void> = async () => {};
+/** Compute meters (re)opened: one per runtime that became active. */
+let computeReopens = 0;
 mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
+    start: async () => {
+      providerStarts += 1;
+      await onProviderStart();
+    },
     stop: async () => {
       providerStops += 1;
       await onProviderStop();
@@ -43,7 +54,22 @@ mock.module('../projects/lib/session-attachments', () => ({
   sessionAttachmentStore: () => ({ removeSession: async () => undefined }),
 }));
 
+// Billing and the post-wake daemon refresh are other lanes. The count of
+// meter reopens is the billing half of the resume contract.
+mock.module('../billing/services/compute-metering', () => ({
+  ...realComputeMetering,
+  reopenComputeForSandbox: async () => {
+    computeReopens += 1;
+  },
+  markComputeSessionAlive: async () => undefined,
+}));
+mock.module('../projects/lib/sandbox-runtime-refresh', () => ({
+  ...realSandboxRuntimeRefresh,
+  scheduleSandboxRuntimeRefresh: () => undefined,
+}));
+
 const { applyStoppedState } = await import('../projects/reaping/sandbox-state-sync');
+const { resumeStoppedSandbox } = await import('../projects/routes/shared');
 const {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
@@ -474,6 +500,130 @@ describe('in-place recovery (claim, then accept)', () => {
     const { session, sandbox } = await read(f);
     expect(session.status).toBe('stopped');
     expect(sandbox.status).toBe('stopped');
+  });
+
+  // The delete lands between the claim and the provider's answer. The accept
+  // must not bring the session back to `running` or open a meter.
+  test('a delete that lands during recovery wins over the accept', async () => {
+    const f = await fixture({ sessionStatus: 'stopped', sandboxStatus: 'stopped' });
+    const claim = await claimInPlaceRuntimeRecovery((await sandboxRow(f)) as never);
+    expect(claim).not.toBeNull();
+    onProviderRemove = async () => {};
+    computeReopens = 0;
+    expect(
+      await deleteSession({
+        projectId: project.project_id,
+        sessionId: f.sessionId,
+        accountId: project.account_id,
+        userId: 'user-1',
+      }),
+    ).toEqual({ ok: true });
+
+    expect(await markInPlaceRuntimeRecoveryAccepted(claim!, 'running')).toBeNull();
+    const { session, sandbox } = await read(f);
+    expect(session.status).toBe('stopped');
+    expect(session.metadata).toMatchObject({ deletedBy: 'user-1' });
+    expect(sandbox.status).toBe('archived');
+    expect(computeReopens).toBe(0);
+  });
+});
+
+describe('resume (resumeStoppedSandbox)', () => {
+  /** A stopped session whose provider box is stopped, and a gate on its start. */
+  async function stoppedFixture() {
+    const f = await fixture({
+      sessionStatus: 'stopped',
+      sandboxStatus: 'stopped',
+      sandboxMetadata: { initStatus: 'ready' },
+    });
+    let releaseStart = () => {};
+    const started = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    onProviderStart = () => started;
+    providerStatus = 'stopped';
+    providerStarts = 0;
+    providerStops = 0;
+    computeReopens = 0;
+    const row = {
+      sandboxId: f.sandboxId,
+      sessionId: f.sessionId,
+      accountId: project.account_id,
+      provider: 'daytona',
+      externalId: f.externalId,
+      metadata: { initStatus: 'ready' },
+    };
+    return { f, row, releaseStart };
+  }
+
+  async function until(condition: () => Promise<boolean> | boolean): Promise<void> {
+    for (let i = 0; i < 150; i += 1) {
+      if (await condition()) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('the resume never reached the expected state');
+  }
+
+  // The wake claim is a compare-and-set on the sandbox metadata. Two callers
+  // that read the same stopped row race it; one wins.
+  test('concurrent resumes issue one provider start, and one meter opens once the box runs', async () => {
+    const { f, row, releaseStart } = await stoppedFixture();
+    try {
+      const results = await Promise.all([resumeStoppedSandbox(row), resumeStoppedSandbox(row)]);
+      expect(results.filter(Boolean)).toHaveLength(1);
+      await until(() => providerStarts > 0);
+      expect(providerStarts).toBe(1);
+      // Both rows stay stopped, and billing stays closed, until the provider
+      // reports the box running.
+      let state = await read(f);
+      expect(state.session.status).toBe('stopped');
+      expect(state.sandbox.status).toBe('stopped');
+      expect(typeof state.sandbox.metadata.runtimeWakeId).toBe('string');
+      expect(computeReopens).toBe(0);
+
+      providerStatus = 'running';
+      releaseStart();
+      await until(async () => (await read(f)).sandbox.status === 'active');
+      state = await read(f);
+      expect(state.session.status).toBe('running');
+      expect(state.sandbox.metadata).not.toHaveProperty('runtimeWakeId');
+      expect(state.sandbox.metadata.providerRunningConfirmedAt).toEqual(expect.any(String));
+      expect(providerStarts).toBe(1);
+      expect(computeReopens).toBe(1);
+    } finally {
+      onProviderStart = async () => {};
+      providerStatus = 'stopped';
+    }
+  });
+
+  // A manual stop lands while the provider start is still in flight. The stop
+  // clears the wake's claim, so the late start must not activate the rows: the
+  // wake stops the box it just started instead.
+  test('a manual stop wins over a provider start that resolves after it', async () => {
+    const { f, row, releaseStart } = await stoppedFixture();
+    try {
+      expect(await resumeStoppedSandbox(row)).toBe(true);
+      await until(() => providerStarts > 0);
+      await applyStoppedState({
+        sandboxId: f.sandboxId,
+        sessionId: f.sessionId,
+        externalId: f.externalId,
+        stopReason: 'manual',
+        metadata: { stoppedBy: 'user-1' },
+      });
+
+      providerStatus = 'running';
+      releaseStart();
+      await until(() => providerStops === 1);
+      const { session, sandbox } = await read(f);
+      expect(session.status).toBe('stopped');
+      expect(sandbox.status).toBe('stopped');
+      expect(sandbox.metadata.stopReason).toBe('manual');
+      expect(computeReopens).toBe(0);
+    } finally {
+      onProviderStart = async () => {};
+      providerStatus = 'stopped';
+    }
   });
 });
 
