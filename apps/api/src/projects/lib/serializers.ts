@@ -20,6 +20,7 @@ import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
 import { requestClientIp } from '../../shared/client-ip';
+import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import {
@@ -666,14 +667,6 @@ export function normalizeBoolean(value: unknown): boolean | null {
     if (normalized === 'false') return false;
   }
   return null;
-}
-
-export function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-export function normalizeJsonObject(value: unknown): Record<string, unknown> {
-  return isPlainObject(value) ? value : {};
 }
 
 export function normalizeRepoUrl(value: unknown): string | null {

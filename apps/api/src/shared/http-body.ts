@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { normalizeJsonObject } from './json';
 
 /**
  * The request's JSON body as a plain object.
@@ -14,7 +15,5 @@ export async function readJsonObject(c: Context): Promise<Record<string, unknown
   } catch {
     return {};
   }
-  return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-    ? (parsed as Record<string, unknown>)
-    : {};
+  return normalizeJsonObject(parsed);
 }

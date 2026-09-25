@@ -17,6 +17,7 @@ import {
 } from '../lib/app';
 import { serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { isPlainObject } from '../../shared/json';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
 import { isFeatureFlagKey } from '../../feature-flags/registry';
 import { runFeatureFlagToggleEffects } from '../../feature-flags/toggle-effects';
@@ -209,13 +210,13 @@ const patchFeatureFlagHandler = async (c: any) => {
   const projectId = c.req.param('projectId');
   // Strict body: malformed JSON is a client error, not an empty object —
   // readJsonObject() would swallow the parse failure and mis-report "unknown flag".
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: 'Request body must be a JSON object' }, 400);
   }
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+  if (!isPlainObject(body)) {
     return c.json({ error: 'Request body must be a JSON object' }, 400);
   }
   const feature = body.feature;

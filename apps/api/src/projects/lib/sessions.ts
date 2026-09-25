@@ -87,9 +87,9 @@ import {
   type ProjectSessionRow,
   type RequestAuditContext,
   deriveKortixApiRoot,
-  normalizeJsonObject,
   normalizeString,
 } from './serializers';
+import { normalizeJsonObject } from '../../shared/json';
 import { isUuid } from '../../shared/validate';
 import {
   canonicalConnectorAlias,
