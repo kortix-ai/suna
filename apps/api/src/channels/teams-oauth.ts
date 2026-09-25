@@ -9,7 +9,7 @@ import {
   setTeamsPublishState,
 } from './install-store';
 import { publishTeamsAppToCatalog } from './teams/catalog';
-import { signChannelToken, verifyChannelToken } from './core/signed-token';
+import { signChannelState, verifyChannelState } from './core/signed-state';
 import { frontendBase, installHandoffUrl, stateForCaller, type InstallCompletion } from './core/install-completion';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -102,11 +102,11 @@ function callbackRedirectUri(baseUrl: string): string {
 }
 
 function signState(state: OauthState): string {
-  return signChannelToken('teams-oauth', { ...state }, STATE_TTL_MS);
+  return signChannelState('teams-oauth', { ...state }, STATE_TTL_MS);
 }
 
 function verifyState(token: string | undefined): OauthState | null {
-  const payload = verifyChannelToken('teams-oauth', token);
+  const payload = verifyChannelState('teams-oauth', token);
   if (!payload) return null;
   if (
     typeof payload.projectId !== 'string' ||

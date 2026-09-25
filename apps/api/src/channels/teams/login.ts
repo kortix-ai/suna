@@ -1,5 +1,5 @@
 import { config } from '../../config';
-import { signChannelToken, verifyChannelToken } from '../core/signed-token';
+import { signChannelState, verifyChannelState } from '../core/signed-state';
 
 const LOGIN_TTL_MS = 10 * 60 * 1000;
 
@@ -16,7 +16,7 @@ export function signTeamsLoginState(input: {
   teamsUserId: string;
   pendingId?: string;
 }): string {
-  return signChannelToken(
+  return signChannelState(
     'teams-login',
     {
       tenantId: input.tenantId,
@@ -28,7 +28,7 @@ export function signTeamsLoginState(input: {
 }
 
 export function verifyTeamsLoginState(token: string): TeamsLoginStatePayload | null {
-  const payload = verifyChannelToken('teams-login', token);
+  const payload = verifyChannelState('teams-login', token);
   if (!payload) return null;
   if (typeof payload.tenantId !== 'string' || typeof payload.teamsUserId !== 'string') return null;
   if (payload.pendingId !== undefined && typeof payload.pendingId !== 'string') return null;

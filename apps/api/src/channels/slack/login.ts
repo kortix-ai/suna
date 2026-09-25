@@ -1,10 +1,10 @@
 import { config } from '../../config';
-import { signChannelToken, verifyChannelToken } from '../core/signed-token';
+import { signChannelState, verifyChannelState } from '../core/signed-state';
 
 // Short-lived, integrity-protected token that round-trips a Slack user's
 // identity through the `/login` web page. The payload (team + Slack user id) is
 // not secret — it only needs to be unforgeable so a member can't bind someone
-// else's Slack id to their Kortix account. See core/signed-token.ts for the key.
+// else's Slack id to their Kortix account. See core/signed-state.ts for the key.
 
 const LOGIN_TTL_MS = 10 * 60 * 1000;
 
@@ -17,7 +17,7 @@ export interface LoginStatePayload {
 }
 
 export function signLoginState(input: { teamId: string; slackUserId: string; pendingId?: string }): string {
-  return signChannelToken(
+  return signChannelState(
     'slack-login',
     {
       teamId: input.teamId,
@@ -29,7 +29,7 @@ export function signLoginState(input: { teamId: string; slackUserId: string; pen
 }
 
 export function verifyLoginState(token: string): LoginStatePayload | null {
-  const payload = verifyChannelToken('slack-login', token);
+  const payload = verifyChannelState('slack-login', token);
   if (!payload) return null;
   if (typeof payload.teamId !== 'string' || typeof payload.slackUserId !== 'string') return null;
   if (payload.pendingId !== undefined && typeof payload.pendingId !== 'string') return null;

@@ -14,7 +14,7 @@ import {
 } from './core/install-completion';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { makeOpenApiApp, errors } from '../openapi';
-import { signChannelToken, verifyChannelToken } from './core/signed-token';
+import { signChannelState, verifyChannelState } from './core/signed-state';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -24,11 +24,11 @@ interface StatePayload {
 }
 
 function signState(payload: StatePayload): string {
-  return signChannelToken('slack-oauth', { ...payload }, STATE_TTL_MS);
+  return signChannelState('slack-oauth', { ...payload }, STATE_TTL_MS);
 }
 
 function verifyState(token: string): StatePayload | null {
-  const payload = verifyChannelToken('slack-oauth', token);
+  const payload = verifyChannelState('slack-oauth', token);
   if (!payload) return null;
   if (typeof payload.projectId !== 'string' || typeof payload.userId !== 'string') return null;
   return { projectId: payload.projectId, userId: payload.userId };

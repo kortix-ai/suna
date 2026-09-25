@@ -11,16 +11,16 @@ import { config } from '../../config';
  * throws without a key, and verifying answers null: an HMAC keyed with an
  * empty string is one anyone can compute.
  */
-export type ChannelTokenPurpose = 'slack-login' | 'teams-login' | 'slack-oauth' | 'teams-oauth';
+export type ChannelStatePurpose = 'slack-login' | 'teams-login' | 'slack-oauth' | 'teams-oauth';
 
-export interface ChannelTokenEnvelope {
+export interface ChannelStateEnvelope {
   exp: number;
   nonce: string;
 }
 
 const keys = new Map<string, Buffer>();
 
-function signingKey(purpose: ChannelTokenPurpose): Buffer {
+function signingKey(purpose: ChannelStatePurpose): Buffer {
   const secret = config.API_KEY_SECRET;
   if (!secret) throw new Error(`API_KEY_SECRET must be configured to sign ${purpose} tokens`);
   const cacheKey = `${purpose}\u0000${secret}`;
@@ -33,12 +33,12 @@ function signingKey(purpose: ChannelTokenPurpose): Buffer {
   return key;
 }
 
-function mac(purpose: ChannelTokenPurpose, body: string): string {
+function mac(purpose: ChannelStatePurpose, body: string): string {
   return createHmac('sha256', signingKey(purpose)).update(body).digest('base64url');
 }
 
-export function signChannelToken(
-  purpose: ChannelTokenPurpose,
+export function signChannelState(
+  purpose: ChannelStatePurpose,
   payload: Record<string, unknown>,
   ttlMs: number,
 ): string {
@@ -52,10 +52,10 @@ export function signChannelToken(
  * malformed, forged, expired, or no key is configured. Callers check the
  * shape of their own fields.
  */
-export function verifyChannelToken(
-  purpose: ChannelTokenPurpose,
+export function verifyChannelState(
+  purpose: ChannelStatePurpose,
   token: string | null | undefined,
-): (Record<string, unknown> & ChannelTokenEnvelope) | null {
+): (Record<string, unknown> & ChannelStateEnvelope) | null {
   if (!token) return null;
   const [body, given] = token.split('.');
   if (!body || !given) return null;
@@ -72,7 +72,7 @@ export function verifyChannelToken(
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as Record<string, unknown>;
     if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
     if (typeof payload.nonce !== 'string') return null;
-    return payload as Record<string, unknown> & ChannelTokenEnvelope;
+    return payload as Record<string, unknown> & ChannelStateEnvelope;
   } catch {
     return null;
   }
