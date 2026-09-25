@@ -22,6 +22,13 @@
  * gives that user NOPASSWD:ALL sudo. The file is named explicitly as well so
  * the owner is right on the images that gunzip it as root.
  *
+ * This change and the supervised gate in apps/cli ship together on purpose.
+ * Measured on a real box: with this directory writable, kortix.com/install
+ * does not fall back to ~/.local/bin — it REPLACES /usr/local/bin/kortix with
+ * a symlink to a public build. Making the CLI replaceable by the daemon makes
+ * it replaceable by that installer too, so the gate that stops the CLI from
+ * offering the installer is not optional.
+ *
  * Runs as root. Single line, no heredoc: E2B's Dockerfile parser cannot read
  * heredocs.
  */
