@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 import { dockerAvailable } from './docker-available';
-import { connectReadOnly, migrationNamesInRunOrder, readMigrationStatus } from './migration-status';
+import { connectReadOnly } from './catalog';
+import { migrationNamesInRunOrder, readMigrationStatus } from './migration-status';
 
 /**
  * `migrate.ts status` must write nothing, including when a pending migration's

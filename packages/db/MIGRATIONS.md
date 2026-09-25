@@ -105,11 +105,13 @@ DATABASE_URL="$(env -i PATH="$PATH" HOME="$HOME" npx -y @dotenvx/dotenvx get DAT
 
 ### `migrate:status` is read-only
 
-`status` lists the migration files, reads `kortix_migrations.pgmigrations`
-inside `BEGIN READ ONLY … ROLLBACK`, and prints the difference
-(`scripts/migration-status.ts`). Its connection opens with
-`default_transaction_read_only = on`; if the server does not report that
-setting after connect, `status` exits 1 before it reads anything. It takes no
+`status` lists the migration files, reads `kortix_migrations.pgmigrations`,
+and prints the difference (`scripts/migration-status.ts`). The ledger read
+goes through `scripts/catalog.ts`, the one reader that `schema-contract.ts`
+and `verify-live-schema.ts` share: its connection opens with
+`default_transaction_read_only = on` and reads inside `BEGIN READ ONLY`; if
+the server does not report both settings, `status` exits 1 before it reads
+anything. It takes no
 advisory lock, creates no ledger table, and exits 1 on the same ledger-order
 mismatch that `up` refuses.
 
@@ -500,8 +502,10 @@ indexes, `account_memberships` had no primary key, and 8 other constraints were
 absent, all because prod's baseline was faked (the `20260925023833525` …
 `20260925023837104` migrations close it).
 
-Run it read-only against any environment. The live connection runs catalog
-queries only, inside `BEGIN READ ONLY`:
+Run it read-only against any environment. Both connections go through
+`scripts/catalog.ts`: one catalog query and one ledger query each, on a
+read-only session inside `BEGIN READ ONLY`. The catalog is read from
+`pg_catalog`, so a role that cannot `SELECT` a table still sees it:
 
 ```bash
 # 1. A throwaway canonical database (PostgreSQL 15 or 16).

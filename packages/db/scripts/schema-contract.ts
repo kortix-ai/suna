@@ -25,7 +25,7 @@
  */
 import { is } from 'drizzle-orm';
 import { PgTable, PgView, getTableConfig, getViewConfig } from 'drizzle-orm/pg-core';
-import pg from 'pg';
+import { type Catalog, connectReadOnly, readCatalog } from './catalog';
 import { SQL_ONLY, type SqlOnlyList } from './schema-contract-sql-only';
 
 const SCHEMA = 'kortix';
@@ -46,13 +46,14 @@ export interface SchemaContract {
   uniqueConstraints: Map<string, string>;
 }
 
-function emptyContract(): SchemaContract {
-  return { relations: new Map(), columns: new Set(), indexes: new Map(), uniqueConstraints: new Map() };
-}
-
 /** What a Drizzle schema module declares for the `kortix` schema. */
 export function declaredContract(schemaModule: Record<string, unknown>): SchemaContract {
-  const contract = emptyContract();
+  const contract: SchemaContract = {
+    relations: new Map(),
+    columns: new Set(),
+    indexes: new Map(),
+    uniqueConstraints: new Map(),
+  };
   for (const value of Object.values(schemaModule)) {
     if (is(value, PgTable)) {
       const config = getTableConfig(value);
@@ -80,53 +81,28 @@ export function declaredContract(schemaModule: Record<string, unknown>): SchemaC
   return contract;
 }
 
-const CATALOG_SQL = `
-  SELECT 'R' AS k, c.relname AS a, CASE WHEN c.relkind IN ('v', 'm') THEN 'view' ELSE 'table' END AS b, '' AS c
-    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-   WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'v', 'm')
-  UNION ALL
-  SELECT 'C', c.relname, a.attname, ''
-    FROM pg_attribute a
-    JOIN pg_class c ON c.oid = a.attrelid
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-   WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'v', 'm') AND a.attnum > 0 AND NOT a.attisdropped
-  UNION ALL
-  SELECT 'I', i.relname, t.relname, CASE WHEN x.indisunique THEN 'unique' ELSE '' END
-         || CASE WHEN x.indisvalid THEN '' ELSE ',invalid' END
-    FROM pg_index x
-    JOIN pg_class i ON i.oid = x.indexrelid
-    JOIN pg_class t ON t.oid = x.indrelid
-    JOIN pg_namespace n ON n.oid = t.relnamespace
-   WHERE n.nspname = $1
-     AND NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conindid = x.indexrelid AND k.contype IN ('p', 'u', 'x'))
-  UNION ALL
-  SELECT 'U', k.conname, t.relname, ''
-    FROM pg_constraint k
-    JOIN pg_class t ON t.oid = k.conrelid
-    JOIN pg_namespace n ON n.oid = t.relnamespace
-   WHERE n.nspname = $1 AND k.contype = 'u'
-`;
-
-/** What the database's `kortix` schema holds. Invalid indexes are reported as drift. */
-export async function liveContract(databaseUrl: string): Promise<{ contract: SchemaContract; invalid: string[] }> {
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
-  try {
-    const { rows } = await client.query<{ k: string; a: string; b: string; c: string }>(CATALOG_SQL, [SCHEMA]);
-    const contract = emptyContract();
-    const invalid: string[] = [];
-    for (const row of rows) {
-      if (row.k === 'R') contract.relations.set(row.a, row.b as 'table' | 'view');
-      else if (row.k === 'C') contract.columns.add(`${row.a}.${row.b}`);
-      else if (row.k === 'I') {
-        contract.indexes.set(row.a, { relation: row.b, unique: row.c.startsWith('unique') });
-        if (row.c.includes('invalid')) invalid.push(row.a);
-      } else if (row.k === 'U') contract.uniqueConstraints.set(row.a, row.b);
-    }
-    return { contract, invalid };
-  } finally {
-    await client.end();
+/**
+ * Pure: the `kortix.ts`-comparable part of the catalog. Indexes that implement
+ * a PRIMARY KEY, UNIQUE or EXCLUDE constraint are the constraint, not an
+ * index. INVALID indexes are returned separately and reported as drift.
+ */
+export function liveContract(catalog: Catalog): { contract: SchemaContract; invalid: string[] } {
+  const contract: SchemaContract = {
+    relations: new Map(catalog.relations),
+    columns: new Set(catalog.columns),
+    indexes: new Map(),
+    uniqueConstraints: new Map(),
+  };
+  const invalid: string[] = [];
+  for (const [name, index] of catalog.indexes) {
+    if (index.backsConstraint) continue;
+    contract.indexes.set(name, { relation: index.table, unique: index.unique });
+    if (!index.valid) invalid.push(name);
   }
+  for (const [name, constraint] of catalog.constraints) {
+    if (constraint.type === 'u') contract.uniqueConstraints.set(name, constraint.table);
+  }
+  return { contract, invalid };
 }
 
 /** Pure: every disagreement between kortix.ts and the catalog, one line each, sorted. */
@@ -217,7 +193,9 @@ async function main() {
     process.exit(2);
   }
   const declared = declaredContract(await import('../src/schema/kortix'));
-  const { contract: live, invalid } = await liveContract(databaseUrl);
+  const client = await connectReadOnly(databaseUrl);
+  const catalog = await readCatalog(client, SCHEMA).finally(() => client.end());
+  const { contract: live, invalid } = liveContract(catalog);
   const drift = diffContract(declared, live, SQL_ONLY, invalid);
   console.log(
     `kortix.ts: ${declared.relations.size} relations, ${declared.indexes.size} indexes, ` +
