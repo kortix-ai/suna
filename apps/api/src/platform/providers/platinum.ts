@@ -47,7 +47,7 @@ import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
-import { platinumJson } from '../../shared/platinum';
+import { platinumJson, platinumJsonResponse } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { serviceKeyForExternalId } from '../service-key';
 import type {
@@ -74,6 +74,11 @@ import { classifyPtyWebSocketPath } from './pty-ingress';
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
 const START_CONFLICT_POLL_MS = 250;
+// How long start() carries a box through a restore from cold storage. The
+// slowest prod unarchive seen on 2026-09-25 took 546 s (p90 400 s for the big
+// rehome boxes, 60 s for session boxes); past this the wake fence decides.
+const START_RESTORE_BUDGET_MS = 10 * 60_000;
+const START_RESTORE_POLL_MS = 1_000;
 
 interface PlatinumSandbox {
   id: string;
@@ -559,10 +564,23 @@ export class PlatinumProvider implements SandboxProvider {
     const deadline = Date.now() + START_CONFLICT_GRACE_MS;
     let firstConflict: unknown = null;
 
+    const restoreDeadline = Date.now() + START_RESTORE_BUDGET_MS;
+
     for (;;) {
       try {
-        await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST' });
-        return;
+        const started = await platinumJsonResponse<PlatinumSandbox>(`/v1/sandboxes/${externalId}/start`, {
+          method: 'POST',
+        });
+        // 202 {state:'unarchiving'}: Platinum is restoring the disk from cold
+        // storage, waited its 45 s inline budget, and will NOT boot the box
+        // when the restore lands — its contract is "call /start again". This
+        // returned on the 202, so nothing ever sent that second /start and
+        // the wake fence gave up at 90 s with start_timeout (KRTX-197; 162 of
+        // 241 prod unarchives on 2026-09-25 outran the inline wait).
+        const state = String(started.body?.state ?? '').toLowerCase();
+        if (started.status !== 202 && !state.includes('archiv')) return;
+        if (!(await this.waitForRestore(externalId, restoreDeadline))) return;
+        continue;
       } catch (error) {
         // Platinum acknowledges stop before the VM always reaches `stopped`.
         // An immediate user reopen can therefore race `stopping` and receive
@@ -587,6 +605,23 @@ export class PlatinumProvider implements SandboxProvider {
 
       if (Date.now() >= deadline) throw firstConflict;
     }
+  }
+
+  /**
+   * Wait out a restore from cold storage. true = the box is back on disk (or
+   * the restore was rolled back to `archived`) and needs its /start now;
+   * false = someone else moved it on, it failed, or the budget ran out, and
+   * the wake fence takes it from here.
+   */
+  private async waitForRestore(externalId: string, until: number): Promise<boolean> {
+    while (Date.now() < until) {
+      await Bun.sleep(START_RESTORE_POLL_MS);
+      const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`).catch(() => null);
+      const state = String(sandbox?.state ?? '').toLowerCase();
+      if (state === 'stopped' || state === 'archived') return true;
+      if (!state.includes('archiv') && state !== '') return false;
+    }
+    return false;
   }
 
   async exec(
