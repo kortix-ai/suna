@@ -1,5 +1,6 @@
 'use client';
 
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
@@ -121,14 +122,14 @@ function ConnectDialogBody({
   const status =
     phase === 'loading' ? (
       <p className="text-muted-foreground flex items-center gap-2 text-sm">
-        <Loading className="size-4 shrink-0" />
+        <Loading variant="spokes" className="size-4 shrink-0" />
         {copy.loading}
       </p>
     ) : phase === 'error' || error ? (
       <InfoBanner tone="destructive" icon={<WarningIcon weight="fill" />} title={error ?? ''} />
     ) : waiting ? (
       <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
-        <Loading className="size-4 shrink-0" />
+        <Loading variant="spokes" className="size-4 shrink-0" />
         <p className="text-sm text-pretty">{fill(copy.waiting, { app })}</p>
       </div>
     ) : connected && connectedAs ? (
@@ -181,7 +182,7 @@ function ConnectDialogBody({
               onClick={connect}
               disabled={starting || phase === 'loading' || phase === 'error'}
             >
-              {starting ? <Loading className="size-4 shrink-0" /> : null}
+              {starting ? <SessionDotMatrix className="size-4 shrink-0" /> : null}
               {starting ? copy.opening : waiting ? copy.reopen : fill(copy.connect, { app })}
             </Button>
           </>
