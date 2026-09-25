@@ -43,6 +43,17 @@ import { readOpenCodeSessionPin } from './runtime-state'
 export const TURN_PROBE_WINDOW = 12
 /** Twenty newest messages can still be ~26 MB on an image-heavy root. */
 export const TURN_PROBE_TIMEOUT_MS = 20_000
+/**
+ * The budget for the orphan read a verified reload does before the kill.
+ *
+ * Much shorter than `TURN_PROBE_TIMEOUT_MS`, and deliberately: the reload has
+ * already promoted the replacement, so this read is the only thing standing
+ * between a wedged old process and its SIGTERM. Two OpenCode processes on a
+ * 4 GB box is how the September `/tmp`-tmpfs OOM started. A read that does not
+ * answer in three seconds costs one un-repaired row; twenty seconds of an extra
+ * process costs the box.
+ */
+export const ORPHAN_READ_TIMEOUT_MS = 3_000
 
 function recentMessagesUrl(baseUrl: string, workspace: string, sessionId: string): string {
   return (
@@ -125,6 +136,7 @@ export async function inspectOpencodeRoot(
   baseUrl: string,
   workspace: string,
   sessionId: string,
+  timeoutMs: number = TURN_PROBE_TIMEOUT_MS,
 ): Promise<RootInspection> {
   const unknown = {
     hasMessages: false,
@@ -141,7 +153,7 @@ export async function inspectOpencodeRoot(
     // has an answer — lives at the tail. A window with assistant messages and
     // no user message means the prompt is older than the window and answered.
     const res = await fetch(recentMessagesUrl(baseUrl, workspace, sessionId), {
-      signal: AbortSignal.timeout(TURN_PROBE_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     if (!res.ok) return unknown
     const msgs = (await res.json()) as Array<{
@@ -224,7 +236,12 @@ export async function openAssistantMessageIdOnRoot(
   rootSessionId: string | null = readOpenCodeSessionPin(),
 ): Promise<string | null> {
   if (!rootSessionId) return null
-  const inspection = await inspectOpencodeRoot(baseUrl, workspace, rootSessionId).catch(() => null)
+  const inspection = await inspectOpencodeRoot(
+    baseUrl,
+    workspace,
+    rootSessionId,
+    ORPHAN_READ_TIMEOUT_MS,
+  ).catch(() => null)
   return inspection?.known ? inspection.openAssistantMessageId : null
 }
 
