@@ -959,7 +959,7 @@ project and switched off without a revert.
 | Key | `config_releases` |
 | Name | Config Releases |
 | Stability | `experimental` |
-| Default | **ON.** This is the intended behaviour; the flag exists to turn it OFF. |
+| Default | **OFF**, until the rollout is done (`platformDefault: () => false`). The behaviour the flag gates is the intended one; the default is a rollout decision. A project that made no choice gets the pre-release behaviour. Turn it on per project in Settings, watch it, then widen. |
 | Operator kill switch | `CONFIG_RELEASES_ENABLED` (`apps/api/src/config.ts`), default `true`. Set it to `false` and the flag is unavailable platform-wide: the Settings row disappears and the surface is dark for every project, whatever a project chose. |
 | Per-project state | `projects.metadata.experimental.config_releases`, written by `PATCH /v1/projects/:projectId/features`. |
 | Registry entry | `apps/api/src/feature-flags/registry.ts` |

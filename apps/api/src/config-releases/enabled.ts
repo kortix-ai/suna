@@ -13,7 +13,8 @@
  *     False ⇒ the flag is off for every project, whatever a project chose, and
  *     the Settings row disappears.
  *   • project  — `projects.metadata.experimental.config_releases`, defaulting
- *     to ON. A project turns the feature off without a code change.
+ *     to OFF (`registry.ts`, `platformDefault: () => false`) until the rollout
+ *     is done. A project opts in, or out again, without a code change.
  *
  * Never inline `resolveFeatureFlag(metadata, 'config_releases')` elsewhere:
  * the chokepoints named in the spec call one of these two functions, so the

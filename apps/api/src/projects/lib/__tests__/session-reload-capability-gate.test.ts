@@ -57,7 +57,8 @@ function convergeBody(outcome: string, overrides: Record<string, unknown> = {}) 
 
 function fakeDaemon(opts: {
   capable: boolean;
-  /** The project's `config_releases` flag. Default on. */
+  /** The project's `config_releases` flag. This double defaults to an
+   *  opted-in project; the platform default is OFF. */
   releasesEnabled?: boolean;
   turnInFlight?: boolean;
   converge?: unknown;

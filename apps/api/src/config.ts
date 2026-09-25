@@ -978,8 +978,10 @@ function validateEnv(): z.infer<typeof envSchema> {
   }
 
   // ── Conditional: config releases on → need the ONE object store ────────
-  // The `config_releases` flag is ON by default, so every environment that
-  // serves sessions publishes config archives. They go through the API's one
+  // `CONFIG_RELEASES_ENABLED` is the operator kill switch and defaults to
+  // true, so any environment that serves sessions can have a project opt in
+  // (the per-project flag itself is OFF by default) and publish config
+  // archives from that moment on. They go through the API's one
   // object store (src/object-store/s3.ts); there is no second store and no
   // fallback path that quietly writes somewhere else. Unset ⇒ every archive
   // request rebuilds from the Git mirror, every time, for every box.
