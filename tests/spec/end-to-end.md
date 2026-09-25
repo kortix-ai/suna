@@ -159,7 +159,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 ### Account deletion
 
 `DEL-1` `GET /account/deletion-status` → state.
-`DEL-2` `POST /account/request-deletion` → schedules; `POST /account/cancel-deletion` → cancels; `DELETE /account/delete-immediately` → purges. (Mirror mount `/billing/account/*`.)
+`DEL-2` `POST /account/request-deletion` → schedules; `POST /account/cancel-deletion` → cancels; `DELETE /account/delete-immediately` → purges. (Mirror mount `/billing/account/*`.) A second request while one is pending → `400`. A request after a cancel → `200`, and `deletion-status` reads pending. Two concurrent requests → exactly one `200` and one `400`; an account never holds two pending requests.
 
 ---
 

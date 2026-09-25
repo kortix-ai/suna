@@ -3616,6 +3616,11 @@ export const creditAccounts = kortixSchema.table(
   },
   (table) => [
     index('idx_credit_accounts_billing_model').on(table.billingModel),
+    // Serves the grant-rotation sweeps: `tier = $1 AND (next_credit_grant IS
+    // NULL OR next_credit_grant <= now())`. The planner answers the OR with a
+    // BitmapOr of two probes on this index. `tier` alone cannot help: 99.7% of
+    // rows are `free`.
+    index('idx_credit_accounts_tier_next_credit_grant').on(table.tier, table.nextCreditGrant),
   ],
 );
 
@@ -3720,6 +3725,13 @@ export const sandboxComputeSessions = kortixSchema.table(
     index('idx_sandbox_compute_sessions_open')
       .on(table.sandboxId)
       .where(sql`${table.endedAt} IS NULL`),
+    // Serves `getLatestComputeSession`: `sandbox_id = $1 ORDER BY created_at
+    // DESC LIMIT 1`, open OR closed rows. The partial indexes above cover only
+    // open rows, so this lookup otherwise scans the whole table. Ascending on
+    // purpose: a backward scan yields `created_at DESC NULLS FIRST`, the exact
+    // order the query asks for. Drizzle's `.desc()` renders `DESC NULLS LAST`,
+    // which does not match it and leaves a sort in the plan.
+    index('idx_sandbox_compute_sessions_sandbox_created').on(table.sandboxId, table.createdAt),
     uniqueIndex('uniq_sandbox_compute_sessions_one_open')
       .on(table.sandboxId)
       .where(sql`${table.endedAt} IS NULL`),
@@ -4093,9 +4105,13 @@ export const accountDeletionRequests = kortixSchema.table(
     isDeleted: boolean('is_deleted').default(false),
   },
   (table) => [
-    uniqueIndex('unique_active_deletion_request')
+    // At most one pending deletion request per account. The application
+    // writes `status`; `is_cancelled` / `is_deleted` are legacy columns it
+    // never sets, so an index keyed on them refused every re-request after a
+    // cancel.
+    uniqueIndex('uniq_account_deletion_requests_pending')
       .on(table.accountId)
-      .where(sql`${table.isCancelled} = false AND ${table.isDeleted} = false`),
+      .where(sql`${table.status} = 'pending'`),
   ],
 );
 
