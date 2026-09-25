@@ -41,6 +41,14 @@ async function ensureAudioMode() {
   }
 }
 
+/**
+ * Dictation takes over the iOS audio session (record category). Call when it
+ * ends so the next sound sets the playback mode again.
+ */
+export function resetAudioMode() {
+  audioModeConfigured = false;
+}
+
 // ---------------------------------------------------------------------------
 // Playback — each call creates a fresh player so rapid taps don't conflict.
 // A player is not garbage-collected on its own: `remove()` releases it once
