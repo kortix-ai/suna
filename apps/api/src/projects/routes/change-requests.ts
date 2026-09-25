@@ -31,7 +31,8 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
-import { normalizeString, readBody } from '../lib/serializers';
+import { normalizeString } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { continueSession } from '../session-lifecycle';
 import { refreshCrTips } from './shared';
 
@@ -114,7 +115,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Human-side capability gate (Git Ops). Managers hold it; a custom
@@ -316,7 +317,7 @@ projectsApp.openapi(
       return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
     }
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const message = normalizeString(body.message) ?? undefined;
 
     const [row] = await db
@@ -466,7 +467,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Per-agent gate: editing a CR is part of the change-request capability,
@@ -520,7 +521,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // request-changes is a human review decision on a CR, not a code push —

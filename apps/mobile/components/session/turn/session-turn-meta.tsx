@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Text } from '@/components/ui/text';
-import { DotsThreeOutlineIcon } from '@/lib/icons';
+import { DotsThreeIcon } from '@/lib/icons';
 import { turnMetaRows, type TurnMetaCost } from '@/lib/session/turn-meta';
 import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -74,7 +74,7 @@ export function SessionTurnMeta({
   // Closed, `now` is null; the fallback only decides whether the button exists.
   const rows = React.useMemo(
     () => turnMetaRows({ endedAt, now: now ?? endedAt ?? 0, durationMs, cost }),
-    [endedAt, now, durationMs, cost],
+    [endedAt, now, durationMs, cost]
   );
 
   // A ⋯ that opens onto an empty panel is worse than no ⋯ at all.
@@ -90,8 +90,8 @@ export function SessionTurnMeta({
           accessibilityLabel="Turn details"
           testID="session-turn-meta-trigger">
           <Icon
-            as={DotsThreeOutlineIcon}
-            weight="fill"
+            as={DotsThreeIcon}
+            weight="bold"
             size={TURN_ACTION_ICON_SIZE}
             color={withAlpha(THEME[scheme].foreground, 0.7)}
           />

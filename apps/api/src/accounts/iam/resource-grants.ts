@@ -23,7 +23,8 @@ import { objectGrantRows } from '../../iam/read-models';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
-import { isUuid, lookupEmailsByUserIds } from '../../projects/lib/access';
+import { lookupEmailsByUserIds } from '../../projects/lib/access';
+import { isUuid } from '../../shared/validate';
 import { iamRouter, AccountIdParam } from './app';
 
 const ResourceGrantRowSchema = z

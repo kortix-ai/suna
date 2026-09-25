@@ -21,10 +21,10 @@ import { AnyObject, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import {
   normalizeString,
-  readBody,
   serializeProject,
   serializeProjectGitConnection,
 } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
 
@@ -180,7 +180,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Editing project config (name / default_branch / manifest_path) is a

@@ -604,6 +604,9 @@ importers:
       expo-sharing:
         specifier: ~56.0.26
         version: 56.0.26(expo@56.0.22)(react-native@0.85.3)(react@19.2.3)(typescript@5.9.3)
+      expo-speech-recognition:
+        specifier: 56.0.4
+        version: 56.0.4(expo@56.0.22)(react-native@0.85.3)(react@19.2.3)
       expo-splash-screen:
         specifier: ~56.0.15
         version: 56.0.15(expo@56.0.22)(typescript@5.9.3)
@@ -20431,6 +20434,18 @@ packages:
     transitivePeerDependencies:
       - supports-color
       - typescript
+    dev: false
+
+  /expo-speech-recognition@56.0.4(expo@56.0.22)(react-native@0.85.3)(react@19.2.3):
+    resolution: {integrity: sha512-6Sh6aeKSG4W81TYfHUL8sgOxO++YrUi5Zhpmu5tiWurm6NP5hFL1SHd6+GbtV7Fyo4Cc35AofR9QxiSROZMJcQ==}
+    peerDependencies:
+      expo: '*'
+      react: '*'
+      react-native: '*'
+    dependencies:
+      expo: 56.0.22(@babel/core@7.29.7)(@expo/dom-webview@56.0.6)(@expo/metro-runtime@56.0.21)(expo-router@56.2.21)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-webview@13.16.1)(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3)(typescript@5.9.3)
+      react: 19.2.3
+      react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
     dev: false
 
   /expo-splash-screen@56.0.15(expo@56.0.22)(typescript@5.9.3):
