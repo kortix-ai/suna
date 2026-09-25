@@ -24,7 +24,7 @@ let mockCreditBalance: any = {
   dailyCreditsBalance: '3.00',
   tier: 'tier_6_50',
 };
-let mockDeductResult: any = { success: true, cost: 0.5, newBalance: 99.5, transactionId: 'tx_test_001' };
+let mockDeductResult: any = { amount: 0.5, balance: 99.5, transactionId: 'tx_test_001', replayed: false };
 let mockDeductError: Error | null = null;
 let mockTransactionsSummary: any = { totalCredits: 150, totalDebits: 50, count: 200 };
 
@@ -95,23 +95,16 @@ mock.module('../billing/services/credits', () => ({
     const outputCost = (completion / 1_000_000) * 15;
     return (inputCost + outputCost) * 1.2;
   },
-  deductCredits: async (accountId: string, cost: number, desc: string) => {
-    if (mockDeductError) throw mockDeductError;
-    return mockDeductResult;
+  getCreditSummary: () => ({ total: 100, daily: 3, monthly: 80, extra: 20 }),
+}));
+
+mock.module('../billing/wallet', () => ({
+  wallet: {
+    debit: async () => {
+      if (mockDeductError) throw mockDeductError;
+      return mockDeductResult;
+    },
   },
-  getBalance: async (accountId: string) => {
-    if (!mockCreditBalance) return { balance: 0, expiring: 0, nonExpiring: 0, daily: 0 };
-    return {
-      balance: Number(mockCreditBalance.balance),
-      expiring: Number(mockCreditBalance.expiringCredits),
-      nonExpiring: Number(mockCreditBalance.nonExpiringCredits),
-      daily: Number(mockCreditBalance.dailyCreditsBalance),
-    };
-  },
-  getCreditSummary: async () => ({ total: 100, daily: 3, monthly: 80, extra: 20, canRun: true }),
-  grantCredits: async () => {},
-  resetExpiringCredits: async () => {},
-  refreshDailyCredits: async () => null,
 }));
 
 // Credit accounts repository mock
@@ -127,7 +120,6 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 
 // Transactions repository mock
 mock.module('../billing/repositories/transactions', () => ({
-  insertLedgerEntry: async (data: any) => ({ id: 'ledger_mock', ...data }),
   getTransactions: async () => ({ rows: [], total: 0 }),
   getTransactionsSummary: async () => mockTransactionsSummary,
   getUsageRecords: async () => ({ rows: [], total: 0 }),
@@ -252,7 +244,7 @@ beforeEach(() => {
     dailyCreditsBalance: '3.00',
     tier: 'tier_6_50',
   };
-  mockDeductResult = { success: true, cost: 0.5, newBalance: 99.5, transactionId: 'tx_test_001' };
+  mockDeductResult = { amount: 0.5, balance: 99.5, transactionId: 'tx_test_001', replayed: false };
   mockDeductError = null;
   mockTransactionsSummary = { totalCredits: 150, totalDebits: 50, count: 200 };
   mockDeletionStatus = {

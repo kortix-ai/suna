@@ -72,13 +72,11 @@ function mobileCallbackState(formData: FormData): string | null {
 function emailRedirectUrl({
   origin,
   returnUrl,
-  email,
   acceptedTerms = false,
   mobileState,
 }: {
   origin: string;
   returnUrl: string;
-  email: string;
   acceptedTerms?: boolean;
   mobileState?: string | null;
 }): string {
@@ -90,7 +88,6 @@ function emailRedirectUrl({
     trustedWebOrigin(origin),
   );
   url.searchParams.set('returnUrl', returnUrl);
-  url.searchParams.set('email', email);
   if (acceptedTerms) url.searchParams.set('terms_accepted', 'true');
   if (mobileState) {
     url.searchParams.set('mobile_callback', '1');
@@ -195,7 +192,6 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   const emailRedirectTo = emailRedirectUrl({
     origin,
     returnUrl,
-    email: normalizedEmail,
     acceptedTerms,
     mobileState,
   });
@@ -440,7 +436,6 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     // The confirmation link outlives the "new user" heuristic downstream, so
     // the signup rule has to be applied before it is minted, not after.
     returnUrl: newAccountReturnUrl,
-    email,
     mobileState,
   });
 

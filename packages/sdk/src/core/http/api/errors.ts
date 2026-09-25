@@ -1,10 +1,13 @@
 /**
- * Billing & API Error Classes
+ * API error classes.
  *
- * Simplified from the legacy 8-class hierarchy. The backend (kortix-api)
- * only returns plain HTTP 402 with { message: "..." } for billing errors.
- * All the old error codes (AGENT_RUN_LIMIT_EXCEEDED, THREAD_LIMIT_EXCEEDED, etc.)
- * are no longer emitted by any backend endpoint.
+ * Every failed backend request is an `ApiError`. `AuthError` (no token),
+ * `BillingError` (HTTP 402) and `RequestTooLargeError` (HTTP 431) are
+ * subclasses, so `err instanceof ApiError` covers them all and `.status` /
+ * `.code` read the same way on each. A 402 body carries a machine `code`
+ * (e.g. `app_budget_exceeded`) and fields such as `billing_state` and
+ * `balance`; `BillingError.code` is that code and `BillingError.detail` the
+ * body.
  */
 
 // ============================================================================
@@ -96,20 +99,19 @@ export class AuthError extends ApiError {
  * Generic billing error for HTTP 402 responses.
  * This is the only billing error class the backend actually triggers.
  */
-export class BillingError extends Error {
-  status: number;
-  detail: { message: string; [key: string]: any };
+export class BillingError extends ApiError {
+  declare status: number;
+  declare detail: { message: string; [key: string]: any };
 
   constructor(
     status: number,
     detail: { message: string; [key: string]: any },
     message?: string,
+    /** The source error's fields (`code`, `details`, `response`, …). */
+    fields: Omit<ApiErrorFields, 'status' | 'detail'> = {},
   ) {
-    super(message || detail.message || `Billing Error: ${status}`);
+    super(message || detail.message || `Billing Error: ${status}`, { ...fields, status, detail });
     this.name = 'BillingError';
-    this.status = status;
-    this.detail = detail;
-    Object.setPrototypeOf(this, BillingError.prototype);
   }
 }
 
@@ -117,9 +119,9 @@ export class BillingError extends Error {
  * HTTP 431 - Request Header Fields Too Large.
  * Typically when uploading many files at once.
  */
-export class RequestTooLargeError extends Error {
-  status: number;
-  detail: {
+export class RequestTooLargeError extends ApiError {
+  declare status: number;
+  declare detail: {
     message: string;
     suggestion: string;
   };
@@ -132,15 +134,37 @@ export class RequestTooLargeError extends Error {
     const defaultMessage = 'Request headers are too large';
     const defaultSuggestion = 'Try uploading files one at a time, or reduce the number of files in a single request.';
 
-    super(message || detail?.message || defaultMessage);
+    super(message || detail?.message || defaultMessage, {
+      status,
+      detail: {
+        message: detail?.message || defaultMessage,
+        suggestion: detail?.suggestion || defaultSuggestion,
+      },
+    });
     this.name = 'RequestTooLargeError';
-    this.status = status;
-    this.detail = {
-      message: detail?.message || defaultMessage,
-      suggestion: detail?.suggestion || defaultSuggestion,
-    };
-    Object.setPrototypeOf(this, RequestTooLargeError.prototype);
   }
+}
+
+// ============================================================================
+// Retired endpoints
+// ============================================================================
+
+/**
+ * The `code` of the error a retired SDK function fails with. The API deleted
+ * the route, so the function no longer sends a request that can only 404.
+ */
+export const ENDPOINT_RETIRED_CODE = 'ENDPOINT_RETIRED';
+
+/**
+ * The error for a retired SDK function. Its exported name stays until the next
+ * major so no import breaks; calling it fails at once, without a request.
+ */
+export function retiredEndpointError(name: string, instead?: string): ApiError {
+  const hint = instead ? ` ${instead}` : '';
+  return new ApiError(
+    `${name}() is retired: the Kortix API no longer serves this endpoint.${hint}`,
+    { code: ENDPOINT_RETIRED_CODE },
+  );
 }
 
 // ============================================================================
@@ -212,10 +236,22 @@ export function parseBillingError(error: any): Error {
 
   const errorData = error.response?.data || error.data || error.detail || {};
   const detail = errorData?.detail || errorData;
-  return new BillingError(status, {
-    message: detail?.message || error.message || 'Billing error',
-    ...detail,
-  });
+  return new BillingError(
+    status,
+    {
+      message: detail?.message || error.message || 'Billing error',
+      ...detail,
+    },
+    undefined,
+    {
+      code: error.code,
+      details: error.details,
+      data: error.data,
+      response: error.response,
+      url: error.url,
+      endpoint: error.endpoint,
+    },
+  );
 }
 
 /**

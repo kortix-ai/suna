@@ -10,7 +10,7 @@
  * gap was deleted because its freshness test could not observe a turn ENDING.
  *
  * WHERE IT IS WRITTEN, AND WHY THERE. Capture runs at TURN END — the
- * `turn-stream` `end`/`turn_end` relay in `routes/r4.ts`, fire-and-forget,
+ * `turn-stream` `end`/`turn_end` relay in `routes/turn-stream.ts`, fire-and-forget,
  * beside the `reconcileForwardedTurnsAtEnd` box read that already happens in
  * that branch. That instant is precisely the one the deleted client mirror
  * could not see, so writing the mirror BECAUSE a turn ended inverts its failure

@@ -23,11 +23,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { HighlightedCode } from '@/components/markdown/code';
-import { DocMarkdown } from '@/components/markdown/doc-markdown';
-import {
-  MarkdownFrontmatterCard,
-  parseFrontmatter,
-} from '@/components/markdown/markdown-frontmatter';
+import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
@@ -41,6 +37,7 @@ import { useEffect, useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import {
   PanelWidthButton,
+  RefreshButton,
   type ShareContext,
   ViewerActions,
   fileShareInput,
@@ -116,6 +113,8 @@ export function FileViewer({
   path,
   shareContext,
   onClose,
+  refresh,
+  reloadKey,
   className,
 }: {
   content: string;
@@ -128,6 +127,11 @@ export function FileViewer({
    *  text and markdown file with no way to produce a public link. */
   shareContext?: ShareContext;
   onClose?: () => void;
+  /** Re-reads the file on demand. Omitted where there is no file on disk to
+   *  re-read, in which case the control is omitted too. */
+  refresh?: { onRefresh: () => void; refreshing: boolean };
+  /** Reloads the HTML preview in place when it changes. See `HtmlPreview`. */
+  reloadKey?: string | number;
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -188,6 +192,9 @@ export function FileViewer({
             Text is the one kind whose content a clipboard can hold, so `Copy`
             here copies the file itself and `Copy link` drops into the menu. */}
         <span className="flex shrink-0 items-center gap-1">
+          {refresh && (
+            <RefreshButton onRefresh={refresh.onRefresh} refreshing={refresh.refreshing} />
+          )}
           <ViewerActions
             copy={{
               run: () => navigator.clipboard.writeText(content),
@@ -222,6 +229,7 @@ export function FileViewer({
           mermaid={mermaid}
           markdown={markdown}
           view={view}
+          reloadKey={reloadKey}
           onShowSource={() => setView('source')}
         />
       </div>
@@ -265,6 +273,7 @@ function FileBody({
   mermaid,
   markdown,
   view,
+  reloadKey,
   onShowSource,
 }: {
   content: string;
@@ -275,6 +284,7 @@ function FileBody({
   mermaid: boolean;
   markdown: boolean;
   view: View;
+  reloadKey?: string | number;
   onShowSource: () => void;
 }) {
   const svgUrl = useSvgObjectUrl(content, svg && view === 'preview');
@@ -290,7 +300,7 @@ function FileBody({
   // `HtmlPreview` owns the whole exchange, and is the same component the files
   // viewer uses — one answer to "what does an HTML file look like".
   if (html && path && view === 'preview') {
-    return <HtmlPreview path={path} fileName={fileName} />;
+    return <HtmlPreview path={path} fileName={fileName} reloadKey={reloadKey} />;
   }
 
   // SVG stays inline, and stays inert: loaded through `<img>` it renders in the
@@ -321,18 +331,10 @@ function FileBody({
     // the raw file, markdown reads the block as prose: the opening `---` is a
     // thematic break and the closing `---` is a setext underline, so an agent
     // definition rendered as a stray horizontal rule followed by its entire
-    // metadata as one giant bold heading. Same split, same card as the chat's
-    // inline preview (`MarkdownWithFrontmatter`), so both panes agree on what
-    // an agent file looks like.
-    const { frontmatter, body } = parseFrontmatter(content);
-    return (
-      <div className="p-6">
-        {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-        {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
-            escaped text rather than becoming live DOM. */}
-        <DocMarkdown content={body} allowHtml={false} />
-      </div>
-    );
+    // metadata as one giant bold heading. `MarkdownWithFrontmatter` splits it
+    // off and renders the body as a document (embedded markup stays text), the
+    // same component the chat's inline preview uses.
+    return <MarkdownWithFrontmatter content={content} className="p-6" />;
   }
 
   // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a

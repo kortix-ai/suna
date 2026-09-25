@@ -1,6 +1,7 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import { inboxOrderBy } from './inbox-order';
 import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
 
@@ -8,7 +9,7 @@ import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './stor
  * The inbox's row operations — everything `GET/DELETE/retry/hold …/prompts`
  * does to `kortix.session_lifecycle_commands`.
  *
- * They live here rather than inline in `routes/r8.ts` for one reason: every one
+ * They live here rather than inline in `routes/session-prompts.ts` for one reason: every one
  * of them has to carry the INBOX SCOPE, and a scope that is re-typed at four
  * call sites is a scope that will be forgotten at one of them. It already was:
  * `continue_session` is also how triggers, Slack and approval-resume deliver,
@@ -519,7 +520,7 @@ export async function claimDueSessionInboxSiblings(input: {
         status: 'running',
         attempts: row.attempts + 1,
         lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + 5 * 60_000),
+        lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
         updatedAt: now,
       })
       .where(

@@ -18,6 +18,8 @@
  * adds one stepped slider above the list for the active model's thinking
  * levels: Default, then each level. A level applies on release and the sheet
  * stays open. The project home passes no `thinking`: its catalog has no levels.
+ * `autoContinue` adds one row under Thinking in a thread: AutoContinue is a
+ * per-run autonomy setting, so it lives beside Thinking, not in the `+` sheet.
  */
 import * as React from 'react';
 import { View } from 'react-native';
@@ -37,7 +39,8 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
-import { CubeIcon, PlusIcon, RobotIcon } from '@/lib/icons';
+import { CubeIcon, InfinityIcon, PlusIcon, RobotIcon } from '@/lib/icons';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import {
   agentDisplayName,
   nearestStop,
@@ -74,6 +77,13 @@ export interface AgentChoice {
   onCreate?: () => void;
 }
 
+export interface ModelAutoContinue {
+  /** The current mode's name, or "Off". */
+  value: string;
+  /** Opens the AutoContinue sheet. */
+  onPress: () => void;
+}
+
 interface ModelPickerSheetProps {
   options: PickerOption[];
   /** The model a send would use now; its row carries the check. */
@@ -84,10 +94,12 @@ interface ModelPickerSheetProps {
   onConnect?: () => void;
   /** The Agent tab. The thread passes the sandbox's agents; project home the project config's. */
   agent?: AgentChoice;
+  /** The thread's AutoContinue row, under Thinking. */
+  autoContinue?: ModelAutoContinue;
 }
 
 export const ModelPickerSheet = React.forwardRef<SheetRef, ModelPickerSheetProps>(
-  ({ options, activeKey, onSelect, thinking, onConnect, agent }, ref) => {
+  ({ options, activeKey, onSelect, thinking, onConnect, agent, autoContinue }, ref) => {
     const pickerRef = React.useRef<SheetRef>(null);
     const [tab, setTab] = React.useState(MODEL_TAB);
 
@@ -166,6 +178,16 @@ export const ModelPickerSheet = React.forwardRef<SheetRef, ModelPickerSheetProps
         empty={onConnect ? { title: 'No models available', actionLabel: 'Connect provider', onAction: onConnect } : undefined}
         tabs={tabs}>
         {thinking && thinking.levels.length > 0 ? <ThinkingControl {...thinking} /> : null}
+        {autoContinue ? (
+          <SettingsGroup>
+            <SettingsRow
+              icon={InfinityIcon}
+              label="AutoContinue"
+              value={autoContinue.value}
+              onPress={autoContinue.onPress}
+            />
+          </SettingsGroup>
+        ) : null}
       </PickerSheet>
     );
   },

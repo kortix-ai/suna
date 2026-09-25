@@ -1,71 +1,34 @@
-A readable audit log, agents as their own principal, and a much lighter web app
+Your own keys in Slack, Teams and the CLI, and sessions that open instantly
 
-The audit log now reads as plain events instead of raw routes, agents act as
-their own principal by default, the mobile app gets a large revamp, and the
-marketing site ships far less JavaScript.
+Your own model keys and ChatGPT subscription now work in Slack, Teams and the CLI, saved sessions open instantly, and a single Stop can no longer break a session.
 
 ## New
 
-- **An audit log you can read.** Every entry shows a readable title instead of a
-  raw route, in all nine languages. Every API route and event now has a label,
-  and `kortix audit ls` prints the same titles in the terminal.
-- **More outcomes are audited**: sandbox-provider transitions, App deployments,
-  branch cleanup (one entry per deleted remote branch), and an expired tunnel
-  permission. Background jobs run each tick as a named worker, so their work is
-  attributable.
-- **Agents act as their own principal by default.** An agent has its own
-  identity and permissions rather than borrowing the person who started it.
-- **Apps are a per-agent resource** in both the editor and the CLI.
-- **Reply to several passages at once** with inline quote blocks.
-- **GPT-6 Sol and GPT-6 Luna** are available through a connected ChatGPT
-  subscription.
-
-## Improved
-
-- The marketing pages are static and ship about 80% less JavaScript, and opening
-  a session is faster.
-- **Mobile**: onboarding, drafts, a reworked drawer header, connectors, a
-  "Needs you" view, session chrome, the browser toolbar, plan rings and sheet
-  contrast.
-- **Desktop**: native window controls, sidebar and settings alignment, the
-  collapsed sidebar accepts clicks again, and the Customize sidebar toggle stays
-  clickable.
-- File attachments now go through OpenAPI and HTTP connectors.
-- Kortix-managed models route through Morph first, with a confirmed-US,
-  zero-retention failover when it is unavailable.
-- **Mobile**: attachments upload through the shared SDK, a session starts
-  optimistically, and there is a Members page.
+- **Your own keys and ChatGPT everywhere.** Models you reach through your own API keys, keys shared with you, project keys, and ChatGPT subscriptions are available in Teams, Slack and the CLI, not only the web picker.
+- **Members bring their own ChatGPT subscription**, without needing permission to manage project secrets.
+- **Saved sessions open on their conversation.** Opening an existing session shows skeleton rows shaped like that session while it loads, instead of the full-screen boot screen.
+- **Command palette.** ⌘K opens instantly at a fixed position, and search can copy your account, project and session IDs.
+- **Connect cards name the app** they connect, and render as cards even when an agent writes them in a table.
+- **Mobile**: dictation in the composer, labelled queue controls with undo, and + only attaches.
+- **SSO domain verification.** An enterprise account verifies its email domain with a DNS TXT record before SSO is enforced for it. Existing SSO setups keep working.
 
 ## Fixed
 
-- Creating a session no longer fails with a server error when a transient
-  git-mirror fetch fails; it retries instead.
-- A trigger or channel prompt no longer freezes the mobile app.
-- A request that changes nothing no longer records a change in the audit log,
-  and a rate-limited request no longer stores the path it was refused on.
-- A git push no longer shares its upstream connection with another push.
-- OpenAI and Anthropic models are never presented as Kortix-managed.
-- Quote splitting trims newlines in one pass.
-- A git request that cannot get its repository credential now fails with a clear,
-  retryable error instead of a misleading "repository not found", and a brief
-  credential failure is retried before anyone sees it.
-- Session turns no longer render out of order after prompts sent from the CLI.
-- On the desktop app, Back is clickable again on sign-in, `/projects`, `/new` and
-  onboarding, and the window can still be dragged from those pages.
-- The shader wallpaper compiles again; its uniform names used a form GPUs reject.
-- When memory runs out because of files held in RAM, the memory guard now names
-  them instead of reporting only that the turn stopped.
-- An agent merging its own change request no longer gets a false "changes agents
-  or triggers" refusal right after a push; the check reads the current branches.
-- An App's Access list shows an agent grant right after it is saved.
+- One Stop during a session's first turn no longer makes every later turn end immediately, and a Stop during start-up releases the held prompt.
+- A healthy Slack run is no longer closed as idle after 30 minutes of quiet work.
+- A saved secret that is not granted to the session's agent is now reported as "not granted to this agent" instead of silently missing, and an agent session can sync its own secrets.
+- In web terminals on custom Debian templates, Kortix tools stay on PATH and secrets load in login shells.
+- An open file viewer refreshes when the agent edits the file.
+- A turn that fails mid-stream shows one readable line naming the model, with details folded away.
+- Streaming from OpenAI-compatible models that omit event separators no longer fails to parse.
+- The web app detects the end of a turn reliably.
 
 ## Security
 
-- Session routes, public shares and proxy edges check access through one shared
-  rule set, and server-managed session metadata can no longer be set by clients.
-- Chat-channel webhooks are scoped to their verified project and workspace.
-- Credit is granted only for settled payments.
-- Tighter database grants for Supabase client roles; 57 unused legacy database
-  functions are removed.
-- Private sandbox ingress, token hashing, and proxy-aware IP rate limits.
+- Markdown, embedded frames, credential routing, share links and analytics are hardened.
+- SDK token, transport, preview-credential and file-write paths are hardened.
+- Connector requests are checked against private-network egress rules, and connector sync is atomic.
+- Gateway usage settles exactly once per request.
+- SSO emails are trusted only on verified domains, and access-control writes are scoped to their account.
+- Billing wallet functions move to a private database schema.
 

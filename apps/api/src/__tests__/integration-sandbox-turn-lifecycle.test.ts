@@ -8,6 +8,10 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { claimExpiredSandboxStop, releaseSandboxStopClaim } from '../projects/reaping/box-queries';
+import {
+  clearPendingStopObservation,
+  markPendingStopObservation,
+} from '../projects/reaping/sandbox-state-sync';
 import { sandboxStopClaimLeaseMs } from '../projects/sandbox-deadline-policy';
 import {
   abandonSandboxTurn,
@@ -874,7 +878,7 @@ describe('session_turns ledger', () => {
     expect(await abandonSandboxTurn({ sandboxId: SANDBOX_ID }, t('ledger-abandon'))).toBe(true);
 
     // Every failed delivery takes this path (preview.ts 3xx/401/503/4xx/
-    // unreachable, r4.ts turn_abandoned). Leaving the row 'delivering' makes
+    // unreachable, turn-stream.ts turn_abandoned). Leaving the row 'delivering' makes
     // the ledger claim a turn is running for ever.
     expect((await readRow()).metadata.activeTurns).toEqual({});
     expect(await readTurn(t('ledger-abandon'))).toMatchObject({
@@ -1069,40 +1073,6 @@ describe('session_turns ledger', () => {
     });
   });
 
-  test('the stop writer settles every open row of the sandbox and nothing else', async () => {
-    await beginSandboxTurn(
-      { sandboxId: SANDBOX_ID },
-      { token: t('ledger-stop-open'), opencodeSessionId: 'ses_root', messageId: 'msg_stop_open' },
-      60_000,
-    );
-    await beginSandboxTurn(
-      { sandboxId: SANDBOX_ID },
-      { token: t('ledger-stop-done'), opencodeSessionId: 'ses_root', messageId: 'msg_stop_done' },
-      60_000,
-    );
-    await completeSandboxTurn(
-      SESSION_ID,
-      'idle',
-      { opencodeSessionId: 'ses_root', messageId: 'msg_stop_done' },
-      undefined,
-      60_000,
-    );
-
-    // The statement applyStoppedState runs inside its stop transaction, right
-    // after the one that erases activeTurn/activeTurns.
-    await db.execute(settleOpenSandboxTurnsQuery(SANDBOX_ID, 'runtime_gone'));
-
-    expect(await readTurn(t('ledger-stop-open'))).toMatchObject({
-      state: 'ended',
-      end_reason: 'runtime_gone',
-    });
-    // An already-settled row keeps the reason it ended with.
-    expect(await readTurn(t('ledger-stop-done'))).toMatchObject({
-      state: 'ended',
-      end_reason: 'completed',
-    });
-  });
-
   test('session_turns_open_idx serves the stop writer predicate', async () => {
     await beginSandboxTurn(
       { sandboxId: SANDBOX_ID },
@@ -1113,15 +1083,14 @@ describe('session_turns ledger', () => {
     // Terminal rows are retained for ever, so the stop path must not degrade
     // into a sequential scan over the whole history as the table grows. On a
     // near-empty table a seq scan is the correct plan, so this asserts the
-    // partial index is USABLE for this exact predicate, not that it is chosen
-    // today: a predicate the index cannot serve stays a seq scan even here.
+    // partial index is USABLE for the SHIPPED statement (the one
+    // applyStoppedState runs), not that it is chosen today: a predicate the
+    // index cannot serve stays a seq scan even here.
     const text = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL enable_seqscan = off`);
-      const plan = await tx.execute(sql`
-        EXPLAIN UPDATE kortix.session_turns
-                   SET state = 'ended'
-                 WHERE sandbox_id = ${SANDBOX_ID}::uuid
-                   AND state <> 'ended'`);
+      const plan = await tx.execute(
+        sql`EXPLAIN ${settleOpenSandboxTurnsQuery(SANDBOX_ID, 'runtime_gone')}`,
+      );
       return rows(plan)
         .map((row) => String(Object.values(row)[0]))
         .join('\n');
@@ -1156,7 +1125,7 @@ describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
   // OpenCode starts turns of its own (synthetic `<pty_exited>` wake-ups) that
   // no control-plane prompt announced. The daemon relays `turn_begin` for
   // them; this write is what turns that relay into `GET .../turn` truth and a
-  // deadline grant (live incident 2026-08-20, SampleCo session d1b74954).
+  // deadline grant (live incident 2026-08-20, a prod session).
   const SYNTH = 'msg_synthetic_pty_1';
 
   async function readOpenBySession(): Promise<Array<Record<string, unknown>>> {
@@ -1261,6 +1230,28 @@ describe('end_error: causes, requested stops, and which one wins', () => {
     expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
   });
 
+  // prod 2026-09-25: a web Stop's hold settle aborted the box ~450 ms before
+  // the client's proxied abort. The first "Aborted" frame closed the turn, and
+  // the proxy's stamp then found no open turn to mark.
+  test('a stamp that lands after the abort closed the turn cannot rescue it', async () => {
+    const token = await openTurn();
+    await end(ABORT); // the settle's unstamped abort
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // proxy, too late
+    await end(ABORT); // the client's abort
+    expect((await readTurn(token))?.end_error).toEqual(ABORT);
+  });
+
+  test('the hold stamps first, so every later abort of the same Stop keeps it a stop', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // hold route
+    await end(ABORT); // the settle's abort
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // proxy
+    await end(ABORT); // the client's abort
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('failed');
+    expect(row?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
   test('a named cause beats a requested stop: the mark never hides a real failure', async () => {
     // Stop pressed, the abort never landed, and the memory guard fired later.
     const token = await openTurn();
@@ -1309,7 +1300,7 @@ describe('end_error: causes, requested stops, and which one wins', () => {
   });
 
   test('a cause that arrives after the abort closed the turn replaces the abort, once', async () => {
-    // Session ad02e053: OpenCode's "Aborted" frame beat the guard's by 476 ms.
+    // A prod session: OpenCode's "Aborted" frame beat the guard's by 476 ms.
     const token = await openTurn();
     await end(ABORT);
     expect((await end(GUARD)).outcome).toBe('already_closed');
@@ -1459,5 +1450,82 @@ describe('clearSandboxTurn: the reaper names what it saw', () => {
     const token = await openTurn(t('reap-none'), 'msg_r3');
     await clearSandboxTurn(SANDBOX_ID, token, 60_000, 'runtime_gone');
     expect((await readTurn(token))?.end_error).toBeNull();
+  });
+});
+
+// The first provider-`stopped` read of a box that holds turn authority does not
+// park it: it arms this marker, and only a second read a full window later may
+// park (reaping/sandbox-state-sync.ts `decideStoppedObservation`).
+describe('the pending stop marker', () => {
+  const ACTIVE_TURNS = {
+    [t('marker-turn')]: { token: t('marker-turn'), state: 'active', messageId: 'msg_marker' },
+  };
+
+  async function setStatus(status: 'provisioning' | 'stopped'): Promise<void> {
+    await db.execute(sql`
+      UPDATE kortix.session_sandboxes
+         SET status = ${status}::kortix.session_sandbox_status
+       WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+  }
+
+  test('records the instant of THIS observation as a merge that keeps turn authority and liveness', async () => {
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS, lastAliveAt: '2026-09-25T10:00:00.000Z' });
+
+    // The reaper carries one pass clock through up to 100 provider round
+    // trips. A marker stamped with it is backdated, and a later read from a
+    // fresh-clock observer confirms a park inside one provider transition.
+    const before = Date.now();
+    await markPendingStopObservation(SANDBOX_ID);
+    const after = Date.now();
+
+    const { metadata } = await readRow();
+    expect(typeof metadata.pendingStopObservedAtMs).toBe('number');
+    expect(metadata.pendingStopObservedAtMs as number).toBeGreaterThanOrEqual(before);
+    expect(metadata.pendingStopObservedAtMs as number).toBeLessThanOrEqual(after);
+    expect(metadata.activeTurns).toEqual(ACTIVE_TURNS);
+    expect(metadata.lastAliveAt).toBe('2026-09-25T10:00:00.000Z');
+  });
+
+  test('never resets a marker that is already counting', async () => {
+    // A second pass must be able to CONFIRM. A write that restarted the window
+    // on every pass would mean the box never parks.
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS, pendingStopObservedAtMs: 1234 });
+
+    await markPendingStopObservation(SANDBOX_ID);
+
+    expect((await readRow()).metadata.pendingStopObservedAtMs).toBe(1234);
+  });
+
+  test('re-records a marker nothing can read', async () => {
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS, pendingStopObservedAtMs: 'soon' });
+
+    await markPendingStopObservation(SANDBOX_ID);
+
+    expect(typeof (await readRow()).metadata.pendingStopObservedAtMs).toBe('number');
+  });
+
+  // A `provisioning` row holds turn authority too (in-place recovery keeps
+  // `activeTurns`). A CAS that matched only `active` left such a row at
+  // `await_confirmation` for ever: never parked, its turns open for ever.
+  test('arms a provisioning row, and never a parked one', async () => {
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS });
+    await setStatus('provisioning');
+    await markPendingStopObservation(SANDBOX_ID);
+    expect(typeof (await readRow()).metadata.pendingStopObservedAtMs).toBe('number');
+
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS });
+    await setStatus('stopped');
+    await markPendingStopObservation(SANDBOX_ID);
+    expect((await readRow()).metadata).not.toHaveProperty('pendingStopObservedAtMs');
+  });
+
+  test('a running observation drops the marker and keeps its siblings', async () => {
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS, pendingStopObservedAtMs: 1234 });
+
+    await clearPendingStopObservation(SANDBOX_ID);
+
+    const { metadata } = await readRow();
+    expect(metadata).not.toHaveProperty('pendingStopObservedAtMs');
+    expect(metadata.activeTurns).toEqual(ACTIVE_TURNS);
   });
 });

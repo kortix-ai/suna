@@ -7,11 +7,17 @@
 import { mock } from 'bun:test';
 import * as realProviders from '../../platform/providers';
 import * as realSandboxReaper from '../../projects/sandbox-reaper';
+import { createFakeWallet } from '../helpers/fake-wallet';
 
 // ─── Global Mock Registry ─────────────────────────────────────────────────────
 
+/**
+ * The wallet every billing unit test shares once `registerWalletMock()` ran.
+ * Read `fakeWallet.calls.grant` / `.reset` / …; `resetMockRegistry()` restores it.
+ */
+export const fakeWallet = createFakeWallet();
+
 export const mockRegistry = {
-  supabaseRpc: null as ReturnType<typeof createMockSupabaseRpc> | null,
   stripeClient: null as any,
 
   getCreditAccount: null as ((id: string) => Promise<any>) | null,
@@ -21,7 +27,6 @@ export const mockRegistry = {
   getYearlyAccountsDueForRotation: null as (() => Promise<any[]>) | null,
   getFreeAccountsDueForRotation: null as (() => Promise<any[]>) | null,
 
-  insertLedgerEntry: null as ((data: any) => Promise<any>) | null,
   getPurchaseByPaymentIntent: null as ((id: string) => Promise<any>) | null,
   updatePurchaseStatus: null as ((...args: any[]) => Promise<void>) | null,
 
@@ -32,9 +37,6 @@ export const mockRegistry = {
   deleteCustomerByStripeId: null as ((id: string) => Promise<void>) | null,
   recordWebhookEvent: null as ((eventId: string, eventType: string) => Promise<boolean>) | null,
   isWebhookEventProcessed: null as ((eventId: string) => Promise<boolean>) | null,
-
-  grantCredits: null as ((...args: any[]) => Promise<void>) | null,
-  resetExpiringCredits: null as ((...args: any[]) => Promise<void>) | null,
 
   provisionSandboxFromCheckout: null as ((...args: any[]) => Promise<any>) | null,
   resolveAccountId: null as ((userId: string) => Promise<string>) | null,
@@ -50,6 +52,7 @@ export function resetMockRegistry() {
   for (const key of Object.keys(mockRegistry) as (keyof typeof mockRegistry)[]) {
     (mockRegistry as any)[key] = null;
   }
+  fakeWallet.restore();
 }
 
 // ─── Register Global Mocks (once per process) ────────────────────────────────
@@ -58,15 +61,6 @@ let _registered = false;
 export function registerGlobalMocks() {
   if (_registered) return;
   _registered = true;
-
-  mock.module('../../shared/supabase', () => ({
-    getSupabase: () => ({
-      rpc: (name: string, params?: any) => {
-        if (mockRegistry.supabaseRpc) return mockRegistry.supabaseRpc.rpc(name, params);
-        return Promise.resolve({ data: null, error: null });
-      },
-    }),
-  }));
 
   mock.module('../../shared/stripe', () => ({
     getStripe: () => mockRegistry.stripeClient ?? createMockStripeClient(),
@@ -106,8 +100,6 @@ export function registerGlobalMocks() {
   }));
 
   mock.module('../../billing/repositories/transactions', () => ({
-    insertLedgerEntry: async (data: any) =>
-      mockRegistry.insertLedgerEntry ? mockRegistry.insertLedgerEntry(data) : { id: 'ledger_test', ...data },
     getTransactions: async () => ({ rows: [], total: 0 }),
     getTransactionsSummary: async () => ({ totalCredits: 0, totalDebits: 0, count: 0 }),
     getPurchaseByPaymentIntent: async (id: string) =>
@@ -146,10 +138,8 @@ export function registerGlobalMocks() {
     withAccountLock: async (_accountId: string, fn: () => Promise<any>) => fn(),
   }));
 
-  // NOTE: The credits service mock is NOT registered here.
-  // credits.test.ts needs the REAL credits module (with mocked deps).
-  // Other billing test files that need to stub grantCredits/resetExpiringCredits
-  // should call registerCreditsMock() separately.
+  // NOTE: The wallet mock is NOT registered here. Test files whose code under
+  // test moves credit call registerWalletMock() and read `fakeWallet.calls`.
 
 
   mock.module('../../platform/services/sandbox-provisioner', () => ({
@@ -190,8 +180,6 @@ export function registerGlobalMocks() {
     getProvider: (_name: string) => ({
       stop: async (_externalId: string) => undefined,
     }),
-    // Real contract: no args, always a number >= 60.
-    providerAutoStopBackstopMinutes: () => 60,
   }));
 
   // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -217,25 +205,19 @@ export function registerGlobalMocks() {
   }));
 }
 
-// ─── Credits Service Mock (separate from registerGlobalMocks) ────────────────
-// Call this from test files that need grantCredits/resetExpiringCredits to be
-// stubbed (webhooks, subscriptions, yearly-rotation). Do NOT call from credits.test.ts.
+// ─── Wallet Mock (separate from registerGlobalMocks) ─────────────────────────
+// Call this from test files whose code under test moves credit (webhooks,
+// subscriptions, rotations, deletion). Assert on `fakeWallet.calls`.
 
-let _creditsMockRegistered = false;
-export function registerCreditsMock() {
-  if (_creditsMockRegistered) return;
-  _creditsMockRegistered = true;
+let _walletMockRegistered = false;
+export function registerWalletMock() {
+  if (_walletMockRegistered) return;
+  _walletMockRegistered = true;
 
+  mock.module('../../billing/wallet', () => ({ wallet: fakeWallet.wallet }));
   mock.module('../../billing/services/credits', () => ({
     calculateTokenCost: () => 0,
-    getBalance: async () => ({ balance: 0, expiring: 0, nonExpiring: 0, daily: 0 }),
-    getCreditSummary: async () => ({ total: 0, daily: 0, monthly: 0, extra: 0, canRun: true }),
-    deductCredits: async () => ({ success: true, cost: 0, newBalance: 0, transactionId: 'tx_mock' }),
-    refreshDailyCredits: async () => null,
-    grantCredits: async (...args: any[]) =>
-      mockRegistry.grantCredits ? mockRegistry.grantCredits(...args) : undefined,
-    resetExpiringCredits: async (...args: any[]) =>
-      mockRegistry.resetExpiringCredits ? mockRegistry.resetExpiringCredits(...args) : undefined,
+    getCreditSummary: () => ({ total: 0, daily: 0, monthly: 0, extra: 0 }),
   }));
 }
 
@@ -372,18 +354,6 @@ export function createMockStripeEvent(type: string, object: any, overrides: Reco
     data: { object },
     created: Math.floor(Date.now() / 1000),
     ...overrides,
-  };
-}
-
-export function createMockSupabaseRpc(results: Record<string, { data?: any; error?: any }> = {}) {
-  return {
-    rpc: (name: string, params?: any) => {
-      const result = results[name];
-      if (result) {
-        return Promise.resolve(result);
-      }
-      return Promise.resolve({ data: null, error: null });
-    },
   };
 }
 

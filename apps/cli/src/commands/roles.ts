@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import {
   emitJson,
+  missing,
   resolveAccountContext,
   surfaceApiError,
   takeFlagValue,
@@ -506,11 +507,6 @@ export async function runRoles(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }
 
 function notFound(what: string): number {

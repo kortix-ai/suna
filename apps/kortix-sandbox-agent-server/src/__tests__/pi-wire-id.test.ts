@@ -1,23 +1,41 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { WIRE_MESSAGE_ID, WireIdClock, mintRootId, mintWireMessageId, wireIdTime } from '../harness/pi/wire-id'
+import { WIRE_MESSAGE_ID, WireIdClock, mintRootId, mintWireMessageId } from '../harness/pi/wire-id'
 
-/** The API's own regex, read off disk so the two codecs cannot drift silently. */
-function apiWireIdRegex(): RegExp {
-  const source = readFileSync(resolve(import.meta.dir, '../../../api/src/projects/wire-message-id.ts'), 'utf8')
-  const match = /\/\^msg_[^/]+\/[a-z]*/.exec(source)
-  if (!match) throw new Error('apps/api wire-message-id regex not found')
-  return new Function(`return ${match[0]}`)() as RegExp
+/**
+ * The frozen cross-codec contract every wire-id minter satisfies (apps/api and
+ * packages/sdk assert the same file). pi's minter is the third copy: a
+ * divergence silently drops turns, because OpenCode decides "has this prompt
+ * already been answered?" by id order.
+ */
+const VECTORS = JSON.parse(
+  readFileSync(resolve(import.meta.dir, '../../../../tests/spec/wire-message-id.vectors.json'), 'utf8'),
+) as {
+  backdateMs: number
+  vectors: Array<{ name: string; nowMs: number; newestKnownTime: string | null; expectedTime: string }>
 }
 
 describe('pi wire ids', () => {
-  test('every minted id satisfies the API regex and sorts after what it saw', () => {
-    const api = apiWireIdRegex()
+  test.each(VECTORS.vectors.map((v) => [v.name, v] as const))('shared vector: %s', (_name, vector) => {
+    const minted = mintWireMessageId({
+      nowMs: vector.nowMs - VECTORS.backdateMs,
+      newestKnownTime: vector.newestKnownTime === null ? null : BigInt(`0x${vector.newestKnownTime}`),
+    })
+    expect(minted.time.toString(16).padStart(12, '0')).toBe(vector.expectedTime)
+    expect(minted.id).toMatch(WIRE_MESSAGE_ID)
+    expect(minted.id.slice(4, 16)).toBe(vector.expectedTime)
+  })
+
+  test('an exhausted ordering clock refuses to mint rather than wrap', () => {
+    expect(() => mintWireMessageId({ nowMs: 1, newestKnownTime: BigInt(0xffffffffffff) })).toThrow(
+      'wire message id ordering clock is exhausted',
+    )
+  })
+
+  test('the clock is strictly monotonic and sorts after an observed future id', () => {
     const clock = new WireIdClock()
     const first = clock.mint(1_700_000_000_000)
-    expect(first).toMatch(api)
-    expect(first).toMatch(WIRE_MESSAGE_ID)
     // Same millisecond: still strictly later.
     const second = clock.mint(1_700_000_000_000)
     expect(second > first).toBe(true)
@@ -26,7 +44,6 @@ describe('pi wire ids', () => {
     clock.observe(client)
     const third = clock.mint(1_700_000_000_000)
     expect(third > client).toBe(true)
-    expect(wireIdTime(third)! > wireIdTime(client)!).toBe(true)
   })
 
   test('the root id is deterministic per session and shaped like an OpenCode session id', () => {

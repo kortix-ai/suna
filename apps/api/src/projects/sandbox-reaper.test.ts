@@ -2717,10 +2717,10 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(endedCompute).toEqual(['sb-1']);
     const sbUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
     expect(sbUpdate?.updates.status).toBe('stopped');
-    expect(sbUpdate?.updates.metadata).toMatchObject({
-      runtimeIdentityState: 'unavailable',
-      preservedExternalId: 'ext-1',
-    });
+    // Merged into the row's current metadata in SQL, never assigned.
+    const metadata = describeSql(sbUpdate?.updates.metadata);
+    expect(metadata).toContain('"runtimeIdentityState":"unavailable"');
+    expect(metadata).toContain('"preservedExternalId":"ext-1"');
     expect(stops).toEqual([]);
   });
 

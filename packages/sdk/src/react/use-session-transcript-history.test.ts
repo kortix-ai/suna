@@ -94,7 +94,7 @@ test('disabled history performs no read and exposes no stored transcript', async
   globalThis.fetch = fetcher as unknown as typeof fetch;
   const hook = await mount(false);
   expect(fetcher).not.toHaveBeenCalled();
-  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null });
+  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, isLoading: false });
 });
 
 test('switching sessions immediately drops the previous transcript while the new read waits', async () => {
@@ -105,14 +105,14 @@ test('switching sessions immediately drops the previous transcript while the new
   const hook = await mount(true);
   expect(hook.value().rootSessionId).toBe('ses_history');
   await hook.update('s2');
-  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null });
+  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, isLoading: true });
 });
 
 test('turning the flag off removes the early history result', async () => {
   globalThis.fetch = mock(async () => Response.json(transcript())) as unknown as typeof fetch;
   const hook = await mount(true);
   await hook.update('s1', false);
-  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null });
+  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, isLoading: false });
 });
 
 test('missing history falls back without inventing an empty conversation or root', async () => {
@@ -125,5 +125,24 @@ test('missing history falls back without inventing an empty conversation or root
     }),
   ) as unknown as typeof fetch;
   const hook = await mount(true);
-  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null });
+  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, isLoading: false });
+});
+
+test('a read with no answer yet is loading; an answer, found or not, is not', async () => {
+  let answer!: (response: Response) => void;
+  globalThis.fetch = mock(
+    async () =>
+      new Promise<Response>((resolve) => {
+        answer = resolve;
+      }),
+  ) as unknown as typeof fetch;
+  const hook = await mount(true);
+  expect(hook.value().isLoading).toBe(true);
+  expect(hook.value().envelope).toBeNull();
+  await act(async () => {
+    answer(Response.json(transcript()));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(hook.value().isLoading).toBe(false);
+  expect(hook.value().rootSessionId).toBe('ses_history');
 });

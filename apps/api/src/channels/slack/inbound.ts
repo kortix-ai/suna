@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
-import { chatInstalls, chatThreads } from '@kortix/db';
+import { chatInstalls } from '@kortix/db';
 import { db } from '../../shared/db';
+import { findChatThread } from '../core/threads';
 
 /**
  * What the signature check on an inbound Slack request proved.
@@ -87,18 +88,9 @@ export async function findSlackThread(
   teamId: string,
   threadTs: string,
 ): Promise<SlackThreadRow | null> {
-  if (!teamId || !threadTs || !inboundAllowsTeam(inbound, teamId)) return null;
-  const [row] = await db
-    .select({ sessionId: chatThreads.sessionId, projectId: chatThreads.projectId })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.platform, 'slack'),
-        eq(chatThreads.workspaceId, teamId),
-        eq(chatThreads.threadId, threadTs),
-        inbound.kind === 'project' ? eq(chatThreads.projectId, inbound.projectId) : undefined,
-      ),
-    )
-    .limit(1);
-  return row ?? null;
+  if (!inboundAllowsTeam(inbound, teamId)) return null;
+  return findChatThread(
+    { platform: 'slack', workspaceId: teamId, threadId: threadTs },
+    inbound.kind === 'project' ? inbound.projectId : undefined,
+  );
 }

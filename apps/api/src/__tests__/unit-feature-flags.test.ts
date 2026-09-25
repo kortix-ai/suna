@@ -322,7 +322,7 @@ describe('catalogHidden', () => {
     });
 
     test(`${key}: (d) is still accepted by PATCH /projects/:id/features`, () => {
-      // The route validates the body with `isFeatureFlagKey` (r6.ts
+      // The route validates the body with `isFeatureFlagKey` (project-settings.ts
       // patchFeatureFlagHandler), not with the catalog. The full HTTP round
       // trip is covered by flow AGP-3, which switches this flag off through
       // the real route.

@@ -24,7 +24,8 @@
         "UIViewControllerBasedStatusBarAppearance": false,
         "NSCameraUsageDescription": "Kortix needs camera access to let you capture photos and attach them to your saved conversations with the AI Worker. For example, you can photograph a document, whiteboard, or product for analysis and receive insights that are stored in your conversation history.",
         "NSPhotoLibraryUsageDescription": "Kortix needs access to your photo library so you can select and share images in your saved conversations with the AI Worker. For example, you can attach screenshots, documents, or images for review\u2014all stored in your personalized conversation history.",
-        "NSMicrophoneUsageDescription": "Kortix needs microphone access to record videos with audio for conversation attachments.",
+        "NSSpeechRecognitionUsageDescription": "Kortix turns your speech into text when you dictate a message.",
+        "NSMicrophoneUsageDescription": "Kortix uses the microphone when you dictate a message and when you record a video to attach to a conversation.",
         "NSUserTrackingUsageDescription": "Kortix uses analytics to improve your experience and understand how features are used. For example, we track which AI features are most helpful so we can make the app better for everyone."
       },
       "appleTeamId": "T8G9J33433",
@@ -144,7 +145,15 @@
         {
           "cameraPermission": "Kortix needs camera access to let you capture photos and attach them to your saved conversations with the AI Worker. For example, you can photograph a document, whiteboard, or product for analysis and receive insights that are stored in your conversation history.",
           "photosPermission": "Kortix needs access to your photo library so you can select and share images in your saved conversations with the AI Worker. For example, you can attach screenshots, documents, or images for review\u2014all stored in your personalized conversation history.",
-          "microphonePermission": "Kortix needs microphone access to record videos with audio. For example, you can record a video to share with the AI Worker for analysis and save it to your conversation history."
+          "microphonePermission": "Kortix uses the microphone when you dictate a message and when you record a video to attach to a conversation."
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Kortix uses the microphone when you dictate a message and when you record a video to attach to a conversation.",
+          "speechRecognitionPermission": "Kortix turns your speech into text when you dictate a message.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox", "com.google.android.as", "com.google.android.tts", "com.samsung.android.bixby.agent"]
         }
       ],
       [

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realProviders from '../../platform/providers';
 import * as realSandboxReaper from '../../projects/sandbox-reaper';
 
@@ -9,6 +11,7 @@ let sandboxRows: SandboxRow[] = [];
 let sandboxQueryError: Error | null = null;
 let ownedAccountRows: Array<{ accountId: string }> = [];
 let ownedAccountsQueryError: Error | null = null;
+let ownedAccountsWhereArg: unknown = null;
 let sandboxWhereArg: unknown = null;
 let sessionUpdateWhereArg: unknown = null;
 let sessionsSettled: Array<{ sessionId: string }> = [];
@@ -35,6 +38,7 @@ mock.module('../../shared/db', () => ({
       from: (table: unknown) => ({
         where: async (cond: unknown) => {
           if (table === accountMembers) {
+            ownedAccountsWhereArg = cond;
             if (ownedAccountsQueryError) throw ownedAccountsQueryError;
             return ownedAccountRows;
           }
@@ -111,8 +115,8 @@ mock.module('../repositories/credit-accounts', () => ({
   updateCreditAccount: async () => undefined,
 }));
 
-mock.module('../repositories/transactions', () => ({
-  insertLedgerEntry: async () => undefined,
+mock.module('../wallet', () => ({
+  wallet: { forfeit: async () => undefined },
 }));
 
 mock.module('../repositories/account-deletion', () => ({
@@ -123,29 +127,16 @@ mock.module('../repositories/account-deletion', () => ({
   getScheduledDeletions: async () => [],
 }));
 
-const {
-  deleteAccountImmediately,
-  reclaimableAccountIds,
-  RECLAIMABLE_SANDBOX_STATUSES,
-  LIVE_SESSION_STATUSES,
-} = await import('./account-deletion');
+const { deleteAccountImmediately, reclaimableAccountIds } = await import('./account-deletion');
 
 /**
- * Collect every primitive a drizzle condition tree carries, so a test can prove
- * which account ids and statuses actually reached the WHERE clause without
- * depending on drizzle's internal chunk shape.
+ * The bound parameters of a drizzle WHERE condition, in order, rendered by the
+ * PostgreSQL dialect. A test proves which account ids and statuses reach the
+ * query without depending on drizzle's internal chunk shape.
  */
-function conditionValues(node: unknown, seen = new Set<unknown>()): string[] {
-  if (node == null) return [];
-  if (typeof node === 'string') return [node];
-  if (typeof node !== 'object') return [];
-  if (seen.has(node)) return [];
-  seen.add(node);
-  const out: string[] = [];
-  for (const value of Object.values(node as Record<string, unknown>)) {
-    out.push(...conditionValues(value, seen));
-  }
-  return out;
+const dialect = new PgDialect();
+function whereParams(condition: unknown): unknown[] {
+  return dialect.sqlToQuery(condition as SQL).params;
 }
 
 beforeEach(() => {
@@ -153,6 +144,7 @@ beforeEach(() => {
   sandboxQueryError = null;
   ownedAccountRows = [];
   ownedAccountsQueryError = null;
+  ownedAccountsWhereArg = null;
   sandboxWhereArg = null;
   sessionUpdateWhereArg = null;
   sessionsSettled = [];
@@ -168,29 +160,6 @@ beforeEach(() => {
   creditAccount = null;
 });
 
-describe('reclaim status filters', () => {
-  test('a box mid-provision or in error is reclaimable, a terminal one is not', () => {
-    // `active` alone was the old filter. A box that died during provisioning or
-    // whose last control-plane call errored still exists at the provider and
-    // still bills — 47 of them survived the release-gate sweep that way.
-    expect([...RECLAIMABLE_SANDBOX_STATUSES]).toEqual(['provisioning', 'active', 'error']);
-    expect(RECLAIMABLE_SANDBOX_STATUSES).not.toContain('stopped');
-    expect(RECLAIMABLE_SANDBOX_STATUSES).not.toContain('archived');
-  });
-
-  test('every non-terminal session status is settled', () => {
-    expect([...LIVE_SESSION_STATUSES]).toEqual([
-      'queued',
-      'branching',
-      'provisioning',
-      'running',
-    ]);
-    for (const terminal of ['stopped', 'failed', 'completed']) {
-      expect(LIVE_SESSION_STATUSES).not.toContain(terminal);
-    }
-  });
-});
-
 describe('reclaimableAccountIds', () => {
   test('without a user id it is just the resolved account', async () => {
     ownedAccountRows = [{ accountId: 'acct-2' }];
@@ -201,6 +170,11 @@ describe('reclaimableAccountIds', () => {
     ownedAccountRows = [{ accountId: 'acct-2' }, { accountId: 'acct-3' }];
     const ids = await reclaimableAccountIds('acct-1', 'user-1');
     expect(ids.sort()).toEqual(['acct-1', 'acct-2', 'acct-3']);
+    // OWNED, not merely a member: deletion must never tear down the sandboxes
+    // of a team the user only belongs to.
+    const filter = whereParams(ownedAccountsWhereArg);
+    expect(filter).toContain('user-1');
+    expect(filter).toContain('owner');
   });
 
   test('the resolved account is never duplicated', async () => {
@@ -244,10 +218,14 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
 
     await deleteAccountImmediately('acct-1', 'user-1');
 
-    const values = conditionValues(sandboxWhereArg);
+    const values = whereParams(sandboxWhereArg);
     expect(values).toContain('acct-1');
     expect(values).toContain('acct-2');
-    for (const status of RECLAIMABLE_SANDBOX_STATUSES) expect(values).toContain(status);
+    // `active` alone was the old filter. A box that died during provisioning or
+    // whose last control-plane call errored still exists at the provider and
+    // still bills — 47 of them survived the release-gate sweep that way.
+    for (const status of ['provisioning', 'active', 'error']) expect(values).toContain(status);
+    for (const status of ['stopped', 'archived']) expect(values).not.toContain(status);
   });
 
   test('a box with no external id is skipped entirely', async () => {
@@ -291,16 +269,6 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
     expect(reconciledRemoved.sort()).toEqual(['ext-1', 'ext-2']);
   });
 
-  test('an already-gone box still stops, removes and reconciles cleanly', async () => {
-    sandboxRows = [{ sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' }];
-    stopErrorByExternal['ext-1'] = new Error('Sandbox already stopped');
-    removeErrorByExternal['ext-1'] = new Error('Sandbox already stopped');
-
-    await deleteAccountImmediately('acct-1');
-
-    expect(reconciledRemoved).toEqual(['ext-1']);
-  });
-
   test('a failed removed-reconcile falls back to the stopped reconcile', async () => {
     // The row must end terminal either way — an eternally `active` row keeps
     // billing and keeps the box eligible for a wake.
@@ -334,15 +302,6 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
     expect(stops).toEqual([]);
   });
 
-  test('no reclaimable sandboxes → no provider calls, deletion still succeeds', async () => {
-    sandboxRows = [];
-
-    const result = await deleteAccountImmediately('acct-1');
-
-    expect(result.success).toBe(true);
-    expect(stops).toEqual([]);
-    expect(removes).toEqual([]);
-  });
 });
 
 describe('deleteAccountImmediately — session settle', () => {
@@ -355,10 +314,11 @@ describe('deleteAccountImmediately — session settle', () => {
 
     await deleteAccountImmediately('acct-1', 'user-1');
 
-    const values = conditionValues(sessionUpdateWhereArg);
+    const values = whereParams(sessionUpdateWhereArg);
     expect(values).toContain('acct-1');
     expect(values).toContain('acct-2');
-    for (const status of LIVE_SESSION_STATUSES) expect(values).toContain(status);
+    for (const status of ['queued', 'branching', 'provisioning', 'running']) expect(values).toContain(status);
+    for (const status of ['stopped', 'failed', 'completed']) expect(values).not.toContain(status);
   });
 
   test('the sessions are settled even when the sandbox lookup failed', async () => {

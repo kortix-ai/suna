@@ -10,7 +10,7 @@ import {
  * The 409 the connection-scoped connect route answers for a connector's
  * EFFECTIVE project default.
  *
- * `apps/api/src/projects/routes/r4.ts` (INVARIANT, 2026-09-16 `account_required`
+ * `apps/api/src/projects/routes/connection-actions.ts` (INVARIANT, 2026-09-16 `account_required`
  * rule) blocks that route for the sole active project-owned row even when
  * nothing is pinned, and names the route the client must use instead. It is the
  * only 409 that handler returns.
@@ -92,7 +92,7 @@ describe('projectConnectSteps — sole shared account (the connector default)', 
   test('finalize polls the SAME route and the SAME owner the link was minted for', async () => {
     // Two distinct hangs are guarded here. Polling the connection-scoped
     // finalize would hit the very same 409 (one handler serves `connect` and
-    // `connect/finalize` — `r4.ts` builds both in one loop). Polling the
+    // `connect/finalize` — `connection-actions.ts` builds both in one loop). Polling the
     // connector-scoped finalize WITHOUT `owner: 'project'` would default to
     // `me` and poll the caller's member account. Either way the account never
     // reports active and the flow burns its full 10-minute timeout.

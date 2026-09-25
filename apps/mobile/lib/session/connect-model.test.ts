@@ -39,7 +39,12 @@ describe('isBrowserReturnPath', () => {
     expect(isBrowserReturnPath('/providers/connected')).toBe(true);
     expect(isBrowserReturnPath('providers')).toBe(true);
     expect(isBrowserReturnPath('kortix://connectors/success?x=1')).toBe(true);
-    expect(isBrowserReturnPath('kortix://connections/error')).toBe(true);
+  });
+
+  test('matches only the roots an in-app browser session returns to', () => {
+    // No mobile code opens a browser session that returns to `kortix://connections`.
+    expect(isBrowserReturnPath('kortix://connections/error')).toBe(false);
+    expect(isBrowserReturnPath('/connections/success')).toBe(false);
   });
 
   test('leaves real routes alone', () => {

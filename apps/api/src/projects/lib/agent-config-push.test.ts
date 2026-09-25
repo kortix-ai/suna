@@ -113,7 +113,16 @@ mock.module('./network-secret-boundary', () => ({
 }));
 
 const ORIGINAL_FETCH = globalThis.fetch;
-(globalThis as { fetch: unknown }).fetch = async (_url: unknown, init?: { body?: string }) => {
+let daemonCapabilities: string[] | 'down' = ['file.import', 'file.append'];
+// What the box reports it is RUNNING. `release_id: null` is a box that runs no
+// release — the flag is off for the project, or the release chain stepped down
+// to the image default. The capability is the binary's, not the box's state.
+let daemonRunningConfig: Record<string, unknown> | null = null;
+(globalThis as { fetch: unknown }).fetch = async (url: unknown, init?: { body?: string }) => {
+  if (String(url).endsWith('/kortix/health')) {
+    if (daemonCapabilities === 'down') return new Response('down', { status: 503 });
+    return Response.json({ capabilities: daemonCapabilities, config: daemonRunningConfig });
+  }
   const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : {};
   posted.push({
     opencodeEnv: body.opencodeEnv as Record<string, string | null> | undefined,
@@ -162,6 +171,8 @@ beforeEach(() => {
   daemonProof = true;
   daemonReload = 'restarted';
   sessionMetadata = null;
+  daemonCapabilities = ['file.import', 'file.append'];
+  daemonRunningConfig = null;
 });
 
 describe('propagateProjectSecretsToActiveSandboxes', () => {
@@ -307,5 +318,44 @@ describe('pushSessionAgentConfigToSandbox', () => {
 
     expect(result.applied).toBe(false);
     expect(posted).toEqual([]);
+  });
+});
+
+describe('capability gate on the compiled-governance push', () => {
+  test('a daemon RUNNING a release receives NO governance push', async () => {
+    daemonCapabilities = ['file.import', 'file.append', 'config.release.v1'];
+    daemonRunningConfig = { release_id: 'r-1', source: 'release' };
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result).toEqual({ applied: false, reason: 'the daemon receives compiled governance in its config release' });
+    expect(posted).toEqual([]);
+  });
+
+  // The gate must read the box's STATE, not the binary's capability. With
+  // `config_releases` off the box runs its workspace config dir and owns no
+  // release, so the pre-release governance push is exactly what has to happen.
+  // Verified on a real Platinum box 2026-09-24 (session 423fe876, flag off):
+  // health.config = {release_id: null, source: 'workspace'}, capabilities
+  // still list config.release.v1, and `kortix sessions reload` answered
+  // "Nothing to apply: the daemon receives compiled governance in its config
+  // release" — a release the session does not have.
+  test('a config.release.v1 daemon running NO release still receives the governance push', async () => {
+    daemonCapabilities = ['file.import', 'file.append', 'config.release.v1'];
+    daemonRunningConfig = { release_id: null, desired_release_id: null, source: 'workspace', mode: null };
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result.applied).toBe(true);
+    expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+  });
+
+  test('a daemon whose health does not answer receives no governance push', async () => {
+    daemonCapabilities = 'down';
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result.applied).toBe(false);
+    expect(posted).toEqual([]);
+  });
+
+  test('an old daemon still receives the governance push', async () => {
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result.applied).toBe(true);
+    expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
   });
 });

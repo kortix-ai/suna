@@ -611,7 +611,7 @@ flow(
 );
 
 // PROJ-35 — PUT /v1/projects/:projectId/model-enablement
-// (apps/api/src/projects/routes/r4.ts:2763-2822). Replace the project's
+// (apps/api/src/projects/routes/models.ts). Replace the project's
 // model-override exceptions (which models are enabled/disabled). The full
 // positive path needs a funded account + model-picker data; the BOUNDARIES
 // are assertable without one: an unknown project 404s, ANON 401s, a missing
@@ -925,7 +925,7 @@ flow(
 
 // PROJ-32 — the BYOK-provider-connect-modal catalog. Serves the SAME live,
 // 24h-refreshed `runtimeModelCatalog.snapshot()` every other gateway/model
-// endpoint reads (apps/api/src/projects/routes/r4.ts) — provider-level rows
+// endpoint reads (apps/api/src/projects/routes/models.ts) — provider-level rows
 // (id, name, auth env vars, docs URL), NOT gated by projectLlmGatewayEnabled
 // since it's meaningful for every project including native (non-gateway)
 // ones. Project-read-scoped (403/404 boundary), not actually secret data.
