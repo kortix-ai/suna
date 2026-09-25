@@ -72,6 +72,12 @@ export function buildPreviewBootstrapScript(input: {
    */
   runTests?: boolean;
   statusPath?: string;
+  /**
+   * The host sandbox's name. The stack tags every session box with it
+   * (`kortix.instance`), which is how teardown and the sweep find the session
+   * boxes a preview owns. See previewWorkerEnvironment().
+   */
+  hostName?: string;
 }): string {
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repository)) {
     throw new Error(`invalid GitHub repository: ${input.repository}`);
@@ -82,6 +88,9 @@ export function buildPreviewBootstrapScript(input: {
   const origin = new URL(input.origin);
   if (origin.protocol !== 'https:' || origin.pathname !== '/') {
     throw new Error('preview origin must be an HTTPS origin');
+  }
+  if (input.hostName !== undefined && !/^kortix-[a-z0-9-]+$/.test(input.hostName)) {
+    throw new Error(`invalid preview host name: ${input.hostName}`);
   }
   const instance = `pr-${input.prNumber}`;
   const state = '/workspace/kortix-preview';
@@ -170,7 +179,8 @@ PREVIEW_STATE_DIR=${shellQuote(state)} \
 PREVIEW_ORIGIN=${shellQuote(origin.origin)} \
 PREVIEW_SHA=${shellQuote(input.sha)} \
 PREVIEW_SECRETS_FILE="$SECRETS" \
-bun tests/bin/preview-stack.ts
+${input.hostName ? `PREVIEW_INSTANCE_ID=${shellQuote(input.hostName)} \
+` : ''}bun tests/bin/preview-stack.ts
 
 printf 'stack\n' > "$PHASE"
 

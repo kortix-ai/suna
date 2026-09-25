@@ -45,7 +45,7 @@
 import type { SandboxExecOptions, SandboxExecResult } from './index';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
-import { currentInstanceId, sandboxBelongsToThisInstance } from '../../projects/instance-scope';
+import { currentInstanceId } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
 import { platinumJson } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
@@ -194,6 +194,23 @@ function isMissingSandboxError(error: unknown): boolean {
     message.includes('no such sandbox') ||
     message.includes('sandbox does not exist')
   );
+}
+
+/**
+ * Whether the orphan-box reaper may treat a listed provider box as this
+ * instance's. Stricter than `sandboxBelongsToThisInstance`, which keeps an
+ * UNSTAMPED database row everyone's: that rule is safe for a row, because the
+ * row is in this instance's own database. A provider box is not. Every PR
+ * preview shares one Platinum org and one `kortix.env=preview` tag, each with
+ * its own database, and a box a preview created before the stamp existed has
+ * no row here. Counting it as ours would let one preview's orphan reaper stop
+ * another preview's live sessions. So, when this instance has an id, only a box
+ * that carries exactly that id is ours.
+ */
+export function providerBoxBelongsToThisInstance(stamped: unknown): boolean {
+  const mine = currentInstanceId();
+  if (!mine) return true;
+  return typeof stamped === 'string' && stamped === mine;
 }
 
 /**
@@ -377,9 +394,11 @@ export class PlatinumProvider implements SandboxProvider {
         'kortix.env': config.INTERNAL_KORTIX_ENV,
         'kortix.workload': workloadType,
         ...(opts.sandboxId ? { 'kortix.sandbox_id': opts.sandboxId } : {}),
-        // Instance scope for local dev on a shared DB (projects/instance-scope.ts):
-        // `listManagedRunningSandboxes` skips another instance's boxes. Absent
-        // in deployed environments.
+        // Instance scope (projects/instance-scope.ts): `listManagedRunningSandboxes`
+        // skips another instance's boxes. Set by local dev worktrees and by PR
+        // previews, where it names the preview host that owns this session box
+        // (tests/src/core/preview-session-reaper.ts). Absent in deployed
+        // environments.
         ...(currentInstanceId() ? { 'kortix.instance': currentInstanceId()! } : {}),
       },
     };
@@ -642,10 +661,9 @@ export class PlatinumProvider implements SandboxProvider {
         const metadata = sandbox.metadata ?? {};
         if (String(metadata['kortix.managed'] ?? '') !== 'true') continue;
         if (String(metadata['kortix.env'] ?? '') !== config.INTERNAL_KORTIX_ENV) continue;
-        // Instance scope beside the env scope: another local instance's box is
-        // not ours to stop. Unstamped boxes stay everyone's. No-op when
-        // KORTIX_INSTANCE_ID is unset.
-        if (!sandboxBelongsToThisInstance({ instanceId: metadata['kortix.instance'] })) continue;
+        // Instance scope beside the env scope: another instance's box is not
+        // ours to stop. No-op when KORTIX_INSTANCE_ID is unset.
+        if (!providerBoxBelongsToThisInstance(metadata['kortix.instance'])) continue;
         if (String(sandbox.state ?? '').toLowerCase() !== 'running') continue;
         const rawCreatedAt = sandbox.created_at ?? sandbox.createdAt ?? null;
         const createdAt = rawCreatedAt ? new Date(rawCreatedAt) : null;
