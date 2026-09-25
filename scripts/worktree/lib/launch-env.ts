@@ -41,6 +41,7 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     // slot's Supabase Storage S3 endpoint. Without the override a --db
     // worktree would publish into the primary checkout's Supabase (the
     // endpoint baked into apps/api/.env), i.e. another stack's data plane.
+    CONFIG_RELEASES_ENABLED: 'true',
     KORTIX_CONFIG_ARCHIVE_S3_BUCKET: 'kortix-config-releases',
     KORTIX_CONFIG_ARCHIVE_S3_REGION: 'local',
     KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: `${c.supabaseUrl.replace(/\/+$/, '')}/storage/v1/s3`,

@@ -588,7 +588,7 @@ jobs:
       # API rebuilds from its Git mirror.
       # docs/specs/config-releases.md#store
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}
+        {"CONFIG_RELEASES_ENABLED":"true","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

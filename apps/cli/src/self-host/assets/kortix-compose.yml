@@ -94,6 +94,7 @@ services:
       # The endpoint is the INTERNAL kong host, so the archive route streams
       # the bytes through this API instead of redirecting a sandbox at a
       # hostname it cannot resolve.
+      CONFIG_RELEASES_ENABLED: ${CONFIG_RELEASES_ENABLED:-false}
       KORTIX_CONFIG_ARCHIVE_S3_BUCKET: kortix-config-releases
       KORTIX_CONFIG_ARCHIVE_S3_REGION: local
       KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: http://supabase-kong:8000/storage/v1/s3

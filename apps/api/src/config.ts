@@ -604,7 +604,7 @@ const envSchema = z.object({
   // Settings row disappears, both routes answer 403 `feature_disabled` for
   // every project, no convergence is scheduled, and every session falls back
   // to reading its workspace config dir, whatever a project chose.
-  CONFIG_RELEASES_ENABLED: optBoolTrue,
+  CONFIG_RELEASES_ENABLED: optBoolFalse,
   // Config archives go through the API's ONE object store
   // (src/object-store/s3.ts), same as project snapshots above, with their own
   // bucket/prefix so that naming a config bucket never starts the snapshot
@@ -978,8 +978,9 @@ function validateEnv(): z.infer<typeof envSchema> {
   }
 
   // ── Conditional: config releases on → need the ONE object store ────────
-  // `CONFIG_RELEASES_ENABLED` is the operator kill switch and defaults to
-  // true, so any environment that serves sessions can have a project opt in
+  // `CONFIG_RELEASES_ENABLED` is the operator switch and defaults to FALSE
+  // while the rollout runs. An environment turns it on together with the
+  // bucket, and only then can a project opt in
   // (the per-project flag itself is OFF by default) and publish config
   // archives from that moment on. They go through the API's one
   // object store (src/object-store/s3.ts); there is no second store and no
@@ -990,7 +991,7 @@ function validateEnv(): z.infer<typeof envSchema> {
   // cache, and an operator upgrading a container with a stale env block must
   // not be locked out of their own dashboard.
   const configReleasesOn =
-    (raw as any).CONFIG_RELEASES_ENABLED !== 'false' && (raw as any).CONFIG_RELEASES_ENABLED !== false;
+    (raw as any).CONFIG_RELEASES_ENABLED === 'true' || (raw as any).CONFIG_RELEASES_ENABLED === true;
   if (configReleasesOn) {
     const bucket = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_BUCKET ?? '').trim();
     const endpoint = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT ?? '').trim();
