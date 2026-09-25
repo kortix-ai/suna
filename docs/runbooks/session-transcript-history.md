@@ -113,9 +113,16 @@ is rejected rather than used to select that old root.
   project when GitHub repository creation is rate-limited. The journey checks the preview
   environment and fixture name, grants temporary memberships, and removes them during cleanup.
   Reply assertions require the exact expected text, allowing a single Markdown inline-code wrapper.
+- `E2E_GREP='33 — ' pnpm test -- --browser-only`: opens sessions with `/start` held and the
+  saved-copy reads delayed 800 ms. A session with a saved copy (flag on or off, by URL or from
+  the sidebar) shows skeleton rows and then the conversation, never the full-screen boot screen;
+  a session without one still shows the boot screen. `BENCH_OUT=<file>` writes the timeline, and
+  the run saves skeleton and conversation screenshots in both themes and at 720x480.
 - `apps/api/src/__tests__/integration-session-transcript-capture.test.ts`: real PostgreSQL writes
   for more than 500 messages, retries, idempotence, concurrent captures, and flag rollback.
 - SDK hook tests cover disabled reads, missing history, session switching, and late responses.
+  `use-session-saved-transcript.test.ts` covers `useSession().savedTranscript`: loading while a
+  saved copy may still paint, shown once it does, and none when the server has none.
 
 The local browser fixture proves startup request initiation and pre-readiness rendering.
 The deployed browser journey additionally verifies cloud startup, streaming, turn-end capture,
