@@ -245,6 +245,9 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  // One bun process runs every daemon test file and bun's file order is not stable,
+  // so a file that leaves `running.release_id` set poisons whichever file runs next.
+  resetConfigReleaseStateForTests()
   api.stop()
   spawnSync('chmod', ['-R', 'u+w', root])
   rmSync(root, { recursive: true, force: true })
