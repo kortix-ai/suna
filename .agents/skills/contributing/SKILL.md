@@ -126,11 +126,11 @@ uploaded URL. The URL renders as a video player. Run the command from the direct
 body's relative paths resolve from: the repo root. The full rules and failure modes are in
 [references/attachments.md](references/attachments.md).
 
-Done when this prints a `https://github.com/user-attachments/assets/…` URL and no local
-path:
+Done when the body has the asset URL and no local link is left:
 
 ```bash
-gh pr view <pr> --json body --jq .body | grep -oE 'https://github.com/user-attachments/assets/[0-9a-f-]+|\./output/[^ )]+'
+gh pr view <pr> --json body --jq .body | grep -oE 'https://github.com/user-attachments/assets/[0-9a-f-]+'  # ≥ 1 URL
+gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'                                        # 0
 ```
 
 ### 7. Keep it green and current

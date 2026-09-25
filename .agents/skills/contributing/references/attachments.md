@@ -67,6 +67,14 @@ commit or a branch.
 - **The same file twice in one command:** refused.
 - **GitHub Enterprise Server:** not supported. github.com only.
 
+## Verify an upload
+
+- An asset URL answers `302` to a signed S3 URL that expires after 5 minutes. `curl -I` gets
+  `403` from S3 because the URL is signed for `GET`, not `HEAD`. Check with a GET instead:
+  `curl -sL -o /tmp/a.mp4 -w '%{http_code} %{content_type}\n' <asset-url>` → `200 video/mp4`.
+- The PR page plays the video from `private-user-images.githubusercontent.com`. It needs no
+  sign-in on a public repo.
+
 ## Visibility
 
 `kortix-ai/suna` is public, so anyone with an attachment URL can open it. Record synthetic
