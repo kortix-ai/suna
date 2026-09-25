@@ -1,7 +1,6 @@
 import { z } from '@hono/zod-openapi';
 import { accountInvitations, accountMembers, accountMemberships, iamRoles, roleAssignments, type accounts } from '@kortix/db';
 import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
 import {
@@ -165,14 +164,6 @@ export const AccountIdParam = z.object({ accountId: z.string() });
 
 export type AccountRole = 'owner' | 'admin' | 'member';
 
-export async function readBodyTokens(c: Context): Promise<Record<string, unknown>> {
-  try {
-    return (await c.req.json()) ?? {};
-  } catch {
-    return {};
-  }
-}
-
 export async function resolveAccountForUser(
   userId: string,
   override: string | undefined,
@@ -189,14 +180,6 @@ export async function resolveAccountForUser(
     return membership.accountId;
   }
   return resolveAccountId(userId);
-}
-
-export async function readBody(c: Context): Promise<Record<string, unknown>> {
-  try {
-    return (await c.req.json()) ?? {};
-  } catch {
-    return {};
-  }
 }
 
 export function normalizeString(value: unknown): string | null {

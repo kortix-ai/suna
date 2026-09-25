@@ -1261,6 +1261,28 @@ describe('end_error: causes, requested stops, and which one wins', () => {
     expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
   });
 
+  // prod 2026-09-25: a web Stop's hold settle aborted the box ~450 ms before
+  // the client's proxied abort. The first "Aborted" frame closed the turn, and
+  // the proxy's stamp then found no open turn to mark.
+  test('a stamp that lands after the abort closed the turn cannot rescue it', async () => {
+    const token = await openTurn();
+    await end(ABORT); // the settle's unstamped abort
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // proxy, too late
+    await end(ABORT); // the client's abort
+    expect((await readTurn(token))?.end_error).toEqual(ABORT);
+  });
+
+  test('the hold stamps first, so every later abort of the same Stop keeps it a stop', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // hold route
+    await end(ABORT); // the settle's abort
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // proxy
+    await end(ABORT); // the client's abort
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('failed');
+    expect(row?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
   test('a named cause beats a requested stop: the mark never hides a real failure', async () => {
     // Stop pressed, the abort never landed, and the memory guard fired later.
     const token = await openTurn();

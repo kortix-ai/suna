@@ -52,7 +52,6 @@ import {
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
   PaintBrushIcon as PaintBrush,
-  SidebarSimpleIcon as PanelLeftClose,
   PlugIcon as Plug,
   PlusIcon as Plus,
   QuestionIcon as QuestionMark,
@@ -69,6 +68,7 @@ import {
   ImagesSquareIcon as WallpaperIcon,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
+import { SidebarToggle as PanelLeftClose } from '@/features/icon/icons/sidebar-toggle';
 
 // ============================================================================
 // Types

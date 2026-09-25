@@ -7,6 +7,7 @@ import {
   migrationLedgerRepairConnectorName,
   repairMigrationLedger,
 } from './migration-ledger-repair';
+import { migrationNamesInRunOrder, readMigrationStatus } from './migration-status';
 
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL;
 const suite = adminUrl ? describe : describe.skip;
@@ -105,17 +106,20 @@ suite('migration ledger rename repair', () => {
       }),
     ).toBe(false);
 
-    const pending = await runner({
-      ...runnerOptions,
-      direction: 'up',
-      count: Number.POSITIVE_INFINITY,
+    // Pending migrations come from the ledger, never from node-pg-migrate's
+    // dryRun: that dry run executes a pending migration's pgm.db.query().
+    // checkOrder throws where `up` would refuse, so this also proves order.
+    const { pending } = await readMigrationStatus({
+      databaseUrl: databaseUrl?.toString() ?? '',
+      migrationsDir,
       checkOrder: true,
-      dryRun: true,
     });
-    const pendingNames = pending.map((migration) => migration.name);
-    expect(pendingNames).not.toContain(migrationLedgerRepairConnectorName);
-    expect(pendingNames).not.toContain('20260730000452547_sandbox_deadline');
-    expect(pendingNames).not.toContain('20260730000452600_sandbox_deadline_index.concurrent');
+    // The repaired ledger is exactly the run-order prefix through the renamed
+    // pair; everything after it is pending.
+    const files = migrationNamesInRunOrder(migrationsDir);
+    const lastRepaired = files.indexOf('20260730000452600_sandbox_deadline_index.concurrent');
+    expect(lastRepaired).toBeGreaterThan(files.indexOf(migrationLedgerRepairConnectorName));
+    expect(pending).toEqual(files.slice(lastRepaired + 1));
 
     const client = new pg.Client({ connectionString: databaseUrl?.toString() });
     await client.connect();

@@ -44,7 +44,6 @@ import {
   CheckIcon as Check,
   WarningCircleIcon as CircleAlert,
   GlobeIcon as Globe,
-  SidebarSimpleIcon as PanelRight,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -637,6 +636,7 @@ import {
   parseJsonFailure,
   type ToolOutcome,
 } from './tool-outcome';
+import { SidebarToggle as PanelRight } from '@/features/icon/icons/sidebar-toggle';
 
 export function JsonFailureOutputCard({
   failure,

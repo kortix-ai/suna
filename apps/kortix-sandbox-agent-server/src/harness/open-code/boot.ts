@@ -1,4 +1,5 @@
 import { publishOpenCodeEvent } from './event-bus'
+import { noteOpencodeStopRequested, type AbortedTurnVerdict } from './instance-guard'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../../agent-env-file'
@@ -692,6 +693,10 @@ async function startSessionRuntime(
   bootMark: (label: string) => void,
 ): Promise<void> {
   const opencode = harness.native
+  const instanceGuard = harness.instanceGuard
+  instanceGuard.configure({
+    canWarm: () => opencode.getState() === 'ok' && bootState.workspaceReady !== false,
+  })
   const markOpencodeListening = () => {
     if (bootState.timeline.some((mark) => mark.label === 'opencode-listening')) return
     bootMark('opencode-listening')
@@ -770,6 +775,12 @@ async function startSessionRuntime(
       ) {
         scheduleRuntimeProjectionPush(event.type)
       }
+      // A disposed instance is rebuilt lazily by its next request. Make that
+      // request the daemon's own, so no prompt is the first caller of a cache.
+      if (event.type === 'server.instance.disposed' || event.type === 'global.disposed') {
+        instanceGuard.noteInstanceDisposed()
+        void instanceGuard.warm(event.type)
+      }
     } catch (error) {
       logger.warn('[opencode-events] runtime fan-out failed', {
         err: error instanceof Error ? error.message : String(error),
@@ -791,12 +802,18 @@ async function startSessionRuntime(
     )
   }
   const onSessionIdle = (opencodeSessionId: string) => {
-    kortixEventBus().publishDaemon(
-      'kortix.turn',
-      { opencode_session_id: opencodeSessionId, verdict: 'idle' },
-      opencodeSessionId,
-    )
-    void relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg).catch((err) =>
+    void (async () => {
+      // An aborted turn is checked first: it may have been healed and resumed,
+      // and then it has not ended (instance-guard.ts).
+      const verdict = await instanceGuard.inspectEndedTurn(opencodeSessionId)
+      if (verdict.kind === 'unrequested' && verdict.resumed) return
+      kortixEventBus().publishDaemon(
+        'kortix.turn',
+        { opencode_session_id: opencodeSessionId, verdict: 'idle' },
+        opencodeSessionId,
+      )
+      await relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg, unrequestedAbortCause(verdict))
+    })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
@@ -814,6 +831,15 @@ async function startSessionRuntime(
     cfg,
     isRoot: (sid) => isRootOpencodeSession(sid, opencode, cfg),
   })
+  instanceGuard.configure({
+    isRoot: (sid) => isRootOpencodeSession(sid, opencode, cfg),
+    resumeVictim: (sid, view) =>
+      autoResumer.maybeResume(
+        sid,
+        { name: view.errorName ?? 'MessageAbortedError', message: 'Aborted' },
+        { cause: 'runtime-fault' },
+      ),
+  })
   const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
     void (async () => {
       // A successful resume means the turn is being re-prompted to continue, so
@@ -821,6 +847,10 @@ async function startSessionRuntime(
       // bus nor in the API ledger. maybeResume returns false when the error is
       // not resumable → relay it exactly as before this feature.
       if (await autoResumer.maybeResume(opencodeSessionId, error)) return
+      // The same for an abort nobody asked for (instance-guard.ts).
+      const verdict = await instanceGuard.inspectEndedTurn(opencodeSessionId)
+      if (verdict.kind === 'unrequested' && verdict.resumed) return
+      error = unrequestedAbortCause(verdict) ?? error
       kortixEventBus().publishDaemon(
         'kortix.turn',
         { opencode_session_id: opencodeSessionId, verdict: 'error', error: error ?? null },
@@ -874,6 +904,9 @@ async function startSessionRuntime(
   // and this reconcile collapse to a single finalize; a reconnect after the turn
   // relayed is a no-op.
   const onConnected = () => {
+    // A (re)connected stream means an OpenCode process is serving: build its
+    // instance caches before any prompt can (instance-guard.ts).
+    void instanceGuard.warm('event-stream-connected')
     void reconcileInitialTurnAcceptance()
     void reconcileFinishedFirstTurn(opencode, cfg).catch((err) =>
       logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
@@ -2166,8 +2199,24 @@ async function confirmTurnOrphaned(
   return true
 }
 
+/**
+ * The cause relayed for a turn the runtime aborted before it reached the model
+ * while nobody asked for a stop, when it could not be resumed. Without it the
+ * turn reads "No reason was reported" (instance-guard.ts).
+ */
+export function unrequestedAbortCause(verdict: AbortedTurnVerdict): OpencodeTurnError | undefined {
+  if (verdict.kind !== 'unrequested' || verdict.resumed || !verdict.view.empty) return undefined
+  return {
+    name: 'RuntimeAbortedTurn',
+    message: verdict.heal.disposed
+      ? 'The agent runtime stopped this turn before it started. Kortix reset the runtime. Send your message again.'
+      : 'The agent runtime stopped this turn before it started, and nobody asked it to stop. Send your message again.',
+  }
+}
+
 /** Finalize an interrupted turn so a streaming client stops spinning. */
 async function abortOpencodeTurn(baseUrl: string, workspace: string, sessionId: string): Promise<void> {
+  noteOpencodeStopRequested(sessionId, 'orphaned-turn')
   try {
     await fetch(
       `${baseUrl}/session/${encodeURIComponent(sessionId)}/abort?directory=${encodeURIComponent(workspace)}`,
@@ -2806,6 +2855,7 @@ export async function relayTurnEndToApi(
   const runawayCheck = (): void => {
     if (effectiveStatus !== 'idle') return
     void observeIdleForRunaway(opencodeSessionId, turn.parentMessageId, async () => {
+      noteOpencodeStopRequested(opencodeSessionId, 'runaway-guard')
       try {
         await fetch(
           `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/abort?directory=${encodeURIComponent(cfg.workspace)}`,
