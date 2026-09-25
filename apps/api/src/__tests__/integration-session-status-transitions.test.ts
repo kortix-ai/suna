@@ -102,6 +102,7 @@ interface Fixture {
 async function fixture(input: {
   sessionStatus: string;
   sessionError?: string;
+  sessionSandboxUrl?: string;
   sandboxStatus: string;
   sessionMetadata?: Row;
   sandboxMetadata?: Row;
@@ -112,11 +113,12 @@ async function fixture(input: {
   const externalId = `sbx_transition_${sessionId.slice(0, 8)}`;
   await db.execute(sql`
     insert into kortix.project_sessions
-      (session_id, account_id, project_id, branch_name, agent_name, status, error, metadata)
+      (session_id, account_id, project_id, branch_name, agent_name, status, error, sandbox_url,
+       metadata)
     values
       (${sessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid, ${sessionId},
        'default', ${input.sessionStatus}::kortix.project_session_status,
-       ${input.sessionError ?? null},
+       ${input.sessionError ?? null}, ${input.sessionSandboxUrl ?? null},
        ${JSON.stringify(input.sessionMetadata ?? {})}::jsonb)`);
   await db.execute(sql`
     insert into kortix.session_sandboxes
@@ -135,12 +137,13 @@ async function fixture(input: {
 }
 
 async function read(f: Fixture): Promise<{
-  session: { status: string; error: string | null; metadata: Row };
+  session: { status: string; error: string | null; sandbox_url: string | null; metadata: Row };
   sandbox: { status: string; metadata: Row; updated_at: Date } & Row;
 }> {
   const [session] = rows(
     await db.execute(sql`
-      select status, error, metadata from kortix.project_sessions where session_id = ${f.sessionId}`),
+      select status, error, sandbox_url, metadata from kortix.project_sessions
+       where session_id = ${f.sessionId}`),
   );
   const [sandbox] = rows(
     await db.execute(sql`
@@ -191,6 +194,9 @@ describe('stop (applyStoppedState)', () => {
   test('parks an active box and its running session, merging the patch', async () => {
     const f = await fixture({
       sessionStatus: 'running',
+      // The stop names neither, so it keeps both.
+      sessionError: 'an earlier turn failed',
+      sessionSandboxUrl: 'https://box.test/p/sbx/8000',
       sandboxStatus: 'active',
       sandboxMetadata: {
         lastAliveAt: '2026-09-25T10:00:00.000Z',
@@ -213,6 +219,8 @@ describe('stop (applyStoppedState)', () => {
     });
     const { session, sandbox } = await read(f);
     expect(session.status).toBe('stopped');
+    expect(session.error).toBe('an earlier turn failed');
+    expect(session.sandbox_url).toBe('https://box.test/p/sbx/8000');
     expect(sandbox.status).toBe('stopped');
     expect(sandbox.metadata.stopReason).toBe('manual');
     expect(sandbox.metadata.stoppedAt).toEqual(expect.any(String));
@@ -725,11 +733,16 @@ describe('first provisioning (session-sandbox writers)', () => {
 });
 
 describe('the transition module against real rows', () => {
+  // Every session status. A dead-lettered `failed` session keeps its park: a
+  // delivery that woke it would aim a reuse trigger back at a wedged session.
   test.each([
     ['stopped', true],
     ['completed', true],
     ['running', false],
     ['provisioning', false],
+    ['failed', false],
+    ['queued', false],
+    ['branching', false],
   ] as const)('`wake` from %s applies: %p', async (from, applies) => {
     const f = await fixture({ sessionStatus: from, sandboxStatus: 'stopped' });
     expect(await transitionSession('wake', f.sessionId, { error: null })).toBe(applies);
@@ -836,6 +849,40 @@ describe('the transition module against real rows', () => {
 });
 
 describe('manual stop (stopSession)', () => {
+  // The stop reads the row, powers the box off, then writes. Anything another
+  // writer put in the metadata during the provider call must survive: the
+  // SS6 incident rebuilt the metadata from the row read before the call.
+  test('parks an active box as a manual stop by this user, keeping a key written during the provider stop', async () => {
+    const f = await fixture({
+      sessionStatus: 'running',
+      sandboxStatus: 'active',
+      sandboxMetadata: { lastAliveAt: 'before-stop' },
+    });
+    onProviderStop = () => concurrentMetadataWrite(f, { lastAliveAt: 'during-stop' });
+    try {
+      const result = await stopSession({
+        projectId: project.project_id,
+        sessionId: f.sessionId,
+        accountId: project.account_id,
+        userId: 'user-1',
+      });
+      expect(result).toEqual({
+        status: 200,
+        body: { ok: true, session_id: f.sessionId, status: 'stopped' },
+      });
+    } finally {
+      onProviderStop = async () => {};
+    }
+    const { session, sandbox } = await read(f);
+    expect(session.status).toBe('stopped');
+    expect(sandbox.status).toBe('stopped');
+    expect(sandbox.metadata).toMatchObject({
+      stopReason: 'manual',
+      stoppedBy: 'user-1',
+      lastAliveAt: 'during-stop',
+    });
+  });
+
   // The row is already `stopped` while a wake is in flight. The stop cancels
   // the wake, and the guard window keeps a provider start that lands late
   // from leaving a running box behind a stopped row.

@@ -2,12 +2,12 @@
  * Integration test (real local DB, REAL IAM engine): the prompt path's per-agent
  * gate against actual `iam_resource_grants` rows.
  *
- * The sibling unit test (sandbox-proxy/routes/preview-agent-authz.test.ts) pins
- * the gate's shape and its ordering ahead of the re-mint with a stubbed
- * `authorize`. This one proves the shape is the one the engine actually consumes
- * — a member scoped OUT of an agent is refused, a member scoped IN is not, and an
- * account owner keeps the implicit-Manager bypass — with nothing about the
- * authorization decision mocked.
+ * This suite owns the authorization decision, with nothing about it mocked: a
+ * member scoped OUT of an agent is refused before the re-mint, a member scoped IN
+ * is not, the gate checks the REQUESTED agent (never the session's own), and an
+ * account owner keeps the implicit-Manager bypass. The sibling unit test
+ * (sandbox-proxy/routes/preview-agent-authz.test.ts) keeps only the no-gate paths
+ * and the undeclared-agent drop, with a stubbed `authorize`.
  *
  * Only the sandbox/transport collaborators are stubbed: there is no box here.
  * The session and its `session_sandboxes` row ARE real: since 344717c09f the
@@ -40,6 +40,8 @@ const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const SESSION_AGENT = 'pipeline-hygiene';
 const SCOPED_AGENT = 'nda-turnaround';
+/** Scoped to `scopedOut` only: the member the other two agents ARE granted to. */
+const OTHER_SCOPED_AGENT = 'release-notes';
 const SESSION = crypto.randomUUID();
 const SANDBOX = crypto.randomUUID();
 /** The provider external id the proxy addresses the box by. */
@@ -72,7 +74,7 @@ mock.module('../projects/lib/session-token-grant', () => ({
   // this, every prompt ran as SESSION_AGENT and the gate under test never saw
   // SCOPED_AGENT.
   agentLaunchableInProject: async (_projectId: string, agentName: string) =>
-    agentName === SESSION_AGENT || agentName === SCOPED_AGENT,
+    agentName === SESSION_AGENT || agentName === SCOPED_AGENT || agentName === OTHER_SCOPED_AGENT,
   remintGrantForAgentSwitch: async (input: { requestedAgent: string | null }) => {
     remintCalls.push(input.requestedAgent ?? '(none)');
     return { action: 'skip' };
@@ -217,6 +219,18 @@ beforeAll(async () => {
     principalId: scopedIn,
     grantedBy: owner,
   });
+  // A third agent, scoped to `scopedOut` ONLY. `scopedIn` holds grants on both
+  // other agents, so a gate that checked the session's agent instead of the
+  // requested one would let `scopedIn` run this one.
+  await upsertResourceGrant({
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    resourceType: 'agent',
+    resourceId: OTHER_SCOPED_AGENT,
+    principalType: 'member',
+    principalId: scopedOut,
+    grantedBy: owner,
+  });
 });
 
 afterAll(async () => {
@@ -249,6 +263,18 @@ test('a member scoped OUT of the agent cannot prompt as it, and never reaches th
   expect(await response.json()).toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
   expect(remintCalls).toEqual([]);
   expect(envSyncCalls).toBe(0);
+  expect(upstreamCalls).toBe(0);
+});
+
+test('the gate checks the REQUESTED agent: a grant on the session agent does not cover a switch', async () => {
+  const response = await promptAs(scopedIn, OTHER_SCOPED_AGENT);
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({
+    code: 'AGENT_NOT_AUTHORIZED',
+    requested_agent: OTHER_SCOPED_AGENT,
+  });
+  expect(remintCalls).toEqual([]);
   expect(upstreamCalls).toBe(0);
 });
 

@@ -69,6 +69,8 @@ let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> 
 let mockResolvedPreviewPorts: number[] = [];
 /** When set, every provider ingress resolution throws it. */
 let mockResolveIngressError: Error | null = null;
+/** Called on every ingress resolution; a fake clock uses it to make one slow. */
+let mockOnResolveIngress: (() => void) | null = null;
 let mockSnapshotSyncCalls: Array<Record<string, unknown>> = [];
 
 function mockSandboxRows(): any[] {
@@ -322,6 +324,7 @@ mock.module('../platform/providers', () => ({
         request: { port: number; path?: string; transport?: string },
       ) => {
         if (mockResolveIngressError) throw mockResolveIngressError;
+        mockOnResolveIngress?.();
         const route = routeIngress(request);
         mockResolvedPreviewPorts.push(route.effectivePort);
         return {
@@ -545,6 +548,7 @@ beforeEach(() => {
   mockDbUpdateCalls = [];
   mockResolvedPreviewPorts = [];
   mockResolveIngressError = null;
+  mockOnResolveIngress = null;
   mockSnapshotSyncCalls = [];
   mockTitleCalls = [];
   // The per-sandbox env-push memo (`PROMPT_ENV_PUSH_TTL_MS`) would otherwise
@@ -675,6 +679,7 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
   test.each([
     ['reports the standby port', { status: 200, body: '{"opencode_port":4097}' }, 4097],
     ['reports a port outside the pair', { status: 200, body: '{"opencode_port":3000}' }, 4096],
+    ['reports its own daemon port', { status: 200, body: '{"opencode_port":8000}' }, 4096],
     ['answers 500', { status: 500, body: 'boom' }, 4096],
     ['cannot be reached', { status: 0, body: '', error: new Error('ECONNREFUSED') }, 4096],
     ['is too old to report the field', { status: 200, body: '{"status":"ok"}' }, 4096],
@@ -847,24 +852,42 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0]?.body).toBe('{"name":"test"}');
   });
 
-  // `kortix sessions connect` / `opencode attach` reach opencode's HTTP API on
-  // 4096 through the proxy on either provider. Which effective port the
-  // provider picks is the provider's rule (platinum-private-ingress.test.ts).
+  // The route classifies a request by the port it DIALS (the route's
+  // `effectivePort`), never by the port the client addressed. Platinum serves
+  // opencode's 4096 through the daemon on 8000, so a `/file/import` addressed
+  // to 4096 there IS the daemon's import: an ambiguous failure is never
+  // replayed, or the box downloads the file twice. Daytona dials 4096 itself,
+  // where `/file/import` is an ordinary route and the same failure is retried.
   test.each([
-    ['platinum', 'platinum-oc-http'],
-    ['daytona', 'daytona-oc-http'],
-  ])('%s: opencode(4096) HTTP is forwarded to the resolved ingress', async (provider, sandbox) => {
-    mockDbSandbox = { ...mockDbSandbox, provider };
-    mockFetchResponses = [{ status: 200, body: '{"sessions":[]}' }];
-    const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/${sandbox}/4096/session`, {
-      headers: { Authorization: 'Bearer test' },
-    });
-    expect(res.status).toBe(200);
-    expect(mockFetchCalls.map((call) => call.url)).toEqual([
-      'https://preview.daytona.io/proxy-url/session',
-    ]);
-  });
+    ['platinum', 'platinum-oc-http', [8000], 1],
+    ['daytona', 'daytona-oc-http', [4096, 4096, 4096, 4096], 4],
+  ] as const)(
+    '%s: a /file/import addressed to 4096 is classified by the port the route dials',
+    async (provider, sandbox, dialledPorts, dials) => {
+      mockDbSandbox = { ...mockDbSandbox, provider };
+      const savedFetch = globalThis.fetch;
+      let calls = 0;
+      globalThis.fetch = (() => {
+        calls += 1;
+        return Promise.reject(new Error('socket hang up'));
+      }) as any;
+      const origSetTimeout = globalThis.setTimeout;
+      globalThis.setTimeout = ((fn: any) => fn()) as any;
+      try {
+        const res = await createProxyTestApp().request(`/v1/p/${sandbox}/4096/file/import`, {
+          method: 'POST',
+          headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: 'https://files.test/a.pdf' }),
+        });
+        expect(res.status).toBe(502);
+      } finally {
+        globalThis.setTimeout = origSetTimeout;
+        globalThis.fetch = savedFetch;
+      }
+      expect(mockResolvedPreviewPorts).toEqual([...dialledPorts]);
+      expect(calls).toBe(dials);
+    },
+  );
 
   test('syncs latest project secrets before forwarding prompt_async', async () => {
     mockFetchResponses = [
@@ -1450,6 +1473,91 @@ describe('Preview proxy: retry exhaustion', () => {
     expect(res.status).toBe(502);
     expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('daemon');
     expect(await res.json()).toMatchObject({ hop: 'daemon' });
+  });
+
+  // Literal ports, on Daytona (no 4096 → 8000 reroute). Both halves of the
+  // opencode pair carry the conversation, so a dead one is the runtime. 3211
+  // needs the session gate, but it serves static files only: a dead file
+  // listener is not "the sandbox is gone", and the SDK probe must not count it.
+  test.each([
+    [4096, 'daemon'],
+    [4097, 'daemon'],
+    [3211, 'upstream_port'],
+  ] as const)('a connection failure on port %p is attributed to %s', async (port, hop) => {
+    const savedFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.reject(new Error('Connection refused'))) as any;
+    const origSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: any) => fn()) as any;
+    try {
+      const res = await createProxyTestApp().request(`/v1/p/sandbox-retry-exhaust-${port}/${port}/`, {
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(502);
+      expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe(hop);
+      expect(await res.json()).toMatchObject({ port, hop });
+    } finally {
+      globalThis.setTimeout = origSetTimeout;
+      globalThis.fetch = savedFetch;
+    }
+  });
+
+  // The AWS ALB severs an idle connection at 60 s and answers with a bare 502.
+  // The loop must give its own answer first, even when every upstream hangs.
+  // A fake clock: each timer advances it by its delay and fires at once, so an
+  // attempt costs exactly its connect timeout (its abort fires before the dial)
+  // and a retry costs its delay.
+  describe('when every upstream hangs', () => {
+    async function hangingRun(path: string, method = 'GET', ingressMs = 0) {
+      const realNow = Date.now;
+      const realSetTimeout = globalThis.setTimeout;
+      const savedFetch = globalThis.fetch;
+      const start = realNow();
+      let now = start;
+      let dials = 0;
+      Date.now = () => now;
+      mockOnResolveIngress = () => {
+        now += ingressMs;
+      };
+      globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+        now += Number(ms ?? 0);
+        fn();
+        return 0;
+      }) as any;
+      globalThis.fetch = ((_url: unknown, init?: RequestInit) => {
+        dials += 1;
+        const signal = init?.signal;
+        if (signal?.aborted) return Promise.reject(signal.reason);
+        return new Promise((_, reject) => signal?.addEventListener('abort', () => reject(signal.reason)));
+      }) as any;
+      try {
+        const res = await createProxyTestApp().request(`/v1/p/sandbox-hang-${method}/${TEST_PORT}${path}`, {
+          method,
+          headers: { Authorization: 'Bearer test' },
+          ...(method === 'POST' ? { body: 'x' } : {}),
+        });
+        return { status: res.status, dials, elapsedMs: now - start };
+      } finally {
+        Date.now = realNow;
+        globalThis.setTimeout = realSetTimeout;
+        globalThis.fetch = savedFetch;
+      }
+    }
+
+    test('an ordinary request answers before the ALB idle cut, each attempt shrunk to the budget left', async () => {
+      const run = await hangingRun('/');
+      expect(run.status).toBe(502);
+      expect(run.dials).toBe(4);
+      expect(run.elapsedMs).toBeLessThan(60_000);
+    });
+
+    // Each ingress resolution takes 1 s. Three attempts end at 52.25 s, past
+    // the 50 s budget, so the loop answers instead of dialling a fourth time.
+    test('no attempt starts once the budget is spent', async () => {
+      const run = await hangingRun('/', 'GET', 1_000);
+      expect(run.status).toBe(502);
+      expect(run.dials).toBe(3);
+      expect(run.elapsedMs).toBeLessThan(60_000);
+    });
   });
 
   test('returns last 400 when all retries get sandbox-down (HTTP 400 path)', async () => {

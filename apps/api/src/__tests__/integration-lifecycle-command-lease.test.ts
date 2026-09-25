@@ -46,6 +46,8 @@ let project: SeededProject;
 const sessionId = crypto.randomUUID();
 /** A second session, so the re-arm cases count only their own parked rows. */
 const rearmSessionId = crypto.randomUUID();
+/** The session a create command made before its post-create step failed. */
+const createdSessionId = crypto.randomUUID();
 
 async function enqueue(label: string, forSession = sessionId): Promise<SessionLifecycleCommandRow> {
   const clientMessageId = `${label}-${crypto.randomUUID()}`;
@@ -61,6 +63,32 @@ async function enqueue(label: string, forSession = sessionId): Promise<SessionLi
     wireMessageId: `msg_${clientMessageId}`,
     parts: [{ type: 'text', text: 'hello' }],
   });
+  return row;
+}
+
+/** A `continue_session` row an AUTOMATION wrote: a trigger fire, no inbox
+ *  fields. Unlike an inbox prompt, its dead-letter parks the session. */
+async function enqueueAutomation(label: string): Promise<SessionLifecycleCommandRow> {
+  const { row } = await enqueueContinueSessionCommand({
+    source: 'trigger:cron',
+    projectId: project.project_id,
+    accountId: project.account_id,
+    sessionId,
+    actorUserId: null,
+    text: label,
+    triggerSlug: 'daily',
+    // The claim below selects by key.
+    idempotencyKey: `trigger:${sessionId}:${label}:${crypto.randomUUID()}`,
+  });
+  return row;
+}
+
+async function sessionRow(id: string) {
+  const [row] = rows(
+    await db.execute(
+      sql`select status, error from kortix.project_sessions where session_id = ${id}`,
+    ),
+  );
   return row;
 }
 
@@ -123,7 +151,9 @@ beforeAll(async () => {
       (${sessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid, ${sessionId},
        'default', 'running', '{}'::jsonb),
       (${rearmSessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,
-       ${rearmSessionId}, 'default', 'running', '{}'::jsonb)`);
+       ${rearmSessionId}, 'default', 'running', '{}'::jsonb),
+      (${createdSessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,
+       ${createdSessionId}, 'default', 'running', '{}'::jsonb)`);
 });
 
 afterAll(async () => {
@@ -322,8 +352,10 @@ describe('markCommandFailed decides retry or dead-letter', () => {
     ]);
   });
 
-  test('a retryable failure below the attempt cap requeues with a backoff and leaves the session alone', async () => {
-    const row = await enqueue('retry-below-cap');
+  // An automation prompt, because its dead-letter WOULD park the session: the
+  // untouched session proves the row was requeued, not dead-lettered.
+  test('a retryable failure below the attempt cap requeues after 2 s per attempt and leaves the session alone', async () => {
+    const row = await enqueueAutomation('retry-below-cap');
     const [held] = await claim(row, 'worker-retry');
     const before = Date.now();
 
@@ -334,29 +366,33 @@ describe('markCommandFailed decides retry or dead-letter', () => {
         sessionId,
       }),
     );
+    const afterCall = Date.now();
 
     const after = await read(row.commandId);
     expect(after.status).toBe('queued');
     expect(after.locked_by).toBeNull();
-    expect(ms(after.available_at)).toBeGreaterThan(before);
+    expect(ms(after.available_at)).toBeGreaterThanOrEqual(before + 4_000);
+    expect(ms(after.available_at)).toBeLessThanOrEqual(afterCall + 4_000);
     expect(logs).toEqual([]);
-    const [session] = rows(
-      await db.execute(
-        sql`select status from kortix.project_sessions where session_id = ${sessionId}`,
-      ),
-    );
-    expect(session?.status).toBe('running');
+    expect((await sessionRow(sessionId))?.status).toBe('running');
   });
 
-  test('a create dead-letter with no session writes no session row', async () => {
-    const countSessions = async () =>
-      Number(
-        rows(
-          await db.execute(sql`
-            select count(*)::int as n from kortix.project_sessions
-             where project_id = ${project.project_id}::uuid`),
-        )[0]?.n,
-      );
+  test('a retryable failure AT the attempt cap dead-letters, and pages', async () => {
+    const row = await enqueue('retry-at-cap');
+    const [held] = await claim(row, 'worker-cap');
+
+    const logs = await logLevels(() =>
+      markCommandFailed(held!, 'delivery outcome: pending', { retryable: true, attempts: 5 }),
+    );
+
+    expect((await read(row.commandId)).status).toBe('dead_lettered');
+    expect(logs.map((log) => log.level)).toEqual(['error']);
+  });
+
+  // A create whose post-create step failed dead-letters WITH the session it
+  // made (`drain.ts`, `create-session.ts`). Only a `continue_session`
+  // dead-letter parks a session; the session a create made stays usable.
+  test('a create dead-letter pages and leaves the session it created alone', async () => {
     const { row } = await claimCreateSessionCommand(
       {
         source: 'ui',
@@ -372,14 +408,26 @@ describe('markCommandFailed decides retry or dead-letter', () => {
       { initialStatus: 'queued' },
     );
     const [held] = await claim(row, 'worker-create-dl');
-    const sessionsBefore = await countSessions();
 
-    await logLevels(() =>
-      markCommandFailed(held!, 'Project not found', { retryable: false, attempts: 1 }),
+    const logs = await logLevels(() =>
+      markCommandFailed(held!, 'post-create action failed', {
+        retryable: true,
+        attempts: 5,
+        sessionId: createdSessionId,
+      }),
     );
 
     expect((await read(row.commandId)).status).toBe('dead_lettered');
-    expect(await countSessions()).toBe(sessionsBefore);
+    expect(await sessionRow(createdSessionId)).toEqual({ status: 'running', error: null });
+    expect(logs).toEqual([
+      {
+        level: 'error',
+        context: expect.objectContaining({
+          command_type: 'create_session',
+          session_id: createdSessionId,
+        }),
+      },
+    ]);
   });
 
   // Out of credits, an unentitled model, a forbidden workspace mode: the

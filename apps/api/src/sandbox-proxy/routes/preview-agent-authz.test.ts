@@ -172,8 +172,9 @@ afterAll(() => {
 });
 
 // The authorization decision itself (scoped out → 403 before the re-mint,
-// scoped in → re-mint and forward, the own-agent exemption) runs on the real
-// IAM engine in __tests__/integration-preview-agent-authz.test.ts.
+// scoped in → re-mint and forward, the gate checks the REQUESTED agent, the
+// own-agent exemption) runs on the real IAM engine in
+// __tests__/integration-preview-agent-authz.test.ts.
 test('an ordinary turn with no agent field pays for no authorization round-trip', async () => {
   const response = await prompt();
 

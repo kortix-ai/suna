@@ -106,16 +106,27 @@ describe('shouldAutoResumeStoppedSandbox', () => {
     ).toBe(false);
   });
 
-  test('a public share never resumes', () => {
-    expect(shouldAutoResumeStoppedSandbox('stopped', 8000, 'public_share')).toBe(false);
+  // Each row below is one that DOES resume for a principal on a stopped box
+  // (a POST on the daemon port, a page load on an app port). Only the access
+  // kind or the status differs, so the row fails when that guard goes.
+  const RESUMING_REQUESTS = [
+    [8000, { method: 'POST' }],
+    [3000, { browserNavigation: true }],
+  ] as const;
+
+  test.each(RESUMING_REQUESTS)('a public share never resumes (port %p)', (port, opts) => {
+    expect(shouldAutoResumeStoppedSandbox('stopped', port, 'principal', opts)).toBe(true);
+    expect(shouldAutoResumeStoppedSandbox('stopped', port, 'public_share', opts)).toBe(false);
   });
 
-  test('only a STOPPED record is a resume candidate (error/archived/active are not)', () => {
-    expect(shouldAutoResumeStoppedSandbox('error', 8000, 'principal')).toBe(false);
-    expect(shouldAutoResumeStoppedSandbox('archived', 8000, 'principal')).toBe(false);
-    expect(shouldAutoResumeStoppedSandbox('active', 8000, 'principal')).toBe(false);
-    expect(shouldAutoResumeStoppedSandbox('provisioning', 8000, 'principal')).toBe(false);
-  });
+  test.each(['error', 'archived', 'active', 'provisioning'])(
+    'only a STOPPED record is a resume candidate: %s is not',
+    (status) => {
+      for (const [port, opts] of RESUMING_REQUESTS) {
+        expect(shouldAutoResumeStoppedSandbox(status, port, 'principal', opts)).toBe(false);
+      }
+    },
+  );
 });
 
 // The 504 LONG_TURN_PROXY_TIMEOUT answer itself (code, no-store, the way out)

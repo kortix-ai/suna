@@ -152,14 +152,24 @@ describe('canAccessPreviewSandbox', () => {
 
   // An account API key carries an account, not a user. It reaches exactly the
   // sandboxes of that account: there is no platform-admin bypass on this path.
+  // A sandbox that resolves to no row is refused, even for a real account.
   test.each([
-    { whose: 'the owning account', accountId: OWNER_ACCOUNT, allowed: true },
-    { whose: 'another account', accountId: OTHER_ACCOUNT, allowed: false },
-    { whose: "a platform admin's account", accountId: ADMIN_ACCOUNT, allowed: false },
-  ])('an account key of $whose: $allowed', async ({ accountId, allowed }) => {
-    expect(await canAccessPreviewSandbox({ previewSandboxId: EXTERNAL_ID, accountId })).toBe(
-      allowed,
-    );
+    { whose: 'the owning account', accountId: OWNER_ACCOUNT, sandbox: EXTERNAL_ID, allowed: true },
+    { whose: 'another account', accountId: OTHER_ACCOUNT, sandbox: EXTERNAL_ID, allowed: false },
+    {
+      whose: "a platform admin's account",
+      accountId: ADMIN_ACCOUNT,
+      sandbox: EXTERNAL_ID,
+      allowed: false,
+    },
+    {
+      whose: 'the owning account, on an unknown sandbox',
+      accountId: OWNER_ACCOUNT,
+      sandbox: `sbx_unknown_${run}`,
+      allowed: false,
+    },
+  ])('an account key of $whose: $allowed', async ({ accountId, sandbox, allowed }) => {
+    expect(await canAccessPreviewSandbox({ previewSandboxId: sandbox, accountId })).toBe(allowed);
   });
 
   test('a caller with neither a user nor an account is refused', async () => {

@@ -46,6 +46,7 @@ import {
 } from '../projects/session-lifecycle/store';
 import type { CommandLease } from '../projects/session-lifecycle/command-lease';
 import { db } from '../shared/db';
+import { logger } from '../lib/logger';
 import { promptState } from '../projects/lib/session-prompt-view';
 
 const SANDBOX_ID = crypto.randomUUID();
@@ -1284,13 +1285,34 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     // sessions, so the next fire of a `session_mode: "reuse"` trigger creates a
     // fresh one instead of re-aiming at a wedged session.
     const automation = await enqueueAutomationPrompt('trigger prompt');
-    await markCommandFailed(await hold(automation), 'delivery outcome: failed', {
-      retryable: false,
-      attempts: 5,
-      sessionId: SESSION_ID,
-    });
+    const paged: Array<Record<string, unknown>> = [];
+    const { error } = logger;
+    logger.error = (message: string, context?: Record<string, unknown>) => {
+      if (message.includes('dead-lettered')) paged.push(context ?? {});
+    };
+    try {
+      await markCommandFailed(await hold(automation), 'delivery outcome: failed', {
+        retryable: false,
+        attempts: 5,
+        sessionId: SESSION_ID,
+      });
+    } finally {
+      logger.error = error;
+    }
 
     expect(await sessionStatus()).toBe('failed');
+    // The page names the trigger and where it fired, so the operator can find
+    // the schedule without reading the command row.
+    expect(paged).toEqual([
+      expect.objectContaining({
+        command_id: automation.commandId,
+        trigger_slug: 'daily-digest',
+        session_id: SESSION_ID,
+        project_id: PROJECT_ID,
+        attempts: 5,
+        error: 'delivery outcome: failed',
+      }),
+    ]);
     // The triggers API reads the dead-letter from the runtime row; left alone
     // it would show the last fire frozen at `queued`.
     expect(await triggerRuntimeRows()).toEqual([
@@ -1350,7 +1372,8 @@ test('a retry claim resets delivery evidence and stays waiting until admitted', 
 // One predicate names the row a wire id belongs to (`wireMessageIdMatches`).
 // A row carries its ids in four places: the client id, the latest and every
 // re-minted id, and the id the delivery actually used. Each reader must find
-// the row by any of them.
+// the row by any of them. The fourth reader, the strand repair's
+// `requeueStranded`, is proven in integration-forwarded-strand-reconcile.
 describe('every reader finds a row by any id it went out under', () => {
   async function forwardedUnder(clientMessageId: string, sentUnder: string) {
     const row = await enqueue(clientMessageId);
