@@ -60,6 +60,20 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     Retired queries never retry or poll.
 
 ### Fixed
+- `BillingError` (402) and `RequestTooLargeError` (431) now extend `ApiError`.
+  `err instanceof ApiError` matches every failed request, and a 402 keeps the
+  backend's machine `code` (for example `app_budget_exceeded`), `details` and
+  `response`. `instanceof BillingError` and `.detail` are unchanged.
+- `backendApi`, `backendApi.postStream` and `authenticatedFetch` now send
+  through one module (`core/http/transport.ts`) and share one policy:
+  - `authenticatedFetch` (the session runtime, files, PTY) now carries the
+    act-as (`X-Kortix-Impersonate`) and admin read-bypass headers, as
+    `backendApi` always did;
+  - `backendApi` requests now replay a `401` once with a fresh token from
+    `getToken()`, as `authenticatedFetch` did;
+  - `backendApi.postStream` now honors `configureKortix({ fetch })`, and
+    without a token it resolves a `401` without sending an unauthenticated
+    request.
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
   `ReferenceError` in a browser `<script>` bundle and on React Native.
 - The HTTP layer (`backendApi`/`makeRequest`) now transparently retries transient
