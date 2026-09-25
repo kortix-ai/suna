@@ -7,12 +7,13 @@ import { useTranslations } from 'next-intl';
 import {
   type AccountSecretResource, getProjectDetail,
 } from '@kortix/sdk';
-import { useAccountSecretResources, useProjectSession, useSessionProviderSecretPools } from '@kortix/sdk/react';
+import { useAccountSecretResources, useModelAccess, useProjectSession, useSessionProviderSecretPools } from '@kortix/sdk/react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import Loading from '@/components/ui/loading';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { keysForSession, normalizePoolSelection, type ProviderPoolDrafts, sessionPersonalUser } from './provider-pool-draft';
@@ -26,6 +27,35 @@ function useResources(projectId: string) {
 
 function usableKeys(resources: AccountSecretResource[] = []) {
   return resources.filter((secret) => secret.consumer === 'llm_gateway' && secret.provider_id && secret.can_use && secret.active);
+}
+
+/** ChatGPT accounts are managed in place: a member cannot open Customize, and a
+ *  link there would be a dead end. Hidden when ChatGPT is disabled for the project. */
+function ChatGptAccountsButton({ projectId, variant, action, disabled }: {
+  projectId: string; variant: 'secondary' | 'outline-ghost'; action: 'connect' | 'manage'; disabled?: boolean;
+}) {
+  const t = useTranslations('pooledSecrets');
+  const [open, setOpen] = useState(false);
+  const access = useModelAccess(projectId);
+  if ((access.data?.disabledProviders ?? []).includes('codex')) return null;
+  return <>
+    <Button size="sm" variant={variant} disabled={disabled} onClick={() => setOpen(true)}>
+      {t(action === 'connect' ? 'connectChatGpt' : 'manageChatGptAccounts')}
+    </Button>
+    <ChatGptAccountsDialog projectId={projectId} open={open} onOpenChange={setOpen} />
+  </>;
+}
+
+/** A shared session never uses a member's own ChatGPT account, so it gets the
+ *  reason instead of a connect button that could not help it. */
+function NoPoolKeys({ projectId, shared = false }: { projectId: string; shared?: boolean }) {
+  const t = useTranslations('pooledSecrets');
+  return <div className="space-y-2"><p className="text-muted-foreground text-xs">{t('addSharedKey')}</p>
+    {shared && <p className="text-muted-foreground text-xs">{t('sharedSessionKeys')}</p>}
+    <div className="flex flex-wrap items-center gap-2">
+      {!shared && <ChatGptAccountsButton projectId={projectId} variant="secondary" action="connect" />}
+      <Button size="sm" variant={shared ? 'secondary' : 'outline-ghost'} asChild><Link href={`/projects/${projectId}/customize/models`}>{t('manageKeys')}</Link></Button>
+    </div></div>;
 }
 
 function PoolChoices({ projectId, providers, providerId, onProviderChange, keys, selected, configured, disabled, readOnly, personalKeys = true, onChange, onReset }: {
@@ -67,9 +97,11 @@ function PoolChoices({ projectId, providers, providerId, onProviderChange, keys,
     {selected.length >= 10 && <p className="text-muted-foreground text-xs" role="status">{t('selectionLimit')}</p>}
     <div className="flex flex-wrap items-center gap-2">
       {configured && !readOnly && <Button size="sm" variant="secondary" disabled={disabled} onClick={onReset}>{t(personalChatGpt ? 'resetPersonalChatGptDefault' : 'resetDefault')}</Button>}
-      {disabled
-        ? <Button size="sm" variant="outline-ghost" disabled>{t('manageKeys')}</Button>
-        : <Button size="sm" variant="outline-ghost" asChild><Link href={`/projects/${projectId}/customize/models`}>{t('manageKeys')}</Link></Button>}
+      {providerId === 'codex'
+        ? <ChatGptAccountsButton projectId={projectId} variant="outline-ghost" action="manage" disabled={disabled} />
+        : disabled
+          ? <Button size="sm" variant="outline-ghost" disabled>{t('manageKeys')}</Button>
+          : <Button size="sm" variant="outline-ghost" asChild><Link href={`/projects/${projectId}/customize/models`}>{t('manageKeys')}</Link></Button>}
     </div>
   </>;
 }
@@ -102,9 +134,7 @@ export function ProviderSecretPoolEditor({ projectId, sessionId, drafts, onChang
   if (project.isError || resources.isError || pools.isError) return <ErrorState size="sm" title={t('keysLoadError')}
     action={<Button size="sm" variant="secondary" disabled={project.isFetching || resources.isFetching || pools.isFetching}
       onClick={() => { void project.refetch(); void resources.refetch(); void pools.refetch(); }}>{common('retry')}</Button>} />;
-  if (!providers.length) return <div className="space-y-2"><p className="text-muted-foreground text-xs">{t('addSharedKey')}</p>
-    {shared && <p className="text-muted-foreground text-xs">{t('sharedSessionKeys')}</p>}
-    <Button size="sm" variant="secondary" asChild><Link href={`/projects/${projectId}/customize/models`}>{t('manageKeys')}</Link></Button></div>;
+  if (!providers.length) return <NoPoolKeys projectId={projectId} shared={shared} />;
   return <div className="space-y-3">
     <PoolChoices projectId={projectId} providers={providers} providerId={activeProvider} onProviderChange={setProviderId}
       keys={keys} selected={selected} configured={configured} disabled={saving} readOnly={!pools.data?.can_edit}
@@ -128,8 +158,7 @@ export function NewProviderSecretPoolEditor({ projectId, selection, onChange }: 
   if (project.isLoading || resources.isLoading) return <div role="status" aria-label={t('loadingKeys')}><Loading /></div>;
   if (project.isError || resources.isError) return <ErrorState size="sm" title={t('keysLoadError')}
     action={<Button size="sm" variant="secondary" onClick={() => { void project.refetch(); void resources.refetch(); }}>{common('retry')}</Button>} />;
-  if (!providers.length) return <div className="space-y-2"><p className="text-muted-foreground text-xs">{t('addSharedKey')}</p>
-    <Button size="sm" variant="secondary" asChild><Link href={`/projects/${projectId}/customize/models`}>{t('manageKeys')}</Link></Button></div>;
+  if (!providers.length) return <NoPoolKeys projectId={projectId} />;
   return <div className="space-y-3">
     <PoolChoices projectId={projectId} providers={providers} providerId={activeProvider} onProviderChange={setProviderId}
       keys={usable.filter((secret) => secret.provider_id === activeProvider)} selected={selection[activeProvider] ?? []}
