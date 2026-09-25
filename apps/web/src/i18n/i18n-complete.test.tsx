@@ -3,6 +3,7 @@ import { faq } from '@/features/marketing/faq/content';
 import { openSource } from '@/features/marketing/open-source/content';
 import { localizedSlashActions } from '@/features/session/composer/menus/slash-actions';
 import { getProviderGuide, getScimGuide } from '@/features/sso-setup/guides';
+import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { createTranslator } from 'next-intl';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -154,5 +155,29 @@ describe('complete UI localization', () => {
       }
     }
     expect(referenced).toBeGreaterThan(1000);
+  });
+
+  // Settings -> Feature flags renders every registry row through
+  // `t('flags.<key>.name')` / `t('flags.<key>.description')`
+  // (features/workspace/settings/tabs/experimental-tab.tsx). A flag added to
+  // FEATURE_FLAG_KEYS without its two catalog entries still renders — as the
+  // raw key id. Verified on a real stack 2026-09-24: the `config_releases` row
+  // read "settings.featureFlags.flags.config_releases.name". The registry
+  // header names six registration sites; the catalog is the seventh, and it is
+  // the only one a user reads.
+  test('names and describes every feature flag in every locale', () => {
+    for (const [locale, catalog] of Object.entries(localeCatalogs)) {
+      const flags = (catalog as typeof en).settings.featureFlags.flags as Record<
+        string,
+        { name?: string; description?: string }
+      >;
+      for (const key of FEATURE_FLAG_KEYS) {
+        expect(flags[key]?.name?.trim() ?? '', `${locale}:flags.${key}.name`).not.toBe('');
+        expect(
+          flags[key]?.description?.trim() ?? '',
+          `${locale}:flags.${key}.description`,
+        ).not.toBe('');
+      }
+    }
   });
 });

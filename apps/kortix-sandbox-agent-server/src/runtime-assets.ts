@@ -17,6 +17,7 @@ import type {
   HarnessAssetsService,
 } from './harness/assets'
 import { logger } from './logger'
+import { withReleaseStoreLock } from './boot-config'
 
 /**
  * What the convergence pass is doing RIGHT NOW, for the proxy's not-ready
@@ -717,7 +718,20 @@ export async function reconcileRuntimeAssets(
           )
           skills = 'failed'
         } else {
-          await writeOverlay(skillsDir, payload.files)
+          // Rewrite the overlay and re-apply it to the live config dir in ONE
+          // section of the release-store lock: a release verification that
+          // saw the new overlay names without the injected files, or the
+          // injected files without the names, reported an added file and
+          // rebuilt the running release (DEF-5). The boot-time injection
+          // already ran, so nothing else would pick the new bodies up.
+          await withReleaseStoreLock(async () => {
+            await writeOverlay(skillsDir, payload.files)
+            if (options.configDir) {
+              await inject(options.configDir, skillsDir).catch((err) =>
+                logger.warn('[runtime-assets] overlay re-injection failed', { err: String(err) }),
+              )
+            }
+          })
           nextState.managed_skills_hash = skillsHash
           skills = 'updated'
           logger.info('[runtime-assets] managed-skill overlay updated from the API', {
@@ -730,14 +744,6 @@ export async function reconcileRuntimeAssets(
   } catch (err) {
     logger.warn('[runtime-assets] managed-skill reconcile failed', { err: String(err) })
     skills = 'failed'
-  }
-
-  // Re-apply the overlay into the live config dir whenever the bodies changed —
-  // the boot-time injection already ran, so nothing else would pick this up.
-  if (skills === 'updated' && options.configDir) {
-    await inject(options.configDir, skillsDir).catch((err) =>
-      logger.warn('[runtime-assets] overlay re-injection failed', { err: String(err) }),
-    )
   }
 
   // ── Agent — STAGE ONLY ─────────────────────────────────────────────────────

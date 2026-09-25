@@ -9,6 +9,8 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 
+import { restoreQueued } from '@/lib/session/queue-undo';
+
 const QUEUE_STORAGE_KEY = 'kortix_message_queue_v1';
 
 // ---------------------------------------------------------------------------
@@ -50,6 +52,9 @@ interface MessageQueueState {
 
   /** Clear all messages for a session */
   clearSession: (sessionId: string) => void;
+
+  /** Undo a remove or clear: put `removedIds` back where they were in `snapshot`. */
+  restore: (snapshot: QueuedMessage[], removedIds: string[]) => void;
 
   /**
    * Sign-out: drop every queued message from memory. Storage is cleared by
@@ -206,6 +211,14 @@ export const useMessageQueueStore = create<MessageQueueState>()((set, get) => ({
       const next = state.messages.filter(
         (m) => m.sessionId !== sessionId,
       );
+      persistMessages(next);
+      return { messages: next };
+    });
+  },
+
+  restore: (snapshot, removedIds) => {
+    set((state) => {
+      const next = restoreQueued(state.messages, snapshot, removedIds);
       persistMessages(next);
       return { messages: next };
     });

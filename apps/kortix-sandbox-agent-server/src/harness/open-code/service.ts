@@ -53,11 +53,10 @@ export interface OpenCodeHarnessService extends HarnessService {
 /** Compose services over ONE lifecycle without changing startup behavior. */
 export function createOpenCodeHarnessService(
   cfg: Config,
-  opencodeConfigDir: string,
   projectEnv?: ProjectEnvStore,
   options: OpencodeLifecycleOptions = {},
 ): OpenCodeHarnessService {
-  const lifecycle = createOpencodeLifecycle(cfg, opencodeConfigDir, projectEnv, options)
+  const lifecycle = createOpencodeLifecycle(cfg, projectEnv, options)
   // One interrupt per service: control arms it, background delivers events to it.
   const quickQueue = createOpenCodeQuickQueueInterrupt(lifecycle, cfg)
   const instanceGuard = createInstanceGuard({
@@ -115,7 +114,7 @@ export const openCodeDefinition: HarnessDefinition = {
   },
   createService: (cfg, projectEnv, options) => {
     const native = requireOpenCodeConfig(cfg)
-    return createOpenCodeHarnessService(native, native.defaultOpencodeConfigDir, projectEnv, options)
+    return createOpenCodeHarnessService(native, projectEnv, options)
   },
   run: async (context) => (await import('./boot')).runOpenCode({ ...context, cfg: requireOpenCodeConfig(context.cfg) }),
   runWarmSeed: async (context) => (await import('./boot')).runOpenCodeWarmSeed({ ...context, cfg: requireOpenCodeConfig(context.cfg) }),

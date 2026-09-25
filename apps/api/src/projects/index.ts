@@ -65,6 +65,7 @@ import './routes/resource-grants';
 import './routes/session-scope';
 import './routes/provider-secret-pools';
 import './routes/session-config';
+import '../config-releases/routes';
 import './routes/public-shares';
 import './routes/session-runtime';
 import './routes/session-prompts';
