@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { WIRE_MESSAGE_ID, mintWireMessageId } from '../projects/wire-message-id';
+import { WIRE_MESSAGE_ID } from '../projects/wire-message-id';
 import {
   isPromptWireIdRepairPath,
   promptTranscriptReadPath,
