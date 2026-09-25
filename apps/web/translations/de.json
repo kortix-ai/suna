@@ -19193,6 +19193,11 @@
       "expired": "Dieser Installationslink ist ungültig oder abgelaufen. Starte die Installation im Projekt erneut.",
       "failed": "Die Installation konnte nicht abgeschlossen werden. Starte sie im Projekt erneut.",
       "backToProject": "Zurück zum Projekt"
+    },
+    "secretIntakeWithheld": {
+      "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
+      "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
+      "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
     }
   },
   "projectOnboarding": {
@@ -19307,7 +19312,17 @@
   },
   "commandPalette": {
     "title": "Befehlspalette",
-    "description": "Nach einem auszuführenden Befehl suchen..."
+    "description": "Nach einem auszuführenden Befehl suchen...",
+    "copyTitle": "Kopieren",
+    "copyEmail": "E-Mail",
+    "copyUserId": "Benutzer-ID",
+    "copyAccountId": "Konto-ID",
+    "copyProjectId": "Projekt-ID",
+    "copySessionId": "Sitzungs-ID",
+    "copySessionLink": "Sitzungslink",
+    "copyAction": "{label} kopieren",
+    "copied": "{label} kopiert",
+    "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
   },
   "personalWelcome": {
     "dismiss": "Schließen",

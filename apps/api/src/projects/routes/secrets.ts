@@ -85,6 +85,12 @@ projectsApp.openapi(
             manifest_status: z.enum(['loaded', 'missing', 'error']),
             manifest_path: z.string(),
             manifest_error: z.string().optional(),
+            agent_scope: z
+              .object({
+                agent: z.string(),
+                secrets: z.union([z.literal('all'), z.array(z.string())]),
+              })
+              .nullable(),
           }),
           'Secret configuration metadata',
         ),
@@ -160,6 +166,12 @@ projectsApp.openapi(
     manifest_status: manifestStatus,
     manifest_path: loaded.row.manifestPath,
     ...(manifestError ? { manifest_error: manifestError } : {}),
+    // The caller's OWN secrets grant (null for a non-agent caller). `items` is
+    // filtered by it, and without saying so a client could only report a
+    // declared-but-filtered name as "missing" — the agent then tells the human
+    // a saved secret is unset. This is the caller's own policy, not a list of
+    // what exists, so it widens nothing an agent can enumerate.
+    agent_scope: agentGrant ? { agent: agentGrant.agent, secrets: agentGrant.env ?? 'all' } : null,
   });
 },
 );
@@ -833,7 +845,13 @@ projectsApp.openapi(
     // That is the re-mint half of the policy-widening exfil chain, so an agent
     // session must not trigger it. Mirror the PUT /strategy guard.
     if (isProjectSessionPrincipal(c)) {
-      return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
+      // `agent_human_only_action` makes the CLI say "a human must do this"
+      // instead of pointing the agent at a kortix_permissions edit that cannot
+      // unlock it.
+      return c.json(
+        { error: 'Agent sessions cannot change secret delivery policy', code: 'agent_human_only_action' },
+        403,
+      );
     }
     const result = await propagateProjectSecretsToActiveSandboxes(projectId);
     return c.json(result);

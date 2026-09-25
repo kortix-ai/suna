@@ -53,6 +53,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   SidebarContext,
   SidebarMenu,
@@ -166,11 +167,12 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
                 )}
               >
-                {/* Nothing, not a skeleton. The tile's initial and the label
-                    both come from the name, so a placeholder would paint a
-                    shape that swaps content the moment the query lands. The
-                    control keeps its size either way — the row is a fixed
-                    `h-8` — so the empty state is a quiet gap, not a jump. */}
+                {/* Until the project resolves, a tile-shaped and a
+                    name-shaped skeleton hold the row. The empty gap this
+                    replaced left the caret alone in the corner on every hard
+                    refresh, which read as a broken control rather than a
+                    loading one. Both shapes match the loaded row (`size-6`
+                    tile, one line of text), so nothing shifts when it lands. */}
                 {/* `glyph` BEFORE `emoji` below, matching EntityAvatar's own
                     precedence. Both are required: a project's icon is a union —
                     an emoji XOR a named glyph — so passing only `emoji` renders
@@ -180,17 +182,25 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                     sidebar is where a person looks at their workspace all day,
                     so that gap read as "I picked an icon and nothing changed". */}
                 {project ? (
-                  <EntityAvatar
-                    label={project.name}
-                    glyph={project.icon_glyph}
-                    emoji={project.icon}
-                    size="sm"
-                  />
-                ) : null}
-
-                <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-medium tracking-tight group-data-[collapsible=icon]:hidden">
-                  {project?.name ?? null}
-                </span>
+                  <>
+                    <EntityAvatar
+                      label={project.name}
+                      glyph={project.icon_glyph}
+                      emoji={project.icon}
+                      size="sm"
+                    />
+                    <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-medium tracking-tight group-data-[collapsible=icon]:hidden">
+                      {project.name}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Skeleton className="size-6 shrink-0 rounded-sm py-0" />
+                    <span className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+                      <Skeleton className="h-3 w-24 py-0" />
+                    </span>
+                  </>
+                )}
 
                 <CaretUpDownIcon className="text-muted-foreground/50 group-hover/workspace:text-muted-foreground size-3.5 shrink-0 group-data-[collapsible=icon]:hidden" />
               </SidebarMenuButton>
