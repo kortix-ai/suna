@@ -239,8 +239,13 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   SUPABASE_SERVICE_ROLE_KEY: ['supabase-kong', 'supabase-realtime', 'supabase-storage', 'supabase-meta', 'supabase-functions', 'kortix-api'],
   DASHBOARD_USERNAME: ['supabase-kong'],
   DASHBOARD_PASSWORD: ['supabase-kong'],
-  S3_PROTOCOL_ACCESS_KEY_ID: ['supabase-storage'],
-  S3_PROTOCOL_ACCESS_KEY_SECRET: ['supabase-storage'],
+  // `kortix-api` too: the API's object store writes config archives through
+  // Supabase Storage's S3 protocol endpoint with this pair
+  // (assets/kortix-compose.yml, KORTIX_CONFIG_ARCHIVE_S3_*). A rotation that
+  // restarted only `supabase-storage` would leave the API signing with the
+  // old pair.
+  S3_PROTOCOL_ACCESS_KEY_ID: ['supabase-storage', 'kortix-api'],
+  S3_PROTOCOL_ACCESS_KEY_SECRET: ['supabase-storage', 'kortix-api'],
   SECRET_KEY_BASE: ['supabase-realtime', 'supabase-supavisor'],
   REALTIME_DB_ENC_KEY: ['supabase-realtime'],
   VAULT_ENC_KEY: ['supabase-supavisor'],

@@ -6,7 +6,7 @@ import {
   isNonIdempotentSessionWrite,
   promptDeliveryKey,
   releasePromptDelivery,
-  shouldClaimPromptDelivery,
+  deliveryKeyIdentifiesOneSubmission,
 } from './prompt-dedupe';
 
 beforeEach(() => __resetPromptDedupe());
@@ -292,10 +292,34 @@ describe('isNonIdempotentSessionWrite', () => {
 });
 
 // ── Claiming is a stronger guarantee than not-retrying ─────────────────────
-describe('shouldClaimPromptDelivery', () => {
-  test('prompts always claim — their bodies differ between submissions', () => {
-    expect(shouldClaimPromptDelivery('/session/abc/message', false)).toBe(true);
-    expect(shouldClaimPromptDelivery('/session/abc/prompt_async', false)).toBe(true);
+describe('deliveryKeyIdentifiesOneSubmission — only an identity may claim', () => {
+  const keyFor = (body: string, idempotencyKey: string | null = null) =>
+    promptDeliveryKey({
+      idempotencyKey,
+      sandboxId: 's',
+      sessionId: 'x',
+      body: new TextEncoder().encode(body).buffer,
+    });
+
+  test("a caller's Idempotency-Key claims — it names one logical submission", () => {
+    expect(deliveryKeyIdentifiesOneSubmission(keyFor('{"command":"webapp"}', 'k-1'))).toBe(true);
+    expect(deliveryKeyIdentifiesOneSubmission(keyFor('{"providerID":"a"}', 'k-2'))).toBe(true);
+  });
+
+  test("a prompt body's wire messageID claims — the web mints one per send", () => {
+    const key = keyFor('{"messageID":"msg_1","parts":[{"type":"text","text":"hi"}]}');
+    expect(key.startsWith('msgid:')).toBe(true);
+    expect(deliveryKeyIdentifiesOneSubmission(key)).toBe(true);
+  });
+
+  test('a PROMPT with neither does NOT claim — DEF-FLAGON-1', () => {
+    // `kortix sessions chat` posts `{parts:[{type:'text',text}]}` with no
+    // Idempotency-Key and no messageID, so two deliberate sends of one sentence
+    // hash to one key. Measured on a real Platinum box 2026-09-25: the second
+    // was answered `200 {"deduplicated":true}`, no user row, no assistant row.
+    const key = keyFor('{"parts":[{"type":"text","text":"Answer with the marker."}]}');
+    expect(key.startsWith('hash:')).toBe(true);
+    expect(deliveryKeyIdentifiesOneSubmission(key)).toBe(false);
   });
 
   test('a command with no Idempotency-Key does NOT claim', () => {
@@ -304,26 +328,21 @@ describe('shouldClaimPromptDelivery', () => {
     // `200 {"deduplicated":true}` and never runs it — silent loss, in exactly
     // the case where the user is re-sending something that looked like it
     // failed.
-    expect(shouldClaimPromptDelivery('/session/abc/command', false)).toBe(false);
-    expect(shouldClaimPromptDelivery('/session/abc/command?x=1', false)).toBe(false);
-  });
-
-  test('a command WITH an Idempotency-Key claims — the CLI mints one per prompt', () => {
-    expect(shouldClaimPromptDelivery('/session/abc/command', true)).toBe(true);
-  });
-
-  test('a lookalike path is treated as a prompt, not a command', () => {
-    expect(shouldClaimPromptDelivery('/session/abc/commands', false)).toBe(true);
+    expect(deliveryKeyIdentifiesOneSubmission(keyFor('{"command":"webapp","arguments":"x"}'))).toBe(
+      false,
+    );
   });
 
   test('a summarize with no Idempotency-Key does NOT claim — its body is byte-identical between deliberate retries', () => {
     // `{providerID,modelID}` is the whole summarize body: a user re-running
-    // /compact after a failure sends identical bytes. A blanket claim would
-    // answer the retry `200 {"deduplicated":true}` and never run it — the
-    // same silent-loss trap as commands.
-    expect(shouldClaimPromptDelivery('/session/abc/summarize', false)).toBe(false);
-    expect(shouldClaimPromptDelivery('/session/abc/summarize?x=1', false)).toBe(false);
-    expect(shouldClaimPromptDelivery('/session/abc/summarize', true)).toBe(true);
+    // /compact after a failure sends identical bytes.
+    expect(deliveryKeyIdentifiesOneSubmission(keyFor('{"providerID":"a","modelID":"b"}'))).toBe(
+      false,
+    );
+  });
+
+  test('an empty body is a hash key and never claims', () => {
+    expect(deliveryKeyIdentifiesOneSubmission(keyFor(''))).toBe(false);
   });
 });
 

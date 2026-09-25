@@ -61,6 +61,14 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
+mock.module('../../projects/lib/turn-start-convergence', () => ({
+  // The C9 turn-start convergence gate reads the session's project row before
+  // every prompt. There is no database in this file, so each call waits out the
+  // driver's connect timeout — 5 s per prompt, which times these cases out.
+  // This suite is about delivery dedupe and wire-id placement, so the gate is
+  // stubbed to its no-op answer.
+  convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+}));
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
@@ -179,6 +187,56 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
     expect(fetchCalls).toBe(1);
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
+    expect(await second.json()).toEqual({ status: 'duplicate', deduplicated: true });
+  });
+
+  // DEF-FLAGON-1. The SDK's `send()` posts `{parts}` to `/session/:id/message`
+  // with no Idempotency-Key and no wire `messageID`, so `promptDeliveryKey`
+  // falls to its content hash. Two deliberate sends of one sentence hash the
+  // same. The proxy once answered the second with `{status:'duplicate'}`: no
+  // turn ran, and the CLI crashed on a body with no `parts`.
+  test('the same sentence sent twice with no client identity reaches the sandbox twice', async () => {
+    const args = [
+      'sb-1',
+      8000,
+      principal,
+      'POST',
+      '/session/sess-1/message',
+      '',
+      jsonHeaders(),
+      PROMPT_BODY,
+      'http://app.local',
+    ] as const;
+    queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
+    expect((await forwardToSandbox(...args)).status).toBe(200);
+    expect(fetchCalls).toBe(1);
+
+    queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
+    const second = await forwardToSandbox(...args);
+    expect(fetchCalls).toBe(1);
+    expect(second.status).toBe(200);
+    expect(await second.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+  });
+
+  test('a resend that carries the same wire messageID still dedupes', async () => {
+    const args = [
+      'sb-1',
+      8000,
+      principal,
+      'POST',
+      '/session/sess-1/message',
+      '',
+      jsonHeaders(),
+      bodyOf({ messageID: 'msg_abc', parts: [{ type: 'text', text: 'hi' }] }),
+      'http://app.local',
+    ] as const;
+    // One delivery costs two upstream calls: the wire-id placement read
+    // (`promptTranscriptReadPath`), then the prompt.
+    queueFetch(new Response('[]', { status: 200 }), new Response('{"info":{},"parts":[]}', { status: 200 }));
+    expect((await forwardToSandbox(...args)).status).toBe(200);
+    expect(fetchCalls).toBe(2);
+    const second = await forwardToSandbox(...args);
+    expect(fetchCalls).toBe(2);
     expect(await second.json()).toEqual({ status: 'duplicate', deduplicated: true });
   });
 });
