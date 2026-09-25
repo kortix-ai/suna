@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import {
   PROXY_ATTEMPT_TIMEOUT_MS,
   PROXY_RETRY_BUDGET_MS,
-  PROXY_RETRY_DELAYS_MS,
   isFileImportRequest,
   isLongTurnCompletionRequest,
   proxyAttemptTimeoutMs,
@@ -128,13 +127,6 @@ describe('proxyAttemptTimeoutMs', () => {
     expect(proxyAttemptTimeoutMs(200, { method, path })).toBe(1_000);
   });
 
-  // The AWS ALB severs an idle connection at 60s. The retry loop starts an
-  // attempt only while budget remains, the attempt is bounded by what remains
-  // (or the floor), and one retry delay can follow it. That worst case must end
-  // before the ALB answers with a bare 502 in place of the proxy's own page.
-  test('the whole retry loop ends before the 60s ALB idle cut', () => {
-    const worstCaseMs =
-      PROXY_RETRY_BUDGET_MS + proxyAttemptTimeoutMs(0) + Math.max(...PROXY_RETRY_DELAYS_MS);
-    expect(worstCaseMs).toBeLessThan(60_000);
-  });
+  // The 60 s ALB idle cut is proven on the route, on a fake clock against a
+  // hanging upstream: e2e-preview-proxy "when every upstream hangs".
 });
