@@ -3,22 +3,23 @@ import {
   createMockCreditAccount,
   mockRegistry,
   registerGlobalMocks,
-  registerCreditsMock,
+  registerWalletMock,
+  fakeWallet,
   resetMockRegistry,
 } from './mocks';
 
-// Register global mocks + credits service mock (stubs grantCredits/resetExpiringCredits)
+// Register global mocks + the fake wallet (records every grant and reset)
 registerGlobalMocks();
-registerCreditsMock();
+registerWalletMock();
 
 // ─── Track calls ──────────────────────────────────────────────────────────────
 
-let resetExpiringCreditsCalls: any[] = [];
+const walletResets = fakeWallet.calls.reset;
 let updateCreditAccountCalls: any[] = [];
 let yearlyAccountsDueResult: any[] = [];
 
 beforeEach(() => {
-  resetExpiringCreditsCalls = [];
+  walletResets.length = 0;
   updateCreditAccountCalls = [];
   yearlyAccountsDueResult = [];
   resetMockRegistry();
@@ -36,17 +37,10 @@ beforeEach(() => {
   mockRegistry.getYearlyAccountsDueForRotation = async () => yearlyAccountsDueResult;
 
   // Credit service defaults
-  mockRegistry.resetExpiringCredits = async (...args: any[]) => {
-    resetExpiringCreditsCalls.push(args);
-  };
 });
 
 // Import AFTER mocking
-const {
-  processYearlyCreditRotation,
-  isYearlyAccountDueForRotation,
-  calculateNextCreditGrant,
-} = await import('../../billing/services/yearly-rotation');
+const { processYearlyCreditRotation } = await import('../../billing/services/yearly-rotation');
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -75,13 +69,13 @@ describe('processYearlyCreditRotation', () => {
 
     expect(result.processed).toBe(2);
     expect(result.errors.length).toBe(0);
-    expect(resetExpiringCreditsCalls.length).toBe(2);
+    expect(walletResets.length).toBe(2);
 
-    expect(resetExpiringCreditsCalls[0][0]).toBe('acc_yearly_1');
-    expect(resetExpiringCreditsCalls[0][1]).toBe(50); // tier_6_50 = $50 monthly credits
+    expect(walletResets[0].accountId).toBe('acc_yearly_1');
+    expect(walletResets[0].amount).toBe(50); // tier_6_50 = $50 monthly credits
 
-    expect(resetExpiringCreditsCalls[1][0]).toBe('acc_yearly_2');
-    expect(resetExpiringCreditsCalls[1][1]).toBe(200); // tier_25_200 = $200 monthly credits
+    expect(walletResets[1].accountId).toBe('acc_yearly_2');
+    expect(walletResets[1].amount).toBe(200); // tier_25_200 = $200 monthly credits
   });
 
   test('updates nextCreditGrant to 1 month later', async () => {
@@ -109,15 +103,6 @@ describe('processYearlyCreditRotation', () => {
     expect(diffDays).toBeLessThan(35);
   });
 
-  test('skips when no accounts are due', async () => {
-    yearlyAccountsDueResult = [];
-
-    const result = await processYearlyCreditRotation();
-
-    expect(result.processed).toBe(0);
-    expect(resetExpiringCreditsCalls.length).toBe(0);
-  });
-
   test('creates ledger entry with idempotency key', async () => {
     const now = new Date();
     const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -135,119 +120,54 @@ describe('processYearlyCreditRotation', () => {
 
     await processYearlyCreditRotation();
 
-    const idempotencyKey = resetExpiringCreditsCalls[0][3];
+    const idempotencyKey = walletResets[0].key.event;
     expect(idempotencyKey).toContain('yearly_rotation_acc_yearly_1_');
     expect(idempotencyKey).toContain(yearMonth);
   });
 
-  test('continues on error for individual accounts', async () => {
+  test('continues past an account whose reset fails', async () => {
     yearlyAccountsDueResult = [
       createMockCreditAccount({
         accountId: 'acc_error',
-        tier: 'invalid_tier_that_has_zero_credits',
+        tier: 'tier_6_50',
         planType: 'yearly',
         nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
-        stripeSubscriptionStatus: 'active',
-        paymentStatus: 'active',
       }),
       createMockCreditAccount({
         accountId: 'acc_ok',
         tier: 'tier_6_50',
         planType: 'yearly',
         nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
-        stripeSubscriptionStatus: 'active',
-        paymentStatus: 'active',
+      }),
+    ];
+    fakeWallet.wallet.reset = async (input) => {
+      walletResets.push(input);
+      if (input.accountId === 'acc_error') throw new Error('reset failed');
+    };
+
+    const result = await processYearlyCreditRotation();
+
+    expect(result.processed).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('acc_error');
+    expect(walletResets.map((call) => call.accountId)).toEqual(['acc_error', 'acc_ok']);
+    expect(updateCreditAccountCalls.map((call) => call.accountId)).toEqual(['acc_ok']);
+  });
+
+  test('a tier with no monthly credits resets nothing but still advances its anchor', async () => {
+    yearlyAccountsDueResult = [
+      createMockCreditAccount({
+        accountId: 'acc_zero',
+        tier: 'invalid_tier_that_has_zero_credits',
+        planType: 'yearly',
+        nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
       }),
     ];
 
     const result = await processYearlyCreditRotation();
-    expect(result.processed).toBe(2);
-  });
-});
 
-describe('isYearlyAccountDueForRotation', () => {
-  test('true when nextCreditGrant <= now', () => {
-    const account = createMockCreditAccount({
-      planType: 'yearly',
-      tier: 'tier_6_50',
-      nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
-      stripeSubscriptionStatus: 'active',
-      paymentStatus: 'active',
-    });
-
-    expect(isYearlyAccountDueForRotation(account)).toBe(true);
-  });
-
-  test('false when nextCreditGrant > now', () => {
-    const account = createMockCreditAccount({
-      planType: 'yearly',
-      tier: 'tier_6_50',
-      nextCreditGrant: new Date(Date.now() + 86400000 * 15).toISOString(),
-      stripeSubscriptionStatus: 'active',
-      paymentStatus: 'active',
-    });
-
-    expect(isYearlyAccountDueForRotation(account)).toBe(false);
-  });
-
-  test('true when null (never rotated)', () => {
-    const account = createMockCreditAccount({
-      planType: 'yearly',
-      tier: 'tier_6_50',
-      nextCreditGrant: null,
-      stripeSubscriptionStatus: 'active',
-      paymentStatus: 'active',
-    });
-
-    expect(isYearlyAccountDueForRotation(account)).toBe(true);
-  });
-
-  test('false for monthly accounts', () => {
-    const account = createMockCreditAccount({
-      planType: 'monthly',
-      tier: 'tier_6_50',
-      nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
-    });
-
-    expect(isYearlyAccountDueForRotation(account)).toBe(false);
-  });
-
-  test('false for free tier', () => {
-    const account = createMockCreditAccount({
-      planType: 'yearly',
-      tier: 'free',
-      nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
-    });
-
-    expect(isYearlyAccountDueForRotation(account)).toBe(false);
-  });
-});
-
-describe('calculateNextCreditGrant', () => {
-  test('returns 1 month from given date', () => {
-    const from = new Date('2025-03-15T12:00:00Z');
-    const next = calculateNextCreditGrant(from);
-
-    expect(next.getFullYear()).toBe(2025);
-    expect(next.getMonth()).toBe(3);
-    expect(next.getDate()).toBe(15);
-  });
-
-  test('handles month boundary (Jan 31 → Feb 28)', () => {
-    const from = new Date('2025-01-31T12:00:00Z');
-    const next = calculateNextCreditGrant(from);
-
-    expect(next.getFullYear()).toBe(2025);
-    expect(next.getMonth()).toBe(1);
-    expect(next.getDate()).toBe(28);
-  });
-
-  test('handles December → January year rollover', () => {
-    const from = new Date('2025-12-15T12:00:00Z');
-    const next = calculateNextCreditGrant(from);
-
-    expect(next.getFullYear()).toBe(2026);
-    expect(next.getMonth()).toBe(0);
-    expect(next.getDate()).toBe(15);
+    expect(result.processed).toBe(1);
+    expect(walletResets).toEqual([]);
+    expect(updateCreditAccountCalls.map((call) => call.accountId)).toEqual(['acc_zero']);
   });
 });

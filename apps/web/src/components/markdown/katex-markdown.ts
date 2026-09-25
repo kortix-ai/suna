@@ -72,7 +72,16 @@ const katexSanitizeSchema = {
   tagNames: [...(defaultSchema.tagNames || []), ...KATEX_MATHML_TAG_NAMES],
   attributes: {
     ...defaultSchema.attributes,
-    '*': [...(defaultSchema.attributes?.['*'] || []), 'className', 'style', 'aria-hidden'],
+    // Raw HTML keeps structure and text, never presentation. This schema is the
+    // only gate on raw HTML from content no Kortix user wrote (scraped pages,
+    // connector tool output, public share transcripts), and a `style` or class
+    // name from that content can place an element over the app. KaTeX output
+    // and code highlighting are produced AFTER this step (`buildKatexRehypePlugins`),
+    // so neither needs `className` or `style` here.
+    '*': [...(defaultSchema.attributes?.['*'] || []), 'aria-hidden'],
+    // The classes remark-math puts on math nodes, which rehype-katex reads
+    // after sanitize, plus GitHub's `language-*` for fenced code.
+    code: [['className', /^language-./, 'math-inline', 'math-display']],
     math: ['xmlns', 'display'],
     annotation: ['encoding'],
     svg: ['xmlns', 'width', 'height', 'viewBox', 'preserveAspectRatio', 'fill', 'stroke'],

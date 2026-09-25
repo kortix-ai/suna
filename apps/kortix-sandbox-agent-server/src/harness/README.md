@@ -82,8 +82,7 @@ Config it reads (all set by apps/api for every session, harness-neutral values):
 `KORTIX_OPENCODE_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`
 (agent prompt, model, permission policy), `KORTIX_AGENT_NAME`, `KORTIX_LLM_BASE_URL`
 + `KORTIX_TOKEN`, the image-baked catalog at `/opt/kortix/llm-catalog.json`.
-pi-only: `KORTIX_PI_STATE_DIR`, `KORTIX_PI_MODEL_MODE=faux` +
-`KORTIX_PI_FAUX_SCRIPT` (tests and benches: a scripted provider, no network).
+pi-only: `KORTIX_PI_STATE_DIR`.
 
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`,
 `pi-ready`, `initial-prompt-delivered`, `initial-turn-accepted`, `runtime-ready`.
@@ -111,6 +110,28 @@ harness. Both `open-code/boot.ts` and `pi/boot.ts` call
 boot acquires the workspace. `boot-state.ts` (host) carries the outcome:
 `configProvider` (reported in `/kortix/health` as `config_provider`) and
 `deferredHistoryBackfill`.
+
+## OpenCode instance guard
+
+OpenCode builds its per-directory services on first use and caches the result
+forever, including an interrupted build. A Stop during the first turn of a
+fresh instance can therefore break every later turn on the box.
+`open-code/instance-guard.ts` prevents that in 3 steps:
+
+1. **Warm.** The daemon requests `/experimental/tool/ids`, `/agent`, `/skill`,
+   `/config/providers` and `/mcp` when the event stream connects and after
+   every instance dispose. Loop-starting requests through the proxy wait for
+   this warm-up, for 20 s at most.
+2. **Heal.** After any aborted turn the daemon probes the same endpoints. Two
+   503 answers in a row trigger `POST /instance/dispose` and a new warm-up.
+3. **Recover.** A root turn that aborted before any output, with no stop
+   request recorded, is a victim. The daemon disposes the instance, then
+   re-prompts once through `turn-auto-resume.ts`. When that is not possible,
+   the turn end carries the cause `RuntimeAbortedTurn`.
+
+Every daemon path that aborts an OpenCode turn calls
+`noteOpencodeStopRequested` first. A new abort path must do the same, or its
+stops read as victims.
 
 ## Native features remain available
 

@@ -11,7 +11,7 @@ import { type SQL, or, sql } from 'drizzle-orm';
  *    Enter, persisted at create (`store.ts`).
  *  - `payload.redeliveredMessageId` — the LATEST id a RE-MINT placed it under,
  *    when the row waited behind a live turn or came back from a strand
- *    (`engine.ts`'s `remintWireMessageId`).
+ *    (`inbox-placement.ts`'s `remintWireMessageId`).
  *  - `payload.redeliveredMessageIds` — EVERY id a re-mint ever placed it under,
  *    appended (never overwritten) by the same two paths. A prompt re-minted
  *    twice keeps the scalar at the newest id, so a ledger row keyed on the

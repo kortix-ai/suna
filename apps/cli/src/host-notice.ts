@@ -94,7 +94,7 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   if (!hostArg) {
     const acct = linkedHost
       ? directoryLink?.account_id
-        ? shortId(directoryLink.account_id)
+        ? idPrefix(directoryLink.account_id)
         : null
       : activeAccountLabel();
     if (acct) line += `${C.dim} · account ${C.reset}${acct}`;
@@ -113,7 +113,7 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
  *  (inside a running sandbox). */
 function activeSessionLabel(): string | null {
   const sid = process.env.KORTIX_SESSION_ID;
-  return sid ? shortId(sid) : null;
+  return sid ? idPrefix(sid) : null;
 }
 
 /** Active account as a short display string, or null when none/sandbox. */
@@ -127,15 +127,16 @@ function activeAccountLabel(): string | null {
 function activeProjectLabel(): { label: string; source: 'linked' | 'default' } | null {
   const link = loadLink();
   if (link?.project_id) {
-    return { label: shortId(link.project_id), source: 'linked' };
+    return { label: idPrefix(link.project_id), source: 'linked' };
   }
   const def = defaultProject();
-  if (def) return { label: def.name || shortId(def.project_id), source: 'default' };
+  if (def) return { label: def.name || idPrefix(def.project_id), source: 'default' };
   return null;
 }
 
-function shortId(id: string): string {
-  return id.length > 8 ? id.slice(0, 8) : id;
+/** The first 8 characters of an id. Not the dash-split `shortId`: ids here can be non-UUIDs. */
+function idPrefix(id: string): string {
+  return id.slice(0, 8);
 }
 
 /**
@@ -217,7 +218,7 @@ export function renderContext(): string {
         ? {
             glyph: ' ',
             label: 'account',
-            value: `${C.bold}${shortId(directoryLink.account_id)}${C.reset}  ${C.faded}(linked)${C.reset}`,
+            value: `${C.bold}${idPrefix(directoryLink.account_id)}${C.reset}  ${C.faded}(linked)${C.reset}`,
             hint: navHint('kortix accounts use'),
           }
         : {

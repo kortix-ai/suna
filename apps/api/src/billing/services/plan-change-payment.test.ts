@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { GrantInput } from '../wallet';
 
 // Production price catalog: the legacy tier prices below only exist there.
 mock.module('../../config', () => ({
@@ -17,7 +18,7 @@ let activeMembers = 1;
 const stripeUpdates: Array<{ id: string; params: Record<string, any> }> = [];
 const itemUpdates: Array<{ id: string; params: Record<string, any> }> = [];
 const tierWrites: Array<Record<string, unknown>> = [];
-const grants: unknown[][] = [];
+const grants: GrantInput[] = [];
 
 mock.module('../../shared/stripe', () => ({
   getStripe: () => ({
@@ -65,9 +66,12 @@ mock.module('./account-write-owner', () => ({
   },
 }));
 
-mock.module('./credits', () => ({
-  grantCredits: async (...args: unknown[]) => {
-    grants.push(args);
+mock.module('../wallet', () => ({
+  wallet: {
+    grant: async (input: GrantInput) => {
+      grants.push(input);
+      return { replayed: false, ledgerId: null };
+    },
   },
 }));
 
@@ -86,7 +90,7 @@ mock.module('./yolo-tokens', () => ({
 mock.module('../repositories/yolo-tokens', () => ({ getActiveYoloTokenRow: async () => null }));
 
 const { createInlineCheckout } = await import('./subscriptions');
-const { syncSeatQuantity, seatProrationFor } = await import('./seat-management');
+const { syncSeatQuantity } = await import('./seat-management');
 
 beforeEach(() => {
   account = {
@@ -154,9 +158,9 @@ describe('a plan upgrade activates only after its proration invoice is paid', ()
     expect(result.status).toBe('upgraded');
     expect(tierWrites.map((w) => w.tier)).toEqual(['tier_12_100']);
     expect(grants).toHaveLength(1);
-    expect(grants[0][1]).toBe(25);
-    expect(grants[0][2]).toBe('tier_grant');
-    expect(grants[0][5]).toBe('proration_grant:in_paid');
+    expect(grants[0].amount).toBe(25);
+    expect(grants[0].kind).toBe('tier_grant');
+    expect(grants[0].key).toEqual({ event: 'proration_grant:in_paid' });
   });
 
   test('a per-seat account cannot swap its seat price for a plan price', async () => {
@@ -177,11 +181,6 @@ describe('per-seat quantity sync bills added seats now and never refunds removed
       seatSubscriptionItemId: 'si_seats',
       autoTopupCustomized: true,
     };
-  });
-
-  test('policy: increase → always_invoice, decrease → none', () => {
-    expect(seatProrationFor(1, 3)).toEqual({ proration_behavior: 'always_invoice' });
-    expect(seatProrationFor(3, 1)).toEqual({ proration_behavior: 'none' });
   });
 
   test('adding members invoices the prorated seat charge immediately', async () => {

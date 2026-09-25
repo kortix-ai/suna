@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 671 route actions and 63 other events.
+This page lists 679 route actions and 64 other events.
 
 ## `account.`
 
@@ -52,6 +52,7 @@ This page lists 671 route actions and 63 other events.
 | `admin.account.overrides.set` | Set account entitlement overrides | `PUT /v1/admin/api/accounts/:id/overrides` |
 | `admin.account.project.list` | Listed account projects as admin | `GET /v1/admin/api/accounts/:id/projects` |
 | `admin.account.session_limit.set` | Updated account session limit | `POST /v1/admin/api/accounts/:id/session-limit` |
+| `admin.account.sso_domain.set` | Set account SSO domain verification | `PUT /v1/admin/api/accounts/:id/sso-domain-verification` |
 | `admin.account.subscription.read` | Viewed account Stripe subscription | `GET /v1/admin/api/accounts/:id/subscription` |
 | `admin.account.tier.set` | Updated account tier | `POST /v1/admin/api/accounts/:id/tier` |
 | `admin.account.trial.grant` | Granted account trial | `POST /v1/admin/api/accounts/:id/trial` |
@@ -216,10 +217,12 @@ This page lists 671 route actions and 63 other events.
 | `channel.slack.file.download` | Downloaded Slack file | `GET /v1/projects/:projectId/channels/slack/file` |
 | `channel.slack.file.upload` | Uploaded file to Slack | `POST /v1/projects/:projectId/channels/slack/file/upload` |
 | `channel.slack.identity.connect` | Linked Slack identity | `POST /v1/channels/slack/identity/bind` |
+| `channel.slack.identity.preview` | Previewed Slack identity link | `POST /v1/channels/slack/identity/preview` |
 | `channel.slack.install.complete` | Completed Slack app installation | `GET /v1/webhooks/slack/oauth/callback` |
 | `channel.slack.installation.read` | Viewed Slack installation | `GET /v1/projects/:projectId/channels/slack/installation` |
 | `channel.slack.login_link.read` | Opened Slack login link | `GET /v1/channels/slack/identity/login/:token` |
 | `channel.slack.mode.read` | Viewed Slack setup options | `GET /v1/projects/:projectId/channels/slack/mode` |
+| `channel.slack.oauth.complete` | Completed Slack app install | `POST /v1/projects/:projectId/channels/slack/oauth/complete` |
 | `channel.slack.thread.bind` | Bound session to Slack thread | `POST /v1/projects/:projectId/channels/slack/bind-thread` |
 | `channel.teams.connect` | Connected Microsoft Teams tenant | `POST /v1/projects/:projectId/channels/teams/connect` |
 | `channel.teams.conversation.list` | Listed Microsoft Teams conversations | `GET /v1/projects/:projectId/channels/teams/conversations` |
@@ -227,12 +230,14 @@ This page lists 671 route actions and 63 other events.
 | `channel.teams.file.download` | Downloaded Microsoft Teams file | `GET /v1/projects/:projectId/channels/teams/file` |
 | `channel.teams.file.upload` | Uploaded file to Microsoft Teams | `POST /v1/projects/:projectId/channels/teams/file/upload` |
 | `channel.teams.identity.connect` | Linked Teams identity | `POST /v1/channels/teams/identity/bind` |
+| `channel.teams.identity.preview` | Previewed Teams identity link | `POST /v1/channels/teams/identity/preview` |
 | `channel.teams.install.complete` | Completed Teams app installation | `GET /v1/webhooks/teams/oauth/callback` |
 | `channel.teams.installation.read` | Viewed Microsoft Teams installation | `GET /v1/projects/:projectId/channels/teams/installation` |
 | `channel.teams.login_link.read` | Opened Teams login link | `GET /v1/channels/teams/identity/login/:token` |
 | `channel.teams.manifest.read` | Viewed Microsoft Teams app manifest | `GET /v1/projects/:projectId/channels/teams/manifest` |
 | `channel.teams.message.send` | Sent Microsoft Teams message | `POST /v1/projects/:projectId/channels/teams/message` |
 | `channel.teams.mode.read` | Viewed Microsoft Teams setup options | `GET /v1/projects/:projectId/channels/teams/mode` |
+| `channel.teams.oauth.complete` | Completed Microsoft Teams install | `POST /v1/projects/:projectId/channels/teams/oauth/complete` |
 
 ## `connector.`
 
@@ -457,6 +462,7 @@ This page lists 671 route actions and 63 other events.
 | `iam.sso.mapping.list` | Listed SSO group mappings | `GET /v1/accounts/:accountId/iam/sso/mappings` |
 | `iam.sso.provider.create` | Created SSO provider | `POST /v1/accounts/:accountId/iam/sso/provider/from-metadata` |
 | `iam.sso.provider.delete` | Removed SSO provider | `DELETE /v1/accounts/:accountId/iam/sso/provider` |
+| `iam.sso.provider.domain_verify` | Verified SSO domain | `POST /v1/accounts/:accountId/iam/sso/provider/verify-domain` |
 | `iam.sso.provider.read` | Viewed SSO provider | `GET /v1/accounts/:accountId/iam/sso/provider` |
 | `iam.sso.provider.update` | Updated SSO provider | `PUT /v1/accounts/:accountId/iam/sso/provider` |
 
@@ -552,6 +558,7 @@ This page lists 671 route actions and 63 other events.
 | `project.cli_token.create` | Created project CLI token | `POST /v1/projects/:projectId/cli-token` |
 | `project.cli_token.list` | Listed project CLI tokens | `GET /v1/projects/:projectId/cli-token` |
 | `project.cli_token.revoke` | Revoked project CLI token | `DELETE /v1/projects/:projectId/cli-token/:tokenId` |
+| `project.config_archive.download` | Downloaded project config archive | `GET /v1/projects/:projectId/config-archives/:configTreeId` |
 | `project.create` | Created project | `POST /v1/projects` |
 | `project.default_agent.update` | Updated default agent | `PUT /v1/projects/:projectId/default-agent` |
 | `project.delete` | Deleted project | `DELETE /v1/projects/:projectId` |
@@ -636,7 +643,7 @@ This page lists 671 route actions and 63 other events.
 | --- | --- | --- |
 | `sandbox.boot_timeline.create` | Recorded sandbox boot timeline | `POST /v1/platform/boot-timeline` |
 | `sandbox.health.read` | Viewed sandbox health | `GET /v1/projects/:projectId/sandbox-health` |
-| `sandbox.port.proxy` | Accessed sandbox port | `/v1/p/:sandboxId/:port/*`, any method (also `/v1/p/:sandboxId/:port`, any method) |
+| `sandbox.port.proxy` | Accessed sandbox port | `/v1/p/:sandboxId/:port/*`, any method |
 | `sandbox.port.websocket.connect` | Opened sandbox port WebSocket | before the API router |
 | `sandbox.port_share.create` | Created sandbox port share link | `POST /v1/p/share` |
 | `sandbox.port_share.list` | Listed sandbox port share links | `GET /v1/p/share` |
@@ -712,6 +719,7 @@ This page lists 671 route actions and 63 other events.
 | `session.agent_config.reload` | Reloaded session agent config | `POST /v1/projects/:projectId/sessions/:sessionId/reload` (also `POST /v1/projects/:projectId/sessions/:sessionId/reload-stream`) |
 | `session.attachment.download` | Downloaded session attachment | `GET /v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId` |
 | `session.attachment.upload` | Uploaded session attachment | `POST /v1/projects/:projectId/sessions/:sessionId/attachments` |
+| `session.config_release.resolve` | Resolved session config release | `POST /v1/projects/:projectId/sessions/:sessionId/config-release` |
 | `session.create` | Created session | `POST /v1/projects/:projectId/sessions` |
 | `session.delete` | Deleted session | `DELETE /v1/projects/:projectId/sessions/:sessionId` |
 | `session.environment.read` | Viewed session environment | `GET /v1/projects/:projectId/sessions/:sessionId/environment` |
@@ -900,6 +908,7 @@ Sandboxes, background jobs, database triggers, and handlers record these for som
 | `iam.assignment.expired` | Expired a role |
 | `iam.assignment.granted` | Granted a role |
 | `iam.assignment.revoked` | Revoked a role assignment |
+| `iam.member.super_admin.revoke` | Revoked super-admin |
 | `iam.mfa_required.disable` | Disabled MFA requirement |
 | `iam.mfa_required.enable` | Required MFA for the account |
 | `iam.session_oversight.disable` | Stopped admins opening every session |

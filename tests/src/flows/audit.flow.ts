@@ -785,6 +785,7 @@ interface AuditRow {
   resource_id: string | null;
   http_status: number | null;
   correlation_id: string | null;
+  ip: string | null;
   metadata: {
     http?: string;
     auth?: { kind?: string; token_id?: string };
@@ -1075,6 +1076,7 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { accountId: team.id };
     let groupId: string | null = null;
+    let forwardedGroupId: string | null = null;
     const auditRows = (query: Record<string, string>, description: string) =>
       waitFor(
         () => owner.get('/v1/accounts/:accountId/audit', { params, query: { limit: '50', ...query } }),
@@ -1126,6 +1128,45 @@ flow(
         }
       });
 
+      await ctx.step(
+        'a row stores the X-Forwarded-For entry that KORTIX_TRUSTED_PROXY_HOPS (2) selects, for a handler row and a request row',
+        async () => {
+          // RFC 5737 documentation addresses. Locally the API receives the header
+          // as sent, so hop 2 (second from the right) is 203.0.113.9. A deployed
+          // target's proxies append their own entries, so there the selected
+          // entry is an infrastructure-appended one, never the leftmost.
+          const forwarded = { 'x-forwarded-for': '192.0.2.1, 203.0.113.9, 198.51.100.7' };
+          const expectIp = (row: AuditRow | undefined, label: string) => {
+            if (!row) throw new Error(`no ${label} row`);
+            const ok =
+              ctx.env.target === 'local'
+                ? row.ip === '203.0.113.9'
+                : typeof row.ip === 'string' && row.ip !== '192.0.2.1';
+            if (!ok) throw new Error(`${label} row stored ip=${JSON.stringify(row.ip)} (target ${ctx.env.target})`);
+          };
+
+          const created = await owner.post(
+            '/v1/accounts/:accountId/iam/groups',
+            { name: ctx.fixtures.name('aud8-xff') },
+            { params, headers: forwarded },
+          );
+          created.status(201);
+          forwardedGroupId = created.json<{ group_id: string }>().group_id;
+          const createId = required(created.header('x-request-id'), 'the request id header');
+          const createRows = await auditRows({ request_id: createId }, 'the forwarded group create row');
+          expectIp(createRows.find((row) => row.action === 'iam.group.create'), 'iam.group.create');
+
+          const read = await owner.get('/v1/projects/:projectId', {
+            params: { projectId: project.id },
+            headers: forwarded,
+          });
+          read.status(200);
+          const readId = required(read.header('x-request-id'), 'the request id header');
+          const readRows = await auditRows({ request_id: readId }, 'the forwarded project read row');
+          expectIp(readRows.find((row) => row.action === 'project.read'), 'project.read');
+        },
+      );
+
       await ctx.step('a request no endpoint matched is `api.route.unmatched`, never its raw path', async () => {
         const missing = await owner.get('/v1/projects/:projectId/aud8-no-such-route', {
           params: { projectId: project.id },
@@ -1142,9 +1183,10 @@ flow(
         }
       });
     } finally {
-      if (groupId) {
+      for (const id of [groupId, forwardedGroupId]) {
+        if (!id) continue;
         await owner.del('/v1/accounts/:accountId/iam/groups/:groupId', {
-          params: { ...params, groupId },
+          params: { ...params, groupId: id },
         });
       }
     }

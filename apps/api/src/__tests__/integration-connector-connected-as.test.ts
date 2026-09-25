@@ -16,13 +16,17 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { accounts, connectorConnections, connectors, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import {
-  setComposioRuntimeForTest,
-  type ComposioRuntime,
-  type ComposioSessionLike,
-} from '../connectors/composio';
-import { dbConnectorRouterDeps } from '../connectors/db-deps';
-import { db } from '../shared/db';
+import type { ComposioRuntime, ComposioSessionLike } from '../connectors/composio';
+
+// `connectorConnect` loads the Composio adapter only when
+// `config.COMPOSIO_API_KEY` is set, and config reads it once at import. The
+// value is a placeholder: every Composio call goes to the fake runtime below.
+// Set before the API modules load, restored in afterAll.
+const previousKey = process.env.COMPOSIO_API_KEY;
+process.env.COMPOSIO_API_KEY = 'test-composio-key';
+const { setComposioRuntimeForTest } = await import('../connectors/composio');
+const { dbConnectorRouterDeps } = await import('../connectors/db-deps');
+const { db } = await import('../shared/db');
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -36,7 +40,6 @@ const active = new Map<string, { accountId: string; displayName: string | null }
 let pendingAuthorization: { stableUserId: string; accountId: string; displayName: string | null } | null =
   null;
 let probes = 0;
-let previousKey: string | undefined;
 
 function fakeSession(stableUserId: string, sessionId: string, toolkit: string): ComposioSessionLike {
   return {
@@ -144,8 +147,6 @@ async function connectAndFinish(input: {
 }
 
 beforeAll(async () => {
-  previousKey = process.env.COMPOSIO_API_KEY;
-  process.env.COMPOSIO_API_KEY ||= 'test-composio-key';
   setComposioRuntimeForTest(fakeRuntime);
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'connected-as-test' });
   await db.insert(projects).values({

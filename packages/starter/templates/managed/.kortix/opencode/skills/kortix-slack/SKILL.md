@@ -135,29 +135,17 @@ slack send "It was api@a3f1 — the new auth middleware drops the trace header o
 </live-stream>
 
 <keeping-the-stream-alive>
-### The ~5-minute idle timeout (READ THIS — it's the #1 cause of false "errors")
+### A live run has no idle timeout — silence only hurts the user
 
-Slack enforces a **hard ~5-minute idle timeout** on a streaming turn. The clock is **idle time since the last stream update**, not total turn length — and it is **not bypassable** from Slack's side. Every `slack step` you emit is a stream update that **resets the timer to zero**. If more than ~5 minutes pass with *no* update, Slack kills the turn and paints a red **error** in the thread — even though your agent is alive and working fine. The work usually still completes in the background; the user just sees a scary "failed" state. (Same root cause as a finished plan block getting stuck on "in_progress" — the stream got severed before the final `slack send`.)
+The plan block is a posted message the server **edits in place**. It is not an open stream, so Slack cannot auto-fail it. A long, silent step (a build, a test suite, a `task`/subagent) does not paint an error and does not end your run. The server closes a thread on its own only when your run has **ended** and no `slack send` reached the thread within 30 minutes. That thread then shows "This run ended without a reply."
 
-The platform runs a **safety-net heartbeat** (a watchdog touches any quiet-but-alive stream every ~3 min so Slack doesn't auto-fail it). Treat that as a backstop, **not** an excuse to go silent: it only paints a generic "Working on it…" tick, it doesn't help if the watchdog is down/lagging, and a wall of nothing for minutes is bad UX. **You keeping the stream warm with real checkpoints is still the primary fix.**
+**Do not run heartbeat loops** (`while sleep …; do slack step …; done`). They buy nothing, and a loop left running after `slack send` is a leak.
 
-**So: a turn doesn't fail because the work is slow. It fails when it goes quiet. Don't go quiet.**
+A wall of nothing for ten minutes is still bad UX:
 
-### Rules to never trip it
-
-- **Never go >~4 minutes without a `slack step`.** Treat 4 min as your budget; post before you spend it. A step is cheap — emitting one extra is free, tripping the timeout is not.
-- **Before any long-running operation, post a step first.** Anything that can take minutes — `git clone`, `pnpm install`, a test suite, a build, `pnpm preview`, deep web research, a big LLM call, a `task`/subagent — gets a `slack step` *immediately before* you start it, so the timer is fresh going in.
-- **Break long single operations into narrated phases.** Don't do "clone + install + typecheck + test" as one silent 12-minute block. Step between each: `slack step "Installing deps"` → `slack step "Running typecheck"` → `slack step "Running tests"`. Each one resets the clock *and* reads better.
-- **For a genuinely long single command (one >4-min step with nothing to narrate),** stream a heartbeat from a background loop so the timer keeps resetting while it runs:
-  ```sh
-  # keep the Slack stream warm during a long blocking command
-  ( while sleep 200; do slack step "Still working… (running tests)"; done ) &
-  HB=$!
-  pnpm test            # the long thing
-  kill "$HB" 2>/dev/null   # stop the heartbeat as soon as it returns
-  ```
-  Kill the heartbeat the instant the command returns, and **never leave a heartbeat running after `slack send`** (steps after send drop silently, and a stray background loop is a leak — see the "stop long-running processes before you finish" rule).
-- **It's idle-time, not call-count.** Ten steps in one minute then six minutes of silence still trips it. Spacing is what matters, not volume — but err toward more frequent updates on long tasks; it's the single biggest reliability win.
+- **Post a step before anything slow** — `git clone`, `pnpm install`, a test suite, a build, `pnpm preview`, deep research, a big LLM call, a `task`/subagent — so the thread shows what you are waiting on.
+- **Narrate long work in phases.** `slack step "Installing deps"` → `slack step "Running typecheck"` → `slack step "Running tests"` reads better than one silent 12-minute block.
+- **Space steps at real phase boundaries.** Ten steps in two seconds add noise, not information.
 </keeping-the-stream-alive>
 
 <final-answer>

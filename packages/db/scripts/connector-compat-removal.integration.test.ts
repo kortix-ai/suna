@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import pg from 'pg';
 
-const databaseUrl = process.env.CONNECTOR_CUTOVER_DATABASE_URL;
+const databaseUrl = process.env.TEST_DATABASE_URL;
 
 const LEGACY_RELATIONS = [
   'workspace_session_connector_bindings',

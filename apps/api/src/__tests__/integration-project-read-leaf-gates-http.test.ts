@@ -5,6 +5,7 @@ import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { PROJECT_ACTIONS } from '../iam';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -35,11 +36,11 @@ beforeAll(async () => {
     // manager rows still pass and the member rows still hit the leaf.
     metadata: { experimental: { review_center: false, teams: true } },
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);

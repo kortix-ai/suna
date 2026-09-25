@@ -61,7 +61,16 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
   let session: AuthSession | null = null;
   let user: AuthUser | null = null;
   let loaded = !options.storage;
+  /** The one storage read every caller waits for while it is pending. */
+  let loading: Promise<AuthSession | null> | null = null;
   let inflight: Promise<AuthSession | null> | null = null;
+  /**
+   * Bumped by every `set()` and `clear()`. An async result (a storage read, a
+   * refresh) captured the generation when it started and is applied only if
+   * the host has not replaced the session since — so an older answer can never
+   * overwrite a newer sign-out or sign-in.
+   */
+  let generation = 0;
   const listeners = new Set<(session: AuthSession | null) => void>();
 
   const expiresAt = (s: AuthSession) => (s.expires_at ?? 0) * 1000;
@@ -91,20 +100,37 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
 
   async function load(): Promise<AuthSession | null> {
     if (loaded) return session;
-    loaded = true;
-    const raw = await options.storage!.get();
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as { session?: AuthSession; user?: AuthUser | null };
-        if (parsed.session?.access_token && parsed.session?.refresh_token) {
-          session = parsed.session;
-          user = parsed.user ?? null;
+    if (!loading) {
+      const startedAt = generation;
+      const pending = (async () => {
+        const raw = await options.storage!.get();
+        // A `set()` or `clear()` during the read is newer than what storage held.
+        if (startedAt === generation && raw) {
+          try {
+            const parsed = JSON.parse(raw) as { session?: AuthSession; user?: AuthUser | null };
+            if (parsed.session?.access_token && parsed.session?.refresh_token) {
+              session = parsed.session;
+              user = parsed.user ?? null;
+            }
+          } catch {
+            session = null;
+          }
         }
-      } catch {
-        session = null;
-      }
+        loaded = true;
+        return session;
+      })();
+      loading = pending;
+      // A failed read is not an answer: forget it so the next call reads again.
+      pending.then(
+        () => {
+          if (loading === pending) loading = null;
+        },
+        () => {
+          if (loading === pending) loading = null;
+        },
+      );
     }
-    return session;
+    return loading;
   }
 
   async function refresh(): Promise<AuthSession | null> {
@@ -112,14 +138,19 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
     if (!session) return null;
     if (!inflight) {
       const token = session.refresh_token;
-      inflight = refreshSession({ refresh_token: token }, options.request)
+      const startedAt = generation;
+      const request: Promise<AuthSession | null> = refreshSession({ refresh_token: token }, options.request)
         .then(async (result) => {
+          // The host signed out or signed in someone else while this was in
+          // flight. Its result belongs to a session that no longer exists.
+          if (startedAt !== generation) return session;
           session = result.session;
           if (result.user) user = result.user;
           await persist();
           return session;
         })
         .catch(async (err) => {
+          if (startedAt !== generation) return session;
           // A dead refresh token means signed out — everywhere. Anything else
           // (network) keeps the stored session so the next call can retry.
           const status = err && typeof err === 'object' && 'status' in err ? (err as { status: number }).status : 0;
@@ -132,8 +163,10 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
           throw err;
         })
         .finally(() => {
-          inflight = null;
+          // Only clear the slot this request owns; a newer refresh may hold it.
+          if (inflight === request) inflight = null;
         });
+      inflight = request;
     }
     return inflight;
   }
@@ -150,6 +183,10 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
     load,
     async set(next, nextUser) {
       await load();
+      generation += 1;
+      // A refresh of the replaced session must not be shared with callers of
+      // the new one.
+      inflight = null;
       session = next;
       if (nextUser !== undefined) user = nextUser;
       if (!next) user = null;
@@ -166,6 +203,8 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
     },
     refresh,
     async clear() {
+      generation += 1;
+      inflight = null;
       session = null;
       user = null;
       loaded = true;

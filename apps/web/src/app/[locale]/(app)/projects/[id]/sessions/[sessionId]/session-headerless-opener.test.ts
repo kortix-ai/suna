@@ -60,12 +60,17 @@ describe('headerless session surfaces carry the sidebar opener', () => {
     expect(wrapper).toContain('relative');
   });
 
-  // Five of these: the session-switch loader, the rolling-deploy repository
-  // compatibility loader, the wake-ladder holding loader, the auto-resume
-  // loader, and the boot overlay's loader. None of them renders a header.
+  // Four of these: the session-switch loader, the wake-ladder holding loader,
+  // the auto-resume loader, and the boot overlay's loader. None of them
+  // renders a header.
+  //
+  // It was five until 2026-09-24. The fifth held a session created before a
+  // repository replacement on a "starting" loader while `/start` refused it.
+  // `/start` no longer refuses such a session, so the branch is gone with the
+  // policy (docs/specs/config-releases.md, "Repository replacement").
   test('every SessionStartingLoader on this route is wrapped', () => {
     const sites = allIndexesOf('<SessionStartingLoader');
-    expect(sites.length).toBe(5);
+    expect(sites.length).toBe(4);
     for (const at of sites) expect(insideSurface(at)).toBe(true);
   });
 

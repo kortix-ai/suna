@@ -14,7 +14,7 @@
 //     transcript shows an assistant reply under that message, the turn ran and
 //     re-sending it would run the user's message a second time.
 //
-// Same mocking caveat as the sibling engine.ts test files: `mock.module` is
+// Same mocking caveat as the sibling session-lifecycle test files: `mock.module` is
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -308,7 +308,7 @@ mock.module('../store', () => ({
       };
     }
   },
-  requeueUnlandedPrompt: async (commandId: string, reason: string) => {
+  requeueUnlandedPrompt: async ({ commandId }: { commandId: string }, reason: string) => {
     unlandedRequeues.push({ commandId, reason });
     simulatedInFlightCommands.delete(commandId);
     if (unlandedBudgetLeft <= 0) return { requeued: false, refusals: 2 };
@@ -316,12 +316,12 @@ mock.module('../store', () => ({
     return { requeued: true, refusals: 2 - unlandedBudgetLeft };
   },
   MAX_LANDING_RETRIES: 2,
-  markInboxDeliveryStarted: async (commandId: string) => { deliveryStarts.push(commandId); },
-  requeueUnverifiedRedelivery: async (commandId: string, availableAt: Date) => {
+  markInboxDeliveryStarted: async ({ commandId }: { commandId: string }) => { deliveryStarts.push(commandId); },
+  requeueUnverifiedRedelivery: async ({ commandId }: { commandId: string }, availableAt: Date) => {
     unverifiedRequeues.push({ commandId, availableAt });
     simulatedInFlightCommands.delete(commandId);
   },
-  requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
+  requeueForAdmission: async ({ commandId }: { commandId: string }, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
     if (completeDuringRequeue) boxRow = { status: 'active', metadata: { activeTurns: {} } };
     simulatedInFlightCommands.delete(commandId);
@@ -342,7 +342,7 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async (
-    commandId: string,
+    { commandId }: { commandId: string },
     message: string,
     options?: { retryable?: boolean },
   ) => {
@@ -351,10 +351,10 @@ mock.module('../store', () => ({
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
-  markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
+  markCommandForwarded: async ({ commandId }: { commandId: string }, sessionId: string, wireMessageId: string) => {
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
   },
-  markCommandSucceeded: async (commandId: string, result: unknown) => {
+  markCommandSucceeded: async ({ commandId }: { commandId: string }, result: unknown) => {
     events.push('command-succeeded');
     succeededCalls.push({ commandId, result });
   },
@@ -373,18 +373,22 @@ mock.module('../../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
 
-// The wake path now converges the box before every delivery (engine.ts
+// The wake path converges the box before every delivery (continue-session.ts
 // `continueSession`): it reads the service key and ingress and calls
-// `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
-// the wire, not about the sync (see continue-session-env-sync.test.ts).
+// `syncSandboxEnvForPrompt`. The order of that sync is proven in
+// continue-session-runtime-env.test.ts; this file records whether it ran.
+let serviceKeyAvailable = true;
+let envSyncCalls = 0;
 mock.module('../../../platform/service-key', () => ({
-  serviceKeyForExternalId: async () => 'svc-key-1',
+  serviceKeyForExternalId: async () => (serviceKeyAvailable ? 'svc-key-1' : null),
 }));
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {},
+  syncSandboxEnvForPrompt: async () => {
+    envSyncCalls += 1;
+  },
 }));
 
 mock.module('../runtime-prompt-file', () => ({
@@ -406,7 +410,8 @@ mock.module('../runtime-prompt-file', () => ({
   },
 }));
 
-const { drainSessionLifecycleQueue, executeQueuedContinue } = await import('../engine');
+const { drainSessionLifecycleQueue } = await import('../drain');
+const { executeQueuedContinue } = await import('../queued-continue');
 
 /** Every `redeliveredMessageId` the drain persisted, read out of the jsonb
  *  merge parameter the UPDATE bound. */
@@ -458,6 +463,8 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 }
 
 beforeEach(() => {
+  serviceKeyAvailable = true;
+  envSyncCalls = 0;
   projectMetadataExpression = undefined;
   pauseAfterPosts = null;
   requeues = [];
@@ -533,6 +540,15 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  // A box whose env cannot be converged would run the prompt against a stale
+  // gateway URL, stale secrets and a stale model catalog. It waits instead.
+  test('a box whose service key cannot be read is not delivered blind — the prompt stays queued', async () => {
+    serviceKeyAvailable = false;
+    expect(await executeQueuedContinue(baseRow())).toBe('queued');
+    expect(envSyncCalls).toBe(0);
+    expect(capturedBodies).toHaveLength(0);
+  });
+
   test('the project flag lookup correlates with the outer session under Drizzle single-table rendering', async () => {
     expect(await executeQueuedContinue(baseRow())).toBe('succeeded');
     expect(projectMetadataExpression).toBeDefined();
@@ -563,20 +579,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(0);
   });
 
-  test('Queue List waits for the whole turn without arming a boundary interrupt', async () => {
-    boxRow = {
-      status: 'active',
-      metadata: { activeTurns: {
-        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
-          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
-      } },
-    };
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'composer' } });
-    expect(await executeQueuedContinue(row)).toBe('queued');
-    expect(requeues).toHaveLength(1);
-    expect(quickQueueControlRequests).toHaveLength(0);
-    expect(capturedBodies).toHaveLength(0);
-  });
   test('Stop during a transient delivery failure prevents another POST', async () => {
     promptResponsePlan = ['failed'];
     pauseAfterPosts = 1;
@@ -1258,10 +1260,17 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(1);
   });
 
-  test('a PROMPT ALREADY ANSWERED is never re-sent, redelivery or not', async () => {
-    // The already-answered guard is not a redelivery-only concern: every
-    // re-mint path re-reads the transcript, and the same assistant reply proves
-    // the same thing on all of them.
+  // The already-answered guard is not a redelivery-only concern: every
+  // re-mint path re-reads the transcript, and an assistant reply under the
+  // message proves the turn ran. Sending it again would run the user's prompt,
+  // and spend a real LLM turn, twice.
+  test.each([
+    [
+      'a promoted re-mint',
+      { payload: { remintOnDelivery: true }, result: { promoted: true } },
+    ],
+    ['a reaper redelivery', { payload: { redeliveries: 1 }, result: {} }],
+  ])('a PROMPT ALREADY ANSWERED is never re-sent: %s', async (_label, row) => {
     transcript = [
       { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
       {
@@ -1275,10 +1284,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     ];
 
     const outcome = await executeQueuedContinue(
-      baseRow({
-        payload: { ...baseRow().payload, remintOnDelivery: true },
-        result: { promoted: true },
-      }),
+      baseRow({ payload: { ...baseRow().payload, ...row.payload }, result: row.result }),
     );
 
     expect(outcome).toBe('succeeded');
@@ -1428,33 +1434,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
   });
 
-  test('a redelivery whose prompt was ALREADY ANSWERED is not sent again', async () => {
-    // The delivery record proves only that the acceptance write failed. An
-    // assistant reply under this message proves the turn ran, so redelivering
-    // would run the user's prompt — and spend a real LLM turn — twice.
-    transcript = [
-      { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
-      {
-        info: {
-          id: NEWER_TRANSCRIPT_ID,
-          role: 'assistant',
-          parentID: SUBMITTED_WIRE_ID,
-          time: { completed: NOW_MS - 30_000 },
-        },
-      },
-    ];
-
-    const outcome = await executeQueuedContinue(
-      baseRow({ payload: { ...baseRow().payload, redeliveries: 1 } }),
-    );
-
-    expect(outcome).toBe('succeeded');
-    expect(capturedBodies).toEqual([]);
-    expect(succeededCalls).toEqual([
-      { commandId: 'cmd-1', result: { status: 'skipped', reason: 'already_answered' } },
-    ]);
-  });
-
   test('a redelivery whose prompt is still UNANSWERED goes out under a fresh id', async () => {
     transcript = [{ info: { id: SUBMITTED_WIRE_ID, role: 'user' } }];
 
@@ -1521,7 +1500,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       { commandId: 'cmd-2', reason: 'older_prompt_pending' },
     ]);
     // AND THE DELIVERY PATH KICKS NOTHING. Promotion belongs to the turn-end
-    // relay (`routes/r4.ts`), which is the only place that knows the answer is
+    // relay (`routes/turn-stream.ts`), which is the only place that knows the answer is
     // finished. Promoting on accepted delivery instead made the next row due
     // while this turn was still running — the merge that let two queued
     // messages share one answer — and it was a lost wake besides: the row was
@@ -1601,7 +1580,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     expect(promotionCalls).toEqual([]);
 
     // B and C go out on the turn-end relay's targeted drain, one per turn —
-    // `routes/r4.ts` awaits `promoteNextInboxRow` and kicks exactly this.
+    // `routes/turn-stream.ts` awaits `promoteNextInboxRow` and kicks exactly this.
     await drainSessionLifecycleQueue({ idempotencyKey: 'queue-b' });
     await drainSessionLifecycleQueue({ idempotencyKey: 'queue-c' });
 

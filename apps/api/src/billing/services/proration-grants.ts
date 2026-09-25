@@ -16,7 +16,7 @@
 
 import type Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
-import { grantCredits } from './credits';
+import { wallet } from '../wallet';
 import {
   INCLUDED_CREDITS_RATIO,
   getTier,
@@ -134,14 +134,14 @@ export async function grantForPaidProrationInvoice(
     ? `Per-seat allowance for added seats: ${decision.credits} credits ($${paidUsd} prorated charge)`
     : `Plan upgrade to ${getTier(decision.toTier).displayName}: ${decision.credits} credits ($${paidUsd} prorated charge)`;
 
-  await grantCredits(
+  await wallet.grant({
     accountId,
-    decision.credits,
-    decision.kind === 'seats' ? 'seat_grant' : 'tier_grant',
+    amount: decision.credits,
+    kind: decision.kind === 'seats' ? 'seat_grant' : 'tier_grant',
     description,
-    true,
-    `proration_grant:${invoice.id}`,
-  );
+    expiring: true,
+    key: { event: `proration_grant:${invoice.id}` },
+  });
   console.log(`[proration-grant] ${accountId} invoice ${invoice.id}: ${description}`);
   return decision;
 }

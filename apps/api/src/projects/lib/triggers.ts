@@ -63,10 +63,10 @@ import {
   type ProjectRow,
   type RequestAuditContext,
   deriveKortixApiRoot,
-  isPlainObject,
   normalizeBoolean,
   normalizeString,
 } from './serializers';
+import { isPlainObject } from '../../shared/json';
 
 /**
  * Who asked for this fire. `monitor` is the third trigger type's source
@@ -1941,6 +1941,11 @@ export async function commitRepoFile(
       };
     }
     invalidateProjectMirror(project.projectId);
+    // The base branch moved through the Contents API. The git-CLI path below
+    // notifies from `commitMultipleFilesToBranch`.
+    void import('./config-convergence-triggers')
+      .then((triggers) => triggers.notifyBaseBranchMoved(project.projectId, branch, 'manifest-write'))
+      .catch(() => {});
     return { ok: true };
   }
 

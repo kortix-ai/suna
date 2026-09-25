@@ -27,6 +27,7 @@ import {
   normalizeBedrockInferenceProfileRegion,
   stripBedrockInferenceProfilePrefix,
 } from './descriptors';
+import { isAwsRegion } from './aws-region';
 
 // Bedrock is the one native-transport BYOK provider whose credential is
 // multi-field (see apps/web/src/lib/llm-providers.ts's env-vars-per-provider
@@ -38,24 +39,6 @@ import {
 // SigV4 signing path lands (see transports/bedrock/request.ts's
 // TODO(bedrock-sigv4)); only the bearer token + region are read here today.
 const BEDROCK_REGION_ENV_VAR = 'AWS_REGION';
-
-// Tier resolution is the SHARED 30s-TTL cache in billing/services/entitlements
-// (getCachedAccountTier) — this used to keep its own independent cache/Map
-// here, so the BYOK fee-waiver decision below and the managed-model free-tier
-// gate a few lines later could each see a different (stale-vs-fresh) tier for
-// up to 30s after an upgrade/downgrade, resolved at different wall-clock
-// instants. One cache, one invalidation point (entitlements.
-// invalidateCachedAccountTier) removes that skew. `getCachedAccountTier`
-// itself takes an injectable `now` (defaults to Date.now()) so the 30s TTL
-// boundary stays unit-testable without a real wall-clock sleep — this is a
-// thin re-export, not a second implementation.
-export const resolveCachedAccountTier = getCachedAccountTier;
-
-// Managed-models entitlement, same shared snapshot cache. Trial overlay and
-// the operator `managed_models_override` are applied inside — never derive
-// this from a tier string here (that is exactly the conflation the comment
-// below warns about).
-export const resolveCachedManagedModels = accountMayUseManagedModels;
 
 const PLAN_UPGRADE_SUGGESTION =
   'Upgrade your plan to use this model, or choose a model available on your current plan.';
@@ -72,7 +55,7 @@ const BRING_YOUR_OWN_KEY_SUGGESTION =
   'This plan does not include managed models. Add your own provider key to use ' +
   'this model, or pick a model your key covers.';
 
-export function noManagedModelsError(model: string, tierIsPaid: boolean): GatewayResolutionError {
+function noManagedModelsError(model: string, tierIsPaid: boolean): GatewayResolutionError {
   return tierIsPaid
     ? new GatewayResolutionError(
         'plan_upgrade_required',
@@ -301,7 +284,16 @@ export async function resolveCandidates(
       // Bedrock's project-scoped region also feeds the AI-SDK engine's Bedrock
       // provider (descriptor.region); resolve it once for both baseUrl + region.
       const bedrockRegion =
-        byok.kind === 'bedrock' ? await readGatewaySecret(BEDROCK_REGION_ENV_VAR) : undefined;
+        byok.kind === 'bedrock'
+          ? (await readGatewaySecret(BEDROCK_REGION_ENV_VAR))?.trim() || undefined
+          : undefined;
+      if (bedrockRegion && !isAwsRegion(bedrockRegion)) {
+        throw new GatewayResolutionError(
+          'provider_not_connected',
+          `The project's AWS_REGION secret is not an AWS region name.`,
+          'Set AWS_REGION to a region such as us-east-1, or remove it to use us-east-1.',
+        );
+      }
       const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
       // Bedrock invoke id: normalize a wrong-geography cross-region
       // inference-profile prefix (e.g. a `jp.` pick that got stored as an
@@ -376,10 +368,14 @@ export async function resolveCandidates(
       );
     }
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-      if (!(await resolveCachedManagedModels(principal.accountId))) {
+      // Both reads go through the one billing cache in entitlements (30s TTL,
+      // one invalidation point), so the entitlement and the tier that picks
+      // the refusal copy cannot disagree. The trial overlay and the operator
+      // `managed_models_override` apply inside `accountMayUseManagedModels`.
+      if (!(await accountMayUseManagedModels(principal.accountId))) {
         // A v3 credit plan lands here too — it pays, it just doesn't bundle
         // managed inference. Telling that customer to "upgrade" is wrong.
-        const tier = await resolveCachedAccountTier(principal.accountId);
+        const tier = await getCachedAccountTier(principal.accountId);
         throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
       }
     }

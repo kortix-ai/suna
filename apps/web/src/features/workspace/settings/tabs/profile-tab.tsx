@@ -30,7 +30,7 @@
  * borrows the empty-state copy — that copy asserts the account has no second
  * factor, which a failed fetch cannot know.
  *
- * Ported from `features/accounts/settings/general-tab.tsx` (avatar upload,
+ * Ported from the deleted `features/accounts/settings/general-tab.tsx` (avatar upload,
  * name save, account deletion) and `features/accounts/settings/
  * security-tab.tsx` (MFA factor list and TOTP enrollment). Task 10 deleted
  * `security-tab.tsx` and the legacy user-settings modal that consumed it: the MFA
@@ -649,8 +649,9 @@ export function ProfileTab() {
   useEffect(() => {
     avatarPreviewRef.current = avatarPreview;
   }, [avatarPreview]);
-  // See general-tab.tsx's identical effect: revoke whatever preview blob is
-  // current on unmount (closing the panel mid-upload), not one captured once.
+  // On unmount (for example, the panel closes mid-upload), revoke the preview
+  // blob URL that is current at that moment. The ref tracks every new preview,
+  // so the cleanup never revokes a stale URL captured when the effect ran.
   useEffect(() => {
     return () => {
       if (avatarPreviewRef.current) URL.revokeObjectURL(avatarPreviewRef.current);

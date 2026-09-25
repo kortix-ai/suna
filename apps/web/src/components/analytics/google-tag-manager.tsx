@@ -3,6 +3,7 @@
 import Script from 'next/script';
 import { useEffect, useState } from 'react';
 
+import { isAnalyticsExcludedPath } from '@/lib/analytics/gtm';
 import { isDesktop } from '@/lib/desktop';
 
 /**
@@ -25,10 +26,20 @@ import { isDesktop } from '@/lib/desktop';
  * Never loads inside the desktop app (its user agent carries
  * `DESKTOP_UA_TOKEN`); GTM carries visitor de-anonymization tags that have no
  * place in the authenticated native client.
+ *
+ * Never loads when the document opens on a signed-in or capability-token page
+ * (`isAnalyticsExcludedPath`: /projects, /admin, /secret-intake, …). Scripts
+ * GTM injects run with the page's privileges, and the Supabase session cookie
+ * is readable from script. The decision is made once per document: a script
+ * cannot be unloaded, so a visitor who opens a marketing page and then
+ * navigates into the app in the same tab keeps the container that page loaded.
  */
 export function GoogleTagManager({ gtmId }: { gtmId: string }) {
   const [enabled, setEnabled] = useState(false);
-  useEffect(() => setEnabled(!isDesktop()), []);
+  useEffect(
+    () => setEnabled(!isDesktop() && !isAnalyticsExcludedPath(window.location.pathname)),
+    [],
+  );
   if (!enabled) return null;
   return (
     <>

@@ -84,4 +84,13 @@ describe('OTLP trace exporter', () => {
 
     expect(fetchCalls).toHaveLength(0);
   });
+
+  // The exporter is configured, but a span emitted outside any request (a
+  // background task, a gateway trace persisted after the request ended) has no
+  // trace to join: it is dropped, never exported as an orphan.
+  test('does not export outside a request context', async () => {
+    const ok = await emitOtelSpan({ name: 'orphan', kind: 'INTERNAL', startTimeMs: 1 });
+    expect(ok).toBe(false);
+    expect(fetchCalls).toHaveLength(0);
+  });
 });

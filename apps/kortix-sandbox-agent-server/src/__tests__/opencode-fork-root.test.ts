@@ -8,26 +8,16 @@ import { describe, expect, test } from 'bun:test'
 import { isSharedSeedBakedRoot } from '../harness/open-code/opencode-fork-root'
 
 describe('isSharedSeedBakedRoot', () => {
-  test('rotates when the resolved root IS the shared seed-baked root', () => {
-    expect(isSharedSeedBakedRoot('ses_seed', 'ses_seed')).toBe(true)
-  })
-
-  test("reuses when the resolved root is the fork's own (differs from seed)", () => {
-    expect(isSharedSeedBakedRoot('ses_fork', 'ses_seed')).toBe(false)
-  })
-
-  test('reuses when there is no seed marker (cold session, or already rotated)', () => {
-    expect(isSharedSeedBakedRoot('ses_fork', null)).toBe(false)
-    expect(isSharedSeedBakedRoot('ses_fork', undefined)).toBe(false)
-  })
-
-  test('does not trigger when there is no resolved root (caller creates one)', () => {
-    expect(isSharedSeedBakedRoot(null, 'ses_seed')).toBe(false)
-    expect(isSharedSeedBakedRoot(undefined, 'ses_seed')).toBe(false)
-  })
-
-  test('treats empty strings as absent', () => {
-    expect(isSharedSeedBakedRoot('', '')).toBe(false)
-    expect(isSharedSeedBakedRoot('ses_seed', '')).toBe(false)
+  test.each([
+    ['the resolved root IS the shared seed-baked root: rotate', 'ses_seed', 'ses_seed', true],
+    ["the resolved root is the fork's own: reuse", 'ses_fork', 'ses_seed', false],
+    ['no seed marker (cold session, or already rotated): reuse', 'ses_fork', null, false],
+    ['no seed marker (undefined): reuse', 'ses_fork', undefined, false],
+    ['no resolved root (the caller creates one)', null, 'ses_seed', false],
+    ['no resolved root (undefined)', undefined, 'ses_seed', false],
+    ['empty strings are absent', '', '', false],
+    ['an empty seed marker is absent', 'ses_seed', '', false],
+  ] as const)('%s', (_name, root, seed, rotate) => {
+    expect(isSharedSeedBakedRoot(root, seed)).toBe(rotate)
   })
 })

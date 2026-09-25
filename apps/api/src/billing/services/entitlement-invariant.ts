@@ -38,13 +38,13 @@ import {
  * the expiring bucket — while still catching any real grant-sizing bug, whose
  * smallest possible error is a whole tier increment.
  */
-export const ENTITLEMENT_DRIFT_TOLERANCE_USD = 0.5;
+const ENTITLEMENT_DRIFT_TOLERANCE_USD = 0.5;
 
 /**
  * Legitimate headroom above the allowance, on top of the numeric tolerance.
  *
- * The subscription-activation grant is ADDITIVE (`grantCredits(…, isExpiring =
- * true)` in webhooks.ts), not a reset, so it stacks on whatever remains of the
+ * The subscription-activation grant is ADDITIVE (`wallet.grant({ expiring:
+ * true })` in webhooks.ts), not a reset, so it stacks on whatever remains of the
  * free tier's $2 expiring welcome grant. Every customer who subscribes before
  * spending that $2 therefore, correctly, holds `allowance + 2` of expiring
  * credit for the rest of their first cycle. Without this the check is red for
@@ -58,7 +58,7 @@ export const ENTITLEMENT_DRIFT_TOLERANCE_USD = 0.5;
 const FIRST_CYCLE_FREE_GRANT_HEADROOM_USD = 2;
 
 /** Total excess, in dollars, that is reported as a breach on a PAID tier. */
-export const ENTITLEMENT_BREACH_THRESHOLD_USD =
+const ENTITLEMENT_BREACH_THRESHOLD_USD =
   ENTITLEMENT_DRIFT_TOLERANCE_USD + FIRST_CYCLE_FREE_GRANT_HEADROOM_USD;
 
 /**

@@ -37,7 +37,7 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ListIcon as MenuIcon, XIcon as CloseIcon, ListIcon, XIcon, PaperPlaneTiltIcon, ArrowUpIcon, ArrowDownIcon, CaretUpIcon, CaretDownIcon } from '@/lib/icons';
+import { XIcon, CaretUpIcon, CaretDownIcon } from '@/lib/icons';
 import type { SheetRef } from '@/components/kortix/sheet';
 import { FLOATING_MENU_CLEARANCE, FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import { ConnectProviderSheet } from '@/components/session/ConnectProviderSheet';
@@ -57,7 +57,6 @@ import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { playSound } from '@/lib/sounds';
 import { Icon } from '@/components/ui/icon';
-import { Text as RNText } from 'react-native';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 
 import { clearOptimistic, useSyncStore } from '@/lib/opencode/sync-store';
@@ -93,7 +92,12 @@ import { mintWireMessageId } from '@/lib/session/wire-message-id';
 import { sendIdsFor, useFailedSendStore, useFailedSends, type SendIds } from '@/lib/session/failed-sends';
 import { optimisticUserParts } from '@/lib/session/optimistic-parts';
 import { draftKey } from '@/lib/session/composer-draft';
-import { interruptedTurnIds, rewindHiddenMessageIds, webSpace } from '@/lib/session/user-message';
+import {
+  buildSessionRefsBlock,
+  interruptedTurnIds,
+  rewindHiddenMessageIds,
+  webSpace,
+} from '@/lib/session/user-message';
 import {
   hasCompactionTurn as findCompactionTurn,
   isSuppressedFailedCompaction,
@@ -114,6 +118,7 @@ import { questionsToHydrate } from '@/lib/opencode/stream-policy';
 import { useSession, replyToQuestion, rejectQuestion, replyToPermission } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
+import { queueHeaderLabel } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import type { QueuedMessage } from '@/stores/message-queue-store';
 import { useCompactionStore } from '@/stores/compaction-store';
@@ -472,9 +477,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
   const queueEnqueue = useMessageQueueStore((s) => s.enqueue);
   const queueRemove = useMessageQueueStore((s) => s.remove);
-  const queueMoveUp = useMessageQueueStore((s) => s.moveUp);
-  const queueMoveDown = useMessageQueueStore((s) => s.moveDown);
-  const queueClearSession = useMessageQueueStore((s) => s.clearSession);
 
   // Hydrate queue store from AsyncStorage once
   useEffect(() => {
@@ -548,10 +550,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       let finalText = text;
       const sessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value);
       if (sessionMentions && sessionMentions.length > 0) {
-        const refs = sessionMentions
-          .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
-          .join('\n');
-        finalText = `${text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
+        const block = buildSessionRefsBlock(
+          sessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })),
+        );
+        finalText = `${text}\n\n${block}`;
       }
 
       // Optimistic user message
@@ -793,12 +795,14 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       if (!msg) return;
       queueInFlightRef.current = null;
       queueRemove(messageId);
+      // Send now interrupts: say so, so the stopped reply is not a surprise.
+      if (isBusy) toast.info('Stopped the current reply to send this now');
       handleStop();
       setTimeout(() => {
         handleSend(msg.text, {});
       }, 200);
     },
-    [queueRemove, handleStop, handleSend],
+    [queueRemove, handleStop, handleSend, isBusy, toast],
   );
 
   // Agent/model/variant config
@@ -1735,7 +1739,27 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
 
   const handleToggleQueue = useCallback(() => setQueueExpanded((v) => !v), []);
-  const handleClearQueue = useCallback(() => queueClearSession(sessionId), [queueClearSession, sessionId]);
+  // Remove acts at once; the toast's Undo puts the message back.
+  const offerQueueUndo = useCallback(
+    (message: string, snapshot: QueuedMessage[], removedIds: string[]) => {
+      if (removedIds.length === 0) return;
+      toast.info(message, {
+        action: {
+          label: 'Undo',
+          onPress: () => useMessageQueueStore.getState().restore(snapshot, removedIds),
+        },
+      });
+    },
+    [toast],
+  );
+  const handleRemoveQueued = useCallback(
+    (messageId: string) => {
+      const snapshot = useMessageQueueStore.getState().messages;
+      queueRemove(messageId);
+      offerQueueUndo('Removed from queue', snapshot, [messageId]);
+    },
+    [queueRemove, offerQueueUndo],
+  );
   // The oldest pending permission, pinned above the composer (COR-137 Task 7)
   // — above the queue panel in the same top slot, so it is never missed
   // off-screen while a tool call waits on it.
@@ -1757,11 +1781,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           key="queue"
           messages={queuedMessages}
           expanded={queueExpanded}
+          busy={isBusy}
           onToggle={handleToggleQueue}
-          onRemove={queueRemove}
-          onMoveUp={queueMoveUp}
-          onMoveDown={queueMoveDown}
-          onClear={handleClearQueue}
+          onRemove={handleRemoveQueued}
           onSendNow={handleQueueSendNow}
           isDark={isDark}
         />,
@@ -1774,10 +1796,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     queuedMessages,
     queueExpanded,
     handleToggleQueue,
-    queueRemove,
-    queueMoveUp,
-    queueMoveDown,
-    handleClearQueue,
+    isBusy,
+    handleRemoveQueued,
     handleQueueSendNow,
     isDark,
   ]);
@@ -2168,36 +2188,34 @@ function FreshSessionHero({
 }
 
 // ---------------------------------------------------------------------------
-// QueuePanel — collapsible list of queued messages shown above the text input
+// QueuePanel — the messages waiting to send, above the text input. Header
+// "Up next · N" toggles the list. Each row: the message, a "Send now" pill,
+// and a 44pt remove. Remove acts at once; the caller shows a toast with Undo.
+// No Clear-all (Jay, 2026-09-25): the per-row X is enough.
 // ---------------------------------------------------------------------------
 
 function QueuePanel({
   messages,
   expanded,
+  busy,
   onToggle,
   onRemove,
-  onMoveUp,
-  onMoveDown,
-  onClear,
   onSendNow,
   isDark,
 }: {
   messages: QueuedMessage[];
   expanded: boolean;
+  /** The agent is working: Send now stops the current reply first. */
+  busy: boolean;
   onToggle: () => void;
   onRemove: (id: string) => void;
-  onMoveUp: (id: string) => void;
-  onMoveDown: (id: string) => void;
-  onClear: () => void;
   onSendNow: (id: string) => void;
   isDark: boolean;
 }) {
   const bgColor = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03);
   const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
-  // Original literals (`#888`/`#999`) had their light/dark branches swapped
-  // relative to their own lightness.
-  const mutedText = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
-  const fgText = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedText = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const first = messages[0]?.text ?? '';
 
   return (
     <View
@@ -2210,69 +2228,39 @@ function QueuePanel({
         overflow: 'hidden',
       }}
     >
-      {/* Header — tap to expand/collapse. Clear sits beside the toggle, not
-          inside it: a button nested in a button is hidden from VoiceOver and
-          its hit area is clipped to the parent. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 4 }}>
         <Button
           variant="ghost"
           onPress={onToggle}
           accessibilityState={{ expanded }}
-          className="h-auto w-auto flex-1 flex-row items-center justify-start rounded-none active:opacity-70"
-          style={{
-            minHeight: 44,
-            paddingLeft: 12,
-            paddingRight: 4,
-            paddingVertical: 10,
-          }}
+          accessibilityLabel={`${queueHeaderLabel(messages.length)}. ${expanded ? 'Hide' : 'Show'} queued messages`}
+          className="h-auto w-auto flex-1 flex-row items-center justify-start gap-2 rounded-none active:opacity-70"
+          style={{ minHeight: 44, paddingLeft: 12, paddingRight: 4, paddingVertical: 10 }}
         >
-          <ListIcon size={14} color={mutedText} style={{ marginRight: 6 }} />
-          <RNText
-            style={{
-              flex: 1,
-              fontSize: 13,
-              fontFamily: 'Roobert-Medium',
-              color: mutedText,
-            }}
-            numberOfLines={1}
-          >
-            {messages.length} message{messages.length !== 1 ? 's' : ''} queued
-            {!expanded && messages.length > 0
-              ? ` — ${messages[0].text.length > 40 ? messages[0].text.slice(0, 40) + '...' : messages[0].text}`
-              : ''}
-          </RNText>
-          {/* Expand/collapse chevron */}
+          <Text variant="small" className="leading-5">
+            {queueHeaderLabel(messages.length)}
+          </Text>
+          <Text variant="muted" numberOfLines={1} className="flex-1">
+            {expanded ? '' : first}
+          </Text>
           {expanded ? (
             <CaretUpIcon size={14} color={mutedText} />
           ) : (
             <CaretDownIcon size={14} color={mutedText} />
           )}
         </Button>
-        {/* Clear all */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={() => onClear()}
-          accessibilityLabel="Clear queue"
-          className="mr-1"
-        >
-          <XIcon size={16} color={mutedText} />
-        </Button>
       </View>
 
-      {/* Expanded list */}
       {expanded && messages.length > 0 && (
-        <View style={{ maxHeight: 160 }}>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
-          >
-            {messages.map((qm, idx) => (
+        <View style={{ maxHeight: 176 }}>
+          <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
+            {messages.map((qm) => (
               <View
                 key={qm.id}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
+                  gap: 8,
                   paddingLeft: 12,
                   paddingRight: 4,
                   paddingVertical: 2,
@@ -2280,77 +2268,29 @@ function QueuePanel({
                   borderTopColor: borderColor,
                 }}
               >
-                {/* Index badge */}
-                <RNText
-                  style={{
-                    fontSize: 13,
-                    fontFamily: 'Roobert-Medium',
-                    color: mutedText,
-                    width: 22,
-                  }}
-                >
-                  {idx + 1}
-                </RNText>
-
-                {/* Message text */}
-                <RNText
-                  numberOfLines={1}
-                  style={{
-                    flex: 1,
-                    fontSize: 13,
-                    fontFamily: 'Roobert',
-                    color: fgText,
-                    marginRight: 8,
-                  }}
-                >
+                <Text variant="small" numberOfLines={1} className="flex-1 leading-5">
                   {qm.text}
-                </RNText>
-
-                {/* Action buttons — 40pt `icon` boxes 4pt apart; the Button's
-                    default 2pt hit slop makes each target 44pt without
-                    reaching into its neighbour. */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  {/* Send now */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onPress={() => onSendNow(qm.id)}
-                    accessibilityLabel="Send now"
-                  >
-                    <PaperPlaneTiltIcon size={16} color={THEME.accent.blue} weight="fill" />
-                  </Button>
-                  {/* Move up */}
-                  {idx > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onPress={() => onMoveUp(qm.id)}
-                      accessibilityLabel="Move up"
-                    >
-                      <ArrowUpIcon size={16} color={mutedText} />
-                    </Button>
-                  )}
-                  {/* Move down */}
-                  {idx < messages.length - 1 && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onPress={() => onMoveDown(qm.id)}
-                      accessibilityLabel="Move down"
-                    >
-                      <ArrowDownIcon size={16} color={mutedText} />
-                    </Button>
-                  )}
-                  {/* Remove */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onPress={() => onRemove(qm.id)}
-                    accessibilityLabel="Remove from queue"
-                  >
-                    <XIcon size={16} color={mutedText} />
-                  </Button>
-                </View>
+                </Text>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-full"
+                  onPress={() => onSendNow(qm.id)}
+                  accessibilityLabel="Send now"
+                  accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
+                >
+                  <Text>Send now</Text>
+                </Button>
+                {/* 40pt box + the Button's default 2pt hit slop = 44pt target. */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full"
+                  onPress={() => onRemove(qm.id)}
+                  accessibilityLabel="Remove from queue"
+                >
+                  <XIcon size={16} color={mutedText} />
+                </Button>
               </View>
             ))}
           </ScrollView>

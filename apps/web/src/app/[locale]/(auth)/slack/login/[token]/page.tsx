@@ -4,7 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 
 import { ChatIdentityConnect } from '@/features/auth/chat-identity-connect';
-import { bindSlackIdentity } from '@kortix/sdk';
+import { bindSlackIdentity, previewSlackIdentity } from '@kortix/sdk';
 
 /**
  * Slack `/login` bind page. The bot DMs the user a link to
@@ -24,6 +24,7 @@ export default function SlackLoginPage() {
       token={token}
       loginPath={`/slack/login/${token}`}
       bind={bindSlackIdentity}
+      preview={previewSlackIdentity}
       missingLinkMessage={tI18nComplete.raw('text86d74a15857f')}
       disconnectNote={
         <>

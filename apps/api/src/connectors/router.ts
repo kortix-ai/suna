@@ -557,7 +557,7 @@ export interface ConnectorRouterDeps {
   } | null>;
   /**
    * Does this caller hold the connections-manage capability on the project?
-   * The same gate r4's project-owned connection create asserts — connecting an
+   * The same gate the project-owned connection create (routes/connections.ts) asserts — connecting an
    * account the WHOLE project can then use is administration, not self-service.
    */
   resolveConnectionsManager?(
