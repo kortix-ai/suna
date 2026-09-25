@@ -889,6 +889,19 @@ private session resolves it; the outsider and the shared session get `403
 connector_not_connected` whose `available_accounts` omits the account. A grant
 to the project opens it to all three again.
 
+`CONN-30` **The real `kortix` CLI shares a connector account.** Three CLI
+processes log in with personal access tokens: the owner, a member in a Sales
+group, and a member outside it. `kortix access grant --group <id> --connection
+<id>` exits 0 and prints the assignment. `kortix connectors connections ls`
+shows the account's WHO CAN USE as the group label plus `(not you)` for the
+owner. `kortix connectors accounts <slug> --json` lists the account for the
+Sales member and omits it for the outsider. `kortix access assignments` names
+the grant. `kortix access grant --everyone --connection <id>` opens it: the
+outsider lists it, WHO CAN USE reads `everyone`, and the listing names the
+principal `everyone`. `kortix access grant --everyone --agent kortix` writes a
+`project` principal agent grant. `--everyone` with only a role exits 2 before
+any request.
+
 ---
 
 ## 25. Parallel-authored domains (git/platform/iam/channels/queue/audit/scim)

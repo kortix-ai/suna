@@ -64,6 +64,10 @@ interface Connection {
   metadata?: Record<string, unknown>;
   /** Who the account was authorized as. Absent on older servers. */
   connected_as?: string | null;
+  /** A shared account's grants. Empty: everyone in the project may use it. */
+  shared_with?: Array<{ principal_type: string; label: string }>;
+  /** `false`: listed only because the caller manages the project's connections. */
+  usable?: boolean;
 }
 
 /**
@@ -1431,15 +1435,20 @@ async function runConnections(input: {
         ...response.connections.map((connection) => (connection.label ?? '').length),
       );
       const asWidth = connectedAsWidth(response.connections);
+      const audienceWidth = Math.max(
+        11,
+        ...response.connections.map((connection) => connectionAudienceLabel(connection).length),
+      );
       process.stdout.write('\n');
       process.stdout.write(
-        `  ${C.dim}${pad('CONNECTOR', connectorWidth)}  ${pad('LABEL', labelWidth)}  ${pad('CONNECTED AS', asWidth)}  OWNER     STATUS   DEFAULT  CONNECTION ID${C.reset}\n`,
+        `  ${C.dim}${pad('CONNECTOR', connectorWidth)}  ${pad('LABEL', labelWidth)}  ${pad('CONNECTED AS', asWidth)}  OWNER     ${pad('WHO CAN USE', audienceWidth)}  STATUS   DEFAULT  CONNECTION ID${C.reset}\n`,
       );
       for (const connection of response.connections) {
         process.stdout.write(
           `  ${pad(connection.connector_alias, connectorWidth)}  ${pad(connection.label ?? '—', labelWidth)}  ` +
             `${pad(connection.connected_as ?? '—', asWidth)}  ` +
-            `${pad(connection.owner_type, 9)} ${pad(connection.status, 8)} ` +
+            `${pad(connection.owner_type, 9)} ${pad(connectionAudienceLabel(connection), audienceWidth)}  ` +
+            `${pad(connection.status, 8)} ` +
             `${pad(connection.is_default ? 'yes' : 'no', 8)} ${connection.connection_id}\n`,
         );
       }
@@ -1965,6 +1974,22 @@ async function readStdin(): Promise<string> {
  * other owner kind (agent / subject / external) prints verbatim — those are
  * machine-owned and have no shared/private reading.
  */
+/**
+ * `connections ls`'s WHO CAN USE column: `owner only` for a member's own
+ * account, `everyone` for a shared account with no grant or a grant to the
+ * project, else the grant labels. `(not you)` marks an account the caller
+ * lists only because they manage the project's connections.
+ */
+export function connectionAudienceLabel(connection: Connection): string {
+  if (connection.owner_type !== 'project') return 'owner only';
+  const shares = connection.shared_with ?? [];
+  const audience =
+    shares.length === 0 || shares.some((share) => share.principal_type === 'project')
+      ? 'everyone'
+      : shares.map((share) => share.label).join(', ');
+  return connection.usable === false ? `${audience} (not you)` : audience;
+}
+
 function accountOwnerLabel(ownerType: string): string {
   if (ownerType === 'project') return 'shared';
   if (ownerType === 'member') return 'private';

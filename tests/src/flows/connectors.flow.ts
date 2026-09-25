@@ -3695,3 +3695,204 @@ flow(
     }
   },
 );
+
+// ── CONN-30 — the real `kortix` CLI shares a connector account ──
+// The CLI half of the Share dialog: `kortix access grant --connection` narrows
+// an account, `--everyone` opens it, and the two listing commands say who can
+// use it. Each principal runs its own CLI process, logged in with its own PAT.
+flow(
+  'CONN-30',
+  {
+    domain: 'connectors',
+    timeoutMs: 240_000,
+    routes: [
+      'POST /v1/accounts/tokens',
+      'DELETE /v1/accounts/tokens/:tokenId',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/projects/:projectId/connections',
+      'POST /v1/accounts/:accountId/iam/groups',
+      'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/projects/:projectId/connections',
+      'GET /v1/connectors/projects/:projectId/connectors/:slug/accounts',
+      'GET /v1/projects/:projectId/resource-grants',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project({ managedGit: true });
+    const inSales = await team.addMember('member');
+    const outsideSales = await team.addMember('member');
+    const slug = `ke2e-cli-share-${Date.now().toString(36)}`;
+    const LABEL = 'Sales CRM';
+    const groupName = ctx.fixtures.name('sales');
+    const owner = new CliSandbox('conn30-owner');
+    const sales = new CliSandbox('conn30-sales');
+    const outsider = new CliSandbox('conn30-outsider');
+    const memberTokens: Array<{ who: typeof inSales; tokenId: string }> = [];
+    let groupId = '';
+    let connectionId = '';
+
+    // Every command names the project; `access` commands act on the active
+    // account, which `login --account` pins to the team.
+    const kortix = async (sb: CliSandbox, args: string[], expectExit = 0) => {
+      const r = await sb.run([...args, '--project', project.id]);
+      throwIfCliInfraFailure(r, `kortix ${args.join(' ')}`);
+      if (r.exitCode !== expectExit) {
+        throw new Error(`kortix ${args.join(' ')}: exit ${r.exitCode}, want ${expectExit}: ${r.all.slice(0, 800)}`);
+      }
+      return r;
+    };
+    const accountLabels = async (sb: CliSandbox) => {
+      const r = await kortix(sb, ['connectors', 'accounts', slug, '--json']);
+      return (JSON.parse(r.stdout) as { accounts?: Array<{ label: string }> }).accounts?.map((a) => a.label) ?? [];
+    };
+    const whoCanUse = async () => {
+      const r = await kortix(owner, ['connectors', 'connections', 'ls']);
+      return r.stdout.split('\n').find((line) => line.includes(` ${LABEL} `)) ?? '';
+    };
+
+    try {
+      await ctx.step('the owner seeds a Sales group with one member, a connector, and a shared account', async () => {
+        await team.grantProjectRole(project.id, inSales.userId!, 'member');
+        await team.grantProjectRole(project.id, outsideSales.userId!, 'member');
+        const g = await ctx.client
+          .as(ctx.P.OWNER)
+          .post('/v1/accounts/:accountId/iam/groups', { name: groupName }, { params: { accountId: team.id } });
+        g.status(201);
+        groupId = g.json<{ group_id: string }>().group_id;
+        (
+          await ctx.client.as(ctx.P.OWNER).post(
+            '/v1/accounts/:accountId/iam/groups/:groupId/members',
+            { userId: inSales.userId! },
+            { params: { accountId: team.id, groupId } },
+          )
+        ).status(200);
+        (
+          await ctx.client.as(ctx.P.OWNER).post(
+            '/v1/connectors/projects/:projectId/connectors',
+            { slug, provider: 'http', baseUrl: 'https://crm.example.com', auth: { type: 'none' } },
+            { params: { projectId: project.id } },
+          )
+        ).status(200);
+        const shared = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/connections',
+          { connector_alias: slug, owner_type: 'project', label: LABEL },
+          { params: { projectId: project.id } },
+        );
+        shared.status(201);
+        connectionId = shared.json<{ connection_id: string }>().connection_id;
+      });
+
+      await ctx.step('three CLI processes log in with their own tokens → exit 0', async () => {
+        const mint = async (who: typeof inSales) => {
+          const r = await ctx.client.as(who).post('/v1/accounts/tokens', { name: ctx.fixtures.name('conn30') });
+          r.status(201);
+          const body = r.json<{ token_id: string; secret_key: string }>();
+          memberTokens.push({ who, tokenId: body.token_id });
+          return body.secret_key;
+        };
+        const logins: Array<[CliSandbox, string]> = [
+          [owner, await ctx.fixtures.pat()],
+          [sales, await mint(inSales)],
+          [outsider, await mint(outsideSales)],
+        ];
+        for (const [sb, pat] of logins) {
+          const r = await sb.login(pat, { noProject: true, account: team.id });
+          throwIfCliInfraFailure(r, 'kortix login');
+          if (r.exitCode !== 0) throw new Error(`login: exit ${r.exitCode}: ${r.all.slice(0, 600)}`);
+        }
+      });
+
+      await ctx.step('before any grant, the member outside Sales lists the shared account', async () => {
+        const labels = await accountLabels(outsider);
+        if (!labels.includes(LABEL)) throw new Error(`outsider accounts: ${labels.join(', ')}`);
+        const line = await whoCanUse();
+        if (!line.includes('everyone')) throw new Error(`WHO CAN USE before any grant: ${line}`);
+      });
+
+      await ctx.step('`kortix access grant --group --connection` narrows the account to Sales → exit 0', async () => {
+        const r = await kortix(owner, ['access', 'grant', '--group', groupId, '--connection', connectionId, '--json']);
+        const assignment = JSON.parse(r.stdout) as Record<string, string>;
+        assert({
+          kind: 'body',
+          description: 'the CLI wrote a connection object grant to the group',
+          pass:
+            assignment.principal_type === 'group' &&
+            assignment.principal_id === groupId &&
+            assignment.object_type === 'connection' &&
+            assignment.object_id === connectionId &&
+            assignment.role_key === 'agent-user',
+          expected: { principal_type: 'group', object_type: 'connection', object_id: connectionId },
+          actual: assignment,
+        });
+      });
+
+      await ctx.step('`connections ls` shows who can use it: Sales, and not the owner', async () => {
+        const line = await whoCanUse();
+        if (!line.includes(`${groupName} (not you)`)) throw new Error(`WHO CAN USE after the group grant: ${line}`);
+      });
+
+      await ctx.step('`connectors accounts --json` lists it for the Sales member and omits it for the outsider', async () => {
+        const inside = await accountLabels(sales);
+        if (!inside.includes(LABEL)) throw new Error(`Sales member accounts: ${inside.join(', ')}`);
+        const outside = await accountLabels(outsider);
+        if (outside.includes(LABEL)) throw new Error(`outsider still lists it: ${outside.join(', ')}`);
+      });
+
+      await ctx.step('`kortix access assignments` names the group grant on the connection', async () => {
+        const r = await kortix(owner, ['access', 'assignments']);
+        const row = r.stdout.split('\n').find((line) => line.includes(`connection:${connectionId}`)) ?? '';
+        if (!row.includes(`group:${groupName}`)) throw new Error(`assignments row: ${row || r.stdout.slice(0, 800)}`);
+      });
+
+      await ctx.step('`kortix access grant --everyone --connection` opens it to the project again', async () => {
+        const r = await kortix(owner, ['access', 'grant', '--everyone', '--connection', connectionId]);
+        if (!r.stdout.includes('to everyone in project')) throw new Error(`grant output: ${r.all.slice(0, 600)}`);
+        const outside = await accountLabels(outsider);
+        if (!outside.includes(LABEL)) throw new Error(`outsider after --everyone: ${outside.join(', ')}`);
+        const line = await whoCanUse();
+        if (!line.includes('everyone') || line.includes('(not you)')) {
+          throw new Error(`WHO CAN USE after --everyone: ${line}`);
+        }
+        const listed = await kortix(owner, ['access', 'assignments']);
+        const everyoneRow = listed.stdout
+          .split('\n')
+          .find((l) => l.includes(`connection:${connectionId}`) && l.includes('everyone'));
+        if (!everyoneRow) throw new Error(`no everyone row: ${listed.stdout.slice(0, 800)}`);
+      });
+
+      await ctx.step('`kortix access grant --everyone --agent kortix` writes a project principal agent grant', async () => {
+        await kortix(owner, ['access', 'grant', '--everyone', '--agent', 'kortix']);
+        const grants = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/resource-grants', { params: { projectId: project.id } });
+        grants.status(200);
+        const rows = grants.json<{ grants: Array<{ resource_id: string; principal_type: string }> }>().grants;
+        assert({
+          kind: 'body',
+          description: 'the agent grant names everyone in the project',
+          pass: rows.some((g) => g.resource_id === 'kortix' && g.principal_type === 'project'),
+          expected: { resource_id: 'kortix', principal_type: 'project' },
+          actual: rows,
+        });
+      });
+
+      await ctx.step('`--everyone` with only a role exits 2 before any request', async () => {
+        const r = await kortix(owner, ['access', 'grant', '--everyone', '--role', 'manager'], 2);
+        if (!r.stderr.includes('--everyone holds an agent or a connection')) {
+          throw new Error(`stderr: ${r.stderr.slice(0, 400)}`);
+        }
+      });
+    } finally {
+      for (const sb of [owner, sales, outsider]) sb.dispose();
+      for (const { who, tokenId } of memberTokens) {
+        await ctx.client
+          .as(who)
+          .del('/v1/accounts/tokens/:tokenId', { params: { tokenId } })
+          .catch(() => undefined);
+      }
+    }
+  },
+);
