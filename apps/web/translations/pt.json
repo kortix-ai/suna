@@ -18694,7 +18694,9 @@
       "texta0bcee97cbb3": "Checkout integrado confirmado",
       "text0b751a917c97": "Instalação do GitHub conectada",
       "text8b7a8797d532": "Tenant do Microsoft Teams conectado",
+      "text83c0e255d4bb": "Instalação do Microsoft Teams concluída",
       "text17a8cf884e2a": "Workspace do Slack conectado",
+      "textf887cb0e6800": "Instalação do app do Slack concluída",
       "textc7f9ec5ed69c": "Agente do túnel do computador conectado",
       "textafd58fcedeee": "Caixa de entrada de e-mail conectada",
       "text2eda12b4ed38": "GitHub App existente conectado",
@@ -19172,6 +19174,13 @@
       "chatAccount": "Conta do {service}",
       "chatWorkspace": "Workspace do {service}",
       "checking": "Verificando o link…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} não foi conectado",
+      "mismatch": "Esta instalação foi iniciada a partir de outra conta Kortix ou para outro projeto. Entre com essa conta ou inicie a instalação novamente a partir do projeto.",
+      "expired": "Este link de instalação é inválido ou expirou. Inicie a instalação novamente a partir do projeto.",
+      "failed": "Não foi possível concluir a instalação. Inicie-a novamente a partir do projeto.",
+      "backToProject": "Voltar ao projeto"
     }
   },
   "projectOnboarding": {

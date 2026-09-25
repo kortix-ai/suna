@@ -10,7 +10,7 @@ import { loadSlackTokenForProject } from '../install-store';
 import { postEphemeral } from '../slack-api';
 import { escapeMrkdwn, sessionWebUrl } from './util';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
-import { lookupSlackIdentity, lookupSlackUserIdForKortixUser } from './identity';
+import { chatUser, lookupChatIdentity, lookupChatUserForKortixUser } from '../core/identity';
 
 const PLATFORM = 'slack';
 
@@ -175,7 +175,7 @@ async function postJoinRequest(input: {
   );
 
   if (input.alreadyPending || !input.ownerUserId) return;
-  const ownerSlackUserId = await lookupSlackUserIdForKortixUser(input.teamId, input.ownerUserId);
+  const ownerSlackUserId = await lookupChatUserForKortixUser('slack', input.teamId, input.ownerUserId);
   if (!ownerSlackUserId) return;
   const label = await requesterLabel(input.requesterUserId, input.requesterSlackUserId);
   await postEphemeral(
@@ -375,7 +375,7 @@ export async function decideSlackThreadJoin(input: {
   requesterSlackUserId: string;
   decision: 'approved' | 'denied';
 }): Promise<{ ok: true; text: string } | { ok: false; text: string }> {
-  const decider = await lookupSlackIdentity(input.teamId, input.deciderSlackUserId);
+  const decider = await lookupChatIdentity(chatUser('slack', input.teamId, input.deciderSlackUserId));
   if (!decider) return { ok: false, text: 'Connect your Kortix account before approving session access.' };
 
   const [session] = await db

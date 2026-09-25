@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 675 route actions and 64 other events.
+This page lists 677 route actions and 64 other events.
 
 ## `account.`
 
@@ -222,6 +222,7 @@ This page lists 675 route actions and 64 other events.
 | `channel.slack.installation.read` | Viewed Slack installation | `GET /v1/projects/:projectId/channels/slack/installation` |
 | `channel.slack.login_link.read` | Opened Slack login link | `GET /v1/channels/slack/identity/login/:token` |
 | `channel.slack.mode.read` | Viewed Slack setup options | `GET /v1/projects/:projectId/channels/slack/mode` |
+| `channel.slack.oauth.complete` | Completed Slack app install | `POST /v1/projects/:projectId/channels/slack/oauth/complete` |
 | `channel.slack.thread.bind` | Bound session to Slack thread | `POST /v1/projects/:projectId/channels/slack/bind-thread` |
 | `channel.teams.connect` | Connected Microsoft Teams tenant | `POST /v1/projects/:projectId/channels/teams/connect` |
 | `channel.teams.conversation.list` | Listed Microsoft Teams conversations | `GET /v1/projects/:projectId/channels/teams/conversations` |
@@ -236,6 +237,7 @@ This page lists 675 route actions and 64 other events.
 | `channel.teams.manifest.read` | Viewed Microsoft Teams app manifest | `GET /v1/projects/:projectId/channels/teams/manifest` |
 | `channel.teams.message.send` | Sent Microsoft Teams message | `POST /v1/projects/:projectId/channels/teams/message` |
 | `channel.teams.mode.read` | Viewed Microsoft Teams setup options | `GET /v1/projects/:projectId/channels/teams/mode` |
+| `channel.teams.oauth.complete` | Completed Microsoft Teams install | `POST /v1/projects/:projectId/channels/teams/oauth/complete` |
 
 ## `connector.`
 

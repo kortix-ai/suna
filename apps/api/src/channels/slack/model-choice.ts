@@ -25,7 +25,9 @@ import {
   describeKeys,
   listChannelModels,
 } from '../model-access';
-import { resolveSlackActor } from './identity';
+import { chatUser, resolveChatActor } from '../core/identity';
+import { authorizeChannelChange } from '../core/settings';
+import { settingsRefusalText, slackSettingsChannel, slackUserOf } from './settings-text';
 import { channelModelContext } from './model-gate';
 import { currentChannelSelection, setChannelModel } from './selection';
 import type { SlashResponse } from './types';
@@ -68,7 +70,7 @@ export async function slackModelScope(ctx: SlackModelCtx): Promise<ChannelModelS
   if (!gate) return null;
   const sender = config.SLACK_REQUIRE_USER_IDENTITY ? ctx.slackUserId : '';
   const actor = sender
-    ? await resolveSlackActor(ctx.teamId, sender, gate.accountId, gate.projectId).catch(() => null)
+    ? await resolveChatActor(chatUser('slack', ctx.teamId, sender), gate).catch(() => null)
     : null;
   const pooledEnabled = await projectFeatureFlagEnabled(gate.projectId, 'pooled_provider_secrets').catch(() => false);
   return channelModelScope({
@@ -234,6 +236,8 @@ export async function applySlackModelChoice(ctx: SlackModelCtx, choice: string):
   const id = choice.trim();
   const scope = await slackModelScope(ctx);
   if (!scope) return connect;
+  const auth = await authorizeChannelChange(slackUserOf(ctx), slackSettingsChannel(ctx));
+  if (!auth.ok) return settingsRefusalText(auth.reason, ctx.command, connect);
   if (!id || id.toLowerCase() === 'default') {
     return (await setChannelModel(channelCtx, null)) ? 'Model reset to the project default.' : connect;
   }
