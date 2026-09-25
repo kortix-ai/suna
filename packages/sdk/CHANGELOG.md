@@ -23,6 +23,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `<script>` tag with no bundler.
 - `KortixMasterProject` — the kortix-master daemon's board project.
 - `@kortix/sdk/internal/*` for the zustand stores. Not covered by semver.
+- `@kortix/sdk/internal/diagnostics-store` and
+  `@kortix/sdk/internal/managed-storage`. `apps/web` now imports the SDK's
+  LSP diagnostics store and quota-safe storage instead of keeping its own
+  copies. Not covered by semver.
 
 ### Deprecated
 - The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
@@ -39,6 +43,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   major.
 
 ### Fixed
+- `safeGetItem`, `safeSetItem`, `ScopedCache` and `pruneAllRegisteredCaches`
+  no longer throw `TypeError` when `window.localStorage` resolves to `null`
+  (some embedded WebViews do this instead of throwing). Added
+  `safeSessionGetItem`, `safeSessionSetItem` and `safeSessionRemoveItem` with
+  the same guarantee for `sessionStorage`.
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
   `ReferenceError` in a browser `<script>` bundle and on React Native.
 - The HTTP layer (`backendApi`/`makeRequest`) now transparently retries transient

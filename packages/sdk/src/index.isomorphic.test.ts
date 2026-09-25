@@ -180,6 +180,8 @@ const SUBPATH_TIERS: Subpath[] = [
   { name: './internal/sandbox-connection-store', file: 'internal/sandbox-connection-store.ts', tier: 'browser-only' },
   { name: './internal/opencode-pending-store', file: 'internal/opencode-pending-store.ts', tier: 'browser-only' },
   { name: './internal/idb-sync-cache', file: 'internal/idb-sync-cache.ts', tier: 'browser-only' },
+  { name: './internal/diagnostics-store', file: 'internal/diagnostics-store.ts', tier: 'browser-only' },
+  { name: './internal/managed-storage', file: 'internal/managed-storage.ts', tier: 'browser-only' },
 
   // The 20 legacy subpaths, now @deprecated shims under src/deprecated/.
   // Store shims stay browser-only; everything else is isomorphic-core.

@@ -36,6 +36,8 @@
     "./internal/sandbox-connection-store": "./src/internal/sandbox-connection-store.ts",
     "./internal/opencode-pending-store": "./src/internal/opencode-pending-store.ts",
     "./internal/idb-sync-cache": "./src/internal/idb-sync-cache.ts",
+    "./internal/diagnostics-store": "./src/internal/diagnostics-store.ts",
+    "./internal/managed-storage": "./src/internal/managed-storage.ts",
     "./opencode-client": "./src/deprecated/opencode-client.ts",
     "./config": "./src/deprecated/config.ts",
     "./auth": "./src/deprecated/auth.ts",
@@ -85,6 +87,14 @@
       "./internal/idb-sync-cache": {
         "types": "./dist/internal/idb-sync-cache.d.ts",
         "import": "./dist/internal/idb-sync-cache.js"
+      },
+      "./internal/diagnostics-store": {
+        "types": "./dist/internal/diagnostics-store.d.ts",
+        "import": "./dist/internal/diagnostics-store.js"
+      },
+      "./internal/managed-storage": {
+        "types": "./dist/internal/managed-storage.d.ts",
+        "import": "./dist/internal/managed-storage.js"
       },
       "./opencode-client": {
         "types": "./dist/deprecated/opencode-client.d.ts",
