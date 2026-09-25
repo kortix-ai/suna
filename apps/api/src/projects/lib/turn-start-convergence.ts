@@ -64,6 +64,7 @@ import {
 } from '../../config-releases/running-release';
 import {
   __clearRunningAssetsForTests,
+  forgetRunningAssets,
   lastKnownAssetVerdict,
   noteRunningAssets,
   shouldReportPinned,
@@ -379,6 +380,8 @@ export interface AssetConvergenceDeps {
   refresh: (sessionId: string, context: string) => void;
   /** One health read, detached. Fills the memo for the next send. */
   probe: (sessionId: string) => Promise<unknown>;
+  /** Drop what we knew, so the next send re-measures instead of re-sending. */
+  forget: (sessionId: string) => void;
 }
 
 function defaultAssetDeps(): AssetConvergenceDeps {
@@ -390,6 +393,7 @@ function defaultAssetDeps(): AssetConvergenceDeps {
     // already current never reaches either.
     fingerprint: async () => (await import('../../runtime-assets/manifest')).manifestFingerprint(),
     lastVerdict: lastKnownAssetVerdict,
+    forget: forgetRunningAssets,
     refresh: (sessionId, context) => {
       void import('./sandbox-runtime-refresh').then(({ scheduleSandboxRuntimeRefresh }) =>
         scheduleSandboxRuntimeRefresh(sessionId, context),
@@ -423,6 +427,12 @@ export async function convergeAssetsInBackground(
       // which is `inFlight`-guarded, and the pass itself downloads nothing when
       // the artifact is already staged.
       deps.refresh(sessionId, 'turn-start');
+      // REFRESH ONCE, THEN RE-MEASURE. Leaving the `behind` entry in place would
+      // have every turn inside the 10-minute TTL POST another refresh and stack
+      // `scheduleSandboxRuntimeRefresh` retry ladders on one box. Forgetting it
+      // makes the next send a cold memo, which probes and records what the box
+      // actually did with this one.
+      deps.forget(sessionId);
       return 'scheduled';
     }
     void deps.probe(sessionId);

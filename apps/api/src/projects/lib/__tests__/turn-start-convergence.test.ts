@@ -17,6 +17,7 @@ import {
 } from '../turn-start-convergence';
 import {
   __clearRunningAssetsForTests,
+  forgetRunningAssets,
   lastKnownAssetVerdict,
   noteRunningAssets,
   shouldReportPinned,
@@ -255,6 +256,7 @@ describe('the runtime-asset lane never costs the send', () => {
       probe: async (sessionId) => {
         probeCalls.push(sessionId);
       },
+      forget: forgetRunningAssets,
       ...over,
     };
   }
@@ -285,6 +287,19 @@ describe('the runtime-asset lane never costs the send', () => {
     expect(await convergeAssetsInBackground(SESSION, assetDeps())).toBe('probe-scheduled');
     expect(probeCalls).toEqual([SESSION]);
     expect(refreshCalls).toEqual([]);
+  });
+
+  // Refresh ONCE, then re-measure. Without this the `behind` entry stands for
+  // its whole TTL and every turn in that window POSTs another refresh, stacking
+  // `scheduleSandboxRuntimeRefresh` retry ladders on one box. Forgetting the
+  // entry makes the next send a cold memo, which probes and records what the box
+  // actually did with the refresh.
+  test('a scheduled refresh forgets the verdict instead of re-sending it every turn', async () => {
+    noteRunningAssets(SESSION, FP, 'behind');
+    expect(await convergeAssetsInBackground(SESSION, assetDeps())).toBe('scheduled');
+    expect(await convergeAssetsInBackground(SESSION, assetDeps())).toBe('probe-scheduled');
+    expect(refreshCalls).toEqual([SESSION]);
+    expect(probeCalls).toEqual([SESSION]);
   });
 
   // The rolling-deploy guard. Two API versions serve two manifests; the box's
