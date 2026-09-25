@@ -2,6 +2,7 @@
 
 import type { CatalogModel } from '@kortix/llm-catalog';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
+import { retiredEndpointError } from '../../http/api/errors';
 import type { SandboxProviderName } from '../platform-client/types';
 import {
   type ProjectFileEntry,
@@ -954,16 +955,14 @@ export async function getProjectSandboxProviderTransition(
 }
 
 /**
- * Configure the warm sandbox pool for one sandbox template (Customize → Sandbox).
- * Warm pool is per-template + opt-in; `slug` selects which template (defaults to
- * the platform default). Live ready/warming counts come back on each template via
- * `listProjectSnapshots`.
+ * @deprecated The per-template warm pool was removed from the API. Always
+ * rejects with `ENDPOINT_RETIRED`.
  */
 export async function updateTemplateWarmPool(
-  projectId: string,
-  input: { slug: string; enabled?: boolean; size?: number },
-) {
-  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input));
+  _projectId: string,
+  _input: { slug: string; enabled?: boolean; size?: number },
+): Promise<KortixProject> {
+  throw retiredEndpointError('updateTemplateWarmPool');
 }
 
 export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {

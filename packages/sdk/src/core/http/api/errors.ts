@@ -144,6 +144,28 @@ export class RequestTooLargeError extends Error {
 }
 
 // ============================================================================
+// Retired endpoints
+// ============================================================================
+
+/**
+ * The `code` of the error a retired SDK function fails with. The API deleted
+ * the route, so the function no longer sends a request that can only 404.
+ */
+export const ENDPOINT_RETIRED_CODE = 'ENDPOINT_RETIRED';
+
+/**
+ * The error for a retired SDK function. Its exported name stays until the next
+ * major so no import breaks; calling it fails at once, without a request.
+ */
+export function retiredEndpointError(name: string, instead?: string): ApiError {
+  const hint = instead ? ` ${instead}` : '';
+  return new ApiError(
+    `${name}() is retired: the Kortix API no longer serves this endpoint.${hint}`,
+    { code: ENDPOINT_RETIRED_CODE },
+  );
+}
+
+// ============================================================================
 // Feature-flag gate
 // ============================================================================
 

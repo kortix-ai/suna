@@ -37,6 +37,27 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
   `updateFeatureFlag(id, 'review_center', …)` answers `400`. Removed in the next
   major.
+- Functions and hooks whose API route was deleted. The exports remain until the
+  next major. Each one now fails at once with an `ApiError` whose `code` is
+  `ENDPOINT_RETIRED`, and sends no request (it used to send one that returned
+  `404`):
+  - referrals: `getReferralCode`, `refreshReferralCode`, `validateReferralCode`,
+    `getReferralStats`, `listReferrals`, `sendReferralEmails`;
+  - Google Slides: `getGoogleAuthUrl`, `convertPresentationToGoogleSlides`
+    (export PDF or PPTX with `convertRuntimePresentation`);
+  - templates and warm pool: `getTemplate`, `installTemplate`,
+    `updateTemplateWarmPool`;
+  - account-level sandbox: `getInvite`, `acceptInvite`, `declineInvite`,
+    `deleteInstance`, `claimComputer`, `getSandboxProvisionStreamUrl` (throws).
+    `markInstanceError` and `getSandboxProvisionStatus` never threw; they now
+    resolve `undefined` and `null` without a request;
+  - `@kortix/sdk/react` admin hooks: every hook in `use-admin-analytics`
+    (28), `use-admin-feedback` (8), `use-system-status` (4) and
+    `use-admin-billing` (4); the per-sandbox hooks `useAdminSandboxDetail`,
+    `useAdminSandboxHealth`, `useAdminSandboxHealthBatch`, `useAdminSandboxExec`,
+    `useAdminSandboxAction`, `useAdminSandboxRepair`, `useDeleteAdminSandbox`
+    and `fetchAdminSandboxProxyToken`; and `useAdminAccountSandboxes`.
+    Retired queries never retry or poll.
 
 ### Fixed
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
