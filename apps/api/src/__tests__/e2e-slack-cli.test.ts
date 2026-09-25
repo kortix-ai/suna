@@ -1,8 +1,14 @@
 /**
- * End-to-end coverage for the in-sandbox `slack` CLI surface. The test runs the
- * real Bun entrypoint against a live fake Kortix API so command parsing,
- * project-explicit Connector routing, turn-stream relays, file upload/download,
- * and manifest fetching are all exercised without touching real Slack.
+ * End-to-end coverage for the in-sandbox channel CLIs, `slack` and `teams`.
+ * Each test runs the real Bun entrypoint against a live fake Kortix API, so
+ * nothing touches real Slack or Microsoft Teams.
+ *
+ * - `slack`: command parsing, project-explicit Connector routing, turn-stream
+ *   relays, file upload and download, manifest fetching, and structured
+ *   upload and download denials.
+ * - `teams`: `download` (owner-only file write, structured denial) and
+ *   `conversations` (listing, structured denial in the shared `API_ERROR`
+ *   envelope).
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -12,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { SLACK_CHANNEL_CONNECTOR_SLUG } from '../connectors/channels';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-const CLI_ENTRY = resolve(REPO_ROOT, 'apps/sandbox/slack-cli/channels/slack.ts');
+const SLACK_CLI_ENTRY = resolve(REPO_ROOT, 'apps/sandbox/slack-cli/channels/slack.ts');
 const TEAMS_CLI_ENTRY = resolve(REPO_ROOT, 'apps/sandbox/slack-cli/channels/teams.ts');
 const CONNECTOR_CLI_ENTRY = resolve(REPO_ROOT, 'apps/cli/src/index.ts');
 
@@ -116,13 +122,18 @@ function asObject(value: CliOutput): CliObject {
   return value as CliObject;
 }
 
-async function runSlack(
-  args: string[],
-  opts: { ok?: boolean; entry?: string } = {},
-): Promise<CliOutput> {
+interface RunOpts {
+  ok?: boolean;
+}
+
+type Run = (args: string[], opts?: RunOpts) => Promise<CliOutput>;
+
+/** Spawns one channel CLI entrypoint (`slack.ts` or `teams.ts`) as a real
+ *  `bun` process against the fake API and parses its stdout. */
+async function runCli(entry: string, args: string[], opts: RunOpts = {}): Promise<CliOutput> {
   const expectOk = opts.ok ?? true;
   const proc = Bun.spawn({
-    cmd: ['bun', opts.entry ?? CLI_ENTRY, ...args],
+    cmd: ['bun', entry, ...args],
     cwd: REPO_ROOT,
     env: {
       PATH: process.env.PATH,
@@ -148,6 +159,31 @@ async function runSlack(
   const trimmed = stdout.trim();
   if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return trimmed;
   return JSON.parse(trimmed);
+}
+
+const runSlack: Run = (args, opts) => runCli(SLACK_CLI_ENTRY, args, opts);
+const runTeams: Run = (args, opts) => runCli(TEAMS_CLI_ENTRY, args, opts);
+
+/** `slack download` and `teams download` fetch through the platform file
+ *  proxy. A denied capability answers with `{ error: true, message, … }`; the
+ *  reason must reach the agent, never the bare boolean. */
+async function expectDownloadDenied(run: Run): Promise<void> {
+  world.denial = structuredDenial('project.connector.read');
+  const outPath = join(tempDir, 'denied', 'file.bin');
+  const out = asObject(
+    await run(['download', '--url', 'https://files.example.com/F1', '--out', outPath], {
+      ok: false,
+    }),
+  );
+  expect(out).toMatchObject({
+    ok: false,
+    error: `Download failed: HTTP 403: ${world.denial.message}`,
+    code: 'API_ERROR',
+    status: 403,
+  });
+  expect(String(out.error)).not.toContain('true');
+  expect(existsSync(outPath)).toBe(false);
+  expect(world.downloads).toHaveLength(0);
 }
 
 beforeEach(() => {
@@ -478,37 +514,25 @@ describe('slack CLI', () => {
   });
 
   test('surfaces a structured download denial instead of the boolean error field', async () => {
-    // `slack download` and `teams download` fetch through the platform file
-    // proxy. A denied capability answers with `{ error: true, message, … }`;
-    // the reason must reach the agent, never the bare boolean.
-    world.denial = structuredDenial('project.connector.read');
-    for (const entry of [CLI_ENTRY, TEAMS_CLI_ENTRY]) {
-      const outPath = join(tempDir, 'denied', 'file.bin');
-      const out = asObject(
-        await runSlack(['download', '--url', 'https://files.example.com/F1', '--out', outPath], {
-          ok: false,
-          entry,
-        }),
-      );
-      expect(out).toMatchObject({
-        ok: false,
-        error: `Download failed: HTTP 403: ${world.denial.message}`,
-        code: 'API_ERROR',
-        status: 403,
-      });
-      expect(String(out.error)).not.toContain('true');
-      expect(existsSync(outPath)).toBe(false);
-    }
-    expect(world.downloads).toHaveLength(0);
-  }, 30_000);
+    await expectDownloadDenied(runSlack);
+  });
+});
 
-  test('teams download writes the file owner-only at the resolved path', async () => {
+describe('teams CLI', () => {
+  test('surfaces a structured download denial instead of the boolean error field', async () => {
+    await expectDownloadDenied(runTeams);
+  });
+
+  test('download writes the file owner-only at the resolved path', async () => {
     const outPath = join(tempDir, 'teams', 'attachment.txt');
     const out = asObject(
-      await runSlack(
-        ['download', '--url', 'https://files.example.com/T1', '--out', `${outPath}  `],
-        { entry: TEAMS_CLI_ENTRY },
-      ),
+      await runTeams([
+        'download',
+        '--url',
+        'https://files.example.com/T1',
+        '--out',
+        `${outPath}  `,
+      ]),
     );
     expect(out).toEqual({ ok: true, path: outPath, size: 21 });
     expect(readFileSync(outPath, 'utf8')).toBe('downloaded from teams');
@@ -516,19 +540,18 @@ describe('slack CLI', () => {
     expect(world.downloads).toEqual(['https://files.example.com/T1']);
   });
 
-  test('teams conversations lists targets and surfaces a structured denial', async () => {
-    const listed = asObject(await runSlack(['conversations'], { entry: TEAMS_CLI_ENTRY }));
+  test('conversations lists targets and surfaces a structured denial', async () => {
+    const listed = asObject(await runTeams(['conversations']));
     expect(listed).toEqual({
       conversations: [{ conversationId: 'a:1', name: 'General', type: 'channel' }],
     });
 
     world.denial = structuredDenial('project.read');
-    const denied = asObject(
-      await runSlack(['conversations'], { ok: false, entry: TEAMS_CLI_ENTRY }),
-    );
+    const denied = asObject(await runTeams(['conversations'], { ok: false }));
     expect(denied).toMatchObject({
       ok: false,
       error: `HTTP 403: ${world.denial.message}`,
+      code: 'API_ERROR',
       status: 403,
     });
   });
