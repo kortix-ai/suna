@@ -7,10 +7,11 @@
 // to `stopped`, while a session that is genuinely live (active box / recent LLM
 // usage / an in-flight turn) or still within the TTL is left untouched.
 //
+// Runs in the `db-suites` lane of `pnpm test` (one throwaway database per file).
 // Gated on TEST_DATABASE_URL + explicit confirmation + non-prod (it writes and
-// deletes rows). Skips otherwise — same harness contract as the other e2e suites.
+// deletes rows); the lane fails the suite if the gate ever skips it.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import {
   createDb,
   accounts,
@@ -71,6 +72,12 @@ async function cleanup() {
   const d = db();
   await d.delete(usageEvents).where(inArray(usageEvents.sessionId, ALL_SESSIONS));
   await d.delete(chatTurnStreams).where(inArray(chatTurnStreams.sessionId, ALL_SESSIONS));
+  // `guard_session_sandbox_identity` refuses to delete the sandbox row of a
+  // session that is not tombstoned, so tombstone the sessions first.
+  await d
+    .update(projectSessions)
+    .set({ metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || '{"deletedAt":"cleanup"}'::jsonb` })
+    .where(inArray(projectSessions.sessionId, ALL_SESSIONS));
   await d.delete(sessionSandboxes).where(inArray(sessionSandboxes.sandboxId, [SANDBOX_STOPPED, SANDBOX_ACTIVE, SANDBOX_ACTIVE_DELETED]));
   await d.delete(projectSessions).where(inArray(projectSessions.sessionId, ALL_SESSIONS));
   await d.delete(projects).where(eq(projects.projectId, PROJECT_ID));

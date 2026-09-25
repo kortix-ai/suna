@@ -30,11 +30,12 @@
  *
  * Gated on TEST_DATABASE_URL + explicit confirmation + non-prod — same
  * harness contract as trigger-execution-store.integration.test.ts and
- * e2e-stuck-session-reconcile.test.ts. Skipped otherwise.
+ * integration-stuck-session-reconcile.test.ts. The `db-suites` lane of
+ * `pnpm test` supplies all three and fails the suite if it skips.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Database, accounts, createDb, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { GitHubRepo } from '../github';
 import { normalizeProjectIcon } from './project-icon';
 import { registerGitHubLinkedProject, registerPatLinkedProject } from './project-registration';
@@ -61,6 +62,17 @@ async function cleanup() {
   const d = db();
   await d.delete(projects).where(eq(projects.accountId, ACCOUNT_ID));
   await d.delete(accounts).where(eq(accounts.accountId, ACCOUNT_ID));
+  await d.execute(sql`delete from auth.users where id = ${USER_ID}::uuid`);
+}
+
+// registerLinkedProject grants the creator the project owner role through
+// assignRole, which requires the principal to be a real auth user (#6554,
+// 3d876d755d). The creator is a synthetic auth user.
+async function seedCreator() {
+  await db().execute(sql`
+    insert into auth.users (id, email)
+    values (${USER_ID}::uuid, ${`icon-glue-${USER_ID}@example.com`})
+    on conflict do nothing`);
 }
 
 function fakeRepo(name: string): GitHubRepo {
@@ -98,6 +110,7 @@ describeWithDb(
   () => {
     beforeEach(async () => {
       await cleanup();
+      await seedCreator();
       await db().insert(accounts).values({ accountId: ACCOUNT_ID, name: 'r2 icon glue test' });
     });
     afterEach(cleanup);

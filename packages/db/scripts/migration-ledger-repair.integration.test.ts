@@ -8,7 +8,7 @@ import {
   repairMigrationLedger,
 } from './migration-ledger-repair';
 
-const adminUrl = process.env.MIGRATION_REPAIR_ADMIN_URL;
+const adminUrl = process.env.TEST_DATABASE_ADMIN_URL;
 const suite = adminUrl ? describe : describe.skip;
 const migrationsDir = join(import.meta.dir, '..', 'migrations');
 const databaseName = `kortix_migration_repair_${process.pid}_${Date.now()}`;

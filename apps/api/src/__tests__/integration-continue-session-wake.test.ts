@@ -16,6 +16,7 @@ import { sql } from 'drizzle-orm';
 import * as realShared from '../projects/routes/shared';
 import * as realTitle from '../projects/session-title-generate';
 import { db } from '../shared/db';
+import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
 type OpenResult = Record<string, unknown> | null;
 let openSessionImpl: (sessionId: string) => Promise<OpenResult> = async () => null;
@@ -34,7 +35,7 @@ const { continueSession } = await import('../projects/session-lifecycle/continue
 type Row = Record<string, unknown>;
 const rows = (result: unknown) => ((result as { rows?: Row[] }).rows ?? result) as Row[];
 
-let project: { project_id: string; account_id: string };
+let project: SeededProject;
 const created: string[] = [];
 
 async function fixture(sessionStatus: 'stopped' | 'completed'): Promise<string> {
@@ -78,13 +79,7 @@ function deliver(sessionId: string) {
 }
 
 beforeAll(async () => {
-  const [first] = rows(
-    await db.execute(
-      sql`select project_id, account_id from kortix.projects order by created_at asc limit 1`,
-    ),
-  );
-  project = first as typeof project;
-  expect(project).toBeDefined();
+  project = await seedProject('continue-session-wake-test');
 });
 
 afterAll(async () => {
@@ -98,6 +93,7 @@ afterAll(async () => {
     );
     await db.execute(sql`delete from kortix.project_sessions where session_id = ${sessionId}`);
   }
+  await removeSeeded([project]);
 });
 
 describe('the pre-delivery wake', () => {

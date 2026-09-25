@@ -16,6 +16,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import * as realProviders from '../platform/providers';
 import { db } from '../shared/db';
+import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
 let providerStops = 0;
 /** What the provider stop does besides counting. Reset after each park case. */
@@ -45,7 +46,7 @@ const { transitionRuntime, transitionSandbox, transitionSession } = await import
 type Row = Record<string, unknown>;
 const rows = (result: unknown) => ((result as { rows?: Row[] }).rows ?? result) as Row[];
 
-let project: { project_id: string; account_id: string };
+let project: SeededProject;
 const created: string[] = [];
 
 interface Fixture {
@@ -120,13 +121,7 @@ async function sandboxRow(f: Fixture) {
 }
 
 beforeAll(async () => {
-  const [first] = rows(
-    await db.execute(
-      sql`select project_id, account_id from kortix.projects order by created_at asc limit 1`,
-    ),
-  );
-  project = first as typeof project;
-  expect(project).toBeDefined();
+  project = await seedProject('status-transitions-test');
 });
 
 afterAll(async () => {
@@ -143,6 +138,7 @@ afterAll(async () => {
     );
     await db.execute(sql`delete from kortix.project_sessions where session_id = ${sessionId}`);
   }
+  await removeSeeded([project]);
 });
 
 describe('stop (applyStoppedState)', () => {
