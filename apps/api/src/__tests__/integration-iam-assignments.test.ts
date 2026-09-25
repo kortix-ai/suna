@@ -530,6 +530,14 @@ describe.if(hasDatabase)('the project principal and connection grants', () => {
     await expect(revokeAssignment(jwt(plainMember), ACCOUNT, row.assignmentId)).rejects.toMatchObject({
       status: 403,
     });
+    // The agent/skill grant route (gated on project.members.manage) must not be
+    // a side door to a connection grant: removing the last one would widen the
+    // account to everyone without the connections-manage capability.
+    const { deleteResourceGrant } = await import('../iam/resource-grants');
+    expect(await deleteResourceGrant(row.assignmentId, PROJECT, ACCOUNT)).toBe(false);
+    expect(
+      (await listAssignments({ accountId: ACCOUNT, objectType: 'connection', objectId: shared })).length,
+    ).toBe(1);
     await revokeAssignment(jwt(owner), ACCOUNT, row.assignmentId);
     const left = await listAssignments({ accountId: ACCOUNT, objectType: 'connection', objectId: shared });
     expect(left).toHaveLength(0);
