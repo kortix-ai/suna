@@ -1688,7 +1688,7 @@ test('does NOT suppress a real first-party sendMessage that throws from an apps/
   // regression; the negative guard MUST preserve it so the call site can be fixed.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/d9ba943c/some-page' },
+      request: { url: 'https://kortix.com/projects/00000000/some-page' },
       exception: {
         values: [
           {
@@ -1914,7 +1914,7 @@ test('does NOT suppress a real first-party widgetId that throws from an apps/web
   // regression; the negative guard MUST preserve it so the call site can be fixed.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/d9ba943c/some-page' },
+      request: { url: 'https://kortix.com/projects/00000000/some-page' },
       exception: {
         values: [
           {
