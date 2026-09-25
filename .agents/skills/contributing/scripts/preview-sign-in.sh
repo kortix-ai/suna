@@ -27,12 +27,23 @@ ab wait --text "Welcome to Kortix"
 # The form posts only after hydration (tests/e2e/specs/01-account-auth.spec.ts).
 ab wait --fn "Boolean(window.__ENV_LOGGED__)"
 ab find label "Email" fill "$email"
+# Poll the page text rather than `wait --text` with a shorter AGENT_BROWSER_DEFAULT_TIMEOUT:
+# a per-command AGENT_BROWSER_* env change relaunches the browser and loses the page.
+sent=0
 for _ in 1 2 3; do
   ab press Enter
-  if AGENT_BROWSER_DEFAULT_TIMEOUT=5000 agent-browser --session "$session" wait --text "Check your email" >/dev/null 2>&1; then
-    break
-  fi
+  for _ in 1 2 3 4 5; do
+    if [ "$(agent-browser --session "$session" eval 'document.body.innerText.includes("Check your email")' 2>/dev/null)" = true ]; then
+      sent=1
+      break 2
+    fi
+    sleep 1
+  done
 done
+if [ "$sent" != 1 ]; then
+  echo "the /auth form did not reach 'Check your email' for ${email}" >&2
+  exit 2
+fi
 
 action="$("$here/preview-auth-email.sh" "$origin" "$email" "$since")"
 case "$action" in
@@ -45,8 +56,16 @@ for _ in $(seq 1 60); do
   case "$url" in
     "$origin"/auth*|"$origin/auth" | "") sleep 1 ;;
     "$origin"*)
-      echo "$email"
-      exit 0
+      # Signed in once the app renders the account, not merely once /auth is left.
+      for _ in $(seq 1 30); do
+        if [ "$(agent-browser --session "$session" eval "document.body.innerText.includes('${email}')" 2>/dev/null)" = true ]; then
+          echo "$email"
+          exit 0
+        fi
+        sleep 1
+      done
+      echo "left /auth but the app never showed ${email} as signed in" >&2
+      exit 2
       ;;
     *) sleep 1 ;;
   esac

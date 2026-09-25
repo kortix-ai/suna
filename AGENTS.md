@@ -552,7 +552,9 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `agent-browser skills get core` (`--full` adds the command reference).
 - Use one named session per worktree:
   `agent-browser session id --scope worktree --prefix <task>`, then pass
-  `--session <id>` on every command.
+  `--session <id>` on every command. Keep every `AGENT_BROWSER_*` variable the
+  same for all commands in a session. A per-command change relaunches the
+  browser and drops the open page.
 - Routes are auth-gated (`/dashboard`, `/projects/*` → redirect to `/auth`
   unauthenticated); sign in first (seed a user as above, then log in via the
   `/auth` form). On a PR preview, the magic link arrives in `<origin>/_mailpit`
