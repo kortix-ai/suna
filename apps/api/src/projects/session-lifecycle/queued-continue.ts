@@ -593,7 +593,7 @@ export async function executeQueuedContinue(
     }
     if (delivery === 'delivered') {
       // A successful POST starts a TURN, and the TERMINAL RELAY owns promotion
-      // of the next row — `routes/r4.ts`, "THE TURN ENDED — the session's next
+      // of the next row — `routes/turn-stream.ts`, "THE TURN ENDED — the session's next
       // queued prompt is admissible NOW", which awaits `promoteNextInboxRow`
       // before it acknowledges the daemon.
       //

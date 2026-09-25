@@ -28,7 +28,7 @@ launcher's project role intersected with the agent's `kortix_cli` list
    run check asks the parent's SA, which bypasses object grants (V4,
    `authorize.ts:232,371`).
 7. A member prompting a shared session acts with the session CREATOR's token
-   (V6, `r8.ts:564-617`).
+   (V6, `session-prompts.ts`).
 
 ## 2. Model
 

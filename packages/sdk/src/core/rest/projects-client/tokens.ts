@@ -101,7 +101,7 @@ export async function revokeAccountToken(tokenId: string, accountId?: string) {
 // time and injected into the sandbox as `KORTIX_TOKEN`, so the in-container
 // CLI works with zero config. Minting/revoking is a human/`manage` operation;
 // an agent-session token is denied outright server-side (privilege-escalation
-// guard — see apps/api/src/projects/routes/r3.ts).
+// guard — see apps/api/src/projects/routes/project-credentials.ts).
 
 export interface ProjectCliToken {
   token_id: string;

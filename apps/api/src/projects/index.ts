@@ -6,30 +6,51 @@
  * The old sandbox/instance tables remain as legacy compute state.
  *
  * ─── Structural note ─────────────────────────────────────────────────────────
- * This module was split for size: the wired Hono app + all helpers now live in
- * ./lib/*, and the 104 route registrations live in ./routes/r1..r9 (grouped by
- * original registration order). This file is a thin barrel: it imports the route
- * modules for their side-effect registration (IN THE ORIGINAL ROUTE ORDER — Hono
- * matches by registration order) and re-exports the same public surface the
- * pre-split file exported, so every external importer keeps working unchanged.
+ * The wired Hono app and the shared helpers live in ./lib/*. The route
+ * registrations live in ./routes/*, one file per domain (projects, secrets,
+ * connections, triggers, channels, sessions, change requests, ...). This file is
+ * a thin barrel: it imports the route modules for their side-effect registration
+ * and re-exports the public surface that external importers use.
  */
 
 // Route registrations run as import side-effects. The order here IS the route
-// registration order — preserve it. r1 registers the global `/*` auth
-// middleware first (its first statement), then the remaining route groups.
-import './routes/r1';
+// registration order, and Hono dispatches in registration order — preserve it.
+// ./routes/projects registers the global `/*` auth middleware first (its first
+// statement), then the remaining route groups follow.
+import './routes/projects';
+import './routes/trigger-webhooks';
+import './routes/project-git';
+import './routes/github-installations';
 import './routes/github-repositories';
 import './routes/git-backend';
-import './routes/r2';
-import './routes/r3';
+import './routes/project-from-repository';
+import './routes/manifest-validation';
+import './routes/sandboxes';
+import './routes/sandbox-templates';
+import './routes/project-credentials';
+import './routes/secrets';
+import './routes/secret-delivery';
+import './routes/provider-oauth';
 import './routes/repository-replacement';
 import './routes/secret-broker';
 import './routes/secret-relay';
 import './routes/setup-links';
-import './routes/r4';
+import './routes/connections';
+import './routes/connection-actions';
+import './routes/triggers';
+import './routes/channel-slack';
+import './routes/channel-teams';
+import './routes/channel-email';
+import './routes/turn-stream';
+import './routes/models';
+import './routes/turn-questions';
 import './routes/oauth2-connectors';
-import './routes/r5';
-import './routes/r6';
+import './routes/project-detail';
+import './routes/project-files';
+import './routes/project-settings';
+import './routes/project-access';
+import './routes/access-requests';
+import './routes/project-invites';
 import './routes/group-grants';
 import './routes/warm-sessions';
 import './routes/project-sessions';
@@ -45,11 +66,13 @@ import './routes/session-scope';
 import './routes/provider-secret-pools';
 import './routes/session-config';
 import './routes/public-shares';
-import './routes/r8';
+import './routes/session-runtime';
+import './routes/session-prompts';
+import './routes/change-requests';
 import './routes/prompt-attachments';
-import './routes/r9';
-import './routes/r10';
-import './routes/r11';
+import './routes/change-request-actions';
+import './routes/marketplace-install-session';
+import './routes/review-items';
 import './routes/agent-scope';
 import './routes/agent-config';
 import './routes/gateway';

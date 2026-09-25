@@ -1,7 +1,7 @@
 /**
  * The one sanitizer for prompt parts entering the durable inbox.
  *
- * Two producers accept caller-supplied parts — `POST .../prompts` (r8.ts) and
+ * Two producers accept caller-supplied parts — `POST .../prompts` (session-prompts.ts) and
  * `pending_prompt` on session create / warm claim (lib/sessions.ts,
  * warm-sessions.ts) — and both must apply the same repairs and the same caps,
  * or the create path becomes the way around the prompt route's limits.

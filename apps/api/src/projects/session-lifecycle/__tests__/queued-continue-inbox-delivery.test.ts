@@ -1522,7 +1522,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       { commandId: 'cmd-2', reason: 'older_prompt_pending' },
     ]);
     // AND THE DELIVERY PATH KICKS NOTHING. Promotion belongs to the turn-end
-    // relay (`routes/r4.ts`), which is the only place that knows the answer is
+    // relay (`routes/turn-stream.ts`), which is the only place that knows the answer is
     // finished. Promoting on accepted delivery instead made the next row due
     // while this turn was still running — the merge that let two queued
     // messages share one answer — and it was a lost wake besides: the row was
@@ -1602,7 +1602,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     expect(promotionCalls).toEqual([]);
 
     // B and C go out on the turn-end relay's targeted drain, one per turn —
-    // `routes/r4.ts` awaits `promoteNextInboxRow` and kicks exactly this.
+    // `routes/turn-stream.ts` awaits `promoteNextInboxRow` and kicks exactly this.
     await drainSessionLifecycleQueue({ idempotencyKey: 'queue-b' });
     await drainSessionLifecycleQueue({ idempotencyKey: 'queue-c' });
 

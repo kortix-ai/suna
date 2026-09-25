@@ -1387,7 +1387,7 @@ async function resolveAdmin(
 }
 
 // Connecting an account the whole project can use is administration, and this
-// is the SAME capability r4's project-owned connection create asserts.
+// is the SAME capability the project-owned connection create (routes/connections.ts) asserts.
 async function resolveConnectionsManager(
   c: Context,
   projectId: string,

@@ -50,10 +50,10 @@ interface SnapshotBuild {
 }
 
 // ── Sandbox provider pin ────────────────────────────────────────────────────
-// PATCH /projects/:id/sandbox-provider (r6.ts:1483) answers with a TAGGED
+// PATCH /projects/:id/sandbox-provider (project-settings.ts) answers with a TAGGED
 // UNION, both arms HTTP 200: `kind:'project'` when the switch applied
 // immediately, `kind:'preparation'` when a snapshot must be built on the target
-// provider first. GET /projects/:id/sandbox-provider/transition (r6.ts:1554)
+// provider first. GET /projects/:id/sandbox-provider/transition (project-settings.ts)
 // polls that preparation — it takes no query params and always reports the
 // project's latest transition plus the last 10.
 
@@ -501,7 +501,7 @@ async function sandboxProvider(
     return 0;
   }
 
-  // `provider: null` is how the API clears the pin (r6.ts:1508 —
+  // `provider: null` is how the API clears the pin (project-settings.ts —
   // null/undefined/'' all normalize to "clear").
   const result = await client.patch<SandboxProviderPatchResult>(`${base}/sandbox-provider`, {
     provider: opts.clear ? null : arg,

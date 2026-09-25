@@ -243,7 +243,11 @@ mock.module('../shared/audit', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/r3');
+// The secret and provider-OAuth routes, in production registration order.
+// secrets.ts registers the `/secrets/*` write rate limit ahead of them.
+await import('../projects/routes/secrets');
+await import('../projects/routes/secret-delivery');
+await import('../projects/routes/provider-oauth');
 
 function buildApp() {
   const app = new Hono<{

@@ -23,7 +23,7 @@ export { matchAllowedRoute };
  *
  * The in-sandbox `KORTIX_TOKEN` — the credential every built-in tool presents
  * to this proxy — is the FIRST shape: a session-scoped PAT auto-minted at
- * session create (projects/routes/r3.ts). This resolver only ever consulted
+ * session create (projects/routes/project-credentials.ts). This resolver only ever consulted
  * the second table, so every built-in tool call answered
  * `401 Invalid Kortix token in x-api-key` while the same token authenticated
  * fine on every other route. Try the right validator for the prefix; never
