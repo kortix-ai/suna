@@ -11,7 +11,6 @@ import {
   MAX_RETRY_MS_DEFAULT,
   auditRelayConfigFromEnv,
   type OpenCodeAuditEvent,
-  auditRelayToken,
   computeRetryDelay,
   createAuditRelay,
   retryAfterMs,
@@ -19,11 +18,6 @@ import {
 } from '../harness/open-code/opencode-audit-relay';
 
 describe('OpenCode canonical audit relay', () => {
-  test('uses the single session credential', () => {
-    expect(auditRelayToken({ KORTIX_TOKEN: 'kortix_pat_session' })).toBe('kortix_pat_session');
-    expect(auditRelayToken({})).toBeNull();
-  });
-
   test('uses deterministic ids and never forwards prompts, credentials, or raw output', () => {
     const raw = {
       type: 'tool.execute.after',

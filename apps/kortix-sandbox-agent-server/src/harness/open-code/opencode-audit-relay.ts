@@ -688,12 +688,6 @@ function applyLineage(
   };
 }
 
-/** The ingestion route accepts only the sandbox credential. The session PAT is
- * intentionally excluded even when both credentials exist in the runtime. */
-export function auditRelayToken(env: NodeJS.ProcessEnv): string | null {
-  return (env.KORTIX_TOKEN || '').trim() || null;
-}
-
 /**
  * Backoff after a rejected batch.
  *

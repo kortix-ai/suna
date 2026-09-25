@@ -45,7 +45,9 @@ import { flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } fr
 import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from '../../kortix-event-bus'
 import { runtimeStateStore } from './runtime-state-projection'
-import { auditRelayConfigFromEnv, auditRelayToken, createAuditRelay } from './opencode-audit-relay'
+import { auditRelayConfigFromEnv, createAuditRelay } from './opencode-audit-relay'
+import { relayQuestionToApi } from './question-relay'
+import { readControlPlaneEnv, sandboxRelayContext } from '../../relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
   openCodeSeedBakedPinPath,
@@ -703,7 +705,7 @@ async function startSessionRuntime(
   await reconcileManagedModels(opencode, cfg, bootMark)
   const auditRelay = createAuditRelay(
     async (events) => {
-      const ctx = sandboxRelayContext(auditRelayToken(process.env))
+      const ctx = sandboxRelayContext()
       if (!ctx) throw new Error('audit relay context is unavailable')
       const response = await fetch(
         `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
@@ -2188,15 +2190,9 @@ async function abortOpencodeTurn(baseUrl: string, workspace: string, sessionId: 
  * still heals the pin on the first /ensure-opencode. Never blocks boot.
  */
 async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> {
-  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
-  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  // /turn-stream accepts EITHER the session token or the sandbox credential
-  // (it's a sandbox-identity route). Prefer the session token; fall back to the
-  // sandbox credential — canonical name first, legacy KORTIX_TOKEN alias last.
-  const token = (process.env.KORTIX_TOKEN || '').trim()
-  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
-  if (!projectId || !sessionId || !token || !apiUrl) return
-  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const ctx = sandboxRelayContext()
+  if (!ctx) return
+  const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
   try {
     const res = await fetch(url, {
@@ -2259,14 +2255,9 @@ export async function relayInitialTurnAcceptedToApi(
   messageId: string,
   turnToken: string,
 ): Promise<boolean> {
-  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
-  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  const sandboxToken = (process.env.KORTIX_TOKEN || '').trim()
-  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
-  if (!projectId || !sessionId || !sandboxToken || !apiUrl) {
-    throw new Error('initial turn acceptance relay context is unavailable')
-  }
-  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const ctx = sandboxRelayContext()
+  if (!ctx) throw new Error('initial turn acceptance relay context is unavailable')
+  const { projectId, sessionId, token: sandboxToken, apiRoot } = ctx
   const response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
     method: 'POST',
     headers: {
@@ -2293,12 +2284,9 @@ export async function relayInitialTurnAcceptedToApi(
 /** Claim the pending first turn through the session-bound Kortix credential. */
 export async function claimInitialTurnFromApi(): Promise<InitialTurnClaim | null> {
   if (claimedInitialTurn) return claimedInitialTurn
-  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
-  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  const token = process.env.KORTIX_TOKEN?.trim()
-  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
-  if (!projectId || !sessionId || !token || !apiUrl) return null
-  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const ctx = sandboxRelayContext()
+  if (!ctx) return null
+  const { projectId, sessionId, token, apiRoot } = ctx
   let response: Response | null = null
   let lastError: unknown = null
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -2343,14 +2331,9 @@ export async function claimInitialTurnFromApi(): Promise<InitialTurnClaim | null
 
 /** Remove only a pre-created initial-turn record that OpenCode never accepted. */
 export async function relayInitialTurnAbandonedToApi(turnToken: string): Promise<boolean> {
-  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
-  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  const sandboxToken = (process.env.KORTIX_TOKEN || '').trim()
-  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
-  if (!projectId || !sessionId || !sandboxToken || !apiUrl) {
-    throw new Error('initial turn abandonment relay context is unavailable')
-  }
-  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const ctx = sandboxRelayContext()
+  if (!ctx) throw new Error('initial turn abandonment relay context is unavailable')
+  const { projectId, sessionId, token: sandboxToken, apiRoot } = ctx
   const response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
     method: 'POST',
     headers: {
@@ -2464,183 +2447,6 @@ export async function waitForInitialSessionCreate(baseUrl: string, workspace: st
   throw new Error(lastError)
 }
 
-type SandboxRelayContext = {
-  projectId: string
-  sessionId: string
-  token: string
-  apiRoot: string
-}
-
-// The control-plane callback context for every project session. The sandbox
-// credential can call the sandbox-identity turn-stream route. This callback is
-// safe for web, CLI, Slack, Teams, and email sessions.
-function sandboxRelayContext(tokenOverride?: string | null): SandboxRelayContext | null {
-  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
-  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  // /turn-stream accepts EITHER the session token or the sandbox credential
-  // (it's a sandbox-identity route). Prefer the session token; fall back to the
-  // sandbox credential — canonical name first, legacy KORTIX_TOKEN alias last.
-  const token =
-    tokenOverride !== undefined
-      ? (tokenOverride ?? '')
-      : (process.env.KORTIX_TOKEN || '').trim()
-  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
-  if (!projectId || !sessionId || !token || !apiUrl) {
-    logger.warn('[opencode-events] missing env to relay to apps/api', {
-      hasProject: !!projectId, hasSession: !!sessionId, hasToken: !!token, hasApi: !!apiUrl,
-    })
-    return null
-  }
-  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
-  return { projectId, sessionId, token, apiRoot }
-}
-
-// Question relays remain Slack-only. A web session answers the question tool
-// through OpenCode SSE and must not receive the Slack sentinel response.
-/**
- * A CHANNEL session — Slack or Teams — as opposed to a dashboard one.
- *
- * This used to read SLACK_THREAD_TS / SLACK_CHANNEL_ID only, and it gates
- * RELEASING opencode's blocking `question` tool. A Teams session carries
- * MS_TEAMS_CONVERSATION_ID / MS_TEAMS_TENANT_ID instead (buildTeamsTurnEnv), so
- * the gate returned null, the call was "left open for the UI", and a Teams
- * agent that called `question` hung until its box was parked — after the card
- * had already been posted, because the RELAY is ungated.
- *
- * The distinction that matters is not which vendor: it is whether the answer
- * arrives out of band (a channel) or over opencode's own SSE (the dashboard).
- */
-function channelRelayContext(): SandboxRelayContext | null {
-  const inChannel =
-    process.env.SLACK_THREAD_TS ||
-    process.env.SLACK_CHANNEL_ID ||
-    process.env.MS_TEAMS_CONVERSATION_ID ||
-    process.env.MS_TEAMS_TENANT_ID
-  if (!inChannel) return null
-  return sandboxRelayContext()
-}
-
-/** Which channel this session belongs to, for copy that names it. */
-function channelLabel(): 'Teams' | 'Slack' {
-  return process.env.MS_TEAMS_CONVERSATION_ID || process.env.MS_TEAMS_TENANT_ID ? 'Teams' : 'Slack'
-}
-
-// Relay an opencode `question.asked` event for a SLACK session: post the
-// question(s) into the thread and resume the agent's (blocking) `question` tool
-// with a sentinel so the turn ends — the user's in-thread reply / button click
-// arrives as a new turn.
-//
-// "Is this a Slack session?" is read straight from the sandbox env, which IS the
-// session metadata: a Slack session is tagged `metadata.slack` at creation, and
-// the API projects that into SLACK_THREAD_TS / SLACK_CHANNEL_ID on EVERY
-// (re)provision (buildSessionChannelEnv). A web/dashboard session has no such
-// metadata, so it has no such env and `slackRelayContext()` returns null.
-//
-// That distinction now gates RESOLVING the question, not reporting it. Every
-// session reports it, so the control plane can persist it and the ask survives
-// the box being parked. Only a channel session auto-answers opencode's blocking
-// call, because only there does the reply arrive out of band. The dashboard
-// answers `question.asked` interactively over opencode's own SSE, and
-// auto-answering it here is the "every question is auto-answered even outside
-// Slack" bug. No round-trip, no status codes — the env is the source of truth.
-async function relayQuestionToApi(
-  req: QuestionRequest,
-  cfg: Config,
-  opencode: Opencode,
-): Promise<void> {
-  // EVERY session, not just Slack ones.
-  //
-  // This used to take `slackRelayContext()`, which returns null without
-  // SLACK_THREAD_TS / SLACK_CHANNEL_ID — so for a web session apps/api never
-  // learned a question was pending. The box was then parked on schedule (a
-  // waiting turn makes no LLM calls, so it earns no extension — that part is
-  // correct), and the question died with it, because opencode restarts cold.
-  // The user came back to a session that had silently forgotten what it asked.
-  //
-  // The control plane now PERSISTS the question regardless of channel, so
-  // reporting it is useful for every session. Posting it into a thread is still
-  // channel-specific and stays server-side.
-  const ctx = sandboxRelayContext()
-  if (!ctx) return
-  const { projectId, sessionId, token, apiRoot } = ctx
-  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-question`
-  logger.info('[opencode-events] relaying question.asked', {
-    requestId: req.id, questions: req.questions.length,
-  })
-
-  // Best-effort: render the question(s) into the thread. Independent of the
-  // resume below — a Slack turn must never hang waiting on this.
-  try {
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        session_id: sessionId,
-        request_id: req.id,
-        opencode_session_id: req.sessionID,
-        questions: req.questions,
-      }),
-      signal: AbortSignal.timeout(15_000),
-    })
-  } catch (err) {
-    logger.warn('[opencode-events] turn-question post failed (non-fatal)', { err: (err as Error).message })
-  }
-
-  // PERSISTING the question is for every session. RESOLVING it here is not.
-  //
-  // In a channel session the reply genuinely arrives out of band — the user
-  // types in the Slack thread and it reaches the agent as a new turn — so the
-  // blocking call must be released or the turn hangs ("stuck until I kill it
-  // manually").
-  //
-  // A dashboard session is the opposite: the UI answers `question.asked`
-  // interactively over opencode's own SSE, so the call SHOULD keep blocking
-  // while the box is alive. Auto-answering it here is the "every question is
-  // auto-answered even outside Slack" bug described above — which the relay
-  // ungate silently brought back, because the sentinel then fired for every
-  // session. Seen live on dev 2026-08-05: a web session's agent was told
-  // "Posted to the Slack thread" (it was not) and replied "I'll use `slack
-  // send` for questions in this environment going forward instead of the
-  // `question` tool" — the tool park-and-restore exists to make reliable.
-  //
-  // If the box is parked while the question is still open, the control plane
-  // has it (persisted above) and POST /sessions/:id/question delivers the answer
-  // as a follow-up turn. Nothing is lost by leaving this one blocked.
-  if (!channelRelayContext()) {
-    logger.info('[opencode-events] question persisted; left open for the UI', {
-      requestId: req.id,
-    })
-    return
-  }
-
-  // Name the channel the agent is actually in. The old text said "Slack" and
-  // "`slack send`" unconditionally, which in a Teams conversation instructed
-  // the agent to use a CLI it does not have.
-  const channel = channelLabel()
-  const sentinel =
-    `(Posted to the ${channel} conversation. In ${channel}, questions are async — the user ` +
-    'replies as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
-    'wait for an answer here; finish this turn now.)'
-  const answers: string[][] = req.questions.map(() => [sentinel])
-  const replyUrl = `${opencode.getInternalUrl()}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
-  try {
-    const r = await fetch(replyUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answers }),
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!r.ok) {
-      logger.warn('[opencode-events] opencode question.reply non-ok', {
-        status: r.status, body: (await r.text()).slice(0, 300),
-      })
-      return
-    }
-    logger.info('[opencode-events] question resolved async (sentinel)', { requestId: req.id })
-  } catch (err) {
-    logger.warn('[opencode-events] opencode question.reply failed', { err: (err as Error).message })
-  }
-}
 
 // Relay a turn ending (opencode `session.idle` / `session.error`) for the ROOT
 // turn to apps/api. The API finalizes channel output and shortens the sandbox
@@ -2694,9 +2500,8 @@ export async function relayTurnBeginToApi(
 ): Promise<void> {
   // The session credential is bound to this sandbox's session_id. The API
   // treats that claim as the daemon identity for lifecycle-only callbacks.
-  const sandboxToken = (process.env.KORTIX_TOKEN || '').trim()
-  if (!sandboxToken) return
-  const ctx = sandboxRelayContext(sandboxToken)
+  if (!readControlPlaneEnv().token) return
+  const ctx = sandboxRelayContext()
   if (!ctx) return
   if (turnBeginRelaysInFlight.has(opencodeSessionId)) return
   turnBeginRelaysInFlight.add(opencodeSessionId)

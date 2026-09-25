@@ -1,6 +1,7 @@
 import type { OpenCodeConfig as Config } from './config'
 import { kortixEventBus } from '../../kortix-event-bus'
 import { logger } from '../../logger'
+import { sandboxRelayContext } from '../../relay-context'
 import { startResourceMonitor, type ResourceMonitor } from '../../resources'
 import type { Opencode } from './lifecycle'
 import { OPENCODE_HOME } from './paths'
@@ -185,12 +186,9 @@ export async function relayMemoryGuardTurnEnd(input: {
   /** The turn that was running when the guard fired, read before the abort. */
   turnMessageId: string | null
 }): Promise<boolean> {
-  const projectId = process.env.KORTIX_PROJECT_ID
-  const sessionId = process.env.KORTIX_SESSION_ID
-  const token = process.env.KORTIX_TOKEN
-  const apiUrl = (process.env.KORTIX_API_URL ?? '').replace(/\/+$/, '')
-  if (!projectId || !sessionId || !token || !apiUrl) return false
-  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const ctx = sandboxRelayContext()
+  if (!ctx) return false
+  const { projectId, sessionId, token, apiRoot } = ctx
   // Name the turn only when the abort landed: a named end closes the turn,
   // and a failed abort leaves it running.
   const turnMessageId = input.aborted ? input.turnMessageId : null
