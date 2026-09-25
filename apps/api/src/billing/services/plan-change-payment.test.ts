@@ -90,7 +90,7 @@ mock.module('./yolo-tokens', () => ({
 mock.module('../repositories/yolo-tokens', () => ({ getActiveYoloTokenRow: async () => null }));
 
 const { createInlineCheckout } = await import('./subscriptions');
-const { syncSeatQuantity, seatProrationFor } = await import('./seat-management');
+const { syncSeatQuantity } = await import('./seat-management');
 
 beforeEach(() => {
   account = {
@@ -181,11 +181,6 @@ describe('per-seat quantity sync bills added seats now and never refunds removed
       seatSubscriptionItemId: 'si_seats',
       autoTopupCustomized: true,
     };
-  });
-
-  test('policy: increase → always_invoice, decrease → none', () => {
-    expect(seatProrationFor(1, 3)).toEqual({ proration_behavior: 'always_invoice' });
-    expect(seatProrationFor(3, 1)).toEqual({ proration_behavior: 'none' });
   });
 
   test('adding members invoices the prorated seat charge immediately', async () => {

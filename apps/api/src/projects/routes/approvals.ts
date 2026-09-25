@@ -13,11 +13,14 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { connectorCalls, projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { mayResolveApproval, maySeeSessionApprovals } from '../lib/approval-authority';
-import { loadProjectForUser, lookupEmailsByUserIds, assertProjectCapability, isUuid } from '../lib/access';
+import { loadProjectForUser, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
+import { isUuid } from '../../shared/validate';
 import { AnyObject, OkSchema, projectsApp } from '../lib/app';
-import { normalizeString, readBody,
+import {
+  normalizeString,
   parseBoundedPositiveInt,
 } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
 import { callerKortixSessionId } from '../lib/caller-session';
 
@@ -239,7 +242,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const executionId = c.req.param('executionId');
     if (!isUuid(executionId)) return c.json({ error: 'Invalid execution id' }, 400);
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const decision = normalizeString(body.decision);
     if (decision !== 'approve' && decision !== 'deny') {
       return c.json({ error: "decision must be 'approve' or 'deny'" }, 400);

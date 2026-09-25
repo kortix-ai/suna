@@ -607,9 +607,20 @@ function SessionChatInputImpl({
     [variants, variant, onVariantSet],
   );
 
-  // `+` opens the Add sheet: Camera · Photos · Files, then Recent files, plus an
-  // AutoContinue row when the project has AutoContinue commands.
+  // `+` opens the Add sheet: Camera · Photos · Files, then Recent files. It only
+  // attaches; AutoContinue lives in the model sheet, under Thinking.
   const hasAutoContinue = availableAutoAlgorithms.length > 0;
+  const autoContinueRow = useMemo(
+    () =>
+      hasAutoContinue
+        ? {
+            value: autocontinueMode ? currentAutoAlgorithm?.label || 'On' : 'Off',
+            // The AutoContinue sheet stacks over the model sheet; closing it returns there.
+            onPress: () => setShowAutoSheet(true),
+          }
+        : undefined,
+    [hasAutoContinue, autocontinueMode, currentAutoAlgorithm],
+  );
   const handleAddPress = useCallback(() => {
     Keyboard.dismiss();
     attachSheetRef.current?.open();
@@ -732,7 +743,7 @@ function SessionChatInputImpl({
         </View>
       </View>
 
-      {/* Add sheet — Camera · Photos · Files, and AutoContinue when the project has it. */}
+      {/* Add sheet — Camera · Photos · Files, then Recent files. */}
       <AttachSheet ref={attachSheetRef} onPick={attachments.add}>
         <SettingsGroup>
           <SettingsRow
@@ -740,14 +751,6 @@ function SessionChatInputImpl({
             label="Recent files"
             onPress={() => attachSheetRef.current?.closeThen(() => filesSheetRef.current?.open())}
           />
-          {hasAutoContinue ? (
-            <SettingsRow
-              icon={InfinityIcon}
-              label="AutoContinue"
-              value={autocontinueMode ? (currentAutoAlgorithm?.label || 'On') : 'Off'}
-              onPress={() => attachSheetRef.current?.closeThen(() => setShowAutoSheet(true))}
-            />
-          ) : null}
         </SettingsGroup>
       </AttachSheet>
 
@@ -768,6 +771,7 @@ function SessionChatInputImpl({
         thinking={thinking}
         onConnect={onConnectModel}
         agent={agentChoice}
+        autoContinue={autoContinueRow}
       />
 
       <AutoContinueSheet

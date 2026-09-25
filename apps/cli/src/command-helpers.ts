@@ -529,6 +529,22 @@ export function surfaceApiError(err: unknown): number {
   return 1;
 }
 
+/** Print a usage error + return the arg-error exit code (2). */
+export function fail(message: string): number {
+  process.stderr.write(`${status.err(message)}\n`);
+  return 2;
+}
+
+/** A required argument is absent: print "Pass <what>." + return 2. */
+export function missing(what: string): number {
+  return fail(`Pass ${what}.`);
+}
+
+/** The first dash-separated segment of an id — `3f2a…-…` prints as `3f2a…`. */
+export function shortId(id: string): string {
+  return id.split('-')[0] ?? id;
+}
+
 /** Find and pull out a flag value from argv (`--project foo` or
  *  `--project=foo`). Mutates the array — caller passes a sliced copy. */
 export function takeFlagValue(argv: string[], names: string[]): string | undefined {

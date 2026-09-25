@@ -8,12 +8,13 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, projectSessionConnectorBindings, serviceAccounts, sessionProviderSecretPools } from '@kortix/db';
+import { projectSessions, projectSessionConnectorBindings, serviceAccounts } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, readBody, hasOwn } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { resolveEffectiveSessionConnectorBindings, sessionConnectorBindingsRequirePrivateVisibility, validateSessionConnectorBindings } from '../lib/session-connector-bindings';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
@@ -29,7 +30,7 @@ import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-re
 import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
 import { resolveSessionPersonalOwner } from '../lib/personal-resources';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { checkSessionModelChange } from '../lib/session-model-keys';
+import { admitSessionModelChange } from '../lib/session-model-keys';
 import { validateProviderSecretPool } from './provider-secret-pools';
 projectsApp.openapi(
   createRoute({
@@ -49,7 +50,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -141,7 +142,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -164,7 +165,7 @@ projectsApp.openapi(
       );
     }
 
-    const parsedBody = SessionScopeInputSchema.safeParse(await readBody(c));
+    const parsedBody = SessionScopeInputSchema.safeParse(await readJsonObject(c));
     if (!parsedBody.success) {
       return c.json(
         {
@@ -597,7 +598,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -618,8 +619,8 @@ projectsApp.openapi(
       );
     }
 
-    const body = await readBody(c);
-    const requested = typeof body?.opencode_model === 'string' ? body.opencode_model : '';
+    const body = await readJsonObject(c);
+    const requested = typeof body.opencode_model === 'string' ? body.opencode_model : '';
     const shapeError = validateModelChangeShape(requested);
     if (shapeError) {
       return c.json({ error: shapeError.message, code: shapeError.code }, 400);
@@ -646,9 +647,9 @@ projectsApp.openapi(
     } else {
       const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
       const owner = visible.row.createdBy ?? loaded.userId;
-      // Checked in the key scope the gateway uses for this session, with the
+      // Checked in the key scope the gateway uses for this session; stores the
       // pooled keys it selects (lib/session-model-keys.ts).
-      const { servable, selected } = await checkSessionModelChange({
+      const servable = await admitSessionModelChange({
         accountId: loaded.row.accountId,
         projectId,
         sessionId,
@@ -660,14 +661,6 @@ projectsApp.openapi(
           resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
           !visible.ownerIsMachine &&
           Boolean(visible.row.createdBy),
-        hasSelection: async (providerId) => {
-          const [existing] = await db
-            .select({ sessionId: sessionProviderSecretPools.sessionId })
-            .from(sessionProviderSecretPools)
-            .where(and(eq(sessionProviderSecretPools.sessionId, sessionId), eq(sessionProviderSecretPools.providerId, providerId)))
-            .limit(1);
-          return Boolean(existing);
-        },
         callerMaySelect: async (providerId, secretIds) =>
           !(await validateProviderSecretPool({
             accountId: loaded.row.accountId,
@@ -681,12 +674,6 @@ projectsApp.openapi(
             ids: secretIds,
           })),
       });
-      if (selected) {
-        await db
-          .insert(sessionProviderSecretPools)
-          .values({ sessionId, providerId: selected.providerId, secretIds: selected.secretIds })
-          .onConflictDoNothing({ target: [sessionProviderSecretPools.sessionId, sessionProviderSecretPools.providerId] });
-      }
       if (!servable) {
         return c.json(
           {

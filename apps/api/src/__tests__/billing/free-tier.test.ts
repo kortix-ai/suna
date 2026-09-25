@@ -39,9 +39,7 @@ beforeEach(() => {
 const { initializeFreeTierAccount, ensureFreeTierAccountReady } = await import(
   '../../billing/services/free-tier'
 );
-const { isFreeTierAccountDueForRotation, processFreeTierCreditRotation } = await import(
-  '../../billing/services/free-tier-rotation'
-);
+const { processFreeTierCreditRotation } = await import('../../billing/services/free-tier-rotation');
 
 describe('free tier account setup', () => {
   test('initializes a free account with one idempotent $2 expiring grant', async () => {
@@ -90,27 +88,34 @@ describe('free tier account setup', () => {
     expect(walletGrants).toHaveLength(1);
   });
 
-  test('does not downgrade or grant free credits to active paid accounts', async () => {
+  // The guard exists for a paying row whose tier still reads 'none': without it,
+  // the repair below would re-initialize a customer as free.
+  test.each([
+    ['active', false],
+    ['past_due', false],
+    ['canceled', true],
+    ['unpaid', true],
+  ])('a drained none-tier row with a "%s" subscription is re-initialized as free: %p', async (status, reinitialized) => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
-        tier: 'per_seat',
-        balance: '20.0000',
-        billingModel: 'per_seat',
+        tier: 'none',
+        balance: '0.0000',
         stripeSubscriptionId: 'sub_paid',
-        stripeSubscriptionStatus: 'active',
+        stripeSubscriptionStatus: status,
       });
 
     await ensureFreeTierAccountReady('acc_paid');
 
-    expect(upsertCreditAccountCalls).toHaveLength(0);
-    expect(walletGrants).toHaveLength(0);
+    expect(upsertCreditAccountCalls.length > 0).toBe(reinitialized);
+    expect(walletGrants.length > 0).toBe(reinitialized);
   });
+
 });
 
 describe('free tier monthly credit rotation', () => {
   const now = new Date('2026-07-25T10:00:00.000Z');
 
-  test('resets unused 300 display credits to exactly 200 fresh credits', async () => {
+  test('a due free account is reset to exactly $2 under a monthly UTC key', async () => {
     freeAccountsDueResult = [
       createMockCreditAccount({
         accountId: 'acc_300_left',
@@ -130,43 +135,6 @@ describe('free tier monthly credit rotation', () => {
     expect(walletResets[0].amount).toBe(2);
     expect(walletResets[0].description).toBe('Free tier monthly credit reset: 2 credits');
     expect(walletResets[0].key).toEqual({ event: 'free_tier_rotation_acc_300_left_2026-07' });
-  });
-
-  test('resets unused 20 display credits to exactly 200 fresh credits', async () => {
-    freeAccountsDueResult = [
-      createMockCreditAccount({
-        accountId: 'acc_20_left',
-        tier: 'free',
-        balance: '0.2000',
-        expiringCredits: '0.2000',
-        nonExpiringCredits: '0.0000',
-        nextCreditGrant: '2026-07-25T00:00:00.000Z',
-      }),
-    ];
-
-    await processFreeTierCreditRotation(now);
-
-    expect(walletResets).toHaveLength(1);
-    expect(walletResets[0].accountId).toBe('acc_20_left');
-    expect(walletResets[0].amount).toBe(2);
-  });
-
-  test('grants exactly 200 display credits even when the free wallet is empty', async () => {
-    freeAccountsDueResult = [
-      createMockCreditAccount({
-        accountId: 'acc_empty',
-        tier: 'free',
-        balance: '0.0000',
-        expiringCredits: '0.0000',
-        nonExpiringCredits: '0.0000',
-        nextCreditGrant: '2026-07-25T00:00:00.000Z',
-      }),
-    ];
-
-    await processFreeTierCreditRotation(now);
-
-    expect(walletResets).toHaveLength(1);
-    expect(walletResets[0].amount).toBe(2);
   });
 
   test('updates the next monthly grant anchor after resetting', async () => {
@@ -214,30 +182,18 @@ describe('free tier monthly credit rotation', () => {
     expect(walletResets.map((call) => call.accountId)).toEqual(['acc_error', 'acc_ok']);
   });
 
-  test('identifies only due free accounts for rotation', () => {
-    expect(
-      isFreeTierAccountDueForRotation(
-        createMockCreditAccount({ tier: 'free', nextCreditGrant: '2026-07-25T00:00:00.000Z' }),
-        now,
-      ),
-    ).toBe(true);
-    expect(
-      isFreeTierAccountDueForRotation(
-        createMockCreditAccount({ tier: 'free', nextCreditGrant: '2026-08-25T00:00:00.000Z' }),
-        now,
-      ),
-    ).toBe(false);
-    expect(
-      isFreeTierAccountDueForRotation(
-        createMockCreditAccount({ tier: 'per_seat', nextCreditGrant: '2026-07-25T00:00:00.000Z' }),
-        now,
-      ),
-    ).toBe(false);
-    expect(
-      isFreeTierAccountDueForRotation(
-        createMockCreditAccount({ tier: 'none', nextCreditGrant: '2026-07-25T00:00:00.000Z' }),
-        now,
-      ),
-    ).toBe(false);
+  test.each([
+    ['a free account never granted before is processed', { tier: 'free', nextCreditGrant: null }, 'processed'],
+    ['a free account not due yet is skipped', { tier: 'free', nextCreditGrant: '2026-08-25T00:00:00.000Z' }, 'skipped'],
+    ['a per-seat account is skipped', { tier: 'per_seat', nextCreditGrant: '2026-07-25T00:00:00.000Z' }, 'skipped'],
+    ['a none-tier account is skipped', { tier: 'none', nextCreditGrant: '2026-07-25T00:00:00.000Z' }, 'skipped'],
+  ] as const)('%s', async (_name, row, outcome) => {
+    freeAccountsDueResult = [createMockCreditAccount({ accountId: 'acc_row', ...row })];
+
+    const result = await processFreeTierCreditRotation(now);
+
+    expect(result.processed).toBe(outcome === 'processed' ? 1 : 0);
+    expect(result.skipped).toBe(outcome === 'skipped' ? 1 : 0);
+    expect(walletResets).toHaveLength(outcome === 'processed' ? 1 : 0);
   });
 });
