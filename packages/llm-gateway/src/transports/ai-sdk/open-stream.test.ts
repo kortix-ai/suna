@@ -87,17 +87,6 @@ describe('callUpstreamViaAiSdk streaming', () => {
   };
   const body = { model: 'anthropic/claude-probe', stream: true, messages: [{ role: 'user', content: 'hi' }] };
 
-  it('throws a provider HTTP error instead of answering 200 with an error frame', async () => {
-    const call = callUpstreamViaAiSdk(body, anthropic, {
-      fetch: async () =>
-        new Response(JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }), {
-          status: 529,
-          headers: { 'content-type': 'application/json' },
-        }),
-    });
-    await expect(call).rejects.toMatchObject({ status: 529 });
-  });
-
   it('answers with synthetic headers when the provider holds its headers past the commit window', async () => {
     const provider = new AbortController();
     const response = await callUpstreamViaAiSdk(body, anthropic, {

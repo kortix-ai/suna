@@ -73,14 +73,6 @@ export function aiSdkFamilyFor(descriptor: UpstreamDescriptor): AiSdkFamily {
   }
 }
 
-// Every descriptor kind the gateway resolves is now servable by the ai-sdk
-// engine, including Codex/openai-responses — resolveAiModel's `needsResponsesApi`
-// check (below) drives those through the AI SDK's own `.responses()` model
-// instead of falling through to the native openai-responses transport.
-export function isAiSdkServable(_descriptor: UpstreamDescriptor): boolean {
-  return true;
-}
-
 // Whether this call must go out over OpenAI's /v1/responses instead of
 // /v1/chat/completions — exactly the same predicate `resolveTransportKind`
 // (route-kind.ts) uses to pick the native openai-responses transport: a
@@ -112,10 +104,10 @@ export function trimTrailingSlash(url: string): string {
 
 // Anthropic's REST API rejects models.dev's dotted model-id convention
 // outright: `{"type":"error","error":{"type":"not_found_error","message":
-// "model: claude-haiku-4.5"}}` — confirmed live 2026-07-17 (dev
-// req_mrp548h9o4t2bezg and 8 streaming-haiku siblings all 502 this exact way;
-// candidates_tried: ["anthropic"], attempts: 0 — the direct-Anthropic
-// candidate never even gets a real turn in). Anthropic only recognizes the
+// "model: claude-haiku-4.5"}}` — confirmed live 2026-07-17 (a dev request and
+// 8 streaming-haiku siblings all 502 this exact way; candidates_tried:
+// ["anthropic"], attempts: 0 — the direct-Anthropic candidate never even gets
+// a real turn in). Anthropic only recognizes the
 // dash form ("claude-haiku-4-5", which itself resolves server-side to the
 // dated "claude-haiku-4-5-20251001") — verified live against both forms. The
 // native anthropic transport already carries this exact translation
@@ -134,7 +126,7 @@ function anthropicModelName(model: string): string {
 // default max_tokens (commonly tens of thousands, sized for Claude-class
 // context) then 400s/502s EVERY call to a small Nova model, deterministically
 // breaking a multi-turn tool loop before it can complete a single round trip
-// (dev req_mrp4yx5cba2cvaa2 and 7 streaming siblings, all "amazon-bedrock/
+// (a dev request and 7 streaming siblings, all "amazon-bedrock/
 // us.amazon.nova-micro-v1:0"). 10000 is Nova Micro's own live-confirmed
 // ceiling, used as a conservative shared cap for the whole Nova family —
 // Lite/Pro are documented to allow at least as much, never less — rather than

@@ -16,7 +16,6 @@ import { openAiJsonFromResult, openAiSseFromFullStream } from './sse';
 export type { AiSdkFetch } from './model';
 export {
   aiSdkFamilyFor,
-  isAiSdkServable,
   isCodexDescriptor,
   needsResponsesApi,
   resolveAiModel,
@@ -94,9 +93,9 @@ function sseResponse(stream: ReadableStream<Uint8Array>): Response {
 // (Bedrock) can throw before any HTTP response ever exists, and some AI-SDK
 // error classes don't expose one at all. Without the message-based fallback
 // below, those errors always fell through to a generic NetworkError — which
-// `defaultIsRetryable` treats as retryable — so an invalid/dead upstream key
-// got retried into a permanently empty, hung session turn (11+ attempts over
-// 2+ minutes, no error ever surfaced) instead of failing fast on attempt one.
+// was treated as retryable — so an invalid/dead upstream key got retried into
+// a permanently empty, hung session turn (11+ attempts over 2+ minutes, no
+// error ever surfaced) instead of failing fast on attempt one.
 export function toTransportError(err: unknown, provider: string): Error {
   // The AI SDK validates the built prompt CLIENT-SIDE, before any request
   // ever goes out (e.g. `messages` resolving to an empty array — a body with
@@ -104,10 +103,9 @@ export function toTransportError(err: unknown, provider: string): Error {
   // ever had this check; it always forwarded whatever body it was given
   // straight to the upstream, which would itself 400 the malformed request.
   // Classified the same way a real upstream 400 would be here so it fails
-  // fast in ONE attempt (defaultIsRetryable never retries a 400) instead of
-  // falling through to the generic NetworkError case below, which IS
-  // retryable and would otherwise burn the full retry budget on a request
-  // that can never succeed no matter how many times it's replayed.
+  // fast (a 400 is a request error, never a transient one) instead of falling
+  // through to the generic NetworkError case below, which a transient fallback
+  // chain moves past on a request that can never succeed.
   if (InvalidPromptError.isInstance(err)) {
     return new UpstreamHttpError(400, err.message, provider);
   }

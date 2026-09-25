@@ -374,7 +374,7 @@ export function openAiSseFromFullStream(
             }
             // `@ai-sdk/*`'s APICallError also stashes the actionable fields
             // (`.responseBody` raw, `.data` parsed, `.url`) here — keep them
-            // on the emitted frame's `detail` so `sseErrorFrame` carries them
+            // on the emitted frame's `detail` so the stream scanner carries them
             // to the logs. Bounded so a huge upstream body can't blow up a log
             // line.
             const detail: Record<string, unknown> = {};

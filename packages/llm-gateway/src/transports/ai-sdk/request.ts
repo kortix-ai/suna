@@ -769,9 +769,6 @@ export function noteBedrockOpenAiRejectsReasoningEffort(resolvedModel: string): 
 export function bedrockOpenAiRejectsReasoningEffort(resolvedModel: string | undefined): boolean {
   return !!resolvedModel && bedrockOpenAiReasoningEffortRejected.has(resolvedModel);
 }
-export function resetBedrockOpenAiReasoningEffortRejectionsForTests(): void {
-  bedrockOpenAiReasoningEffortRejected.clear();
-}
 
 const ANTHROPIC_CACHE_CONTROL = { type: 'ephemeral' } as const;
 const BEDROCK_CACHE_POINT = { type: 'default' } as const;

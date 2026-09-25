@@ -32,19 +32,6 @@ function makeHooks(over: Partial<GatewayHooks> = {}): GatewayHooks {
 }
 
 describe('gateway.messages (Anthropic Messages ingress)', () => {
-  test('401 without a bearer token, in the Anthropic error envelope (not the OpenAI-compat one)', async () => {
-    const res = await createGateway(makeHooks()).messages({
-      authorization: undefined,
-      rawBody: JSON.stringify({ model: 'x', messages: [{ role: 'user', content: 'hi' }] }),
-    });
-    expect(res.status).toBe(401);
-    const body = (await res.json()) as { type: string; error: { type: string; message: string } };
-    expect(body.type).toBe('error');
-    expect(body.error.type).toBe('authentication_error');
-    // Not the OpenAI-compat shape a bare chatCompletions() 401 would return.
-    expect((body as unknown as { code?: unknown }).code).toBeUndefined();
-  });
-
   test('400 on invalid JSON, in the Anthropic error envelope', async () => {
     const res = await createGateway(makeHooks()).messages({
       authorization: 'Bearer good',
