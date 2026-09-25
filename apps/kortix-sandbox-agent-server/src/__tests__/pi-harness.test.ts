@@ -15,7 +15,7 @@ import { loadConfig } from '../config'
 import { resetKortixEventBusForTests } from '../kortix-event-bus'
 import { buildDaemonApp } from '../proxy'
 import { requirePiConfig } from '../harness/pi/config'
-import { createPiHarnessService, type PiHarnessService } from '../harness/pi/service'
+import { createPiHarnessService, piDefinition, type PiHarnessService } from '../harness/pi/service'
 import type { PiBootState } from '../harness/pi/boot-state'
 
 const TOKEN = 'pi-test-token'
@@ -480,6 +480,39 @@ describe('pi harness', () => {
     expect(page.messages[1]!.parts[0]).toMatchObject({ type: 'text', text: 'first answer' })
     const sessions = (await r.user('/session').then((res) => res.json())) as Array<{ title: string }>
     expect(sessions[0]!.title).toBe('remember me')
+  })
+
+  test('a managed-skill overlay that lands after start reaches the running pi', async () => {
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-'))
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
+      const r = await boot({ script: [{ text: 'ok' }], start: false })
+      const write = (root: string, name: string, description: string) => {
+        require('node:fs').mkdirSync(join(root, name), { recursive: true })
+        writeFileSync(join(root, name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
+      }
+      write(join(r.workspace, 'skills'), 'kortix-cli', 'Committed copy')
+      await r.service.lifecycle.start()
+      const list = async () =>
+        ((await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>)
+          .map((s) => [s.name, s.description])
+          .sort()
+      expect(await list()).toEqual([['kortix-cli', 'Committed copy']])
+
+      // runtime-assets writes the overlay after the harness started, then calls injectSkills.
+      write(managed, 'kortix-cli', 'Managed copy')
+      write(managed, 'kortix-system', 'Platform reference')
+      await piDefinition.assets.injectSkills(r.workspace, managed)
+
+      expect(await list()).toEqual([
+        ['kortix-cli', 'Managed copy'],
+        ['kortix-system', 'Platform reference'],
+      ])
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+    }
   })
 
   test('skills in the project are loaded into the system prompt: root skills/, then the legacy dir', async () => {

@@ -9,7 +9,7 @@ import type { ProjectEnvStore } from '../../project-env'
 import type { HarnessDefinition, HarnessService, HarnessStartupOptions } from '../harness'
 import { isRepoMaterialized } from '../../git'
 import { runtimeAssetsActivity } from '../../runtime-assets'
-import { createPiAssetsService } from './assets'
+import { createPiAssetsService, registerPiSkillReload } from './assets'
 import { startPiBackground } from './background'
 import type { PiBootState } from './boot-state'
 import { loadPiEnvironment, requirePiConfig, resolvePiSkillDirectories, type PiConfig } from './config'
@@ -36,6 +36,7 @@ export function createPiHarnessService(
   const runtime = new PiRuntime({ cfg, sessionId, projectEnv, hooks: options.hooks, env })
   let started = false
   const live = () => (started ? runtime : null)
+  registerPiSkillReload(async () => live()?.reloadSkills())
   const surface = createPiSurface(live)
   const pushProjection = (reason: string) =>
     schedulePiProjectionPush(() => {
