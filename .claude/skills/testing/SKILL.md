@@ -18,6 +18,12 @@ the **sdk** skill before editing the SDK.
   `packages/db/scripts`. Read `TEST_DATABASE_URL`; the `db-suites` lane gives
   every file its own fresh migrated database. Create every row you read. See
   `tests/README.md` "DB suites".
+- Never `return` early from a DB test when a fixture row is missing. Seed it.
+  An early return passes with zero assertions: one suite borrowed an existing
+  account and asserted nothing in CI for all 12 of its tests.
+- Prove a SQL guard (a `WHERE` predicate, a compare-and-set, a tombstone check)
+  in a DB suite. A mocked `db` whose stub returns the receipt proves the stub,
+  not the query. Keep mocked-collaborator tests for ordering and branching.
 - Add API and CLI product contracts to `tests/spec/end-to-end.md` and
   `tests/src/flows`.
 - Keep SDK tests in `packages/sdk`.

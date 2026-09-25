@@ -341,7 +341,6 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/oauth/userinfo': { action: 'oauth.userinfo.read', title: 'Viewed OAuth user information' },
   'GET /v1/openapi.json': { action: 'system.openapi_spec.read', title: 'Viewed OpenAPI specification' },
   'GET /v1/ops/overview': { action: 'admin.ops.overview.read', title: 'Viewed platform operations overview' },
-  'ALL /v1/p/:sandboxId/:port': 'ALL /v1/p/:sandboxId/:port/*',
   'ALL /v1/p/:sandboxId/:port/*': { action: 'sandbox.port.proxy', title: 'Accessed sandbox port' },
   'OPTIONS /v1/p/auth': { action: 'sandbox.preview.cors.check', title: 'Checked sandbox preview CORS access' },
   'POST /v1/p/auth': { action: 'sandbox.preview.authenticate', title: 'Authenticated to sandbox previews' },

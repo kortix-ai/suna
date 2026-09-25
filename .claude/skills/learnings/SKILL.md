@@ -174,7 +174,7 @@ that are too low. 104 prod turns in 59 sessions across 4 accounts, from
 **Enforcement.** `tests/spec/wire-message-id.vectors.json` (API and SDK);
 `packages/sdk/src/core/turns/display-order.test.ts` (prod-shaped ids, the
 wrap); `apps/cli/src/commands/sessions-queue.test.ts`; API tests for POST
-stamping, drain floors, and proxy repair (`forward-prompt-wire-id.test.ts`).
+stamping, drain floors, and proxy repair (`sandbox-proxy/routes/forward.test.ts`).
 PR #7597.
 
 ### A guest fix in the boot path must also reach sandboxes that only resume (2026-09-24)
@@ -1323,8 +1323,8 @@ request got another customer's agent (`chief-of-staff`, the first
 344 tokens in unrelated projects lost CLI and connector access; the admin project
 list showed global session counts per project. *Automation:*
 `sql-correlated-subquery-guard.test.ts` fails on any raw subquery that references
-a `@kortix/db` table column it does not select from; `backend-load-sandbox-sql.test.ts`
-pins the rendered join; `isLaunchableAgentName` + the proxy/re-mint guards refuse
+a `@kortix/db` table column it does not select from;
+`integration-correlated-subquery-isolation.test.ts` proves the `loadSandbox` join on real rows; `isLaunchableAgentName` + the proxy/re-mint guards refuse
 any agent name the session's own manifest does not declare.
 
 ### Renaming or replacing the default agent is TWO writes — the manifest AND `project.metadata.default_agent`, which wins (2026-09-15)
@@ -5363,7 +5363,7 @@ install had already landed.
 3. Do not "fix" a slow legitimate boot by raising the fixed budget; expose the
    progress and budget that.
 
-*Automation:* `unit-session-restart-url-contract.test.ts` ("progress-aware
+*Automation:* `session-lifecycle/readiness-clocks.test.ts` ("progress-aware
 OpenCode boot budget"), `boot-phase.test.ts`, `proxy-auth.test.ts` ("names the
 boot phase").
 
@@ -5744,8 +5744,10 @@ consumed by a `/start` branch that returned before any provider call. Only
 *Automation:* `apps/api/src/projects/routes/stopped-wake-result.test.ts` (the
 10-hour replay, both stamps, the ladder, the evidence),
 `session-lifecycle/runtime-wake-fence.test.ts` (progress-aware budget, hard cap,
-cooldown ladder), `session-lifecycle/runtime-wake-billing-invariant.test.ts`
-(the 2026-08-17 mid-turn park and the compute-close exemption stay intact),
+cooldown ladder, the lease boundary), `reaping/sandbox-state-sync.test.ts`
+(the 2026-08-17 mid-turn park needs a confirmed second stopped read),
+`projects/sandbox-reaper.test.ts` (`decideComputeClose`: a fresh wake fence is
+not billable-stop proof),
 `session-lifecycle/stopped-observation-followup.test.ts` (bounded confirmation),
 `session-lifecycle/start-envelope.test.ts` (one envelope per open state).
 
@@ -5762,8 +5764,8 @@ unreachable-runtime class separately from the refusal class, keep the work
 queued with a runtime-scaled backoff, spend no dead-letter budget on it, and
 re-arm it on the event you are actually waiting for.** *Enforcer:*
 `deliver.test.ts` (stopped/parked → `unreachable`, missing → `no-session`) and
-`runtime-unreachable-park.test.ts` (bounded budget, backoff ladder, fresh
-idempotency key, Stop survives as a hold).
+`integration-lifecycle-command-lease.test.ts` (bounded budget, backoff ladder,
+fresh idempotency key, Stop survives as a hold, re-arm skips a held row).
 
 ### A provider's "resume" is not a promise that your processes come back (2026-08-26)
 
@@ -5843,8 +5845,8 @@ deterministically doomed, regardless of progress.**
    `console.warn`s fails invisibly — which is the likeliest reason the
    ready-path clear never cleared anything in production.
 
-*Automation:* `unit-session-restart-url-contract.test.ts` — "an automatic rung
-never inherits the previous attempt boot budget" (8 tests, including "a stub
+*Automation:* `session-lifecycle/readiness-clocks.test.ts` — "an automatic rung
+never inherits the previous attempt boot budget" (including "a stub
 launcher that changes phase for ever is still caught at the cap" and
 "who resets the retry accounting"); `e2e-project-session-contract.test.ts` —
 "the automatic rung re-baselines the boot clocks but KEEPS the failure
