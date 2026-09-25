@@ -1049,9 +1049,10 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 
 // Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
 // session title + sanitized transcript for a valid session public-share
-// (any resource type SESS-13's CRUD creates); backs the logged-out
-// `/share/[shareId]` viewer (apps/web). No auth, no client-side sandbox
-// access — the API reads the sandbox's OpenCode daemon server-side.
+// (any resource type SESS-13's CRUD creates); exposed through the SDK's
+// `getPublicSessionShare` / `getPublicSessionShareMessages`. The web app has
+// no page for it. No auth, no client-side sandbox access — the API reads the
+// sandbox's OpenCode daemon server-side.
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 

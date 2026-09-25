@@ -17,7 +17,16 @@
  * bypass the store, the cache contract, or the audit trail.
  */
 import { and, eq, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
-import { accountGroups, accountMembers, iamRoleActions, iamRoles, roleAssignments, serviceAccounts } from '@kortix/db';
+import {
+  accountGroups,
+  accountMembers,
+  accountMemberships,
+  iamRoleActions,
+  iamRoles,
+  projects,
+  roleAssignments,
+  serviceAccounts,
+} from '@kortix/db';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
@@ -205,6 +214,7 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
       message: `role "${role.key}" is a ${role.scopeType}-scoped role and cannot be assigned at ${scopeType} scope`,
     });
   }
+  if (scopeId) await assertProjectInAccount(accountId, scopeId);
 
   await assertPrincipalExists(accountId, input.principal);
   assertAccountRoleHolder(writer, role, scopeType, input.principal);
@@ -297,6 +307,7 @@ async function retractSiblingSystemRoles(
     ...(kept.scopeId ? { scopeId: kept.scopeId } : {}),
     liveOnly: false,
   });
+  let ownerRetracted = false;
   for (const row of rows) {
     if (row.assignmentId === kept.assignmentId) continue;
     if (!row.roleIsSystem) continue;
@@ -304,7 +315,9 @@ async function retractSiblingSystemRoles(
     if (row.scopeId !== kept.scopeId) continue;
     await db.delete(roleAssignments).where(eq(roleAssignments.assignmentId, row.assignmentId));
     await audit(writer, accountId, 'iam.assignment.revoked', row.assignmentId, describe(row, row.roleKey), null);
+    if (isAccountOwnerRow(row)) ownerRetracted = true;
   }
+  if (ownerRetracted) await clearSuperAdminAfterOwnerLoss(writer, accountId, kept.principalId);
 }
 
 /**
@@ -366,6 +379,7 @@ export async function updateAssignment(
   if (scopeType === 'project' && !scopeId) {
     throw new HTTPException(400, { message: 'a project-scoped assignment must name a project' });
   }
+  if (scopeId) await assertProjectInAccount(accountId, scopeId);
   assertAccountRoleHolder(writer, role, scopeType, {
     type: existing.principalType as PrincipalRef['type'],
     id: existing.principalId,
@@ -428,6 +442,9 @@ export async function updateAssignment(
   await bustCachesFor({ type: existing.principalType as PrincipalRef['type'], id: existing.principalId }, scopeId);
   await bustCachesFor({ type: existing.principalType as PrincipalRef['type'], id: existing.principalId }, existing.scopeId);
   await audit(writer, accountId, 'iam.assignment.granted', assignmentId, describe(existing, existing.roleKey), describe(row, role.key));
+  if (isAccountOwnerRow(existing) && !isAccountOwnerRow(row)) {
+    await clearSuperAdminAfterOwnerLoss(writer, accountId, existing.principalId);
+  }
   return row;
 }
 
@@ -484,6 +501,7 @@ export async function revokeAssignment(
     existing.scopeId,
   );
   await audit(writer, accountId, 'iam.assignment.revoked', assignmentId, describe(existing, existing.roleKey), null);
+  if (isAccountOwnerRow(existing)) await clearSuperAdminAfterOwnerLoss(writer, accountId, existing.principalId);
 
   return existing;
 }
@@ -733,6 +751,86 @@ async function assertDelegable(role: ResolvedRole): Promise<void> {
     throw new HTTPException(403, {
       message: `role "${role.key}" cannot be assigned: it carries non-delegable permission(s) ${forbidden.sort().join(', ')}`,
     });
+  }
+}
+
+/**
+ * A project-scoped assignment belongs to the project's own account.
+ *
+ * The writer is authorized against the account in the URL, and the engine
+ * reads object grants and project roles by project id. A row written in one
+ * account for a project of another would therefore act inside that other
+ * account. The storage layer refuses the same row
+ * (`role_assignments_project_account_guard`); this check answers with a 404
+ * instead of a constraint error.
+ */
+async function assertProjectInAccount(accountId: string, projectId: string): Promise<void> {
+  const [row] = await db
+    .select({ projectId: projects.projectId })
+    .from(projects)
+    .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
+    .limit(1);
+  if (!row) throw new HTTPException(404, { message: 'project not found in this account' });
+}
+
+function isAccountOwnerRow(row: Pick<AssignmentRow, 'roleIsSystem' | 'roleKey' | 'scopeType' | 'principalType'>): boolean {
+  return row.roleIsSystem && row.roleKey === 'owner' && row.scopeType === 'account' && row.principalType === 'user';
+}
+
+/**
+ * Losing the owner role ends the super-admin bypass that came with it.
+ *
+ * Every account creator gets `is_super_admin`, and `authorize` allows a
+ * super-admin every action before any role check. A demoted owner who kept the
+ * flag kept every owner power, including re-granting `owner`. When a user holds
+ * no live account-scope `owner` assignment any more, the flag is cleared in the
+ * same call and the revoke is audited.
+ */
+async function clearSuperAdminAfterOwnerLoss(writer: Writer, accountId: string, userId: string): Promise<void> {
+  const [stillOwner] = await db
+    .select({ assignmentId: roleAssignments.assignmentId })
+    .from(roleAssignments)
+    .innerJoin(iamRoles, eq(iamRoles.roleId, roleAssignments.roleId))
+    .where(
+      and(
+        eq(roleAssignments.accountId, accountId),
+        eq(roleAssignments.principalType, 'user'),
+        eq(roleAssignments.principalId, userId),
+        eq(roleAssignments.scopeType, 'account'),
+        isNull(iamRoles.accountId),
+        eq(iamRoles.key, 'owner'),
+        or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, sql`now()`)),
+      ),
+    )
+    .limit(1);
+  if (stillOwner) return;
+  const cleared = await db
+    .update(accountMemberships)
+    .set({ isSuperAdmin: false })
+    .where(
+      and(
+        eq(accountMemberships.accountId, accountId),
+        eq(accountMemberships.userId, userId),
+        eq(accountMemberships.isSuperAdmin, true),
+      ),
+    )
+    .returning({ userId: accountMemberships.userId });
+  if (cleared.length === 0) return;
+  invalidateIamCacheForUser(userId);
+  try {
+    await recordAuditEvent({
+      accountId,
+      actorUserId: writer === SYSTEM_ACTOR ? undefined : writer.userId,
+      action: 'iam.member.super_admin.revoke',
+      resourceType: 'account_member',
+      resourceId: userId,
+      before: { is_super_admin: true },
+      after: { is_super_admin: false, reason: 'owner_role_removed' },
+      ip: writer === SYSTEM_ACTOR ? null : (writer.ctx.ip ?? null),
+      userAgent: null,
+    });
+  } catch (err) {
+    console.error('[iam audit] failed to write super-admin revoke event', err);
   }
 }
 

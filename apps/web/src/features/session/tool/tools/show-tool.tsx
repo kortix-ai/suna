@@ -23,8 +23,8 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
   buildHtmlStaticUrl,
+  isShowHtmlFile,
   ServicePreviewViewport,
-  SHOW_HTML_EXT_RE,
   ShowCarousel,
   ShowCarouselItem,
   ShowContentRenderer,
@@ -34,11 +34,11 @@ import {
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { GlobeIcon as Globe } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 
 // The header owns a single preview state for the active item; the carousel gets it
@@ -103,11 +103,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const resolvedPreviewUrl = useMemo(() => {
     const hasLocalhostUrl = !!parseLocalhostUrl(activeUrl) && !isAppRouteUrl(activeUrl);
     if (hasLocalhostUrl) return activeUrl;
-    const isHtmlFilePath =
-      !!activePath &&
-      SHOW_HTML_EXT_RE.test(activePath) &&
-      (activeType === 'file' || activeType === 'html');
-    return isHtmlFilePath ? buildHtmlStaticUrl(activePath) : '';
+    return isShowHtmlFile(activeType, activePath) ? buildHtmlStaticUrl(activePath) : '';
   }, [activeUrl, activePath, activeType]);
   const isWebsitePreview = !!resolvedPreviewUrl;
 

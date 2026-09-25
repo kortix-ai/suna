@@ -17,6 +17,7 @@ import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/roles';
 import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
+import { trustedEmailForUser } from '../iam/email-trust';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -52,6 +53,29 @@ const InviteAcceptSchema = z
 
 function normalizeEmail(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase();
+}
+
+/**
+ * The caller's email for invite matching: the Auth row's email, and only when
+ * it proves ownership (see iam/email-trust.ts). An SSO identity whose IdP has
+ * not verified the email's domain matches no invite.
+ */
+async function callerInviteEmail(c: any): Promise<string> {
+  return trustedEmailForUser(c.get('userId') as string | undefined);
+}
+
+/** 403 for a caller whose token names the invite's email but cannot prove it. */
+function unverifiedSsoEmail(c: any, invite: { email: string }) {
+  const claimed = normalizeEmail(c.get('userEmail') as string | undefined);
+  if (!claimed || claimed !== invite.email.toLowerCase()) return null;
+  return c.json(
+    {
+      error:
+        "Your single sign-on provider has not verified this email's domain. Sign in with your email address to use this invite.",
+      code: 'sso_email_domain_unverified',
+    },
+    403,
+  );
 }
 
 function isExpired(invite: { expiresAt: Date; acceptedAt: Date | null }): boolean {
@@ -220,7 +244,7 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-    const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
+    const callerEmail = await callerInviteEmail(c);
     if (!callerEmail) return c.json({ invites: [] });
 
     const rows = await db
@@ -298,7 +322,7 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
+  const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
 
   const [invite] = await db
@@ -373,7 +397,7 @@ accountInvitesRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
-  const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
+  const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
 
   const [invite] = await db
@@ -385,7 +409,8 @@ accountInvitesRouter.openapi(
   if (!invite) return c.json({ error: 'Invite not found' }, 404);
 
   if (callerEmail !== invite.email.toLowerCase()) {
-    return c.json({ error: 'This invite is addressed to a different account.' }, 403);
+    return unverifiedSsoEmail(c, invite)
+      ?? c.json({ error: 'This invite is addressed to a different account.' }, 403);
   }
 
   const alreadyAccepted = !!invite.acceptedAt;
@@ -507,7 +532,7 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
+  const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
 
   const [invite] = await db
@@ -523,7 +548,8 @@ accountInvitesRouter.openapi(
   }
 
   if (callerEmail !== invite.email.toLowerCase()) {
-    return c.json({ error: 'This invite is addressed to a different account.' }, 403);
+    return unverifiedSsoEmail(c, invite)
+      ?? c.json({ error: 'This invite is addressed to a different account.' }, 403);
   }
 
   await db.delete(accountInvitations).where(eq(accountInvitations.inviteId, invite.inviteId));

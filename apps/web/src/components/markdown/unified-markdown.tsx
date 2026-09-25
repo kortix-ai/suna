@@ -12,6 +12,12 @@ import {
   katexRemarkPlugins,
   normalizeClassName,
 } from '@/components/markdown/katex-markdown';
+import {
+  markdownPolicy,
+  type MarkdownPolicy,
+  type MarkdownTrust,
+  type MarkdownVariant,
+} from '@/components/markdown/markdown-policy';
 import { MarkdownOrderedList } from '@/components/markdown/ordered-list';
 import {
   hasLinkReferenceDefinition,
@@ -51,21 +57,13 @@ function handleHashClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
 interface MarkdownRenderContextValue {
   isStreaming: boolean;
   proxy: (url: string | undefined) => string | undefined;
-  remoteImages: MarkdownRemoteImages;
+  policy: Readonly<MarkdownPolicy>;
 }
-
-/**
- * `load` fetches every image as it renders. `click-to-load` shows a button in
- * place of an image hosted outside this app and fetches it only on click, so
- * rendering third-party content never sends a request to a host that content
- * chose.
- */
-export type MarkdownRemoteImages = 'load' | 'click-to-load';
 
 const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
   isStreaming: false,
   proxy: (url) => url,
-  remoteImages: 'load',
+  policy: markdownPolicy('untrusted'),
 });
 
 /**
@@ -125,8 +123,10 @@ const MARKDOWN_COMPONENTS = {
 
   // Links — brand-blue, routed through next/link. Setup links open an in-app modal.
   a: function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
-    const { proxy } = useContext(MarkdownRenderContext);
-    const setupLink = parseSetupLinkHref(href);
+    const { proxy, policy } = useContext(MarkdownRenderContext);
+    // Only agent content may turn a setup link into the in-app card. From any
+    // other writer it stays a plain link to the same page.
+    const setupLink = policy.setupLinks ? parseSetupLinkHref(href) : null;
     if (setupLink) {
       return (
         <SetupLinkButton kind={setupLink.kind} token={setupLink.token}>
@@ -137,7 +137,7 @@ const MARKDOWN_COMPONENTS = {
 
     // A setup link whose URL is still streaming: the card it will
     // become, with nothing to click yet (see `holdPendingSetupLink`).
-    const pendingSetupLink = parsePendingSetupLinkHref(href);
+    const pendingSetupLink = policy.setupLinks ? parsePendingSetupLinkHref(href) : null;
     if (pendingSetupLink) {
       return (
         <SetupLinkButton kind={pendingSetupLink} token={null}>
@@ -185,11 +185,10 @@ const MARKDOWN_COMPONENTS = {
   },
 
   // Every fence kind and inline code resolve in one shared place; see
-  // components/markdown/code. Both this renderer and DocMarkdown pass the
-  // parser's props straight through, so the two can no longer drift.
+  // components/markdown/code.
   code: function MarkdownCodeRenderer(props: { children?: React.ReactNode; className?: string }) {
-    const { isStreaming } = useContext(MarkdownRenderContext);
-    return <MarkdownCode {...props} isStreaming={isStreaming} />;
+    const { isStreaming, policy } = useContext(MarkdownRenderContext);
+    return <MarkdownCode {...props} isStreaming={isStreaming} setupLinks={policy.setupLinks} />;
   },
   // `code` returns the fully-styled block; collapse the default `<pre>` wrapper.
   pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
@@ -247,13 +246,13 @@ const MARKDOWN_COMPONENTS = {
   ),
 
   img: function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
-    const { proxy, remoteImages } = useContext(MarkdownRenderContext);
+    const { proxy, policy } = useContext(MarkdownRenderContext);
     const tHardcodedUi = useTranslations('hardcodedUi');
     const [loadRequested, setLoadRequested] = useState(false);
     if (!src) return null;
     const resolvedSrc = proxy(src) ?? src;
     const remoteHost = remoteImageHost(src, resolvedSrc);
-    if (remoteImages === 'click-to-load' && remoteHost && !loadRequested) {
+    if (policy.remoteImages === 'click-to-load' && remoteHost && !loadRequested) {
       return (
         <Button
           type="button"
@@ -386,31 +385,29 @@ function parseMarkdownBlocks(markdown: string): string[] {
 
 export interface UnifiedMarkdownProps {
   content: string;
+  /**
+   * Who wrote `content`. Decides whether embedded HTML is parsed, whether
+   * remote images load, and whether setup links become in-app cards. See
+   * `MarkdownTrust`.
+   */
+  trust: MarkdownTrust;
+  /** `document` for a markdown file: embedded HTML is not parsed. Defaults to `message`. */
+  variant?: MarkdownVariant;
   className?: string;
   isStreaming?: boolean;
-  /**
-   * Parse embedded raw HTML/SVG into live DOM. Defaults to `true`; set `false`
-   * for file/source viewers so markup shows as escaped text instead of broken DOM.
-   */
-  allowHtml?: boolean;
-  /**
-   * Set `click-to-load` where the content comes from a third party (scraped
-   * pages, connector tool output, public share pages): images hosted outside
-   * this app then load only when the reader asks. Defaults to `load`.
-   */
-  remoteImages?: MarkdownRemoteImages;
 }
 
 // Single source of truth for markdown rendering across the app — clean, minimal,
 // readable in both themes.
 export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
-  ({ content, className, isStreaming = false, allowHtml = true, remoteImages = 'load' }) => {
+  ({ content, trust, variant = 'message', className, isStreaming = false }) => {
     const tHardcodedUi = useTranslations('hardcodedUi');
     const { proxyUrl } = useSandboxProxy();
     const proxy = useCallback((url: string | undefined) => proxyUrl(url), [proxyUrl]);
+    const policy = markdownPolicy(trust, variant);
     const renderContext = useMemo(
-      () => ({ isStreaming, proxy, remoteImages }),
-      [isStreaming, proxy, remoteImages],
+      () => ({ isStreaming, proxy, policy }),
+      [isStreaming, proxy, policy],
     );
 
     // Streamdown renders streaming text block by block and settled text as one
@@ -462,7 +459,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             remarkPlugins={katexRemarkPlugins}
             // Module-level arrays for the same reason as MARKDOWN_COMPONENTS: a
             // new array each render made every block re-parse on every token.
-            rehypePlugins={allowHtml ? katexRehypePlugins : katexRehypePluginsNoRaw}
+            rehypePlugins={policy.rawHtml ? katexRehypePlugins : katexRehypePluginsNoRaw}
           >
             {finalContent}
           </Streamdown>

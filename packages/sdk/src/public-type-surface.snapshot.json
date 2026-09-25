@@ -1699,6 +1699,7 @@
     "SnapshotErrorCategory",
     "SnapshotFileDiff",
     "SnapshotPart",
+    "SsoDomainVerificationRecord",
     "SsoGroupMapping",
     "SsoProvider",
     "StaticAppSource",
@@ -3349,6 +3350,7 @@
     "validateToken",
     "verifyGatewayProvider",
     "verifyOtp",
+    "verifySsoDomain",
     "wakeEscalationAttemptSummary",
     "wakeEscalationNote",
     "wakeProgressFingerprint",
@@ -6426,6 +6428,7 @@
     "SlackInstallation",
     "SlackMode",
     "SnapshotErrorCategory",
+    "SsoDomainVerificationRecord",
     "SsoGroupMapping",
     "SsoProvider",
     "StaticAppSource",
@@ -6936,7 +6939,8 @@
     "validateProjectManifest",
     "validateReferralCode",
     "validateToken",
-    "verifyGatewayProvider"
+    "verifyGatewayProvider",
+    "verifySsoDomain"
   ],
   "./feature-flags": [
     "FeatureFlags",

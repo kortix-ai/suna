@@ -19138,7 +19138,9 @@
       "text30cef615e8e3": "取引の概要を表示しました",
       "textd2c6127fc332": "バージョンの差分を表示しました",
       "text8cc0d84b66bb": "Slack ID リンクをプレビュー",
-      "text508b43cc4545": "Teams ID リンクをプレビュー"
+      "text508b43cc4545": "Teams ID リンクをプレビュー",
+      "text467f597e95b0": "SSO ドメインを検証しました",
+      "text8295f9d4861b": "アカウントの SSO ドメイン検証を設定しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20167,5 +20169,18 @@
   },
   "connectorsAppReturn": {
     "done": "完了。Kortix アプリに戻る"
+  },
+  "ssoDomainVerification": {
+    "title": "ドメイン検証",
+    "verified": "検証済み",
+    "unverified": "未検証",
+    "verifiedDescription": "ID プロバイダーは {domain} について信頼されています。SSO の必須化はこのドメインに適用されます。",
+    "unverifiedDescription": "{domain} を管理していることを証明するため、この DNS TXT レコードを追加してください。それまでは SSO サインインはこのアカウント内でのみ機能し、SSO の必須化は効果がありません。",
+    "recordName": "名前",
+    "recordValue": "値",
+    "verify": "ドメインを検証",
+    "verifiedToast": "ドメインを検証しました",
+    "failedToast": "ドメインはまだ検証されていません",
+    "enforceNeedsVerification": "先にドメインを検証してください。SSO の必須化は検証済みのドメインにのみ適用されます。"
   }
 }

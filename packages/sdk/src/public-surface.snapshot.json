@@ -988,6 +988,7 @@
     "validateToken",
     "verifyGatewayProvider",
     "verifyOtp",
+    "verifySsoDomain",
     "wakeEscalationAttemptSummary",
     "wakeEscalationNote",
     "wakeProgressFingerprint",
@@ -2160,7 +2161,8 @@
     "validateProjectManifest",
     "validateReferralCode",
     "validateToken",
-    "verifyGatewayProvider"
+    "verifyGatewayProvider",
+    "verifySsoDomain"
   ],
   "./feature-flags": [
     "featureFlags",

@@ -500,7 +500,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
             return (
               <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
-                  <UnifiedMarkdown content={q.question} />
+                  <UnifiedMarkdown content={q.question} trust="agent" />
                 </div>
                 <p className="text-foreground text-sm font-medium text-pretty">{answerText}</p>
               </div>

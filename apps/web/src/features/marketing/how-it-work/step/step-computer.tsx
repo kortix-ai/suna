@@ -2,9 +2,9 @@
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import { ActivityBurst } from '@/features/session/turn/activity-burst';
+import { useTranslations } from '@/i18n/use-translations';
 import type { Part } from '@/ui';
 import { m, useReducedMotion, type Transition } from 'motion/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStepShowcaseStart } from '../use-step-showcase';
 
@@ -350,6 +350,7 @@ function AgentTurn({ beat }: { beat: number }): ReactNode {
           <div className="shrink-0">
             <UnifiedMarkdown
               content={t.raw('texte10d01e3b40c')}
+              trust="trusted"
               className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             />
           </div>
@@ -369,6 +370,7 @@ function AgentTurn({ beat }: { beat: number }): ReactNode {
           <div className="min-h-0 flex-1">
             <UnifiedMarkdown
               content={PATCH_MD}
+              trust="trusted"
               className="[&_pre]:overflow-hidden [&>*:first-child]:mt-0"
             />
           </div>

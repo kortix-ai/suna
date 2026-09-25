@@ -1384,6 +1384,74 @@ adminApp.openapi(
   },
 );
 
+// ── Mark an account's SSO domain verified (operator) ────────────────────────
+// The self-serve path is DNS (`POST /accounts/:id/iam/sso/provider/verify-domain`).
+// An operator can record the same fact after proving domain control another way
+// (a support ticket from the domain's mail, a signed order form), or withdraw it.
+// A verified domain makes the IdP's asserted emails trusted outside the account
+// and turns on `enforce_sso`, so the change is audited on the account.
+adminApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/api/accounts/{id}/sso-domain-verification',
+    tags: ['admin'],
+    summary: "Mark the account's SSO primary domain verified or unverified",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: { content: { 'application/json': { schema: z.object({ verified: z.boolean() }) } } },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), primary_domain: z.string(), domain_verified: z.boolean() }),
+        'Updated domain verification',
+      ),
+      404: json(z.record(z.string(), z.any()), 'No SSO provider'),
+      409: json(z.record(z.string(), z.any()), 'Domain verified by another account'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const body = c.req.valid('json') as { verified: boolean };
+      const { domainVerifiedByOtherAccount, getSsoProvider, isSsoDomainVerified, setSsoDomainVerified } =
+        await import('../repositories/sso');
+      const before = await getSsoProvider(accountId);
+      if (!before) return c.json({ error: 'no SSO provider configured' }, 404);
+      if (body.verified && (await domainVerifiedByOtherAccount(accountId, before.primaryDomain))) {
+        return c.json(
+          { error: `${before.primaryDomain} is already verified by another account`, code: 'sso_domain_claimed' },
+          409,
+        );
+      }
+      const after = await setSsoDomainVerified(accountId, body.verified);
+      if (!after) return c.json({ error: 'no SSO provider configured' }, 404);
+      try {
+        const { recordAuditEvent } = await import('../shared/audit');
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: 'admin.account.sso_domain.set',
+          resourceType: 'sso_provider',
+          resourceId: after.ssoProviderId,
+          before: { primary_domain: before.primaryDomain, domain_verified: isSsoDomainVerified(before) },
+          after: { primary_domain: after.primaryDomain, domain_verified: isSsoDomainVerified(after), method: 'operator' },
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the change */
+      }
+      return c.json({ ok: true, primary_domain: after.primaryDomain, domain_verified: isSsoDomainVerified(after) });
+    } catch (e: any) {
+      return c.json({ error: adminErrorMessage(e) }, 500);
+    }
+  },
+);
+
 // ── Set per-account entitlement overrides (the JSONB map) ────────────────────
 // One route for every override an account can carry, each with an OPTIONAL
 // EXPIRY — which the four single-purpose routes above cannot express at all
