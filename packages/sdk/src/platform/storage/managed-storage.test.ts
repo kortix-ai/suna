@@ -194,6 +194,40 @@ describe('null storage accessor (embedded WebView)', () => {
   });
 });
 
+describe('storage whose reads throw after it resolves', () => {
+  // Every Storage member throws, as a revoked or partitioned storage can.
+  function installThrowingStorage(): void {
+    const fail = (): never => {
+      throw new Error('SecurityError: storage is not available');
+    };
+    const throwing = {
+      get length(): number {
+        return fail();
+      },
+      key: fail,
+      getItem: fail,
+      setItem: fail,
+      removeItem: fail,
+    };
+    globals.window = { localStorage: throwing, sessionStorage: throwing };
+    globals.localStorage = throwing;
+    globals.sessionStorage = throwing;
+  }
+
+  test('safeSetItem reports false instead of throwing from its quota reclaim', () => {
+    installThrowingStorage();
+    new ScopedCache<number>('fam_throwing', 2);
+    expect(safeSetItem('k', 'v')).toBe(false);
+  });
+
+  test('ScopedCache and pruneAllRegisteredCaches never throw', () => {
+    installThrowingStorage();
+    const cache = new ScopedCache<number>('fam_throwing_prune', 2);
+    expect(() => cache.set('s', 1)).not.toThrow();
+    expect(() => pruneAllRegisteredCaches()).not.toThrow();
+  });
+});
+
 describe('sessionStorage helpers', () => {
   test('write, read and remove through window.sessionStorage', () => {
     const store = install(10_000);

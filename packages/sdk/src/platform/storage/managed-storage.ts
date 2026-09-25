@@ -75,12 +75,19 @@ function resolveStorage(name: 'localStorage' | 'sessionStorage'): Storage | null
   }
 }
 
-/** Every key currently in `storage` (a snapshot, safe to mutate during). */
+/**
+ * Every key currently in `storage` (a snapshot, safe to mutate during). A
+ * storage that throws on read yields no keys, so nothing is evicted.
+ */
 function allKeys(storage: Storage): string[] {
   const keys: string[] = [];
-  for (let i = 0; i < storage.length; i++) {
-    const k = storage.key(i);
-    if (k !== null) keys.push(k);
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k !== null) keys.push(k);
+    }
+  } catch {
+    /* unreadable storage — nothing to enumerate */
   }
   return keys;
 }
@@ -118,7 +125,7 @@ function disposableEntriesOldestFirst(storage: Storage): Array<{ key: string; t:
     }
     for (const family of disposableFamilies) {
       if (keyBelongsToFamily(key, family)) {
-        entries.push({ key, t: entryTimestamp(storage.getItem(key)) });
+        entries.push({ key, t: entryTimestamp(safeGetItem(key)) });
         break;
       }
     }
@@ -273,7 +280,7 @@ export class ScopedCache<T> {
     const entries: Array<{ key: string; t: number }> = [];
     for (const key of allKeys(storage)) {
       if (keyBelongsToFamily(key, this.family)) {
-        entries.push({ key, t: entryTimestamp(storage.getItem(key)) });
+        entries.push({ key, t: entryTimestamp(safeGetItem(key)) });
       }
     }
     if (entries.length <= this.maxScopes) return;
