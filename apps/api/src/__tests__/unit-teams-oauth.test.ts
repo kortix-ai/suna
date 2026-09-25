@@ -109,11 +109,15 @@ afterAll(() => {
   mock.restore();
 });
 
-const oauth = await import('../channels/teams-oauth');
+const oauth = (await import('../channels/teams-oauth')) as any;
 const { teamsOauthApp, teamsOrgConsentUrl, setTeamsPublishRedirectWaitForTest } = oauth;
 
-function state(): string {
-  const url = teamsOrgConsentUrl({ projectId: PROJECT_ID, baseUrl: BASE_URL, enabled: true });
+const USER_ID = '8c7d5e1a-3b2f-4e6d-9a1c-0f2e4d6b8a3c';
+const OTHER_USER_ID = '1e2d3c4b-5a69-4788-9a0b-1c2d3e4f5a6b';
+const OTHER_PROJECT_ID = '7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2910';
+
+function state(userId = USER_ID): string {
+  const url = teamsOrgConsentUrl({ projectId: PROJECT_ID, userId, baseUrl: BASE_URL, enabled: true });
   const s = url && new URL(url).searchParams.get('state');
   if (!s) throw new Error('missing state');
   return s;
@@ -125,85 +129,40 @@ function location(res: Response): string {
   return l;
 }
 
+function complete(input: Partial<{ projectId: string; userId: string; code: string; state: string }> = {}) {
+  return oauth.completeTeamsOauthInstall({
+    projectId: PROJECT_ID,
+    userId: USER_ID,
+    code: 'c1',
+    state: state(),
+    ...input,
+  });
+}
+
+const landed = (status: string) => ({ ok: true, redirectUrl: `${CHANNELS_URL}&teams=${status}` });
+
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe('Teams one-click install callback', () => {
   test('consent URL asks for the delegated catalog scope and carries the callback', () => {
-    const url = new URL(teamsOrgConsentUrl({ projectId: PROJECT_ID, baseUrl: BASE_URL, enabled: true })!);
+    const url = new URL(teamsOrgConsentUrl({ projectId: PROJECT_ID, userId: USER_ID, baseUrl: BASE_URL, enabled: true })!);
     expect(url.searchParams.get('scope')).toContain('AppCatalog.ReadWrite.All');
     expect(url.searchParams.get('redirect_uri')).toBe(`${BASE_URL}/v1/webhooks/teams/oauth/callback`);
     expect(url.searchParams.get('client_id')).toBe('62b4470a-e8e6-4e13-a73f-363de2209dfc');
   });
 
-  test('admin publish completes within the wait → ?teams=connected on the Channels page, outcome persisted', async () => {
-    const res = await teamsOauthApp.request(`/callback?code=c1&state=${state()}`);
+  test('the callback hands off to web completion and saves nothing', async () => {
+    const s = state();
+    const res = await teamsOauthApp.request(`/callback?code=c1&state=${s}`);
 
     expect(res.status).toBe(302);
-    expect(location(res)).toBe(`${CHANNELS_URL}&teams=connected`);
-    expect(saved).toEqual([{ projectId: PROJECT_ID, tenantId: TENANT_ID }]);
-    expect(states).toEqual([{ state: 'publishing' }, { state: 'published' }]);
-    expect(orgInstalled).toEqual([true]);
-    expect(catalogIds).toEqual(['cat-1']);
-  });
-
-  test('non-admin submit → ?teams=review, state "review"', async () => {
-    publishImpl = async () => ({ ok: true, published: false, pendingReview: true, teamsAppId: 'sub-9' });
-
-    const res = await teamsOauthApp.request(`/callback?code=c2&state=${state()}`);
-
-    expect(location(res)).toBe(`${CHANNELS_URL}&teams=review`);
-    expect(states).toEqual([{ state: 'publishing' }, { state: 'review' }]);
-    expect(orgInstalled).toEqual([]);
-    expect(catalogIds).toEqual(['sub-9']);
-  });
-
-  test('Graph rejects the package → ?teams=failed, the reason is persisted on the install', async () => {
-    publishImpl = async () => ({
-      ok: false,
-      published: false,
-      error: 'Graph app-catalog publish failed (400): Invalid manifest',
-    });
-
-    const res = await teamsOauthApp.request(`/callback?code=c3&state=${state()}`);
-
-    expect(location(res)).toBe(`${CHANNELS_URL}&teams=failed`);
-    expect(states).toEqual([
-      { state: 'publishing' },
-      { state: 'failed', error: 'Graph app-catalog publish failed (400): Invalid manifest' },
-    ]);
-    expect(saved).toHaveLength(1);
-  });
-
-  test('publish throws → still ?teams=failed with the thrown message, never a 500', async () => {
-    publishImpl = async () => {
-      throw new Error('socket hang up');
-    };
-
-    const res = await teamsOauthApp.request(`/callback?code=c4&state=${state()}`);
-
-    expect(res.status).toBe(302);
-    expect(location(res)).toBe(`${CHANNELS_URL}&teams=failed`);
-    expect(states[1]).toEqual({ state: 'failed', error: 'socket hang up' });
-  });
-
-  test('a slow publish redirects ?teams=publishing immediately and finishes in the background', async () => {
-    setTeamsPublishRedirectWaitForTest(20);
-    let release!: (v: Record<string, unknown>) => void;
-    publishImpl = () => new Promise((r) => (release = r));
-
-    const res = await teamsOauthApp.request(`/callback?code=c5&state=${state()}`);
-
-    expect(location(res)).toBe(`${CHANNELS_URL}&teams=publishing`);
-    expect(states).toEqual([{ state: 'publishing' }]);
-    expect(saved).toHaveLength(1);
-
-    release({ ok: true, published: true, teamsAppId: 'cat-late' });
-    await tick();
-    await tick();
-
-    expect(states).toEqual([{ state: 'publishing' }, { state: 'published' }]);
-    expect(catalogIds).toEqual(['cat-late']);
-    setTeamsPublishRedirectWaitForTest(null);
+    const target = new URL(location(res));
+    expect(`${target.origin}${target.pathname}`).toBe('https://dev.kortix.com/channels/install/teams');
+    expect(target.searchParams.get('project')).toBe(PROJECT_ID);
+    expect(target.searchParams.get('code')).toBe('c1');
+    expect(target.searchParams.get('state')).toBe(s);
+    expect(saved).toHaveLength(0);
+    expect(states).toHaveLength(0);
   });
 
   test('flag off for the project → ?teams=disabled, nothing saved', async () => {
@@ -219,17 +178,103 @@ describe('Teams one-click install callback', () => {
     expect(saved).toHaveLength(0);
   });
 
-  test('token exchange fails → ?teams=failed, nothing saved', async () => {
+  test('tampered or expired state → home with ?teams_error=expired', async () => {
+    const res = await teamsOauthApp.request(`/callback?code=c8&state=${state()}x`);
+    expect(location(res)).toBe('https://dev.kortix.com/?teams_error=expired');
+  });
+});
+
+describe('Teams one-click install completion', () => {
+  test('admin publish completes within the wait → ?teams=connected on the Channels page, outcome persisted', async () => {
+    expect(await complete()).toEqual(landed('connected'));
+    expect(saved).toEqual([{ projectId: PROJECT_ID, tenantId: TENANT_ID }]);
+    expect(states).toEqual([{ state: 'publishing' }, { state: 'published' }]);
+    expect(orgInstalled).toEqual([true]);
+    expect(catalogIds).toEqual(['cat-1']);
+  });
+
+  test('another Kortix user is refused with 403 before the code is exchanged, and nothing is saved', async () => {
     tokenExchangeOk = false;
-    const res = await teamsOauthApp.request(`/callback?code=c7&state=${state()}`);
-    expect(location(res)).toBe(`${CHANNELS_URL}&teams=failed`);
+    const result = await complete({ state: state(OTHER_USER_ID) });
+    expect(result).toMatchObject({ ok: false, status: 403, code: 'CHANNEL_INSTALL_STATE_MISMATCH' });
     expect(saved).toHaveLength(0);
     expect(states).toHaveLength(0);
   });
 
-  test('tampered or expired state → home with ?teams_error=expired', async () => {
-    const res = await teamsOauthApp.request(`/callback?code=c8&state=${state()}x`);
-    expect(location(res)).toBe('https://dev.kortix.com/?teams_error=expired');
+  test('another project is refused with 403, and nothing is saved', async () => {
+    const result = await complete({ projectId: OTHER_PROJECT_ID });
+    expect(result).toMatchObject({ ok: false, status: 403, code: 'CHANNEL_INSTALL_STATE_MISMATCH' });
+    expect(saved).toHaveLength(0);
+  });
+
+  test('a state that does not verify is refused with 400', async () => {
+    const result = await complete({ state: 'nope' });
+    expect(result).toMatchObject({ ok: false, status: 400, code: 'CHANNEL_INSTALL_STATE_INVALID' });
+    expect(saved).toHaveLength(0);
+  });
+
+  test('non-admin submit → ?teams=review, state "review"', async () => {
+    publishImpl = async () => ({ ok: true, published: false, pendingReview: true, teamsAppId: 'sub-9' });
+
+    expect(await complete()).toEqual(landed('review'));
+    expect(states).toEqual([{ state: 'publishing' }, { state: 'review' }]);
+    expect(orgInstalled).toEqual([]);
+    expect(catalogIds).toEqual(['sub-9']);
+  });
+
+  test('Graph rejects the package → ?teams=failed, the reason is persisted on the install', async () => {
+    publishImpl = async () => ({
+      ok: false,
+      published: false,
+      error: 'Graph app-catalog publish failed (400): Invalid manifest',
+    });
+
+    expect(await complete()).toEqual(landed('failed'));
+    expect(states).toEqual([
+      { state: 'publishing' },
+      { state: 'failed', error: 'Graph app-catalog publish failed (400): Invalid manifest' },
+    ]);
+    expect(saved).toHaveLength(1);
+  });
+
+  test('publish throws → still ?teams=failed with the thrown message, never a 500', async () => {
+    publishImpl = async () => {
+      throw new Error('socket hang up');
+    };
+
+    expect(await complete()).toEqual(landed('failed'));
+    expect(states[1]).toEqual({ state: 'failed', error: 'socket hang up' });
+  });
+
+  test('a slow publish answers ?teams=publishing at once and finishes in the background', async () => {
+    setTeamsPublishRedirectWaitForTest(20);
+    let release!: (v: Record<string, unknown>) => void;
+    publishImpl = () => new Promise((r) => (release = r));
+
+    expect(await complete()).toEqual(landed('publishing'));
+    expect(states).toEqual([{ state: 'publishing' }]);
+    expect(saved).toHaveLength(1);
+
+    release({ ok: true, published: true, teamsAppId: 'cat-late' });
+    await tick();
+    await tick();
+
+    expect(states).toEqual([{ state: 'publishing' }, { state: 'published' }]);
+    expect(catalogIds).toEqual(['cat-late']);
+    setTeamsPublishRedirectWaitForTest(null);
+  });
+
+  test('flag off for the project → ?teams=disabled, nothing saved', async () => {
+    flagOn = false;
+    expect(await complete()).toEqual(landed('disabled'));
+    expect(saved).toHaveLength(0);
+  });
+
+  test('token exchange fails → ?teams=failed, nothing saved', async () => {
+    tokenExchangeOk = false;
+    expect(await complete()).toEqual(landed('failed'));
+    expect(saved).toHaveLength(0);
+    expect(states).toHaveLength(0);
   });
 });
 
@@ -245,7 +290,7 @@ describe('Teams install state key', () => {
     config.MICROSOFT_APP_PASSWORD = '';
     try {
       const body = Buffer.from(
-        JSON.stringify({ projectId: PROJECT_ID, baseUrl: BASE_URL, exp: Date.now() + 60_000, nonce: 'n' }),
+        JSON.stringify({ projectId: PROJECT_ID, userId: USER_ID, baseUrl: BASE_URL, exp: Date.now() + 60_000, nonce: 'n' }),
       ).toString('base64url');
       const forged = `${body}.${createHmac('sha256', '').update(body).digest('base64url')}`;
       const res = await teamsOauthApp.request(`/callback?code=c9&state=${forged}`);
@@ -258,7 +303,7 @@ describe('Teams install state key', () => {
 
   test('a state MACed with the app password is refused', async () => {
     const body = Buffer.from(
-      JSON.stringify({ projectId: PROJECT_ID, baseUrl: BASE_URL, exp: Date.now() + 60_000, nonce: 'n' }),
+      JSON.stringify({ projectId: PROJECT_ID, userId: USER_ID, baseUrl: BASE_URL, exp: Date.now() + 60_000, nonce: 'n' }),
     ).toString('base64url');
     const forged = `${body}.${createHmac('sha256', 'app-secret').update(body).digest('base64url')}`;
     const res = await teamsOauthApp.request(`/callback?code=c10&state=${forged}`);
