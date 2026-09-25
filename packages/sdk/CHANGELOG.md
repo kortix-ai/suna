@@ -44,8 +44,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - `safeGetItem`, `safeSetItem`, `ScopedCache` and `pruneAllRegisteredCaches`
-  no longer throw `TypeError` when `window.localStorage` resolves to `null`
-  (some embedded WebViews do this instead of throwing). Added
+  no longer throw when `window.localStorage` resolves to `null` (some
+  embedded WebViews do this instead of throwing) or when a resolved storage
+  throws on read during quota reclaim or pruning. Added
   `safeSessionGetItem`, `safeSessionSetItem` and `safeSessionRemoveItem` with
   the same guarantee for `sessionStorage`.
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
