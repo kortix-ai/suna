@@ -41,12 +41,31 @@ Each account's `owner_type` decides who may run a call as it:
 Multiple connectors can reference the same provider app. Use separate
 connectors when one app needs different policies.
 
+### Add an account
+
+Open the connector in **Customize → Connectors**. The **Accounts** tab lists
+every account you can use or manage in one list. Each card shows who can use
+the account: **Only you**, **Everyone in project**, or the groups and people it
+is shared with.
+
+Select **Add account**, name the account, and choose **Who can use it**:
+
+- **Only you** — a private account. Any member can add one.
+- **Everyone in the project** — a shared account.
+- **Specific people or groups** — a shared account, narrowed to the people and
+  groups you pick.
+
+The two shared choices need `project.connector.connections.manage`. For
+**Specific people or groups**, Kortix writes the grants before you authorize
+the account, so the account never holds a credential while it is open to the
+whole project. An account name must be new: a name that an account of the same
+owner already uses is refused.
+
 ### Choose who can use a shared account
 
 A shared account is usable by everyone in the project until you narrow it.
-Open the connector in **Customize → Connectors**, then select **Share** on the
-account row. The dialog is the same **Grant access** dialog used for agents. It
-lists who can use the account now, and you add:
+Select **Share** on the account card. The dialog is the same **Grant access**
+dialog used for agents. It lists who can use the account now, and you add:
 
 - **Everyone in the project** — the default.
 - **Groups** — every member of each group.
@@ -75,6 +94,15 @@ POST   /accounts/{accountId}/iam/assignments
         "role_key": "agent-user", "scope_type": "project", "scope_id": "<project-id>",
         "object_type": "connection", "object_id": "<connection-id>"}
 DELETE /accounts/{accountId}/iam/assignments/{assignmentId}
+```
+
+From the CLI, the same writes are:
+
+```bash
+kortix access grant --group <group-id> --connection <connection-id>
+kortix access grant --everyone --connection <connection-id>
+kortix access revoke <assignment-id>
+kortix connectors connections ls   # the WHO CAN USE column
 ```
 
 - `principal_type` is `user`, `group`, or `project` (everyone in the project;

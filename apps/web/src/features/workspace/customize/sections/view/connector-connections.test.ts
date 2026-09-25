@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Connection } from '@kortix/sdk';
-import { connectorConnectionRows, sharedAudienceSummary } from './connector-connections';
+import { accountVisibility, connectorConnectionRows } from './connector-connections';
 
 const connection = (connector_alias: string, owner_type: string, connection_id: string) => ({
   connector_alias,
@@ -38,7 +38,7 @@ describe('connectorConnectionRows', () => {
   });
 });
 
-describe('sharedAudienceSummary', () => {
+describe('accountVisibility', () => {
   const account = (
     owner_type: Connection['owner_type'],
     shared_with?: Connection['shared_with'],
@@ -53,26 +53,47 @@ describe('sharedAudienceSummary', () => {
     metadata: {},
     ...(shared_with ? { shared_with } : {}),
   });
-  const share = (principal_type: 'member' | 'group' | 'project', label: string) => ({
-    grant_id: `g-${label}`,
+  const share = (principal_type: 'member' | 'group' | 'project', id: string, label = id) => ({
+    grant_id: `g-${id}`,
     principal_type,
-    principal_id: label,
+    principal_id: id,
     label,
     expires_at: null,
   });
 
-  test('a private account has no audience line', () => {
-    expect(sharedAudienceSummary(account('member'))).toBeNull();
+  test('your own account is only you', () => {
+    expect(accountVisibility(account('member'), 'u-1')).toEqual({ kind: 'you' });
   });
 
   test('a shared account nobody narrowed is everyone', () => {
-    expect(sharedAudienceSummary(account('project', []))).toEqual({ kind: 'everyone' });
+    expect(accountVisibility(account('project', []), 'u-1')).toEqual({ kind: 'everyone' });
   });
 
-  test('a narrowed account names its first two grants and counts the rest', () => {
-    const summary = sharedAudienceSummary(
-      account('project', [share('group', 'Sales'), share('member', 'ada@x.test'), share('group', 'Ops')]),
-    );
-    expect(summary).toEqual({ kind: 'narrowed', names: ['Sales', 'ada@x.test'], more: 1 });
+  test('a grant to the project is everyone, beside any other grant', () => {
+    const shared = account('project', [share('group', 'sales', 'Sales'), share('project', 'p-1')]);
+    expect(accountVisibility(shared, 'u-1')).toEqual({ kind: 'everyone' });
+  });
+
+  test('a shared account narrowed to the viewer alone is only you', () => {
+    expect(accountVisibility(account('project', [share('member', 'u-1', 'me@x.test')]), 'u-1')).toEqual({
+      kind: 'you',
+    });
+  });
+
+  test('the same account seen by someone else names its one person', () => {
+    expect(accountVisibility(account('project', [share('member', 'u-1', 'me@x.test')]), 'u-2')).toEqual({
+      kind: 'named',
+      names: ['me@x.test'],
+      more: 0,
+    });
+  });
+
+  test('a narrowed account names its first grant and counts the rest', () => {
+    const shared = account('project', [
+      share('group', 'sales', 'Sales'),
+      share('member', 'u-9', 'ada@x.test'),
+      share('group', 'ops', 'Ops'),
+    ]);
+    expect(accountVisibility(shared, 'u-1')).toEqual({ kind: 'named', names: ['Sales'], more: 2 });
   });
 });

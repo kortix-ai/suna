@@ -572,8 +572,9 @@ test.describe("23 — Composio managed connector", () => {
 
     const row = page.getByRole("listitem").filter({ hasText: "Team CRM" });
     await expect(row).toBeVisible({ timeout: 60_000 });
-    await expect(row.getByText("Shared with the project")).toBeVisible();
-    await expect(page.getByText("Shared accounts", { exact: true })).toBeVisible();
+    // One list: each card states who may use it; no owner group headings.
+    await expect(row.getByTestId("account-visibility")).toHaveText("Everyone in project");
+    await expect(page.getByText("Shared accounts", { exact: true })).toHaveCount(0);
 
     // ── Narrow it to the group ───────────────────────────────────────────
     await row.getByRole("button", { name: "Share Team CRM", exact: true }).click();
@@ -582,6 +583,8 @@ test.describe("23 — Composio managed connector", () => {
     const audience = dialog.getByTestId("share-audience");
     await expect(audience.getByText(`Everyone in ${projectName}`)).toBeVisible();
     await expect(dialog.getByTestId("share-result")).toContainText(`Everyone in ${projectName} can use`);
+    // Sharing an account is about people; the dialog says nothing about agents.
+    await expect(dialog).not.toContainText(/automation|agent/i);
 
     await dialog.getByRole("button", { name: groupName }).click();
     await expect(dialog.getByTestId("share-result")).toContainText("Only the people you chose");
@@ -613,7 +616,7 @@ test.describe("23 — Composio managed connector", () => {
 
     await expect(dialog).not.toBeVisible();
     await expect(page.getByText("Access updated")).toBeVisible();
-    await expect(row.getByText(`Shared with ${groupName}`)).toBeVisible();
+    await expect(row.getByTestId("account-visibility")).toHaveText(groupName);
     // The owner manages the account but is not in the group.
     await expect(row.getByText("Not shared with you")).toBeVisible();
 
@@ -649,8 +652,125 @@ test.describe("23 — Composio managed connector", () => {
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
     expect((await revokeResponse).status()).toBe(200);
     await expect(dialog).not.toBeVisible();
-    await expect(row.getByText("Shared with the project")).toBeVisible();
+    await expect(row.getByTestId("account-visibility")).toHaveText("Everyone in project");
     await expect(row.getByText("Not shared with you")).toHaveCount(0);
+
+    expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
+  });
+
+  test("adds accounts from one Add account dialog that asks who can use each", async ({ page }) => {
+    // One button, one dialog: the name plus who may use the new account. The
+    // visibility lands on the card. A connector with `auth: none` needs no
+    // credential, so each account is ready as soon as it is created.
+    await fundAccount(databaseUrl!, accountId);
+    await setDatabaseEnterpriseDemo(loadEnv(), accountId, true);
+    const runId = Date.now().toString(36);
+    const slug = `e2e-add-${runId}`;
+    const groupName = `Sales ${runId}`;
+    await api(
+      session.access_token,
+      "POST",
+      `/connectors/projects/${project.id}/connectors`,
+      { slug, provider: "http", baseUrl: "https://crm.example.com", auth: { type: "none" } },
+      200,
+    );
+    const group = await api<{ group_id: string }>(
+      session.access_token,
+      "POST",
+      `/accounts/${accountId}/iam/groups`,
+      { name: groupName },
+      201,
+    );
+
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    const url = `/projects/${project.id}/customize/connectors?scope=connected&c=${slug}`;
+    await installBrowserSessionDirect(page, session, url, authOptions);
+    await selectAccountForUi(page, accountId);
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await dismissOnboarding(page);
+    const addButton = page.getByRole("button", { name: "Add account", exact: true });
+    await expect(addButton).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole("button", { name: "Add my own" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Connect shared account" })).toHaveCount(0);
+
+    // ── Only you: the caller's own account ───────────────────────────────
+    await addButton.click();
+    const add = page.getByRole("dialog", { name: /^Add a .* account$/ });
+    await expect(add).toBeVisible();
+    await expect(add.getByRole("radio", { name: /^Only you/ })).toBeChecked();
+    await add.getByLabel("Name").fill("Mine");
+    const mineRequest = page.waitForRequest(
+      (request) =>
+        request.url().endsWith(`/projects/${project.id}/connections/me`) && request.method() === "POST",
+    );
+    await add.getByRole("button", { name: "Continue", exact: true }).click();
+    expect((await mineRequest).postDataJSON()).toEqual(
+      expect.objectContaining({ connector_alias: slug, label: "Mine" }),
+    );
+    await expect(add).toHaveCount(0);
+    const mineRow = page.getByRole("listitem").filter({ hasText: "Mine" });
+    await expect(mineRow.getByTestId("account-visibility")).toHaveText("Only you");
+
+    // ── A name the owner already uses is refused before any request ───────
+    await addButton.click();
+    await add.getByLabel("Name").fill("mine");
+    await expect(add.getByRole("alert")).toHaveText("An account named mine already exists.");
+    await expect(add.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+
+    // ── Specific people or groups: created, then narrowed ────────────────
+    await add.getByLabel("Name").fill("Sales CRM");
+    await add.getByRole("radio", { name: /^Specific people or groups/ }).click();
+    await expect(add.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+    await add.getByRole("button", { name: groupName }).click();
+    const sharedRequest = page.waitForRequest(
+      (request) =>
+        request.url().endsWith(`/projects/${project.id}/connections`) && request.method() === "POST",
+    );
+    const grantRequest = page.waitForRequest(
+      (request) =>
+        /\/v1\/accounts\/[^/]+\/iam\/assignments$/.test(request.url()) && request.method() === "POST",
+    );
+    await add.getByRole("button", { name: "Continue", exact: true }).click();
+    expect((await sharedRequest).postDataJSON()).toEqual(
+      expect.objectContaining({ connector_alias: slug, owner_type: "project", label: "Sales CRM" }),
+    );
+    // The grant is sent only after the create call answered, so the row exists.
+    const grantBody = (await grantRequest).postDataJSON();
+    const salesCrm = (
+      await api<{ connections: Array<{ connection_id: string; label: string; owner_type: string }> }>(
+        session.access_token,
+        "GET",
+        `/projects/${project.id}/connections`,
+      )
+    ).connections.find((c) => c.label === "Sales CRM" && c.owner_type === "project");
+    expect(grantBody).toEqual(
+      expect.objectContaining({
+        principal_type: "group",
+        principal_id: group.group_id,
+        role_key: "agent-user",
+        object_type: "connection",
+        object_id: salesCrm?.connection_id,
+      }),
+    );
+    await expect(add).toHaveCount(0);
+    const salesRow = page.getByRole("listitem").filter({ hasText: "Sales CRM" });
+    await expect(salesRow.getByTestId("account-visibility")).toHaveText(groupName);
+
+    // ── Read back: the API holds both accounts with the chosen audience ───
+    const after = await api<{
+      connections: Array<{
+        label: string;
+        owner_type: string;
+        shared_with?: Array<{ principal_type: string; principal_id: string }>;
+      }>;
+    }>(session.access_token, "GET", `/projects/${project.id}/connections`);
+    const mine = after.connections.filter((c) => c.label === "Mine");
+    expect(mine.map((c) => c.owner_type)).toEqual(["member"]);
+    const sales = after.connections.find((c) => c.label === "Sales CRM");
+    expect(sales?.shared_with).toEqual([
+      expect.objectContaining({ principal_type: "group", principal_id: group.group_id }),
+    ]);
 
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });

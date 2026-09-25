@@ -167,3 +167,33 @@ describe('projectConnectSteps — errors that are not the default-account 409', 
     expect(() => steps.finalize()).toThrow('The project connection was not created.');
   });
 });
+
+describe('projectConnectSteps — an account shared with chosen people', () => {
+  test('narrows the new account after it exists and before authorization starts', async () => {
+    // A shared account with no grant is usable by everyone. Writing the grants
+    // before the OAuth link opens means the account never holds a credential
+    // while it is open to the whole project.
+    const { calls, deps } = recordingDeps('ok', 'conn-3');
+    const steps = projectConnectSteps('project-1', 'notion-product', 'Sales', deps, async (id) => {
+      calls.push(`narrow:${id}`);
+    });
+
+    await steps.start();
+
+    expect(calls).toEqual([
+      'reconcile:project-1:project:Sales',
+      'narrow:conn-3',
+      'connect-connection:project-1:conn-3',
+    ]);
+  });
+
+  test('a failed narrowing stops the flow before any authorization link', async () => {
+    const { calls, deps } = recordingDeps('ok', 'conn-4');
+    const steps = projectConnectSteps('project-1', 'notion-product', 'Sales', deps, async () => {
+      throw new Error('grant refused');
+    });
+
+    await expect(steps.start()).rejects.toThrow('grant refused');
+    expect(calls).toEqual(['reconcile:project-1:project:Sales']);
+  });
+});

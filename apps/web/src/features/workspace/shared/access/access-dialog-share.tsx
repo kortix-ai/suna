@@ -89,6 +89,26 @@ export function planShare(
   return { add, revoke };
 }
 
+/** Grant each principal the use of one shared connector account, in parallel.
+ *  The one write both the share dialog and the Add account flow make. */
+export async function grantConnectionAccess(
+  accountId: string,
+  projectId: string,
+  connectionId: string,
+  principals: SharePlan['add'],
+): Promise<void> {
+  await Promise.all(
+    principals.map((principal) =>
+      createAssignment(accountId, {
+        principal,
+        roleKey: 'agent-user',
+        scope: { type: 'project', id: projectId },
+        object: { type: 'connection', id: connectionId },
+      }),
+    ),
+  );
+}
+
 /** After Save, may everyone in the project use the account? No grant left, or
  *  a grant to the project, means yes. */
 export function sharedWithEveryoneAfter(
@@ -151,16 +171,7 @@ export function ShareAccessBody({
 
   const save = useMutation({
     mutationFn: async () => {
-      await Promise.all(
-        plan.add.map((principal) =>
-          createAssignment(accountId, {
-            principal,
-            roleKey: 'agent-user',
-            scope: { type: 'project', id: projectId },
-            object: { type: object.type, id: object.id },
-          }),
-        ),
-      );
+      await grantConnectionAccess(accountId, projectId, object.id, plan.add);
       await Promise.all(plan.revoke.map((assignmentId) => revokeAssignment(accountId, assignmentId)));
     },
     onSuccess: () => {
