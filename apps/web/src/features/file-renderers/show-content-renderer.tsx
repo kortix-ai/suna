@@ -37,6 +37,7 @@ import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Loading from '@/components/ui/loading';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
@@ -983,6 +984,9 @@ export interface ShowCarouselItem {
   aspect_ratio?: string;
   /** Stored copy of `path` from saved history — see `ShowContentProps.attachment`. */
   attachment?: string;
+  /** `pending`: a grouped `show` call whose payload has not arrived yet. The
+   *  slot holds its place so the card does not jump when it lands. */
+  status?: 'pending' | 'ready' | 'error';
 }
 
 export interface ShowCarouselProps {
@@ -1084,9 +1088,13 @@ export function ShowCarousel({
   toolbarActions,
 }: ShowCarouselProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const typeLabels = useLocalizedUiCatalog(SHOW_TYPE_LABELS);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [requestedIndex, setCurrentIndex] = useState(0);
   const count = items.length;
+  // A grouped carousel can lose an item (a call that settled empty), so the
+  // stored index is clamped instead of trusted.
+  const currentIndex = Math.max(0, Math.min(requestedIndex, count - 1));
   const segmentRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const stripRef = useRef<HTMLDivElement | null>(null);
 
@@ -1127,8 +1135,8 @@ export function ShowCarousel({
     });
   }, [currentIndex]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  const handleArrowKey = useCallback(
+    (e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'preventDefault'>) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const el = document.activeElement as HTMLElement | null;
       if (
@@ -1148,31 +1156,60 @@ export function ShowCarousel({
         e.preventDefault();
         next();
       }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [prev, next]);
+    },
+    [prev, next],
+  );
+
+  // The panel shows one carousel, so ←/→ page it from anywhere. Inline, a
+  // thread can hold several carousels: a window listener paged all of them at
+  // once. There the keys act only while focus is inside this card (see the
+  // root's `onKeyDown`).
+  useEffect(() => {
+    if (!fill) return;
+    window.addEventListener('keydown', handleArrowKey);
+    return () => window.removeEventListener('keydown', handleArrowKey);
+  }, [fill, handleArrowKey]);
 
   const currentItem = items[currentIndex];
   if (!currentItem) return null;
 
   return (
-    <div className={cn(fill && 'flex h-full flex-col')}>
+    <div
+      className={cn('outline-none', fill && 'flex h-full flex-col')}
+      // -1: a click on the content focuses the card, so ←/→ page it next,
+      // without adding a Tab stop. Tab still reaches the chevrons inside.
+      tabIndex={fill || count < 2 ? undefined : -1}
+      onKeyDown={fill || count < 2 ? undefined : (e) => handleArrowKey(e)}
+    >
       <div className={cn(fill ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-[420px]')}>
-        <ShowContentRenderer
-          type={currentItem.type}
-          title={currentItem.title}
-          description={currentItem.description}
-          path={currentItem.path}
-          url={currentItem.url}
-          content={currentItem.content}
-          language={currentItem.language}
-          aspectRatio={currentItem.aspect_ratio}
-          attachment={currentItem.attachment}
-          LocalhostPreview={LocalhostPreview}
-          toolbarActions={toolbarActions}
-          fill={fill}
-        />
+        {currentItem.status === 'pending' ? (
+          <div
+            className={cn(
+              'flex items-center justify-center gap-3',
+              fill ? 'h-full' : 'min-h-[420px]',
+            )}
+          >
+            <Loading className="text-muted-foreground size-4" />
+            <TextShimmer duration={1} spread={2} className="text-sm">
+              {tHardcodedUi.raw('componentsSessionToolRenderers.line4935JsxTextPreparingOutput')}
+            </TextShimmer>
+          </div>
+        ) : (
+          <ShowContentRenderer
+            type={currentItem.type}
+            title={currentItem.title}
+            description={currentItem.description}
+            path={currentItem.path}
+            url={currentItem.url}
+            content={currentItem.content}
+            language={currentItem.language}
+            aspectRatio={currentItem.aspect_ratio}
+            attachment={currentItem.attachment}
+            LocalhostPreview={LocalhostPreview}
+            toolbarActions={toolbarActions}
+            fill={fill}
+          />
+        )}
       </div>
 
       {count > 1 && (

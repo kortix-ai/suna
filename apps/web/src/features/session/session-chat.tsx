@@ -15,6 +15,7 @@ import {
   type SandboxLifecycle,
   type SessionPrompt,
   type SessionPromptPart,
+  groupShowSegments,
   hasRetryingAssistantTurn,
   listSessionPrompts,
   projectSessionConnection,
@@ -66,6 +67,7 @@ import {
   QueuedPromptFailure,
   type QueuedPromptStatusState,
 } from './turn/queued-prompt-bubbles';
+import { ShowGroupRenderer } from './tool/show-group-renderer';
 import { segmentTurn } from './turn/segment-turn';
 import { stabilizeTurns } from './turn/stable-turns';
 import { statusElapsedFrame } from './turn/status-elapsed';
@@ -1535,7 +1537,8 @@ function SessionTurnImpl({
       }
       parts.push(part);
     }
-    return segmentTurn(parts, { standaloneCallIds });
+    // Consecutive `show` calls render as one carousel card (`show-group`).
+    return groupShowSegments(segmentTurn(parts, { standaloneCallIds }), { standaloneCallIds });
   }, [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds]);
 
   // ============================================================================
@@ -1757,6 +1760,31 @@ function SessionTurnImpl({
                     isTrailing={index === segments.length - 1}
                     disableNavigation={disableToolNavigation}
                     density={conversationDensity}
+                  />
+                );
+              }
+
+              if (segment.kind === 'show-group') {
+                const visible = segment.parts.filter(shouldShowToolPart);
+                if (visible.length === 0) return null;
+                // Same key as the lone `show` this group grew from, so the
+                // card is not re-mounted when the next call joins it.
+                if (visible.length === 1) {
+                  return (
+                    <ToolPartRenderer
+                      key={visible[0].id}
+                      part={visible[0]}
+                      sessionId={sessionId}
+                      disableNavigation={disableToolNavigation}
+                    />
+                  );
+                }
+                return (
+                  <ShowGroupRenderer
+                    key={visible[0].id}
+                    parts={visible}
+                    sessionId={sessionId}
+                    disableNavigation={disableToolNavigation}
                   />
                 );
               }

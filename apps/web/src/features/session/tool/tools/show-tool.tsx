@@ -87,7 +87,9 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const isCarousel = !!items && items.length > 0;
 
   const [carouselIndex, setCarouselIndex] = useState(0);
-  const currentItem = isCarousel ? items![carouselIndex] || items![0] : null;
+  const currentItem = isCarousel
+    ? items![Math.min(carouselIndex, items!.length - 1)] || items![0]
+    : null;
 
   const [contentStatus, setContentStatus] = useState<ShowLoadStatus>('loading');
 
@@ -147,8 +149,13 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     () => (safeSubtitleUrl ? showDomain(safeSubtitleUrl) : ''),
     [safeSubtitleUrl],
   );
+  // A carousel's header names the ACTIVE item, so paging updates it. The
+  // call's own title is the fallback, then the item count.
+  const activeItemLabel = currentItem
+    ? currentItem.title || currentItem.path?.split('/').pop()
+    : '';
   const displayTitle = isCarousel
-    ? title || `${items!.length} items`
+    ? activeItemLabel || title || `${items!.length} items`
     : title || (type === 'error' ? 'Error' : type === 'url' ? subtitleDomain || 'Link' : 'Output');
 
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
@@ -314,7 +321,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     >
       <div className="flex items-center justify-between gap-2 px-2 py-1.5">
         <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">
-          {running && !type && !items ? (
+          {(running && !type && !items) || currentItem?.status === 'pending' ? (
             <Loading className="text-muted-foreground size-4 shrink-0" />
           ) : (
             showFileTypeIcon(headerIcon, activePath || undefined)
