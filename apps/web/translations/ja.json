@@ -19312,7 +19312,17 @@
   },
   "commandPalette": {
     "title": "コマンドパレット",
-    "description": "実行するコマンドを検索..."
+    "description": "実行するコマンドを検索...",
+    "copyTitle": "コピー",
+    "copyEmail": "メールアドレス",
+    "copyUserId": "ユーザー ID",
+    "copyAccountId": "アカウント ID",
+    "copyProjectId": "プロジェクト ID",
+    "copySessionId": "セッション ID",
+    "copySessionLink": "セッションのリンク",
+    "copyAction": "{label}をコピー",
+    "copied": "{label}をコピーしました",
+    "copyFailed": "クリップボードにコピーできませんでした"
   },
   "personalWelcome": {
     "dismiss": "閉じる",
