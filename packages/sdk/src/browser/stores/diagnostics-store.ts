@@ -167,6 +167,21 @@ export function buildDiagnosticCountsMap(
   return map;
 }
 
+/** Common project-root directory names, checked left-to-right in a path. */
+const PROJECT_ROOT_MARKERS = new Set([
+  'src',
+  'lib',
+  'app',
+  'pages',
+  'components',
+  'public',
+  'test',
+  'tests',
+  'pkg',
+  'cmd',
+  'internal',
+]);
+
 /**
  * Extract the relative filename from a diagnostic's file path.
  * Used by the diagnostics panel to show short names.
@@ -181,7 +196,7 @@ export function getRelativePath(absPath: string): string {
     const parts = clean.split('/').filter(Boolean);
     // Look for common project markers going from right to left
     for (let i = 0; i < parts.length; i++) {
-      if (['src', 'lib', 'app', 'pages', 'components', 'public', 'test', 'tests', 'pkg', 'cmd', 'internal'].includes(parts[i])) {
+      if (PROJECT_ROOT_MARKERS.has(parts[i])) {
         return parts.slice(i).join('/');
       }
     }
