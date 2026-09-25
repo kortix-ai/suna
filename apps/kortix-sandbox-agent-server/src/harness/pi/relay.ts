@@ -28,14 +28,6 @@ export interface InitialTurnClaim {
 let claimedInitialTurn: InitialTurnClaim | null = null
 let claimInFlight: Promise<InitialTurnClaim | null> | null = null
 
-export function __resetPiRelaysForTests(): void {
-  claimedInitialTurn = null
-  claimInFlight = null
-  relayedTurnBegins.clear()
-  relayedTurnEnds.clear()
-  lastPushedProjectionEtag = null
-}
-
 /** Claim the pending first turn (memoized: the prefetch and the boot path share one call). */
 export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
   if (claimedInitialTurn) return Promise.resolve(claimedInitialTurn)
@@ -75,14 +67,6 @@ export async function relayInitialTurnAccepted(rootId: string, messageId: string
   if (!ctx) return false
   const res = await postTurnStream(ctx, { kind: 'turn_accepted', opencode_session_id: rootId, turn_message_id: messageId, turn_token: turnToken })
   if (!res.ok) throw new Error(`initial turn acceptance rejected: ${res.status} ${(await res.text().catch(() => '')).slice(0, 200)}`)
-  return ((await res.json().catch(() => ({}))) as { ok?: boolean }).ok === true
-}
-
-export async function relayInitialTurnAbandoned(turnToken: string): Promise<boolean> {
-  const ctx = sandboxRelayContext()
-  if (!ctx) return false
-  const res = await postTurnStream(ctx, { kind: 'turn_abandoned', turn_token: turnToken })
-  if (!res.ok) throw new Error(`initial turn abandonment rejected: ${res.status}`)
   return ((await res.json().catch(() => ({}))) as { ok?: boolean }).ok === true
 }
 
