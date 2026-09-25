@@ -102,6 +102,7 @@
     "providerKeys": "Chaves de fornecedor",
     "chooseSharedKeys": "Escolha as chaves partilhadas que esta sessão pode usar.",
     "sessionKeyPool": "Conjunto de chaves da sessão",
+    "sharedSessionKeys": "Esta sessão está partilhada com o projeto, por isso aqui só funcionam as chaves partilhadas com todo o projeto. As chaves atribuídas a si funcionam nas suas sessões privadas.",
     "projectDefaultShort": "Padrão do projeto",
     "rateLimitDescription": "O gateway alterna entre as chaves selecionadas quando um fornecedor indica um limite de pedidos.",
     "enableGateway": "Ative o gateway LLM nas definições do projeto para usar conjuntos de chaves.",
@@ -1594,6 +1595,7 @@
     "backToProject": "Voltar ao projeto",
     "delete": "Excluir sessão",
     "failedLabel": "Sessão com falha",
+    "loadingConversation": "Carregando a conversa",
     "prompt": {
       "queueFailed": "Não foi possível adicionar o prompt salvo à fila",
       "unavailable": "Nenhum prompt salvo está disponível.",

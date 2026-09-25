@@ -111,13 +111,6 @@ export const LIVE_SCHEMA_WAIVERS: LiveSchemaWaivers = {
       'Faked-baseline gap on prod. Its only reader is the identity-merge UPDATE (account-identity.ts), which runs ' +
       'on an account merge against a 7.4k-row table; 0 scans on staging.',
 
-    // unique index prod cannot hold
-    unique_active_deletion_request:
-      'Prod cannot build it: 8 accounts hold more than one row with is_cancelled = false AND is_deleted = false ' +
-      '(2026-09-25 aggregate). The application writes the `status` column and never sets those flags, so on the ' +
-      'databases that have this index a second deletion request after a cancelled one fails with 23505. ' +
-      'Follow-up: replace it with a unique index on (account_id) WHERE status = \'pending\' (0 duplicates on prod).',
-
     // same name, equivalent definition on prod
     idx_account_tokens_project: EQUIVALENT('(project_id), without the `project_id IS NOT NULL` predicate'),
     idx_project_snapshot_builds_project_recent: EQUIVALENT('(project_id, started_at DESC NULLS LAST)'),

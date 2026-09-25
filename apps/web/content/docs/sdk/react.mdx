@@ -40,6 +40,7 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 |---|---|---|
 | `phase` | `'starting' \| 'ready' \| 'error'` | Overall state. Render a boot screen until `ready`. |
 | `messages` | `{ info, parts }[]` | The message list. Parts stream in live. |
+| `savedTranscript` | `'loading' \| 'shown' \| 'none'` | Whether the saved conversation can show before the computer wakes. `loading`: a saved copy is on its way. `shown`: messages are in the list. `none`: nothing can show until the runtime answers. |
 | `status` | `SessionStatus` | The session status. |
 | `isBusy` | `boolean` | The agent is generating a reply. |
 | `questions`, `permissions` | array | Pending agent questions and tool-approval requests. A `permission` here is one runtime tool approval, not an IAM permission. |
@@ -165,6 +166,17 @@ by their original IDs. Hosts do not need a separate history request or message s
 This flag is off by default. Sessions without saved history use the existing runtime read.
 The initial history window contains the last 40 messages. Older-message loading and attachments
 that require the computer become available when the runtime is ready.
+
+`savedTranscript` tells a host what to render while the computer starts. It is `loading` while
+a saved copy may still arrive, `shown` once messages are in `messages`, and `none` when nothing
+can show before the runtime answers. An unknown is `loading`, never `none`.
+
+```tsx
+if (s.messages.length === 0) {
+  // One round trip for a saved copy; the computer can take minutes.
+  return s.savedTranscript === 'none' ? <Booting stage={s.stage} /> : <MessageSkeleton />;
+}
+```
 ### Pending prompts
 
 `useSessionPrompts(projectId, sessionId)` submits to the durable session inbox.

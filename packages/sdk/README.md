@@ -378,6 +378,11 @@ The flag is off by default. Missing or rejected history falls back to the existi
 See [the testing runbook](../../docs/runbooks/session-transcript-history.md) for capture limits
 and local verification.
 
+`useSession().savedTranscript` says whether that saved conversation can show before the
+computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
+`messages`, and `none` when nothing can show until the runtime answers. A host renders
+placeholder rows on `loading` and its boot screen only on `none`.
+
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
 ```tsx

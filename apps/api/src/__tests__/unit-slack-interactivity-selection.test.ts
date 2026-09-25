@@ -52,6 +52,19 @@ mock.module('../channels/slack/selection', () => ({
   modelLabel: (id: string) => id,
 }));
 
+// Model picks go through slack/model-choice.ts (pinned in
+// unit-slack-model-choice); this file pins what the click hands it.
+const modelChoices: Array<{ ctx: Record<string, unknown>; choice: string }> = [];
+mock.module('../channels/slack/model-choice', () => ({
+  applySlackModelChoice: async (c: Record<string, unknown>, choice: string) => {
+    modelChoices.push({ ctx: c, choice });
+    return choice ? `Model for this channel set to ${choice}.` : 'Model reset to the project default.';
+  },
+  buildSlackModelsResponse: async () => ({ response_type: 'ephemeral' }),
+  slackChannelIsDm: (id: string) => id.startsWith('D'),
+  slackModelScope: async () => null,
+}));
+
 // Capture response_url POSTs.
 const posts: Array<{ url: string; body: any }> = [];
 const realFetch = globalThis.fetch;
@@ -62,6 +75,7 @@ beforeEach(() => {
   setResult = true;
   setAgentReason = 'no_binding';
   posts.length = 0;
+  modelChoices.length = 0;
   globalThis.fetch = (async (url: string, init?: any) => {
     posts.push({ url, body: JSON.parse(init?.body ?? '{}') });
     return { ok: true } as any;
@@ -80,14 +94,24 @@ const basePayload = {
 } as any;
 
 describe('agent/model picker clicks', () => {
-  test('set_model_ → persists the model and confirms', async () => {
+  test('set_model_ → the pick is applied as the person who clicked, and the picker is replaced', async () => {
     await handleBlockAction({
       ...basePayload,
       actions: [{ action_id: 'set_model_anthropic/claude-opus-4-8', value: JSON.stringify({ c: 'C1', m: 'anthropic/claude-opus-4-8' }) }],
     });
-    expect(setModelCalls).toEqual(['kortix/anthropic/claude-opus-4-8']);
+    expect(modelChoices).toEqual([
+      { ctx: { teamId: 'T1', channelId: 'C1', slackUserId: 'U1', command: '/kortix' }, choice: 'anthropic/claude-opus-4-8' },
+    ]);
     expect(posts[0]?.body.text).toContain('Model for this channel set to');
     expect(posts[0]?.body.replace_original).toBe(true);
+  });
+
+  test('the long list`s select carries its pick in selected_option', async () => {
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'set_model_select', selected_option: { value: JSON.stringify({ c: 'C1', m: 'openrouter/model-11' }) } }],
+    });
+    expect(modelChoices.map((c) => c.choice)).toEqual(['openrouter/model-11']);
   });
 
   test('set_model_default (empty value) → clears the override', async () => {
@@ -95,7 +119,7 @@ describe('agent/model picker clicks', () => {
       ...basePayload,
       actions: [{ action_id: 'set_model_default', value: JSON.stringify({ c: 'C1', m: '' }) }],
     });
-    expect(setModelCalls).toEqual([null]);
+    expect(modelChoices.map((c) => c.choice)).toEqual(['']);
     expect(posts[0]?.body.text).toContain('reset');
   });
 

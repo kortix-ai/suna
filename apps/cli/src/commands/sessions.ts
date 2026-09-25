@@ -65,7 +65,11 @@ Subcommands:
                                     initial prompt. --agent <name> pins the
                                     session to that agent (default: the
                                     project's declared default agent).
-                                    --model <id> overrides the model.
+                                    --model <id> overrides the model. A
+                                    model on an API key or a ChatGPT
+                                    subscription runs on every key you may
+                                    use for it, and they rotate (see
+                                    \`kortix models ls\`).
                                     --wait blocks until it's running; --json
                                     prints the session object (capture
                                     session_id to orchestrate).
@@ -185,6 +189,9 @@ Subcommands:
                                     --exclude <session-id>, --json.
   model <session-id> <model-id>     Change the model a session runs. A live
                                     box restarts, ending the turn in flight.
+                                    A session with no keys for the new
+                                    model's provider gets every key you may
+                                    use there.
   compact <session-id>              Summarize the conversation and continue
                                     from the summary.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it

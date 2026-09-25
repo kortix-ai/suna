@@ -102,6 +102,7 @@
     "providerKeys": "Claves de proveedor",
     "chooseSharedKeys": "Elige las claves compartidas que puede usar esta sesión.",
     "sessionKeyPool": "Grupo de claves de sesión",
+    "sharedSessionKeys": "Esta sesión está compartida con el proyecto, así que aquí solo funcionan las claves compartidas con todo el proyecto. Las claves que te concedieron funcionan en tus sesiones privadas.",
     "projectDefaultShort": "Valor predeterminado del proyecto",
     "rateLimitDescription": "La pasarela alterna entre las claves seleccionadas cuando un proveedor indica un límite de solicitudes.",
     "enableGateway": "Activa la pasarela LLM en la configuración del proyecto para usar grupos de claves.",
@@ -1594,6 +1595,7 @@
     "backToProject": "Volver al proyecto",
     "delete": "Eliminar sesión",
     "failedLabel": "Sesión fallida",
+    "loadingConversation": "Cargando la conversación",
     "prompt": {
       "queueFailed": "No se pudo poner en cola el mensaje guardado",
       "unavailable": "No hay ningún mensaje guardado disponible.",

@@ -3,7 +3,9 @@
 import { useParams } from 'next/navigation';
 
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
+import { SavedSessionSkeleton } from '@/features/session/saved-session-skeleton';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
+import { isSessionFresh } from '@kortix/sdk';
 import { readStartStash } from '@kortix/sdk/react';
 import ProjectHomeLoading from '../../loading';
 
@@ -21,9 +23,17 @@ import ProjectHomeLoading from '../../loading';
  * So on that navigation this boundary renders the instant session shell
  * itself — the very component the page mounts first — with the first prompt
  * from the producer's preview store. The hand-over to the page is then
- * pixel-identical: same bubble, same waiting row, same composer. Every other
- * navigation into a session (sidebar, back/forward) has no preview and paints
- * the project boundary's pulsing Kortix mark — never a skeleton.
+ * pixel-identical: same bubble, same waiting row, same composer.
+ *
+ * Every other navigation into a session (sidebar, back/forward) opens an
+ * EXISTING session, and the page paints that as `SavedSessionSkeleton` while
+ * its saved conversation loads. This boundary paints the same skeleton (its
+ * header names the session from the row the sidebar already cached), so the
+ * frame after the click is already the session, not the project's pulsing
+ * Kortix mark. A
+ * session this tab just created without a first prompt keeps the mark: the
+ * page opens it on the instant shell, and a skeleton of a conversation it does
+ * not have would flash in between.
  */
 export default function SessionLoading() {
   const params = useParams<{ id: string; sessionId: string }>();
@@ -32,7 +42,13 @@ export default function SessionLoading() {
   const preview = useFirstPromptPreviewStore((s) =>
     sessionId ? (s.previewBySession[sessionId] ?? null) : null,
   );
-  if (!projectId || !sessionId || !preview) return <ProjectHomeLoading />;
+  if (!projectId || !sessionId) return <ProjectHomeLoading />;
+  if (!preview) {
+    if (isSessionFresh(sessionId)) return <ProjectHomeLoading />;
+    return (
+      <SavedSessionSkeleton projectId={projectId} sessionId={sessionId} stage="provisioning" />
+    );
+  }
   // The producer stashed the picked agent alongside the prompt (see
   // `writeStartStash` on the home composer) — hand it to the shell so the
   // agent picker names the session's real agent on THIS boundary's first

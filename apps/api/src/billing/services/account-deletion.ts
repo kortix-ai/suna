@@ -3,6 +3,7 @@ import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
 import { getStripe } from '../../shared/stripe';
 import { db } from '../../shared/db';
 import { BillingError } from '../../errors';
+import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
 import {
   isAlreadyNotRunning,
@@ -20,6 +21,7 @@ import {
 } from '../repositories/account-deletion';
 
 const GRACE_PERIOD_DAYS = 14;
+const ACTIVE_DELETION_REQUEST_EXISTS = 'An active deletion request already exists for this account';
 
 export async function requestAccountDeletion(
   accountId: string,
@@ -28,11 +30,20 @@ export async function requestAccountDeletion(
 ) {
   const existing = await getActiveDeletionRequest(accountId);
   if (existing) {
-    throw new BillingError('An active deletion request already exists for this account');
+    throw new BillingError(ACTIVE_DELETION_REQUEST_EXISTS);
   }
 
   const scheduledFor = new Date(Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const request = await createDeletionRequest(accountId, userId, scheduledFor, reason);
+  let request: Awaited<ReturnType<typeof createDeletionRequest>>;
+  try {
+    request = await createDeletionRequest(accountId, userId, scheduledFor, reason);
+  } catch (err) {
+    // A concurrent request inserted its pending row after our read.
+    // uniq_account_deletion_requests_pending refuses the second one; answer it
+    // the same way as the read above.
+    if (isUniqueViolation(err)) throw new BillingError(ACTIVE_DELETION_REQUEST_EXISTS);
+    throw err;
+  }
 
   return {
     success: true,

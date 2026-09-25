@@ -102,6 +102,7 @@
     "providerKeys": "Chiavi fornitore",
     "chooseSharedKeys": "Scegli le chiavi condivise che questa sessione può usare.",
     "sessionKeyPool": "Pool di chiavi della sessione",
+    "sharedSessionKeys": "Questa sessione è condivisa con il progetto, quindi qui funzionano solo le chiavi condivise con tutto il progetto. Le chiavi assegnate a te funzionano nelle tue sessioni private.",
     "projectDefaultShort": "Impostazione predefinita del progetto",
     "rateLimitDescription": "Il gateway alterna le chiavi selezionate quando un fornitore segnala un limite di richieste.",
     "enableGateway": "Abilita il gateway LLM nelle impostazioni del progetto per usare i pool di chiavi.",
@@ -1594,6 +1595,7 @@
     "backToProject": "Torna al progetto",
     "delete": "Elimina sessione",
     "failedLabel": "Sessione non riuscita",
+    "loadingConversation": "Caricamento della conversazione",
     "prompt": {
       "queueFailed": "Impossibile accodare il prompt salvato",
       "unavailable": "Nessun prompt salvato disponibile.",

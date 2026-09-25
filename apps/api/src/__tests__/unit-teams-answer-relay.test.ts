@@ -24,6 +24,7 @@ mock.module('../channels/teams/identity', () => ({
 }));
 
 mock.module('../channels/teams/binding', () => ({
+  conversationSession: async () => null,
   resolveConversationProject: async () => PROJECT,
   setConversationProject: async () => {},
   teamsChannelCtx: () => ({ platform: 'teams', teamId: TENANT, channelId: CONVO }),

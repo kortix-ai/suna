@@ -124,6 +124,30 @@ describe('requestAccountDeletion', () => {
       expect(err.message).toContain('already exists');
     }
   });
+
+  test('a concurrent duplicate (unique violation on insert) answers like the pre-check', async () => {
+    // Drizzle wraps the PostgresError; the SQLSTATE sits on `cause`.
+    mockRegistry.createDeletionRequest = async () => {
+      throw Object.assign(new Error('Failed query: insert into account_deletion_requests'), {
+        cause: { code: '23505', constraint_name: 'uniq_account_deletion_requests_pending' },
+      });
+    };
+
+    const err: any = await requestAccountDeletion('acc_test_123', 'user_123').catch((e) => e);
+    expect(err?.name).toBe('BillingError');
+    expect(err.statusCode).toBe(400);
+    expect(err.message).toContain('already exists');
+  });
+
+  test('any other insert failure propagates unchanged', async () => {
+    const boom = Object.assign(new Error('connection reset'), { code: 'ECONNRESET' });
+    mockRegistry.createDeletionRequest = async () => {
+      throw boom;
+    };
+
+    const err = await requestAccountDeletion('acc_test_123', 'user_123').catch((e) => e);
+    expect(err).toBe(boom);
+  });
 });
 
 describe('getAccountDeletionStatus', () => {

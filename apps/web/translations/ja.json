@@ -102,6 +102,7 @@
     "providerKeys": "プロバイダーキー",
     "chooseSharedKeys": "このセッションで使用できる共有キーを選択します。",
     "sessionKeyPool": "セッションのキープール",
+    "sharedSessionKeys": "このセッションはプロジェクトと共有されているため、ここではプロジェクト全体で共有されているキーのみ使用できます。自分に付与されたキーは、自分の非公開セッションで使用できます。",
     "projectDefaultShort": "プロジェクトのデフォルト",
     "rateLimitDescription": "プロバイダーがレート制限を返した場合、ゲートウェイは選択したキーを順に使用します。",
     "enableGateway": "キープールを使用するには、プロジェクト設定で LLM ゲートウェイを有効にしてください。",
@@ -1594,6 +1595,7 @@
     "backToProject": "プロジェクトに戻る",
     "delete": "セッションを削除",
     "failedLabel": "失敗したセッション",
+    "loadingConversation": "会話を読み込んでいます",
     "prompt": {
       "queueFailed": "保存済みのプロンプトをキューに追加できませんでした",
       "unavailable": "利用できる保存済みのプロンプトはありません。",

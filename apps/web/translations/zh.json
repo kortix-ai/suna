@@ -102,6 +102,7 @@
     "providerKeys": "提供商密钥",
     "chooseSharedKeys": "选择此会话可以使用的共享密钥。",
     "sessionKeyPool": "会话密钥池",
+    "sharedSessionKeys": "此会话已与项目共享，因此这里只能使用与整个项目共享的密钥。授予您的密钥可在您的私有会话中使用。",
     "projectDefaultShort": "项目默认值",
     "rateLimitDescription": "当提供商触发速率限制时，网关会轮换使用已选密钥。",
     "enableGateway": "在项目设置中启用 LLM 网关以使用密钥池。",
@@ -1594,6 +1595,7 @@
     "backToProject": "返回项目",
     "delete": "删除会话",
     "failedLabel": "会话失败",
+    "loadingConversation": "正在加载对话",
     "prompt": {
       "queueFailed": "无法将已保存的提示词加入队列",
       "unavailable": "没有可用的已保存提示词。",

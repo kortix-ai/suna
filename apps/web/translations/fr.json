@@ -102,6 +102,7 @@
     "providerKeys": "Clés du fournisseur",
     "chooseSharedKeys": "Choisissez les clés partagées que cette session peut utiliser.",
     "sessionKeyPool": "Groupe de clés de session",
+    "sharedSessionKeys": "Cette session est partagée avec le projet : seules les clés partagées avec tout le projet fonctionnent ici. Les clés qui vous sont attribuées fonctionnent dans vos sessions privées.",
     "projectDefaultShort": "Valeur par défaut du projet",
     "rateLimitDescription": "La passerelle passe aux autres clés sélectionnées lorsqu’un fournisseur signale une limite de débit.",
     "enableGateway": "Activez la passerelle LLM dans les paramètres du projet pour utiliser les groupes de clés.",
@@ -1594,6 +1595,7 @@
     "backToProject": "Retour au projet",
     "delete": "Supprimer la session",
     "failedLabel": "Session échouée",
+    "loadingConversation": "Chargement de la conversation",
     "prompt": {
       "queueFailed": "Impossible de mettre le prompt enregistré en file d’attente",
       "unavailable": "Aucun prompt enregistré n’est disponible.",
