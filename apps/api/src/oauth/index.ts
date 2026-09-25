@@ -15,10 +15,10 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { eq, and, inArray, isNull, lt, or } from 'drizzle-orm';
+import { eq, and, isNull, lt, or } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { randomAlphanumeric, verifySecretKey } from '../shared/crypto';
-import { hashOauthToken, oauthTokenHashCandidatesAsync } from './token-hash';
+import { hashOauthToken, hashPresentedOauthToken } from './token-hash';
 import { supabaseAuth } from '../middleware/auth';
 import { config } from '../config';
 import {
@@ -73,16 +73,11 @@ async function oauthTokenAuth(c: Context, next: Next) {
   const token = authHeader.slice(7);
   if (!token) throw new HTTPException(401, { message: 'Missing token' });
 
-  const accessCandidates = await oauthTokenHashCandidatesAsync(token);
+  const tokenHash = await hashPresentedOauthToken(token);
   const [row] = await db
     .select()
     .from(oauthAccessTokens)
-    .where(
-      and(
-        inArray(oauthAccessTokens.tokenHash, accessCandidates),
-        isNull(oauthAccessTokens.revokedAt),
-      ),
-    )
+    .where(and(eq(oauthAccessTokens.tokenHash, tokenHash), isNull(oauthAccessTokens.revokedAt)))
     .limit(1);
   if (!row) throw new HTTPException(401, { message: 'Invalid access token' });
   if (row.expiresAt < new Date()) throw new HTTPException(401, { message: 'Access token expired' });
@@ -666,13 +661,13 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
   const refreshTokenRaw = body['refresh_token'] as string;
   if (!refreshTokenRaw) return c.json({ error: 'invalid_request', error_description: 'Missing refresh_token' }, 400);
 
-  const refreshCandidates = await oauthTokenHashCandidatesAsync(refreshTokenRaw);
+  const refreshHash = await hashPresentedOauthToken(refreshTokenRaw);
   const [refreshRow] = await db
     .select()
     .from(oauthRefreshTokens)
     .where(
       and(
-        inArray(oauthRefreshTokens.tokenHash, refreshCandidates),
+        eq(oauthRefreshTokens.tokenHash, refreshHash),
         eq(oauthRefreshTokens.clientId, client.clientId),
         isNull(oauthRefreshTokens.revokedAt),
       ),
@@ -737,13 +732,13 @@ oauthApp.openapi(
     const now = new Date();
     let revoked = false;
     if (isOAuthRefreshToken(token)) {
-      const candidates = await oauthTokenHashCandidatesAsync(token);
+      const tokenHash = await hashPresentedOauthToken(token);
       const rows = await db
         .update(oauthRefreshTokens)
         .set({ revokedAt: now })
         .where(
           and(
-            inArray(oauthRefreshTokens.tokenHash, candidates),
+            eq(oauthRefreshTokens.tokenHash, tokenHash),
             eq(oauthRefreshTokens.clientId, client.clientId),
             isNull(oauthRefreshTokens.revokedAt),
           ),
@@ -754,13 +749,13 @@ oauthApp.openapi(
       }
       revoked = rows.length > 0;
     } else if (isOAuthAccessToken(token)) {
-      const candidates = await oauthTokenHashCandidatesAsync(token);
+      const tokenHash = await hashPresentedOauthToken(token);
       const rows = await db
         .update(oauthAccessTokens)
         .set({ revokedAt: now })
         .where(
           and(
-            inArray(oauthAccessTokens.tokenHash, candidates),
+            eq(oauthAccessTokens.tokenHash, tokenHash),
             eq(oauthAccessTokens.clientId, client.clientId),
             isNull(oauthAccessTokens.revokedAt),
           ),
