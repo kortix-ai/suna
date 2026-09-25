@@ -180,7 +180,7 @@ mock.module("../backpressure", () => ({
 mock.module("../store", () => ({
   promoteNextInboxRow: async () => null,
   requeueForAdmission: async (
-    commandId: string,
+    { commandId }: { commandId: string },
     reason: string,
     availableAt: Date,
   ) => {
@@ -206,20 +206,20 @@ mock.module("../store", () => ({
     throw new Error('not expected: this test never fails a landing proof');
   },
   markInboxDeliveryStarted: async () => {},
-  markCommandFailed: async (commandId: string, message: string) => {
+  markCommandFailed: async ({ commandId }: { commandId: string }, message: string) => {
     failedCalls.push({ commandId, message });
   },
   markCommandQueued: async () => {
     throw new Error("not expected");
   },
   markCommandForwarded: async (
-    commandId: string,
+    { commandId }: { commandId: string },
     sessionId: string,
     wireMessageId: string,
   ) => {
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
   },
-  markCommandSucceeded: async (commandId: string, result: unknown) => {
+  markCommandSucceeded: async ({ commandId }: { commandId: string }, result: unknown) => {
     succeededCalls.push({ commandId, result });
   },
   // `inbox-rows.ts` imports this at module load, so the mock has to carry it or

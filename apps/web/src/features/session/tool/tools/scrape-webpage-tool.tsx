@@ -20,11 +20,11 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
-  looksLikeHtml,
   resolveScrapeResults,
   wsDomain,
   type ScrapeResult,
 } from '@/features/session/tool/shared/web-helpers';
+import { useTranslations } from '@/i18n/use-translations';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import {
@@ -32,7 +32,6 @@ import {
   WarningIcon as DangerTriangleSolid,
   GlobeIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 const MAX_CONTENT_CHARS = 8000;
@@ -43,13 +42,11 @@ function capContent(content: string): string {
     : content;
 }
 
-function getScrapeContent(result: ScrapeResult): { content: string; allowHtml?: boolean } {
-  if (!result.success && result.error) return { content: result.error };
+function getScrapeContent(result: ScrapeResult): string {
+  if (!result.success && result.error) return result.error;
   const content = result.content?.trim();
-  if (!content) return { content: 'No content extracted.' };
-  const capped = capContent(content);
-  if (looksLikeHtml(capped)) return { content: capped, allowHtml: true };
-  return { content: capped };
+  if (!content) return 'No content extracted.';
+  return capContent(content);
 }
 
 /**
@@ -65,14 +62,14 @@ function getScrapeContent(result: ScrapeResult): { content: string; allowHtml?: 
  * whether it was searched or scraped.
  */
 function ScrapeResultItem({ result }: { result: ScrapeResult }) {
-  // `getScrapeContent` trims and slices up to 8000 characters of page text and
-  // then runs `looksLikeHtml` over the copy. That ran in this body on every
-  // render of the row — for every scraped page in the list — even though only
-  // the expanded disclosure reads it. `results` is memoised upstream, so each
-  // `result` identity is stable and these memos actually hold.
+  // `getScrapeContent` trims and slices up to 8000 characters of page text.
+  // That ran in this body on every render of the row — for every scraped page
+  // in the list — even though only the expanded disclosure reads it. `results`
+  // is memoised upstream, so each `result` identity is stable and these memos
+  // actually hold.
   const url = useMemo(() => safeHttpUrl(result.url), [result.url]);
   const hostname = useMemo(() => (url ? wsDomain(url) : ''), [url]);
-  const { content, allowHtml } = useMemo(() => getScrapeContent(result), [result]);
+  const content = useMemo(() => getScrapeContent(result), [result]);
 
   if (!url) return null;
 
@@ -106,12 +103,7 @@ function ScrapeResultItem({ result }: { result: ScrapeResult }) {
       <DisclosureContent className="p-0">
         <DisclosureBody className="px-2 pb-2">
           <div className={cn('text-foreground/80 text-xs', MD_FLUSH_CLASSES)}>
-            <UnifiedMarkdown
-              content={content}
-              isStreaming={false}
-              allowHtml={allowHtml}
-              remoteImages="click-to-load"
-            />
+            <UnifiedMarkdown content={content} trust="untrusted" isStreaming={false} />
           </div>
         </DisclosureBody>
       </DisclosureContent>

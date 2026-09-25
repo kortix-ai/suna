@@ -134,12 +134,12 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       DAYTONA_SERVER_URL: 'http://127.0.0.1:1',
       DAYTONA_TARGET: 'us',
     });
-    // `mock.module` is process-global and `bun test tests/migration` runs every
-    // file in one process, in directory order. Another file here replaces
-    // `shared/db` with a client for ITS container, which is gone by the time
-    // this file runs. Bind the module to this container explicitly, with the
-    // same exports the real module has, so file order cannot decide which
-    // database the wallet writes to.
+    // `mock.module` is process-global. The `db-suites` lane runs each file in
+    // its own process, but a hand-run `bun test tests/migration` runs every
+    // file in one process, in directory order, and another file here replaces
+    // `shared/db` with a client for ITS container. Bind the module to this
+    // container explicitly, with the same exports the real module has, so file
+    // order cannot decide which database the wallet writes to.
     database = createDb(url);
     const scoped = contextualDatabase(database);
     mock.module('../../apps/api/src/shared/db', () => ({

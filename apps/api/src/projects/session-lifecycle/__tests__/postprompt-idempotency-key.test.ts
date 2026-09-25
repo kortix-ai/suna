@@ -129,7 +129,7 @@ mock.module('../store', () => ({
     throw new Error('not expected: this test never fails a landing proof');
   },
   markInboxDeliveryStarted: async () => {},
-  markCommandFailed: async (commandId: string, message: string) => {
+  markCommandFailed: async ({ commandId }: { commandId: string }, message: string) => {
     failedCalls.push({ commandId, message });
   },
   markCommandQueued: async () => {
@@ -142,7 +142,7 @@ mock.module('../store', () => ({
   markCommandForwarded: async () => {
     throw new Error('not expected: a prompt with no wire id must not stay open');
   },
-  markCommandSucceeded: async (commandId: string, result: unknown) => {
+  markCommandSucceeded: async ({ commandId }: { commandId: string }, result: unknown) => {
     succeededCalls.push({ commandId, result });
   },
   // `inbox-rows.ts` imports this at module load, so the mock has to carry it or

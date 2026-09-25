@@ -84,6 +84,23 @@ Custom roles need the enterprise `rbac` entitlement. Without it, assigning one a
 
 Super-admin is not a role. It is a flag on one account membership. It bypasses every permission check, and every bypass is written to the audit log. Roles are the mechanism for ordinary access; super-admin is the audited escape hatch.
 
+The account creator starts as owner and super-admin. When an owner is demoted, the owner role and the super-admin flag go together: the change clears the flag and records `iam.member.super_admin.revoke`. A super-admin flag granted to someone who is not an owner stays until an owner revokes it.
+
+## Single sign-on domain
+
+A SAML identity provider asserts each person's email address. Kortix trusts that address outside your account only for a domain your account has verified. Until then:
+
+- a person signed in through your identity provider still joins your account and gets their groups;
+- their SSO identity matches no invitation from another account, and another account's "add member by email" does not find it;
+- SSO sign-in never merges an existing identity into the SSO identity;
+- **Enforce SSO** has no effect, and password sign-in keeps working for the domain.
+
+To verify the domain, open **Identity** in account settings. The SSO card shows a DNS TXT record: name `_kortix-verification.<your-domain>`, value `kortix-verification=<token>`. Publish it at your DNS provider, then select **Verify domain** (`POST /v1/accounts/:accountId/iam/sso/provider/verify-domain`). One domain belongs to one account: a domain that another account has verified cannot be verified again. Changing the primary domain starts a new, unverified claim.
+
+With a verified domain and **Enforce SSO** on, the web sign-in form, `/v1/access/check-email`, and the headless `/v1/auth/sign-in/password`, `/v1/auth/sign-in/magic-link` and `/v1/auth/verify-otp` routes all refuse the password and email-code paths for that domain (`403 sso_required`).
+
+SSO sign-in never merges an owner or a super-admin into an SSO identity, even on a verified domain. They keep their existing identity, and the SSO identity joins as a separate member.
+
 ## Per-feature access settings
 
 Some features carry their own visibility setting on top of the role model:

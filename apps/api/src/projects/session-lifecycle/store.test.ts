@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { PgDialect } from 'drizzle-orm/pg-core';
+import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import {
-  LIFECYCLE_CLAIM_LOCK_MS,
   LIFECYCLE_RUNNING_RECLAIM_GRACE_MS,
   buildContinueSessionCommandValues,
   buildCreateSessionCommandValues,
@@ -94,6 +94,12 @@ describe('buildCreateSessionCommandValues — inline create claims are reclaimab
     expect(values.status).toBe('running');
     expect(values.lockedBy).toStartWith('session-lifecycle-inline:');
     expect(values.lockedUntil?.getTime()).toBe(NOW.getTime() + LIFECYCLE_CLAIM_LOCK_MS);
+  });
+
+  test('each inline claim has its own lock owner, the fencing token of its writes', () => {
+    const first = buildCreateSessionCommandValues(command, { initialStatus: 'running' }, NOW);
+    const second = buildCreateSessionCommandValues(command, { initialStatus: 'running' }, NOW);
+    expect(first.lockedBy).not.toBe(second.lockedBy);
   });
 
   test('the lock expires into the reclaim window, like a drained claim', () => {

@@ -109,6 +109,7 @@ import {
   resolveSessionSandboxSlug,
 } from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
+import { transitionSession } from '../session-lifecycle/status-transitions';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,
@@ -2006,18 +2007,14 @@ export async function createProjectSession(input: {
       const message = (err as Error)?.message || 'Sandbox provisioning failed';
       console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
       try {
-        await db
-          .update(projectSessions)
-          .set({
-            status: 'failed',
-            error: message,
-            // Merge, never re-write the create-time snapshot: by the time
-            // provisioning fails the row may already carry a generated title,
-            // remote_branch or the start timeline.
-            metadata: projectSessionMetadataMerge({ provisioning_error: message }),
-            updatedAt: new Date(),
-          })
-          .where(eq(projectSessions.sessionId, sessionId));
+        // Merge, never re-write the create-time snapshot: by the time
+        // provisioning fails the row may already carry a generated title,
+        // remote_branch or the start timeline. A session deleted meanwhile
+        // keeps its tombstone.
+        await transitionSession('fail', sessionId, {
+          error: message,
+          metadata: { provisioning_error: message },
+        });
       } catch (markErr) {
         console.error(`[projects] Failed to mark session ${sessionId} failed:`, markErr);
       }

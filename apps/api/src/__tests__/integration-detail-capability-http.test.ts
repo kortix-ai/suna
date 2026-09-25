@@ -4,6 +4,7 @@ import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
+import { insertIntoView } from './helpers/compat-views';
 
 // GET /:projectId/detail must stay loadable by a plain `member` even though
 // member lacks project.file.read: the fix filters the file list OUT of the
@@ -29,11 +30,11 @@ beforeAll(async () => {
     name: 'detail-cap-test-project',
     repoUrl: 'https://example.com/detail-cap-test.git',
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);

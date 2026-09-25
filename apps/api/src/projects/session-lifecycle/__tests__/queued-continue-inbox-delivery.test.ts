@@ -308,7 +308,7 @@ mock.module('../store', () => ({
       };
     }
   },
-  requeueUnlandedPrompt: async (commandId: string, reason: string) => {
+  requeueUnlandedPrompt: async ({ commandId }: { commandId: string }, reason: string) => {
     unlandedRequeues.push({ commandId, reason });
     simulatedInFlightCommands.delete(commandId);
     if (unlandedBudgetLeft <= 0) return { requeued: false, refusals: 2 };
@@ -316,12 +316,12 @@ mock.module('../store', () => ({
     return { requeued: true, refusals: 2 - unlandedBudgetLeft };
   },
   MAX_LANDING_RETRIES: 2,
-  markInboxDeliveryStarted: async (commandId: string) => { deliveryStarts.push(commandId); },
-  requeueUnverifiedRedelivery: async (commandId: string, availableAt: Date) => {
+  markInboxDeliveryStarted: async ({ commandId }: { commandId: string }) => { deliveryStarts.push(commandId); },
+  requeueUnverifiedRedelivery: async ({ commandId }: { commandId: string }, availableAt: Date) => {
     unverifiedRequeues.push({ commandId, availableAt });
     simulatedInFlightCommands.delete(commandId);
   },
-  requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
+  requeueForAdmission: async ({ commandId }: { commandId: string }, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
     if (completeDuringRequeue) boxRow = { status: 'active', metadata: { activeTurns: {} } };
     simulatedInFlightCommands.delete(commandId);
@@ -342,7 +342,7 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async (
-    commandId: string,
+    { commandId }: { commandId: string },
     message: string,
     options?: { retryable?: boolean },
   ) => {
@@ -351,10 +351,10 @@ mock.module('../store', () => ({
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
-  markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
+  markCommandForwarded: async ({ commandId }: { commandId: string }, sessionId: string, wireMessageId: string) => {
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
   },
-  markCommandSucceeded: async (commandId: string, result: unknown) => {
+  markCommandSucceeded: async ({ commandId }: { commandId: string }, result: unknown) => {
     events.push('command-succeeded');
     succeededCalls.push({ commandId, result });
   },

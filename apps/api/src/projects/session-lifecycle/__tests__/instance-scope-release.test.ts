@@ -129,16 +129,16 @@ mock.module('../store', () => ({
     throw new Error('not expected: this test never fails a landing proof');
   },
   markInboxDeliveryStarted: async () => {},
-  markCommandFailed: async (commandId: string, message: string) => {
+  markCommandFailed: async ({ commandId }: { commandId: string }, message: string) => {
     failedCalls.push({ commandId, message });
   },
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
-  markCommandForwarded: async (commandId: string) => {
+  markCommandForwarded: async ({ commandId }: { commandId: string }) => {
     forwardedCalls.push(commandId);
   },
-  markCommandSucceeded: async (commandId: string) => {
+  markCommandSucceeded: async ({ commandId }: { commandId: string }) => {
     succeededCalls.push(commandId);
   },
   withNextDeliveryAttempt: (payload: unknown) => payload,
@@ -154,7 +154,7 @@ mock.module('../instance-release', () => ({
     return ownerMetadataBySession;
   },
   releaseCommandToOwningInstance: async (
-    commandId: string,
+    { commandId }: { commandId: string },
     opts: { availableAt: Date; owner: string | null },
   ) => {
     releases.push({ commandId, availableAt: opts.availableAt, owner: opts.owner });

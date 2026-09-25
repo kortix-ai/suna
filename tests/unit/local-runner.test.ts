@@ -3,17 +3,36 @@ import { resolveBrowserWorkers } from '../playwright.config';
 import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
-  it('runs the REST flows, SDK, runner unit tests, and route coverage concurrently by default', () => {
+  it('runs the REST flows, SDK, DB suites, runner unit tests, and route coverage concurrently by default', () => {
     const plan = buildLocalTestPlan([]);
 
     expect(plan.mode).toBe('core');
     expect(plan.lanes.map((lane) => lane.name)).toEqual([
       'api-cli-flows',
       'sdk',
+      'db-suites',
       'flow-runner-unit',
       'route-coverage',
       'worktree-unit',
     ]);
+    expect(plan.stages).toHaveLength(1);
+    expect(plan.lanes.find((lane) => lane.name === 'db-suites')?.command).toEqual([
+      'bun',
+      'tests/bin/db-suites.ts',
+    ]);
+  });
+
+  it('runs only the DB suites and passes path filters through', () => {
+    const plan = buildLocalTestPlan(['--db-only', 'integration-prompt-inbox', 'tests/migration']);
+
+    expect(plan.mode).toBe('db');
+    expect(plan.lanes).toEqual([
+      {
+        name: 'db-suites',
+        command: ['bun', 'tests/bin/db-suites.ts', 'integration-prompt-inbox', 'tests/migration'],
+      },
+    ]);
+    expect(() => buildLocalTestPlan(['--db-only', '--sdk-only'])).toThrow('choose only one');
   });
 
   it('runs one filtered flow without paying the SDK or unit-test cost', () => {
@@ -31,6 +50,7 @@ describe('local test runner', () => {
     expect(plan.lanes.map((lane) => lane.name)).toEqual([
       'api-cli-flows',
       'sdk',
+      'db-suites',
       'flow-runner-unit',
       'route-coverage',
       'worktree-unit',
@@ -43,7 +63,7 @@ describe('local test runner', () => {
       env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
     });
     expect(plan.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([
-      ['api-cli-flows', 'sdk', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
+      ['api-cli-flows', 'sdk', 'db-suites', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
       ['browser'],
       ['package-quality'],
     ]);

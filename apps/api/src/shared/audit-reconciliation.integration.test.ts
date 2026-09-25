@@ -3,7 +3,10 @@ import pg from 'pg';
 import { reconcileAuditEvents } from './audit-reconciliation';
 import { runAuditReconciliationPage } from './audit-reconciliation-worker';
 
-const databaseUrl = process.env.AUDIT_V2_DATABASE_URL;
+const databaseUrl = process.env.TEST_DATABASE_URL;
+// Fixture writes below use `session_replication_role`, which needs a
+// superuser. The code under test still runs as the API's own role.
+const fixtureUrl = process.env.TEST_DATABASE_SUPERUSER_URL ?? databaseUrl;
 const ACCOUNT = 'b7100000-0000-4000-a000-000000000001';
 const SECOND_ACCOUNT = 'b7100000-0000-4000-a000-000000000002';
 const PROJECT = 'b7200000-0000-4000-a000-000000000001';
@@ -27,12 +30,11 @@ async function cursorImmediatelyBefore(accountId: string): Promise<string | null
 
 describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', () => {
   beforeAll(async () => {
-    client = new pg.Client({ connectionString: databaseUrl });
+    client = new pg.Client({ connectionString: fixtureUrl });
     await client.connect();
     // These append-only source ledgers intentionally have no account FK.
     // Remove fixtures from an interrupted previous test run before reseeding.
     await client.query('DELETE FROM kortix.provider_events WHERE account_id = $1', [ACCOUNT]);
-    await client.query('DELETE FROM kortix.voice_call_turns WHERE session_id = $1', [SESSION]);
     await client.query(
       `INSERT INTO kortix.accounts(account_id, name) VALUES
          ($1, 'audit-reconcile'), ($2, 'audit-reconcile-second')`,
@@ -109,11 +111,6 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
         [ACCOUNT, PROJECT, ACTOR, SESSION],
       );
       await client.query(
-        `INSERT INTO kortix.voice_call_turns(call_id, project_id, session_id, role, speaker, text)
-         VALUES ($1, $2, $1, 'user', NULL, 'content hashed but not copied')`,
-        [SESSION, PROJECT],
-      );
-      await client.query(
         `INSERT INTO kortix.tunnel_audit_logs
            (tunnel_id, account_id, capability, operation, success, request_summary)
          VALUES ($1, $2, 'filesystem', 'list', true, '{"path_count":1}'::jsonb)`,
@@ -139,7 +136,6 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
       SESSION,
     ]);
     await client.query('DELETE FROM kortix.provider_events WHERE account_id = $1', [ACCOUNT]);
-    await client.query('DELETE FROM kortix.voice_call_turns WHERE session_id = $1', [SESSION]);
     await client.query('DELETE FROM kortix.tunnel_connections WHERE tunnel_id = $1', [TUNNEL]);
     await client.query('DELETE FROM kortix.accounts WHERE account_id = ANY($1::uuid[])', [
       [ACCOUNT, SECOND_ACCOUNT],
@@ -147,7 +143,9 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
     await client.end();
   });
 
-  test('converges nine durable ledgers through bounded idempotent pages', async () => {
+  // Eight ledgers: 20287a733e removed the voice runtime and dropped
+  // voice_call_turns from reconciliation.
+  test('converges eight durable ledgers through bounded idempotent pages', async () => {
     const totals: Record<string, number> = {};
     let inserted = 0;
     let complete = false;
@@ -160,7 +158,7 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
       }
     }
 
-    expect(inserted).toBe(9);
+    expect(inserted).toBe(8);
     expect(complete).toBe(true);
     expect(Object.keys(totals).sort()).toEqual([
       'connector_calls',
@@ -171,7 +169,6 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
       'session_lifecycle_commands',
       'tunnel_audit_logs',
       'usage_events',
-      'voice_call_turns',
     ]);
     const digests = await client!.query<{
       source_ledger: string;
@@ -180,15 +177,12 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
       `SELECT source_ledger, input_sha256
          FROM kortix.audit_events
         WHERE account_id = $1
-          AND source_ledger IN ('connector_calls', 'voice_call_turns')
-        ORDER BY source_ledger`,
+          AND source_ledger = 'connector_calls'`,
       [ACCOUNT],
     );
-    expect(digests.rows).toHaveLength(2);
+    expect(digests.rows).toHaveLength(1);
     expect(digests.rows[0]?.source_ledger).toBe('connector_calls');
     expect(digests.rows[0]?.input_sha256).toBe('a'.repeat(64));
-    expect(digests.rows[1]?.source_ledger).toBe('voice_call_turns');
-    expect(digests.rows[1]?.input_sha256).toHaveLength(64);
     const sessionAttribution = await client!.query<{
       actor_type: string | null;
       authoritative_source: string | null;

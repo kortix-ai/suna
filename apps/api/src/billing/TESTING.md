@@ -264,8 +264,10 @@ The ledger rows every wallet operation writes are pinned against a real,
 migrated PostgreSQL (Docker required):
 
 ```bash
-bun test tests/migration/wallet-ledger.test.ts   # from the repository root
+pnpm test -- --db-only tests/migration/wallet-ledger   # from the repository root
 ```
+
+`pnpm test` runs it in the `db-suites` lane on every core run and in CI.
 
 **Coverage gap (recommended next):**
 

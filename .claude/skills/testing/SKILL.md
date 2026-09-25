@@ -13,6 +13,11 @@ the **sdk** skill before editing the SDK.
 ## Select the correct test
 
 - Add pure logic and internal invariant tests beside their package code.
+- Add a test that needs real PostgreSQL as a DB suite: `integration-*.test.ts`
+  or `*.integration.test.ts` in `apps/api/src`, `*.integration.test.ts` in
+  `packages/db/scripts`. Read `TEST_DATABASE_URL`; the `db-suites` lane gives
+  every file its own fresh migrated database. Create every row you read. See
+  `tests/README.md` "DB suites".
 - Add API and CLI product contracts to `tests/spec/end-to-end.md` and
   `tests/src/flows`.
 - Keep SDK tests in `packages/sdk`.
@@ -41,6 +46,7 @@ pnpm test                       # Local REST/CLI flows + SDK + runner units + co
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One domain
 pnpm test -- --sdk-only        # SDK only
+pnpm test -- --db-only [path-filter ...] # PostgreSQL-backed suites only
 pnpm test -- --browser-only    # Browser only; owns the deterministic local stack
 pnpm test -- --browser-only --browser-shard=1/4 # One browser shard
 pnpm test -- --packages-only   # Every app/package test and publish contract

@@ -2010,3 +2010,154 @@ flow(
     });
   },
 );
+
+flow(
+  'IAM-41',
+  {
+    domain: 'iam',
+    routes: [
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/projects/:projectId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    // A signed-in user who owns (and is super-admin of) only their personal account.
+    const outsider = await ctx.fixtures.user({ label: 'OUTSIDER' });
+    const ownAccount = { accountId: outsider.accountId! };
+
+    await ctx.step('an owner of one account cannot write a project role for a project of another account → 404', async () => {
+      const r = await ctx.client.as(outsider).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: outsider.userId,
+          role_key: 'manager',
+          scope_type: 'project',
+          scope_id: project.id,
+        },
+        { params: ownAccount },
+      );
+      r.status(404);
+    });
+
+    await ctx.step('nor an object grant on that project → 404', async () => {
+      const r = await ctx.client.as(outsider).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: outsider.userId,
+          role_key: 'agent-user',
+          scope_type: 'project',
+          scope_id: project.id,
+          object_type: 'agent',
+          object_id: 'default',
+        },
+        { params: ownAccount },
+      );
+      r.status(404);
+    });
+
+    await ctx.step('read-back: no row landed in either account and the outsider still has no project access', async () => {
+      const own = await ctx.client.as(outsider).get('/v1/accounts/:accountId/iam/assignments', {
+        params: ownAccount,
+        query: { scope_type: 'project' },
+      });
+      own.status(200);
+      if ((own.json<any>().assignments as any[]).some((a) => a.scope_id === project.id)) {
+        throw new Error('a project-scoped row for a foreign project was stored');
+      }
+      (await ctx.client.as(outsider).get('/v1/projects/:projectId', { params: { projectId: project.id } }))
+        .status([403, 404]);
+    });
+
+    await ctx.step("the project's own account still grants roles on it → 201", async () => {
+      const member = await team.addMember('member');
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: member.userId,
+          role_key: 'manager',
+          scope_type: 'project',
+          scope_id: project.id,
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(201).body().has('$.scope_id', project.id);
+    });
+  },
+);
+
+flow(
+  'IAM-42',
+  {
+    domain: 'iam',
+    routes: [
+      'PATCH /v1/accounts/:accountId/members/:userId',
+      'PATCH /v1/accounts/:accountId/iam/members/:userId/super-admin',
+      'GET /v1/accounts/:accountId/members',
+      'POST /v1/accounts/:accountId/iam/assignments',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const params = { accountId: team.id };
+    const cofounder = await team.addMember('admin');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const superAdminFlag = async () => {
+      const r = await owner.get('/v1/accounts/:accountId/members', { params });
+      r.status(200);
+      const row = (r.json<any[]>()).find((m) => m.user_id === cofounder.userId);
+      if (!row) throw new Error('co-founder missing from the member list');
+      return { role: row.account_role as string, superAdmin: row.is_super_admin as boolean };
+    };
+
+    await ctx.step('the owner makes a co-founder owner and super-admin', async () => {
+      (await owner.patch('/v1/accounts/:accountId/members/:userId', { role: 'owner' }, {
+        params: { ...params, userId: cofounder.userId! },
+      })).status(200).body().has('$.account_role', 'owner');
+      (await owner.patch('/v1/accounts/:accountId/iam/members/:userId/super-admin', { isSuperAdmin: true }, {
+        params: { ...params, userId: cofounder.userId! },
+      })).status(200).body().has('$.is_super_admin', true);
+      const state = await superAdminFlag();
+      if (state.role !== 'owner' || !state.superAdmin) throw new Error(`unexpected state ${JSON.stringify(state)}`);
+    });
+
+    await ctx.step('demoting that owner to member also clears super-admin', async () => {
+      (await owner.patch('/v1/accounts/:accountId/members/:userId', { role: 'member' }, {
+        params: { ...params, userId: cofounder.userId! },
+      })).status(200).body().has('$.account_role', 'member');
+      const state = await superAdminFlag();
+      if (state.role !== 'member' || state.superAdmin) {
+        throw new Error(`a demoted owner kept super-admin: ${JSON.stringify(state)}`);
+      }
+    });
+
+    await ctx.step('the demoted member cannot grant themselves owner again → 403', async () => {
+      const r = await ctx.client.as(cofounder).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        { principal_type: 'user', principal_id: cofounder.userId, role_key: 'owner', scope_type: 'account' },
+        { params },
+      );
+      r.status(403);
+      const state = await superAdminFlag();
+      if (state.role !== 'member') throw new Error(`role changed to ${state.role}`);
+    });
+
+    await ctx.step('a super-admin grant made while not an owner survives a role change that removes no owner role', async () => {
+      (await owner.patch('/v1/accounts/:accountId/iam/members/:userId/super-admin', { isSuperAdmin: true }, {
+        params: { ...params, userId: cofounder.userId! },
+      })).status(200);
+      (await owner.patch('/v1/accounts/:accountId/members/:userId', { role: 'admin' }, {
+        params: { ...params, userId: cofounder.userId! },
+      })).status(200);
+      const state = await superAdminFlag();
+      if (state.role !== 'admin' || !state.superAdmin) {
+        throw new Error(`an explicit super-admin grant was dropped: ${JSON.stringify(state)}`);
+      }
+    });
+  },
+);

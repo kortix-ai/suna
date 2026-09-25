@@ -170,7 +170,7 @@ export async function remintWireMessageId(
       (BigInt(Date.now()) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
   // THE TRANSCRIPT IS NOT THE ONLY FLOOR — it lags. OpenCode persists a
   // mid-turn user message ~4s after the POST (measured against a real sandbox
-  // in `integration-inbox-midturn-forward.test.ts`), and two prompts sent
+  // in `inbox-midturn-forward.live.test.ts`), and two prompts sent
   // inside that window read the SAME `newest` and mint the SAME clock. The
   // user's own two messages then sort by 14 random base62 characters: either
   // they run in the wrong order, or the loser sorts under an assistant reply

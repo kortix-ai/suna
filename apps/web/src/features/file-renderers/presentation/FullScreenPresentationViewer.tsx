@@ -6,11 +6,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { useDownloadRestriction } from '@/hooks/billing';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useTranslations } from '@/i18n/use-translations';
-import { getAgentContentIframeSandbox } from '@/lib/security/iframe-sandbox';
-import { privilegedFrameOrigins } from '@/lib/security/privileged-frame-origins';
 import { cn } from '@/lib/utils';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import {
@@ -430,10 +429,7 @@ export function FullScreenPresentationViewer({
                 className="rounded-xl border-0"
                 // Agent-written slides keep same-origin only on a preview origin
                 // of their own, never on this app's or the API's origin.
-                sandbox={getAgentContentIframeSandbox(frameSrc, {
-                  privilegedOrigins: privilegedFrameOrigins(),
-                  presentation: true,
-                })}
+                sandbox={framePolicy('slide', frameSrc).sandbox}
                 style={{
                   width: '1920px',
                   height: '1080px',

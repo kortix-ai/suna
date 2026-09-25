@@ -18,7 +18,11 @@ import { preserveEstablishedRuntime } from '../runtime-identity';
 import { settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-lifecycle';
 import { requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
-import { transitionSandbox, transitionSession } from '../session-lifecycle/status-transitions';
+import {
+  STOPPED_SANDBOX_CLEARED_KEYS,
+  transitionSandbox,
+  transitionSession,
+} from '../session-lifecycle/status-transitions';
 import type { StopReason } from '../stop-reason';
 
 /** Merge keys into a jsonb metadata column without clobbering siblings. */
@@ -182,22 +186,6 @@ export async function clearPendingStopObservation(sandboxId: string): Promise<vo
     );
 }
 
-/**
- * What a stopped row may not keep: wake fences, turn authority, the pending
- * stop marker, and the idle-stop claim.
- */
-const STOPPED_CLEARED_KEYS = [
-  'runtimeWakeStartedAt',
-  'runtimeWakeId',
-  'runtimeWakeLeaseExpiresAt',
-  'runtimeWakeProviderStatus',
-  'runtimeWakeCleanupId',
-  'runtimeWakeCleanupLeaseExpiresAt',
-  'activeTurn',
-  'activeTurns',
-  'pendingStopObservedAtMs',
-  'lifecycleStopClaim',
-] as const;
 
 export interface StoppedStateWrite {
   sandboxId: string;
@@ -289,7 +277,7 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
     await transitionSandbox(
       'stop',
       write.sandboxId,
-      { at: now, metadata: { strip: STOPPED_CLEARED_KEYS, merge: patch } },
+      { at: now, metadata: { strip: STOPPED_SANDBOX_CLEARED_KEYS, merge: patch } },
       tx,
     );
     // A `failed` session keeps its park (see SESSION_TRANSITIONS.stop).
