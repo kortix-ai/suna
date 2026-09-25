@@ -900,6 +900,36 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     expect(text).toContain('data: [DONE]');
   });
 
+  test('a managed stream repairs missing upstream event boundaries before a client parses it', async () => {
+    const chunks = [
+      'data: {"model":"vendor/model","choices":[{"delta":{"reasoning_content":"think"}}]}\n',
+      'data: {"model":"vendor/model","choices":[{"delta":{"content":"answer"}}]}\n',
+      'data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7}}\n',
+      'data: [DONE]\n\n',
+    ];
+    const { response, text, usage, traces } = await run(() => new Response(new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+        controller.close();
+      },
+    }), { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+    { model: 'requested-model', stream: true, messages: [] }, [openrouter]);
+
+    expect(response.status).toBe(200);
+    const events = text.trim().split(/\r?\n\r?\n/);
+    expect(events).toHaveLength(4);
+    const data = events.slice(0, -1).map((event) => JSON.parse(event.slice(6)));
+    expect(data.slice(0, 2).map((frame) => frame.choices[0].delta)).toEqual([
+      { reasoning_content: 'think' },
+      { content: 'answer' },
+    ]);
+    expect(data[0].model).toBe('primary-model');
+    expect(data[0].provider).toBeUndefined();
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ promptTokens: 11, completionTokens: 7 });
+    expect(traces.at(-1)).toMatchObject({ ok: true, status: 200 });
+  });
+
   test('BYOK responses stay byte-for-byte from the provider', async () => {
     const byok: UpstreamDescriptor = { ...primary, provider: 'openrouter', billingMode: 'none', markup: 0 };
     const { response, text } = await run(() => new Response(coreweave429, { status: 429 }), undefined, [byok]);
