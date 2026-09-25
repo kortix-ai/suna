@@ -48,7 +48,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   embedded WebViews do this instead of throwing) or when a resolved storage
   throws on read during quota reclaim or pruning. Added
   `safeSessionGetItem`, `safeSessionSetItem` and `safeSessionRemoveItem` with
-  the same guarantee for `sessionStorage`.
+  the same guarantee for `sessionStorage`, plus `safeSessionStorage` and
+  `createSafeSessionJSONStorage` for zustand `persist` stores.
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
   `ReferenceError` in a browser `<script>` bundle and on React Native.
 - The HTTP layer (`backendApi`/`makeRequest`) now transparently retries transient
