@@ -89,6 +89,32 @@ describe('SessionRetryDisplay', () => {
   });
 });
 
+// Off a session route there is no session to fix, so a ChatGPT connection
+// failure keeps the plain row: message, suggestion, code, and no button. The
+// session-aware action is asserted in the browser (spec 30).
+describe('TurnErrorDisplay — ChatGPT connection failures', () => {
+  test('stays informational without a session route', () => {
+    const html = renderToStaticMarkup(
+      <TurnErrorDisplay
+        errorText="Your ChatGPT connection needs reconnection."
+        errorDetails={{
+          provider: '',
+          code: 'provider_reauth_required',
+          requestId: 'req_chatgpt',
+          suggestion: 'Reconnect your ChatGPT account in Models, then retry.',
+          requestedModel: 'codex/gpt-6-sol',
+          resolvedModel: 'codex/gpt-6-sol',
+        }}
+      />,
+    );
+
+    expect(html).toContain('Your ChatGPT connection needs reconnection.');
+    expect(html).toContain('Reconnect your ChatGPT account in Models, then retry.');
+    expect(html).toContain('provider_reauth_required');
+    expect(html).not.toContain('<button');
+  });
+});
+
 // Persisted on a local stack as OpenCode `UnknownError.data.message`:
 // `{"message":"The usage limit has been reached","code":429}`. Once the SDK
 // unwraps that to the sentence, it is a usage stop the user can lift, so it

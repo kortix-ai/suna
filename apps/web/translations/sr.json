@@ -49,6 +49,7 @@
     "manageChatGptAccounts": "Управљајте ChatGPT налозима",
     "connect": "Повежи",
     "connectChatGpt": "Повежи ChatGPT",
+    "reconnectChatGpt": "Поново повежи ChatGPT",
     "noChatGptAccounts": "Још нема ChatGPT налога",
     "oauthCreationDescription": "Пријавите се својим ChatGPT Plus или Pro налогом. Kortix чува пријаву шифровану и никада је не приказује.",
     "defaultAccountLabel": "ChatGPT · {name}",

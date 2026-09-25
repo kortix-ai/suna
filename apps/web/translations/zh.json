@@ -49,6 +49,7 @@
     "manageChatGptAccounts": "管理 ChatGPT 账户",
     "connect": "连接",
     "connectChatGpt": "连接 ChatGPT",
+    "reconnectChatGpt": "重新连接 ChatGPT",
     "noChatGptAccounts": "还没有 ChatGPT 账户",
     "oauthCreationDescription": "使用您的 ChatGPT Plus 或 Pro 账户登录。Kortix 会加密保存登录信息，且从不显示。",
     "defaultAccountLabel": "ChatGPT · {name}",

@@ -41,6 +41,7 @@
     "manageChatGptAccounts": "Manage ChatGPT accounts",
     "connect": "Connect",
     "connectChatGpt": "Connect ChatGPT",
+    "reconnectChatGpt": "Reconnect ChatGPT",
     "noChatGptAccounts": "No ChatGPT accounts yet",
     "oauthCreationDescription": "Sign in with your ChatGPT Plus or Pro account. Kortix stores the login encrypted and never shows it.",
     "defaultAccountLabel": "ChatGPT · {name}",

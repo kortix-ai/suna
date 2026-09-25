@@ -49,6 +49,7 @@
     "manageChatGptAccounts": "ChatGPT アカウントを管理",
     "connect": "接続",
     "connectChatGpt": "ChatGPT を接続",
+    "reconnectChatGpt": "ChatGPT を再接続",
     "noChatGptAccounts": "ChatGPT アカウントはまだありません",
     "oauthCreationDescription": "ChatGPT Plus または Pro アカウントでサインインしてください。ログイン情報は暗号化して保存され、表示されることはありません。",
     "defaultAccountLabel": "ChatGPT · {name}",

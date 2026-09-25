@@ -49,6 +49,7 @@
     "manageChatGptAccounts": "Gerenciar contas ChatGPT",
     "connect": "Conectar",
     "connectChatGpt": "Conectar ChatGPT",
+    "reconnectChatGpt": "Reconectar ChatGPT",
     "noChatGptAccounts": "Nenhuma conta ChatGPT ainda",
     "oauthCreationDescription": "Entre com sua conta ChatGPT Plus ou Pro. O Kortix armazena o login criptografado e nunca o exibe.",
     "defaultAccountLabel": "ChatGPT · {name}",

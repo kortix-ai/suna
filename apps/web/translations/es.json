@@ -49,6 +49,7 @@
     "manageChatGptAccounts": "Administrar cuentas de ChatGPT",
     "connect": "Conectar",
     "connectChatGpt": "Conectar ChatGPT",
+    "reconnectChatGpt": "Reconectar ChatGPT",
     "noChatGptAccounts": "Aún no hay cuentas de ChatGPT",
     "oauthCreationDescription": "Inicia sesión con tu cuenta ChatGPT Plus o Pro. Kortix guarda el inicio de sesión cifrado y nunca lo muestra.",
     "defaultAccountLabel": "ChatGPT · {name}",

@@ -49,6 +49,7 @@
     "manageChatGptAccounts": "ChatGPT-Konten verwalten",
     "connect": "Verbinden",
     "connectChatGpt": "ChatGPT verbinden",
+    "reconnectChatGpt": "ChatGPT neu verbinden",
     "noChatGptAccounts": "Noch keine ChatGPT-Konten",
     "oauthCreationDescription": "Melden Sie sich mit Ihrem ChatGPT-Plus- oder Pro-Konto an. Kortix speichert die Anmeldung verschlüsselt und zeigt sie nie an.",
     "defaultAccountLabel": "ChatGPT · {name}",
