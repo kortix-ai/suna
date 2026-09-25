@@ -12,7 +12,8 @@
 // commits. Each test holds the row lock with a second connection, lets the
 // writer under test block on it, then commits — the exact interleaving.
 //
-// Gated like the other real-DB suites: TEST_DATABASE_URL + explicit
+// Runs in the `db-suites` lane of `pnpm test` (one throwaway database per
+// file). Gated like the other real-DB suites: TEST_DATABASE_URL + explicit
 // confirmation + non-prod. It writes and deletes rows with fixed ids.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import pg from 'pg';

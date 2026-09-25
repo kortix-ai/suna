@@ -26,11 +26,12 @@ import {
   requeueForAdmission,
 } from '../projects/session-lifecycle/store';
 import { db } from '../shared/db';
+import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
 type Row = Record<string, unknown>;
 const rows = (result: unknown) => ((result as { rows?: Row[] }).rows ?? result) as Row[];
 
-let project: { project_id: string; account_id: string };
+let project: SeededProject;
 const sessionId = crypto.randomUUID();
 
 async function enqueue(label: string): Promise<SessionLifecycleCommandRow> {
@@ -86,13 +87,7 @@ async function reclaimed(label: string) {
 }
 
 beforeAll(async () => {
-  const [first] = rows(
-    await db.execute(
-      sql`select project_id, account_id from kortix.projects order by created_at asc limit 1`,
-    ),
-  );
-  project = first as typeof project;
-  expect(project).toBeDefined();
+  project = await seedProject('lifecycle-command-lease-test');
   await db.execute(sql`
     insert into kortix.project_sessions
       (session_id, account_id, project_id, branch_name, agent_name, status, metadata)
@@ -106,6 +101,7 @@ afterAll(async () => {
     sql`delete from kortix.session_lifecycle_commands where session_id = ${sessionId}`,
   );
   await db.execute(sql`delete from kortix.project_sessions where session_id = ${sessionId}`);
+  await removeSeeded([project]);
 });
 
 describe('writes that end a claim are fenced by the lease', () => {

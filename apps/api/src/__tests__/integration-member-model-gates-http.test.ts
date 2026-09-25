@@ -27,10 +27,15 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projectSessions, projects } from '@kortix/db';
-import { db } from '../shared/db';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
-import { upsertResourceGrant } from '../iam/resource-grants';
+
+// The project row below opts into the gateway, but the operator master switch
+// (config.LLM_GATEWAY_ENABLED, default off) wins over any project override, and
+// config reads it once at import. Set it before the app loads.
+process.env.LLM_GATEWAY_ENABLED = 'true';
+const { db } = await import('../shared/db');
+const { app } = await import('../index');
+const { createAccountToken } = await import('../repositories/account-tokens');
+const { upsertResourceGrant } = await import('../iam/resource-grants');
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

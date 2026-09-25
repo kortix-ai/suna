@@ -1,10 +1,17 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
-import { db } from '../shared/db';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
-import { PROJECT_ACTIONS } from '../iam';
+
+// The model-defaults routes 404 `llm_gateway_disabled` BEFORE their leaf gate
+// when the gateway is unavailable, so the leaf would never be measured. The
+// operator master switch (config.LLM_GATEWAY_ENABLED) defaults off and is read
+// once at config import, so it must be set before the app loads. The project
+// row below also opts in explicitly.
+process.env.LLM_GATEWAY_ENABLED = 'true';
+const { db } = await import('../shared/db');
+const { app } = await import('../index');
+const { createAccountToken } = await import('../repositories/account-tokens');
+const { PROJECT_ACTIONS } = await import('../iam');
 
 // Every capability checkbox must be authoritative: unchecking a leaf must DENY
 // its endpoint. These endpoints previously gated on a coarse floor only (or an
@@ -35,7 +42,9 @@ beforeAll(async () => {
     // Flag-gated routes in CASES (channels/email/*, channels/teams/*) reject
     // with 403 `feature_disabled` when off. Turn them on so this suite measures
     // the LEAF gate, not the flag.
-    metadata: { experimental: { agentmail_email: true, teams: true } },
+    // `llm_gateway` likewise: model-defaults PUT 404s `llm_gateway_disabled`
+    // before the leaf gate when the project has the gateway off.
+    metadata: { experimental: { agentmail_email: true, teams: true, llm_gateway: true } },
   });
   await db.insert(accountMembers).values([
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
