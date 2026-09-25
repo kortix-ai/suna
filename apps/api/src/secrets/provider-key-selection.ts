@@ -34,7 +34,12 @@ export function providerKeyOf(model: string): { providerId: string; envVar: stri
 interface KeyScope {
   accountId: string;
   projectId: string;
-  userId: string;
+  /**
+   * The account member who must read the project. Null for a principal that
+   * is not an account member (a service account) and that the route has
+   * already authorized: only keys shared with the whole project count.
+   */
+  userId: string | null;
   /**
    * Whose member-granted keys count: the person a private session acts for,
    * or null in a shared one — keys shared with the whole project only (spec

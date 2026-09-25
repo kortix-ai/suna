@@ -7,7 +7,7 @@ import { requireFeatureFlag } from '../../feature-flags/gate';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv } from '../../iam/agent-scope';
-import { memberMayReadProject } from '../../secrets/account-resource';
+import { isAccountMember, memberMayReadProject } from '../../secrets/account-resource';
 import { MAX_KEYS_PER_PROVIDER, mayUseProviderKeys, providerEnvVarOf } from '../../secrets/provider-key-selection';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { mayChangeSessionModel } from '../lib/session-model-change';
@@ -25,6 +25,12 @@ const Input = z.object({ secret_ids: z.array(z.string().uuid()).max(MAX_KEYS_PER
  * May the caller select these keys for a session? Its agent must be granted
  * the provider's key name, and each key must be one the caller may use: shared
  * with the whole project, or granted to the caller.
+ *
+ * A caller that is not an account member, such as a service account with a
+ * project role, has no member grants and no `account_members` row. The route
+ * has already authorized it, so it may select keys shared with the whole
+ * project. The session-side check still runs as the session owner, the user
+ * the gateway serves the selection as.
  */
 export async function validateProviderSecretPool(input: {
   accountId: string; projectId: string; repoUrl: string; defaultBranch: string | null;
@@ -48,9 +54,10 @@ export async function validateProviderSecretPool(input: {
     return { status: 409, error: 'Agent grant unavailable' };
   }
   if (!agentMayUseEnv(grant, envVar)) return { status: 403, error: 'Agent cannot use this provider secret' };
+  const member = (await isAccountMember(input.accountId, input.userId)) ? input.userId : null;
   const usable = await mayUseProviderKeys({
     accountId: input.accountId, projectId: input.projectId, providerId: input.providerId, ids: input.ids,
-    userId: input.userId, grantUserId: input.userId,
+    userId: member, grantUserId: member,
   });
   return usable ? null : { status: 403, error: 'Secret unavailable or not granted' };
 }

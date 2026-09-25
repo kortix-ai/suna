@@ -75,6 +75,9 @@ flow(
       "POST /v1/projects/:projectId/sessions",
       "PUT /v1/projects/:projectId/sessions/:sessionId/model",
       "DELETE /v1/accounts/:accountId/secret-resources/:secretId",
+      "POST /v1/accounts/:accountId/iam/service-accounts",
+      "POST /v1/accounts/:accountId/iam/assignments",
+      "DELETE /v1/accounts/:accountId/iam/service-accounts/:saId",
     ],
   },
   async (ctx) => {
@@ -185,6 +188,58 @@ flow(
       }, { params: poolParams })).status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
       (await owner.get(poolPath, { params: poolParams })).status(200).body().has('$.configured', true).has('$.secret_ids', []);
       (await owner.put(poolPath, { secret_ids: ids }, { params: poolParams })).status(200).body().has('$.secret_ids', ids);
+    });
+    await ctx.step('a service account with a project manager role selects project keys and switches to a pool-only model', async () => {
+      // A service account has no account membership. The gateway serves a
+      // session's selection as its human owner, not as the caller, so keys
+      // shared with the whole project stay selectable. Keys granted to one
+      // member do not.
+      const key = await owner.post(resourcePath, {
+        label: 'Project shared', provider_id: 'anthropic', name: 'ANTHROPIC_API_KEY',
+        value: 'project-shared-test-value', consumer: 'llm_gateway', strategy: 'broker',
+        project_id: project.id, access_mode: 'project',
+      }, { params: resourceParams });
+      key.status(201);
+      const projectKeyId = key.json<any>().secret_id as string;
+      const created = await owner.post('/v1/accounts/:accountId/iam/service-accounts',
+        { name: ctx.fixtures.name('sa'), description: 'e2e' }, { params: resourceParams });
+      created.status(201);
+      const { service_account_id: saId, secret } = created.json<any>();
+      try {
+        (await owner.post('/v1/accounts/:accountId/iam/assignments', {
+          principal_type: 'service_account', principal_id: saId, role_key: 'manager',
+          scope_type: 'project', scope_id: project.id,
+        }, { params: resourceParams })).status(201);
+        const sa = ctx.client.withBearer(secret, 'service-account');
+        // A git-trigger session its human owner shares with the project. A
+        // service account manages it through `project.trigger.update`.
+        const shared = await createDatabaseSession(ctx.env, {
+          projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId!, visibility: 'project',
+          metadata: { source: 'trigger:git', trigger_kind: 'git', trigger_slug: 'e2e-pool' },
+        });
+        const params = { ...poolParams, sessionId: shared };
+        // IAM verdicts are cached per API task for up to 15 s.
+        const deadline = Date.now() + 30_000;
+        let selected = await sa.put(poolPath, { secret_ids: [projectKeyId] }, { params });
+        while (selected.statusCode !== 200 && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 2_000));
+          selected = await sa.put(poolPath, { secret_ids: [projectKeyId] }, { params });
+        }
+        if (selected.statusCode !== 200) throw new Error(`service-account selection returned ${selected.statusCode}: ${selected.text()}`);
+        selected.body().has('$.configured', true).has('$.secret_ids', [projectKeyId]);
+        (await sa.put(poolPath, { secret_ids: [ids[0]] }, { params })).status(403)
+          .body().has('$.error', 'Secret unavailable or not granted');
+        (await sa.put(poolPath, { secret_ids: null }, { params })).status(200).body().has('$.configured', false);
+        (await sa.put('/v1/projects/:projectId/sessions/:sessionId/model', {
+          opencode_model: 'anthropic/claude-sonnet-4.6',
+        }, { params })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
+        (await owner.get(poolPath, { params })).status(200).body().has('$.configured', true).has('$.secret_ids', [projectKeyId]);
+      } finally {
+        (await owner.del('/v1/accounts/:accountId/iam/service-accounts/:saId', {
+          params: { ...resourceParams, saId },
+        })).status(200);
+        (await owner.del(`${resourcePath}/:secretId`, { params: { ...resourceParams, secretId: projectKeyId } })).status(200);
+      }
     });
     await ctx.step('a shared session uses only keys shared with the whole project', async () => {
       await team.grantProjectRole(project.id, member.userId!, 'member');

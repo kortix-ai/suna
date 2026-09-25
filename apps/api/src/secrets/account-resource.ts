@@ -50,6 +50,13 @@ export function personalKeyGranted(rowGrantUserId: string | null, grantUserId: s
   return grantUserId !== null && rowGrantUserId === grantUserId;
 }
 
+/** Does the principal have an `account_members` row in the account? False for a service account. */
+export async function isAccountMember(accountId: string, userId: string): Promise<boolean> {
+  const [row] = await db.select({ userId: accountMembers.userId }).from(accountMembers)
+    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId))).limit(1);
+  return Boolean(row);
+}
+
 export async function memberMayReadProject(accountId: string, projectId: string, userId: string): Promise<boolean> {
   const [{ actorForUser }, { authorize }, { PROJECT_ACTIONS }] = await Promise.all([
     import('../iam/actor'), import('../iam/authorize'), import('../iam/actions'),
@@ -89,7 +96,13 @@ export interface UsableGatewaySecret {
 export async function listUsableGatewaySecrets(input: {
   accountId: string;
   projectId: string;
-  userId: string;
+  /**
+   * The account member the keys are listed for: it must read the project and
+   * have an `account_members` row. Null for a principal that is not an account
+   * member, such as a service account, that the route has already authorized:
+   * no member check, and only keys shared with the whole project count.
+   */
+  userId: string | null;
   grantUserId?: string | null;
   providerId?: string;
   /** Only keys stored under this key name. */
@@ -97,9 +110,9 @@ export async function listUsableGatewaySecrets(input: {
   /** Only these keys. */
   ids?: string[];
 }): Promise<UsableGatewaySecret[]> {
-  const grantUserId = input.grantUserId === undefined ? input.userId : input.grantUserId;
-  if (!(await memberMayReadProject(input.accountId, input.projectId, input.userId))) return [];
-  const rows = await db.select({
+  const grantUserId = input.userId === null ? null : input.grantUserId === undefined ? input.userId : input.grantUserId;
+  if (input.userId !== null && !(await memberMayReadProject(input.accountId, input.projectId, input.userId))) return [];
+  const query = db.select({
     secretId: accountSecretResources.secretId,
     providerId: accountSecretResources.providerId,
     name: accountSecretResources.name,
@@ -112,7 +125,11 @@ export async function listUsableGatewaySecrets(input: {
       eq(accountSecretGrants.secretId, accountSecretResources.secretId),
       grantUserId ? eq(accountSecretGrants.userId, grantUserId) : sql`false`,
     ))
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId)))
+    .$dynamic();
+  const scoped = input.userId === null
+    ? query
+    : query.innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId)));
+  const rows = await scoped
     .where(and(
       eq(accountSecretResources.accountId, input.accountId),
       eq(accountSecretResources.consumer, 'llm_gateway'),

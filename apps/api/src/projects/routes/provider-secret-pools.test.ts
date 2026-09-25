@@ -1,8 +1,8 @@
-import { beforeEach, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
-import { accountSecretResources } from '@kortix/db';
+import { accountMembers, accountSecretResources, projectSessions, sessionProviderSecretPools } from '@kortix/db';
 
 const accountId = '10000000-0000-4000-8000-000000000000';
 const projectId = '11111111-1111-4111-8111-111111111111';
@@ -11,6 +11,8 @@ const sessionId = '22222222-2222-4222-8222-222222222222';
 const managerId = '44444444-4444-4444-8444-444444444444';
 const ownerId = '55555555-5555-4555-8555-555555555555';
 const otherMemberId = '77777777-7777-4777-8777-777777777777';
+/** A service account with a project role: authorized by the route, never an account member. */
+const serviceAccountId = '88888888-8888-4888-8888-888888888888';
 const users = [managerId, ownerId, otherMemberId];
 const keyId = (n: number) => `33333333-3333-4333-8333-${String(n).padStart(12, '0')}`;
 const base = `/${projectId}/sessions/${sessionId}/provider-secret-pools`;
@@ -31,6 +33,12 @@ let sessionPersonal: string | null = ownerId;
 let agentEnv = ['ANTHROPIC_API_KEY', 'CODEX_AUTH_JSON'];
 /** Users IAM lets read the project. */
 let readers = new Set(users);
+/** Principals with an `account_members` row. */
+let members = new Set(users);
+/** Who makes the request. */
+let callerId = managerId;
+/** The session model as stored by `PUT /sessions/:id/model`. */
+let storedModel: string | null = null;
 let writes = 0;
 
 const projectKey = (n: number, over: Partial<Key> = {}): Key => ({
@@ -42,23 +50,46 @@ const dialect = new PgDialect();
 const paramsOf = (condition: SQL | undefined) => (condition ? dialect.sqlToQuery(condition).params : []);
 const app = new OpenAPIHono<any>();
 app.use('*', async (c, next) => {
-  c.set('authType', boundSession ? 'pat' : 'supabase');
-  c.set('sessionId', boundSession ?? 'browser-login');
+  if (!boundSession && callerId === serviceAccountId) {
+    // A service-account bearer carries no session id (middleware/auth.ts).
+    c.set('authType', 'service_account');
+  } else {
+    c.set('authType', boundSession ? 'pat' : 'supabase');
+    c.set('sessionId', boundSession ?? 'browser-login');
+  }
   await next();
 });
 mock.module('../lib/app', () => ({ projectsApp: app }));
 mock.module('../lib/access', () => ({
   loadProjectForUser: async () => ({
-    userId: managerId,
-    row: { accountId, metadata: {}, repoUrl: 'https://example.test/repo' },
+    userId: callerId,
+    row: { accountId, metadata: {}, repoUrl: 'https://example.test/repo', defaultBranch: null, manifestPath: null },
   }),
   assertProjectCapability: async () => {},
+  projectCapabilityAllowed: async () => true,
   loadVisibleSession: async (_loaded: unknown, target: string, caller: string | null, bound: string | null) => {
-    if ((caller && caller !== target) || (bound && bound !== target)) return null;
-    return { row: { createdBy: ownerId }, canManageLifecycle: canManage, ownerIsMachine };
+    // `PUT /model` passes the raw context session id: a browser login's is not a Kortix session.
+    if ((caller && caller !== 'browser-login' && caller !== target) || (bound && bound !== target)) return null;
+    return {
+      row: { createdBy: ownerId, status: 'idle', metadata: {}, agentName: null },
+      canManageLifecycle: canManage, ownerIsMachine,
+    };
   },
 }));
 mock.module('../../feature-flags/gate', () => ({ requireFeatureFlag: () => null }));
+const realRegistry = await import('../../feature-flags/registry');
+mock.module('../../feature-flags/registry', () => ({ ...realRegistry, resolveFeatureFlag: () => true }));
+const realEntitlements = await import('../../billing/services/entitlements');
+mock.module('../../billing/services/entitlements', () => ({ ...realEntitlements, accountMayUseManagedModels: async () => true }));
+// An Anthropic model serves only through a selection that holds a key.
+const realDefaultModel = await import('../../llm-gateway/resolution/default-model');
+mock.module('../../llm-gateway/resolution/default-model', () => ({
+  ...realDefaultModel,
+  isModelServableForAccount: async (input: { providerSecretPools?: Record<string, string[]> }) =>
+    Boolean((input.providerSecretPools ?? Object.fromEntries(pools)).anthropic?.length),
+}));
+const realEnvSync = await import('../lib/sandbox-env-sync');
+mock.module('../lib/sandbox-env-sync', () => ({ ...realEnvSync, pushSessionModelToSandbox: async () => ({ ok: true }) }));
 mock.module('../../llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: () => true }));
 mock.module('../../llm-gateway/models/provider-registry', () => ({
   resolveCatalogUpstream: (providerId: string) => (providerId === 'anthropic' ? { envVar: 'ANTHROPIC_API_KEY' } : null),
@@ -74,13 +105,15 @@ mock.module('../../iam/authorize', () => ({
 
 /**
  * A query over the pooled keys as PostgreSQL answers it: active keys of the
- * named provider (and key name, when the query names one) among the named ids,
+ * named provider (and key name, when the query names one) among the named ids
+ * (every key, when the query names none),
  * each with the grant of the one user the grant join names.
  */
 function keyRows(where: unknown[], grantUser: string | null) {
   const names = where.filter((p): p is string => typeof p === 'string' && /^[A-Z][A-Z0-9_]*$/.test(p));
+  const ids = where.filter((p): p is string => typeof p === 'string' && p.startsWith(keyId(0).slice(0, 24)));
   return keys
-    .filter((key) => key.active && where.includes(key.providerId) && where.includes(key.secretId))
+    .filter((key) => key.active && where.includes(key.providerId) && (!ids.length || ids.includes(key.secretId)))
     .filter((key) => !names.length || names.includes(key.name))
     .map((key) => ({
       id: key.secretId, secretId: key.secretId, providerId: key.providerId, name: key.name, label: key.secretId,
@@ -93,16 +126,26 @@ mock.module('../../shared/db', () => ({ db: {
   select: () => ({ from: (table: unknown) => {
     let rows: unknown[] = [];
     let grantUser: string | null = null;
+    /** The principal an `account_members` join requires; undefined when the query has no such join. */
+    let memberJoin: string | undefined;
     const query: any = {
-      innerJoin: () => query,
+      $dynamic: () => query,
+      innerJoin: (joined: unknown, condition: SQL) => {
+        if (joined === accountMembers) memberJoin = paramsOf(condition).find((p) => p !== accountId) as string;
+        return query;
+      },
       leftJoin: (_joined: unknown, condition: SQL) => {
         grantUser = (paramsOf(condition).find((p) => users.includes(p as string)) as string | undefined) ?? null;
         return query;
       },
       where: (condition: SQL) => {
         const params = paramsOf(condition);
+        if (table === accountMembers) {
+          rows = params.some((p) => members.has(p as string)) ? [{ userId: params.find((p) => members.has(p as string)) }] : [];
+          return query;
+        }
         rows = table === accountSecretResources
-          ? keyRows(params, grantUser)
+          ? (memberJoin !== undefined && !members.has(memberJoin) ? [] : keyRows(params, grantUser))
           : [...pools].filter(([providerId]) => !params.some((p) => p !== sessionId) || params.includes(providerId))
             .map(([providerId, ids]) => ({ provider_id: providerId, secret_ids: ids, ids }));
         return query;
@@ -113,16 +156,32 @@ mock.module('../../shared/db', () => ({ db: {
     };
     return query;
   } }),
-  insert: () => ({ values: (row: { providerId: string; secretIds: string[] }) => ({
+  insert: (table: unknown) => ({ values: (row: { providerId: string; secretIds: string[] }) => ({
     onConflictDoUpdate: async () => { writes++; pools.set(row.providerId, row.secretIds); },
+    onConflictDoNothing: () => ({ returning: async () => {
+      if (table !== sessionProviderSecretPools) throw new Error('unexpected insert');
+      if (pools.has(row.providerId)) return [];
+      writes++;
+      pools.set(row.providerId, row.secretIds);
+      return [{ sessionId }];
+    } }),
   }) }),
+  update: (table: unknown) => ({ set: (values: { metadata: { opencode_model: string } }) => ({ where: async () => {
+    if (table !== projectSessions) throw new Error('unexpected update');
+    storedModel = values.metadata.opencode_model;
+  } }) }),
   delete: () => ({ where: async (condition: SQL) => {
     writes++;
     for (const p of paramsOf(condition)) pools.delete(p as string);
   } }),
 } }));
 await import('./provider-secret-pools');
+await import('./session-scope');
 const { MAX_KEYS_PER_PROVIDER } = await import('../../secrets/provider-key-selection');
+
+const putModel = (model: string) => app.request(`/${projectId}/sessions/${sessionId}/model`, {
+  method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ opencode_model: model }),
+});
 
 const put = (providerId: string, secretIds: string[] | null) => app.request(`${base}/${providerId}`, {
   method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ secret_ids: secretIds }),
@@ -137,6 +196,9 @@ beforeEach(() => {
   canManage = true;
   agentEnv = ['ANTHROPIC_API_KEY', 'CODEX_AUTH_JSON'];
   readers = new Set(users);
+  members = new Set(users);
+  callerId = managerId;
+  storedModel = null;
   writes = 0;
 });
 
@@ -297,4 +359,79 @@ test('a shared session never selects a key granted to one member, even its owner
   expect(response.status).toBe(403);
   expect(await response.json()).toMatchObject({ code: 'SHARED_SESSION_PERSONAL_KEY' });
   expect(writes).toBe(0);
+});
+
+// A service-account bearer's `userId` is the service account's id, and a
+// service account has no `account_members` row. The gateway serves a session's
+// selection as the session owner, not as the caller, so a service account with
+// a project role may select keys shared with the whole project, as before.
+test('a service-account caller selects keys shared with the whole project for a human-owned session', async () => {
+  callerId = serviceAccountId;
+  keys = [projectKey(1), projectKey(2, { projectId: null })];
+  const response = await put('anthropic', [keyId(1), keyId(2)]);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ provider_id: 'anthropic', configured: true, secret_ids: [keyId(1), keyId(2)] });
+  sessionPersonal = null;
+  expect((await put('anthropic', [keyId(1)])).status).toBe(200);
+  expect(pools.get('anthropic')).toEqual([keyId(1)]);
+});
+
+test('a service-account caller cannot select a key granted to one member', async () => {
+  callerId = serviceAccountId;
+  keys = [projectKey(1, { accessMode: 'members', grants: [ownerId] })];
+  const response = await put('anthropic', [keyId(1)]);
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({ error: 'Secret unavailable or not granted' });
+  expect(writes).toBe(0);
+});
+
+test('a member-granted key counts only for a caller with an account membership', async () => {
+  keys = [projectKey(1, { accessMode: 'members', grants: [managerId, ownerId] })];
+  members.delete(managerId);
+  const response = await put('anthropic', [keyId(1)]);
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({ error: 'Secret unavailable or not granted' });
+  expect(writes).toBe(0);
+});
+
+test('the session check keeps the member gate: an owner with no account membership gets no key', async () => {
+  // The gateway joins `account_members` on the owner when it serves the keys.
+  callerId = serviceAccountId;
+  keys = [projectKey(1)];
+  members.delete(ownerId);
+  const response = await put('anthropic', [keyId(1)]);
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({ error: 'The session owner cannot use every selected secret' });
+  expect(writes).toBe(0);
+});
+
+describe('PUT /sessions/:id/model to a model only pooled keys reach', () => {
+  const model = 'anthropic/claude-sonnet-4-5';
+
+  test('a service-account caller stores the project keys and the model', async () => {
+    callerId = serviceAccountId;
+    keys = [projectKey(1), projectKey(2)];
+    const response = await putModel(model);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.opencode_model).toBe(storedModel!);
+    expect(storedModel).toContain(model);
+    expect(pools.get('anthropic')).toEqual([keyId(1), keyId(2)]);
+  });
+
+  test('a member caller stores the same selection', async () => {
+    keys = [projectKey(1), projectKey(2)];
+    expect((await putModel(model)).status).toBe(200);
+    expect(pools.get('anthropic')).toEqual([keyId(1), keyId(2)]);
+  });
+
+  test('refused, and nothing stored, when the only key is granted to one member', async () => {
+    callerId = serviceAccountId;
+    keys = [projectKey(1, { accessMode: 'members', grants: [ownerId] })];
+    const response = await putModel(model);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'INVALID_SESSION_MODEL' });
+    expect(pools.size).toBe(0);
+    expect(storedModel).toBeNull();
+  });
 });

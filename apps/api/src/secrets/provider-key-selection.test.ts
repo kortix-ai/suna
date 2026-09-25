@@ -85,6 +85,12 @@ describe('mayUseProviderKeys', () => {
     expect(await mayUseProviderKeys({ ...scope, ids: ['k1', 'k1'] })).toBe(true);
     expect(queries[0]).toMatchObject({ ids: ['k1'] });
   });
+
+  test('a principal that is not an account member is asked for with no member and no grants', async () => {
+    rows = [key('k1')];
+    expect(await mayUseProviderKeys({ ...scope, userId: null, grantUserId: null, ids: ['k1'] })).toBe(true);
+    expect(queries[0]).toMatchObject({ userId: null, grantUserId: null, ids: ['k1'] });
+  });
 });
 
 describe('providerKeyOf', () => {
