@@ -3476,3 +3476,222 @@ flow(
     });
   },
 );
+
+// ── CONN-29 — a narrowed shared account at the gateway ──
+// CONN-28 proves the list. This flow proves the call: the gateway resolves a
+// narrowed account only for a human in its audience, only in a private
+// session. Sessions and tokens are seeded the way CONN-ACCOUNTS seeds them.
+flow(
+  'CONN-29',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    // The agent config PUT is a Git commit round-trip on a managed project.
+    timeoutMs: 180_000,
+    routes: [
+      'POST /v1/accounts/tokens',
+      'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'POST /v1/accounts/:accountId/iam/groups',
+      'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'POST /v1/connectors/projects/:projectId/call',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project({ managedGit: true });
+    const inSales = await team.addMember('member');
+    const outsideSales = await team.addMember('member');
+    const { randomUUID } = await import('node:crypto');
+    const { Client: PgClient } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new PgClient({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    const slug = `ke2e-gate-${Date.now().toString(36)}`;
+    const LABEL = 'Sales CRM';
+    const accountParams = { accountId: team.id };
+    type Caller = 'Sales, private session' | 'outsider, private session' | 'Sales, shared session';
+    const callers = new Map<Caller, typeof ctx.client>();
+    const sessionIds: string[] = [];
+    const tokenIds: string[] = [];
+    let connectorId = '';
+    let connectionId = '';
+    let groupId = '';
+
+    const call = (who: Caller) =>
+      callers.get(who)!.post(
+        '/v1/connectors/projects/:projectId/call',
+        { connector: slug, action: 'anything', args: {}, account: LABEL },
+        { params: { projectId: project.id }, timeoutMs: 60_000 },
+      );
+    // The fixture registers no action, so `action_not_found` is past account
+    // resolution: the call ran as LABEL.
+    const expectResolved = async (who: Caller) => {
+      (await call(who)).status(404).body().has('$.ok', false).has('$.reason', 'action_not_found');
+    };
+    const expectDenied = async (who: Caller) => {
+      const r = await call(who);
+      r.status(403)
+        .body()
+        .has('$.reason', 'connector_not_connected')
+        .has('$.requested_account', LABEL);
+      const available = r.json<{ available_accounts?: string[] }>().available_accounts ?? [];
+      assert({
+        kind: 'body',
+        description: `${who}: the denial does not offer the narrowed account`,
+        pass: !available.includes(LABEL),
+        expected: `available_accounts without "${LABEL}"`,
+        actual: available,
+      });
+    };
+    const grant = (principal: { type: 'group' | 'project'; id: string }) =>
+      ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: principal.type,
+          principal_id: principal.id,
+          role_key: 'agent-user',
+          scope_type: 'project',
+          scope_id: project.id,
+          object_type: 'connection',
+          object_id: connectionId,
+        },
+        { params: accountParams },
+      );
+
+    try {
+      await db.connect();
+
+      await ctx.step(
+        'seed one shared account, a Sales group, and three session tokens',
+        async () => {
+          await team.grantProjectRole(project.id, inSales.userId!, 'member');
+          await team.grantProjectRole(project.id, outsideSales.userId!, 'member');
+          const declared = await ctx.client.as(ctx.P.OWNER).put(
+            '/v1/projects/:projectId/agents/:agentName/config',
+            { connectors: 'all', secrets: 'all', kortix_permissions: 'all', skills: 'all' },
+            { params: { projectId: project.id, agentName: 'kortix' }, timeoutMs: 60_000 },
+          );
+          declared.status(200);
+
+          const g = await ctx.client
+            .as(ctx.P.OWNER)
+            .post('/v1/accounts/:accountId/iam/groups', { name: ctx.fixtures.name('sales') }, {
+              params: accountParams,
+            });
+          g.status(201);
+          groupId = g.json<any>().group_id;
+          const added = await ctx.client.as(ctx.P.OWNER).post(
+            '/v1/accounts/:accountId/iam/groups/:groupId/members',
+            { userId: inSales.userId! },
+            { params: { ...accountParams, groupId } },
+          );
+          added.status(200).body().has('$.added', 1);
+
+          // `http` with `auth: none`: every active account on it is connected,
+          // so the access rule alone decides the call (see CONN-ACCOUNTS).
+          const connector = await db.query<{ connector_id: string }>(
+            `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+             VALUES ($1, $2, $3, 'KE2E Gate', 'http', $4::jsonb, 'active') RETURNING connector_id`,
+            [
+              team.id,
+              project.id,
+              slug,
+              JSON.stringify({ base_url: 'https://ke2e.kortix.test', auth: { type: 'none' } }),
+            ],
+          );
+          connectorId = connector.rows[0]?.connector_id ?? '';
+          const shared = await db.query<{ connection_id: string }>(
+            `INSERT INTO kortix.connector_connections
+               (account_id, project_id, connector_id, owner_type, label, status, is_default)
+             VALUES ($1, $2, $3, 'project', $4, 'active', true) RETURNING connection_id`,
+            [team.id, project.id, connectorId, LABEL],
+          );
+          connectionId = shared.rows[0]?.connection_id ?? '';
+          if (!connectorId || !connectionId) throw new Error('connector fixtures incomplete');
+
+          const seats: Array<[Caller, string, 'private' | 'project']> = [
+            ['Sales, private session', inSales.userId!, 'private'],
+            ['outsider, private session', outsideSales.userId!, 'private'],
+            ['Sales, shared session', inSales.userId!, 'project'],
+          ];
+          for (const [who, userId, visibility] of seats) {
+            const sessionId = randomUUID();
+            sessionIds.push(sessionId);
+            // One session per branch (`idx_project_sessions_project_branch`).
+            await db.query(
+              `INSERT INTO kortix.project_sessions
+                 (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
+               VALUES ($1, $2, $3, $6, 'kortix', 'running', $4, $5)`,
+              [sessionId, team.id, project.id, userId, visibility, `ke2e/${sessionId.slice(0, 8)}`],
+            );
+            await db.query(
+              `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+               VALUES ($1::uuid, $1, $2, $3, 'active')`,
+              [sessionId, team.id, project.id],
+            );
+            const minted = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {
+              name: `CONN-29 ${sessionId.slice(0, 8)}`,
+            });
+            minted.status(201);
+            const credential = minted.json<{ token_id: string; secret_key: string }>();
+            tokenIds.push(credential.token_id);
+            await db.query(
+              `UPDATE kortix.account_tokens
+                 SET account_id = $2, user_id = $3, project_id = $4, session_id = $5, agent_grant = $6::jsonb
+               WHERE token_id = $1`,
+              [
+                credential.token_id,
+                team.id,
+                userId,
+                project.id,
+                sessionId,
+                JSON.stringify({ agent: 'kortix', connectors: 'all', permissions: [], env: [] }),
+              ],
+            );
+            callers.set(who, ctx.client.withBearer(credential.secret_key, 'SESSION_TOKEN'));
+          }
+        },
+      );
+
+      await ctx.step('with no grant all three callers resolve the shared account', async () => {
+        for (const who of callers.keys()) await expectResolved(who);
+      });
+
+      await ctx.step('the owner narrows the account to the Sales group → 201', async () => {
+        (await grant({ type: 'group', id: groupId })).status(201);
+      });
+
+      await ctx.step('the Sales member in a private session still resolves it', async () => {
+        await expectResolved('Sales, private session');
+      });
+
+      await ctx.step('the member outside Sales is denied → 403 connector_not_connected', async () => {
+        await expectDenied('outsider, private session');
+      });
+
+      await ctx.step('the Sales member in a shared session is denied → 403 connector_not_connected', async () => {
+        await expectDenied('Sales, shared session');
+      });
+
+      await ctx.step('a grant to everyone in the project opens it to all three again', async () => {
+        (await grant({ type: 'project', id: project.id })).status(201);
+        for (const who of callers.keys()) await expectResolved(who);
+      });
+    } finally {
+      const cleanup = [
+        [`DELETE FROM kortix.role_assignments WHERE object_type = 'connection' AND object_id = $1`, [connectionId]],
+        [`DELETE FROM kortix.connector_connections WHERE connector_id::text = $1`, [connectorId]],
+        [`DELETE FROM kortix.connectors WHERE connector_id::text = $1`, [connectorId]],
+        [`DELETE FROM kortix.account_tokens WHERE token_id::text = ANY($1)`, [tokenIds]],
+        [`DELETE FROM kortix.session_sandboxes WHERE session_id::text = ANY($1)`, [sessionIds]],
+        [`DELETE FROM kortix.project_sessions WHERE session_id::text = ANY($1)`, [sessionIds]],
+      ] as const;
+      for (const [sql, params] of cleanup) await db.query(sql, [...params]).catch(() => undefined);
+      await db.end().catch(() => undefined);
+    }
+  },
+);

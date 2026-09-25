@@ -879,6 +879,16 @@ sessions only, never an unattended service account — which
 `integration-connection-audience.test.ts` pins against real PostgreSQL through
 the gateway's own resolution functions.
 
+`CONN-29` **A narrowed shared account at the gateway.** Three session tokens
+call `POST /connectors/projects/:id/call` naming one shared account: a group
+member in a private session, a member outside the group in a private session,
+and the group member in a shared (`visibility:'project'`) session. With no
+`connection` grant all three resolve it: the call passes account resolution and
+stops at `404 action_not_found`. After a group grant only the group member's
+private session resolves it; the outsider and the shared session get `403
+connector_not_connected` whose `available_accounts` omits the account. A grant
+to the project opens it to all three again.
+
 ---
 
 ## 25. Parallel-authored domains (git/platform/iam/channels/queue/audit/scim)
