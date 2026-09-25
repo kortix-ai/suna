@@ -13,7 +13,8 @@
  * (`/v1/git/<project>.git`) with an OWNER PAT, the way `kortix ship` pushes.
  */
 import { flow } from '../core/flow';
-import type { FlowContext, TeamFixture } from '../core/types';
+import { waitFor } from '../core/poll';
+import type { CreatedProject, FlowContext, TeamFixture } from '../core/types';
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -72,6 +73,8 @@ interface Fixture {
   db: import('pg').Client;
   team: TeamFixture;
   projectId: string;
+  /** The project itself, for the one flow that boots a real sandbox in it. */
+  project: CreatedProject;
   repo: ProjectRepo;
   sessions: string[];
   mint(opts?: {
@@ -264,6 +267,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
     db,
     team,
     projectId: project.id,
+    project,
     repo,
     sessions,
     openRepo,
@@ -1475,6 +1479,223 @@ flow(
         if (expected.config_dir !== '.kortix/opencode') throw new Error(`config_dir ${expected.config_dir}`);
         const tip = await baseTip(fixture);
         if (expected.source_commit !== tip) throw new Error(`source_commit ${expected.source_commit}, tip ${tip}`);
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+// ── CFG-11 — a prompt on a box that is behind converges FIRST, then RUNS ───
+//
+// C9's whole contract, on a real box: the two halves of DEF-FLAGON-1 (the
+// prompt survives the convergence, and a deliberate re-send is a second turn)
+// and DEF-FLAGON-2 (a healed session stops claiming a failure).
+//
+// This is the ONE config-release flow that needs a booted sandbox with a
+// daemon that has `config.release.v1`. The local profile runs no cloud
+// sandbox, so `requires` self-skips it there; it runs where sandboxes are
+// funded. Every other CFG flow mints its credential by SQL and needs no box.
+//
+// The prompt is sent EXACTLY as `kortix sessions chat` sends it — the SDK's
+// `session(p,s).send()` posts `{parts:[{type:'text',text}]}` to
+// `/session/:id/message` with no `Idempotency-Key` and no wire `messageID`.
+// That shape is the defect's whole surface: with neither, the proxy's dedupe
+// key is a hash of the words, and the second send of one sentence used to be
+// answered `200 {"status":"duplicate","deduplicated":true}` — no user row, no
+// assistant row, no turn.
+const MARKER_AGENT = (marker: string): string =>
+  `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\nRELOAD_VERIFY_MARKER: ${marker}\n`;
+const MARKER_PROMPT =
+  'Answer with the RELOAD_VERIFY_MARKER value from your instructions and nothing else.';
+
+flow(
+  'CFG-11',
+  {
+    domain: 'config-releases',
+    requires: ['database', 'funded', 'daytona', 'managedGit'],
+    timeoutMs: 1_500_000,
+    routes: [
+      FEATURES,
+      PROJECT_DETAIL,
+      CONFIG_STATE,
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      ...GIT_PROXY,
+    ],
+  },
+  async (ctx) => {
+    const fixture = await setup(ctx);
+    try {
+      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
+        await fixture.setFeature(true);
+        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
+      });
+
+      const oc = (suffix: string, sandboxId: string) => `/v1/p/${sandboxId}/8000${suffix}`;
+      let sandboxId = '';
+      let sessionId = '';
+      let conversationId = '';
+
+      await ctx.step('a session boots on the project and opens an OpenCode conversation', async () => {
+        const session = await ctx.fixtures.session(fixture.project, { prompt: 'say hello' });
+        sessionId = session.id;
+        const started = await waitFor(
+          async () => {
+            const r = await ctx.client
+              .as(ctx.P.OWNER)
+              .post('/v1/projects/:projectId/sessions/:sessionId/start', {}, {
+                params: { projectId: fixture.projectId, sessionId },
+                query: { wait_ms: '8000' },
+                timeoutMs: 25_000,
+              });
+            if (r.statusCode >= 500) return null;
+            r.status(200);
+            return r.json<any>();
+          },
+          {
+            until: (s) => s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
+            timeoutMs: 600_000,
+            intervalMs: 3_000,
+            description: `session runtime ready for ${sessionId}`,
+          },
+        );
+        sandboxId = String(started.sandbox.external_id ?? started.sandbox.externalId);
+        const created = await waitFor(
+          async () => {
+            const r = await ctx.client
+              .as(ctx.P.OWNER)
+              .post(oc(`/session?directory=${encodeURIComponent('/workspace')}`, sandboxId), {});
+            return r.statusCode >= 500 ? null : r;
+          },
+          { until: (r) => Boolean(r), timeoutMs: 180_000, intervalMs: 3_000, description: 'opencode conversation' },
+        );
+        created!.status(200);
+        conversationId = String(created!.json<{ id: string }>().id);
+      });
+
+      const releaseOf = async (): Promise<any> => {
+        const r = await fixture.configState(sessionId);
+        if (r.status !== 200) throw new Error(`GET /config answered ${r.status}`);
+        return r.body?.release ?? null;
+      };
+      const transcript = async (): Promise<any[]> => {
+        const r = await ctx.client.as(ctx.P.OWNER).get(oc(`/session/${conversationId}/message`, sandboxId));
+        r.status(200);
+        return r.json<any[]>();
+      };
+      const send = async (text: string) =>
+        ctx.client
+          .as(ctx.P.OWNER)
+          .post(oc(`/session/${conversationId}/message`, sandboxId), {
+            parts: [{ type: 'text', text }],
+          }, { timeoutMs: 180_000 });
+
+      let behindRelease = '';
+      await ctx.step('the box runs a release, and a push then puts it behind', async () => {
+        const before = await releaseOf();
+        if (!before || before.source !== 'release' || before.proven !== true) {
+          throw new Error(`the box is not on a proven release: ${JSON.stringify(before)}`);
+        }
+        behindRelease = String(before.running_release_id);
+        await fixture.commit(
+          { '.kortix/opencode/agents/kortix.md': MARKER_AGENT('marker-one') },
+          'marker-one',
+        );
+      });
+
+      await ctx.step('the prompt is NOT lost: it answers, and the answer comes from the NEW release', async () => {
+        const r = await send(MARKER_PROMPT);
+        r.status(200);
+        const body = r.json<any>();
+        // The defect's signature: `200 {"status":"duplicate","deduplicated":true}`
+        // — a body with neither `info` nor `parts`, which is why the CLI died on
+        // `msg.parts.filter` rather than printing an answer.
+        if (body?.deduplicated) throw new Error('the prompt was swallowed as a duplicate');
+        if (!body?.info || !Array.isArray(body?.parts)) {
+          throw new Error(`the send did not answer with a message: ${JSON.stringify(body).slice(0, 200)}`);
+        }
+        const rows = await transcript();
+        const users = rows.filter((m) => m.info?.role === 'user');
+        const assistants = rows.filter((m) => m.info?.role === 'assistant');
+        const asked = users.some((m) =>
+          (m.parts ?? []).some((part: any) => typeof part.text === 'string' && part.text.includes(MARKER_PROMPT)),
+        );
+        if (!asked) throw new Error('the transcript holds no user row for the prompt');
+        const answered = assistants
+          .flatMap((m) => (m.parts ?? []).map((part: any) => part.text))
+          .filter((t: unknown): t is string => typeof t === 'string')
+          .join('\n');
+        if (!answered.includes('marker-one')) {
+          throw new Error(`the answer does not come from the new release: ${answered.slice(0, 200)}`);
+        }
+      });
+
+      await ctx.step('the release moved: running == desired, and it is not the release the box was behind on', async () => {
+        const after = await waitFor(releaseOf, {
+          until: (rel) => Boolean(rel) && rel.running_release_id === rel.desired_release_id,
+          timeoutMs: 120_000,
+          intervalMs: 3_000,
+          description: 'running release == desired release',
+        });
+        if (after.running_release_id === behindRelease) {
+          throw new Error(`the release never moved off ${behindRelease}`);
+        }
+        if (after.proven !== true) throw new Error('the new release is not proven');
+      });
+
+      await ctx.step('DEF-FLAGON-1 — the SAME sentence sent again is a SECOND turn, not a duplicate', async () => {
+        const before = (await transcript()).filter((m) => m.info?.role === 'user').length;
+        const r = await send(MARKER_PROMPT);
+        r.status(200);
+        const body = r.json<any>();
+        if (body?.deduplicated) throw new Error('the re-send was answered `duplicate` and never ran');
+        if (!body?.info || !Array.isArray(body?.parts)) {
+          throw new Error(`the re-send did not answer with a message: ${JSON.stringify(body).slice(0, 200)}`);
+        }
+        const after = (await transcript()).filter((m) => m.info?.role === 'user').length;
+        if (after !== before + 1) throw new Error(`user rows ${before} -> ${after}; the re-send left no turn`);
+      });
+
+      await ctx.step('DEF-FLAGON-2 — a broken base branch makes the session report a fallback', async () => {
+        await fixture.commit(
+          { '.kortix/opencode/opencode.json': '{ "$schema": "https://opencode.ai/config.json",, }\n' },
+          'break the config',
+        );
+        const broken = await waitFor(releaseOf, {
+          until: (rel) => Boolean(rel?.fallback_reason) && Boolean(rel?.failed_release_id),
+          timeoutMs: 300_000,
+          intervalMs: 5_000,
+          description: 'the session reports the broken release',
+        });
+        if (broken.running_release_id === broken.failed_release_id) {
+          throw new Error('the box is running the release it reported as failed');
+        }
+      });
+
+      await ctx.step('DEF-FLAGON-2 — the fix clears the fallback with no further push', async () => {
+        // The fix restores the config tree exactly, so the release the box is
+        // ALREADY running becomes the desired one again — a release is
+        // content-addressed. The convergence that carries the fix answers
+        // `unchanged`, and that answer must state that there is no failure any
+        // more. Before the fix it did not, and a session whose config never
+        // changed again kept the warning indefinitely.
+        await fixture.commit(
+          { '.kortix/opencode/opencode.json': CONFIG_FILES['.kortix/opencode/opencode.json']! },
+          'fix the config',
+        );
+        const healed = await waitFor(releaseOf, {
+          until: (rel) =>
+            Boolean(rel) &&
+            rel.running_release_id === rel.desired_release_id &&
+            rel.proven === true &&
+            rel.fallback_reason === null &&
+            rel.failed_release_id === null,
+          timeoutMs: 300_000,
+          intervalMs: 5_000,
+          description: 'the healed session reports no fallback',
+        });
+        if (healed.source !== 'release') throw new Error(`healed source ${healed.source}`);
       });
     } finally {
       await fixture.cleanup();

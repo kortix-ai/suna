@@ -735,7 +735,13 @@ Each step down records `fallback_reason`. The step that chose the running
 config writes the most complete reason, because it saw every step down. A
 later convergence that keeps the same running config for the same failed
 release keeps that reason. A different failed release replaces it. A proven
-release clears it.
+release clears it — INCLUDING the release the box is already running. A
+release is content-addressed by its config tree, so fixing a broken base
+branch restores the release the box never stopped running: that convergence
+answers `unchanged`, and `unchanged` clears `fallback_reason` and
+`failed_release_id` as surely as `applied` does. Without that, a session
+demonstrably running the desired, proven release keeps reporting a failure
+until some unrelated later push happens to produce a new release ID.
 
 ### Health
 

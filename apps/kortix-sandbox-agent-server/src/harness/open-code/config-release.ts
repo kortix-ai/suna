@@ -169,6 +169,27 @@ function recordKeptConfigFailure(releaseId: string, reason: string): void {
   setRunningConfig({ failed_release_id: releaseId, fallback_reason: reason })
 }
 
+/**
+ * The box already runs the release the API wants, and the copy verifies.
+ *
+ * This is the only place a convergence ends with nothing to do, and it must
+ * state the WHOLE answer — including that there is no failure any more. A
+ * release is content-addressed by its config tree, so fixing a broken base
+ * branch restores the release the box was already running: the convergence
+ * that carries the fix answers `unchanged`, and any `fallback_reason` left
+ * from the broken one now describes a release nobody wants.
+ *
+ * DEF-FLAGON-2, measured on a real Platinum box 2026-09-25: the fields
+ * survived the fix and were still rendered — `/kortix/health`, `GET /config`
+ * and the CLI's "! Fallback — the latest config failed to load…" — on a
+ * session demonstrably running the desired, proven release. They cleared only
+ * when a LATER, unrelated push produced a brand-new release ID. A project
+ * whose config does not change again kept the false warning indefinitely.
+ */
+function noteDesiredReleaseMet(): void {
+  setRunningConfig({ mode: 'follow-base', fallback_reason: null, failed_release_id: null })
+}
+
 export function resetConfigReleaseStateForTests(): void {
   setRunningConfig({ ...INITIAL })
   inFlight = null
@@ -533,7 +554,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   if (descriptor.archive === null) {
     const dir = cfg.defaultOpencodeConfigDir
     if (running.release_id === releaseId && running.source === 'image-default' && (await servingConfigDir(root)) === dir) {
-      setRunningConfig({ mode: 'follow-base' })
+      noteDesiredReleaseMet()
       return respond('unchanged', null)
     }
     const notRunning = await requireRunning()
@@ -570,7 +591,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   if (running.source === 'release' && running.release_id === releaseId && (await servingConfigDir(root)) === dir) {
     const check = await verifyReleaseDetail({ dir, files: manifest.files, managedSkillsDir: deps.managedSkillsDir })
     if (check.ok) {
-      setRunningConfig({ mode: 'follow-base' })
+      noteDesiredReleaseMet()
       return respond('unchanged', null)
     }
     logger.warn('[config-release] the running release no longer verifies; rebuilding', {

@@ -89,10 +89,10 @@ import {
 } from '../preview-retry-budget';
 import {
   claimPromptDelivery,
+  deliveryKeyIdentifiesOneSubmission,
   isNonIdempotentSessionWrite,
   promptDeliveryKey,
   releasePromptDelivery,
-  shouldClaimPromptDelivery,
 } from '../prompt-dedupe';
 import {
   PROXY_HOP_HEADER,
@@ -1050,24 +1050,29 @@ export async function forwardToSandbox(
   const idempotencyKey = incomingHeaders.get('idempotency-key');
   // Non-idempotent (never re-sent by us) and dedupe-claimed (a later lookalike
   // is short-circuited) are DIFFERENT guarantees — see
-  // `shouldClaimPromptDelivery`. A command body has no client-unique field, so
-  // claiming one on content alone silently swallows a deliberate re-run.
-  if (promptDelivery && shouldClaimPromptDelivery(remainingPath, !!idempotencyKey?.trim())) {
-    promptDedupeKey = promptDeliveryKey({
+  // `deliveryKeyIdentifiesOneSubmission`. A body with no client-unique field
+  // yields a content hash, and claiming on that silently swallows a deliberate
+  // re-send: the same sentence, the same command, the same /compact.
+  if (promptDelivery) {
+    const key = promptDeliveryKey({
       idempotencyKey,
       sandboxId,
       sessionId: record.sessionId,
       body: requestBody,
     });
-    if (!claimPromptDelivery(promptDedupeKey)) {
-      return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+    if (deliveryKeyIdentifiesOneSubmission(key)) {
+      promptDedupeKey = key;
+      if (!claimPromptDelivery(key)) {
+        return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+      }
     }
-    // Stamped HERE, and only here: past the dedupe claim, so a re-sent prompt
-    // cannot double-count, and outside the retry loop below, so a wake retry
-    // cannot either. This is the sidebar's authoritative "last activity" —
-    // unlike the opencode_sessions snapshot scheduled further down, it needs no
-    // sandbox round-trip, so a session stays correctly dated even when the box
-    // is unreachable. See projects/session-activity.ts.
+    // Stamped for EVERY turn-creating POST, claimed or not: a prompt the proxy
+    // cannot dedupe is still the user acting on this session. Past the claim,
+    // so a re-sent prompt cannot double-count, and outside the retry loop
+    // below, so a wake retry cannot either. This is the sidebar's authoritative
+    // "last activity" — unlike the opencode_sessions snapshot scheduled further
+    // down, it needs no sandbox round-trip, so a session stays correctly dated
+    // even when the box is unreachable. See projects/session-activity.ts.
     void recordSessionActivity({
       sessionId: record.sessionId,
       projectId: record.projectId,

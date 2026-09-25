@@ -433,6 +433,53 @@ describe('convergeConfigRelease — failures keep the running config', () => {
     expect((await converge(healthy)).outcome).toBe('applied')
   })
 
+  // ── DEF-FLAGON-2 — a healed session must not keep claiming a failure ──────
+  test('the base branch is fixed: the next convergence clears the fallback, with no new release', async () => {
+    // Measured on a real Platinum box, 2026-09-25 (config-converge e2e, session
+    // `7c18c223`): a broken `opencode.jsonc` was reverted, the release the box
+    // was ALREADY running became the desired one again (a release is
+    // content-addressed, so the fix restored the same ID), the convergence
+    // answered `unchanged` — and `fallback_reason` / `failed_release_id` stayed
+    // set in `/kortix/health`, in `GET /config` and in the CLI until an
+    // unrelated later push produced a brand-new release.
+    const good = baseRelease(GOV_V1)
+    serveRelease(api, good)
+    const oc = fakeOpencode()
+    await converge(oc)
+    const goodDir = (await servingDir())!
+
+    write(origin, `${DIR}/tools/firecrawl.ts`, 'import x from "@mendable/firecrawl-js"\nexport default x\n')
+    commitAll(origin, 'a tool with a missing dependency')
+    served.droppedTools = new Set(['firecrawl'])
+    const bad = baseRelease(GOV_V2)
+    serveRelease(api, bad)
+    const declined = await converge(oc)
+    expect(declined.outcome).toBe('declined')
+    expect(declined.config.fallback_reason).toBe('tools not loaded: firecrawl')
+    expect(declined.config.failed_release_id).toBe(bad.descriptor.release_id)
+
+    // The fix: the base branch is back to the tree the box already runs, so the
+    // API assigns the SAME release ID again.
+    served.droppedTools = new Set()
+    serveRelease(api, good)
+    const healed = await converge(oc)
+
+    expect(healed.outcome).toBe('unchanged')
+    expect(healed.config).toMatchObject({
+      release_id: good.descriptor.release_id,
+      desired_release_id: good.descriptor.release_id,
+      source: 'release',
+      mode: 'follow-base',
+      proven: true,
+      fallback_reason: null,
+      failed_release_id: null,
+    })
+    expect(configReleaseReport().fallback_reason).toBeNull()
+    expect(configReleaseReport().failed_release_id).toBeNull()
+    // Nothing was restarted to say so: the box was already correct.
+    expect(await servingDir()).toBe(goodDir)
+  })
+
   test('a reload that could not start a candidate does not quarantine', async () => {
     serveRelease(api, baseRelease())
     const oc = fakeOpencode({ notStarted: true })
