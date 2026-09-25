@@ -179,7 +179,7 @@ managed fallback with tier gating), real unit tests on the core pipeline.
    the 240s retry deadline), so overshoot scales with concurrency × average
    cost over that window, not a fixed ~1.
    - **Credit/wallet path — real fix**: `checkBillingActive` now takes an
-     ATOMIC admission hold (`deductCredits` → the row-locked
+     ATOMIC admission hold (`wallet.debit` → the row-locked
      `atomic_use_credits` DB function — the same one the real deduction uses)
      instead of a stale read-only balance check. `recordGatewayUsage`
      reconciles the hold to the real cost at settle (top up the remainder or

@@ -21,9 +21,9 @@
 //
 // THROW, NOT COERCE. The alternative was to silently rewrite `type` to
 // metadata.ledger_type. Rejected:
-//   1. No current caller of insertLedgerEntry sets metadata.ledger_type at all
-//      (billing/services/credits.ts x3, billing/services/account-deletion.ts x1),
-//      so a throw cannot break live traffic — it is a pure tripwire today.
+//   1. The one direct ledger insert (the wallet's forfeiture row) sets no
+//      metadata.ledger_type at all, so a throw cannot break live traffic — it
+//      is a pure tripwire today.
 //   2. Coercion silently rewrites the type column of a MONEY row. Quietly
 //      resolving a contradiction in a financial ledger is the same class of
 //      behaviour that let the 2026-07-30 rows look plausible for a week. A
@@ -36,9 +36,8 @@ import { BillingError } from '../errors';
 /**
  * Granular kinds that are legitimately carried on a row typed 'usage'.
  *
- * Kept in sync with `LedgerDebitType` (billing/services/credits.ts) and
- * `RouterLedgerDebitType` (repositories/credits.ts) — the two unions of values
- * that reach atomic_use_credits, which hardcodes `type = 'usage'`.
+ * Kept in sync with `LedgerDebitType` (billing/wallet) — the values that reach
+ * atomic_use_credits and atomic_settle_credits, which hardcode `type = 'usage'`.
  */
 export const USAGE_FAMILY_LEDGER_TYPES = [
   'usage',

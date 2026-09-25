@@ -75,7 +75,7 @@ export async function subscribe(
   // subscription alone leaves the account with a 0 balance and sessions 402. To
   // give the account a real, usable balance we replay a real credit-PURCHASE
   // event (`checkout.session.completed`, mode=payment → handleCreditPurchase →
-  // grantCredits) with a VALID signature (whsec_…) — the exact path a real "buy
+  // wallet.grant) with a VALID signature (whsec_…) — the exact path a real "buy
   // credits" flow takes. Stripe→API webhook delivery isn't wired to dev-api, so we
   // supply the delivery; the handler code runs unchanged.
   if (env.stripeWebhookSecret) {
@@ -103,7 +103,7 @@ export async function subscribe(
   if (!activated) throw new Error(`confirm-inline-checkout never activated: ${lastErr}`);
 
   // Monthly credits are granted
-  // by the Stripe `invoice.paid` webhook (services/webhooks.ts → grantCredits),
+  // by the Stripe `invoice.paid` webhook (services/webhooks.ts → wallet.grant),
   // which lands asynchronously. Poll the real account-state until the balance is
   // usable — that's the true signal that billing-gated flows (sessions) can run.
   await waitForCredits(client, accountId, tierKey);
@@ -114,7 +114,7 @@ const FUNDING_CREDITS_USD = 50;
 /**
  * POST a validly-signed `checkout.session.completed` (mode=payment) credit-purchase
  * event to the platform Stripe webhook so the REAL handler (handleCreditPurchase →
- * grantCredits) gives the account a usable balance. This is the exact path a real
+ * wallet.grant) gives the account a usable balance. This is the exact path a real
  * "buy credits" purchase takes; we only supply the webhook delivery Stripe isn't
  * making to this target. No tier dependency, no recovery guard.
  */

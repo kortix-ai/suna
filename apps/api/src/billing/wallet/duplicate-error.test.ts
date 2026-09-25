@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { errorChainText, isDuplicateCreditGrantError } from './credit-duplicate-error';
+import { errorChainText, isDuplicateCreditGrantError } from './duplicate-error';
 
 /** The exact shape a Drizzle insert failure has: the wrapper carries the
  *  statement and the parameters, and NOTHING else. Everything that identifies

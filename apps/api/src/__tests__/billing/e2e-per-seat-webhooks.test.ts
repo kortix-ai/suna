@@ -17,22 +17,22 @@ import {
   createMockStripeClient,
   mockRegistry,
   registerGlobalMocks,
-  registerCreditsMock,
+  registerWalletMock,
+  fakeWallet,
   resetMockRegistry,
   installWebhookMarkerTable,
 } from './mocks';
 
 registerGlobalMocks();
-registerCreditsMock();
+registerWalletMock();
 
 const PER_SEAT_PRICE_PLACEHOLDER = 'price_PLACEHOLDER_PER_SEAT';
 
-let grantCreditsCalls: any[][] = [];
+const walletGrants = fakeWallet.calls.grant;
 let updateCalls: { accountId: string; data: any }[] = [];
 let upsertCalls: { accountId: string; data: any }[] = [];
 
 beforeEach(() => {
-  grantCreditsCalls = [];
   updateCalls = [];
   upsertCalls = [];
   resetMockRegistry();
@@ -53,10 +53,6 @@ beforeEach(() => {
   mockRegistry.upsertCreditAccount = async (accountId: string, data: any) => {
     upsertCalls.push({ accountId, data });
   };
-  mockRegistry.grantCredits = async (...args: any[]) => {
-    grantCreditsCalls.push(args);
-  };
-  mockRegistry.resetExpiringCredits = async () => {};
 
   // Default: per-seat account with 1 seat already.
   mockRegistry.getCreditAccount = async () =>
@@ -109,7 +105,7 @@ describe('per-seat webhook reconciliation', () => {
 
     // The added seats are funded when their proration invoice is PAID
     // (invoice.paid, billing_reason subscription_update), never here.
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('auto-topup defaults rescale unless user customized', async () => {
@@ -141,7 +137,7 @@ describe('per-seat webhook reconciliation', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'whsec_test');
 
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
     const persistedUpdate = updateCalls.find((c) => c.data.seatCount !== undefined);
     expect(persistedUpdate?.data.seatCount).toBe(1);
   });
@@ -152,7 +148,7 @@ describe('per-seat webhook reconciliation', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'whsec_test');
 
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('redelivered quantity changes never grant allowance', async () => {
@@ -163,7 +159,7 @@ describe('per-seat webhook reconciliation', () => {
     await processStripeWebhook(JSON.stringify(eventA), 'whsec_test');
     await processStripeWebhook(JSON.stringify(eventB), 'whsec_test');
 
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('legacy subscription (no per-seat item) — billing_model unchanged, no seat fields touched', async () => {
@@ -193,7 +189,7 @@ describe('per-seat webhook reconciliation', () => {
     await processStripeWebhook(JSON.stringify(event), 'whsec_test');
 
     // No seat grant for legacy customers.
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
     // No update should set seatCount / billingModel='per_seat'.
     const seatTouchingUpdate = updateCalls.find(
       (c) => c.data.seatCount !== undefined || c.data.billingModel === 'per_seat',
@@ -239,7 +235,7 @@ describe('per-seat webhook reconciliation', () => {
 
     const seatUpdate = updateCalls.find((c) => c.data.seatCount === 4);
     expect(seatUpdate).toBeDefined();
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
 
@@ -374,7 +370,7 @@ describe('legacy → per-seat adoption (regression)', () => {
 
       const seatUpdate = updateCalls.find((c) => c.data.seatCount === 5);
       expect(seatUpdate).toBeDefined();
-      expect(grantCreditsCalls.length).toBe(0);
+      expect(walletGrants.length).toBe(0);
     });
 
     test('tier=enterprise (no flag) + per-seat sub update → tier NOT clobbered', async () => {

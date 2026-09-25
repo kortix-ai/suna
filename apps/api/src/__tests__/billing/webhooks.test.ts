@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import type { GrantInput } from '../../billing/wallet';
 import {
   createMockCreditAccount,
   createMockStripeSubscription,
@@ -9,29 +10,28 @@ import {
   createMockRevenueCatEvent,
   mockRegistry,
   registerGlobalMocks,
-  registerCreditsMock,
+  registerWalletMock,
+  fakeWallet,
   resetMockRegistry,
   installWebhookMarkerTable,
 } from './mocks';
 
-// Register global mocks + credits service mock (stubs grantCredits/resetExpiringCredits)
+// Register global mocks + the fake wallet (records every grant and reset)
 registerGlobalMocks();
-registerCreditsMock();
+registerWalletMock();
 
 // ─── Track calls ──────────────────────────────────────────────────────────────
 
-let grantCreditsCalls: any[] = [];
-let resetExpiringCreditsCalls: any[] = [];
-let insertLedgerCalls: any[] = [];
+const walletGrants = fakeWallet.calls.grant;
+const walletResets = fakeWallet.calls.reset;
 let upsertCreditAccountCalls: any[] = [];
 let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
 let stripeCancelSubCalls: any[] = [];
 
 beforeEach(() => {
-  grantCreditsCalls = [];
-  resetExpiringCreditsCalls = [];
-  insertLedgerCalls = [];
+  walletGrants.length = 0;
+  walletResets.length = 0;
   upsertCreditAccountCalls = [];
   updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
@@ -56,10 +56,6 @@ beforeEach(() => {
   };
 
   // Transaction repo defaults
-  mockRegistry.insertLedgerEntry = async (data: any) => {
-    insertLedgerCalls.push(data);
-    return { id: 'ledger_test', ...data };
-  };
   mockRegistry.getPurchaseByPaymentIntent = async () => null;
   mockRegistry.updatePurchaseStatus = async () => {};
 
@@ -78,12 +74,6 @@ beforeEach(() => {
   mockRegistry.resolveAccountId = async (userId: string) => userId;
 
   // Credit service defaults
-  mockRegistry.grantCredits = async (...args: any[]) => {
-    grantCreditsCalls.push(args);
-  };
-  mockRegistry.resetExpiringCredits = async (...args: any[]) => {
-    resetExpiringCreditsCalls.push(args);
-  };
 
   // Track stripe.subscriptions.cancel calls (used by cancelFreeSubscriptionForUpgrade)
   mockRegistry.stripeClient.subscriptions.cancel = async (id: string) => {
@@ -158,9 +148,9 @@ describe('checkout.session.completed', () => {
     expect(upsertCreditAccountCalls[0].data.tier).toBe('tier_6_50');
 
     // Only tier_grant ($50) — no machine bonus since no server_type in metadata
-    expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][0]).toBe('acc_test_123');
-    expect(grantCreditsCalls[0][1]).toBe(50); // tier_6_50 = $50 monthly credits
+    expect(walletGrants.length).toBe(1);
+    expect(walletGrants[0].accountId).toBe('acc_test_123');
+    expect(walletGrants[0].amount).toBe(50); // tier_6_50 = $50 monthly credits
 
     expect(upsertCustomerCalls.length).toBe(1);
   });
@@ -182,9 +172,9 @@ describe('checkout.session.completed', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
-    expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][1]).toBe(50);
-    expect(grantCreditsCalls[0][4]).toBe(false);
+    expect(walletGrants.length).toBe(1);
+    expect(walletGrants[0].amount).toBe(50);
+    expect(walletGrants[0].expiring).toBe(false);
   });
 
   test('skips if missing account_id', async () => {
@@ -196,7 +186,7 @@ describe('checkout.session.completed', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
     expect(upsertCreditAccountCalls.length).toBe(0);
   });
 
@@ -210,7 +200,7 @@ describe('checkout.session.completed', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('yearly subscription sets nextCreditGrant to 1 month ahead', async () => {
@@ -255,10 +245,10 @@ describe('checkout.session.completed', () => {
     mockRegistry.stripeClient.webhooks.constructEvent = () => checkoutEvent;
     await processStripeWebhook(JSON.stringify(checkoutEvent), 'sig');
 
-    expect(resetExpiringCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls.length).toBe(1);
-    expect(resetExpiringCreditsCalls[0][3]).toBe('subscription_activation:sub_race_123');
-    expect(grantCreditsCalls[0][5]).toBe('subscription_activation:sub_race_123');
+    expect(walletResets.length).toBe(1);
+    expect(walletGrants.length).toBe(1);
+    expect(walletResets[0].key).toEqual({ event: 'subscription_activation:sub_race_123' });
+    expect(walletGrants[0].key).toEqual({ event: 'subscription_activation:sub_race_123' });
   });
 });
 
@@ -288,7 +278,7 @@ describe('activation is gated on payment', () => {
 
     // Entitlements and money are NOT.
     expect(upsertCreditAccountCalls[0].data.tier).toBeUndefined();
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
     expect(upsertCustomerCalls.length).toBe(0);
   });
 
@@ -304,10 +294,10 @@ describe('activation is gated on payment', () => {
     expect(upsertCreditAccountCalls[0].data.tier).toBe('tier_6_50');
     expect(upsertCreditAccountCalls[0].data.stripeSubscriptionId).toBe('sub_test_123');
 
-    const tierGrant = grantCreditsCalls.find((c: any) => c[2] === 'tier_grant');
+    const tierGrant = walletGrants.find((grant) => grant.kind === 'tier_grant');
     expect(tierGrant).toBeDefined();
-    expect(tierGrant[1]).toBe(50);
-    expect(tierGrant[5]).toBe('subscription_activation:sub_test_123');
+    expect(tierGrant!.amount).toBe(50);
+    expect(tierGrant!.key).toEqual({ event: 'subscription_activation:sub_test_123' });
 
     // Customer is stitched from the subscription's customer, with no email.
     expect(upsertCustomerCalls.length).toBe(1);
@@ -325,21 +315,22 @@ describe('activation is gated on payment', () => {
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
     expect(upsertCreditAccountCalls.length).toBe(0);
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('invoice.paid(subscription_create) after a paid checkout does NOT grant twice', async () => {
-    // Both paths call grantCredits with the SAME idempotency key, so the credits
-    // ledger collapses them. Model that here: the stub grants once per key and
-    // records the effective grants.
+    // Both paths grant with the SAME wallet key, so the ledger collapses them.
+    // Model that here: the stub grants once per key and records the effective
+    // grants.
     const grantedKeys = new Set<string>();
-    const effectiveGrants: any[] = [];
-    mockRegistry.grantCredits = async (...args: any[]) => {
-      grantCreditsCalls.push(args);
-      const key = args[5];
-      if (key && grantedKeys.has(key)) return;
+    const effectiveGrants: GrantInput[] = [];
+    fakeWallet.wallet.grant = async (input) => {
+      walletGrants.push(input);
+      const key = input.key && 'event' in input.key ? input.key.event : null;
+      if (key && grantedKeys.has(key)) return { replayed: true, ledgerId: null };
       if (key) grantedKeys.add(key);
-      effectiveGrants.push(args);
+      effectiveGrants.push(input);
+      return { replayed: false, ledgerId: 'ledger_test' };
     };
 
     const checkout = createMockStripeCheckoutSession();
@@ -352,11 +343,11 @@ describe('activation is gated on payment', () => {
     mockRegistry.stripeClient.webhooks.constructEvent = () => invoiceEvent;
     await processStripeWebhook(JSON.stringify(invoiceEvent), 'sig');
 
-    expect(grantCreditsCalls.length).toBe(2);
-    expect(grantCreditsCalls[0][5]).toBe('subscription_activation:sub_test_123');
-    expect(grantCreditsCalls[1][5]).toBe(grantCreditsCalls[0][5]);
+    expect(walletGrants.length).toBe(2);
+    expect(walletGrants[0].key).toEqual({ event: 'subscription_activation:sub_test_123' });
+    expect(walletGrants[1].key).toEqual(walletGrants[0].key);
     expect(effectiveGrants.length).toBe(1);
-    expect(effectiveGrants[0][1]).toBe(50);
+    expect(effectiveGrants[0].amount).toBe(50);
   });
 
   test('customer.subscription.created with status=incomplete writes no tier and no recovery credits', async () => {
@@ -374,8 +365,8 @@ describe('activation is gated on payment', () => {
     expect(updateCreditAccountCalls.length).toBe(1);
     expect(updateCreditAccountCalls[0].data.stripeSubscriptionStatus).toBe('incomplete');
     expect(updateCreditAccountCalls[0].data.tier).toBeUndefined();
-    expect(resetExpiringCreditsCalls.length).toBe(0);
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletResets.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('a per-seat sub with status=incomplete writes no seat entitlements', async () => {
@@ -397,8 +388,8 @@ describe('activation is gated on payment', () => {
     expect(updateCreditAccountCalls[0].data.tier).toBeUndefined();
     expect(updateCreditAccountCalls[0].data.billingModel).toBeUndefined();
     expect(updateCreditAccountCalls[0].data.seatCount).toBeUndefined();
-    expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
-    expect(resetExpiringCreditsCalls.length).toBe(0);
+    expect(walletGrants.filter((grant) => grant.kind === 'seat_grant').length).toBe(0);
+    expect(walletResets.length).toBe(0);
   });
 });
 
@@ -588,7 +579,7 @@ describe('invoice.paid (renewal)', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
-    expect(resetExpiringCreditsCalls.length).toBe(0);
+    expect(walletResets.length).toBe(0);
   });
 
   test('skips already-processed renewals (idempotency)', async () => {
@@ -604,7 +595,7 @@ describe('invoice.paid (renewal)', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
-    expect(resetExpiringCreditsCalls.length).toBe(0);
+    expect(walletResets.length).toBe(0);
   });
 
   test('resets expiring credits', async () => {
@@ -617,9 +608,9 @@ describe('invoice.paid (renewal)', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
-    expect(resetExpiringCreditsCalls.length).toBe(1);
-    expect(resetExpiringCreditsCalls[0][0]).toBe('acc_test_123');
-    expect(resetExpiringCreditsCalls[0][1]).toBe(50); // tier_6_50 = $50 monthly credits
+    expect(walletResets.length).toBe(1);
+    expect(walletResets[0].accountId).toBe('acc_test_123');
+    expect(walletResets[0].amount).toBe(50); // tier_6_50 = $50 monthly credits
   });
 
   test('applies scheduled downgrade before granting', async () => {
@@ -641,11 +632,11 @@ describe('invoice.paid (renewal)', () => {
     expect(downgradeCall).toBeDefined();
     expect(downgradeCall.data.scheduledTierChange).toBeNull();
 
-    expect(resetExpiringCreditsCalls.length).toBe(1);
-    expect(resetExpiringCreditsCalls[0][1]).toBe(20); // tier_2_20 = $20 monthly credits
+    expect(walletResets.length).toBe(1);
+    expect(walletResets[0].amount).toBe(20); // tier_2_20 = $20 monthly credits
   });
 
-  test('does NOT create duplicate ledger entry (only RPC creates it)', async () => {
+  test('a renewal writes exactly one ledger entry: the reset', async () => {
     const invoice = createMockStripeInvoice();
     const event = createMockStripeEvent('invoice.paid', invoice);
     mockRegistry.stripeClient.webhooks.constructEvent = () => event;
@@ -654,7 +645,8 @@ describe('invoice.paid (renewal)', () => {
       createMockCreditAccount({ lastRenewalPeriodStart: null });
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
-    expect(insertLedgerCalls.length).toBe(0);
+    expect(walletResets.length).toBe(1);
+    expect(walletGrants.length).toBe(0);
   });
 });
 
@@ -692,9 +684,9 @@ describe('RevenueCat', () => {
     expect(upsertCreditAccountCalls.length).toBe(1);
     expect(upsertCreditAccountCalls[0].data.tier).toBe('pro');
     // Pro tier has 0 monthly credits, but gets $5 machine bonus
-    expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][1]).toBe(5); // $5 machine bonus
-    expect(grantCreditsCalls[0][2]).toBe('machine_bonus');
+    expect(walletGrants.length).toBe(1);
+    expect(walletGrants[0].amount).toBe(5); // $5 machine bonus
+    expect(walletGrants[0].kind).toBe('machine_bonus');
     expect(result.event_type).toBe('INITIAL_PURCHASE');
   });
 
@@ -710,7 +702,7 @@ describe('RevenueCat', () => {
 
     expect(upsertCreditAccountCalls.length).toBe(1);
     expect(upsertCreditAccountCalls[0].accountId).toBe('acc_canonical_123');
-    expect(grantCreditsCalls[0][0]).toBe('acc_canonical_123');
+    expect(walletGrants[0].accountId).toBe('acc_canonical_123');
     expect((result as any).account_id).toBe('acc_canonical_123');
   });
 
@@ -724,9 +716,9 @@ describe('RevenueCat', () => {
     expect(upsertCreditAccountCalls.length).toBe(1);
     expect(upsertCreditAccountCalls[0].data.tier).toBe('tier_2_20');
     // tier_grant ($20) + machine_bonus ($5)
-    expect(grantCreditsCalls.length).toBe(2);
-    expect(grantCreditsCalls[0][1]).toBe(20); // tier_2_20 = $20 monthly credits
-    expect(grantCreditsCalls[1][1]).toBe(5);  // $5 machine bonus
+    expect(walletGrants.length).toBe(2);
+    expect(walletGrants[0].amount).toBe(20); // tier_2_20 = $20 monthly credits
+    expect(walletGrants[1].amount).toBe(5);  // $5 machine bonus
     expect(result.event_type).toBe('INITIAL_PURCHASE');
   });
 
@@ -745,7 +737,7 @@ describe('RevenueCat', () => {
     expect((first as any).skipped).toBeUndefined();
     expect((second as any).deduped).toBe(true);
     expect(upsertCreditAccountCalls.length).toBe(1);
-    expect(grantCreditsCalls.length).toBe(2);
+    expect(walletGrants.length).toBe(2);
   });
 
   test('RENEWAL: resets expiring credits', async () => {
@@ -754,8 +746,8 @@ describe('RevenueCat', () => {
 
     await processRevenueCatWebhook(body);
 
-    expect(resetExpiringCreditsCalls.length).toBe(1);
-    expect(resetExpiringCreditsCalls[0][1]).toBe(50); // tier_6_50 = $50 monthly credits
+    expect(walletResets.length).toBe(1);
+    expect(walletResets[0].amount).toBe(50); // tier_6_50 = $50 monthly credits
   });
 
   test('CANCELLATION: sets cancelled timestamp', async () => {
@@ -825,9 +817,9 @@ describe('RevenueCat', () => {
 
     await processRevenueCatWebhook(body);
 
-    expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][1]).toBe(25);
-    expect(grantCreditsCalls[0][4]).toBe(false);
+    expect(walletGrants.length).toBe(1);
+    expect(walletGrants[0].amount).toBe(25);
+    expect(walletGrants[0].expiring).toBe(false);
   });
 
   test('BILLING_ISSUE: sets past_due', async () => {
@@ -847,7 +839,7 @@ describe('RevenueCat', () => {
     const result = await processRevenueCatWebhook(body);
 
     expect(result.skipped).toBe(true);
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('throws on missing event', async () => {
@@ -906,7 +898,7 @@ describe('RevenueCat', () => {
     await processRevenueCatWebhook(body);
 
     expect(upsertCreditAccountCalls.length).toBe(0);
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('RENEWAL: skips a deleted account', async () => {
@@ -916,7 +908,7 @@ describe('RevenueCat', () => {
 
     await processRevenueCatWebhook(body);
 
-    expect(resetExpiringCreditsCalls.length).toBe(0);
+    expect(walletResets.length).toBe(0);
     expect(updateCreditAccountCalls.length).toBe(0);
   });
 
@@ -927,7 +919,7 @@ describe('RevenueCat', () => {
 
     await processRevenueCatWebhook(body);
 
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   // The dedupe marker is written only AFTER the handler succeeds. A handler
@@ -974,19 +966,19 @@ describe('RevenueCat', () => {
       product_id: 'kortix_plus_monthly',
     });
     await processRevenueCatWebhook(purchase);
-    const tierGrant = grantCreditsCalls.find((args: any[]) => args[2] === 'tier_grant');
+    const tierGrant = walletGrants.find((grant) => grant.kind === 'tier_grant');
     expect(tierGrant).toBeDefined();
-    expect(tierGrant![5]).toBe('revenuecat:evt_rc_initial_purchase');
+    expect(tierGrant!.key).toEqual({ event: 'revenuecat:evt_rc_initial_purchase' });
 
-    grantCreditsCalls = [];
+    walletGrants.length = 0;
     const renewal = createMockRevenueCatEvent('RENEWAL');
     await processRevenueCatWebhook(renewal);
-    expect(resetExpiringCreditsCalls[0][3]).toBe('revenuecat:evt_rc_renewal');
+    expect(walletResets[0].key).toEqual({ event: 'revenuecat:evt_rc_renewal' });
 
-    grantCreditsCalls = [];
+    walletGrants.length = 0;
     const topup = createMockRevenueCatEvent('NON_RENEWING_PURCHASE', { price: 25 });
     await processRevenueCatWebhook(topup);
-    expect(grantCreditsCalls[0][5]).toBe('revenuecat:evt_rc_non_renewing_purchase');
+    expect(walletGrants[0].key).toEqual({ event: 'revenuecat:evt_rc_non_renewing_purchase' });
   });
 
   test('INITIAL_PURCHASE: skips cancel when no old Stripe subscription', async () => {
@@ -1466,8 +1458,8 @@ describe('per-seat entitlement is the allowance, never the price', () => {
 
     await syncSeats(perSeatSub(5));
 
-    expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
-    expect(resetExpiringCreditsCalls.length).toBe(0);
+    expect(walletGrants.filter((grant) => grant.kind === 'seat_grant').length).toBe(0);
+    expect(walletResets.length).toBe(0);
     const write = updateCreditAccountCalls.find((c: any) => c.data.seatCount !== undefined);
     expect(write?.data.seatCount).toBe(5);
   });
@@ -1478,7 +1470,7 @@ describe('per-seat entitlement is the allowance, never the price', () => {
 
     await syncSeats(perSeatSub(2));
 
-    expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
+    expect(walletGrants.filter((grant) => grant.kind === 'seat_grant').length).toBe(0);
   });
 
   test('a recovering per-seat team is reset to its FULL seat allowance, not a flat $25', async () => {
@@ -1492,9 +1484,9 @@ describe('per-seat entitlement is the allowance, never the price', () => {
 
     await syncSeats(perSeatSub(6));
 
-    expect(resetExpiringCreditsCalls.length).toBe(1);
-    expect(resetExpiringCreditsCalls[0][1]).toBe(150);
-    expect(resetExpiringCreditsCalls[0][1]).not.toBe(25);
+    expect(walletResets.length).toBe(1);
+    expect(walletResets[0].amount).toBe(150);
+    expect(walletResets[0].amount).not.toBe(25);
   });
 
   test('a recovery reset funds every seat and writes no separate seat_grant', async () => {
@@ -1508,8 +1500,8 @@ describe('per-seat entitlement is the allowance, never the price', () => {
 
     await syncSeats(perSeatSub(6));
 
-    expect(resetExpiringCreditsCalls[0][1]).toBe(150);
-    expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
+    expect(walletResets[0].amount).toBe(150);
+    expect(walletGrants.filter((grant) => grant.kind === 'seat_grant').length).toBe(0);
   });
 
   test('a brand-new per-seat team gets seat tokens minted even though no seat_grant is written', async () => {
@@ -1526,7 +1518,7 @@ describe('per-seat entitlement is the allowance, never the price', () => {
 
     await syncSeats(perSeatSub(6));
 
-    expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
+    expect(walletGrants.filter((grant) => grant.kind === 'seat_grant').length).toBe(0);
     expect(mintYoloTokensCalls).toEqual(['acc_test_123']);
   });
 
@@ -1537,8 +1529,8 @@ describe('per-seat entitlement is the allowance, never the price', () => {
     const sub = createMockStripeSubscription({ id: 'sub_legacy_recover' });
     await syncSeats(sub);
 
-    expect(resetExpiringCreditsCalls.length).toBe(1);
-    expect(resetExpiringCreditsCalls[0][1]).toBe(50);
+    expect(walletResets.length).toBe(1);
+    expect(walletResets[0].amount).toBe(50);
   });
 });
 
@@ -1565,7 +1557,7 @@ describe('credit purchases grant only settled money', () => {
 
   test('checkout.session.completed with payment_status=unpaid grants nothing', async () => {
     await deliverStripe('checkout.session.completed', purchaseSession({ payment_status: 'unpaid' }));
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('async_payment_succeeded grants the purchase once, keyed on the session id', async () => {
@@ -1577,11 +1569,11 @@ describe('credit purchases grant only settled money', () => {
     await deliverStripe('checkout.session.completed', purchaseSession({ payment_status: 'unpaid' }));
     await deliverStripe('checkout.session.async_payment_succeeded', purchaseSession({ payment_status: 'paid' }));
 
-    expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][1]).toBe(25);
-    expect(grantCreditsCalls[0][2]).toBe('purchase');
-    expect(grantCreditsCalls[0][4]).toBe(false);
-    expect(grantCreditsCalls[0][5]).toBe('cs_purchase_1');
+    expect(walletGrants.length).toBe(1);
+    expect(walletGrants[0].amount).toBe(25);
+    expect(walletGrants[0].kind).toBe('purchase');
+    expect(walletGrants[0].expiring).toBe(false);
+    expect(walletGrants[0].key).toEqual({ event: 'cs_purchase_1' });
     expect(statusCalls[0][0]).toBe('11111111-2222-4333-8444-555555555555');
     expect(statusCalls[0][1]).toBe('completed');
   });
@@ -1594,7 +1586,7 @@ describe('credit purchases grant only settled money', () => {
 
     await deliverStripe('checkout.session.async_payment_failed', purchaseSession({ payment_status: 'unpaid' }));
 
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
     expect(statusCalls).toEqual([['11111111-2222-4333-8444-555555555555', 'failed', undefined]]);
   });
 });
@@ -1603,9 +1595,10 @@ describe('the Stripe dedupe marker is written only after the handler succeeds', 
   test('a successful event is checked first and recorded last', async () => {
     const markers = installWebhookMarkerTable();
     let grantedBeforeRecord = false;
-    mockRegistry.grantCredits = async (...args: any[]) => {
-      grantCreditsCalls.push(args);
+    fakeWallet.wallet.grant = async (input) => {
+      walletGrants.push(input);
       grantedBeforeRecord = !markers.order.some((entry) => entry.startsWith('record:'));
+      return { replayed: false, ledgerId: 'ledger_test' };
     };
 
     const session = createMockStripeCheckoutSession({ mode: 'payment', subscription: null, amount_total: 1000 });
@@ -1618,12 +1611,13 @@ describe('the Stripe dedupe marker is written only after the handler succeeds', 
   test('a handler that throws leaves no marker, and the redelivery runs the handler', async () => {
     const markers = installWebhookMarkerTable();
     let failNext = true;
-    mockRegistry.grantCredits = async (...args: any[]) => {
+    fakeWallet.wallet.grant = async (input) => {
       if (failNext) {
         failNext = false;
         throw new Error('grant transport failure');
       }
-      grantCreditsCalls.push(args);
+      walletGrants.push(input);
+      return { replayed: false, ledgerId: 'ledger_test' };
     };
 
     const session = createMockStripeCheckoutSession({ mode: 'payment', subscription: null, amount_total: 1000 });
@@ -1635,11 +1629,11 @@ describe('the Stripe dedupe marker is written only after the handler succeeds', 
 
     const retry = await processStripeWebhook(JSON.stringify(event), 'sig');
     expect((retry as any).deduped).toBeUndefined();
-    expect(grantCreditsCalls.length).toBe(1);
+    expect(walletGrants.length).toBe(1);
 
     const replay = await processStripeWebhook(JSON.stringify(event), 'sig');
     expect((replay as any).deduped).toBe(true);
-    expect(grantCreditsCalls.length).toBe(1);
+    expect(walletGrants.length).toBe(1);
   });
 });
 
@@ -1660,18 +1654,18 @@ describe('auto-topup settles on payment_intent webhooks', () => {
   test('payment_intent.succeeded grants the auto-topup keyed on the PaymentIntent id', async () => {
     await deliverStripe('payment_intent.succeeded', autoTopupIntent());
 
-    expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][0]).toBe('acc_test_123');
-    expect(grantCreditsCalls[0][1]).toBe(20);
-    expect(grantCreditsCalls[0][4]).toBe(false);
-    expect(grantCreditsCalls[0][5]).toBe('pi_topup_1');
+    expect(walletGrants.length).toBe(1);
+    expect(walletGrants[0].accountId).toBe('acc_test_123');
+    expect(walletGrants[0].amount).toBe(20);
+    expect(walletGrants[0].expiring).toBe(false);
+    expect(walletGrants[0].key).toEqual({ event: 'pi_topup_1' });
     const reset = updateCreditAccountCalls.find((c: any) => c.data.autoTopupConsecutiveFailures === 0);
     expect(reset).toBeDefined();
   });
 
   test('a PaymentIntent that is not an auto-topup is ignored', async () => {
     await deliverStripe('payment_intent.succeeded', autoTopupIntent({ metadata: { account_id: 'acc_test_123' } }));
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('payment_intent.payment_failed after processing counts a failure and grants nothing', async () => {
@@ -1683,7 +1677,7 @@ describe('auto-topup settles on payment_intent webhooks', () => {
         last_payment_error: { code: 'payment_intent_payment_attempt_failed' },
       }),
     );
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
     const failure = updateCreditAccountCalls.find((c: any) => c.data.autoTopupConsecutiveFailures === 1);
     expect(failure).toBeDefined();
   });
@@ -1693,7 +1687,7 @@ describe('auto-topup settles on payment_intent webhooks', () => {
       'payment_intent.payment_failed',
       autoTopupIntent({ status: 'requires_payment_method', last_payment_error: { code: 'processing_error' } }),
     );
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
     expect(updateCreditAccountCalls.length).toBe(0);
   });
 });
@@ -1723,16 +1717,16 @@ describe('invoice.paid (subscription_update): mid-period changes are funded by t
       { amount: 15000, price: SEAT_PRICE },
     ]));
 
-    expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][1]).toBe(56.25);
-    expect(grantCreditsCalls[0][2]).toBe('seat_grant');
-    expect(grantCreditsCalls[0][4]).toBe(true);
-    expect(grantCreditsCalls[0][5]).toBe('proration_grant:in_proration_1');
+    expect(walletGrants.length).toBe(1);
+    expect(walletGrants[0].amount).toBe(56.25);
+    expect(walletGrants[0].kind).toBe('seat_grant');
+    expect(walletGrants[0].expiring).toBe(true);
+    expect(walletGrants[0].key).toEqual({ event: 'proration_grant:in_proration_1' });
   });
 
   test('a seat change that collected no money grants nothing', async () => {
     await deliverStripe('invoice.paid', prorationInvoice([{ amount: -4000, price: SEAT_PRICE }]));
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('an invoice that is not paid grants nothing', async () => {
@@ -1740,7 +1734,7 @@ describe('invoice.paid (subscription_update): mid-period changes are funded by t
       { amount: -6000, price: SEAT_PRICE },
       { amount: 15000, price: SEAT_PRICE },
     ], { status: 'open' }));
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 
   test('plan upgrade: the paid difference converts at the target plan rate', async () => {
@@ -1749,12 +1743,12 @@ describe('invoice.paid (subscription_update): mid-period changes are funded by t
       { amount: 5000, price: TIER_12_100_MONTHLY },
     ]));
 
-    expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][1]).toBe(25);
-    expect(grantCreditsCalls[0][2]).toBe('tier_grant');
-    expect(grantCreditsCalls[0][5]).toBe('proration_grant:in_proration_1');
+    expect(walletGrants.length).toBe(1);
+    expect(walletGrants[0].amount).toBe(25);
+    expect(walletGrants[0].kind).toBe('tier_grant');
+    expect(walletGrants[0].key).toEqual({ event: 'proration_grant:in_proration_1' });
     // The webhook never RESETS the wallet for an upgrade.
-    expect(resetExpiringCreditsCalls.length).toBe(0);
+    expect(walletResets.length).toBe(0);
   });
 
   test('a plan downgrade grants nothing', async () => {
@@ -1762,6 +1756,6 @@ describe('invoice.paid (subscription_update): mid-period changes are funded by t
       { amount: -5000, price: TIER_12_100_MONTHLY },
       { amount: 2500, price: TIER_6_50_MONTHLY },
     ]));
-    expect(grantCreditsCalls.length).toBe(0);
+    expect(walletGrants.length).toBe(0);
   });
 });

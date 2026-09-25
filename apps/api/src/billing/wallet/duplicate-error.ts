@@ -3,8 +3,8 @@
  *
  * A duplicate `stripe_event_id` (`kortix_unique_stripe_event`) or idempotency
  * key means the grant already landed and the database refused the second copy.
- * That is a NO-OP, not a fault, and it must never be logged as an error or
- * trigger a fallback that re-applies the grant.
+ * That is a NO-OP, not a fault: the wallet reports it as a replay and never
+ * logs it as an error.
  *
  * It has to read the whole error chain. A Drizzle failure's own `message` is
  * only `Failed query: insert into "kortix"."credit_ledger" … params: …`; the pg

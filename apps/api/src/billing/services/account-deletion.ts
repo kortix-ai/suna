@@ -10,7 +10,7 @@ import {
   reconcileSandboxStoppedByExternalId,
 } from '../../projects/sandbox-reaper';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
-import { insertLedgerEntry } from '../repositories/transactions';
+import { wallet } from '../wallet';
 import {
   getActiveDeletionRequest,
   createDeletionRequest,
@@ -360,25 +360,10 @@ async function performDeletion(accountId: string, userId?: string) {
     }
   }
 
-  // Record forfeiture ledger entry for any remaining balance
-  const currentBalance = account ? Number(account.balance) : 0;
-  if (currentBalance > 0) {
-    await insertLedgerEntry({
-      accountId,
-      amount: String(-currentBalance),
-      balanceAfter: '0',
-      type: 'forfeiture',
-      description: 'Account deletion: credit balance forfeited',
-      isExpiring: false,
-    });
-  }
+  // Record any remaining balance as forfeited and empty every bucket.
+  await wallet.forfeit(accountId);
 
-  // Zero out all credit balances
   await updateCreditAccount(accountId, {
-    balance: '0',
-    expiringCredits: '0',
-    nonExpiringCredits: '0',
-    dailyCreditsBalance: '0',
     tier: 'free',
     stripeSubscriptionStatus: 'canceled',
     paymentStatus: 'deleted',

@@ -5,6 +5,7 @@
 //
 // `mock.module` is process-global in bun, so this lives in its own file.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { createFakeWallet } from '../billing/wallet/fake';
 
 mock.module('../config', () => ({
   config: new Proxy(
@@ -33,28 +34,8 @@ mock.module('../shared/usage-events', () => ({
   resolveSessionOriginRef: async () => null,
 }));
 
-const deducts: Array<{ usageEventId?: string | null; costUsd: number }> = [];
-const grants: Array<{ amount: number; key: string | null | undefined }> = [];
-const realCredits = await import('../billing/services/credits');
-mock.module('../billing/services/credits', () => ({
-  ...realCredits,
-  deductForLlmUsage: async (opts: { usageEventId?: string | null; costUsd: number }) => {
-    deducts.push({ usageEventId: opts.usageEventId, costUsd: opts.costUsd });
-    return { success: true, cost: opts.costUsd, newBalance: 0, transactionId: null };
-  },
-  grantCredits: async (
-    _accountId: string,
-    amount: number,
-    _type: string,
-    _description: string,
-    _isExpiring?: boolean,
-    _stripeEventId?: string,
-    opts?: { idempotencyKey?: string | null },
-  ) => {
-    grants.push({ amount, key: opts?.idempotencyKey });
-    return { success: true };
-  },
-}));
+const fake = createFakeWallet();
+mock.module('../billing/wallet', () => ({ wallet: fake.wallet }));
 
 const realDeadline = await import('../projects/sandbox-deadline');
 mock.module('../projects/sandbox-deadline', () => ({
@@ -85,23 +66,41 @@ function event(requestId: string, finalCost: number) {
 
 describe('gateway settlement idempotency keys', () => {
   beforeEach(() => {
-    deducts.length = 0;
-    grants.length = 0;
+    fake.restore();
   });
 
-  test('a replayed settlement above the hold debits under the same usage row', async () => {
+  test('a replayed settlement above the hold settles under the same usage row', async () => {
     await recordGatewayUsage(event('req_debit', 0.05));
     await recordGatewayUsage(event('req_debit', 0.05));
-    expect(deducts).toHaveLength(2);
-    expect(deducts[0]!.usageEventId).toBeTruthy();
-    expect(deducts[1]!.usageEventId).toBe(deducts[0]!.usageEventId);
+    const [first, second] = fake.calls.settle;
+    const usageEventId = first!.audit!.usageEventId as string;
+    expect(fake.calls.settle).toHaveLength(2);
+    expect(first).toEqual({
+      accountId: 'acct-1',
+      amount: 0.04,
+      description: 'LLM · kortix/kortix/test',
+      kind: 'llm_debit',
+      key: { request: `llm:${usageEventId}` },
+      audit: {
+        usageEventId,
+        upstreamCostUsd: 0.05,
+        markup: expect.any(Number),
+        actorUserId: 'user-1',
+        route: '/v1/llm/chat/completions',
+      },
+    });
+    expect(second!.key).toEqual(first!.key);
   });
 
-  test('a replayed hold refund carries one idempotency key per request', async () => {
+  test('a replayed hold refund carries one wallet key per request', async () => {
     await recordGatewayUsage(event('req_refund', 0.001));
     await recordGatewayUsage(event('req_refund', 0.001));
-    expect(grants).toHaveLength(2);
-    expect(grants[0]!.key).toBe('llm-hold-refund:req_refund');
-    expect(grants[1]!.key).toBe(grants[0]!.key);
+    expect(fake.calls.grant).toHaveLength(2);
+    expect(fake.calls.grant[0]).toMatchObject({
+      kind: 'llm_reservation_refund',
+      expiring: false,
+      key: { request: 'llm-hold-refund:req_refund' },
+    });
+    expect(fake.calls.grant[1]!.key).toEqual(fake.calls.grant[0]!.key);
   });
 });

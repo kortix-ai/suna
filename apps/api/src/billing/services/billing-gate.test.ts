@@ -24,10 +24,8 @@ mock.module('./free-tier', () => ({
   ensureFreeTierAccountReady: async () => undefined,
 }));
 
-// The whole module is replaced, so every symbol `./credits` imports from it has
-// to exist here — without `updateCreditAccount` the import of `./credits`
-// (deductCredits, on the pure-wallet admission-hold path) fails to link and the
-// entire file errors out before a single test runs.
+// The whole module is replaced, so every symbol the gate's import graph reads
+// from it has to exist here, or the file fails to link before a test runs.
 mock.module('../repositories/credit-accounts', () => ({
   getCreditAccount: async () => account,
   getCreditBalance: async () => null,
@@ -40,10 +38,13 @@ mock.module('../repositories/credit-accounts', () => ({
 // the floor and throws when it cannot, exactly like `atomic_use_credits`.
 const holdCalls: number[] = [];
 
-mock.module('./credits', () => ({
-  deductCredits: async (_accountId: string, amount: number) => {
-    holdCalls.push(amount);
-    if (Number(account?.balance ?? 0) < amount) throw new Error('insufficient credits');
+mock.module('../wallet', () => ({
+  wallet: {
+    debit: async (input: { amount: number }) => {
+      holdCalls.push(input.amount);
+      if (Number(account?.balance ?? 0) < input.amount) throw new Error('insufficient credits');
+      return { amount: input.amount, balance: 0, transactionId: 'tx', replayed: false };
+    },
   },
 }));
 

@@ -17,7 +17,7 @@ import {
 } from './auto-topup-payment-method';
 import { resolveAccountBilling } from './billing-cache';
 import { isDeadSubscriptionStatus } from './billing-state';
-import { grantCredits } from './credits';
+import { wallet } from '../wallet';
 import { isPaidTier } from './tiers';
 import { BillingError } from '../../errors';
 import {
@@ -342,14 +342,14 @@ async function tryAutoTopup(accountId: string): Promise<void> {
  * them.
  */
 async function grantAutoTopup(accountId: string, paymentIntentId: string, amount: number, context: string) {
-  await grantCredits(
+  await wallet.grant({
     accountId,
     amount,
-    'purchase',
-    `Auto-topup: $${amount.toFixed(2)} (${context})`,
-    false,
-    paymentIntentId,
-  );
+    kind: 'purchase',
+    description: `Auto-topup: $${amount.toFixed(2)} (${context})`,
+    expiring: false,
+    key: { event: paymentIntentId },
+  });
   await updateCreditAccount(accountId, {
     autoTopupLastCharged: new Date().toISOString(),
     autoTopupConsecutiveFailures: 0,
