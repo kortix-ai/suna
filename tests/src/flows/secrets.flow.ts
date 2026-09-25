@@ -158,6 +158,26 @@ flow(
       }, { params: { projectId: project.id } });
       refused.status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
     });
+    await ctx.step('a model on pooled keys needs no key list: create and model change select every usable key', async () => {
+      // The CLI, the SDK and chat channels name only a model. This used to
+      // answer 400 INVALID_SESSION_MODEL; an explicit empty list above still does.
+      const created = await owner.post('/v1/projects/:projectId/sessions', {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params: { projectId: project.id } });
+      if (ctx.env.target === 'local') {
+        created.status(503).body().has('$.code', 'KORTIX_URL_UNREACHABLE');
+      } else {
+        created.status(201);
+        const createdId = created.json<any>().session_id;
+        ctx.track('session', createdId, { projectId: project.id });
+        (await owner.get(poolPath, { params: { ...poolParams, sessionId: createdId } })).status(200).body().has('$.secret_ids', ids);
+      }
+      (await owner.put(poolPath, { secret_ids: null }, { params: poolParams })).status(200).body().has('$.configured', false);
+      (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params: poolParams })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
+      (await owner.get(poolPath, { params: poolParams })).status(200).body().has('$.configured', true).has('$.secret_ids', ids);
+    });
     await ctx.step('manager selection requires grants for the session owner', async () => {
       await team.grantProjectRole(project.id, member.userId!, 'member');
       const memberSession = await createDatabaseSession(ctx.env, {

@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { accountMembers, accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -57,18 +57,74 @@ export async function memberMayReadProject(accountId: string, projectId: string,
   return (await authorize(actorForUser(userId, accountId), PROJECT_ACTIONS.PROJECT_READ, { type: 'project', id: projectId })).allowed;
 }
 
-export async function listGrantedGatewaySecretNames(accountId: string, projectId: string, userId: string): Promise<string[]> {
-  if (!(await memberMayReadProject(accountId, projectId, userId))) return [];
-  const rows = await db.select({ name: accountSecretResources.name, projectId: accountSecretResources.projectId,
-    accessMode: accountSecretResources.accessMode, grantUserId: accountSecretGrants.userId }).from(accountSecretResources)
-    .leftJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.userId, userId)))
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+export async function listGrantedGatewaySecretNames(
+  accountId: string,
+  projectId: string,
+  userId: string,
+  /**
+   * Whose personal grants count. Absent = `userId`. `null` = none: only keys
+   * shared with the whole project, which is all a shared session reaches
+   * (spec 2026-09-22 §2.3).
+   */
+  grantUserId: string | null = userId,
+): Promise<string[]> {
+  return [...new Set((await listUsableGatewaySecrets({ accountId, projectId, userId, grantUserId })).map((row) => row.name))];
+}
+
+export interface UsableGatewaySecret {
+  secretId: string;
+  providerId: string | null;
+  name: string;
+  label: string;
+  accessMode: string;
+}
+
+/**
+ * The gateway keys a member may select in this project, oldest first. Never
+ * reads a value. `grantUserId` as in `listGrantedGatewaySecretNames`.
+ *
+ * A key cooling down after a rate limit is still listed: it belongs to the
+ * pool, and the gateway skips it only until its cooldown ends.
+ */
+export async function listUsableGatewaySecrets(input: {
+  accountId: string;
+  projectId: string;
+  userId: string;
+  grantUserId?: string | null;
+  providerId?: string;
+}): Promise<UsableGatewaySecret[]> {
+  const grantUserId = input.grantUserId === undefined ? input.userId : input.grantUserId;
+  if (!(await memberMayReadProject(input.accountId, input.projectId, input.userId))) return [];
+  const rows = await db.select({
+    secretId: accountSecretResources.secretId,
+    providerId: accountSecretResources.providerId,
+    name: accountSecretResources.name,
+    label: accountSecretResources.label,
+    projectId: accountSecretResources.projectId,
+    accessMode: accountSecretResources.accessMode,
+    grantUserId: accountSecretGrants.userId,
+  }).from(accountSecretResources)
+    .leftJoin(accountSecretGrants, and(
+      eq(accountSecretGrants.secretId, accountSecretResources.secretId),
+      grantUserId ? eq(accountSecretGrants.userId, grantUserId) : sql`false`,
+    ))
+    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId)))
     .where(and(
-      eq(accountSecretResources.accountId, accountId),
+      eq(accountSecretResources.accountId, input.accountId),
       eq(accountSecretResources.consumer, 'llm_gateway'),
       eq(accountSecretResources.active, true),
-    ));
-  return [...new Set(rows.filter((row) => secretUsableInProject(row, projectId, row.grantUserId === userId)).map((row) => row.name))];
+      ...(input.providerId ? [eq(accountSecretResources.providerId, input.providerId)] : []),
+    ))
+    .orderBy(asc(accountSecretResources.createdAt), asc(accountSecretResources.secretId));
+  const seen = new Set<string>();
+  const usable: UsableGatewaySecret[] = [];
+  for (const row of rows) {
+    if (seen.has(row.secretId)) continue;
+    if (!secretUsableInProject(row, input.projectId, personalKeyGranted(row.grantUserId, grantUserId))) continue;
+    seen.add(row.secretId);
+    usable.push({ secretId: row.secretId, providerId: row.providerId, name: row.name, label: row.label, accessMode: row.accessMode });
+  }
+  return usable;
 }
 
 /** An unconfigured session uses the caller's newest personal ChatGPT connection. */

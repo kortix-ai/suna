@@ -183,6 +183,19 @@ For a new session, the selection is sent with the first prompt.
   still show that provider so you can reset it.
 - A failed read shows **Try again**. It never appears as an inherited selection.
 
+### Sessions that name only a model
+
+The CLI, the SDK, and Teams and Slack name a model but no keys. When that model
+runs only on pooled keys, the session gets every key its creator may use for
+that provider, up to ten, so they rotate. The agent must be allowed the key's
+name in its `secrets`. Changing a running session to such a model does the
+same when the session has no selection for that provider. A selection made on
+purpose, an empty one included, is left alone.
+
+Your own keys and ChatGPT connections count only in a session that is private
+to you and acts on your behalf. In a shared session only keys shared with the
+whole project count: a Teams channel or group chat, a Slack channel.
+
 On a rate limit before output starts, the gateway tries another selected key.
 It never replays a partial answer across keys. If every key is rate-limited,
 retry after the earliest cooldown, capped at 60 seconds. An explicit pool does

@@ -25,6 +25,8 @@ import {
   isModelServableForAccount,
 } from "../../llm-gateway/resolution/default-model";
 import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
+import { resolveFeatureFlag } from "../../feature-flags/registry";
+import { usableProviderKeys } from "../../secrets/provider-key-selection";
 import { validateNativeOpencodeModelRef } from "../lib/session-model-change";
 import {
   type ModelSource,
@@ -58,6 +60,45 @@ interface ModelResolutionCtx {
    *  resolution: an explicit pin reports verbatim and the gateway default
    *  chain is not consulted. */
   llmGatewayEnabled: boolean;
+  /** The project's `pooled_provider_secrets` flag. */
+  pooledEnabled: boolean;
+}
+
+/**
+ * Can a chat conversation's sessions run `model`? A conversation is shared, so
+ * only what its sessions will reach counts: Kortix models, the project's own
+ * keys, and pooled keys shared with the whole project — which those sessions
+ * select (channels/model-access.ts). Nobody's personal key or ChatGPT
+ * connection counts: a shared session never reaches one (spec 2026-09-22
+ * §2.3), and a conversation pinned to one failed every message with
+ * "Connect Codex to use this model".
+ */
+async function conversationCanRun(input: {
+  userId: string;
+  accountId: string;
+  projectId: string;
+  freeModelsOnly: boolean;
+  pooledEnabled: boolean;
+  model: string;
+}): Promise<boolean> {
+  const base = {
+    userId: input.userId,
+    accountId: input.accountId,
+    projectId: input.projectId,
+    freeModelsOnly: input.freeModelsOnly,
+    model: input.model,
+    personalUserId: null,
+  };
+  if (await isModelServableForAccount(base)) return true;
+  if (!input.pooledEnabled) return false;
+  const keys = await usableProviderKeys({
+    accountId: input.accountId,
+    projectId: input.projectId,
+    userId: input.userId,
+    grantUserId: null,
+    model: input.model,
+  }).catch(() => null);
+  return keys ? isModelServableForAccount({ ...base, providerSecretPools: { [keys.providerId]: keys.secretIds } }) : false;
 }
 
 // Mirrors resolveEffectiveModel (default-model.ts) but batches the account
@@ -70,6 +111,7 @@ async function resolveBindingEffectiveModel(
   explicitModel: string | null,
   agentName: string,
   ctx: ModelResolutionCtx,
+  oneToOne = false,
 ): Promise<{ model: string | null; source: ModelSource }> {
   if (!ctx.llmGatewayEnabled) {
     // Native mode: the pin is a native `provider/model` ref OpenCode resolves
@@ -79,14 +121,19 @@ async function resolveBindingEffectiveModel(
     return { model: null, source: "platform" };
   }
   if (explicitModel) {
-    const servable = await isModelServableForAccount({
+    const servable = await conversationCanRun({
       userId: ctx.userId,
       accountId: ctx.accountId,
       projectId: ctx.projectId,
       freeModelsOnly: ctx.freeModelsOnly,
+      pooledEnabled: ctx.pooledEnabled,
       model: explicitModel,
     });
     if (servable) return { model: toWireModel(explicitModel), source: "explicit" };
+    // A one-to-one chat's sessions are private to its person, whose own keys
+    // and ChatGPT subscription count there; they picked this model with them
+    // (`/model`). This view runs as someone else and cannot check those keys.
+    if (oneToOne) return { model: toWireModel(explicitModel), source: "explicit" };
   }
   return chooseEffectiveModel({
     agentDefault: ctx.modelDefaults.agents[agentName] ?? null,
@@ -94,6 +141,13 @@ async function resolveBindingEffectiveModel(
     accountDefault: ctx.modelDefaults.account,
     freeModelsOnly: ctx.freeModelsOnly,
   });
+}
+
+/** A one-to-one chat with the bot: a Teams personal chat, a Slack DM. */
+function oneToOneConversation(row: ChannelBindingRow): boolean {
+  if (row.platform === "teams") return row.channelType === "personal";
+  if (row.platform === "slack") return row.channelId.startsWith("D");
+  return false;
 }
 
 async function serializeBinding(
@@ -105,7 +159,12 @@ async function serializeBinding(
     explicit: row.agentName,
     projectDefault: projectDefaultAgent,
   });
-  const effectiveModel = await resolveBindingEffectiveModel(row.opencodeModel, effectiveAgent.agent, modelCtx);
+  const effectiveModel = await resolveBindingEffectiveModel(
+    row.opencodeModel,
+    effectiveAgent.agent,
+    modelCtx,
+    oneToOneConversation(row),
+  );
   return {
     bindingId: row.bindingId,
     platform: row.platform,
@@ -167,6 +226,7 @@ projectsApp.openapi(
       modelDefaults: await getAccountModelDefaults(accountId, projectId),
       freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
       llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+      pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
     };
     return c.json({
       projectDefaultAgent,
@@ -296,16 +356,20 @@ projectsApp.openapi(
           stored = trimmed;
         } else {
         const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId as string));
-        const servable = await isModelServableForAccount({
+        const servable = await conversationCanRun({
           userId: loaded.userId,
           accountId: loaded.row.accountId as string,
           projectId,
           freeModelsOnly,
+          pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
           model: trimmed,
         });
         if (!servable) {
           return c.json(
-            { error: `Model "${trimmed}" is not available for this account`, code: "model_not_servable" },
+            {
+              error: `Model "${trimmed}" is not available to this conversation. A conversation is shared: it can run Kortix models and keys shared with the whole project, not anyone's own key or ChatGPT subscription.`,
+              code: "model_not_servable",
+            },
             409,
           );
         }
@@ -331,6 +395,7 @@ projectsApp.openapi(
       modelDefaults: await getAccountModelDefaults(accountId, projectId),
       freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
       llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+      pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
     };
     return c.json(await serializeBinding(updated, projectDefaultAgentOf(loaded.row.metadata), modelCtx));
   },
