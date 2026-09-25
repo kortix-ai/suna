@@ -203,6 +203,31 @@ describe('GET /connectors/:token', () => {
     expect(body.icon_url).toBeNull();
   });
 
+  test('a Composio connector without a stored icon uses the toolkit logo the catalogue shows', async () => {
+    const { setComposioRuntimeForTest } = await import('../connectors/composio');
+    const previousKey = process.env.COMPOSIO_API_KEY;
+    process.env.COMPOSIO_API_KEY = 'test-key';
+    setComposioRuntimeForTest({
+      sessions: { create: async () => ({}) as never, use: async () => ({}) as never },
+      toolkits: {
+        get: async () => [
+          { slug: 'SmartLead', name: 'Smartlead', meta: { logo: 'https://logos.example.test/smartlead' } },
+        ],
+      },
+    });
+    try {
+      connectorRows = [{ name: 'Smartlead', config: {} }];
+      const body = await (
+        await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`)
+      ).json();
+      expect(body.icon_url).toBe('https://logos.example.test/smartlead');
+    } finally {
+      setComposioRuntimeForTest(null);
+      if (previousKey === undefined) delete process.env.COMPOSIO_API_KEY;
+      else process.env.COMPOSIO_API_KEY = previousKey;
+    }
+  });
+
   test('a link whose connector row is gone still resolves, with null identity', async () => {
     connectorRows = [];
     const res = await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`);

@@ -25,7 +25,7 @@ import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
 import { watchConnectorCompletion } from './connector-completion-watch';
-import { composioConfigured } from '../connectors/composio';
+import { composioConfigured, composioToolkitLogo } from '../connectors/composio';
 import { connectorConnectedPrompt, notifyConnectorSession } from '../connectors/notify-session';
 
 // The connector half of the notification moved to connectors/notify-session.ts so the
@@ -168,7 +168,7 @@ setupLinksPublicApp.get('/connectors/:token', async (c) => {
 
   const [name, identity] = await Promise.all([
     projectName(resolved.projectId),
-    connectorIdentity(resolved.projectId, resolved.payload.slug),
+    connectorIdentity(resolved.projectId, resolved.payload.slug, resolved.payload.app),
   ]);
   return c.json({
     kind: 'connector',
@@ -185,24 +185,30 @@ setupLinksPublicApp.get('/connectors/:token', async (c) => {
  * The display name and logo the in-chat card shows, so a connect link reads
  * "Connect Google Calendar" with its logo instead of a generic plug.
  *
- * Read from the project's connector row, the same `config.icon_url` the
- * connectors page renders. Both are `null` when the row is gone or the catalog
- * had no logo; the card then falls back to a monogram, never a guessed URL.
+ * The name comes from the project's connector row. The logo is the row's
+ * `config.icon_url` when set, else the Composio catalogue logo for the link's
+ * app — the same image the connectors catalogue shows. Connectors an agent adds
+ * store no `icon_url`, so the catalogue is the source for almost every link.
+ * Both are `null` when nothing is known; the card then shows a monogram.
  */
 async function connectorIdentity(
   projectId: string,
   slug: string,
+  app: string | null,
 ): Promise<{ name: string | null; iconUrl: string | null }> {
   const [row] = await db
     .select({ name: connectors.name, config: connectors.config })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
-  const iconUrl = (row?.config as { icon_url?: unknown } | null | undefined)?.icon_url;
-  return {
-    name: row?.name ?? null,
-    iconUrl: typeof iconUrl === 'string' && iconUrl.length > 0 ? iconUrl : null,
-  };
+  const stored = (row?.config as { icon_url?: unknown } | null | undefined)?.icon_url;
+  const iconUrl =
+    typeof stored === 'string' && stored.length > 0
+      ? stored
+      : app
+        ? await composioToolkitLogo(app)
+        : null;
+  return { name: row?.name ?? null, iconUrl };
 }
 
 /**
