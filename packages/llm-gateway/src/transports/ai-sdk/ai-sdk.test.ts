@@ -9,7 +9,6 @@ import { callUpstreamViaAiSdk, guardAgainstUnhandledResultRejections, toTranspor
 import {
   aiSdkFamilyFor,
   clampMaxOutputTokensForBedrock,
-  openRouterCostMetadataExtractor,
   resolveAiModel,
 } from './model';
 import { buildAiSdkArgs, toModelMessages } from './request';
@@ -266,8 +265,6 @@ describe('ai-sdk request conversion', () => {
     // Fallback to kind when npm is absent/unknown.
     expect(aiSdkFamilyFor(d({ kind: 'anthropic' }))).toBe('anthropic');
     expect(aiSdkFamilyFor(d({ kind: 'bedrock' }))).toBe('bedrock');
-    expect(aiSdkFamilyFor(d({ kind: 'openai-compat' }))).toBe('openai-compatible');
-    expect(aiSdkFamilyFor(d({ npm: 'unknown', kind: 'custom' }))).toBe('openai-compatible');
   });
 
   it('hoists system, translates tool calls + tool results', () => {
@@ -430,43 +427,6 @@ describe('ai-sdk request conversion', () => {
     expect(anthropic.tools).toBeTruthy();
   });
 
-  // `UpstreamDescriptor.bodyExtras` ("upstream-specific fields merged into the
-  // outgoing request body, overriding any same-named client fields (e.g.
-  // OpenRouter's `provider` routing preferences pinning managed models to
-  // reliable hosts)") lost its only reader when the native openai-compat
-  // transport was deleted on 2026-07-18 — apps/api still BUILDS it from the
-  // catalog's `openrouterProvider`, but nothing in this package read it, so the
-  // whole OpenRouter provider-routing mechanism was silently inert and every
-  // managed OpenRouter request load-balanced across all 21 endpoints serving
-  // the slug. For the openai-compatible family, any key under
-  // providerOptions[<providerName>] that the package's own schema does not
-  // claim rides onto the wire verbatim — which is how `provider` reaches
-  // OpenRouter.
-  it('forwards descriptor bodyExtras onto the wire for openai-compatible upstreams', () => {
-    const args = buildAiSdkArgs({ messages: [] }, 'openai-compatible', {
-      providerName: 'openrouter',
-      bodyExtras: { provider: { order: ['deepseek'], allow_fallbacks: true } },
-    });
-    expect(args.providerOptions).toEqual({
-      openrouter: { provider: { order: ['deepseek'], allow_fallbacks: true } },
-    });
-  });
-
-  it('bodyExtras overrides a same-named client field and never leaks to other families', () => {
-    const compat = buildAiSdkArgs(
-      { messages: [], provider: { order: ['someone-else'] } },
-      'openai-compatible',
-      { providerName: 'openrouter', bodyExtras: { provider: { order: ['deepseek'] } } },
-    );
-    expect((compat.providerOptions as Record<string, Record<string, unknown>>).openrouter.provider)
-      .toEqual({ order: ['deepseek'] });
-
-    const anthropic = buildAiSdkArgs({ messages: [] }, 'anthropic', {
-      providerName: 'anthropic',
-      bodyExtras: { provider: { order: ['deepseek'] } },
-    });
-    expect(anthropic.providerOptions).toBeUndefined();
-  });
 });
 
 // buildAiSdkArgs is now models.dev-capability-driven: when the caller passes
@@ -734,18 +694,10 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     }
   });
 
-  it('does not set thinking/reasoningConfig or bump maxOutputTokens for openai/openai-compatible families', () => {
+  it('does not set thinking/reasoningConfig or bump maxOutputTokens for the openai family', () => {
     const openai = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai');
     expect(openai.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
     expect(openai.maxOutputTokens).toBeUndefined();
-
-    const openrouter = buildAiSdkArgs(
-      { messages: [], reasoning_effort: 'high' },
-      'openai-compatible',
-      { providerName: 'openrouter' },
-    );
-    expect(openrouter.providerOptions).toEqual({ openrouter: { reasoningEffort: 'high' } });
-    expect(openrouter.maxOutputTokens).toBeUndefined();
   });
 });
 
@@ -891,7 +843,7 @@ describe('ai-sdk anthropic/bedrock prompt caching (ported from native)', () => {
     });
   });
 
-  it('never attaches cacheControl/cachePoint providerOptions for openai/openai-compatible families', () => {
+  it('never attaches cacheControl/cachePoint providerOptions for the openai family', () => {
     const openai = buildAiSdkArgs(
       {
         messages: [
@@ -1186,41 +1138,6 @@ describe('clampMaxOutputTokensForBedrock — defect 2 (Nova max-tokens ceiling)'
   });
 });
 
-// Defect 3 (2026-07-17, live-confirmed against OpenRouter): mapUsage emitted
-// token-only usage, never cost — a managed OpenRouter model with no
-// models.dev catalog price booked $0 even though OpenRouter's own
-// `usage.cost` (returned only when the request carries `usage:
-// {include:true}`, threaded via model.ts's openRouterCostMetadataExtractor)
-// has the real upstream-billed figure.
-describe('cost-hint threading — defect 3 (OpenRouter usage.cost parity)', () => {
-  it('mapUsage folds a providerMetadata cost into the OpenAI-shaped usage.cost field', () => {
-    const out = mapUsage(usage() as any, { openrouterCost: { cost: 0.00012 } });
-    expect(out.cost).toBe(0.00012);
-  });
-
-  it('mapUsage omits cost entirely when no provider metadata carries one', () => {
-    const out = mapUsage(usage() as any, undefined);
-    expect(out.cost).toBeUndefined();
-    const out2 = mapUsage(usage() as any, { openrouterCost: {} });
-    expect(out2.cost).toBeUndefined();
-  });
-
-  it('openRouterCostMetadataExtractor pulls usage.cost from both non-streaming and streaming shapes', async () => {
-    const extractor = openRouterCostMetadataExtractor();
-    const nonStreaming = await extractor.extractMetadata({
-      parsedBody: { usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0009 } },
-    });
-    expect(nonStreaming).toEqual({ openrouterCost: { cost: 0.0009 } });
-
-    const streamExtractor = extractor.createStreamExtractor();
-    streamExtractor.processChunk({ choices: [{ delta: { content: 'hi' } }] });
-    streamExtractor.processChunk({
-      usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0011 },
-    });
-    expect(streamExtractor.buildMetadata()).toEqual({ openrouterCost: { cost: 0.0011 } });
-  });
-});
-
 // Piece A (2026-07-17): absorbs the OpenAI Responses API into the ai-sdk
 // engine itself, so Codex + genuine-OpenAI reasoning-with-tools no longer
 // need to fall through to the native openai-responses transport. The routing
@@ -1262,43 +1179,31 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
     headers: { 'ChatGPT-Account-ID': 'acct_1' },
   };
 
-  it('aiSdkFamilyFor resolves a Codex descriptor to the openai family (Responses-capable), not generic openai-compatible', () => {
+  it('aiSdkFamilyFor resolves a Codex descriptor to the openai family (Responses-capable)', () => {
     expect(aiSdkFamilyFor(codex)).toBe('openai');
   });
 
-  describe('resolveAiModel — .chat() vs .responses() selection', () => {
+  describe('resolveAiModel — the Responses model selection', () => {
     // `LanguageModel` (the return type) is a union that also admits a bare
     // model-id string (a global-registry reference) — narrow to the object
     // shape resolveAiModel actually returns to read `.provider` off it.
     const providerOf = (model: ReturnType<typeof resolveAiModel>): string =>
       (model as { provider: string }).provider;
 
-    it('builds a .responses() model for genuine OpenAI reasoning + tools + a live effort', () => {
-      const model = resolveAiModel(genuineOpenAiReasoning, {
-        messages: [],
-        tools: [reasoningTool],
-        reasoning_effort: 'medium',
-      });
-      expect(providerOf(model)).toBe('openai.responses');
+    // Every openai-family call reaches the AI SDK only when it needs the
+    // Responses API (a genuine OpenAI reasoning model with tools and a live
+    // effort, or Codex); a plain chat request goes to the provider directly.
+    it.each([
+      ['a genuine OpenAI reasoning upstream', genuineOpenAiReasoning],
+      ['Codex', codex],
+    ])('builds a .responses() model for %s', (_name, descriptor) => {
+      expect(providerOf(resolveAiModel(descriptor))).toBe('openai.responses');
     });
 
-    it('keeps using .chat() for a plain non-reasoning-blocked openai request (no tools)', () => {
-      const model = resolveAiModel(genuineOpenAiReasoning, {
-        messages: [],
-        reasoning_effort: 'medium',
-      });
-      expect(providerOf(model)).toBe('openai.chat');
-    });
-
-    it('keeps using .chat() when no body is passed at all (default {})', () => {
-      expect(providerOf(resolveAiModel(genuineOpenAiReasoning))).toBe('openai.chat');
-    });
-
-    it('always builds a .responses() model for Codex, regardless of what the body says', () => {
-      expect(providerOf(resolveAiModel(codex, { messages: [] }))).toBe('openai.responses');
-      expect(providerOf(resolveAiModel(codex, { messages: [], stream: false }))).toBe(
-        'openai.responses',
-      );
+    it('refuses an OpenAI-compatible upstream: those are called directly', () => {
+      expect(() =>
+        resolveAiModel({ ...genuineOpenAiReasoning, provider: 'openrouter', npm: undefined, baseUrl: 'https://openrouter.example/v1' }),
+      ).toThrow('OpenAI-compatible upstreams are called directly');
     });
   });
 
@@ -1624,15 +1529,6 @@ describe('Piece B — response_format parity (CONFIRMED DEFECT fix)', () => {
     });
   });
 
-  it('maps response_format for the openai-compatible family too (OpenRouter etc.) — native forwards it there identically', async () => {
-    const args = buildAiSdkArgs(
-      { messages: [], response_format: { type: 'json_object' } },
-      'openai-compatible',
-      { providerName: 'openrouter' },
-    );
-    await expect(args.output!.responseFormat).resolves.toEqual({ type: 'json' });
-  });
-
   it('honors an explicit strict:true from the client via providerOptions.openai.strictJsonSchema', () => {
     const args = buildAiSdkArgs(
       {
@@ -1647,7 +1543,7 @@ describe('Piece B — response_format parity (CONFIRMED DEFECT fix)', () => {
     expect(args.providerOptions).toMatchObject({ openai: { strictJsonSchema: true } });
   });
 
-  // @ai-sdk/openai and @ai-sdk/openai-compatible both default
+  // @ai-sdk/openai defaults
   // strictJsonSchema to `true` (OpenAI's Structured Outputs mode) when the
   // key is absent from providerOptions — but native forwards the client's
   // body verbatim, so an omitted `strict` field reaches OpenAI as OpenAI's
@@ -1792,53 +1688,8 @@ describe('buildAiSdkArgs — extra OpenAI-only fields via providerOptions (logit
     });
   });
 
-  it('maps to raw wire (snake_case) keys under providerOptions[<configured provider name>] for openai-compatible, since that package spreads any key outside its own small schema verbatim onto the wire request', () => {
-    const args = buildAiSdkArgs(body, 'openai-compatible', { providerName: 'openrouter' });
-    expect(args.providerOptions).toEqual({
-      openrouter: {
-        logit_bias: { '123': -100 },
-        logprobs: true,
-        top_logprobs: 3,
-        parallel_tool_calls: false,
-        user: 'user-1',
-        service_tier: 'flex',
-        metadata: { k: 'v' },
-        prediction: { type: 'content', content: 'hi' },
-      },
-    });
-  });
-
   it('never maps these OpenAI-only fields for anthropic/bedrock — matches native, which has no equivalent for either transport', () => {
     expect(buildAiSdkArgs(body, 'anthropic').providerOptions).toBeUndefined();
     expect(buildAiSdkArgs(body, 'bedrock').providerOptions).toBeUndefined();
   });
-
-});
-
-// Defect 5 (2026-07-17, found auditing this parity piece): buildAiSdkArgs
-// previously keyed reasoning_effort's providerOptions entry as
-// `providerOptions.openai` for EVERY family including 'openai-compatible' —
-// but @ai-sdk/openai-compatible's chat model never reads a bare 'openai'
-// key back out (its `providerOptionsName` getter resolves to whatever
-// `name` model.ts passed to `createOpenAICompatible`, i.e.
-// `descriptor.provider`, e.g. 'openrouter' — confirmed by reading
-// @ai-sdk/openai-compatible's chat-language-model.js getArgs, which parses
-// only `providerOptions['openai-compatible']`, `['openaiCompatible']`,
-// `[this.providerOptionsName]`, and the camelCase of the last one — never a
-// literal `'openai'`). reasoning_effort was therefore silently dropped for
-// every OpenRouter-class request that set one — undetected because the only
-// prior reasoning_effort test drove family:'openai'.
-describe("buildAiSdkArgs — defect 5 (reasoning_effort keyed under the wrong providerOptions entry for 'openai-compatible')", () => {
-  it('keys reasoningEffort under providerOptions[<configured provider name>], not the literal "openai"', () => {
-    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai-compatible', {
-      providerName: 'openrouter',
-    });
-    expect(args.providerOptions).toEqual({ openrouter: { reasoningEffort: 'high' } });
-  });
-
-  it('falls back to the literal "openai-compatible" key when no providerName is supplied, matching model.ts\'s own createOpenAICompatible default', () => {
-    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai-compatible');
-    expect(args.providerOptions).toEqual({ 'openai-compatible': { reasoningEffort: 'high' } });
-  });
-
 });

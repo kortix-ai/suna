@@ -80,8 +80,8 @@ function textOf(content: unknown): string {
 // Bedrock's Converse API (and the Anthropic Messages API) reject any message
 // whose content is empty or whitespace-only: "The content field in the Message
 // object at messages.N is empty." Such messages reach us mid-history — most
-// often an assistant turn from an earlier empty upstream completion (see
-// guardEmptyChoicesFetch) that the client persisted and replayed. Backfill a
+// often an assistant turn from an earlier empty upstream completion that the
+// client persisted and replayed. Backfill a
 // minimal non-whitespace placeholder so the message survives the round-trip
 // without dropping it (dropping would collapse the user/assistant alternation
 // the provider also depends on).
@@ -339,32 +339,17 @@ function toToolChoice(raw: unknown): ToolChoice<ToolSet> | undefined {
 // OpenAI wire fields that carry no AI-SDK top-level CallSettings equivalent
 // (unlike temperature/topP/stopSequences/seed/frequencyPenalty/
 // presencePenalty, which the SDK core exposes directly — see the seed/
-// penalty mapping in buildAiSdkArgs below) but that native's openai-compat
-// forwards completely verbatim to the upstream (openai-compat/index.ts:
-// `payload = body`, untouched unless one of its few named rewrites fires).
-// Threaded through providerOptions instead of CallSettings:
-//  - 'openai' family: @ai-sdk/openai's own schema
-//    (openaiLanguageModelChatOptions) recognizes each of these under
-//    providerOptions.openai by CAMELCASE name and re-serializes them back to
-//    the identical wire field (see its chat getArgs `baseArgs`).
-//  - 'openai-compatible' family: its schema only recognizes
-//    user/reasoningEffort/textVerbosity/strictJsonSchema — any OTHER key
-//    under providerOptions[<provider name>] rides straight onto the wire
-//    request UNMODIFIED (getArgs spreads everything not in its own schema's
-//    `.shape` verbatim) — so these are set using the RAW WIRE (snake_case)
-//    field names here, not the openai package's camelCase ones, since no
-//    schema ever translates them for this family.
-// Deliberately NOT mapped: `n` (multiple choices) — even forwarded onto the
-// wire, this transport only ever reconstructs ONE choice from AI-SDK's
-// single-result `streamText`/`generateText` (see sse.ts/index.ts), so
-// setting n>1 would silently bill for completions the client never receives
-// instead of doing nothing; and `modalities` (audio output) — no current
-// caller (opencode/agents) requests non-text output and AI SDK core has no
-// hook for it on streamText/generateText.
-function extraOpenAiFields(
-  body: Record<string, unknown>,
-  family: 'openai' | 'openai-compatible',
-): Record<string, unknown> {
+// penalty mapping in buildAiSdkArgs below). @ai-sdk/openai's own schema
+// (openaiLanguageModelChatOptions) recognizes each of these under
+// providerOptions.openai by CAMELCASE name and re-serializes them back to the
+// identical wire field.
+// Deliberately NOT mapped: `n` (multiple choices) — this transport only ever
+// reconstructs ONE choice from AI-SDK's single-result `streamText`/
+// `generateText` (see sse.ts/index.ts), so setting n>1 would silently bill for
+// completions the client never receives instead of doing nothing; and
+// `modalities` (audio output) — no current caller (opencode/agents) requests
+// non-text output and AI SDK core has no hook for it on streamText/generateText.
+function extraOpenAiFields(body: Record<string, unknown>): Record<string, unknown> {
   const logitBias = body.logit_bias;
   const logprobs = body.logprobs;
   const topLogprobs = body.top_logprobs;
@@ -374,34 +359,21 @@ function extraOpenAiFields(
   const metadata = body.metadata;
   const prediction = body.prediction;
 
-  if (family === 'openai') {
-    return {
-      logitBias: logitBias && typeof logitBias === 'object' ? logitBias : undefined,
-      // @ai-sdk/openai encodes "how many top logprobs" as the VALUE of a
-      // single `logprobs` option (boolean → just the chosen token; number →
-      // that many alternatives) — collapse OpenAI's two wire fields
-      // (`logprobs: boolean`, `top_logprobs: number`) into it.
-      logprobs:
-        typeof topLogprobs === 'number'
-          ? topLogprobs
-          : typeof logprobs === 'boolean'
-            ? logprobs
-            : undefined,
-      parallelToolCalls: typeof parallelToolCalls === 'boolean' ? parallelToolCalls : undefined,
-      user: typeof user === 'string' ? user : undefined,
-      serviceTier: typeof serviceTier === 'string' ? serviceTier : undefined,
-      metadata: metadata && typeof metadata === 'object' ? metadata : undefined,
-      prediction: prediction && typeof prediction === 'object' ? prediction : undefined,
-    };
-  }
-
   return {
-    logit_bias: logitBias && typeof logitBias === 'object' ? logitBias : undefined,
-    logprobs: typeof logprobs === 'boolean' ? logprobs : undefined,
-    top_logprobs: typeof topLogprobs === 'number' ? topLogprobs : undefined,
-    parallel_tool_calls: typeof parallelToolCalls === 'boolean' ? parallelToolCalls : undefined,
+    logitBias: logitBias && typeof logitBias === 'object' ? logitBias : undefined,
+    // @ai-sdk/openai encodes "how many top logprobs" as the VALUE of a
+    // single `logprobs` option (boolean → just the chosen token; number →
+    // that many alternatives) — collapse OpenAI's two wire fields
+    // (`logprobs: boolean`, `top_logprobs: number`) into it.
+    logprobs:
+      typeof topLogprobs === 'number'
+        ? topLogprobs
+        : typeof logprobs === 'boolean'
+          ? logprobs
+          : undefined,
+    parallelToolCalls: typeof parallelToolCalls === 'boolean' ? parallelToolCalls : undefined,
     user: typeof user === 'string' ? user : undefined,
-    service_tier: typeof serviceTier === 'string' ? serviceTier : undefined,
+    serviceTier: typeof serviceTier === 'string' ? serviceTier : undefined,
     metadata: metadata && typeof metadata === 'object' ? metadata : undefined,
     prediction: prediction && typeof prediction === 'object' ? prediction : undefined,
   };
@@ -474,8 +446,8 @@ interface OpenAiResponseFormatBody {
 // (no schema) and `json_schema` (schema attached) both map onto AI SDK's
 // `{type:'json', schema?}`* — schema presence/absence is what tells the
 // downstream provider package which of the two to actually emit back onto
-// the wire (see @ai-sdk/openai's and @ai-sdk/openai-compatible's chat
-// getArgs: `schema != null ? {type:'json_schema',...} : {type:'json_object'}`).
+// the wire (see @ai-sdk/openai's getArgs:
+// `schema != null ? {type:'json_schema',...} : {type:'json_object'}`).
 function responseFormatFromBody(body: Record<string, unknown>): AiSdkResponseFormat | undefined {
   const raw = body.response_format as OpenAiResponseFormatBody | undefined;
   if (!raw || typeof raw !== 'object') return undefined;
@@ -491,11 +463,9 @@ function responseFormatFromBody(body: Record<string, unknown>): AiSdkResponseFor
   return undefined;
 }
 
-// Only the two families whose NATIVE transport is openai-compat (the
-// verbatim body-forwarding path — see openai-compat/index.ts) ever actually
-// deliver `response_format` to an upstream today: genuine OpenAI and any
-// generic OpenAI-compatible upstream (OpenRouter, Groq, self-hosted...).
-// anthropic/bedrock's native transports (anthropic/request.ts's
+// Only the openai family delivers `response_format` to an upstream through
+// this engine (OpenAI-compatible upstreams receive the client body verbatim on
+// the direct path). anthropic/bedrock's native transports (anthropic/request.ts's
 // buildAnthropicCorePayload, shared by bedrock) never read
 // `body.response_format` at all — it's silently dropped there too — so NOT
 // mapping it for those two families here is matching parity, not a gap. Lives
@@ -951,45 +921,26 @@ function normalizeRequest(
 //
 // Each AI-SDK family (see model.ts's `AiSdkFamily`) has its own wire
 // contract — a different `providerOptions` key, a different reasoning
-// mechanism, different defaults, different caching primitives, and only two
-// of the four ever see `response_format`. Before this refactor all of that
-// lived as `if (family === ...)` branches sprinkled through one function
-// (see git history) — easy to update one branch and forget a sibling (that's
-// exactly how the openai-compatible reasoningEffort key and the Anthropic
-// legacy-thinking-shape defects both happened). Now each family owns ONE
-// adapter implementing this interface, keyed off `AiSdkFamily` in `ADAPTERS`
-// below; `buildAiSdkArgs` is a thin orchestrator that never branches on
-// family itself — it only ever asks "the adapter for this family" to do the
+// mechanism, different defaults, different caching primitives, and only one
+// of them ever sees `response_format`. Each family owns ONE adapter
+// implementing this interface, keyed off `AiSdkFamily` in `ADAPTERS` below;
+// `buildAiSdkArgs` is a thin orchestrator that never branches on family
+// itself — it only ever asks "the adapter for this family" to do the
 // family-specific work.
 //
 // `buildProviderOptions`'s return type is intentionally `Record<string,
-// unknown>` at the interface level (the four families have four genuinely
-// different shapes, and TypeScript has no clean way to key an interface
-// method's return type off which family implements it) — but every
-// individual adapter below builds and returns a value first typed against
-// its OWN package's exported provider-options type
+// unknown>` at the interface level (the families have genuinely different
+// shapes) — but every adapter below builds and returns a value first typed
+// against its OWN package's exported provider-options type
 // (`AnthropicProviderOptions`, `BedrockProviderOptions`,
 // `OpenAIChatLanguageModelOptions`), so assigning a field the SDK doesn't
 // recognize, or misspelling one, is a compile error at the point it's
-// constructed — precisely the class of defect (`thinking.type:'enabled'` vs
-// `'adaptive'`, `providerOptions.openai` vs the real per-provider key) that
-// motivated this refactor. openai-compatible is the one deliberate
-// exception: `createOpenAICompatible`'s schema only recognizes
-// user/reasoningEffort/textVerbosity/strictJsonSchema and forwards every
-// OTHER key onto the wire completely unvalidated (see extraOpenAiFields'
-// doc comment), so a loose `Record<string, unknown>` is the accurate type
-// for that family, not a narrower one that would falsely imply validation
-// exists.
+// constructed.
 interface ProviderAdapter {
   // Which `providerOptions` key this family's AI-SDK provider PACKAGE itself
   // reads back out — NOT an arbitrary label. Getting this wrong means the
-  // options object is built but never consumed (silently inert). Only the
-  // 'openai-compatible' adapter needs `providerName` (createOpenAICompatible's
-  // chat model reads `providerOptions[<the exact `name` passed to it>]` — its
-  // `providerOptionsName` getter, see @ai-sdk/openai-compatible's
-  // chat-language-model.js — i.e. `descriptor.provider`, e.g. 'openrouter',
-  // never the literal string 'openai'); every other family ignores it.
-  optionsKey(providerName?: string): string;
+  // options object is built but never consumed (silently inert).
+  optionsKey: string;
   // Reasoning/thinking + family-specific extra fields + strictJsonSchema,
   // typed against this family's own SDK option type (see the interface doc
   // comment above). Returned fields with value `undefined` are dropped by
@@ -997,17 +948,16 @@ interface ProviderAdapter {
   // a key itself just to avoid sending it.
   buildProviderOptions(req: NormalizedRequest, providerName?: string): Record<string, unknown>;
   // maxOutputTokens to use when the client sent no explicit max_tokens/
-  // max_completion_tokens. `undefined` (openai/openai-compatible) means
-  // "let the AI SDK / upstream default apply" — unlike anthropic/bedrock,
-  // neither family required an explicit ceiling before this transport
-  // existed.
+  // max_completion_tokens. `undefined` (openai) means "let the AI SDK /
+  // upstream default apply" — unlike anthropic/bedrock, it never required an
+  // explicit ceiling before this transport existed.
   defaultMaxTokens(req: NormalizedRequest): number | undefined;
   // Whether this family's native transport ever forwarded `response_format`
   // to the upstream (see the parity note above `strictJsonSchemaField`) —
   // gates whether the orchestrator builds an `AiSdkOutput` at all.
   supportsResponseFormat: boolean;
   // Prompt-cache breakpoint insertion (anthropic/bedrock only). Absent on
-  // families with no caching primitive here (openai/openai-compatible). Takes
+  // families with no caching primitive here (openai). Takes
   // `req` so the bedrock adapter can gate the Claude-only `cachePoint` on the
   // resolved model id (see `isBedrockClaudeModel`).
   applyCaching?(
@@ -1019,7 +969,7 @@ interface ProviderAdapter {
 }
 
 const openAiAdapter: ProviderAdapter = {
-  optionsKey: () => 'openai',
+  optionsKey: 'openai',
   buildProviderOptions(req, providerName) {
     const options: OpenAIChatLanguageModelOptions = {};
     // The AI SDK's OpenAI provider strips temperature and other unsupported
@@ -1040,23 +990,7 @@ const openAiAdapter: ProviderAdapter = {
     // Do NOT "clean this up" as redundant: omitted and `false` are different
     // requests to this backend.
     if (providerName === 'openai-codex') options.store = false;
-    Object.assign(options, extraOpenAiFields(req.raw, 'openai'));
-    const strict = strictJsonSchemaField(req.raw);
-    if (strict !== undefined) options.strictJsonSchema = strict;
-    return options;
-  },
-  defaultMaxTokens: () => undefined,
-  supportsResponseFormat: true,
-};
-
-const openAiCompatibleAdapter: ProviderAdapter = {
-  optionsKey: (providerName) => providerName || 'openai-compatible',
-  buildProviderOptions(req) {
-    const options: Record<string, unknown> = {};
-    // openai-compatible upstreams (OpenRouter) accept the same reasoning
-    // field under the provider namespace.
-    if (typeof req.reasoningEffort === 'string') options.reasoningEffort = req.reasoningEffort;
-    Object.assign(options, extraOpenAiFields(req.raw, 'openai-compatible'));
+    Object.assign(options, extraOpenAiFields(req.raw));
     const strict = strictJsonSchemaField(req.raw);
     if (strict !== undefined) options.strictJsonSchema = strict;
     return options;
@@ -1066,7 +1000,7 @@ const openAiCompatibleAdapter: ProviderAdapter = {
 };
 
 const anthropicAdapter: ProviderAdapter = {
-  optionsKey: () => 'anthropic',
+  optionsKey: 'anthropic',
   buildProviderOptions(req) {
     const options: AnthropicProviderOptions = {};
     const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
@@ -1090,7 +1024,7 @@ const anthropicAdapter: ProviderAdapter = {
 };
 
 const bedrockAdapter: ProviderAdapter = {
-  optionsKey: () => 'bedrock',
+  optionsKey: 'bedrock',
   buildProviderOptions(req) {
     const options: BedrockProviderOptions = {};
     // OpenAI-on-Bedrock: forward the (capability-gated, see normalizeRequest)
@@ -1148,7 +1082,6 @@ const bedrockAdapter: ProviderAdapter = {
 
 const ADAPTERS: Record<AiSdkFamily, ProviderAdapter> = {
   openai: openAiAdapter,
-  'openai-compatible': openAiCompatibleAdapter,
   anthropic: anthropicAdapter,
   bedrock: bedrockAdapter,
 };
@@ -1163,10 +1096,8 @@ export function buildAiSdkArgs(
     // defaults to 'low'; see openai-responses/request.ts), so callUpstreamViaAiSdk
     // passes this for Codex descriptors instead of duplicating that default here.
     defaultReasoningEffort?: string;
-    // The exact provider name model.ts passed to `createOpenAICompatible`
-    // (`descriptor.provider`) — needed to key providerOptions correctly for
-    // the 'openai-compatible' family (see the ProviderAdapter interface doc
-    // comment above). Ignored for every other family.
+    // `descriptor.provider`. Codex (`openai-codex`) needs `store: false` and no
+    // output-token cap; every other provider is unaffected.
     providerName?: string;
     // The resolved catalog model for this wire request (see index.ts, which
     // resolves it via @kortix/llm-catalog's `catalogModelForWireModel`). When
@@ -1174,16 +1105,6 @@ export function buildAiSdkArgs(
     // its real models.dev capabilities in `normalizeRequest`. OPTIONAL: absent
     // → no gating (permissive parity — every param passes through unchanged).
     model?: CatalogModel;
-    // `UpstreamDescriptor.bodyExtras` — upstream-specific WIRE fields that have
-    // no AI-SDK equivalent and must reach the upstream verbatim (today: only
-    // OpenRouter's `provider` routing preferences, which pin a managed model to
-    // endpoints that actually support prompt caching and the advertised context
-    // window). 'openai-compatible' ONLY, matching the descriptor field's own
-    // contract: that family's provider package spreads any key it does not
-    // recognize straight onto the wire, which is what makes this work without a
-    // schema. Merged LAST so an upstream pin always wins over a same-named
-    // client field, exactly as the retired native openai-compat transport did.
-    bodyExtras?: Record<string, unknown>;
     // The upstream model id (`descriptor.resolvedModel`), e.g.
     // `global.openai.gpt-5.6-sol` vs `us.anthropic.claude-fable-5`. Gates the
     // bedrock adapter's Claude-Converse-only primitives (cachePoint, adaptive
@@ -1204,17 +1125,8 @@ export function buildAiSdkArgs(
   const providerOptions: Record<string, Record<string, unknown>> = {};
   const rawFields = adapter.buildProviderOptions(req, opts.providerName);
   const definedFields = Object.entries(rawFields).filter(([, value]) => value !== undefined);
-  // See `bodyExtras`'s doc comment on this function's options: openai-compatible
-  // only, and merged after the adapter's own fields so an upstream pin wins.
-  const wireExtras =
-    family === 'openai-compatible' && opts.bodyExtras
-      ? Object.entries(opts.bodyExtras).filter(([, value]) => value !== undefined)
-      : [];
-  if (definedFields.length || wireExtras.length) {
-    providerOptions[adapter.optionsKey(opts.providerName)] = Object.fromEntries([
-      ...definedFields,
-      ...wireExtras,
-    ]);
+  if (definedFields.length) {
+    providerOptions[adapter.optionsKey] = Object.fromEntries(definedFields);
   }
 
   // Codex's ChatGPT backend (`https://chatgpt.com/backend-api/codex/responses`)
