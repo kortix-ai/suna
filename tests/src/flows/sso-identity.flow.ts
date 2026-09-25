@@ -377,3 +377,89 @@ flow(
     });
   },
 );
+
+flow(
+  'SSO-4',
+  {
+    domain: 'iam',
+    routes: [
+      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
+      'POST /v1/accounts/:accountId/members',
+      'GET /v1/accounts/:accountId/invites',
+      'GET /v1/accounts',
+      'POST /v1/accounts/:accountId/iam/scim/tokens',
+      'POST /scim/v2/accounts/:accountId/Users',
+    ],
+  },
+  async (ctx) => {
+    const idpTeam = await ctx.fixtures.team({ enterprise: true });
+    const inviter = await ctx.fixtures.team({ enterprise: true });
+    const supabaseProviderId = crypto.randomUUID();
+    const inviteeDomain = `${ctx.fixtures.name('sso-claim')}.test`.toLowerCase();
+    const invitee = await ctx.fixtures.userWithEmail(`invitee@${inviteeDomain}`);
+    // Invited BEFORE the account exists, so the invite stays pending until the
+    // person's first account listing claims it.
+    const passwordEmail = `${ctx.fixtures.name('pw-claim')}@example.test`.toLowerCase();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { accountId: inviter.id };
+    let sso: Client;
+
+    const accountIds = async (client: Client) => {
+      const r = await client.get('/v1/accounts');
+      r.status(200);
+      return new Set(r.json<Array<{ account_id: string }>>().map((a) => a.account_id));
+    };
+    const pendingEmails = async () => {
+      const r = await owner.get('/v1/accounts/:accountId/invites', { params });
+      r.status(200);
+      return new Set(r.json<Array<{ email: string }>>().map((i) => i.email.toLowerCase()));
+    };
+
+    await ctx.step('an IdP account with an unverified domain signs the invitee in over SSO', async () => {
+      await saveProvider(ctx, idpTeam.id, { supabaseProviderId, domain: inviteeDomain });
+      sso = ctx.client.withBearer(await ssoFixtureToken(ctx.env, invitee, supabaseProviderId, []), 'SSO-claim');
+    });
+
+    await ctx.step('another account invites the SSO address and a not-yet-registered address (plain account invites)', async () => {
+      for (const email of [invitee.email!, passwordEmail]) {
+        const r = await owner.post('/v1/accounts/:accountId/members', { email, role: 'member' }, { params });
+        r.status(201).body().has('$.status', 'pending');
+      }
+    });
+
+    await ctx.step('listing accounts does not auto-claim the invite for the unverified SSO identity', async () => {
+      if ((await accountIds(sso)).has(inviter.id)) throw new Error('the unverified SSO identity was auto-joined');
+      if (!(await pendingEmails()).has(invitee.email!.toLowerCase())) {
+        throw new Error('the invite for the SSO address was consumed');
+      }
+    });
+
+    await ctx.step('a SCIM directory entry for the address does not link the unverified SSO identity', async () => {
+      const tokenRes = await owner.post('/v1/accounts/:accountId/iam/scim/tokens', { name: ctx.fixtures.name('scim') }, { params });
+      tokenRes.status(201);
+      const scim = ctx.client.withBearer(tokenRes.json<{ secret: string }>().secret, 'SCIM');
+      const created = await scim.post('/scim/v2/accounts/:accountId/Users', { userName: invitee.email }, { params });
+      created.status([200, 201]);
+      if (created.json<{ id: string }>().id === invitee.userId) {
+        throw new Error('SCIM linked the address to the unverified SSO identity');
+      }
+      if ((await accountIds(sso)).has(inviter.id)) throw new Error('the SCIM entry joined the unverified SSO identity');
+    });
+
+    await ctx.step('a password identity for the other address still auto-claims its plain invite on account listing', async () => {
+      const password = ctx.client.as(await ctx.fixtures.userWithEmail(passwordEmail));
+      if (!(await accountIds(password)).has(inviter.id)) throw new Error('the password identity was not auto-joined');
+      if ((await pendingEmails()).has(passwordEmail)) throw new Error('the claimed invite is still pending');
+    });
+
+    await ctx.step('after the IdP account verifies the domain, the SSO identity auto-claims the remaining invite', async () => {
+      (await operatorVerifies(ctx, idpTeam.id, true)).status(200).body().has('$.domain_verified', true);
+      if (!(await accountIds(sso)).has(inviter.id)) throw new Error('a verified SSO identity must auto-claim its invite');
+    });
+
+    await ctx.step('cleanup: remove the provider', async () => {
+      (await owner.del('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: idpTeam.id } })).status(200);
+    });
+  },
+);

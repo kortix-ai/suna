@@ -233,6 +233,8 @@ Supabase marks every SAML-asserted email as verified and does not compare it wit
 
 `SSO-3` **SAML JIT never merges an owner or an unverified email** — when a SAML sign-in's email matches another identity of the same account (here through a SCIM directory row), the existing identity is merged into the SSO identity only when the IdP's domain is verified and the existing identity is neither an owner nor a super-admin. Unverified domain → both stay members. Verified domain + owner → the owner keeps `owner`, the SSO identity joins as `member`. Verified domain + ordinary member → the member is linked (merged) into the SSO identity, which keeps `member`. JIT sync runs once per login session and IdP claim set per API process (5-minute memo), not on every request (`middleware/auth-sso-sync.test.ts`).
 
+`SSO-4` **Auto-claim and SCIM linking use the same email trust** — an SSO identity whose IdP account has not verified the email's domain: another account's plain invite for that address is not auto-claimed by `GET /accounts` (the account is absent from the list and the invite stays pending in `GET /accounts/:id/invites`), and a SCIM `POST /Users` for the address in that account does not link to the SSO identity. A password identity invited before it registered still auto-claims its plain invite on account listing. After the IdP account verifies the domain, the SSO identity auto-claims the remaining invite.
+
 
 ---
 
