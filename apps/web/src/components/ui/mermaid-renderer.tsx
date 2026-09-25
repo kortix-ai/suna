@@ -22,6 +22,7 @@ import {
   MagnifyingGlassPlusIcon as ZoomIn,
   MagnifyingGlassMinusIcon as ZoomOut,
 } from '@phosphor-icons/react';
+import { Copy } from '@/features/icon/icons/copy';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 let mermaidInstance: any = null;

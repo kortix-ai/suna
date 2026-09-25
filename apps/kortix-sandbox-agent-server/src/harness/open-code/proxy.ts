@@ -8,6 +8,12 @@ import type { Opencode } from './lifecycle'
 import type { OpenCodeBootState } from './boot-state'
 import { stripInlineAttachmentBytes } from '../../inline-attachments'
 import { openPartText } from './open-part-text'
+import {
+  abortTargetOf,
+  loopStartTargetOf,
+  noteOpencodeStopRequested,
+  type InstanceGuard,
+} from './instance-guard'
 
 // Bound on waiting for opencode to respond to a proxied request. Applied only
 // to the wait for the response to arrive (headers), never to a streaming body
@@ -63,7 +69,10 @@ export function isBlockingTurnRequest(method: string, path: string): boolean {
 }
 
 /** Native readiness and upstream protocol handling, without route registration. */
-export function createOpenCodeProxyService(opencode: Opencode): HarnessProxyService {
+export function createOpenCodeProxyService(
+  opencode: Opencode,
+  instanceGuard?: Pick<InstanceGuard, 'settled'>,
+): HarnessProxyService {
   return {
     blockedPorts(cfg) {
       const native = requireOpenCodeConfig(cfg)
@@ -152,6 +161,18 @@ export function createOpenCodeProxyService(opencode: Opencode): HarnessProxyServ
       const upstreamUrl = `${opencode.getInternalUrl()}${input.path}${input.search}`
       const method = input.method.toUpperCase()
       const hasBody = method !== 'GET' && method !== 'HEAD'
+
+      // Every client Stop (web, SDK, CLI, API) is this request. Record it
+      // before OpenCode sees it: the abort frame that follows cannot say
+      // whether somebody asked for it (instance-guard.ts).
+      const abortTarget = abortTargetOf(method, input.path)
+      if (abortTarget) noteOpencodeStopRequested(abortTarget, 'proxy')
+      // A prompt must never be the first caller of an instance cache: a Stop
+      // would interrupt the build and the instance would keep the interrupt.
+      // Wait for the daemon's own warm-up (bounded); the prompt then joins
+      // caches the daemon built.
+      const loopTarget = loopStartTargetOf(method, input.path)
+      if (instanceGuard && loopTarget) await instanceGuard.settled(undefined, loopTarget)
 
       // Bound only the wait for opencode's response (headers) — not the abort
       // controller's whole lifetime — so we can free-run a stream once it starts.

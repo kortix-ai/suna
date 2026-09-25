@@ -16,6 +16,8 @@ import * as realAccess from '../lib/access';
 import * as realLifecycle from '../session-lifecycle';
 import * as realRuntimeClient from '../session-lifecycle/runtime-client';
 import { PLACED_INBOX_WINDOW_MS } from '../session-lifecycle/inbox-rows';
+import * as realHoldSettle from '../session-lifecycle/inbox-hold-settle';
+import * as realTurnLifecycle from '../sandbox-turn-lifecycle';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -481,6 +483,24 @@ const runtimeFetch = (async (input: string | URL | Request, init?: RequestInit) 
   return new Response(null, { status: 404 });
 }) as typeof fetch;
 
+// The Stop's first request is the hold, and the hold's background settle can
+// abort OpenCode before the client's own abort leaves the browser. So the hold
+// must stamp the requested stop on the open turn BEFORE the settle starts.
+// Both are recorded into one ordered log.
+const stopLog: unknown[][] = [];
+mock.module('../sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
+  markTurnStopRequested: async (sessionId: string, name: string, scope?: unknown) => {
+    stopLog.push(['stamp', sessionId, name, scope]);
+  },
+}));
+mock.module('../session-lifecycle/inbox-hold-settle', () => ({
+  ...realHoldSettle,
+  settleInboxHoldAfterStopInBackground: (sessionId: string) => {
+    stopLog.push(['settle', sessionId]);
+  },
+}));
+
 const { projectsApp } = await import('../lib/app');
 await import('./session-prompts');
 
@@ -534,6 +554,7 @@ beforeEach(() => {
   loadProjectCalls = [];
   capabilityCalls = [];
   agentAccessCalls.length = 0;
+  stopLog.length = 0;
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   visibleSession = { row: { sessionId: SESSION_ID, metadata: {} } };
 });
@@ -1721,6 +1742,28 @@ describe('POST .../prompts/hold', () => {
     await hold({ held: false });
     expect(commandTable[0].status).toBe('queued');
     expect(commandTable[0].result).toEqual({});
+  });
+
+  test('Stop stamps UserStop on the root turn BEFORE the settle can abort it', async () => {
+    // prod 2026-09-25: the settle's abort reached OpenCode ~450 ms before the
+    // client's proxied abort, the turn closed on a bare "Aborted" frame, and
+    // the user's own Stop read as "stopped before it finished".
+    visibleSession = { row: { sessionId: SESSION_ID, opencodeSessionId: 'ses_root', metadata: {} } };
+    commandTable = [
+      row({ status: 'succeeded', result: { status: 'delivered', forwarded_message_id: WIRE_ID } }),
+    ];
+    expect((await hold({ held: true })).status).toBe(200);
+    expect(stopLog).toEqual([
+      ['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: 'ses_root' }],
+      ['settle', SESSION_ID],
+    ]);
+  });
+
+  test('Resume and a rejected body stamp nothing: only a Stop is a requested stop', async () => {
+    commandTable = [row()];
+    await hold({ held: false });
+    await hold({ held: 'yes' });
+    expect(stopLog.filter((entry) => entry[0] === 'stamp')).toEqual([]);
   });
 });
 

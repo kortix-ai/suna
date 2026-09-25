@@ -1,6 +1,7 @@
 import type { Context, Next } from 'hono';
 import { config } from '../config';
-import { requestClientIp } from './client-ip';
+import { requestClientIp, requestClientKey } from './client-ip';
+import { isUuid } from './validate';
 import { recordAuditEvent } from './audit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from './rate-limit-audit';
 
@@ -30,8 +31,6 @@ interface AuditContext {
   action: string;
   metadata?: Record<string, unknown>;
 }
-
-const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 // Hard cap on distinct live buckets per limiter. A limiter keyed on any
 // attacker-influenced value (e.g. the public-session-share id) would otherwise
@@ -103,12 +102,6 @@ function positiveInt(value: unknown, fallback: number) {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-// Every IP-keyed limiter reads the caller through the trusted-proxy rule in
-// shared/client-ip.ts. The leftmost X-Forwarded-For entry is caller-written.
-function clientIp(c: Context) {
-  return requestClientIp(c);
-}
-
 function setHeaders(c: Context, result: RateLimitResult) {
   c.header('X-RateLimit-Limit', String(result.limit));
   c.header('X-RateLimit-Remaining', String(result.remaining));
@@ -125,7 +118,7 @@ async function auditRateLimitHit(c: Context, context: AuditContext, result: Rate
     action: context.action,
     resourceType: context.resourceType,
     resourceId: context.resourceId ?? null,
-    ip: clientIp(c),
+    ip: requestClientIp(c),
     userAgent: c.req.header('user-agent') || null,
     metadata: {
       ...(context.metadata ?? {}),
@@ -241,7 +234,7 @@ export function createInviteAcceptRateLimitMiddleware() {
     const denied = await enforceRateLimit(
       c,
       inviteAcceptLimiter,
-      clientIp(c),
+      requestClientKey(c),
       {
         limit: positiveInt((config as any).KORTIX_INVITE_ACCEPT_REQS_PER_MIN, 20),
         windowMs: 60_000,
@@ -301,7 +294,7 @@ export function createPublicSessionShareRateLimitMiddleware() {
     // of buckets (the id is never a real share, so it never reaches the
     // handler's own validation) and OOM the process.
     const rawShareId = c.req.param('shareId');
-    const shareId = rawShareId && UUID_V4_REGEX.test(rawShareId) ? rawShareId : `ip:${clientIp(c)}`;
+    const shareId = isUuid(rawShareId) ? rawShareId : `ip:${requestClientKey(c)}`;
     const denied = await enforceRateLimit(
       c,
       publicSessionShareLimiter,
@@ -333,7 +326,7 @@ export function createDemoRequestRateLimitMiddleware() {
     const denied = await enforceRateLimit(
       c,
       demoRequestLimiter,
-      clientIp(c),
+      requestClientKey(c),
       {
         limit: positiveInt((config as any).KORTIX_DEMO_REQUEST_REQS_PER_MIN, 10),
         windowMs: 60_000,
@@ -365,7 +358,7 @@ export function createCheckEmailRateLimitMiddleware() {
     const denied = await enforceRateLimit(
       c,
       checkEmailLimiter,
-      clientIp(c),
+      requestClientKey(c),
       {
         limit: positiveInt((config as any).KORTIX_CHECK_EMAIL_REQS_PER_MIN, 60),
         windowMs: 60_000,
@@ -390,7 +383,7 @@ export function createCheckEmailRateLimitMiddleware() {
 export function createProjectWebhookRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
     const projectId = c.req.param('projectId') || 'unknown';
-    const result = projectWebhookLimiter.check(`${projectId}:${clientIp(c)}`, {
+    const result = projectWebhookLimiter.check(`${projectId}:${requestClientKey(c)}`, {
       limit: positiveInt((config as any).KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN, 120),
       windowMs: 60_000,
     });
