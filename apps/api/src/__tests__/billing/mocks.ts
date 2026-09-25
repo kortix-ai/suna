@@ -219,7 +219,7 @@ export function registerWalletMock() {
   mock.module('../../billing/wallet', () => ({ wallet: fakeWallet.wallet }));
   mock.module('../../billing/services/credits', () => ({
     calculateTokenCost: () => 0,
-    getCreditSummary: async () => ({ total: 0, daily: 0, monthly: 0, extra: 0, canRun: true }),
+    getCreditSummary: () => ({ total: 0, daily: 0, monthly: 0, extra: 0 }),
   }));
 }
 

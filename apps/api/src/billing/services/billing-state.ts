@@ -3,7 +3,7 @@
  *
  * Before this module the question was answered in at least four places with
  * four different rules — the billing gate (per-seat active-sub bypass + wallet
- * floor), `getCreditSummary().canRun` (bare wallet floor), the web session-page
+ * floor), a `canRun` flag on the credit summary (bare wallet floor, since removed), the web session-page
  * gate (`!can_run` → rendered as "no plan"), and the upgrade modal (per-seat OR
  * has-subscription). A Team account on an ACTIVE $40/mo subscription whose
  * wallet had drained to $0.01 therefore got told "Your team isn't on a plan
