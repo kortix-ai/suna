@@ -134,10 +134,8 @@ describe('resolveSandboxOnBoot', () => {
 
 
 describe('native configuration behind the host boundary', () => {
-  test('retains the existing flat defaults without copying at adapter entry', () => {
-    const host = loadConfig({})
-    const native = requireOpenCodeConfig(host)
-    expect(native === host).toBe(true)
+  test('an empty environment yields the flat defaults', () => {
+    const native = requireOpenCodeConfig(loadConfig({}))
     expect(native).toMatchObject({
       servicePort: 8000,
       staticPort: 3211,

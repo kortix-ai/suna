@@ -5,15 +5,16 @@ import { join } from 'node:path'
 
 import {
   BUNDLED_MANAGED_MODELS,
+  MINIMAL_FALLBACK_MODELS,
   buildOpencodeConfigContent,
-  configuredProviderModelIds,
+  catalogIsDegraded,
   fetchManagedModels,
   missingManagedModelIds,
   refreshGatewayCatalogFile,
   resetManagedModelsStateForTests,
+  scheduleCatalogWarmToPathForTests,
   settleManagedModelsPrefetch,
   startManagedModelsPrefetch,
-  withManagedOverlay,
   type Opencode,
 } from '../harness/open-code/lifecycle'
 import { loadOpenCodeConfig as loadConfig } from '../harness/open-code/config'
@@ -81,7 +82,7 @@ afterEach(async () => {
 })
 
 describe('managed listing fetch', () => {
-  test('asks the gateway for the managed scope only', async () => {
+  test('asks the gateway for the picker scope only', async () => {
     const urls: string[] = []
     globalThis.fetch = (async (input: string) => {
       urls.push(String(input))
@@ -113,11 +114,20 @@ describe('managed listing fetch', () => {
     expect(Date.now() - started).toBeLessThan(5_500)
   })
 
-  test('an empty managed set (free tier) is not an overlay', async () => {
+  test('an empty picker listing (free tier) still leaves every bundled managed model', async () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ models: {} }), { status: 200 })) as unknown as typeof fetch
 
-    expect(await fetchManagedModels('https://gw.kortix.test/v1', 'k')).toBeNull()
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
+    await settleManagedModelsPrefetch()
+    const models = providerModels(
+      await buildOpencodeConfigContent({
+        ...GATEWAY,
+        KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile(),
+      } as NodeJS.ProcessEnv),
+    )
+
+    for (const id of Object.keys(BUNDLED_MANAGED_MODELS)) expect(models[id]).toBeDefined()
   })
 })
 
@@ -191,20 +201,125 @@ describe('boot config composition', () => {
     expect(models['openai/gpt-5.5']).toBeDefined()
   }, 15_000)
 
-  test('with no prefetch started the boot path stays network-free', async () => {
+})
+
+describe('the boot config never touches the network', () => {
+  // `opencode serve` cannot bind until this config exists, so the build reads
+  // only disk: a catalog file, else the bundled minimal set.
+  const NO_FILE_ENV = {
+    KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1',
+    KORTIX_TOKEN: 'k-test',
+    KORTIX_API_URL: 'https://api.kortix.test/v1',
+    KORTIX_LLM_CATALOG_FILE: join(tmpdir(), 'kortix-absent-catalog.json'),
+  }
+
+  function recordFetches(): string[] {
     const calls: string[] = []
     globalThis.fetch = (async (input: string) => {
       calls.push(String(input))
-      return new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })
+      return new Response('{}', { status: 200 })
     }) as unknown as typeof fetch
+    return calls
+  }
 
-    const raw = await buildOpencodeConfigContent({
-      ...GATEWAY,
-      KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile(),
-    } as NodeJS.ProcessEnv)
-
+  test('with no catalog file it falls back to the minimal model set, with no fetch', async () => {
+    const calls = recordFetches()
+    const models = providerModels(await buildOpencodeConfigContent(NO_FILE_ENV as NodeJS.ProcessEnv))
+    expect(Object.keys(models)).toEqual(Object.keys(MINIMAL_FALLBACK_MODELS))
     expect(calls).toEqual([])
-    expect(providerModels(raw)['deepseek-v4.1-flash']).toBeDefined()
+  })
+
+  test('a catalog file is used verbatim plus the bundled managed floor, with no fetch', async () => {
+    // Prod 2026-08-19: a baked catalog older than the managed lineup hid a
+    // managed model from OpenCode. The bundled set fills the gap.
+    const calls = recordFetches()
+    const models = providerModels(
+      await buildOpencodeConfigContent({
+        ...NO_FILE_ENV,
+        KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile({ models: { 'test/only-model': { name: 'Only Model' } } }),
+      } as NodeJS.ProcessEnv),
+    )
+    expect(models['test/only-model']).toBeDefined()
+    for (const id of Object.keys(BUNDLED_MANAGED_MODELS)) expect(models[id]).toBeDefined()
+    expect(calls).toEqual([])
+  })
+
+  test('catalogIsDegraded is true with no file and false with one', async () => {
+    const file = join(await mkdtemp(join(tmpdir(), 'kortix-degraded-')), 'catalog.json')
+    tempDirs.push(join(file, '..'))
+    expect(catalogIsDegraded(file)).toBe(true)
+    await writeFile(file, JSON.stringify({ models: { 'a/b': { name: 'B' } } }))
+    expect(catalogIsDegraded(file)).toBe(false)
+  })
+
+  test('every model gets a context window: a known one by id tail, else the conservative default', async () => {
+    // The gateway listing carries no limits; without one OpenCode cannot size
+    // the conversation and auto-compaction never fires.
+    const knownTail = Object.entries(MINIMAL_FALLBACK_MODELS).find(([, model]) => model.limit?.context)!
+    const tail = knownTail[0].split('/').pop()!
+    recordFetches()
+    const models = providerModels(
+      await buildOpencodeConfigContent({
+        ...NO_FILE_ENV,
+        KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile({
+          models: { [`other-provider/${tail}`]: { name: 'Known tail' }, 'unknown/model-x': { name: 'Unknown' } },
+        }),
+      } as NodeJS.ProcessEnv),
+    ) as Record<string, { limit?: { context?: number; output?: number } }>
+    expect(models[`other-provider/${tail}`]?.limit).toEqual(knownTail[1].limit)
+    expect(models['unknown/model-x']?.limit).toEqual({ context: 200_000, output: 32_000 })
+  })
+
+  test('no OpenAI reasoning model in the fallback set claims temperature support', () => {
+    // OpenCode would send `temperature` and every turn 400s while the fallback
+    // set is in effect.
+    const offenders = Object.entries(MINIMAL_FALLBACK_MODELS)
+      .filter(([id, model]) => id.startsWith('openai/') && model.reasoning && model.temperature)
+      .map(([id]) => id)
+    expect(offenders).toEqual([])
+  })
+})
+
+describe('a repaired catalog is rebuilt to a known shape before it reaches disk', () => {
+  // The remote listing becomes OpenCode config. An unknown field once made
+  // OpenCode reject its config at startup.
+  async function warmThenRead(catalog: unknown): Promise<Record<string, any> | null> {
+    const dir = await mkdtemp(join(tmpdir(), 'kortix-warm-'))
+    tempDirs.push(dir)
+    const target = join(dir, 'llm-catalog.json')
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ models: catalog }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch
+
+    scheduleCatalogWarmToPathForTests(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN, target)
+    const deadline = Date.now() + 8_000
+    while (Date.now() < deadline) {
+      try {
+        return JSON.parse(await readFile(target, 'utf8')).models
+      } catch {
+        await new Promise((r) => setTimeout(r, 25))
+      }
+    }
+    return null
+  }
+
+  test.each([
+    [
+      'drops unrecognised fields',
+      { 'a/b': { name: 'B', reasoning: true, arbitrary: { deep: 'junk' } } },
+      { 'a/b': { name: 'B', reasoning: true } },
+    ],
+    ['rejects non-object entries', { 'good/one': { name: 'G' }, 'bad/one': 'not-an-object' }, { 'good/one': { name: 'G' } }],
+    ['coerces a missing name to the id', { 'x/y': { reasoning: true } }, { 'x/y': { name: 'x/y', reasoning: true } }],
+    [
+      'keeps structured limit objects and drops a non-object cost',
+      { 'm/1': { name: 'M', limit: { context: 1000 }, cost: 'free' } },
+      { 'm/1': { name: 'M', limit: { context: 1000 } } },
+    ],
+  ])('%s', async (_name, served, expected) => {
+    expect(await warmThenRead(served)).toEqual(expected)
   })
 })
 
@@ -213,16 +328,19 @@ describe('warm-fork adoption refresh', () => {
     current: unknown,
     full: unknown,
     managed: unknown,
-  ): Promise<{ changed: boolean; written: Record<string, unknown> }> {
+  ): Promise<{ changed: boolean; written: Record<string, unknown>; auth: Array<string | null> }> {
     const dir = await mkdtemp(join(tmpdir(), 'kortix-adopt-'))
     tempDirs.push(dir)
     const currentFile = join(dir, 'baked.json')
     const targetFile = join(dir, 'session.json')
     await writeFile(currentFile, JSON.stringify(current))
-    globalThis.fetch = (async (input: string) =>
-      new Response(JSON.stringify(String(input).includes('scope=picker') ? managed : full), {
+    const auth: Array<string | null> = []
+    globalThis.fetch = (async (input: string, init?: RequestInit) => {
+      auth.push(new Headers(init?.headers).get('authorization'))
+      return new Response(JSON.stringify(String(input).includes('scope=picker') ? managed : full), {
         status: 200,
-      })) as unknown as typeof fetch
+      })
+    }) as unknown as typeof fetch
 
     const result = await refreshGatewayCatalogFile({
       currentCatalogFile: currentFile,
@@ -233,29 +351,35 @@ describe('warm-fork adoption refresh', () => {
     const written = JSON.parse(await readFile(targetFile, 'utf8')) as {
       models: Record<string, unknown>
     }
-    return { changed: !!result?.changed, written: written.models }
+    return { changed: !!result?.changed, written: written.models, auth }
   }
 
   test('reports changed when only the MANAGED set differs', async () => {
     const full = { models: STALE_BAKED.models }
-    const { changed, written } = await refreshWith(STALE_BAKED, full, LIVE_MANAGED)
+    const { changed, written, auth } = await refreshWith(STALE_BAKED, full, LIVE_MANAGED)
 
     // The full catalog is byte-identical to the current file; the managed
     // overlay is the only difference — and it MUST still trip the controlled
     // OpenCode restart, because OpenCode reads providers at process start.
     expect(changed).toBe(true)
     expect(written['grok-4.6']).toBeDefined()
+    // Both reads authenticate with the session's own gateway key.
+    expect(auth.length).toBeGreaterThan(0)
+    expect(auth.every((value) => value === `Bearer ${GATEWAY.KORTIX_TOKEN}`)).toBe(true)
   })
 
   test('an unchanged catalog + unchanged managed set keeps the no-restart path', async () => {
-    const composed = withManagedOverlay(STALE_BAKED.models, LIVE_MANAGED.models)
-    const { changed } = await refreshWith(
-      { models: composed },
+    // The first refresh lands the overlay; a second one over its own output
+    // has nothing left to change.
+    const first = await refreshWith(STALE_BAKED, { models: STALE_BAKED.models }, LIVE_MANAGED)
+    expect(first.changed).toBe(true)
+    const second = await refreshWith(
+      { models: first.written },
       { models: STALE_BAKED.models },
       LIVE_MANAGED,
     )
 
-    expect(changed).toBe(false)
+    expect(second.changed).toBe(false)
   })
 
   test('a dead full-catalog fetch still lands the managed overlay on the session file', async () => {
@@ -283,29 +407,6 @@ describe('warm-fork adoption refresh', () => {
     expect(written.models['grok-4.6']).toBeDefined()
     expect(written.models['openai/gpt-5.5']).toBeDefined()
   }, 20_000)
-})
-
-describe('withManagedOverlay', () => {
-  test('a live managed set is authoritative for its ids and additive elsewhere', () => {
-    const out = withManagedOverlay(
-      { 'a/b': { name: 'B' }, 'grok-4.6': { name: 'old' } },
-      { 'grok-4.6': { name: 'new' }, 'x-1': { name: 'X' } },
-    )
-    expect(out['grok-4.6']?.name).toBe('new')
-    expect(out['a/b']?.name).toBe('B')
-    expect(out['x-1']?.name).toBe('X')
-  })
-
-  test('without a live set the bundled managed models only fill gaps', () => {
-    const out = withManagedOverlay({ 'grok-4.6': { name: 'baked' } }, null)
-    expect(out['grok-4.6']?.name).toBe('baked')
-    expect(out['deepseek-v4.1-flash']).toBeDefined()
-  })
-
-  test('never removes a model the disk catalog already carried', () => {
-    const out = withManagedOverlay({ 'legacy/model': { name: 'L' } }, { 'grok-4.6': { name: 'G' } })
-    expect(out['legacy/model']).toBeDefined()
-  })
 })
 
 describe('post-spawn managed reconcile', () => {
@@ -352,7 +453,7 @@ describe('post-spawn managed reconcile', () => {
   test('restarts opencode EXACTLY ONCE when the live set has a model the boot config lacks', async () => {
     await bootWithLiveGateway()
     // The provider map OpenCode booted with does not know the new model.
-    expect(configuredProviderModelIds()?.has('new-managed-9.9')).toBe(false)
+    expect(missingManagedModelIds(LIVE_MANAGED.models)).toContain('new-managed-9.9')
 
     const restarts = { n: 0 }
     const marks: string[] = []

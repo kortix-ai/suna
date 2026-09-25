@@ -1,20 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 import { loadConfig } from '../config'
 import { isShallowRepo, scheduleHistoryBackfill } from '../git'
-import {
-  BUNDLED_MANAGED_MODELS,
-  MINIMAL_FALLBACK_MODELS,
-  buildOpencodeConfigContent,
-  catalogIsDegraded,
-  hasKortixLlmGateway,
-  scheduleCatalogWarmToPathForTests,
-  resetManagedModelsStateForTests,
-} from '../harness/open-code/lifecycle'
 
 const BASE_ENV = { KORTIX_WORKSPACE: '/workspace', KORTIX_REPO_URL: 'https://example.test/r.git' }
 
@@ -38,13 +29,7 @@ async function makeOriginRepo(): Promise<string> {
 }
 
 const tempDirs: string[] = []
-// The managed-models prefetch cache is module state in opencode.ts. Another
-// file in the same worker can leave a "live managed set" in it, and then the
-// catalog-floor assertions below read that set instead of the bundled floor
-// (order-dependent CI flake, 2026-08-27). Start every test from the baked state.
-beforeEach(() => resetManagedModelsStateForTests())
 afterEach(async () => {
-  resetManagedModelsStateForTests()
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 
@@ -171,155 +156,5 @@ describe('scheduleHistoryBackfill', () => {
 
     expect(await isShallowRepo(target)).toBe(false)
     expect(git(target, 'rev-list', '--count', 'HEAD').trim()).toBe('3')
-  })
-})
-
-describe('building the opencode boot config never touches the network', () => {
-  const realFetch = globalThis.fetch
-  afterEach(() => {
-    globalThis.fetch = realFetch
-  })
-
-  const GATEWAY_ENV = {
-    KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1',
-    KORTIX_TOKEN: 'k-test',
-    KORTIX_API_URL: 'https://api.kortix.test/v1',
-  }
-
-  test('the env under test really does engage the gateway path', () => {
-    expect(hasKortixLlmGateway(GATEWAY_ENV as NodeJS.ProcessEnv)).toBe(true)
-  })
-
-  test('makes zero fetch calls even with no catalog file on disk', async () => {
-    const calls: string[] = []
-    globalThis.fetch = (async (input: string) => {
-      calls.push(String(input))
-      return new Response('{}', { status: 200 })
-    }) as unknown as typeof fetch
-
-    const raw = await buildOpencodeConfigContent(GATEWAY_ENV as NodeJS.ProcessEnv)
-
-    expect(calls).toEqual([])
-    expect(raw).toBeDefined()
-  })
-
-  test('an unreachable gateway costs no boot latency at all', async () => {
-    globalThis.fetch = (async () => {
-      await new Promise((r) => setTimeout(r, 30_000))
-      return new Response('{}', { status: 200 })
-    }) as unknown as typeof fetch
-
-    const started = Date.now()
-    const raw = await buildOpencodeConfigContent(GATEWAY_ENV as NodeJS.ProcessEnv)
-
-    expect(Date.now() - started).toBeLessThan(1_000)
-    expect(raw).toBeDefined()
-  })
-
-  test('falls back to the minimal model set rather than blocking, and says so', async () => {
-    globalThis.fetch = (async () => new Response('{}', { status: 500 })) as unknown as typeof fetch
-
-    const raw = await buildOpencodeConfigContent(GATEWAY_ENV as NodeJS.ProcessEnv)
-    const parsed = JSON.parse(raw!) as { provider: { kortix: { models: Record<string, unknown> } } }
-
-    expect(Object.keys(parsed.provider.kortix.models)).toEqual(Object.keys(MINIMAL_FALLBACK_MODELS))
-  })
-
-  test('a catalog file on disk is used verbatim (plus the managed floor), still with no fetch', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'kortix-catalog-'))
-    tempDirs.push(dir)
-    const file = join(dir, 'catalog.json')
-    await writeFile(file, JSON.stringify({ models: { 'test/only-model': { name: 'Only Model' } } }))
-
-    const calls: string[] = []
-    globalThis.fetch = (async (input: string) => {
-      calls.push(String(input))
-      return new Response('{}', { status: 200 })
-    }) as unknown as typeof fetch
-
-    const raw = await buildOpencodeConfigContent({
-      ...GATEWAY_ENV,
-      KORTIX_LLM_CATALOG_FILE: file,
-    } as NodeJS.ProcessEnv)
-    const parsed = JSON.parse(raw!) as { provider: { kortix: { models: Record<string, unknown> } } }
-
-    // The file's own models survive untouched...
-    expect(parsed.provider.kortix.models['test/only-model']).toBeDefined()
-    // ...and the BUNDLED managed set fills the ids it lacks, so a baked catalog
-    // that predates a managed-lineup change can never hide a managed model from
-    // OpenCode (prod incident 2026-08-19). Still zero network on the boot path.
-    for (const id of Object.keys(BUNDLED_MANAGED_MODELS)) {
-      expect(parsed.provider.kortix.models[id]).toBeDefined()
-    }
-    expect(calls).toEqual([])
-  })
-
-  test('catalogIsDegraded reports true with no file and false with one', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'kortix-degraded-'))
-    tempDirs.push(dir)
-    const file = join(dir, 'catalog.json')
-
-    expect(catalogIsDegraded(file)).toBe(true)
-    await writeFile(file, JSON.stringify({ models: { 'a/b': { name: 'B' } } }))
-    expect(catalogIsDegraded(file)).toBe(false)
-  })
-})
-
-describe('catalog written to disk is rebuilt to a known shape, never passed through', () => {
-  const realFetch = globalThis.fetch
-  afterEach(() => {
-    globalThis.fetch = realFetch
-  })
-
-  const GATEWAY = { KORTIX_LLM_BASE_URL: 'https://gw.kortix.test/v1', KORTIX_TOKEN: 'k' }
-
-  async function warmThenRead(catalog: unknown): Promise<Record<string, any> | null> {
-    const dir = await mkdtemp(join(tmpdir(), 'kortix-warm-'))
-    tempDirs.push(dir)
-    const target = join(dir, 'llm-catalog.json')
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ models: catalog }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })) as unknown as typeof fetch
-
-    scheduleCatalogWarmToPathForTests(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN, target)
-    const deadline = Date.now() + 8_000
-    while (Date.now() < deadline) {
-      try {
-        return JSON.parse(await readFile(target, 'utf8')).models
-      } catch {
-        await new Promise((r) => setTimeout(r, 25))
-      }
-    }
-    return null
-  }
-
-  test('drops unrecognised fields instead of writing them through', async () => {
-    const written = await warmThenRead({
-      'a/b': { name: 'B', reasoning: true, __proto__hack: 'x', arbitrary: { deep: 'junk' } },
-    })
-    expect(written).not.toBeNull()
-    expect(written!['a/b'].name).toBe('B')
-    expect(written!['a/b'].reasoning).toBe(true)
-    expect(written!['a/b'].arbitrary).toBeUndefined()
-  })
-
-  test('rejects non-object model entries rather than persisting them', async () => {
-    const written = await warmThenRead({ 'good/one': { name: 'G' }, 'bad/one': 'not-an-object' })
-    expect(Object.keys(written!)).toEqual(['good/one'])
-  })
-
-  test('coerces a missing name to the model id rather than writing undefined', async () => {
-    const written = await warmThenRead({ 'x/y': { reasoning: true } })
-    expect(written!['x/y'].name).toBe('x/y')
-  })
-
-  test('keeps structured limit/cost objects but drops non-object ones', async () => {
-    const written = await warmThenRead({
-      'm/1': { name: 'M', limit: { context: 1000 }, cost: 'free' },
-    })
-    expect(written!['m/1'].limit).toEqual({ context: 1000 })
-    expect(written!['m/1'].cost).toBeUndefined()
   })
 })

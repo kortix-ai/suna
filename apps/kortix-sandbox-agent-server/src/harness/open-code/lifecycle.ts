@@ -780,8 +780,6 @@ function scheduleCatalogWarmToPath(
   })()
 }
 
-export const buildConnectorMcpConfigContent = buildOpencodeConfigContent
-
 /**
  * Where the composed Kortix config is materialized for an OpenCode child.
  * Derived from the DAEMON's own home, never from `env.HOME`: a project may name
@@ -932,7 +930,7 @@ let lastConfiguredProviderModelIds: Set<string> | null = null
  * Purely additive in both cases: nothing is removed, so a transient fetch can
  * never shrink a working picker.
  */
-export function withManagedOverlay(
+function withManagedOverlay(
   base: Record<string, KortixGatewayModel>,
   live: Record<string, KortixGatewayModel> | null | undefined,
 ): Record<string, KortixGatewayModel> {
@@ -1054,12 +1052,6 @@ export async function settleManagedModelsPrefetch(): Promise<Record<
   const pending = managedPrefetch
   if (pending) await pending.catch(() => null)
   return cachedManagedModels()
-}
-
-/** The kortix model ids the running OpenCode's provider map holds (i.e. the ids
- *  in the config written by the last spawn), or null before any config build. */
-export function configuredProviderModelIds(): Set<string> | null {
-  return lastConfiguredProviderModelIds
 }
 
 /**
@@ -1334,7 +1326,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
  *  Used when the live managed fetch is unavailable, so a managed model is
  *  present in OpenCode's provider map even with a stale baked catalog AND a
  *  down gateway. Kept in sync with @kortix/llm-catalog MANAGED_MODELS by
- *  __tests__/managed-fallback-sync.test.ts — a managed model missing here and
+ *  apps/api/src/llm-gateway/models/managed-fallback-sync.test.ts — a managed model missing here and
  *  missing from the baked image is the exact 2026-08-19 ModelNotFound outage. */
 export const BUNDLED_MANAGED_MODELS: Record<string, KortixGatewayModel> = Object.fromEntries(
   Object.entries(MINIMAL_FALLBACK_MODELS).filter(
@@ -1364,7 +1356,7 @@ const KNOWN_LIMIT_BY_TAIL: Record<string, { context?: number; output?: number }>
 // long sessions then blow past the window and get stuck (session pinned at 100%
 // context). Backfill from the known-model table (exact id, then bare id), else a
 // conservative default. Models that already declare a usable limit are untouched.
-export function withModelLimits(
+function withModelLimits(
   models: Record<string, KortixGatewayModel>,
 ): Record<string, KortixGatewayModel> {
   const out: Record<string, KortixGatewayModel> = {}
