@@ -608,10 +608,6 @@ bodies are unchanged):
 | `dialog.tsx` | `X` | `XIcon as X` |
 | `select.tsx` | `Check, ChevronDown, ChevronDownIcon, ChevronUpIcon` | `CheckIcon`, `CaretDownIcon` (×2), `CaretUpIcon` aliased |
 
-One non-import line: `checkbox.tsx` drops
-`strokeWidth={Platform.OS === 'web' ? 2.5 : 3.5}` — Phosphor has no stroke
-width; the app weight applies.
-
 `icon.tsx` is rewritten: `as: AppIcon` (was `LucideIcon`), and `IconImpl`
 passes the `className` color from `style.color` to the `color` prop, because
 Phosphor fills with `color` and ignores `style.color` (default `#000`). An
