@@ -19193,6 +19193,11 @@
       "expired": "此安装链接无效或已过期。请从项目中重新开始安装。",
       "failed": "无法完成安装。请从项目中重新开始。",
       "backToProject": "返回项目"
+    },
+    "secretIntakeWithheld": {
+      "title": "已保存，但 {agent} 暂时无法读取",
+      "grant": "{count, plural, other {# 个密钥}}（{names}）不在智能体 {agent} 的密钥中。请打开 自定义 → Agents → {agent} → 密钥 并启用{count, plural, =1 {它} other {它们}}。",
+      "allowlist": "{count, plural, other {# 个密钥}}（{names}）不在此会话的密钥范围内。请启动新会话以使用{count, plural, =1 {它} other {它们}}。"
     }
   },
   "projectOnboarding": {

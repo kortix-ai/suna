@@ -144,6 +144,9 @@ describe('POST /:projectId/secrets/sync', () => {
     expect(src).toContain('isProjectSessionPrincipal(c)');
     expect(src).toContain(GUARD_MESSAGE);
     expect(src).toContain('403');
+    // The CLI renders this code as "a human must do this", not as a
+    // kortix_permissions edit that could never unlock the route.
+    expect(src).toContain("code: 'agent_human_only_action'");
   });
 
   test('rejects the agent BEFORE the re-mint propagation runs', () => {
