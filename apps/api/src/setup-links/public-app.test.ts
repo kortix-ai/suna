@@ -90,6 +90,24 @@ mock.module('../connectors/db-deps', () => ({
   },
 }));
 
+// The grant verdict is resolved per session from the manifest. Mocked at the
+// I/O seam only: the pure policy and its wording stay real.
+const realReach = await import('../projects/lib/session-secret-reach');
+let reach: Awaited<ReturnType<typeof realReach.resolveSessionSecretReach>> | Error = null;
+const reachLookups: string[] = [];
+mock.module('../projects/lib/session-secret-reach', () => ({
+  ...realReach,
+  // The real advisory wrapper, re-bound to the mocked lookup: a module mock
+  // cannot reach a call made inside the module itself.
+  sessionWithheldSecrets: async (sessionId: string, names: string[]) => {
+    reachLookups.push(sessionId);
+    if (reach instanceof Error) return null;
+    if (!reach) return null;
+    const withheld = realReach.withheldSecrets(names, reach.grantEnv, reach.allowlist);
+    return withheld.length > 0 ? { agent: reach.agent, withheld } : null;
+  },
+}));
+
 const { mintSetupLink } = await import('./token');
 const { setupLinksPublicApp, secretSubmittedPrompt, connectorConnectedPrompt } = await import(
   './public-app'
@@ -100,13 +118,17 @@ const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const CONNECTOR_ID = '99999999-8888-7777-6666-555555555555';
 const T0 = new Date('2026-08-07T12:00:00.000Z');
 
-function mintToken(opts?: { expiresInMinutes?: number; sid?: string | null }) {
+function mintToken(opts?: {
+  expiresInMinutes?: number;
+  sid?: string | null;
+  scope?: 'runtime' | 'connector';
+}) {
   return mintSetupLink(
     PROJECT_ID,
     {
       kind: 'secret',
       fields: [{ name: 'DRATA_API_KEY' }],
-      scope: 'runtime',
+      scope: opts?.scope ?? 'runtime',
       uid: 'user-1',
       sid: opts?.sid === undefined ? SESSION_ID : opts.sid,
     },
@@ -138,6 +160,8 @@ beforeEach(() => {
   propagated.length = 0;
   enqueued.length = 0;
   finalizeCalls.length = 0;
+  reachLookups.length = 0;
+  reach = null;
   sessionRows = [];
   projectRows = [{ name: 'Kortix Company' }];
   connectorRows = [
@@ -289,6 +313,49 @@ describe('POST /secret/:token', () => {
     expect(res.status).toBe(200);
     await flushNotification();
     expect(enqueued).toHaveLength(0);
+  });
+
+  test('names a value the requesting agent is not granted, on the form and in the session', async () => {
+    sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
+    reach = { agent: 'analyst', grantEnv: ['OTHER_KEY'], allowlist: null };
+    const res = await submit(mintToken());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      saved: ['DRATA_API_KEY'],
+      agent: 'analyst',
+      withheld: [{ name: 'DRATA_API_KEY', reason: 'agent_grant' }],
+    });
+    expect(reachLookups).toEqual([SESSION_ID]);
+    await flushNotification();
+    const text = String(enqueued[0]?.text);
+    expect(text).toContain('not in agent "analyst"\'s secrets grant');
+    expect(text).toContain('Customize → Agents → analyst → Secrets');
+    expect(text).toContain('Do not report');
+  });
+
+  test('a granted value reports nothing withheld', async () => {
+    sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
+    reach = { agent: 'analyst', grantEnv: ['DRATA_API_KEY'], allowlist: null };
+    const res = await submit(mintToken());
+    expect(await res.json()).toEqual({ ok: true, saved: ['DRATA_API_KEY'] });
+    await flushNotification();
+    expect(String(enqueued[0]?.text)).not.toContain('secrets grant');
+  });
+
+  test('a connector-scoped value is never judged against the sandbox grant', async () => {
+    reach = { agent: 'analyst', grantEnv: [], allowlist: null };
+    const res = await submit(mintToken({ scope: 'connector' }));
+    expect(await res.json()).toEqual({ ok: true, saved: ['DRATA_API_KEY'] });
+    expect(reachLookups).toEqual([]);
+  });
+
+  test('an unreadable grant saves the value and claims nothing', async () => {
+    reach = new Error('manifest unreadable');
+    const res = await submit(mintToken());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, saved: ['DRATA_API_KEY'] });
+    expect(writes).toHaveLength(1);
   });
 
   test('an expired token cannot submit and returns 410', async () => {
@@ -478,7 +545,10 @@ describe('secretSubmittedPrompt', () => {
   test('names every saved key and tells the agent not to re-mint', () => {
     const text = secretSubmittedPrompt(['DRATA_API_KEY', 'DRATA_WORKSPACE_ID']);
     expect(text).toContain('DRATA_API_KEY, DRATA_WORKSPACE_ID');
-    expect(text).toContain('kortix secrets sync');
+    // The agent cannot run `kortix secrets sync` (the route refuses session
+    // principals), so the prompt must not send it there.
+    expect(text).toContain('arrives with the next message');
+    expect(text).toContain('cannot run `kortix secrets sync`');
     expect(text).toContain('Do not mint a new intake link');
   });
 });

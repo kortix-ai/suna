@@ -53,7 +53,9 @@ describe('tryDisposeReload', () => {
     const start = OPENCODE_SRC.indexOf('async function writeComposedConfig(')
     expect(start).toBeGreaterThanOrEqual(0)
     const body = OPENCODE_SRC.slice(start, OPENCODE_SRC.indexOf('async function spawnChild(', start))
-    expect(body).toContain("injectedSkillsDir: join(currentOpencodeConfigDir, 'skills')")
+    // The config dir is the boot link, so the injected-skills dir is too: a
+    // release swap repoints the link and the same path keeps resolving.
+    expect(body).toContain("injectedSkillsDir: join(bootLinkPath(), 'skills')")
     expect(body).toContain('secretCapabilitiesInstructionPath')
     expect(body).toContain('writeKortixOpencodeConfig(')
   })
