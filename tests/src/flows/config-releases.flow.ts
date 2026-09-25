@@ -13,7 +13,7 @@
  * (`/v1/git/<project>.git`) with an OWNER PAT, the way `kortix ship` pushes.
  */
 import { flow } from '../core/flow';
-import { waitFor } from '../core/poll';
+import { sleep, waitFor } from '../core/poll';
 import type { CreatedProject, FlowContext, TeamFixture } from '../core/types';
 
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -1229,6 +1229,25 @@ flow(
           [sessionId],
         )
       ).rows as Array<{ action: string; before: any; after: any; agent_name: string | null }>;
+    // Audit rows reach the table through the 250 ms flush queue
+    // (`AUDIT_FLUSH_MS_DEFAULT`, apps/api/src/shared/audit-queue.ts): the
+    // descriptor answers before the row is committed. A read taken the moment
+    // the call returns is ahead of the writer, and CFG-4 read 0 rows 0.5 s into
+    // the flow on CI run 36161395127. So: wait for a row the step expects, and
+    // give the queue a full window before reading for a row it must NOT have
+    // written.
+    const AUDIT_FLUSH_WINDOW_MS = 1_500;
+    const auditRowsOnceWritten = (sessionId: string, expected: number) =>
+      waitFor(() => auditRows(sessionId), {
+        until: (rows) => rows.length >= expected,
+        timeoutMs: 20_000,
+        intervalMs: 200,
+        description: `${expected} SESSION_AGENT_REPOINTED audit row(s)`,
+      });
+    const auditRowsAfterFlush = async (sessionId: string) => {
+      await sleep(AUDIT_FLUSH_WINDOW_MS);
+      return auditRows(sessionId);
+    };
     const storedAgent = async (sessionId: string) =>
       String(
         (await fixture.db.query('SELECT agent_name FROM kortix.project_sessions WHERE session_id = $1', [sessionId]))
@@ -1268,7 +1287,7 @@ flow(
         if ((await storedAgent(dropped.sessionId)) !== 'kortix') {
           throw new Error(`agent_name is ${await storedAgent(dropped.sessionId)}`);
         }
-        const rows = await auditRows(dropped.sessionId);
+        const rows = await auditRowsOnceWritten(dropped.sessionId, 1);
         if (rows.length !== 1) throw new Error(`${rows.length} audit rows, expected 1`);
         if (rows[0]!.before?.agent_name !== 'retired' || rows[0]!.after?.agent_name !== 'kortix') {
           throw new Error(`audit before/after ${JSON.stringify(rows[0])}`);
@@ -1283,7 +1302,8 @@ flow(
         if (d.agent_repoint !== null) throw new Error(`agent_repoint still set: ${JSON.stringify(d.agent_repoint)}`);
         const agents = Object.keys(JSON.parse(d.compiled_governance!).agent ?? {});
         if (agents.join(',') !== 'kortix') throw new Error(`compiled ${agents.join(',')}`);
-        if ((await auditRows(dropped.sessionId)).length !== 1) throw new Error('a second audit row was written');
+        if ((await auditRowsAfterFlush(dropped.sessionId)).length !== 1)
+          throw new Error('a second audit row was written');
       });
 
       await ctx.step('a HUMAN read decides the same answer and writes nothing', async () => {
@@ -1298,7 +1318,8 @@ flow(
         // Only the daemon's own request persists. A read that wrote would move
         // a session's identity every time somebody opened the session page.
         if ((await storedAgent(other.sessionId)) !== 'retired') throw new Error('a human read wrote the column');
-        if ((await auditRows(other.sessionId)).length !== 0) throw new Error('a human read wrote an audit row');
+        if ((await auditRowsAfterFlush(other.sessionId)).length !== 0)
+          throw new Error('a human read wrote an audit row');
       });
 
       await ctx.step('a declared agent is never re-pointed', async () => {
@@ -1307,7 +1328,8 @@ flow(
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
         if ((r.body as Descriptor).agent_repoint !== null) throw new Error('a declared agent was re-pointed');
         if ((await storedAgent(fine.sessionId)) !== 'reviewer') throw new Error('a declared agent moved');
-        if ((await auditRows(fine.sessionId)).length !== 0) throw new Error('a declared agent produced an audit row');
+        if ((await auditRowsAfterFlush(fine.sessionId)).length !== 0)
+          throw new Error('a declared agent produced an audit row');
       });
 
       await ctx.step('with no declared default agent the session keeps none, gets a valid release, and is told why', async () => {
@@ -1327,7 +1349,8 @@ flow(
         }
         if (!d.agent_repoint.reason.includes('retired')) throw new Error(`reason ${d.agent_repoint.reason}`);
         if ((await storedAgent(orphan.sessionId)) !== 'retired') throw new Error('an orphaned session was moved');
-        if ((await auditRows(orphan.sessionId)).length !== 0) throw new Error('an orphaned session produced an audit row');
+        if ((await auditRowsAfterFlush(orphan.sessionId)).length !== 0)
+          throw new Error('an orphaned session produced an audit row');
       });
     } finally {
       await fixture.cleanup();
