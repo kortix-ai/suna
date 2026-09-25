@@ -264,7 +264,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'channels',
             args: '<subcommand>',
-            blurb: 'Slack, Teams and Email channels, per-channel bindings, voice bot name',
+            blurb: 'Slack, Teams and Email channels, per-channel bindings',
           },
           {
             name: 'sandboxes',

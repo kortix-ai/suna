@@ -4,6 +4,7 @@ import { fetchCostExportCsv } from '@kortix/sdk';
 import { withKortixScope } from '../api/sdk.ts';
 import {
   emitJson,
+  fail,
   resolveAccountContext,
   surfaceApiError,
   takeFlagBool,
@@ -80,11 +81,6 @@ interface Flags {
   summary: boolean;
   breakdown: boolean;
   usage: boolean;
-}
-
-function fail(message: string): number {
-  process.stderr.write(`${status.err(message)}\n`);
-  return 2;
 }
 
 function money(value: unknown): string {

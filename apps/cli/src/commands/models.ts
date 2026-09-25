@@ -18,6 +18,7 @@
 
 import {
   emitJson,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -331,11 +332,6 @@ function row(label: string, value: string | null): void {
   process.stdout.write(
     `  ${C.dim}${pad(label, 9)}${C.reset} ${value ? `${C.cyan}${value}${C.reset}` : `${C.faded}unset${C.reset}`}\n`,
   );
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }
 
 function trim(s: string, max: number): string {
