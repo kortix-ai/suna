@@ -3,22 +3,23 @@ import {
   createMockCreditAccount,
   mockRegistry,
   registerGlobalMocks,
-  registerCreditsMock,
+  registerWalletMock,
+  fakeWallet,
   resetMockRegistry,
 } from './mocks';
 
-// Register global mocks + credits service mock (stubs grantCredits/resetExpiringCredits)
+// Register global mocks + the fake wallet (records every grant and reset)
 registerGlobalMocks();
-registerCreditsMock();
+registerWalletMock();
 
 // ─── Track calls ──────────────────────────────────────────────────────────────
 
-let resetExpiringCreditsCalls: any[] = [];
+const walletResets = fakeWallet.calls.reset;
 let updateCreditAccountCalls: any[] = [];
 let yearlyAccountsDueResult: any[] = [];
 
 beforeEach(() => {
-  resetExpiringCreditsCalls = [];
+  walletResets.length = 0;
   updateCreditAccountCalls = [];
   yearlyAccountsDueResult = [];
   resetMockRegistry();
@@ -36,9 +37,6 @@ beforeEach(() => {
   mockRegistry.getYearlyAccountsDueForRotation = async () => yearlyAccountsDueResult;
 
   // Credit service defaults
-  mockRegistry.resetExpiringCredits = async (...args: any[]) => {
-    resetExpiringCreditsCalls.push(args);
-  };
 });
 
 // Import AFTER mocking
@@ -75,13 +73,13 @@ describe('processYearlyCreditRotation', () => {
 
     expect(result.processed).toBe(2);
     expect(result.errors.length).toBe(0);
-    expect(resetExpiringCreditsCalls.length).toBe(2);
+    expect(walletResets.length).toBe(2);
 
-    expect(resetExpiringCreditsCalls[0][0]).toBe('acc_yearly_1');
-    expect(resetExpiringCreditsCalls[0][1]).toBe(50); // tier_6_50 = $50 monthly credits
+    expect(walletResets[0].accountId).toBe('acc_yearly_1');
+    expect(walletResets[0].amount).toBe(50); // tier_6_50 = $50 monthly credits
 
-    expect(resetExpiringCreditsCalls[1][0]).toBe('acc_yearly_2');
-    expect(resetExpiringCreditsCalls[1][1]).toBe(200); // tier_25_200 = $200 monthly credits
+    expect(walletResets[1].accountId).toBe('acc_yearly_2');
+    expect(walletResets[1].amount).toBe(200); // tier_25_200 = $200 monthly credits
   });
 
   test('updates nextCreditGrant to 1 month later', async () => {
@@ -115,7 +113,7 @@ describe('processYearlyCreditRotation', () => {
     const result = await processYearlyCreditRotation();
 
     expect(result.processed).toBe(0);
-    expect(resetExpiringCreditsCalls.length).toBe(0);
+    expect(walletResets.length).toBe(0);
   });
 
   test('creates ledger entry with idempotency key', async () => {
@@ -135,7 +133,7 @@ describe('processYearlyCreditRotation', () => {
 
     await processYearlyCreditRotation();
 
-    const idempotencyKey = resetExpiringCreditsCalls[0][3];
+    const idempotencyKey = walletResets[0].key.event;
     expect(idempotencyKey).toContain('yearly_rotation_acc_yearly_1_');
     expect(idempotencyKey).toContain(yearMonth);
   });

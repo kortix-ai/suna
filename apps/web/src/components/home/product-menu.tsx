@@ -24,7 +24,7 @@ import {
   ShieldCheckIcon,
   UsersThreeIcon,
 } from '@phosphor-icons/react';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { useEffect, useRef, useState } from 'react';
 
 /**

@@ -279,7 +279,7 @@ test('the provider sentence follows the same fallback the value does', () => {
 test('the invite gate asks for the leaf the route asserts, not project.write', () => {
   // `POST /:projectId/git/collaborators` asserts
   // `PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE` (apps/api/src/projects/routes/
-  // r1.ts). Gating the UI on `project.write` meant a custom role with
+  // routes/project-git.ts). Gating the UI on `project.write` meant a custom role with
   // write-but-not-members.manage saw the form and got a 403 on submit, and the
   // reverse role saw nothing though the API would have accepted it.
   expect(code).toContain('PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE');

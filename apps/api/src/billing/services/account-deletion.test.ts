@@ -111,8 +111,8 @@ mock.module('../repositories/credit-accounts', () => ({
   updateCreditAccount: async () => undefined,
 }));
 
-mock.module('../repositories/transactions', () => ({
-  insertLedgerEntry: async () => undefined,
+mock.module('../wallet', () => ({
+  wallet: { forfeit: async () => undefined },
 }));
 
 mock.module('../repositories/account-deletion', () => ({

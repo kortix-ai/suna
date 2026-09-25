@@ -89,7 +89,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 
 const OAUTH_CLIENTS_KEY = (accountId: string) => ['oauth-clients', accountId];
 

@@ -212,7 +212,7 @@ projectsApp.openapi(
       );
     }
     // Minting a link that authorizes the SHARED account is administration —
-    // the same capability r4's project-owned connection create asserts
+    // the same capability the project-owned connection create (connections.ts) asserts
     // (PROJECT_CONNECTOR_CONNECTIONS_MANAGE), not just connector.write.
     if (owner === 'project') {
       const mayManage = await projectCapabilityAllowed(

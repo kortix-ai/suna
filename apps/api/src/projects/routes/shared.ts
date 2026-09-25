@@ -428,7 +428,7 @@ export async function allocateRuntimeOnOpen(
     typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
   const runtimeMetadata = { opened_at: new Date().toISOString() };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
-  const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata);
+  const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata, loaded.row.projectId);
 
   allocateSessionRuntime({
     sessionId,

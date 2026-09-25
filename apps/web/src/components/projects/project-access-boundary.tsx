@@ -4,6 +4,7 @@ import { ShieldWarningIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,7 @@ import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
+import { prefetchSessionOpen } from '@kortix/sdk/react';
 
 const QUERY_KEY = 'project-access-boundary';
 
@@ -174,6 +176,12 @@ export function resolveGateState(
   return waiting ?? errorState ?? 'unavailable';
 }
 
+/** The `[sessionId]` route segment, when the current route has one. */
+export function routeSessionIdFromParams(params: Record<string, unknown> | null | undefined): string | null {
+  const value = params?.sessionId;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 // ─── Boundary ────────────────────────────────────────────────────────────────
 
 interface ProjectAccessBoundaryProps {
@@ -201,6 +209,18 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
     enabled: authReady && !!projectId,
     retry: false,
   });
+
+  // A session route's open read needs only the two route ids, so it starts
+  // HERE, beside `getProject`, instead of after this boundary renders the
+  // session page. Staging HAR (cold open): the snapshot waited 1.68 s for
+  // `GET /projects/<id>` before it could start. Read-only — it never wakes a
+  // sandbox — and a project this user cannot read answers 403 to it as well.
+  const queryClient = useQueryClient();
+  const routeSessionId = routeSessionIdFromParams(useParams());
+  useEffect(() => {
+    if (!authReady || !routeSessionId) return;
+    void prefetchSessionOpen(queryClient, projectId, routeSessionId);
+  }, [authReady, projectId, routeSessionId, queryClient]);
 
   const { refetch } = query;
   // Background poll: silent, and must never touch the button's pending state.

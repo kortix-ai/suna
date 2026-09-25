@@ -6,11 +6,11 @@ const accessSource = readFileSync(
   'utf8',
 );
 const routesSource = readFileSync(
-  new URL('../projects/routes/r1.ts', import.meta.url),
+  new URL('../projects/routes/projects.ts', import.meta.url),
   'utf8',
 );
 // The managed-git POST /provision create path used to stamp this inline in
-// `r1.ts`. Task 16 (workspace-switcher) extracted that handler's body into
+// `projects.ts`. Task 16 (workspace-switcher) extracted that handler's body into
 // `runProvision`, shared with the streaming variant of the route, so its
 // `setContextField('projectId', row.projectId);` call now lives here instead.
 const provisionCoreSource = readFileSync(
@@ -28,7 +28,7 @@ test('project account and project resolution propagate the central audit scope',
   );
   expect(accessSource).toContain("setContextField('accountId', row.accountId);");
   expect(accessSource).toContain("setContextField('projectId', row.projectId);");
-  // ONE project-creation path per file: `r1.ts`'s BYO-repo POST / handler,
+  // ONE project-creation path per file: `projects.ts`'s BYO-repo POST / handler,
   // and `provision-core.ts`'s managed-git `runProvision`. Neither alone has
   // both any more — checking them separately (instead of one combined count)
   // means a regression that drops EITHER stamp fails on its own file, not

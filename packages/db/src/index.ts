@@ -1,5 +1,5 @@
 // Main exports
-export { createDb, type Database } from './client';
+export { createDb, instrumentSql, type Database, type DbHooks } from './client';
 export * as schema from './schema';
 
 // Re-export frequently used schemas and types for convenience
@@ -225,6 +225,7 @@ export {
   connectorPolicies,
   connectorProjectPolicies,
   connectorProjectSettings,
+  connectorSyncFences,
   connectorCalls,
   connectorAttachments,
   promptAttachments,

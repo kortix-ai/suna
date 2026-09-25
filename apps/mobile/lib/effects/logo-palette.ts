@@ -1,7 +1,6 @@
 /**
- * The colours of the Kortix symbol (`MetalKortixLogo`). No screen offers a
- * choice now (the hidden `LogoPaletteSheet` is deleted, COR-156): the hero
- * renders the default metal. Pure: no React Native, no THEME import (the caller passes the
+ * The colours of the Kortix symbol (`MetalKortixLogo`), as a choice the user
+ * can make. Pure: no React Native, no THEME import (the caller passes the
  * accent's `hsl(H S% L%)` string), so it runs under `bun test`.
  *
  * Every colour is predefined: a palette is one brand accent (`THEME.accent.*`)

@@ -20,6 +20,7 @@ import type { AppEnv } from '../types';
 import { auditLogout } from '../shared/auth-audit';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { gotrue } from './gotrue';
+import { forgetJwtLiveness } from '../shared/jwt-liveness';
 
 export const authRouter = makeOpenApiApp<AppEnv>();
 
@@ -66,6 +67,10 @@ authRouter.openapi(
   // typically have one account context per session, but multi-tenant
   // dashboards can hit several — the safe move is to revoke them all
   // on explicit logout.
+  // This replica stops trusting the token at once; other replicas re-ask
+  // GoTrue within SUPABASE_JWT_LIVENESS_TTL_MS (shared/jwt-liveness.ts).
+  const logoutBearer = c.req.header('Authorization')?.replace(/^Bearer\s+/, '');
+  if (logoutBearer) forgetJwtLiveness(logoutBearer);
   let revokedCount = 0;
   if (sessionId) {
     const rows = await db
@@ -304,6 +309,7 @@ authRouter.openapi(
       // Best effort: the local revoke below is what the Kortix gate reads.
       await gotrue('/logout', { method: 'POST', bearer: token, body: {}, query: { scope } });
     }
+    if (token) forgetJwtLiveness(token);
     const userId = c.get('userId') as string;
     const sessionId = (c as unknown as { get(k: string): unknown }).get('sessionId') as string | undefined;
     const accountId = ((c as unknown as { get(k: string): unknown }).get('accountId') as string | undefined) ?? null;

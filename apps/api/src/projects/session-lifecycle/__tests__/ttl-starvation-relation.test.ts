@@ -1,5 +1,5 @@
 // F3 — the no-blind-repost guarantee documented on `executeQueuedContinue`
-// (engine.ts) depends on one cross-module relation:
+// (queued-continue.ts) depends on one cross-module relation:
 //
 //   DEDUPE_TTL_MS (sandbox-proxy/prompt-dedupe.ts) >=
 //   UNDELIVERED_PROMPT_STARVATION_MS (session-lifecycle/undelivered-prompts.ts)
@@ -19,12 +19,12 @@
 // someone re-hardcoding one side back to a bare number — fails here.
 import { describe, expect, mock, test } from 'bun:test';
 
-// `undelivered-prompts.ts` imports `./engine`, whose own import graph
+// `undelivered-prompts.ts` imports `./drain`, whose own import graph
 // eagerly validates process env (`../../config`) — unrelated to the relation
 // this file pins. Same mocking approach as `undelivered-prompts.test.ts`:
-// stand in for `./engine` before importing the real module under test, so
+// stand in for `./drain` before importing the real module under test, so
 // only the TTL/starvation constants get exercised for real.
-mock.module('../engine', () => ({
+mock.module('../drain', () => ({
   drainSessionLifecycleQueue: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
 }));
 

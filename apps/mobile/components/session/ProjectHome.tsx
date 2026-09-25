@@ -8,10 +8,10 @@
  * with the thread, not part of this content.
  *
  * The chat input is one card: text on top, then add files · model · send.
- * Files cannot upload yet (the session's sandbox does not exist), so they ride
- * along in the submit and ProjectScreen uploads them after the session
- * connects. The model comes from the project catalog and is sent as
- * `opencode_model`.
+ * Each file uploads when it is picked (`useComposerAttachments`, COR-185), so
+ * the send waits for the uploads and hands their parts to ProjectScreen,
+ * which creates the session with them. The model comes from the project
+ * catalog and is sent as `opencode_model`.
  *
  * Layout:
  * - The symbol (`ProjectHero`) is absolutely centred in the keyboard-avoiding
@@ -24,6 +24,7 @@
  */
 
 import * as React from 'react';
+import type { SessionPromptPart } from '@kortix/sdk';
 import { newConfigPrompt } from '@kortix/shared';
 import { Keyboard, Pressable, View } from 'react-native';
 import {
@@ -35,13 +36,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Composer } from '@/components/kortix/composer';
 import type { SheetRef } from '@/components/kortix/sheet';
+import { useToast } from '@/components/kortix/toast-provider';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import { ConnectProviderSheet } from '@/components/session/ConnectProviderSheet';
 import { ModelPickerSheet } from '@/components/session/ModelPickerSheet';
 import { ProjectHero } from '@/components/session/ProjectHero';
 import { AttachSheet, type AttachSheetRef } from '@/components/session/AttachSheet';
+import { useComposerAttachments } from '@/components/session/useComposerAttachments';
+import { useRecoverPendingPick } from '@/components/session/useRecoverPendingPick';
 import { useProjectDetail, useProjectModelCatalog } from '@/lib/projects/hooks';
 import type { AttachedFile } from '@/lib/session/attachments';
+import { uploadErrorMessage } from '@/lib/session/composer-uploads';
 import { takeComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { draftKey } from '@/lib/session/composer-draft';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
@@ -72,6 +77,8 @@ const KEYBOARD_GAP = 12;
 export interface ProjectHomeSubmit {
   text: string;
   files: AttachedFile[];
+  /** The uploaded files' prompt parts, in `files` order (`takeForSend`). */
+  fileParts: SessionPromptPart[];
   /** Gateway wire id, or null to use the project default. */
   model: string | null;
   /**
@@ -87,18 +94,22 @@ export interface ProjectHomeProps {
   projectId: string;
   /** A send is in flight: the composer keeps its content and locks. */
   sending?: boolean;
-  /** Parent handles the create+connect flow for a brand-new session. */
-  onSubmitNewSession: (input: ProjectHomeSubmit) => void;
+  /**
+   * Parent handles the create+connect flow for a brand-new session. Resolves
+   * `false` when the session was not started: the draft and files stay.
+   */
+  onSubmitNewSession: (input: ProjectHomeSubmit) => Promise<boolean>;
   onOpenDrawer: () => void;
   /**
-   * Read-and-clear the draft text to seed the composer with, if any — e.g. a
-   * project-home send the user cancelled from `SessionConnecting` before it
-   * connected (COR-146: `ProjectScreen.handleCancelConnect`). Called once, at
-   * mount; the parent's `homeKey` bump remounts this screen whenever it has
-   * text to hand back, so a lazy initial read is enough — no effect needed,
-   * and nothing here re-reads it on a later re-render.
+   * Read-and-clear the draft text and files to seed the composer with, if any
+   * — e.g. a project-home send the user cancelled from `SessionConnecting`
+   * before it connected (COR-146: `ProjectScreen.handleCancelConnect`). Called
+   * once, at mount; the parent's `homeKey` bump remounts this screen whenever
+   * it has a draft to hand back, so a lazy initial read is enough — no effect
+   * needed, and nothing here re-reads it on a later re-render. The files
+   * upload again (`useComposerAttachments`'s `initialFiles`).
    */
-  takeInitialDraft?: () => string;
+  takeInitialDraft?: () => { text: string; files: AttachedFile[] };
 }
 
 export function ProjectHome({
@@ -109,14 +120,21 @@ export function ProjectHome({
   takeInitialDraft,
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
-  const [draft, setDraft] = React.useState(() => takeInitialDraft?.() ?? '');
+  const toast = useToast();
+  // One read at mount: the text seeds the draft, the files seed the uploads.
+  const [initialDraft] = React.useState(() => takeInitialDraft?.() ?? { text: '', files: [] });
+  const [draft, setDraft] = React.useState(initialDraft.text);
   // Survives the OS killing the app (COR-143). ProjectScreen clears it once a
   // send starts a session.
   useComposerDraft(draftKey({ kind: 'project', projectId }), draft, setDraft);
   // The first project, just created on `/new` (COR-161): open with the
   // keyboard up. One-shot, read once at mount.
   const [focusComposer] = React.useState(() => takeComposerFocus(projectId));
-  const [files, setFiles] = React.useState<AttachedFile[]>([]);
+  const attachments = useComposerAttachments(projectId, { initialFiles: initialDraft.files });
+  useRecoverPendingPick(attachments.add);
+  const files = attachments.files;
+  // Waiting for the uploads before the create: the send slot shows the loader.
+  const [preparing, setPreparing] = React.useState(false);
   const [model, setModel] = React.useState<string | null>(null);
   const modelSheetRef = React.useRef<SheetRef>(null);
   const connectSheetRef = React.useRef<SheetRef>(null);
@@ -204,16 +222,19 @@ export function ProjectHome({
   // a new session on the shared "configure a new agent" prompt, through the
   // same path as a composer send.
   const handleCreateAgent = React.useCallback(() => {
-    onSubmitNewSession({ text: newConfigPrompt('agent'), files: [], model: null, picks: null, agent: null });
+    void onSubmitNewSession({
+      text: newConfigPrompt('agent'),
+      files: [],
+      fileParts: [],
+      model: null,
+      picks: null,
+      agent: null,
+    });
   }, [onSubmitNewSession]);
   const agentChoice = React.useMemo(
     () => ({ agents: projectAgents, activeName: agentName, onSelect: handleAgentChange, onCreate: handleCreateAgent }),
     [projectAgents, agentName, handleAgentChange, handleCreateAgent],
   );
-
-  const addFiles = React.useCallback((picked: AttachedFile[]) => {
-    setFiles((prev) => [...prev, ...picked]);
-  }, []);
 
   const restingGap = insets.bottom + COMPOSER_BOTTOM_GAP;
   const { progress } = useReanimatedKeyboardAnimation();
@@ -223,22 +244,72 @@ export function ProjectHome({
 
   // Nothing is cleared on send. A successful send pushes the connecting state
   // over this screen, and the project stack remounts this screen once it is
-  // covered (ProjectRoutes `homeKey`). A failed or gated send (credits,
-  // network) leaves the prompt and files in place. Web does the same
-  // (`clearOnSend={false}` on the home composer).
-  const handleSubmit = React.useCallback(() => {
+  // covered (ProjectRoutes `homeKey`). A failed or gated send (upload,
+  // credits, network) leaves the prompt and files in place, and hands the
+  // uploads back to the composer. Web does the same (`clearOnSend={false}` on
+  // the home composer).
+  const isSending = sending || preparing;
+  const submitNow = React.useCallback(async () => {
     const text = draft.trim();
-    if ((!text && files.length === 0) || sending) return;
+    if ((!text && files.length === 0) || isSending) return;
+    let sent: { files: AttachedFile[]; fileParts: SessionPromptPart[] } = { files: [], fileParts: [] };
+    if (files.length > 0) {
+      setPreparing(true);
+      try {
+        sent = await attachments.takeForSend();
+      } catch (err) {
+        // `takeForSend` already handed the uploads back to the composer.
+        toast.error(uploadErrorMessage(err));
+        return;
+      } finally {
+        setPreparing(false);
+      }
+    }
     // The thread's header reads the store: it then shows the agent this session runs on.
     if (agentName) setLastUsedAgent(agentName);
-    onSubmitNewSession({
+    const ok = await onSubmitNewSession({
       text,
-      files,
+      files: sent.files,
+      fileParts: sent.fileParts,
       model,
       picks: firstPromptPicks(activeModel, variant, levels),
       agent: agentName,
     });
-  }, [draft, files, model, activeModel, variant, levels, agentName, setLastUsedAgent, sending, onSubmitNewSession]);
+    if (!ok) {
+      attachments.reclaim(
+        sent.files.map((f) => f.uploadId).filter((id): id is string => Boolean(id)),
+      );
+    }
+  }, [
+    draft,
+    files,
+    isSending,
+    attachments,
+    toast,
+    model,
+    activeModel,
+    variant,
+    levels,
+    agentName,
+    setLastUsedAgent,
+    onSubmitNewSession,
+  ]);
+
+  // One submission at a time: two taps inside one frame both read the same
+  // draft (the cleared text has not rendered yet), so the second would send
+  // it again. Released a frame after the submission settles.
+  const submittingRef = React.useRef(false);
+  const handleSubmit = React.useCallback(async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      await submitNow();
+    } finally {
+      requestAnimationFrame(() => {
+        submittingRef.current = false;
+      });
+    }
+  }, [submitNow]);
 
   return (
     <View className="flex-1 bg-background">
@@ -267,15 +338,15 @@ export function ProjectHome({
               onSubmit={handleSubmit}
               placeholder="Ask anything"
               autoFocus={focusComposer}
-              disabled={sending}
+              disabled={isSending}
+              sending={isSending}
               attachments={files}
+              attachmentUploads={attachments.uploads}
               onAttach={() => {
                 Keyboard.dismiss();
                 attachSheetRef.current?.open();
               }}
-              onRemoveAttachment={(index) =>
-                setFiles((prev) => prev.filter((_, i) => i !== index))
-              }
+              onRemoveAttachment={attachments.remove}
               modelLabel={pillLabel}
               onModelPress={() => {
                 Keyboard.dismiss();
@@ -286,7 +357,7 @@ export function ProjectHome({
         </View>
       </KeyboardAvoidingView>
 
-      <AttachSheet ref={attachSheetRef} onPick={addFiles} />
+      <AttachSheet ref={attachSheetRef} onPick={attachments.add} />
 
       <ModelPickerSheet
         ref={modelSheetRef}

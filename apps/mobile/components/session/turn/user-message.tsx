@@ -34,13 +34,15 @@ import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import type { Turn, TextPart } from '@/lib/opencode/types';
 import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
 import { isTextPart, messageCreatedAt, splitUserParts, type MessageWithParts } from '@kortix/sdk';
+import { parseTriggerEvent } from '@kortix/shared';
+import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
 import {
   isPreviewableImage,
+  localOrResolvedSource,
   planAttachmentGrid,
-  resolveAttachmentSource,
 } from '@/lib/session/attachment-tile';
 import {
   commandMessageText,
@@ -134,6 +136,8 @@ interface MessageAttachment {
   filename: string;
   mime?: string;
   src?: string;
+  /** The picked file on the device (an optimistic send, COR-185): shown until the server echo replaces the message. */
+  localUri?: string;
 }
 
 // ─── UserMessage ─────────────────────────────────────────────────────────────
@@ -199,8 +203,8 @@ export function UserMessage({
         src: f.path || undefined,
       })),
       ...fileParts.map((p) => {
-        const fp = p as unknown as { id: string; filename?: string; mime: string; url?: string };
-        return { key: fp.id, filename: fp.filename || 'File', mime: fp.mime, src: fp.url };
+        const fp = p as unknown as { id: string; filename?: string; mime: string; url?: string; localUri?: string };
+        return { key: fp.id, filename: fp.filename || 'File', mime: fp.mime, src: fp.url, localUri: fp.localUri };
       }),
     ];
     return { rawText, content, attachments };
@@ -220,30 +224,10 @@ export function UserMessage({
   const edited = useMemo(() => isUserMessageEdited(message.parts as never), [message.parts]);
   const timestamp = messageCreatedAt(message as unknown as MessageWithParts);
 
-  const channelMessageInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const headerMatch = rawText.match(/^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/);
-    if (!headerMatch) return undefined;
-    const platform = headerMatch[1] as 'Telegram' | 'Slack';
-    const userName = headerMatch[3]!.trim();
-    const afterHeader = rawText.slice(headerMatch[0].length);
-    const instrStart = afterHeader.search(/\n\s*(Chat ID:|── Telegram instructions|── Slack instructions)/);
-    const messageText = instrStart >= 0 ? afterHeader.slice(0, instrStart).trim() : afterHeader.trim();
-    return { platform, userName, messageText };
-  }, [rawText]);
-
-  const triggerEventInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const match = rawText.match(/<trigger_event>\s*([\s\S]*?)\s*<\/trigger_event>/);
-    if (!match) return undefined;
-    try {
-      const data = JSON.parse(match[1]!);
-      const prompt = rawText.replace(/<trigger_event>[\s\S]*?<\/trigger_event>/, '').trim();
-      return { data, prompt };
-    } catch {
-      return undefined;
-    }
-  }, [rawText]);
+  // Both parsers are linear in the prompt: a channel or a webhook chooses this
+  // text, and a regex version of each froze the JS thread on a crafted prompt.
+  const channelMessageInfo = useMemo(() => parseLegacyChannelMessage(rawText), [rawText]);
+  const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);
@@ -804,7 +788,7 @@ function MessageAttachmentTile({
   file: MessageAttachment;
   onOpenPath?: (path: string) => void;
 }) {
-  const source = resolveAttachmentSource(file.src);
+  const source = localOrResolvedSource(file.localUri, file.src);
   const path = source && 'path' in source ? source.path : '';
   const directUri = source && 'uri' in source ? source.uri : null;
   const isImage = isPreviewableImage(file.filename, file.mime);

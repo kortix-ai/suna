@@ -7,8 +7,7 @@
  *
  * Scope (v1): the safe accounts console — list accounts (filterable by tier,
  * payment status, paid-only, and subscription presence), account members,
- * credit ledger, and grant/debit credits (reusing the billing grantCredits
- * service). Stripe customer id/email are still returned as null (no join yet);
+ * credit ledger, and grant/debit credits (through the billing wallet). Stripe customer id/email are still returned as null (no join yet);
  * the legacy env/exec/schema endpoints are intentionally NOT restored.
  */
 import { qualifiedColumn } from '../shared/sql-qualified-column';
@@ -744,6 +743,12 @@ adminApp.openapi(
   },
 );
 
+/** The buckets an admin credit route echoes back; no credit row reads as empty. */
+async function adminBalance(accountId: string) {
+  const { wallet } = await import('../billing/wallet');
+  return (await wallet.balance(accountId)) ?? { balance: 0, expiring: 0, nonExpiring: 0, daily: 0 };
+}
+
 // ── Grant credits ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
@@ -783,10 +788,16 @@ adminApp.openapi(
     const isExpiring = body.isExpiring !== false;
     if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
 
-    const { grantCredits, getBalance } = await import('../billing/services/credits');
-    await grantCredits(accountId, amount, 'admin_grant', `${description} (by admin ${actorUserId ?? 'unknown'})`, isExpiring);
-    const balance = await getBalance(accountId);
-    return c.json({ ok: true, balance });
+    const { wallet } = await import('../billing/wallet');
+    await wallet.grant({
+      accountId,
+      amount,
+      kind: 'admin_grant',
+      description: `${description} (by admin ${actorUserId ?? 'unknown'})`,
+      expiring: isExpiring,
+      key: null,
+    });
+    return c.json({ ok: true, balance: await adminBalance(accountId) });
   } catch (e: any) {
     return c.json({ error: adminErrorMessage(e) }, 500);
   }
@@ -830,10 +841,18 @@ adminApp.openapi(
     const description = String(body.description || 'Admin credit debit');
     if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
 
-    const { grantCredits, getBalance } = await import('../billing/services/credits');
-    await grantCredits(accountId, -Math.abs(amount), 'admin_debit', `${description} (by admin ${actorUserId ?? 'unknown'})`, false);
-    const balance = await getBalance(accountId);
-    return c.json({ ok: true, balance });
+    const { wallet } = await import('../billing/wallet');
+    // A negative grant of its own kind: an operator correction is not
+    // customer usage, and it is not refused by the admission floor.
+    await wallet.grant({
+      accountId,
+      amount: -Math.abs(amount),
+      kind: 'admin_debit',
+      description: `${description} (by admin ${actorUserId ?? 'unknown'})`,
+      expiring: false,
+      key: null,
+    });
+    return c.json({ ok: true, balance: await adminBalance(accountId) });
   } catch (e: any) {
     return c.json({ error: adminErrorMessage(e) }, 500);
   }

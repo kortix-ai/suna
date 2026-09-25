@@ -260,7 +260,7 @@ const handleSessionSnapshot = async (c: any) => {
             : { known: true as const, requested: true as const, ...transcript.value }
           : failed(transcript.reason),
 
-      // Control-plane composer samplecols. Deliberately NOT the `/config`
+      // Control-plane composer essentials. Deliberately NOT the `/config`
       // route's freshness answer: that one compiles the manifest and re-reads
       // the box, which is exactly the kind of work a first paint must not wait
       // on.

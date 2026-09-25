@@ -1,6 +1,13 @@
 import { createHash } from 'node:crypto';
 import { type Database, auditEvents } from '@kortix/db';
+import {
+  type AuditRouteLabel,
+  auditLabelForEntrypoint,
+  auditLabelForRoute,
+  UNMATCHED_ROUTE_LABEL,
+} from '@kortix/shared/audit-labels';
 import type { Context, Next } from 'hono';
+import { matchedRoutes } from 'hono/route';
 import { getRequestContext, runWithContext } from '../lib/request-context';
 import type { AppEnv } from '../types';
 import { normalizeAuditClientSource } from './audit-client-source';
@@ -384,8 +391,25 @@ function withInheritedPrincipal(input: AuditEventInput): AuditEventInput {
   return out;
 }
 
+/**
+ * An event written while a request runs happened in that request: it carries
+ * the request's IP, user agent and reported client, unless it names its own.
+ * A worker tick has no request, so its scope lends none.
+ */
+function withRequestTransport(input: AuditEventInput): AuditEventInput {
+  const scope = currentInboundAuditScope();
+  if (!scope || scope.owner === 'worker') return input;
+  return {
+    ...input,
+    ip: input.ip || scope.ip,
+    userAgent: input.userAgent ?? scope.userAgent,
+    clientReportedSource:
+      input.clientReportedSource ?? normalizeAuditClientSource(scope.clientSourceHeader ?? undefined),
+  };
+}
+
 function buildAuditRow(rawInput: AuditEventInput): AuditRow {
-  const input = withInheritedPrincipal(rawInput);
+  const input = withRequestTransport(withInheritedPrincipal(rawInput));
   const request = getRequestContext();
   const authoritativeSource = input.authoritativeSource ?? input.source ?? 'api';
   const inputSummary = sanitizeAuditRecord(input.inputSummary);
@@ -487,6 +511,8 @@ export function auditWritesAreSynchronous(): boolean {
  * rejected promise in a request handler.
  */
 export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
+  const scope = currentInboundAuditScope();
+  if (scope && scope.owner !== 'worker') scope.recordedActions.add(input.action);
   if (auditWritesAreSynchronous()) {
     await insertAuditEvent(auditDb(), input);
     return;
@@ -605,7 +631,42 @@ const ENTRYPOINT_RESOURCE_TYPE: Record<InboundEntrypoint, string> = {
   preview_origin: 'sandbox_preview_origin',
   app_origin: 'app',
   ws_upgrade: 'websocket',
+  worker: 'worker',
 };
+
+/**
+ * The audit label of the request's route (`@kortix/shared/audit-labels`):
+ * the matched endpoint for a request Hono routed, the class name for one the
+ * server dispatched before Hono, and a fixed label when no endpoint matched.
+ * Null for a route the catalog does not know; its row keeps `METHOD /route`.
+ */
+function routeLabel(scope: InboundAuditScope): AuditRouteLabel | null {
+  if (scope.entrypoint !== 'http') return scope.route ? auditLabelForEntrypoint(scope.route) : null;
+  return scope.route ? auditLabelForRoute(scope.method, scope.route) : UNMATCHED_ROUTE_LABEL;
+}
+
+/**
+ * The route template of the endpoint Hono matched, or null when none did.
+ *
+ * Not `routePath`: that is the handler Hono stopped at, so a request an auth
+ * middleware refused was recorded under the middleware's `/v1/projects/*`
+ * instead of the endpoint it asked for. The router matches the whole handler
+ * stack up front, so the endpoint is known even when it never ran: the last
+ * method route, or else a catch-all handler (`app.all`) the catalog labels.
+ * Everything else that matches with method ALL is middleware.
+ */
+function matchedEndpointRoute(c: AuditContext): string | null {
+  const routes = matchedRoutes(c);
+  for (let i = routes.length - 1; i >= 0; i -= 1) {
+    const route = routes[i];
+    if (route && route.method !== 'ALL') return route.path;
+  }
+  for (let i = routes.length - 1; i >= 0; i -= 1) {
+    const route = routes[i];
+    if (route && auditLabelForRoute('ALL', route.path)) return route.path;
+  }
+  return null;
+}
 
 /**
  * The row for one inbound request. Precedence, per field: what an
@@ -653,6 +714,7 @@ async function inboundAuditInput(
   // Never the raw path: path segments can be bearer capabilities.
   const route = scope.route ?? '<unmatched>';
   const httpAction = `${scope.method} ${route}`;
+  const action = annotation.action ?? routeLabel(scope)?.action ?? httpAction;
   const inferred = hono
     ? inferResource(hono.path)
     : { resourceType: ENTRYPOINT_RESOURCE_TYPE[scope.entrypoint], resourceId: null };
@@ -661,7 +723,7 @@ async function inboundAuditInput(
     ...annotation.metadata,
     method: scope.method,
     path: route,
-    ...(annotation.action ? { http: httpAction } : {}),
+    ...(action !== httpAction ? { http: httpAction } : {}),
     ...(scope.entrypoint !== 'http' ? { entrypoint: scope.entrypoint } : {}),
     ...(bound.authMethod ? { auth: bound.authMethod } : {}),
   };
@@ -690,7 +752,7 @@ async function inboundAuditInput(
     authoritativeSource: source,
     clientReportedSource: normalizeAuditClientSource(scope.clientSourceHeader ?? undefined),
     outcome: annotation.outcome ?? outcomeForStatus(status),
-    action: annotation.action ?? httpAction,
+    action,
     resourceType: annotation.resourceType ?? inferred.resourceType,
     resourceId: annotation.resourceId !== undefined ? annotation.resourceId : inferred.resourceId,
     httpStatus: status,
@@ -734,6 +796,13 @@ export async function emitInboundAuditRow(scope: InboundAuditScope, status: numb
   scope.emitted = true;
   try {
     const input = await inboundAuditInput(scope, status);
+    // The handler already wrote this request's event, and the request
+    // succeeded: that event is the row. It is either the route's own action
+    // (`iam.group.create`, with the group in `after`) or one the route label
+    // lists (`secret.strategy.changed`, recorded only for a real change). A
+    // failed or refused request keeps its own row, with the status.
+    const standIns = [input.action, ...(routeLabel(scope)?.events ?? [])];
+    if (status < 400 && standIns.some((action) => scope.recordedActions.has(action))) return;
     // A deployed app's public traffic is the customer's end users, not a
     // principal acting on the account. A signed-in viewer is still audited.
     if (scope.entrypoint === 'app_origin' && input.actorType === 'anonymous') return;
@@ -805,7 +874,7 @@ async function auditRequestInScope(c: AuditContext, next: Next): Promise<void> {
     thrown = error;
     throw error;
   } finally {
-    if (scope.entrypoint === 'http') scope.route = c.req.routePath || c.req.path;
+    if (scope.entrypoint === 'http') scope.route = matchedEndpointRoute(c);
     scope.status = thrown ? errorStatus(thrown) : c.res.status;
     scope.hono = honoIdentitySnapshot(c);
     if (scope.owner === 'hono') await emitInboundAuditRow(scope, scope.status);

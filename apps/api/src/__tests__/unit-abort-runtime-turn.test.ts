@@ -95,7 +95,7 @@ describe('abortRuntimeTurn', () => {
   });
 });
 
-mock.module('../projects/session-lifecycle/engine', () => ({
+mock.module('../projects/session-lifecycle/runtime-client', () => ({
   resolveSessionOpencodeEndpoint: async () => endpoint,
 }));
 

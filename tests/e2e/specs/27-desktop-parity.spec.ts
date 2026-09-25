@@ -234,6 +234,12 @@ for (const runtime of runtimes) {
         process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
       if (!databaseUrl)
         throw new Error("Desktop parity requires the configured test database");
+      // The macOS row rule keys on `data-desktop-platform`, which the app reads
+      // from `navigator.platform`, not from the user agent. Pin it, or a Linux
+      // CI runner renders the Linux desktop layout and the row stays left.
+      await page.addInitScript(() =>
+        Object.defineProperty(navigator, "platform", { get: () => "MacIntel" }),
+      );
       const email = `e2e-desktop-exit-${randomUUID()}@example.test`;
       const user = await createAuthUser(email, authOptions);
       const session = await signIn(email, authOptions);
@@ -260,9 +266,21 @@ for (const runtime of runtimes) {
         );
         await selectAccountForUi(page, accounts[0].account_id);
         await dismissOnboarding(page);
-        await page.keyboard.press("Meta+,");
+        // Mod+, is bound by `SettingsPanel`, which `ProjectShell` mounts only
+        // after auth hydrates (until then the shell renders an empty div). A
+        // keystroke sent before that has no listener. The local stack hydrates
+        // before `dismissOnboarding` returns; a deployed origin does not, so
+        // this step failed 4 of 4 attempts on staging and on the #7579 preview
+        // while passing locally. Wait for the shell's own sidebar, then press
+        // until the effect has bound — the dialog must still come from Mod+,.
+        await expect(
+          page.getByRole("button", { name: "Switch project", exact: true }),
+        ).toBeVisible({ timeout: 60_000 });
         const settings = page.getByRole("dialog");
-        await expect(settings).toBeVisible();
+        await expect(async () => {
+          await page.keyboard.press("Meta+,");
+          await expect(settings).toBeVisible({ timeout: 2_000 });
+        }).toPass({ timeout: 45_000 });
         const settingsRow = settings.locator(".kx-overlay-sidebar-titlebar");
         const settingsBack = settingsRow.getByRole("button", { name: /Back to app/i });
         await expect(settingsBack).toBeVisible();
@@ -1695,6 +1713,35 @@ for (const runtime of runtimes) {
           "Log out must sit below the title-bar band",
         ).toBeGreaterThanOrEqual(backBox.y + backBox.height);
 
+        // `/new` has no titlebar owner, so the root strip is its only drag
+        // area and covers the whole band (#7568). The strip paints above Back,
+        // so it must not take Back's click: Back is the topmost box at its
+        // own center.
+        const strip = await page
+          .locator(".kx-desktop-chrome")
+          .evaluate((element) => ({
+            bottom: element.getBoundingClientRect().bottom,
+            region: getComputedStyle(element).webkitAppRegion,
+          }));
+        expect(
+          strip.bottom,
+          "the drag strip must cover the title-bar band",
+        ).toBeGreaterThanOrEqual(backBox.y + backBox.height);
+        expect(strip.region, "the band must stay a window drag region").toBe(
+          "drag",
+        );
+        expect(
+          await back.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const hit = document.elementFromPoint(
+              rect.left + rect.width / 2,
+              rect.top + rect.height / 2,
+            );
+            return hit !== null && element.contains(hit);
+          }),
+          "the drag strip must not cover Back",
+        ).toBe(true);
+
         await back.click();
         await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), {
           timeout: 60_000,
@@ -1824,6 +1871,88 @@ for (const runtime of runtimes) {
 
 const nativeBrowserTest =
   process.env.E2E_DESKTOP_NATIVE === "1" ? browserTest : null;
+nativeBrowserTest?.(
+  "27 — desktop parity keeps the collapsed Customize header draggable",
+  async ({ baseURL }) => {
+    browserTest.setTimeout(120_000);
+    const databaseUrl =
+      process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+    if (!databaseUrl)
+      throw new Error("Desktop drag test requires the configured test database");
+    const profile = await mkdtemp(join(tmpdir(), "kortix-desktop-drag-"));
+    const email = `e2e-desktop-drag-${randomUUID()}@example.test`;
+    const user = await createAuthUser(email, authOptions);
+    const session = await signIn(email, authOptions);
+    let project: ManifestProject | undefined;
+    let app: ElectronApplication | undefined;
+    try {
+      const accounts = await api<{ account_id: string }[]>(
+        session.access_token,
+        "GET",
+        "/accounts",
+      );
+      project = await createManifestProject({
+        api,
+        accessToken: session.access_token,
+        accountId: accounts[0].account_id,
+        userId: user.id,
+        name: "Desktop drag region",
+        databaseUrl,
+      });
+      app = await launchDesktop(baseURL!, profile);
+      const main = app
+        .windows()
+        .find((window) => window.url().startsWith(baseURL!));
+      if (!main) throw new Error("native main window not found");
+      await installBrowserSessionDirect(
+        main,
+        session,
+        `${baseURL}/projects/${project.id}/customize/agents`,
+        authOptions,
+      );
+      await selectAccountForUi(main, accounts[0].account_id);
+      await dismissOnboarding(main);
+      await main.getByRole("button", { name: "Collapse sidebar" }).click();
+      const row = main.locator(
+        ".kx-capability-titlebar[data-sidebar-collapsed='true']",
+      );
+      await expect(row).toBeVisible();
+      const dragPoint = () =>
+        row.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const y = Math.round(rect.top + rect.height / 2);
+          for (let x = Math.round(rect.left + 120); x < rect.right - 8; x += 8) {
+            const target = document.elementFromPoint(x, y);
+            if (!target || !element.contains(target)) continue;
+            if (target.closest("button,a,input,[role='button'],[role='tab']")) continue;
+            for (let node: Element | null = target; node && element.contains(node); node = node.parentElement) {
+              const region = getComputedStyle(node).webkitAppRegion;
+              if (region === "no-drag") break;
+              if (region === "drag") return { x, y };
+            }
+          }
+          return null;
+        });
+      expect(await dragPoint()).not.toBeNull();
+      const tab = row.getByRole("tab").first();
+      await expect(tab).toBeVisible();
+      expect(
+        await tab.evaluate((element) => getComputedStyle(element).webkitAppRegion),
+      ).toBe("no-drag");
+      const nativeWindow = await app.browserWindow(main);
+      await nativeWindow.evaluate((window) => window.setContentSize(720, 480));
+      await expect.poll(dragPoint).not.toBeNull();
+      const opener = main.getByRole("button", { name: "Open sidebar" });
+      await opener.hover();
+      expect(await dragPoint()).not.toBeNull();
+    } finally {
+      await app?.close();
+      await project?.dispose();
+      await deleteAuthUser(user.id, authOptions);
+      await rm(profile, { recursive: true, force: true });
+    }
+  },
+);
 nativeBrowserTest?.(
   "27 — desktop parity guards reload, Home, close, and quit with an unsaved agent draft",
   async ({ baseURL }) => {

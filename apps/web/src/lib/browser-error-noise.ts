@@ -201,7 +201,7 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
 
 // Expected "model not available for this account" UI validation state. The API
 // returns a TYPED 409 with `code: 'model_not_servable'`
-// (`apps/api/src/projects/routes/r4.ts:3045` and `channel-bindings.ts:288`, both
+// (`apps/api/src/projects/routes/models.ts` and `channel-bindings.ts:288`, both
 // via `isModelServableForAccount`) when a user picks a model their account
 // can't use — a free-tier managed model, or a BYOK model whose provider isn't
 // connected. The SAME wording is also returned as a 400 with
@@ -238,7 +238,7 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
 // `Model "openai/gpt-5.4-mini" is not available for this account`, 7
 // occurrences / 0 identified users, first 2026-08-06 05:09 UTC (ALL
 // post-v0.12.4, release `160f0b286f0ad5c53debc343d5e055241694e24d`),
-// request URL `https://kortix.com/projects/377b3ef0-…/sessions/d3d542…`
+// request URL `https://kortix.com/projects/<project_id>/sessions/<session_id>`
 // (co-worker session page), browser Android Chrome mobile, mechanism
 // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
 // `handled:false`).
@@ -472,7 +472,7 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
   // (Kortix Frontend prod, application_id 2346967): `TypeError`, message
   // `this.gl is null`, 1 occurrence / 0 identified users, first 2026-08-10
   // 14:35:19 UTC (post-v0.12.7), request URL
-  // `https://kortix.com/projects/1d0153d2-…` (project page), browser Firefox
+  // `https://kortix.com/projects/<project_id>` (project page), browser Firefox
   // 137.0 on Windows 10 (Gecko engine), mechanism
   // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
   // `handled:false`), 3 frames in chunk
@@ -1998,7 +1998,7 @@ export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
 /**
  * Whether a message is the EXPECTED "model not available for this account"
  * UI validation state — the typed 409 `code: 'model_not_servable'` the API
- * returns (`apps/api/src/projects/routes/r4.ts` + `channel-bindings.ts` via
+ * returns (`apps/api/src/projects/routes/models.ts` + `channel-bindings.ts` via
  * `isModelServableForAccount`, plus the 400 `INVALID_SESSION_MODEL` sibling in
  * `r7.ts` + `sessions.ts`) when a user picks a model their account can't use.
  * The SDK's `useModelDefaults` `setMutation` `onError` already surfaces a
@@ -3313,7 +3313,7 @@ export function isOperationErrorPopErrorScopeNoise(input: {
 // UNCAUGHT, never reached a React error boundary), `synthetic:true`, releases
 // `c330eda4d96e7aee557618254a86df7d16ba5d9b` (v0.12.0), request URLs
 // `https://kortix.com/auth` (first occurrence) and
-// `https://kortix.com/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf` (second
+// `https://kortix.com/projects/<project_id>` (second
 // occurrence, referer `https://accounts.google.com/` post-Google OAuth), Chrome
 // 151.0.0.0 on Windows. Breadcrumbs: `https://supa.kortix.com/auth/v1/user`
 // (Supabase gotrue), `/_vercel/insights/view`, google-analytics,
@@ -3754,7 +3754,7 @@ export function isConnectionClosedNoise(input: {
 // function `Object.x [as mutationFn]`, call site file
 // `app:///_next/static/immutable/chunks/3n0z0jtixhg6r.js` (minified — NO
 // resolved first-party source), request URL a co-worker session page
-// (`https://kortix.com/projects/834686a1-…/sessions/54f7abe9-…`), browser
+// (`https://kortix.com/projects/<project_id>/sessions/<session_id>`), browser
 // Chrome on macOS, mechanism `generic` with `handled:true` (CAUGHT by an
 // error boundary — NOT an uncaught global rejection). Stack frames (1,
 // `in_app:true`):
@@ -3872,7 +3872,7 @@ export function isFailedToSendMessageNoise(input: {
 //     identified users, last 2026-08-05 04:40:45 UTC (POST-v0.12.3),
 //     mechanism `auto.browser.browserapierrors.addEventListener` (UNCAUGHT,
 //     `handled:false`), request URL
-//     `https://kortix.com/projects/e1d956a3-…/sessions/be897489-…` (session
+//     `https://kortix.com/projects/<project_id>/sessions/<session_id>` (session
 //     page), Safari 26.5 on macOS (WebKit). Frames: `r @ 13jg6.ewllp.z.js` →
 //     `v @ 17631.2j-4o95.js` → `getActiveMode @ 17631.2j-4o95.js` →
 //     `getDocumentStateOrThrow @ 17631.2j-4o95.js` — NO first-party
@@ -4190,7 +4190,7 @@ export function isUndefinedVariableThirdPartyNoise(input: {
 // `Cannot redefine property: webdriver`, call site function
 // `Object.defineProperty`, call site file `<anonymous>`, 1 occurrence / 0
 // identified users, first 2026-08-12 07:49:16 UTC, request URL
-// `https://kortix.com/projects/61df2bc0-…` (project page), browser Chrome on
+// `https://kortix.com/projects/<project_id>` (project page), browser Chrome on
 // Windows 10. Stack: 3 frames, ALL `<anonymous>` (functions `?`, `?`,
 // `Object.defineProperty`) — NO resolved first-party `apps/web/src/…` frame
 // and NO chunk frame at all. This is bot/scanner noise, NOT a product bug: a

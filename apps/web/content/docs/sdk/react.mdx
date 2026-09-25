@@ -59,7 +59,7 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 | `sendParts(parts, override?)` | Send text and runtime URL file parts through the selected transport. Private staged handles use platform prompt routes. |
 | `rewind(messageId)` | Rewind this canonical session to a user message. The selected message and later path become hidden and recoverable. |
 | `restoreRewind()` | Restore the removed path before another prompt commits its replacement. |
-| `cancel()` | Stop the current run and clear pending questions and permissions. |
+| `cancel()` | Stop the current run and clear pending questions and permissions. Holds the session's queued prompts first, so a queued prompt does not start a new run. |
 | `runCommand(command, args)` | Run a project slash command. |
 | `answerQuestion(id, answers)` | Answer a pending agent question. |
 | `rejectQuestion(id)` | Reject a pending agent question. |
@@ -104,6 +104,50 @@ need a running session. Each mirrors a method on the
 | `useSessionProviderSecretPools(projectId, sessionId)` | Configured pools, including empty selections; `setPool` updates one provider and refreshes the session cache. |
 | `useProjectTriggers(projectId)` | Triggers: list, create, update, remove, fire. |
 | `useChangeRequests(projectId, status?)` | Change requests: list, open, merge, close, request changes. |
+
+## Start the open read early
+
+`prefetchSessionOpen(queryClient, projectId, sessionId)` starts the session-open
+read before the session view mounts. It issues one `GET .../snapshot` request
+(session row, turn, queue, and the first 40 transcript messages) and seeds the
+session row cache from it. `useSession` then uses that request instead of
+starting its own.
+
+Call it when a route names a session, or on hover, focus, or touch of a session
+link. It is read-only: it never calls `/start` and never wakes a computer. It
+never rejects. A repeat call for the same session within 30 seconds sends no
+request.
+
+```tsx
+import { prefetchSessionOpen } from '@kortix/sdk/react';
+
+<a
+  href={`/projects/${projectId}/sessions/${sessionId}`}
+  onFocus={() => void prefetchSessionOpen(queryClient, projectId, sessionId)}
+/>;
+```
+
+## Sign-out and account switching
+
+The SDK keeps per-user session state in memory: transcripts, pending questions
+and permissions, turn receipts, and model picks. Call `resetIdentityState()` on
+every identity change: sign-out, and a different user signing in. This includes
+a sign-in in another tab that changes the user without a page load.
+
+```tsx
+import { resetIdentityState } from '@kortix/sdk/react';
+
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_OUT' || session?.user.id !== previousUserId) {
+    queryClient.clear();
+    resetIdentityState();
+  }
+});
+```
+
+`resetIdentityState()` also removes the model store's `localStorage` entry. It
+does not clear the host's own caches, such as React Query, or the token source
+passed to `createKortix`. Reset those in the same handler. It never throws.
 
 ## Next
 

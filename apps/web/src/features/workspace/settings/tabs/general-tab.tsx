@@ -36,7 +36,7 @@
  *   (2026-08-12):
  *   - `archiveProject()` is `DELETE /v1/projects/:id`
  *     (`packages/sdk/src/core/rest/projects-client/projects.ts`), which sets
- *     `status: 'archived'` (`apps/api/src/projects/routes/r6.ts`).
+ *     `status: 'archived'` (`apps/api/src/projects/routes/project-settings.ts`).
  *   - `loadProjectForUser` — the gate in front of EVERY project-scoped route —
  *     returns `null` for an archived row
  *     (`apps/api/src/projects/lib/access.ts:575`). So every session, secret,
@@ -53,7 +53,7 @@
  *   says that. What it does NOT say is that the data is erased, because it is
  *   not — and it explicitly reassures that the Git repository survives, which
  *   is true: `deleteManagedProjectRepo` runs only under `?purge=true`
- *   (`r6.ts`), a query param `archiveProject()` never sends. Claiming the repo
+ *   (`project-settings.ts`), a query param `archiveProject()` never sends. Claiming the repo
  *   was destroyed would be the one genuinely false thing this dialog could
  *   say, and it is the thing users would panic about first.
  *
@@ -193,7 +193,7 @@ export const DELETE_WORKSPACE_CONSEQUENCES = [
 
 /** Stated because it is true and because its absence would be read as a
  *  denial. `archiveProject()` sends no `?purge=true`, which is the only thing
- *  that deletes a Kortix-managed repository (`apps/api/.../routes/r6.ts`);
+ *  that deletes a Kortix-managed repository (`apps/api/.../routes/project-settings.ts`);
  *  user-connected repositories are never touched at all. */
 export const DELETE_WORKSPACE_REASSURANCE =
   'Your connected Git repository is not deleted. Any code already pushed to it stays where it is.';

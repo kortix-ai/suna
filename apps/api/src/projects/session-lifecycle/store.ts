@@ -7,6 +7,7 @@ import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
 import { inboxLaneSql, inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
+import { transitionSession } from './status-transitions';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -377,7 +378,7 @@ export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
  * Put back a REDELIVERY whose already-answered check could not read the
  * transcript. A prompt that was posted before may already have its answer on
  * record; re-sending it blind shows the user the same prompt twice. The row
- * waits and counts the failure; after `MAX_ANSWER_CHECK_FAILURES` (engine.ts)
+ * waits and counts the failure; after `MAX_ANSWER_CHECK_FAILURES` (queued-continue.ts)
  * the drain sends it anyway, so an unreadable box cannot strand the prompt.
  */
 export async function requeueUnverifiedRedelivery(
@@ -526,15 +527,33 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
   return next.idempotencyKey ?? null;
 }
 
-export async function claimCreateSessionCommand(
+/** The lock a claim holds before an abandoned `running` row can be reclaimed. */
+export const LIFECYCLE_CLAIM_LOCK_MS = 5 * 60_000;
+
+/**
+ * The row a create claim inserts. An inline create is claimed `running` by
+ * THIS process, so it carries the same lock a drained row does: without one,
+ * `locked_until` stays NULL, the reclaim arm (`locked_until <= now - grace`)
+ * never matches it, and a pod that dies mid-create leaves the idempotency key
+ * answering `pending` for ever.
+ */
+export function buildCreateSessionCommandValues(
   command: CreateSessionCommand,
   opts: { initialStatus: 'queued' | 'running'; reason?: string | null },
-): Promise<{ row: SessionLifecycleCommandRow; existing: boolean }> {
-  const now = new Date();
-  const values = {
+  now: Date,
+) {
+  const inlineLock =
+    opts.initialStatus === 'running'
+      ? {
+          lockedBy: `session-lifecycle-inline:${process.pid}`,
+          lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
+        }
+      : {};
+  return {
     commandType: 'create_session',
     source: command.source,
     status: opts.initialStatus,
+    ...inlineLock,
     projectId: command.project.projectId,
     accountId: command.project.accountId,
     actorUserId: command.userId,
@@ -544,6 +563,13 @@ export async function claimCreateSessionCommand(
     availableAt: now,
     updatedAt: now,
   };
+}
+
+export async function claimCreateSessionCommand(
+  command: CreateSessionCommand,
+  opts: { initialStatus: 'queued' | 'running'; reason?: string | null },
+): Promise<{ row: SessionLifecycleCommandRow; existing: boolean }> {
+  const values = buildCreateSessionCommandValues(command, opts, new Date());
 
   if (!command.idempotencyKey) {
     const pending = command.body.pending_prompt as { parts?: PromptPartWire[] } | undefined;
@@ -820,20 +846,13 @@ export async function markCommandFailed(
     // Park the target session 'failed': findReusableTriggerSession skips failed
     // sessions, so a `session_mode = "reuse"` trigger's next fire creates a
     // FRESH session instead of re-aiming prompts at a wedged one — the proven
-    // lossless self-heal. Status re-check in the UPDATE predicate (same pattern
-    // as reconcileStuckActiveSessions) so a concurrent transition isn't
-    // clobbered by a stale dead-letter.
+    // lossless self-heal. The `fail` transition re-checks the status and the
+    // tombstone in its own UPDATE, so a stale dead-letter cannot clobber a
+    // concurrent transition or touch a deleted session.
     try {
-      await db
-        .update(projectSessions)
-        .set({
-          status: 'failed',
-          error: `prompt delivery dead-lettered: ${error}`.slice(0, 1000),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(eq(projectSessions.sessionId, row.sessionId), ne(projectSessions.status, 'failed')),
-        );
+      await transitionSession('fail', row.sessionId, {
+        error: `prompt delivery dead-lettered: ${error}`.slice(0, 1000),
+      });
     } catch (err) {
       console.warn('[session-lifecycle] failed to park session after dead-letter', {
         sessionId: row.sessionId,
@@ -1100,7 +1119,7 @@ export async function claimDueLifecycleCommands(input: {
         attempts: row.attempts + 1,
         result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'delivery_started_at'`,
         lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + 5 * 60_000),
+        lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
         updatedAt: now,
       })
       // CAS on the exact state this row was read in — its status AND its lock

@@ -1,4 +1,5 @@
 import type { SseErrorFrame } from './completion-guard';
+import { chunkOutputChars } from './estimate';
 import { type ExtractedUsage, type UpstreamChunkShape, normalizeUsageChunk } from './extract';
 
 // A well-formed SSE `data:` line for a chat-completion chunk (usage frame,
@@ -25,6 +26,7 @@ export class IncrementalSseScanner {
   private lastUsage: ExtractedUsage | null = null;
   private lastModel: string | undefined;
   private errorFrame: SseErrorFrame | null = null;
+  private streamedOutputChars = 0;
   private readonly maxCarryBytes: number;
 
   constructor(maxCarryBytes: number = DEFAULT_MAX_CARRY_BYTES) {
@@ -67,6 +69,7 @@ export class IncrementalSseScanner {
     }
     if (chunk?.model) this.lastModel = chunk.model;
     if (chunk?.usage) this.lastUsage = normalizeUsageChunk(chunk);
+    this.streamedOutputChars += chunkOutputChars(chunk);
     if (!this.errorFrame && chunk?.error && typeof chunk.error === 'object') {
       const { message, code, ...rest } = chunk.error as {
         message?: unknown;
@@ -92,6 +95,15 @@ export class IncrementalSseScanner {
       this.lastUsage.model = this.lastModel;
     }
     return this.lastUsage;
+  }
+
+  /**
+   * Characters of generated output (content, reasoning, tool-call arguments)
+   * seen so far. The usage estimate for a stream that ends without a usage
+   * frame is built from it.
+   */
+  get outputChars(): number {
+    return this.streamedOutputChars;
   }
 
   /** First upstream error frame seen, or null on a clean stream. */

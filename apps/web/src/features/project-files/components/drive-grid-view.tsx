@@ -586,7 +586,7 @@ function FileCard({
             ) : (
               <div className="flex w-full min-w-0 items-center gap-1.5">
                 {getFileIcon(node.name, {
-                  className: tHardcodedUi.raw('i18nComplete.textf5797adb113e'),
+                  className: 'size-3.5 shrink-0 text-muted-foreground',
                   variant: 'monochrome',
                 })}
                 <span className="text-foreground truncate text-sm font-medium">{node.name}</span>

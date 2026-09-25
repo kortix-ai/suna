@@ -81,6 +81,7 @@ import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { createCorsMiddleware } from './middleware/cors';
 import { compressResponse } from './middleware/compress';
 import { upstreamTiming } from './middleware/upstream-timing';
+import { installFetchTiming } from './lib/server-timing';
 import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
 import { oauthApp } from './oauth';
 import { oauthAuthorizationServerMetadata } from './oauth/discovery';
@@ -323,6 +324,8 @@ app.use('*', async (c, next) => {
 // INSIDE the request-context middleware above, because it reads the
 // AsyncLocalStorage scope that one creates. See middleware/upstream-timing.ts.
 app.use('*', upstreamTiming);
+// Outbound HTTP made inside a request is attributed as `gotrue` or `http`.
+installFetchTiming(config.SUPABASE_URL);
 
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
 app.use('*', logger());
@@ -1700,14 +1703,12 @@ import {
   previewWsHandlers,
 } from './sandbox-proxy/ws-proxy';
 
-// Route one inbound request. Everything here runs inside the audit boundary
-// (`runInboundAudit`, called from `fetch` below): each branch that answers
-// outside Hono names its entrypoint class so its row says what it was.
-// `unit-audit-boundary-wiring.test.ts` fails if a branch escapes it.
-// Line comments only below the `'/v1/...'` middleware mounts: the comment
-// stripper in `unit-iam-gate-codemod-pin.test.ts` reads the slash-star inside
-// those strings as a block-comment opener, and any later star-slash (a JSDoc
-// close) then swallows the whole route table from its view.
+/**
+ * Route one inbound request. Everything here runs inside the audit boundary
+ * (`runInboundAudit`, called from `fetch` below): each branch that answers
+ * outside Hono names its entrypoint class so its row says what it was.
+ * `unit-audit-boundary-wiring.test.ts` fails if a branch escapes it.
+ */
 async function dispatchInbound(
   req: Request,
   url: URL,
@@ -1837,11 +1838,8 @@ async function dispatchInbound(
     // Include the source address so an unauthenticated attacker who learns a
     // tunnelId cannot consume the real machine's reconnect budget.
     const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-    const clientIp =
-      req.headers.get('cf-connecting-ip')?.trim() ||
-      req.headers.get('x-real-ip')?.trim() ||
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      'unknown';
+    const { clientIpFromHeaders } = await import('./shared/client-ip');
+    const clientIp = clientIpFromHeaders((name) => req.headers.get(name)) ?? 'unknown';
     const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
     if (!wsIpRateCheck.allowed) {
       return new Response(

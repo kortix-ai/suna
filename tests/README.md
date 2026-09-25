@@ -399,6 +399,8 @@ preview stack pin it to `1`.
 | `KE2E_PROVISION_CONCURRENCY` | 4 | Global cap on concurrent project provisions. Each provision creates a real managed GitHub repository, so this — not the worker counts — is the binding constraint on suite parallelism. |
 | `KE2E_PROVISION_RATE_LIMIT_BASE_DELAY_MS` | 15000 | First delay after a GitHub rate-limit response. Doubles per attempt with equal jitter. |
 | `KE2E_PROVISION_RATE_LIMIT_DELAY_MS` | 120000 | Ceiling for that backoff. |
+| `KE2E_PROVISION_RATE_LIMIT_BUDGET_MS` | 900000 | Wall-clock time one provision may spend in the shared rate-limit cooldown, whoever set it. |
+| `KE2E_TOKEN_REFRESH_MARGIN_MS` | 20 min, or half a shorter token lifetime | Renew a principal's Supabase access token when this much lifetime or less remains. A value at or above the lifetime renews before every request; use it only to prove renewal against a real GoTrue. |
 | `KE2E_TEARDOWN_WORKERS` | 8 | Concurrency for deleting synthesized users at teardown. |
 | `KE2E_GATEWAY_RETRIES` | 3 | In-request retries of a gateway-generated transient 502/503/504. |
 | `KE2E_RETRY_BASE_DELAY_MS` | 500 | Base for that retry's exponential backoff with full jitter. |
@@ -426,6 +428,52 @@ application 5xx (`origin`). Do not guess at which one a 503 was.
 capability, a failed OWNER Stripe subscribe now throws during provisioning
 instead of degrading 52 flows to `skip` and reporting the red at the end of the
 run. Set `KE2E_FUNDING_OPTIONAL=1` to restore the warning-only behavior.
+
+### Principal tokens outlive the run
+
+Every principal the runner synthesizes (OWNER, NONMEMBER, the run-scoped
+platform admin, and every `fixtures.user()` / `team().addMember()` user) signs
+in with a password grant. Supabase access tokens expire after 1 hour. Preview
+runs 36067774228 and 36068206735 (2026-09-24) lasted ~61 minutes, and every
+flow that started after minute 60 failed with `401 Invalid or expired token`.
+
+The principal's `auth` is now a `SupabaseSessionAuth`
+(`src/fixtures/supabase-session.ts`). It keeps the refresh token and renews the
+access token through the refresh-token grant:
+
+- `Client` awaits `auth.ensureFresh()` before every request.
+- A background timer renews at the same point, so code that reads
+  `P.OWNER.auth.token` synchronously also stays valid. `env.adminToken` reads
+  the platform admin's current token the same way.
+- Renewal starts when 20 minutes or less remain, so a token a flow reads stays
+  valid for the longest flow.
+- One renewal runs at a time per principal. GoTrue rotates the refresh token.
+- A failed renewal keeps the old token while it is still valid and tries again
+  after 30 s. When the token is no longer usable, the request is not sent and
+  the flow fails with `SupabaseSessionRefreshError`, which names the
+  principal, the token age, and the cause. A network or 5xx failure is marked
+  retryable.
+
+There is no "retry on 401". Many flows assert a 401 on purpose, and a replay
+with a new token would hide that result.
+
+### Fixtures stop when their flow attempt ends
+
+The runner gives every flow attempt an `AbortSignal`. It aborts when the
+attempt passes, fails, or exceeds its timeout. A project provision that is
+still queued behind the provision semaphore, or sleeping out a GitHub rate
+limit, then stops and frees its slot. Before this, a flow that timed out kept
+its provision alive for up to the full 15-minute rate-limit budget, holding one
+of the 4 semaphore slots. On the two preview runs above, 61 and 67 flows failed
+with a flow timeout while provisions were failing on the GitHub rate limit, and
+the API lane took ~61 minutes instead of the usual ~20.
+
+The rate-limit budget also counts the time a provision waits in the shared
+cooldown that other provisions set. A cooldown that does not fit the remaining
+budget fails the provision at once with the reason. The shared projects
+(`sharedProject()`, `sharedSeededProject()`) are run-scoped and do not take the
+attempt signal. A failed shared provision is no longer cached: the next flow
+that asks creates it again.
 
 ## Browser journeys
 

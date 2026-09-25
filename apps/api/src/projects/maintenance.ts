@@ -3,6 +3,8 @@ import { and, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { cleanupExpiredConnectorAttachments } from '../connectors/attachments';
 import { db } from '../shared/db';
+import { recordAuditEvent } from '../shared/audit';
+import { runWorkerTick } from '../shared/audit-scope';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
@@ -11,6 +13,8 @@ import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
 import { verifyParkedRuntimes } from './reaping/parked-runtime-verification';
+import { removeArchivedProviderBoxes } from './reaping/archived-box-removal';
+import { convergeStuckProvisioningRuntimes } from './reaping/stuck-provisioning';
 import { reconcileRuntimeWakeFences } from './session-lifecycle/runtime-wake-maintenance';
 import {
   EMPTY_REAP_RESULT,
@@ -111,6 +115,37 @@ export function postgresTimestampParam(date: Date): string {
 // (real turns) rather than the partial `last_used_at` proxy signal. See that
 // module for the why.
 
+/**
+ * A session branch deleted from the project's remote. No request drives the
+ * deletion, so it runs as the `project-maintenance` worker. An audit failure
+ * never counts as a GC failure: the branch is already gone.
+ */
+async function auditBranchDeleted(row: {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  branchName: string;
+}): Promise<void> {
+  try {
+    await recordAuditEvent({
+      accountId: row.accountId,
+      projectId: row.projectId,
+      sessionId: row.sessionId,
+      action: 'git.branch.deleted',
+      resourceType: 'git_repository',
+      resourceId: row.projectId,
+      outcome: 'success',
+      metadata: {
+        branch_name: row.branchName,
+        reason: 'retention_expired',
+        retention_days: branchRetentionDays(),
+      },
+    });
+  } catch (err) {
+    console.warn(`[project-maintenance] branch GC audit failed for ${row.branchName}:`, err);
+  }
+}
+
 export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
   candidates: number;
   deleted: number;
@@ -124,6 +159,7 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
       branchName: projectSessions.branchName,
       baseRef: projectSessions.baseRef,
       metadata: projectSessions.metadata,
+      accountId: projectSessions.accountId,
       projectId: projects.projectId,
       repoUrl: projects.repoUrl,
       defaultBranch: projects.defaultBranch,
@@ -195,6 +231,7 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
           updatedAt: new Date(),
         })
         .where(eq(projectSessions.sessionId, row.sessionId));
+      if (remoteDeleted) await auditBranchDeleted(row);
       deleted += remoteDeleted ? 1 : 0;
       if (!remoteDeleted) skipped += 1;
     } catch (err) {
@@ -247,6 +284,8 @@ export async function runProjectMaintenance(): Promise<void> {
       parkedRuntimes,
       monitorBoxes,
       monitorEventsPurged,
+      archivedRemovals,
+      stuckProvisioning,
     ] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
@@ -403,6 +442,24 @@ export async function runProjectMaintenance(): Promise<void> {
         );
         return 0;
       }),
+      // A deleted session's box is removed until the provider confirms it is
+      // gone; one failed remove no longer leaves its disk behind for good.
+      removeArchivedProviderBoxes().catch((err) => {
+        console.warn(
+          '[project-maintenance] archived-box removal failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { examined: 0, removed: 0, failed: 1 };
+      }),
+      // A `provisioning` row whose restart/recovery owner is gone is converged
+      // to the provider's state; nothing else ever acts on such a row.
+      convergeStuckProvisioningRuntimes().catch((err) => {
+        console.warn(
+          '[project-maintenance] stuck-provisioning converge failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { examined: 0, activated: 0, parked: 0, lost: 0, archived: 0, errors: 1 };
+      }),
     ]);
     const hadAction = Boolean(
       idle.stopped ||
@@ -440,7 +497,11 @@ export async function runProjectMaintenance(): Promise<void> {
         monitorBoxes.disabledOverCap ||
         monitorBoxes.deferred ||
         monitorBoxes.errors ||
-        monitorEventsPurged,
+        monitorEventsPurged ||
+        archivedRemovals.removed ||
+        archivedRemovals.failed ||
+        stuckProvisioning.examined ||
+        stuckProvisioning.errors,
     );
     if (hadAction) {
       console.log('[project-maintenance] completed', {
@@ -459,6 +520,8 @@ export async function runProjectMaintenance(): Promise<void> {
         runtimeWakes,
         monitorBoxes,
         monitorEventsPurged,
+        archivedRemovals,
+        stuckProvisioning,
       });
     }
     // Unconditional heartbeat — proof-of-life independent of whether any
@@ -489,6 +552,9 @@ export async function runProjectMaintenance(): Promise<void> {
       `parked_verified=${parkedRuntimes.examined}`,
       `parked_lost=${parkedRuntimes.lost}`,
       `parked_healed=${parkedRuntimes.healed}`,
+      `archived_boxes_removed=${archivedRemovals.removed}`,
+      `archived_box_remove_failures=${archivedRemovals.failed}`,
+      `stuck_provisioning_converged=${stuckProvisioning.examined}`,
       // A monitor box only stays billable while this sweep observes it, so
       // `monitor_observed` going flat while boxes exist is the signal that
       // monitor billing has silently stopped earning.
@@ -543,7 +609,7 @@ export function startProjectMaintenance(): void {
     clearInterval(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
   }
   maintenanceTimer = setInterval(() => {
-    runProjectMaintenance().catch((err) => {
+    runWorkerTick('project-maintenance', runProjectMaintenance).catch((err) => {
       console.error('[project-maintenance] run failed:', err);
     });
   }, maintenanceIntervalMs());

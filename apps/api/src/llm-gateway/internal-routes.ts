@@ -163,6 +163,17 @@ export function createInternalGatewayRoutes() {
 
   app.post('/usage', async (c) => {
     const { event } = await c.req.json();
+    // `requestId` is the settlement's idempotency key (one usage row, one
+    // debit, one refund per request). Without it a retry would bill twice.
+    if (
+      !event ||
+      typeof event !== 'object' ||
+      typeof event.accountId !== 'string' ||
+      typeof event.requestId !== 'string' ||
+      !event.requestId
+    ) {
+      return c.json({ ok: false, error: 'event.accountId and event.requestId are required' }, 400);
+    }
     await recordGatewayUsage(event as UsageEvent);
     return c.json({ ok: true });
   });

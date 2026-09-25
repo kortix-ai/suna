@@ -1,9 +1,9 @@
 import { eq, and, desc, inArray, isNull, type SQL } from 'drizzle-orm';
 import { accountTokens, accounts, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
+import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
   hashSecretKey,
-  candidateSecretKeyHashes,
   generateAccountTokenPair,
   isApiKeySecretConfigured,
   isAccountToken,
@@ -127,9 +127,11 @@ async function loadPatPolicy(accountId: string): Promise<{
  *   - require_expiry → must provide expires_at
  *   - max_lifetime_days → expires_at can't be more than N days out
  *
- * Project-scoped tokens (sandbox injection) are EXEMPT: they're short-
- * lived by construction (sandbox lifetime) and we don't want admin
- * policy to break the agent runtime.
+ * Session-bound tokens (a sandbox's own KORTIX_TOKEN, `sessionId` set) are
+ * EXEMPT: they live and die with the session, and admin policy must not
+ * break the agent runtime. A project-scoped token WITHOUT a session binding
+ * (`POST /projects/:id/cli-token`, `POST /accounts/tokens {project_id}`) is a
+ * durable credential like any other PAT and follows the policy.
  */
 export async function createAccountToken(
   params: CreateAccountTokenParams,
@@ -138,7 +140,7 @@ export async function createAccountToken(
     throw new Error('API_KEY_SECRET not configured');
   }
 
-  if (!params.projectId) {
+  if (!params.sessionId) {
     const policy = await loadPatPolicy(params.accountId);
     if (policy) {
       if (policy.requireExpiry && !params.expiresAt) {
@@ -401,9 +403,18 @@ export async function validateAccountToken(
     return { isValid: false, error: 'Invalid PAT format — expected kortix_pat_ prefix' };
   }
 
-  return validateAccountTokenMatching(() =>
-    inArray(accountTokens.secretKeyHash, candidateSecretKeyHashes(secretKey)),
+  let hashes: string[];
+  try {
+    hashes = await candidateSecretKeyHashesAsync(secretKey);
+  } catch (err) {
+    console.error('Account token hashing error:', err);
+    return { isValid: false, error: 'Validation error' };
+  }
+  const result = await validateAccountTokenMatching(() =>
+    inArray(accountTokens.secretKeyHash, hashes),
   );
+  if (result.isValid) markTokenValidated(secretKey);
+  return result;
 }
 
 const TOKEN_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
