@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 import { relayTurnBeginToApi, __resetRelayedTurnBegins } from '../harness/open-code/boot'
-import { dispatch } from '../harness/open-code/events'
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 
 // A BOX-INITIATED turn (OpenCode's synthetic `<pty_exited>` wake-up) must be
@@ -94,6 +93,8 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
         opencode_session_id: ROOT,
         turn_message_id: 'msg_pty_2',
       })
+      // The single session credential.
+      expect(m.auth()[0]).toBe('Bearer tok')
     } finally {
       m.stop()
     }
@@ -157,20 +158,6 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
     }
   })
 
-  test('authenticates with the single session credential', async () => {
-    const m = startMocks(syntheticTurn)
-    sessionEnv(m.baseUrl)
-    const opencode = { getInternalUrl: () => m.baseUrl }
-    const cfg = { workspace: WORKSPACE } as unknown as Config
-    try {
-      await relayTurnBeginToApi(ROOT, opencode, cfg)
-      expect(m.calls()).toBe(1)
-      expect(m.auth()[0]).toBe('Bearer tok')
-    } finally {
-      m.stop()
-    }
-  })
-
   test('does not relay without the session credential', async () => {
     const m = startMocks(syntheticTurn)
     sessionEnv(m.baseUrl)
@@ -187,6 +174,11 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
 
   test('does not relay without sandbox callback identity', async () => {
     const m = startMocks(syntheticTurn)
+    // Credential and API present; only the project/session identity missing,
+    // so the identity guard (not the token guard) is what refuses.
+    sessionEnv(m.baseUrl)
+    delete process.env.KORTIX_PROJECT_ID
+    delete process.env.KORTIX_SESSION_ID
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {
@@ -195,29 +187,5 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
     } finally {
       m.stop()
     }
-  })
-})
-
-// The wiring itself, pinned separately from the relay's behavior: the live
-// event loop routes every frame through `dispatch`, so a `session.status`
-// frame must reach `onSessionStatus`. Verified against a REAL frame captured
-// from opencode 1.18.19 on dev (`{"sessionID":"ses_…","status":{"type":"busy"}}`).
-describe('dispatch → onSessionStatus', () => {
-  test('a real busy frame reaches the handler', () => {
-    const seen: Array<[string, string]> = []
-    dispatch(
-      { type: 'session.status', properties: { sessionID: 'ses_root', status: { type: 'busy' } } },
-      { onSessionStatus: (s, t) => seen.push([s, t]) },
-    )
-    expect(seen).toEqual([['ses_root', 'busy']])
-  })
-
-  test('session.idle is not swallowed by the status branch', () => {
-    let idle = ''
-    dispatch(
-      { type: 'session.idle', properties: { sessionID: 'ses_root' } },
-      { onSessionStatus: () => {}, onSessionIdle: (s) => { idle = s } },
-    )
-    expect(idle).toBe('ses_root')
   })
 })

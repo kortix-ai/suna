@@ -39,12 +39,12 @@ import { logger } from '../../logger'
 
 export const MAX_CONSECUTIVE_REPEATS = 3
 
-export interface RunawayGuardState {
+interface RunawayGuardState {
   lastParentMessageId: string | null
   repeatCount: number
 }
 
-export function createRunawayGuardState(): RunawayGuardState {
+function createRunawayGuardState(): RunawayGuardState {
   return { lastParentMessageId: null, repeatCount: 0 }
 }
 
@@ -65,7 +65,7 @@ export function createRunawayGuardState(): RunawayGuardState {
  * event count, not elapsed time, since each repeat here fired within single-
  * digit seconds of the last (see the incident note above).
  */
-export function stepRunawayGuard(
+function stepRunawayGuard(
   state: RunawayGuardState,
   parentMessageId: string | null,
 ): { state: RunawayGuardState; shouldAbort: boolean } {

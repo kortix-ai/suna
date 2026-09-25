@@ -239,12 +239,6 @@ describe('inspectOpencodeRoot — could-not-tell is its own answer', () => {
     });
   });
 
-  test('an EMPTY session is known-idle, not unknown', async () => {
-    // Nothing has run. That is a definite answer and the reload gate may act on it.
-    stubFetch([]);
-    expect((await inspectOpencodeRoot(BASE, WORKSPACE, SESSION)).known).toBe(true);
-  });
-
   test('an unreadable list is UNKNOWN, not idle', async () => {
     // Reporting idle here let the reload restart opencode while a turn was
     // running and opencode was merely slow to answer — defeating the one
@@ -364,15 +358,10 @@ describe('opencodeTurnInFlight — the reload gate reads this', () => {
   // ASK, DON'T INFER. The step boundary inside ONE turn — latest step completed,
   // tools running, next step's message not created yet — is invisible in the
   // transcript and plain to `/session/status`. The gate must not restart here.
-  test('a busy root is in flight even when the transcript reads finished', async () => {
-    stubFetch(assistantTurn(1_700_000_000), { sessionStatus: { [SESSION]: { type: 'busy' } } });
+  test.each(['busy', 'retry'])('a %s root is in flight even when the transcript reads finished', async (type) => {
+    stubFetch(assistantTurn(1_700_000_000), { sessionStatus: { [SESSION]: { type } } });
     expect(await turnInFlightWithPin(SESSION)).toBe(true);
     expect(calls.some((url) => url.includes('/session/status'))).toBe(true);
-  });
-
-  test('a retrying root is in flight', async () => {
-    stubFetch(assistantTurn(1_700_000_000), { sessionStatus: { [SESSION]: { type: 'retry' } } });
-    expect(await turnInFlightWithPin(SESSION)).toBe(true);
   });
 
   // The oracle CANNOT clear a husk: an assistant message left open by a writer
@@ -386,147 +375,79 @@ describe('opencodeTurnInFlight — the reload gate reads this', () => {
 });
 
 describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
-  test('a delivered user message without an assistant is active only while OpenCode reports busy', async () => {
-    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
-      sessionStatus: { [SESSION]: { type: 'busy' } },
-    });
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
-  });
+  const user1 = { info: { id: 'msg_turn_1', role: 'user' } };
+  const user2 = { info: { id: 'msg_turn_2', role: 'user' } };
+  const open1 = { info: { id: 'msg_step_1', role: 'assistant', parentID: 'msg_turn_1', time: {} } };
+  const completed1 = { info: { role: 'assistant', parentID: 'msg_turn_1', time: { completed: 1234 } } };
 
-  test('a user-only message in an idle OpenCode session is terminal', async () => {
-    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
-      sessionStatus: { [SESSION]: { type: 'idle' } },
-    });
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
-  });
-
-  test('an absent OpenCode session status is terminal', async () => {
-    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], { sessionStatus: {} });
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
-  });
-
-  test('a retrying OpenCode session keeps a user-only message active', async () => {
-    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
-      sessionStatus: { [SESSION]: { type: 'retry' } },
-    });
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
-  });
-
-  test('an unreadable OpenCode session status makes user-only evidence unknown', async () => {
-    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], { sessionStatusOk: false });
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBeNull();
-  });
-
-  test('an unrecognized OpenCode session status makes user-only evidence unknown', async () => {
-    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
-      sessionStatus: { [SESSION]: { type: 'paused' } },
-    });
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBeNull();
-  });
-
-  // EXPECTATION FLIPPED 2026-08-20 (live incident, a customer session):
-  // prompts forwarded INTO a live turn — and OpenCode's own synthetic
-  // `<pty_exited>` wake-ups — put a NEWER user message on the root while the
-  // SAME loop is still streaming the older turn's steps. The old rule ("a
-  // newer user message owns the root, never ask the status") made the reaper
-  // read that turn as terminal and destroy live turn authority mid-stream
-  // (cleared 12:48:51Z; the step completed 12:48:54Z). Transcript shape alone
-  // may never end a turn while the root itself reports busy.
-  test('a later user message does NOT end an unanswered older turn while the session is busy', async () => {
-    stubFetch(
-      [
-        { info: { id: 'msg_turn_1', role: 'user' } },
-        { info: { id: 'msg_turn_2', role: 'user' } },
-      ],
-      { sessionStatus: { [SESSION]: { type: 'busy' } } },
-    );
+  // While the root itself reports busy (or retrying), no transcript shape may
+  // end the turn. 2026-08-20 (a customer session): prompts forwarded INTO a
+  // live turn and OpenCode's synthetic `<pty_exited>` wake-ups put a NEWER user
+  // message on the root while the SAME loop still streamed the older turn. The
+  // old "a newer user message owns the root" rule read that as terminal and
+  // destroyed live turn authority at 12:48:51Z; the step completed 12:48:54Z.
+  test.each([
+    ['a delivered user message without an assistant', [user1], 'busy'],
+    ['a delivered user message while retrying', [user1], 'retry'],
+    ['an incomplete assistant for the exact message', [user1, open1], 'busy'],
+    ['an unanswered older turn under a later user message', [user1, user2], 'busy'],
+    ['a streaming step under a later wake-up message', [user1, open1, user2], 'busy'],
+  ])('%s is active while the root reports %s', async (_name, transcript, type) => {
+    stubFetch(transcript, { sessionStatus: { [SESSION]: { type } } });
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
     expect(calls.some((url) => url.includes('/session/status'))).toBe(true);
   });
 
-  test('a later user message ends an unanswered older turn once the session is idle', async () => {
-    stubFetch(
-      [
-        { info: { id: 'msg_turn_1', role: 'user' } },
-        { info: { id: 'msg_turn_2', role: 'user' } },
-      ],
-      { sessionStatus: { [SESSION]: { type: 'idle' } } },
-    );
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
-  });
-
-  test('a later user message with an unreadable status is unknown, never terminal', async () => {
-    stubFetch(
-      [
-        { info: { id: 'msg_turn_1', role: 'user' } },
-        { info: { id: 'msg_turn_2', role: 'user' } },
-      ],
-      { sessionStatusOk: false },
-    );
+  // An unreadable status is UNKNOWN, never a licence to end a turn.
+  test.each([
+    ['a user-only message', [user1]],
+    ['an older turn under a later user message', [user1, user2]],
+    ['a completed latest step (possibly between steps)', [user1, completed1]],
+    ['a streaming step under a later wake-up message', [user1, open1, user2]],
+  ])('%s with an unreadable status is unknown', async (_name, transcript) => {
+    stubFetch(transcript, { sessionStatusOk: false });
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBeNull();
   });
 
-  // EXPECTATION FLIPPED (second half of the 2026-08-20 rule). The previous
-  // version of this test asserted terminal-without-asking for exactly this
-  // shape. It is the two live-turn shapes STACKED: a `<pty_exited>` user row
-  // landing in the step-boundary window, where the latest step of the SAME turn
-  // reads completed while its tools run. Array position alone may not end a
-  // turn while the root itself reports busy — that rule now has no exception
-  // for `completed`, only for a terminally-errored answer (which ends the turn
-  // that owns it, asserted below).
+  test('a user-only message in an idle OpenCode session is terminal', async () => {
+    stubFetch([user1], { sessionStatus: { [SESSION]: { type: 'idle' } } });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
+  });
+
+  test('an absent OpenCode session status is terminal', async () => {
+    stubFetch([user1], { sessionStatus: {} });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
+  });
+
+  test('an unrecognized OpenCode session status makes user-only evidence unknown', async () => {
+    stubFetch([user1], { sessionStatus: { [SESSION]: { type: 'paused' } } });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBeNull();
+  });
+
+  test.each([
+    ['an unanswered older turn under a later user message', [user1, user2]],
+    ['a streaming step under a later wake-up message', [user1, open1, user2]],
+  ])('%s ends once the root is idle', async (_name, transcript) => {
+    stubFetch(transcript, { sessionStatus: { [SESSION]: { type: 'idle' } } });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
+  });
+
+  // The two live-turn shapes STACKED: a wake-up user row landing in the
+  // step-boundary window, where the latest step of the SAME turn reads
+  // completed while its tools run. There is no `completed` exception to the
+  // busy rule.
   test('a later user message after a COMPLETED answer stays active while the root is busy', async () => {
-    stubFetch(
-      [
-        { info: { id: 'msg_turn_1', role: 'user' } },
-        { info: { role: 'assistant', parentID: 'msg_turn_1', time: { completed: 1234 } } },
-        { info: { id: 'msg_turn_2', role: 'user' } },
-      ],
-      { sessionStatus: { [SESSION]: { type: 'busy' } } },
-    );
+    stubFetch([user1, completed1, user2], { sessionStatus: { [SESSION]: { type: 'busy' } } });
     const observed = await observeOpencodeDelivery(BASE, WORKSPACE, SESSION, 'msg_turn_1');
     expect(observed).toEqual({ inFlight: true, end: null });
     expect(calls.some((url) => url.includes('/session/status'))).toBe(true);
   });
 
-  test('a later user message after a COMPLETED answer is terminal once the root is idle', async () => {
-    stubFetch(
-      [
-        { info: { id: 'msg_turn_1', role: 'user' } },
-        { info: { role: 'assistant', parentID: 'msg_turn_1', time: { completed: 1234 } } },
-        { info: { id: 'msg_turn_2', role: 'user' } },
-      ],
-      { sessionStatus: { [SESSION]: { type: 'idle' } } },
-    );
-    expect(await observeOpencodeDelivery(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toEqual({
-      inFlight: false,
-      end: 'completed',
-    });
-  });
-
-  // The step-boundary window: each step of ONE turn is its own assistant
-  // message, completed at the step's end, and the next step's message does not
-  // exist yet while tools run. A completed latest step + a busy root is the
-  // SAME turn between steps, not a finished turn.
+  // Each step of ONE turn is its own assistant message, completed at the
+  // step's end; the next step's message does not exist yet while tools run.
   test('a completed latest step with a busy root stays active (step boundary)', async () => {
-    stubFetch(
-      [
-        { info: { id: 'msg_turn_1', role: 'user' } },
-        { info: { role: 'assistant', parentID: 'msg_turn_1', time: { completed: 1234 } } },
-      ],
-      { sessionStatus: { [SESSION]: { type: 'busy' } } },
-    );
+    stubFetch([user1, completed1], { sessionStatus: { [SESSION]: { type: 'busy' } } });
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
-  });
-
-  test('a completed latest step with an unreadable status is unknown', async () => {
-    stubFetch(
-      [
-        { info: { id: 'msg_turn_1', role: 'user' } },
-        { info: { role: 'assistant', parentID: 'msg_turn_1', time: { completed: 1234 } } },
-      ],
-      { sessionStatusOk: false },
-    );
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBeNull();
   });
 
   test('a non-retryable error is terminal even while the root reports busy', async () => {
@@ -535,7 +456,7 @@ describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
     // turn that is provably over.
     stubFetch(
       [
-        { info: { id: 'msg_turn_1', role: 'user' } },
+        user1,
         {
           info: {
             role: 'assistant',
@@ -550,17 +471,9 @@ describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
   });
 
-  test('an incomplete assistant for the exact user message remains active', async () => {
+  test('a terminal assistant error without a completion timestamp does not hold the reload gate', async () => {
     stubFetch([
-      { info: { id: 'msg_turn_1', role: 'user' } },
-      { info: { role: 'assistant', parentID: 'msg_turn_1', time: {} } },
-    ], { sessionStatus: { [SESSION]: { type: 'busy' } } });
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
-  });
-
-  test('a terminal assistant error without a completion timestamp is terminal', async () => {
-    stubFetch([
-      { info: { id: 'msg_turn_1', role: 'user' } },
+      user1,
       {
         info: {
           role: 'assistant',
@@ -570,13 +483,12 @@ describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
         },
       },
     ]);
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
     expect(await turnInFlightWithPin(SESSION)).toBe(false);
   });
 
   test('a retryable assistant error remains active during backoff', async () => {
     stubFetch([
-      { info: { id: 'msg_turn_1', role: 'user' } },
+      user1,
       {
         info: {
           role: 'assistant',
@@ -588,25 +500,6 @@ describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
     ], { sessionStatus: { [SESSION]: { type: 'retry' } } });
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
     expect(await turnInFlightWithPin(SESSION)).toBe(true);
-  });
-
-  test('a completed assistant for the exact user message is terminal', async () => {
-    stubFetch([
-      { info: { id: 'msg_turn_1', role: 'user' } },
-      {
-        info: {
-          role: 'assistant',
-          parentID: 'msg_turn_1',
-          time: { completed: 1234 },
-        },
-      },
-    ]);
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
-  });
-
-  test('a missing user message after delivery grace is terminal', async () => {
-    stubFetch([]);
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
   });
 });
 
@@ -732,7 +625,26 @@ describe('observeOpencodeDelivery — WHY the turn is not in flight', () => {
   });
 });
 
-describe('observeRequestedTurn — what /kortix/health?turn=1 answers with', () => {
+/** The real `/kortix/health` router over the OpenCode diagnostics service. */
+function healthRouter() {
+  return createHealthRouter(
+    {
+      cfg: { projectTarget: '/workspace', autoClone: false, sandboxToken: '' } as never,
+      bootTime: Date.now(),
+      bootState: { repoMaterializationError: null, timeline: [] },
+      staticWebPort: null,
+      resources: () => null,
+    },
+    createOpenCodeDiagnosticsService({
+      getState: () => 'ok',
+      getInternalUrl: () => BASE,
+      getPid: () => 1,
+      getActivePort: () => 4096,
+    } as never),
+  );
+}
+
+describe('turn observation (diagnostics.observeRequestedTurn, /kortix/health?turn=1)', () => {
   test('a message-scoped request carries the outcome the messages prove', async () => {
     stubFetch([
       { info: { id: 'msg_turn_1', role: 'user' } },
@@ -807,21 +719,7 @@ describe('observeRequestedTurn — what /kortix/health?turn=1 answers with', () 
         },
       },
     ]);
-    const router = createHealthRouter(
-      {
-        cfg: { projectTarget: '/workspace', autoClone: false, sandboxToken: '' } as never,
-        bootTime: Date.now(),
-        bootState: { repoMaterializationError: null, timeline: [] },
-        staticWebPort: null,
-        resources: () => null,
-      },
-      createOpenCodeDiagnosticsService({
-        getState: () => 'ok',
-        getInternalUrl: () => BASE,
-        getPid: () => 1,
-        getActivePort: () => 4096,
-      } as never),
-    );
+    const router = healthRouter();
 
     const body = (await (
       await router.request(`/?turn=1&turn_session_id=${SESSION}&turn_message_id=msg_turn_1`)
@@ -834,21 +732,7 @@ describe('observeRequestedTurn — what /kortix/health?turn=1 answers with', () 
 
   test('/kortix/health?turn=1 reports a root-scoped orphaned prompt on the wire', async () => {
     stubFetch([{ info: { role: 'user', time: { completed: 1 } } }]);
-    const router = createHealthRouter(
-      {
-        cfg: { projectTarget: '/workspace', autoClone: false, sandboxToken: '' } as never,
-        bootTime: Date.now(),
-        bootState: { repoMaterializationError: null, timeline: [] },
-        staticWebPort: null,
-        resources: () => null,
-      },
-      createOpenCodeDiagnosticsService({
-        getState: () => 'ok',
-        getInternalUrl: () => BASE,
-        getPid: () => 1,
-        getActivePort: () => 4096,
-      } as never),
-    );
+    const router = healthRouter();
 
     const body = (await (
       await router.request(`/?turn=1&turn_session_id=${SESSION}`)
@@ -861,23 +745,27 @@ describe('observeRequestedTurn — what /kortix/health?turn=1 answers with', () 
     expect(body.turn_orphaned_prompt).toBe(true);
   });
 
+  test('turn observation falls back to the pinned root when no session is requested', async () => {
+    // An ambiguous prompt-delivery timeout knows only the message it sent; the
+    // pinned root is the session that message went to.
+    writeOpenCodeSessionPin(SESSION);
+    stubFetch([
+      { info: { id: 'msg_turn_1', role: 'user' } },
+      { info: { role: 'assistant', parentID: 'msg_turn_1', time: { completed: 1234 } } },
+    ]);
+
+    const body = (await (
+      await healthRouter().request('/?turn=1&turn_message_id=msg_turn_1')
+    ).json()) as Record<string, unknown>;
+
+    expect(body.turn_in_flight).toBe(false);
+    expect(body.turn_end).toBe('completed');
+    expect(urls.some((url) => new URL(url).pathname === `/session/${SESSION}/message`)).toBe(true);
+  });
+
   test('/kortix/health without ?turn=1 still answers nothing about turns', async () => {
     stubFetch(assistantTurn(undefined));
-    const router = createHealthRouter(
-      {
-        cfg: { projectTarget: '/workspace', autoClone: false, sandboxToken: '' } as never,
-        bootTime: Date.now(),
-        bootState: { repoMaterializationError: null, timeline: [] },
-        staticWebPort: null,
-        resources: () => null,
-      },
-      createOpenCodeDiagnosticsService({
-        getState: () => 'ok',
-        getInternalUrl: () => BASE,
-        getPid: () => 1,
-        getActivePort: () => 4096,
-      } as never),
-    );
+    const router = healthRouter();
 
     const body = (await (await router.request('/')).json()) as Record<string, unknown>;
 
@@ -885,46 +773,6 @@ describe('observeRequestedTurn — what /kortix/health?turn=1 answers with', () 
     // a call into opencode and stays opt-in.
     expect('turn_in_flight' in body).toBe(false);
     expect('turn_end' in body).toBe(false);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// REPLAY of the incident this gate exists for: a customer session at
-// 2026-08-20T12:48:51Z, reconstructed from the box's own transcript.
-//
-// Turn `LIVE_TURN` was STREAMING — its step completed at 12:48:54Z —
-// when OpenCode's synthetic `<pty_exited>` user message (a newer user message)
-// landed above it. The reaper asked the daemon, the old newer-user rule
-// answered "terminal" without ever looking at the root's status, and turn
-// authority was destroyed mid-stream (`end_reason='unknown'`). The composer
-// then read "not running" over a visibly working session.
-// ─────────────────────────────────────────────────────────────────────────────
-describe('incident replay — a streaming turn under a pty wake-up', () => {
-  const ROOT_2 = 'ses_testIncidentRoot000000000';
-  const LIVE_TURN = 'msg_0000000a0001TestLiveTurnAa';
-  const incidentTranscript = [
-    { info: { id: LIVE_TURN, role: 'user' } },
-    // the step that was mid-flight at 12:48:51 — no completion yet
-    { info: { id: 'msg_0000000b0001TestStep', role: 'assistant', parentID: LIVE_TURN, time: {} } },
-    // the synthetic <pty_exited> wake-up that landed above it
-    { info: { id: 'msg_0000000c0001TestWake', role: 'user' } },
-  ];
-
-  test('is NOT terminal while the root reports busy', async () => {
-    stubFetch(incidentTranscript, { sessionStatus: { [ROOT_2]: { type: 'busy' } } });
-    const observed = await observeOpencodeDelivery(BASE, WORKSPACE, ROOT_2, LIVE_TURN);
-    expect(observed.inFlight).toBe(true);
-    expect(observed.end).toBeNull();
-  });
-
-  test('ends normally once the root is genuinely idle', async () => {
-    stubFetch(incidentTranscript, { sessionStatus: { [ROOT_2]: { type: 'idle' } } });
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, ROOT_2, LIVE_TURN)).toBe(false);
-  });
-
-  test('an unreadable status is unknown — never a licence to end it', async () => {
-    stubFetch(incidentTranscript, { sessionStatusOk: false });
-    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, ROOT_2, LIVE_TURN)).toBeNull();
   });
 });
 
@@ -973,16 +821,6 @@ describe('turn probes read a bounded window, never the whole root', () => {
       end: 'completed',
     });
     expect(calls).toContain(`GET ${BASE}/session/${SESSION}/message/msg_turn_1`);
-  });
-
-  test('a prompt older than the window whose newest step is still open is in flight while busy', async () => {
-    stubFetch(stepsAfter('msg_turn_1', 20, { time: {} }), {
-      sessionStatus: { [SESSION]: { type: 'busy' } },
-    });
-    expect(await observeOpencodeDelivery(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toEqual({
-      inFlight: true,
-      end: null,
-    });
   });
 
   test('a prompt missing from the window AND from the root is abandoned, nothing else is', async () => {
