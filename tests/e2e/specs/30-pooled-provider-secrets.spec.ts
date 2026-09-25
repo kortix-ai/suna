@@ -548,27 +548,36 @@ test.describe('30 — pooled provider secrets', () => {
         await page.getByRole('option', { name: /Switch model/ }).click();
       };
 
-      // The composer's own call to action reaches the same accounts panel. A
-      // member cannot read project secrets; the modal must settle instead of
-      // re-reading them in a loop (it used to send ~6 requests a second).
-      let secretReads = 0;
-      page.on('request', (request) => {
-        if (request.method() === 'GET' && request.url().endsWith(`/v1/projects/${projectId}/secrets`)) secretReads++;
-      });
-      await page.getByRole('button', { name: 'Connect model', exact: true }).click();
-      const providerAccounts = page.getByRole('region', { name: 'ChatGPT accounts' });
-      await expect(providerAccounts.getByRole('button', { name: 'Connect ChatGPT' })).toBeVisible({ timeout: 60_000 });
-      const readsWhenSettled = secretReads;
-      await page.waitForTimeout(3_000);
-      expect(secretReads - readsWhenSettled).toBeLessThanOrEqual(1);
-      await page.keyboard.press('Escape');
-      await expect(providerAccounts).toHaveCount(0);
-
+      // The way in follows the account. With no model yet (the local profile)
+      // the picker is empty and the composer offers "Connect model". A funded
+      // account on a deployed target lists models, and the list ends with a
+      // ChatGPT row. Both reach the same accounts dialog.
       await openModelPicker();
-      // A member with no models yet gets the empty picker; ChatGPT sits beside
-      // the provider gate. Once its models exist, the list ends with a row.
-      await expect(page.getByText('No models available', { exact: true })).toBeVisible();
-      await page.getByRole('button', { name: 'Connect ChatGPT', exact: true }).click();
+      const emptyPicker = page.getByText('No models available', { exact: true });
+      const chatGptRow = page.getByRole('option', { name: /Use your ChatGPT subscription/ });
+      await expect(emptyPicker.or(chatGptRow)).toBeVisible();
+      if (await emptyPicker.isVisible()) {
+        await page.keyboard.press('Escape');
+        // The composer's own call to action reaches the same accounts panel. A
+        // member cannot read project secrets; the modal must settle instead of
+        // re-reading them in a loop (it used to send ~6 requests a second).
+        let secretReads = 0;
+        page.on('request', (request) => {
+          if (request.method() === 'GET' && request.url().endsWith(`/v1/projects/${projectId}/secrets`)) secretReads++;
+        });
+        await page.getByRole('button', { name: 'Connect model', exact: true }).click();
+        const providerAccounts = page.getByRole('region', { name: 'ChatGPT accounts' });
+        await expect(providerAccounts.getByRole('button', { name: 'Connect ChatGPT' })).toBeVisible({ timeout: 60_000 });
+        const readsWhenSettled = secretReads;
+        await page.waitForTimeout(3_000);
+        expect(secretReads - readsWhenSettled).toBeLessThanOrEqual(1);
+        await page.keyboard.press('Escape');
+        await expect(providerAccounts).toHaveCount(0);
+        await openModelPicker();
+        await page.getByRole('button', { name: 'Connect ChatGPT', exact: true }).click();
+      } else {
+        await chatGptRow.click();
+      }
       const accountsDialog = page.getByRole('dialog', { name: 'ChatGPT subscription' });
       await expect(accountsDialog.getByText('No ChatGPT accounts yet', { exact: true })).toBeVisible();
       await accountsDialog.getByRole('button', { name: 'Connect ChatGPT' }).click();
