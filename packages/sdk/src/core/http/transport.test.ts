@@ -128,10 +128,12 @@ describe('send: token', () => {
     expect(seen).toHaveLength(0);
   });
 
-  test('an explicit token is used without asking getToken', async () => {
+  test('send takes no token option: getToken() is the only token source', async () => {
+    // @ts-expect-error — a caller-resolved token would be replaced by the
+    // host's token on the 401 replay, so the option does not exist.
     await send('http://backend.test/v1/x', {}, { token: 'given' });
-    expect(tokenCalls).toBe(0);
-    expect(seen[0].headers.get('authorization')).toBe('Bearer given');
+    expect(tokenCalls).toBe(1);
+    expect(seen[0].headers.get('authorization')).toBe('Bearer tok1');
   });
 
   test('an already aborted signal throws AbortError before asking for a token', async () => {
@@ -161,6 +163,14 @@ describe('send: 401 replay', () => {
     const response = await send('http://backend.test/v1/x');
     expect(response.status).toBe(401);
     expect(seen).toHaveLength(1);
+  });
+
+  test("a caller's own Authorization is never replayed with the host token", async () => {
+    tokens = ['tok1', 'tok2'];
+    statuses = [401, 200];
+    const response = await send('http://backend.test/v1/x', { headers: { Authorization: 'Bearer explicit' } });
+    expect(response.status).toBe(401);
+    expect(seen.map((s) => s.headers.get('authorization'))).toEqual(['Bearer explicit']);
   });
 
   test('retryOnAuthError: false returns the first 401', async () => {
@@ -213,11 +223,25 @@ describe('every adapter applies the same policy', () => {
     expect(seen[1].body).toBe('{"name":"n"}');
   });
 
-  test('backendApi without a token returns AuthError and sends nothing', async () => {
+  test('backendApi without a token returns AuthError, sends nothing and does not retry', async () => {
     tokens = [null];
     const result = await backendApi.get('/projects');
     expect(result.error).toBeInstanceOf(AuthError);
+    expect(result.success).toBe(false);
     expect(seen).toHaveLength(0);
+    expect(tokenCalls).toBe(1);
+  });
+
+  test('a backendApi read retry after a 401 replay sends the fresh token, not the first one', async () => {
+    tokens = ['tok1', 'tok2'];
+    statuses = [401, 503, 200];
+    const result = await backendApi.get('/projects', { showErrors: false });
+    expect(result.success).toBe(true);
+    expect(seen.map((s) => s.headers.get('authorization'))).toEqual([
+      'Bearer tok1',
+      'Bearer tok2',
+      'Bearer tok2',
+    ]);
   });
 
   test('postStream sends through the same policy', async () => {

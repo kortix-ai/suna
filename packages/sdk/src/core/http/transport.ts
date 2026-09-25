@@ -2,11 +2,16 @@
  * The one request path from the SDK to the Kortix backend.
  *
  * `send()` owns everything every backend request must agree on:
- *   - the token: `getToken()` from the configured host, or an explicit token;
+ *   - the token: `getToken()` from the configured host, resolved on every
+ *     send, so a retry after a 401 replay starts from the fresh token. There
+ *     is no token option: the 401 replay asks `getToken()` again, so a
+ *     caller-resolved token would be swapped for the host's identity;
  *   - the header policy: bearer, `X-Kortix-Client`, admin read bypass, act-as;
  *   - the default deadline, composed with the caller's signal;
  *   - the one 401 replay with a fresh token, from a copy of the request taken
- *     BEFORE the first send (a `Request` body is consumed by the first send);
+ *     BEFORE the first send (a `Request` body is consumed by the first send).
+ *     A caller that sets its own `Authorization` gets no replay: a fresh host
+ *     token cannot change a header the caller owns;
  *   - the configured `fetch` (`configureKortix({ fetch })`).
  *
  * It returns the `Response` for any HTTP status. It throws only when no
@@ -43,8 +48,6 @@ export interface SendOptions {
    * transport deadline, the caller's signal is the only one.
    */
   timeoutMs?: number | null;
-  /** The bearer for the first send, already resolved by the caller. */
-  token?: string;
   /** The `fetch` to send with. Default `configureKortix({ fetch })`, then the global. */
   fetch?: Fetch;
 }
@@ -72,6 +75,16 @@ function toRecord(headers: HeadersInit | undefined): Record<string, string> {
   return { ...(headers as Record<string, string>) };
 }
 
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+  return Object.keys(headers).some((key) => key.toLowerCase() === name);
+}
+
+/** The caller's headers: the `Request`'s own, then `init.headers` over them. */
+function callerHeaders(input: RequestInfo | URL, init: RequestInit): Record<string, string> {
+  const base = input instanceof Request ? toRecord(input.headers) : {};
+  return Object.assign(base, toRecord(init.headers));
+}
+
 /**
  * The caller's headers plus the platform policy. A caller's own
  * `Authorization` or `X-Kortix-Client` wins. Act-as is attached after the
@@ -80,12 +93,11 @@ function toRecord(headers: HeadersInit | undefined): Record<string, string> {
  */
 function withPlatformHeaders(url: string, base: Record<string, string>, token: string): Record<string, string> {
   const headers = { ...base };
-  const has = (name: string) => Object.keys(headers).some((key) => key.toLowerCase() === name);
   const clientSource = normalizeClientSource(platformConfig().clientSource);
-  if (clientSource && !has('x-kortix-client')) headers['X-Kortix-Client'] = clientSource;
+  if (clientSource && !hasHeader(headers, 'x-kortix-client')) headers['X-Kortix-Client'] = clientSource;
   if (adminBypassEnabled) headers['x-kortix-admin-bypass'] = '1';
   Object.assign(headers, impersonationHeaders(url));
-  if (!has('authorization')) headers.Authorization = `Bearer ${token}`;
+  if (!hasHeader(headers, 'authorization')) headers.Authorization = `Bearer ${token}`;
   return headers;
 }
 
@@ -106,13 +118,11 @@ function dispatch(
   if (input instanceof Request) {
     // The headers go ON the Request: `fetch(Request, { headers })` is dropped
     // by some patched fetches (Next.js) and browsers.
-    const base = toRecord(input.headers);
-    Object.assign(base, toRecord(init.headers));
-    const headers = new Headers(withPlatformHeaders(input.url, base, token));
+    const headers = new Headers(withPlatformHeaders(input.url, callerHeaders(input, init), token));
     return fetchImpl(new Request(input, { headers, ...(signal ? { signal } : {}) }));
   }
   const url = String(input);
-  const headers = withPlatformHeaders(url, toRecord(init.headers), token);
+  const headers = withPlatformHeaders(url, callerHeaders(input, init), token);
   return fetchImpl(url, { ...init, headers, ...(signal ? { signal } : {}) });
 }
 
@@ -134,10 +144,11 @@ export async function send(
       : withDefaultTimeout(input, init, timeoutMs);
   if (signal?.aborted) throw createAbortError();
 
-  const token = options.token ?? (await (signal ? abortable(currentToken(), signal) : currentToken()));
+  const token = await (signal ? abortable(currentToken(), signal) : currentToken());
   if (!token) throw new AuthError();
 
-  const canRetry = retryOnAuthError && !hasOneShotBody(init);
+  const canRetry =
+    retryOnAuthError && !hasOneShotBody(init) && !hasHeader(callerHeaders(input, init), 'authorization');
   const retryInput = canRetry && input instanceof Request ? input.clone() : input;
 
   const response = await dispatch(fetchImpl, input, init, token, signal);

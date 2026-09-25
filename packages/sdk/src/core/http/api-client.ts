@@ -1,5 +1,4 @@
 import { syntheticUnauthenticatedResponse } from '../../platform/auth-core';
-import { getSupabaseAccessTokenWithRetry } from './auth';
 import { ApiError, AuthError, parseBillingError, RequestTooLargeError } from './api/errors';
 import { platformConfig } from './config';
 import { abortable, abortableDelay, createAbortError } from './abort';
@@ -208,22 +207,9 @@ async function makeRequest<T = any>(
       }
     }, timeout);
 
-    const token = await abortable(getSupabaseAccessTokenWithRetry(), controller.signal);
-
-    if (!token) {
-      // No session yet — Supabase hasn't hydrated from cookies.
-      // Return a silent failure instead of sending a naked request that will 401.
-      // Callers gated by `enabled: !!user` should prevent this path, but this
-      // is a safety net for any calls that slip through.
-      return {
-        error: new AuthError(),
-        success: false,
-      };
-    }
-
     // Don't set Content-Type for FormData - browser will set it automatically
-    // with boundary. `send` adds the bearer, client surface, admin bypass and
-    // act-as headers after these.
+    // with boundary. `send` resolves the token on every attempt and adds the
+    // bearer, client surface, admin bypass and act-as headers after these.
     const headers: Record<string, string> = {
       ...(fetchOptions.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...(fetchOptions.headers as Record<string, string>),
@@ -263,7 +249,7 @@ async function makeRequest<T = any>(
               signal: attemptController.signal,
               credentials: fetchOptions.credentials ?? 'omit',
             },
-            { token, timeoutMs: null },
+            { timeoutMs: null },
           ),
           attemptController.signal,
         );
@@ -271,6 +257,12 @@ async function makeRequest<T = any>(
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
+        }
+        // No token: the host has no session yet (Supabase has not hydrated
+        // from cookies). `send` sent nothing. A silent failure, never retried:
+        // callers gated by `enabled: !!user` should not reach this path.
+        if (error instanceof AuthError) {
+          return { error: new AuthError(), success: false };
         }
         // A self-timeout (OUR deadline fired, the caller did not abort) means
         // this attempt got no response, so replaying it is safe for a
