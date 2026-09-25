@@ -45,13 +45,8 @@ describe('resolvePrefixEscape', () => {
     expect(resolvePrefixEscape(req)?.location).toBe('/v1/p/sbx_abc/3000/learn');
   });
 
-  it('ignores XHR/fetch — only navigations carry a recoverable intent', () => {
-    const req = navigation('/api/items', { 'sec-fetch-dest': 'empty' });
-    expect(resolvePrefixEscape(req)).toBeNull();
-  });
-
-  it('ignores sub-resource loads (scripts, styles, images)', () => {
-    for (const dest of ['script', 'style', 'image', 'font', 'iframe']) {
+  it('ignores XHR/fetch and sub-resource loads — only navigations carry a recoverable intent', () => {
+    for (const dest of ['empty', 'script', 'style', 'image', 'font', 'iframe']) {
       expect(resolvePrefixEscape(navigation('/app.js', { 'sec-fetch-dest': dest }))).toBeNull();
     }
   });

@@ -705,7 +705,7 @@ Run these against representative endpoints from each domain.
 `SEC-D` project-scoped PAT: allowed only on its bound project + `/accounts/me`; **every other surface → 403** (cross-project, `/accounts/*`, project-list, router/billing/channels/etc.).
 `SEC-E` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`.
 `SEC-F` webhook sig bypass — Stripe/RevenueCat/Slack/Telegram/project-webhook with missing/wrong sig never process the forged payload. An unconfigured webhook can return its exact service-unavailable response.
-`SEC-G` preview proxy without token/cookie → 401; cross-sandbox token reuse → 403.
+`SEC-G` preview proxy without token/cookie → 401 (share routes and the `/v1/p/:sandboxId/:port/*` data path); cross-sandbox token reuse → 403.
 `SEC-H` audit — every state-changing `/v1/*` writes an audit row (`auditStateChangingRequest`); assert `GET /accounts/:id/audit` reflects a prior mutation.
 `SEC-I` rate limits — session create (429), invite-accept, preview proxy, tunnel WS each return their limiter response under load.
 `SEC-J` transport hardening — public health responses leak no secrets or framework headers; sensitive paths stay hidden; malicious origins receive no permissive CORS; adversarial bodies and content types produce no 5xx, reflection, or secret leakage; HTTP method fuzzing never bypasses auth; the router is not an anonymous upstream relay.

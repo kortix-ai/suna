@@ -22,6 +22,11 @@ mock.module('./backend', () => ({
     labelLookups.push(label);
     return label === 'sbx-known' ? 'sbx_KNOWN' : null;
   },
+  // The WebSocket upgrade module imports these; no case here reaches them.
+  invalidatePreviewLink: () => {},
+  resolveSandboxIngress: async () => {
+    throw new Error('not expected: no case here resolves ingress');
+  },
 }));
 mock.module('./preview-auth', () => ({
   extractPreviewToken: (req: Request, url: URL) =>
@@ -31,7 +36,12 @@ mock.module('./preview-auth', () => ({
     return token === 'good' ? { userId: 'user-1', sessionId: null } : null;
   },
 }));
+let wsUpstreamResolutions = 0;
 mock.module('./routes/preview', () => ({
+  resolvePreviewWsUpstream: async () => {
+    wsUpstreamResolutions += 1;
+    return { ok: true, url: 'wss://upstream.test/hmr', headers: {} };
+  },
   forwardToSandbox: async (
     _sandboxId: string,
     _port: number,
@@ -64,6 +74,7 @@ mock.module('../shared/session-public-shares', () => ({
 }));
 
 const { handlePreviewOriginRequest } = await import('./preview-origin');
+const { preparePreviewHostWsUpgrade } = await import('./ws-proxy');
 const { mintPreviewSession } = await import('./preview-session');
 
 const HOST = 'p8081-sbx-known.localhost:8008';
@@ -94,6 +105,7 @@ function request(path: string, init: RequestInit = {}, host = HOST): [Request, U
 }
 
 beforeEach(() => {
+  wsUpstreamResolutions = 0;
   labelLookups = [];
   principalCalls = [];
   forwarded = 0;
@@ -531,5 +543,46 @@ describe('every preview request is attributed in the audit log', () => {
       resourceType: 'sandbox_preview_origin',
       resourceId: 'sbx_KNOWN',
     });
+  });
+});
+
+// A WebSocket handshake is a cookie-bearing request that no CORS policy
+// governs: any site can open one and the browser attaches the SameSite=None
+// preview cookie. And a public share is a read-only view, never a socket.
+describe('a WebSocket to a preview origin', () => {
+  test('the signed-in owner opening it from the preview itself is upgraded', async () => {
+    const [req, url] = request('/hmr', {
+      headers: { cookie: mintCookieFor('sbx-known', 8081), 'sec-fetch-site': 'same-origin' },
+    });
+    const res = await preparePreviewHostWsUpgrade(req, url);
+    expect(res.ok).toBe(true);
+    expect(wsUpstreamResolutions).toBe(1);
+  });
+
+  test('a cross-site handshake is refused, even with a valid cookie', async () => {
+    const [req, url] = request('/hmr', {
+      headers: { cookie: mintCookieFor('sbx-known', 8081), 'sec-fetch-site': 'cross-site' },
+    });
+    expect(await preparePreviewHostWsUpgrade(req, url)).toMatchObject({ ok: false, status: 403 });
+    expect(wsUpstreamResolutions).toBe(0);
+  });
+
+  test('a public share never opens a socket', async () => {
+    shares = {
+      'prev-token': {
+        ok: true,
+        row: {
+          shareId: 's-prev',
+          mode: 'view',
+          resourceType: 'preview',
+          externalId: 'sbx_KNOWN',
+          port: 8081,
+          filePath: null,
+        },
+      },
+    };
+    const [req, url] = request('/hmr?public_share=prev-token');
+    expect(await preparePreviewHostWsUpgrade(req, url)).toMatchObject({ ok: false, status: 403 });
+    expect(wsUpstreamResolutions).toBe(0);
   });
 });
