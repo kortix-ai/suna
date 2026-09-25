@@ -1,6 +1,6 @@
 'use client';
 
-import { favicon } from '@/components/home/interactive-demo/data';
+import { faviconUrlForHostname } from '@/lib/favicon';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import { IconFrame } from '@/components/ui/marketing/icon-frame';
 import { m, useReducedMotion } from 'motion/react';
@@ -164,7 +164,7 @@ export function StepConnectors(): ReactNode {
                 className="border-border bg-popover flex size-[var(--tile)] flex-none items-center justify-center rounded-[calc(var(--tile)*0.26)] border"
               >
                 <img
-                  src={favicon(domain)}
+                  src={faviconUrlForHostname(domain)}
                   alt=""
                   aria-hidden
                   loading="lazy"

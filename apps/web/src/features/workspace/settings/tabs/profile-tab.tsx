@@ -30,7 +30,7 @@
  * borrows the empty-state copy — that copy asserts the account has no second
  * factor, which a failed fetch cannot know.
  *
- * Ported from `features/accounts/settings/general-tab.tsx` (avatar upload,
+ * Ported from the deleted `features/accounts/settings/general-tab.tsx` (avatar upload,
  * name save, account deletion) and `features/accounts/settings/
  * security-tab.tsx` (MFA factor list and TOTP enrollment). Task 10 deleted
  * `security-tab.tsx` and the legacy user-settings modal that consumed it: the MFA
