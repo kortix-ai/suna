@@ -503,9 +503,7 @@ describe('LEGACY_SETTINGS_TAB_MAP', () => {
     // `referrals` is not a member of `SettingsTab`, so `account-referrals`
     // fell through to `DEFAULT_SETTINGS_TAB` and opened the project workspace
     // General tab under a "Referrals" label. Mapping it correctly was not an
-    // option: the only live referral surface is `ReferralModal`, which mounts
-    // inside `UserMenu` -> `AppHeader` (i.e. only under `/accounts/**`) and
-    // which nothing opens. The entry was removed instead.
+    // option: the API has no referral routes. The entry was removed instead.
     expect(SETTINGS_TABS as readonly string[]).not.toContain('referrals');
     expect(LEGACY_SETTINGS_TAB_MAP.referrals).toBeUndefined();
     expect(paletteItems.find((item) => item.id === 'account-referrals')).toBeUndefined();

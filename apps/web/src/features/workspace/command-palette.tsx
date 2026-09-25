@@ -226,9 +226,8 @@ export function buildPaletteSearchText(item: { label: string; keywords?: string 
  * `openSettingsTab`, not through a raw `openSettings` call.
  *
  * `referrals` is deliberately absent: there is no `referrals` member of
- * `SettingsTab`, and the only live referral surface (`ReferralModal`) mounts
- * inside `UserMenu` -> `AppHeader`, i.e. only on `/accounts/**`. Its registry
- * entry was removed rather than mapped — see `menu-registry.ts`.
+ * `SettingsTab`, and the API has no referral routes. Its registry entry was
+ * removed rather than mapped — see `menu-registry.ts`.
  */
 export const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>> = {
   // `billing`, `tokens` and `transactions` are gone. They mapped onto the

@@ -18,7 +18,6 @@ import {
   CaretRightIcon as ChevronRight,
   DownloadIcon as Download,
   PencilSimpleIcon as Edit,
-  ArrowSquareOutIcon as ExternalLink,
   FileTextIcon as FileText,
   PresentationIcon as Presentation,
   SkipBackIcon as SkipBack,
@@ -26,11 +25,7 @@ import {
   XIcon as X,
 } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  DownloadFormat,
-  downloadPresentation,
-  handleGoogleSlidesUpload,
-} from './presentation-utils';
+import { DownloadFormat, downloadPresentation } from './presentation-utils';
 
 interface SlideMetadata {
   title: string;
@@ -78,7 +73,6 @@ export function FullScreenPresentationViewer({
   const [showEditor, setShowEditor] = useState(false);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
   const [isDownloadingPPTX, setIsDownloadingPPTX] = useState(false);
-  const [isDownloadingGoogleSlides, setIsDownloadingGoogleSlides] = useState(false);
 
   // Track the previous isOpen state to detect when modal opens
   const wasOpenRef = useRef(false);
@@ -330,41 +324,17 @@ export function FullScreenPresentationViewer({
     const sanitizedName = sanitizeFilename(presentationName);
 
     const setDownloadState =
-      format === DownloadFormat.PDF
-        ? setIsDownloadingPDF
-        : format === DownloadFormat.PPTX
-          ? setIsDownloadingPPTX
-          : setIsDownloadingGoogleSlides;
+      format === DownloadFormat.PDF ? setIsDownloadingPDF : setIsDownloadingPPTX;
 
     setDownloadState(true);
     try {
-      if (format === DownloadFormat.GOOGLE_SLIDES) {
-        const result = await handleGoogleSlidesUpload(
-          sandboxUrl,
-          `/workspace/presentations/${sanitizedName}`,
-          {
-            authFailed: tHardcodedUi.raw('i18nComplete.textbb39b2467568'),
-            redirecting: tHardcodedUi.raw('i18nComplete.text1b65f45d0347'),
-            uploaded: tHardcodedUi.raw('i18nComplete.text438f7a2e19eb'),
-            openInSlides: tHardcodedUi.raw('i18nComplete.text59f65a8a6575'),
-            authenticateFirst: tHardcodedUi.raw('i18nComplete.text258060e32b20'),
-            uploadFailed: tHardcodedUi.raw('i18nComplete.textac1f3393cb4c'),
-          },
-          tI18nComplete,
-        );
-        // If redirected to auth, don't show error
-        if (result?.redirected_to_auth) {
-          return; // Don't set loading false, user is being redirected
-        }
-      } else {
-        await downloadPresentation(
-          format,
-          sandboxUrl,
-          `/workspace/presentations/${sanitizedName}`,
-          presentationName,
-          tI18nComplete,
-        );
-      }
+      await downloadPresentation(
+        format,
+        sandboxUrl,
+        `/workspace/presentations/${sanitizedName}`,
+        presentationName,
+        tI18nComplete,
+      );
     } catch (error) {
       console.error(`Error downloading ${format}:`, error);
     } finally {
@@ -557,9 +527,9 @@ export function FullScreenPresentationViewer({
                   title={tHardcodedUi.raw(
                     'componentsThreadToolViewsPresentationToolsFullscreenpresentationviewer.line485JsxAttrTitleExportPresentation',
                   )}
-                  disabled={isDownloadingPDF || isDownloadingPPTX || isDownloadingGoogleSlides}
+                  disabled={isDownloadingPDF || isDownloadingPPTX}
                 >
-                  {isDownloadingPDF || isDownloadingPPTX || isDownloadingGoogleSlides ? (
+                  {isDownloadingPDF || isDownloadingPPTX ? (
                     <KortixLoader customSize={14} />
                   ) : (
                     <Download className="h-3.5 w-3.5" />
@@ -582,16 +552,6 @@ export function FullScreenPresentationViewer({
                 >
                   <Presentation className="mr-2 h-4 w-4" />
                   PPTX
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => handleDownload(DownloadFormat.GOOGLE_SLIDES)}
-                  disabled={isDownloadingGoogleSlides}
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  {tHardcodedUi.raw(
-                    'componentsThreadToolViewsPresentationToolsFullscreenpresentationviewer.line518JsxTextGoogleSlides',
-                  )}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
