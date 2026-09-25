@@ -43,7 +43,26 @@
     "connectAccount": "Connetti account",
     "oauthWaiting": "In attesa di autorizzazione…",
     "oauthExpired": "Autorizzazione scaduta. Riprova.",
-    "oauthPrivateDescription": "I nuovi account ChatGPT sono disponibili per questo progetto per impostazione predefinita. Puoi limitare ogni account ai membri selezionati.",
+    "oauthPrivateDescription": "Usa il tuo piano ChatGPT Plus o Pro in questo progetto. I nuovi account restano privati finché non li condividi.",
+    "chatGptSubscription": "Abbonamento ChatGPT",
+    "useYourChatGpt": "Usa il tuo abbonamento ChatGPT",
+    "manageChatGptAccounts": "Gestisci account ChatGPT",
+    "connect": "Connetti",
+    "connectChatGpt": "Connetti ChatGPT",
+    "noChatGptAccounts": "Nessun account ChatGPT",
+    "oauthCreationDescription": "Accedi con il tuo account ChatGPT Plus o Pro. Kortix conserva l’accesso crittografato e non lo mostra mai.",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "Solo tu",
+    "onlyYouDescription": "Solo tu puoi selezionarla in una sessione.",
+    "onlyOwner": "Solo {name}",
+    "shareRequiresPermission": "Per condividere con altri serve l’autorizzazione a gestire i segreti del progetto.",
+    "accountConnected": "Account ChatGPT connesso",
+    "accountReconnected": "Account ChatGPT riconnesso",
+    "connectFailed": "Autorizzazione ChatGPT non riuscita. Riprova.",
+    "reconnectAccount": "Riconnetti",
+    "reconnectTitle": "Riconnetti {label}",
+    "reconnectDescription": "Accedi di nuovo a ChatGPT. L’account mantiene nome, accesso e selezioni di sessione.",
+    "needsReconnection": "Da riconnettere",
     "accountLabelPlaceholder": "es. Il mio account ChatGPT",
     "chooseProvider": "Scegli un fornitore.",
     "saved": "Segreto salvato",
@@ -52,7 +71,7 @@
     "deleteError": "Impossibile eliminare il segreto",
     "accessError": "Impossibile modificare l’accesso",
     "sharedTitle": "Connessioni ai provider",
-    "sharedDescription": "Aggiungi più chiavi API e account ChatGPT. Per impostazione predefinita, tutti nel progetto possono usarli. Limita l’accesso per ogni connessione e scegli le chiavi per sessione.",
+    "sharedDescription": "Aggiungi chiavi API e account ChatGPT. Quelli nuovi restano privati finché non li condividi. Scegli quali usa ogni sessione.",
     "legacyProjectKey": "Chiave del progetto esistente · Usata quando la sessione non ha una selezione di chiavi",
     "keyCount": "{count, plural, one {# chiave} other {# chiavi}}",
     "providerKeysFor": "Chiavi API di {provider}",
@@ -1110,7 +1129,7 @@
         },
         "pooled_provider_secrets": {
           "name": "Segreti del provider condivisi",
-          "description": "Condividi più chiavi del provider con i membri e seleziona un gruppo di chiavi per ogni sessione."
+          "description": "I membri collegano i propri abbonamenti ChatGPT e chiavi dei provider, li condividono quando serve e scelgono quali usa ogni sessione."
         },
         "pi_worker": {
           "name": "Runtime worker Pi (compilato)",
@@ -18675,7 +18694,9 @@
       "texta0bcee97cbb3": "Checkout integrato confermato",
       "text0b751a917c97": "Installazione GitHub connessa",
       "text8b7a8797d532": "Tenant Microsoft Teams connesso",
+      "text83c0e255d4bb": "Installazione di Microsoft Teams completata",
       "text17a8cf884e2a": "Workspace Slack connesso",
+      "textf887cb0e6800": "Installazione dell’app Slack completata",
       "textc7f9ec5ed69c": "Agente del tunnel del computer connesso",
       "textafd58fcedeee": "Casella email connessa",
       "text2eda12b4ed38": "GitHub App esistente connessa",
@@ -19153,6 +19174,13 @@
       "chatAccount": "Account {service}",
       "chatWorkspace": "Workspace {service}",
       "checking": "Verifica del link…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} non è stato collegato",
+      "mismatch": "Questa installazione è stata avviata da un altro account Kortix o per un altro progetto. Accedi con quell’account oppure riavvia l’installazione dal progetto.",
+      "expired": "Questo link di installazione non è valido o è scaduto. Riavvia l’installazione dal progetto.",
+      "failed": "Non è stato possibile completare l’installazione. Riavviala dal progetto.",
+      "backToProject": "Torna al progetto"
     }
   },
   "projectOnboarding": {
