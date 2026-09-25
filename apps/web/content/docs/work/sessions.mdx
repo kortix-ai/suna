@@ -69,6 +69,13 @@ access** and picks one of 3 options.
 
 Everyone with access reads the conversation and continues it.
 
+**A shared session runs on shared keys.** Once shared, a session uses only
+provider keys shared with the whole project, never one person's own keys or
+ChatGPT connection. If its model ran on your own keys, sharing switches it to
+the project's keys for that provider. If the project shares no key that runs
+the model, sharing is refused and the session stays private. See
+[Provider keys and member access](/docs/project/models#provider-keys-and-member-access).
+
 **Only the owner changes this.** A project manager who did not create the
 session can open it once it is shared with them, and can stop, restart, or
 delete it. They cannot rewrite who else can open it. Sharing a session with a

@@ -74,6 +74,8 @@ flow(
       "PUT /v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId",
       "POST /v1/projects/:projectId/sessions",
       "PUT /v1/projects/:projectId/sessions/:sessionId/model",
+      "PUT /v1/projects/:projectId/sessions/:sessionId/sharing",
+      "GET /v1/projects/:projectId/sessions/:sessionId",
       "DELETE /v1/accounts/:accountId/secret-resources/:secretId",
     ],
   },
@@ -213,6 +215,39 @@ flow(
       (await asMember.put('/v1/projects/:projectId/sessions/:sessionId/model', {
         opencode_model: 'anthropic/claude-sonnet-4.6',
       }, { params })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
+    });
+    await ctx.step('sharing a session that runs on keys granted to its owner switches it to keys shared with the project', async () => {
+      const privateSession = await createDatabaseSession(ctx.env, {
+        projectId: project.id, accountId: team.id, userId: member.userId!, visibility: 'private',
+      });
+      const params = { ...poolParams, sessionId: privateSession };
+      const sessionPath = '/v1/projects/:projectId/sessions/:sessionId';
+      const asMember = ctx.client.as(member);
+      (await asMember.put(poolPath, { secret_ids: ids }, { params })).status(200);
+      (await asMember.put(`${sessionPath}/model`, {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params })).status(200);
+      // A shared session uses nobody's personal keys: with no key shared with
+      // the project, the share would leave the model with none. Refused, unchanged.
+      (await asMember.put(`${sessionPath}/sharing`, { mode: 'project' }, { params })).status(409)
+        .body().has('$.code', 'SHARED_SESSION_NEEDS_PROJECT_KEY');
+      (await asMember.get(sessionPath, { params })).status(200).body().has('$.visibility', 'private');
+      (await asMember.get(poolPath, { params })).status(200).body().has('$.secret_ids', ids);
+
+      const shared = await owner.post(resourcePath, {
+        project_id: project.id, label: 'Project key', provider_id: 'anthropic', name: 'ANTHROPIC_API_KEY',
+        value: 'project-key-test-value', consumer: 'llm_gateway', strategy: 'broker',
+      }, { params: resourceParams });
+      shared.status(201).body().has('$.access_mode', 'project');
+      const projectKey = shared.json<any>().secret_id as string;
+      (await asMember.put(`${sessionPath}/sharing`, { mode: 'project' }, { params })).status(200)
+        .body().has('$.visibility', 'project');
+      (await asMember.get(poolPath, { params })).status(200).body().has('$.secret_ids', [projectKey]);
+      // The shared session still runs its model, now on the project's key.
+      (await asMember.put(`${sessionPath}/model`, {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params })).status(200);
+      (await owner.del(`${resourcePath}/:secretId`, { params: { ...resourceParams, secretId: projectKey } })).status(200);
     });
     await ctx.step('create rejects a secret ID without a grant before provisioning', async () => {
       const created = await owner.post('/v1/projects/:projectId/sessions', {

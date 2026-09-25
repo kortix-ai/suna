@@ -419,7 +419,10 @@ resolve under `/workspace` unless they start with `/workspace`, `/tmp`,
 (`find` filename cap), and `-y` to skip the `rm` confirmation.
 
 `sessions share` is owner-governed: the API refuses a project manager who
-cannot already read the session.
+cannot already read the session. A shared session runs only on provider keys
+shared with the whole project: a model that ran on your own keys switches to
+the project's keys for that provider, and with none that runs it, the share is
+refused (`409 SHARED_SESSION_NEEDS_PROJECT_KEY`).
 
 `sessions links create` options: `--port <n>` (default `3000`; `22`, `8000`,
 and the opencode ports are refused), `--path <p>` (default `/`),
