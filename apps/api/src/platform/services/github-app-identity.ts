@@ -8,7 +8,7 @@
  *
  * That mixing is what took production down on 2026-09-16: a stored row held a
  * new appId while the auth token stayed the env PAT, so every installation
- * 404ed. See `.claude/skills/learnings/SKILL.md`, "Never render an
+ * 404ed. See `.agents/skills/learnings/SKILL.md`, "Never render an
  * instance-global config surface inside an account-scoped page".
  *
  * The identity is one of three separate concepts. The other two are the

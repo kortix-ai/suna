@@ -418,7 +418,7 @@ export async function provisionSessionSandbox(opts: {
           // 'ensurePiWorkerImage' not found` — attributed to no test, and it
           // takes an unrelated parallel worker down with it. The register's
           // rule is "fix the import, not the mocks"
-          // (.claude/skills/learnings/SKILL.md:39). This edge is reached once,
+          // (.agents/skills/learnings/SKILL.md:39). This edge is reached once,
           // on the pi-worker branch only, so deferring it costs nothing and
           // needs no test churn.
           import('../../snapshots/builder').then(({ ensurePiWorkerImage }) =>
