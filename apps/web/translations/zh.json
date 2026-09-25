@@ -19149,6 +19149,13 @@
       "chatAccount": "{service} 账户",
       "chatWorkspace": "{service} 工作区",
       "checking": "正在检查链接…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} 未连接",
+      "mismatch": "此安装是从另一个 Kortix 账户或为另一个项目发起的。请使用该账户登录，或从项目中重新开始安装。",
+      "expired": "此安装链接无效或已过期。请从项目中重新开始安装。",
+      "failed": "无法完成安装。请从项目中重新开始。",
+      "backToProject": "返回项目"
     }
   },
   "projectOnboarding": {

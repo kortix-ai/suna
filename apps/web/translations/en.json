@@ -19162,6 +19162,13 @@
       "chatAccount": "{service} account",
       "chatWorkspace": "{service} workspace",
       "checking": "Checking link…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} was not connected",
+      "mismatch": "This install was started from another Kortix account or for another project. Sign in with that account, or start the install again from the project.",
+      "expired": "This install link is invalid or has expired. Start the install again from the project.",
+      "failed": "The install could not be finished. Start it again from the project.",
+      "backToProject": "Back to the project"
     }
   },
   "projectOnboarding": {

@@ -10,7 +10,8 @@ import { resolveBaseUrl } from '../../channels/slack-manifest';
 import { proveTeamsTenant, teamsChannelEnabled } from '../../channels/teams-auth';
 import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
-import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
+import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/install-completion';
+import { completeTeamsOauthInstall, teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
 import { listTeamsPostTargets, postToTeamsConversation } from '../../channels/teams/post';
 import { config } from '../../config';
@@ -67,10 +68,61 @@ projectsApp.openapi(
     const enabled = teamsChannelEnabled(loaded.row.metadata);
     return c.json({
       ...teamsMode(baseUrl, { enabled, projectId, byoAppId }),
-      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl, enabled }),
+      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, userId: loaded.userId, baseUrl, enabled }),
       orgInstalled: install?.orgInstalled ?? false,
       deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
     });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/teams/oauth/complete
+// The web completion page posts the provider's {code, state} here with the
+// signed-in user's bearer. The install lands only when the signed state names
+// this caller and this project (see channels/install-completion.ts).
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/teams/oauth/complete',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/teams/oauth/complete',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: InstallCompletionBody } } },
+    },
+    responses: {
+      200: json(z.object({ redirect_url: z.string() }), 'OK'),
+      ...errors(400, 403, 404, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Same gate as the manual connect route: installing a Teams app is a
+    // connector-write capability.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    const body = InstallCompletionBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) {
+      return c.json({ error: 'Missing code or state', code: INSTALL_STATE_INVALID }, 400);
+    }
+    const result = await completeTeamsOauthInstall({
+      projectId,
+      userId: loaded.userId,
+      code: body.data.code,
+      state: body.data.state,
+    });
+    if (!result.ok) {
+      return c.json({ error: result.error, ...(result.code ? { code: result.code } : {}) }, result.status);
+    }
+    return c.json({ redirect_url: result.redirectUrl });
   },
 );
 
