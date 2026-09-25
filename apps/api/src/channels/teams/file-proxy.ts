@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { teamsPendingUploads } from '@kortix/db';
 import { eq, lt } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { loadTeamsBotCredentials, loadTeamsTenantForProject } from '../install-store';
+import { loadTeamsBotCredentials } from '../install-store';
+import { provenTeamsTenants } from './inbound';
 import { sendActivity, sendCard } from '../teams-api';
 import { buildNoticeCard } from './cards';
 import { assertValidTeamsServiceUrl } from '../teams-service-url';
@@ -23,9 +24,39 @@ const ALLOWED_DOWNLOAD_HOST =
  * which also allows `azurewebsites.net`, a customer-registrable namespace.
  * The download url is caller-supplied, so reusing the broad list let anyone
  * with project read point the proxy at their own `*.azurewebsites.net` host
- * and capture the bot connector token (CWE-918).
+ * and capture the bot connector token (CWE-918). `*.trafficmanager.net` is the
+ * same class — any Azure customer can name a Traffic Manager profile — so only
+ * the Teams connector's own profile, `smba.trafficmanager.net`, is accepted.
  */
-const ALLOWED_BOT_ATTACHMENT_HOST = /(^|\.)(botframework\.com|botframework\.us|trafficmanager\.net)$/i;
+const ALLOWED_BOT_ATTACHMENT_HOST = /(^smba\.trafficmanager\.net|(^|\.)botframework\.com|(^|\.)botframework\.us)$/i;
+
+/**
+ * The Graph resources the download proxy reads: the hosted content (an inline
+ * image) of a chat or channel message — the only Graph URLs an inbound
+ * activity hands the agent (teams/types.ts `inlineImageUrls`). The proxy
+ * attaches an app-only Graph token for the tenant, so any other Graph path
+ * (directory, drives, mail) is refused rather than read with the app's
+ * permissions.
+ */
+const GRAPH_HOST = /^graph\.microsoft\.com$/i;
+const GRAPH_SEGMENT = '[^/]+';
+const GRAPH_DOWNLOAD_PATHS: readonly RegExp[] = [
+  new RegExp(`^/(?:v1\\.0|beta)/chats/${GRAPH_SEGMENT}/messages/${GRAPH_SEGMENT}/hostedContents/${GRAPH_SEGMENT}/\\$value$`),
+  new RegExp(
+    `^/(?:v1\\.0|beta)/teams/${GRAPH_SEGMENT}/channels/${GRAPH_SEGMENT}/messages/${GRAPH_SEGMENT}` +
+      `(?:/replies/${GRAPH_SEGMENT})?/hostedContents/${GRAPH_SEGMENT}/\\$value$`,
+  ),
+];
+
+/** Is `url` a Graph message-hosted-content download the proxy may read? */
+export function isAllowedGraphDownload(url: URL): boolean {
+  if (!GRAPH_HOST.test(url.hostname)) return false;
+  if (url.search || url.hash) return false;
+  // No encoded separators or dot-segments: each id must stay one path segment.
+  if (/%2f|%5c|%2e/i.test(url.pathname) || url.pathname.includes('\\')) return false;
+  if (url.pathname.split('/').some((seg) => seg === '.' || seg === '..')) return false;
+  return GRAPH_DOWNLOAD_PATHS.some((re) => re.test(url.pathname));
+}
 
 export type FileProxyError = { ok: false; error: string; status: number };
 
@@ -45,6 +76,9 @@ export async function downloadTeamsFile(
   ) {
     return { ok: false, error: 'url must be an https Microsoft/SharePoint file URL', status: 400 };
   }
+  if (GRAPH_HOST.test(parsed.hostname) && !isAllowedGraphDownload(parsed)) {
+    return { ok: false, error: 'only Teams message attachment URLs can be downloaded from Microsoft Graph', status: 400 };
+  }
 
   const headers: Record<string, string> = {};
   if (ALLOWED_BOT_ATTACHMENT_HOST.test(parsed.hostname)) {
@@ -54,8 +88,10 @@ export async function downloadTeamsFile(
     const token = await botConnectorToken(creds).catch(() => null);
     if (!token) return { ok: false, error: 'could not mint a bot token', status: 502 };
     headers.Authorization = `Bearer ${token}`;
-  } else if (/(^|\.)graph\.microsoft\.com$/i.test(parsed.hostname)) {
-    const tenant = await loadTeamsTenantForProject(projectId);
+  } else if (GRAPH_HOST.test(parsed.hostname)) {
+    // The tenant comes from the install record the connect paths proved, not
+    // from a project secret an admin can overwrite.
+    const [tenant] = await provenTeamsTenants(projectId);
     if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
     const creds = await loadTeamsBotCredentials(projectId);
     const token = await graphToken(tenant, creds).catch(() => null);
@@ -269,7 +305,8 @@ async function uploadToTeamDrive(
   ref: TeamsConversationRef,
   args: TeamsUploadArgs & { teamGroupId: string },
 ): Promise<TeamsUploadResult | FileProxyError> {
-  const tenant = await loadTeamsTenantForProject(projectId);
+  // The tenant comes from the proven install record, as on the download path.
+  const [tenant] = await provenTeamsTenants(projectId);
   if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
   const creds = await loadTeamsBotCredentials(projectId);
   const token = await graphToken(tenant, creds).catch(() => null);

@@ -94,7 +94,8 @@ import {
   rowMetadata,
   CONNECTED_AS_KEY,
 } from './connection-identity';
-import type { ConnectorAuth, FetchImpl } from './call';
+import type { ConnectorAuth } from './call';
+import { connectorEgressFetch } from './egress';
 import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
 import {
   type ConnectorDraft,
@@ -613,19 +614,6 @@ async function resolveActiveConnectorConnection(principal: ConnectorPrincipal, r
   return connection?.status === 'active' ? connection : null;
 }
 
-const nodeFetch: FetchImpl = async (url, init) => {
-  const res = await fetch(url, {
-    method: init.method,
-    headers: init.headers,
-    body: init.body,
-    ...(init.tls ? { tls: init.tls } : {}),
-  } as RequestInit);
-  // `headers` is what carries `Mcp-Session-Id` back to the MCP session
-  // handshake in call.ts. Without it every MCP call to a stateful server
-  // re-initializes.
-  return { status: res.status, ok: res.ok, text: () => res.text(), headers: res.headers };
-};
-
 /** Spec §2.3 "own computer": see `filterPersonalTunnelOwners`. */
 async function personalTunnelOwnersFor(
   principal: ConnectorPrincipal,
@@ -829,7 +817,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
           args,
         }),
       ),
-    fetchImpl: nodeFetch,
+    // Every connector request resolves and checks its target, on each
+    // redirect hop too. See egress.ts.
+    fetchImpl: connectorEgressFetch,
     enforcePolicies: true,
   };
 }

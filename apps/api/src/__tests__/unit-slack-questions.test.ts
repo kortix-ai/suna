@@ -191,7 +191,7 @@ describe('handleBlockAction → question answer click resumes the session', () =
       channel: { id: 'C1' },
       user: { id: 'U1' },
       message: { ts: '50.0', thread_ts: '10.0' },
-      response_url: 'https://hooks.slack.test/x',
+      response_url: 'https://hooks.slack.com/x',
       actions: [
         {
           action_id: 'qa_0_1',
@@ -218,7 +218,7 @@ describe('handleBlockAction → question answer click resumes the session', () =
       channel: { id: 'C1' },
       user: { id: 'U1' },
       message: { ts: '50.0', thread_ts: '10.0' },
-      response_url: 'https://hooks.slack.test/x',
+      response_url: 'https://hooks.slack.com/x',
       actions: [{ action_id: 'qa_0_0', text: { type: 'plain_text', text: 'A' }, value: '{"q":"Q?","a":"A"}' }],
     } as any);
 

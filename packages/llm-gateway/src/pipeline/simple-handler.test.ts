@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { GatewayHooks, GatewayTrace, UpstreamDescriptor, UsageEvent } from '../domain';
-import {
-  handleChatCompletions,
-  streamErrorTraceStatus,
-  upstreamHeadersTimeoutMs,
-  withUpstreamHeadersTimeout,
-  retryWithoutReasoningEffortPossible,
-} from './simple-handler';
+import { upstreamHeadersTimeoutMs, withUpstreamHeadersTimeout } from './dispatch';
+import { handleChatCompletions, streamErrorTraceStatus } from './simple-handler';
 
 const principal = { userId: 'user', accountId: 'account', projectId: 'project' };
 const primary: UpstreamDescriptor = {
@@ -27,8 +22,8 @@ function hooks(usage: UsageEvent[], traces: GatewayTrace[]): GatewayHooks {
     resolveRoute: async () => ({
       policyId: 'route',
       primaryModel: 'primary-model',
-      fallbackModels: ['fallback-model'],
-      fallbackOn: 'any-error',
+      fallbackModels: [],
+      fallbackOn: 'transient',
     }),
     resolveUpstream: async () => [primary, fallback],
     assertBillingActive: async () => {},
@@ -359,6 +354,52 @@ describe('simple gateway pipeline', () => {
     expect(usage[0]).toMatchObject({ model: 'global.xai.grok-4.6' });
   });
 
+  test('a Bedrock model that refuses reasoning_effort is retried once without it', async () => {
+    const traces: GatewayTrace[] = [];
+    const sent: Array<Record<string, unknown>> = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks([], traces),
+          resolveUpstream: async () => [
+            { ...primary, provider: 'amazon-bedrock', kind: 'bedrock', resolvedModel: 'openai.effort-probe' },
+          ],
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async (_input, init) => {
+          sent.push(JSON.parse(String(init.body)));
+          if (sent.length === 1) {
+            return new Response(
+              JSON.stringify({ message: 'unknown_parameter: reasoning_effort is not supported' }),
+              { status: 400, headers: { 'content-type': 'application/json' } },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              output: { message: { role: 'assistant', content: [{ text: 'ok' }] } },
+              stopReason: 'end_turn',
+              usage: { inputTokens: 3, outputTokens: 1, totalTokens: 4 },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        },
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({
+          model: 'amazon-bedrock/openai.effort-probe',
+          reasoning_effort: 'high',
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(sent).toHaveLength(2);
+    expect(JSON.stringify(sent[0])).toContain('high');
+    expect(JSON.stringify(sent[1])).not.toContain('high');
+    expect(traces[0]).toMatchObject({ ok: true, attempts: 2 });
+  });
+
   test('a Bedrock 400 that is NOT the on-demand refusal is passed through with no retry', async () => {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
@@ -453,6 +494,134 @@ describe('simple gateway pipeline', () => {
     });
   });
 
+  test('a stream the client stops before the usage frame still settles an estimate', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const client = new AbortController();
+    const response = await handleChatCompletions(
+      {
+        hooks: hooks(usage, traces),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                // Output arrives; the usage chunk never does.
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: {"choices":[{"delta":{"content":"${'y'.repeat(800)}"}}]}\n\n`,
+                  ),
+                );
+              },
+            }),
+            { headers: { 'content-type': 'text/event-stream' } },
+          ),
+      },
+      {
+        authorization: 'Bearer token',
+        signal: client.signal,
+        rawBody: JSON.stringify({
+          model: 'requested-model',
+          stream: true,
+          messages: [{ role: 'user', content: 'p'.repeat(40_000) }],
+        }),
+      },
+    );
+    const reader = response.body!.getReader();
+    await reader.read();
+    client.abort();
+    await reader.cancel();
+
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ usageEstimated: true, requestId: expect.any(String) });
+    expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(10_000);
+    expect(usage[0]!.completionTokens).toBe(200);
+    expect(usage[0]!.finalCost).toBeGreaterThan(0);
+  });
+
+  test('a stream stopped during prefill, before any output, settles the prompt', async () => {
+    const usage: UsageEvent[] = [];
+    const client = new AbortController();
+    const response = await handleChatCompletions(
+      {
+        hooks: hooks(usage, []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () =>
+          new Response(new ReadableStream<Uint8Array>({ pull() {} }), {
+            headers: { 'content-type': 'text/event-stream' },
+          }),
+      },
+      {
+        authorization: 'Bearer token',
+        signal: client.signal,
+        rawBody: JSON.stringify({
+          model: 'requested-model',
+          stream: true,
+          messages: [{ role: 'user', content: 'p'.repeat(4_000) }],
+        }),
+      },
+    );
+    client.abort();
+    await response.body!.cancel();
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 0 });
+    expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(1_000);
+  });
+
+  test('a stream with a usage frame settles the reported usage, never an estimate', async () => {
+    const usage: UsageEvent[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: hooks(usage, []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () =>
+          new Response(
+            'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n' +
+              'data: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":3}}\n\ndata: [DONE]\n\n',
+            { headers: { 'content-type': 'text/event-stream' } },
+          ),
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'requested-model', stream: true, messages: [] }),
+      },
+    );
+    await response.text();
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ promptTokens: 12, completionTokens: 3 });
+    expect(usage[0]!.usageEstimated).toBeUndefined();
+  });
+
+  test('a BYOK stream stopped early records no estimate', async () => {
+    const usage: UsageEvent[] = [];
+    const client = new AbortController();
+    const response = await handleChatCompletions(
+      {
+        hooks: { ...hooks(usage, []), resolveUpstream: async () => [{ ...primary, billingMode: 'none', markup: 0 }] },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'));
+              },
+            }),
+            { headers: { 'content-type': 'text/event-stream' } },
+          ),
+      },
+      {
+        authorization: 'Bearer token',
+        signal: client.signal,
+        rawBody: JSON.stringify({ model: 'requested-model', stream: true, messages: [{ role: 'user', content: 'q' }] }),
+      },
+    );
+    const reader = response.body!.getReader();
+    await reader.read();
+    client.abort();
+    await reader.cancel();
+    expect(usage).toHaveLength(0);
+  });
+
   test('drops wire-framing headers the provider sent for a body fetch already decompressed', async () => {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
@@ -508,16 +677,6 @@ describe('simple gateway pipeline', () => {
     expect(sse.headers.get('content-length')).toBeNull();
     expect(sse.headers.get('content-type')).toBe('text/event-stream');
     expect(await sse.text()).toContain('[DONE]');
-  });
-});
-
-describe('retryWithoutReasoningEffortPossible', () => {
-  const bedrock: UpstreamDescriptor = { ...primary, provider: 'amazon-bedrock', kind: 'bedrock', resolvedModel: 'global.openai.gpt-5.6-sol' };
-  test('only a Bedrock candidate carrying reasoning_effort qualifies', () => {
-    expect(retryWithoutReasoningEffortPossible({ reasoning_effort: 'max' }, bedrock)).toBe(true);
-    expect(retryWithoutReasoningEffortPossible({}, bedrock)).toBe(false);
-    expect(retryWithoutReasoningEffortPossible({ reasoning_effort: 'max' }, primary)).toBe(false);
-    expect(retryWithoutReasoningEffortPossible(null, bedrock)).toBe(false);
   });
 });
 

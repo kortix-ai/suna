@@ -36,6 +36,7 @@ import {
 } from '../../platform/providers';
 import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
 import { db } from '../../shared/db';
+import { isUniqueViolation } from '../../shared/postgres-errors';
 import {
   type SandboxSpec,
   claimComputeWindow,
@@ -190,7 +191,10 @@ export async function startComputeSession(opts: StartComputeOpts): Promise<strin
     workloadType: opts.workloadType ?? 'session',
     appRuntimeId: opts.appRuntimeId ?? null,
   }).catch(async (err) => {
-    if ((err as { code?: string })?.code !== '23505') throw err;
+    // `uniq_sandbox_compute_sessions_one_open`: a concurrent start opened the
+    // row between the read above and this insert. Reuse it. Drizzle wraps the
+    // driver error, so the SQLSTATE is read through the cause chain.
+    if (!isUniqueViolation(err)) throw err;
     return getOpenComputeSession(opts.sandboxId);
   });
   return row?.id ?? null;

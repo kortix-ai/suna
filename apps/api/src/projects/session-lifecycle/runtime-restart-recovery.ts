@@ -102,7 +102,7 @@ const liveDeps: RuntimeRestartRecoveryDeps = {
   // on a partially-mocked `shared/daytona` / `projects/git` the moment the
   // static edge existed. Nothing here needs the engine before this call.
   kickDrain: () =>
-    void import('./engine')
+    void import('./drain')
       .then((m) => m.drainSessionLifecycleQueue({ limit: 5 }))
       .catch(() => undefined),
   requeue: (input) => requeueAbandonedPrompt(input),

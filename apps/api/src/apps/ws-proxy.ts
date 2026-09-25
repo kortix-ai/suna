@@ -5,6 +5,7 @@ import { markComputeSessionAlive } from '../billing/services/compute-metering';
 import { db } from '../shared/db';
 import { AppHostingProvider } from './hosting';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
+import { ingressTargetUrl } from '../platform/providers/ingress-url';
 import { AppBudgetExceededError } from './budget';
 import {
   appRuntimeNeedsWake,
@@ -113,7 +114,7 @@ export async function prepareAppWsUpgrade(
       ok: true,
       data: {
         type: 'app-ws',
-        url: websocketUrl(`${ingress.url.replace(/\/$/, '')}${url.pathname}${url.search}`),
+        url: websocketUrl(ingressTargetUrl(ingress, `${url.pathname}${url.search}`)),
         headers: headerObject,
         runtimeId: runtime.runtimeId,
         idleTimeoutSeconds: loaded.app.idleTimeoutSeconds,

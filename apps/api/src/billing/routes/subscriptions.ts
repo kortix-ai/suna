@@ -188,10 +188,11 @@ subscriptionsRouter.openapi(
     const accountId = await resolveBillingWriteAccountId(c, 'body');
     const body = await c.req.json();
 
+    // `tier_key` in the body is ignored: the tier comes from the price of the
+    // caller's own subscription (confirmInlineCheckout).
     const result = await confirmInlineCheckout({
       accountId,
       subscriptionId: body.subscription_id,
-      tierKey: body.tier_key,
     });
 
     return c.json(result);

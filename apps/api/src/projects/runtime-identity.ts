@@ -1,4 +1,4 @@
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { sessionSandboxes } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { endComputeSession, reopenComputeForSandbox } from '../billing/services/compute-metering';
@@ -12,6 +12,7 @@ import {
   STAMPED_RUNTIME_FAILURE_STOP_REASONS,
   runtimeStartFailurePatch,
 } from './session-lifecycle/runtime-wake-fence';
+import { transitionRuntime } from './session-lifecycle/status-transitions';
 
 export const RUNTIME_IDENTITY_UNAVAILABLE = 'runtime_identity_unavailable';
 /** Stable alert key. Better Stack / Sentry rules match on this, not on prose. */
@@ -28,11 +29,12 @@ type RecoverableRuntimeIdentityRow = typeof sessionSandboxes.$inferSelect;
 
 const RECOVERY_LEASE_MS = 10 * 60 * 1000;
 
-class RuntimeIdentityCasLostError extends Error {}
-
-function sessionIsNotDeleted() {
-  return sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;
-}
+/** The recovery lease keys. Every write that ends a recovery drops them. */
+const RECOVERY_LEASE_KEYS = [
+  'runtimeRecoveryLeaseId',
+  'runtimeRecoveryLeaseAt',
+  'runtimeRecoveryLeaseExpiresAtMs',
+] as const;
 
 export type RuntimeRecoveryClaim = {
   row: RecoverableRuntimeIdentityRow & { externalId: string };
@@ -51,43 +53,28 @@ export async function claimInPlaceRuntimeRecovery(
   if (Number.isFinite(currentExpiry) && currentExpiry > now.getTime()) return null;
 
   const leaseId = crypto.randomUUID();
-  const metadata = {
-    ...currentMetadata,
-    runtimeIdentityState: 'recovery_claimed',
-    runtimeRecoveryLeaseId: leaseId,
-    runtimeRecoveryLeaseAt: now.toISOString(),
-    runtimeRecoveryLeaseExpiresAtMs: now.getTime() + RECOVERY_LEASE_MS,
-    preservedExternalId: externalId,
-  };
-
-  try {
-    const claimed = await db.transaction(async (tx) => {
-      const [liveSession] = await tx
-        .update(projectSessions)
-        .set({ status: 'provisioning', error: null, updatedAt: now })
-        .where(and(eq(projectSessions.sessionId, row.sessionId), sessionIsNotDeleted()))
-        .returning({ sessionId: projectSessions.sessionId });
-      if (!liveSession) return null;
-
-      const [claimedRow] = await tx
-        .update(sessionSandboxes)
-        .set({ status: 'provisioning', metadata, updatedAt: now })
-        .where(
-          and(
-            eq(sessionSandboxes.sandboxId, row.sandboxId),
-            eq(sessionSandboxes.externalId, externalId),
-            sql`CASE WHEN jsonb_typeof(${sessionSandboxes.metadata}->'runtimeRecoveryLeaseExpiresAtMs') = 'number' THEN (${sessionSandboxes.metadata}->>'runtimeRecoveryLeaseExpiresAtMs')::numeric ELSE 0 END < ${now.getTime()}`,
-          ),
-        )
-        .returning();
-      if (!claimedRow) throw new RuntimeIdentityCasLostError();
-      return claimedRow;
-    });
-    return claimed ? { row: { ...claimed, externalId }, leaseId } : null;
-  } catch (err) {
-    if (err instanceof RuntimeIdentityCasLostError) return null;
-    throw err;
-  }
+  const claimed = await transitionRuntime({
+    sessionId: row.sessionId,
+    sandboxId: row.sandboxId,
+    session: 'provision',
+    sandbox: 'provision',
+    at: now,
+    error: null,
+    metadata: {
+      merge: {
+        runtimeIdentityState: 'recovery_claimed',
+        runtimeRecoveryLeaseId: leaseId,
+        runtimeRecoveryLeaseAt: now.toISOString(),
+        runtimeRecoveryLeaseExpiresAtMs: now.getTime() + RECOVERY_LEASE_MS,
+        preservedExternalId: externalId,
+      },
+    },
+    guard: and(
+      eq(sessionSandboxes.externalId, externalId),
+      sql`CASE WHEN jsonb_typeof(${sessionSandboxes.metadata}->'runtimeRecoveryLeaseExpiresAtMs') = 'number' THEN (${sessionSandboxes.metadata}->>'runtimeRecoveryLeaseExpiresAtMs')::numeric ELSE 0 END < ${now.getTime()}`,
+    ),
+  });
+  return claimed ? { row: { ...claimed, externalId }, leaseId } : null;
 }
 
 /** Persist provider acceptance only if this request still owns the recovery fence. */
@@ -96,62 +83,38 @@ export async function markInPlaceRuntimeRecoveryAccepted(
   recovery: 'running' | 'recovering',
   now = new Date(),
 ): Promise<RecoverableRuntimeIdentityRow | null> {
-  const metadata: Record<string, unknown> = {
-    ...((claim.row.metadata as Record<string, unknown> | null) ?? {}),
-    runtimeIdentityState: recovery === 'running' ? 'recovered' : 'recovering',
-    runtimeRecoveryStartedAt: now.toISOString(),
-    preservedExternalId: claim.row.externalId,
-  };
-  delete metadata.runtimeUnavailableReason;
-  delete metadata.runtimeUnavailableAt;
-  if (recovery === 'running') {
-    delete metadata.runtimeRecoveryLeaseId;
-    delete metadata.runtimeRecoveryLeaseAt;
-    delete metadata.runtimeRecoveryLeaseExpiresAtMs;
+  const running = recovery === 'running';
+  const updated = await transitionRuntime({
+    sessionId: claim.row.sessionId,
+    sandboxId: claim.row.sandboxId,
+    session: running ? 'resume' : 'provision',
+    sandbox: running ? 'activate' : 'provision',
+    at: now,
+    error: null,
+    metadata: {
+      strip: [
+        'runtimeUnavailableReason',
+        'runtimeUnavailableAt',
+        ...(running ? RECOVERY_LEASE_KEYS : []),
+      ],
+      merge: {
+        runtimeIdentityState: running ? 'recovered' : 'recovering',
+        runtimeRecoveryStartedAt: now.toISOString(),
+        preservedExternalId: claim.row.externalId,
+      },
+    },
+    guard: and(
+      eq(sessionSandboxes.externalId, claim.row.externalId),
+      sql`${sessionSandboxes.metadata}->>'runtimeRecoveryLeaseId' = ${claim.leaseId}`,
+    ),
+  });
+  if (updated && running) {
+    void reopenComputeForSandbox(updated.sandboxId, updated.accountId, updated.sessionId, null, updated.provider as ProviderName).catch(
+      (err) =>
+        console.warn(`[runtime-identity] compute reopen failed for ${updated.sandboxId}:`, err),
+    );
   }
-
-  try {
-    const updated = await db.transaction(async (tx) => {
-      const [liveSession] = await tx
-        .update(projectSessions)
-        .set({
-          status: recovery === 'running' ? 'running' : 'provisioning',
-          error: null,
-          updatedAt: now,
-        })
-        .where(and(eq(projectSessions.sessionId, claim.row.sessionId), sessionIsNotDeleted()))
-        .returning({ sessionId: projectSessions.sessionId });
-      if (!liveSession) return null;
-
-      const [updatedRow] = await tx
-        .update(sessionSandboxes)
-        .set({
-          status: recovery === 'running' ? 'active' : 'provisioning',
-          metadata,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(sessionSandboxes.sandboxId, claim.row.sandboxId),
-            eq(sessionSandboxes.externalId, claim.row.externalId),
-            sql`${sessionSandboxes.metadata}->>'runtimeRecoveryLeaseId' = ${claim.leaseId}`,
-          ),
-        )
-        .returning();
-      if (!updatedRow) throw new RuntimeIdentityCasLostError();
-      return updatedRow;
-    });
-    if (updated && recovery === 'running') {
-      void reopenComputeForSandbox(updated.sandboxId, updated.accountId, updated.sessionId, null, updated.provider as ProviderName).catch(
-        (err) =>
-          console.warn(`[runtime-identity] compute reopen failed for ${updated.sandboxId}:`, err),
-      );
-    }
-    return updated;
-  } catch (err) {
-    if (err instanceof RuntimeIdentityCasLostError) return null;
-    throw err;
-  }
+  return updated;
 }
 
 export async function finalizeRecoveredRuntimeIfRunning(
@@ -206,61 +169,36 @@ export async function preserveEstablishedRuntime(
     ),
   );
 
-  const metadata = {
-    ...((row.metadata as Record<string, unknown> | null) ?? {}),
-  };
-  delete metadata.needsReprovision;
-  delete metadata.runtimeRecoveryLeaseId;
-  delete metadata.runtimeRecoveryLeaseAt;
-  delete metadata.runtimeRecoveryLeaseExpiresAtMs;
-  Object.assign(metadata, {
-    runtimeIdentityState: 'unavailable',
-    runtimeUnavailableReason: reason,
-    runtimeUnavailableAt: now.toISOString(),
-    preservedExternalId: externalId,
-    // NOT resumable in place — /start must branch on runtimeIdentityState, not
-    // on the bare `stopped` status (see Task 7). WHICH park this is comes from
-    // the caller; see the note on the parameter above.
-    stopReason,
-    stoppedAt: now.toISOString(),
+  const preserved = await transitionRuntime({
+    sessionId: row.sessionId,
+    sandboxId: row.sandboxId,
+    session: 'park',
+    sandbox: 'stop',
+    at: now,
+    error: RUNTIME_IDENTITY_ERROR,
+    metadata: {
+      strip: ['needsReprovision', ...RECOVERY_LEASE_KEYS],
+      merge: {
+        runtimeIdentityState: 'unavailable',
+        runtimeUnavailableReason: reason,
+        runtimeUnavailableAt: now.toISOString(),
+        preservedExternalId: externalId,
+        // NOT resumable in place — /start must branch on runtimeIdentityState, not
+        // on the bare `stopped` status (see Task 7). WHICH park this is comes from
+        // the caller; see the note on the parameter above.
+        stopReason,
+        stoppedAt: now.toISOString(),
+      },
+    },
+    guard: eq(sessionSandboxes.externalId, externalId),
+    // The box is GONE at the provider, so any turn still open ended because
+    // the runtime went away. Once the row reads `stopped`, every token-scoped
+    // ledger settle refuses it — they all require an active/provisioning row
+    // — so this transaction is the last moment the history can be closed.
+    // Savepoint-bounded: the park must not become abortable by an
+    // observation table (see settleOpenSandboxTurns).
+    then: (tx) => settleOpenSandboxTurns(tx, row.sandboxId, 'runtime_gone'),
   });
-
-  let preserved: typeof sessionSandboxes.$inferSelect | null = null;
-  try {
-    preserved = await db.transaction(async (tx) => {
-      const [liveSession] = await tx
-        .update(projectSessions)
-        .set({
-          status: 'stopped',
-          error: RUNTIME_IDENTITY_ERROR,
-          updatedAt: now,
-        })
-        .where(and(eq(projectSessions.sessionId, row.sessionId), sessionIsNotDeleted()))
-        .returning({ sessionId: projectSessions.sessionId });
-      if (!liveSession) return null;
-      const [preservedRow] = await tx
-    .update(sessionSandboxes)
-    .set({ status: 'stopped', metadata, updatedAt: now })
-    .where(
-      and(
-        eq(sessionSandboxes.sandboxId, row.sandboxId),
-            eq(sessionSandboxes.externalId, externalId),
-      ),
-    )
-    .returning();
-      if (!preservedRow) throw new RuntimeIdentityCasLostError();
-      // The box is GONE at the provider, so any turn still open ended because
-      // the runtime went away. Once the row reads `stopped`, every token-scoped
-      // ledger settle refuses it — they all require an active/provisioning row
-      // — so this transaction is the last moment the history can be closed.
-      // Savepoint-bounded: the park must not become abortable by an
-      // observation table (see settleOpenSandboxTurns).
-      await settleOpenSandboxTurns(tx, row.sandboxId, 'runtime_gone');
-      return preservedRow;
-    });
-  } catch (err) {
-    if (!(err instanceof RuntimeIdentityCasLostError)) throw err;
-  }
 
   if (!preserved) return null;
 
@@ -342,43 +280,30 @@ export async function parkEstablishedRuntime(
   }
   const externalId = row.externalId;
 
-  const metadata = {
-    ...((row.metadata as Record<string, unknown> | null) ?? {}),
-  };
-  delete metadata.needsReprovision;
-  delete metadata.runtimeRecoveryLeaseId;
-  delete metadata.runtimeRecoveryLeaseAt;
-  delete metadata.runtimeRecoveryLeaseExpiresAtMs;
-  Object.assign(
-    metadata,
-    parkMetadataPatch(reason, stopReason, now, (row.metadata as Record<string, unknown>) ?? null),
-  );
-
-  let parked: typeof sessionSandboxes.$inferSelect | null = null;
-  try {
-    parked = await db.transaction(async (tx) => {
-      const [liveSession] = await tx
-        .update(projectSessions)
-        .set({ status: 'stopped', error: null, updatedAt: now })
-        .where(and(eq(projectSessions.sessionId, row.sessionId), sessionIsNotDeleted()))
-        .returning({ sessionId: projectSessions.sessionId });
-      if (!liveSession) return null;
-      const [parkedRow] = await tx
-        .update(sessionSandboxes)
-        .set({ status: 'stopped', metadata, updatedAt: now })
-        .where(
-          and(
-            eq(sessionSandboxes.sandboxId, row.sandboxId),
-            eq(sessionSandboxes.externalId, externalId),
-            eq(sessionSandboxes.status, 'active'),
-            // A readiness request can outlive the wake it inspected. The wake
-            // rewrites this row before starting the provider. No provider or
-            // billing side effect is allowed unless this exact snapshot wins.
-            eq(sessionSandboxes.updatedAt, row.updatedAt),
-          ),
-        )
-        .returning();
-      if (!parkedRow) throw new RuntimeIdentityCasLostError();
+  return transitionRuntime({
+    sessionId: row.sessionId,
+    sandboxId: row.sandboxId,
+    session: 'park',
+    sandbox: 'park',
+    at: now,
+    error: null,
+    metadata: {
+      strip: ['needsReprovision', ...RECOVERY_LEASE_KEYS],
+      merge: parkMetadataPatch(
+        reason,
+        stopReason,
+        now,
+        (row.metadata as Record<string, unknown>) ?? null,
+      ),
+    },
+    guard: and(
+      eq(sessionSandboxes.externalId, externalId),
+      // A readiness request can outlive the wake it inspected. The wake
+      // rewrites this row before starting the provider. No provider or
+      // billing side effect is allowed unless this exact snapshot wins.
+      eq(sessionSandboxes.updatedAt, row.updatedAt),
+    ),
+    then: async (tx) => {
       // A turn that was open ended with this runtime. The settle remains
       // savepoint-bounded so an observation-table failure cannot abort the
       // lifecycle claim this transaction now owns.
@@ -404,14 +329,8 @@ export async function parkEstablishedRuntime(
           ),
         );
       }
-      return parkedRow;
-    });
-  } catch (err) {
-    if (err instanceof RuntimeIdentityCasLostError) return null;
-    throw err;
-  }
-
-  return parked;
+    },
+  });
 }
 
 /**

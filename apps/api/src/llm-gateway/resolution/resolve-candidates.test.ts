@@ -376,6 +376,30 @@ describe('resolveCandidates — BYOK billing', () => {
     });
   });
 
+  test('BYOK Bedrock: an AWS_REGION that is not a region name is refused before any endpoint is built', async () => {
+    catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+    for (const region of ['x@example.test/', 'example.test#', 'us-east-1.example.test', 'us-east-1/']) {
+      secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: region };
+      await expect(resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8')).rejects.toMatchObject({
+        code: 'provider_not_connected',
+      });
+    }
+  });
+
+  test('BYOK Bedrock: a padded region name is trimmed and accepted', async () => {
+    catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
+    secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: ' us-gov-west-1 ' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+    const candidates = await resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8');
+    expect(candidates[0]).toMatchObject({
+      baseUrl: 'https://bedrock-runtime.us-gov-west-1.amazonaws.com',
+      region: 'us-gov-west-1',
+    });
+  });
+
   // Regression coverage for the $0 upstream-cost-hint bug: models.dev only
   // catalogs the BASE Bedrock model id, never the cross-region
   // inference-profile id the user actually requests — so the PRICING lookup

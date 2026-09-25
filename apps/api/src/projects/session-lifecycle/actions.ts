@@ -40,10 +40,24 @@ import {
 import { inspectSandboxRuntime } from '../runtime-inspection';
 import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
 import { claimInPlaceRestart } from './runtime-restart-claim';
+import { transitionSandbox, transitionSession } from './status-transitions';
+import {
+  DELETED_SESSION_CLEARED_KEYS,
+  PROVIDER_REMOVAL_PENDING_KEY,
+  attemptArchivedBoxRemoval,
+} from '../reaping/archived-box-removal';
 import {
   RUNTIME_RESTART_LEASE_MS,
   restartClaimIsActive,
 } from './runtime-restart-fence';
+
+/** The in-place restart claim. The restart finalize and failure writes drop it. */
+const RESTART_CLAIM_KEYS = [
+  'runtimeRestartId',
+  'runtimeRestartStartedAt',
+  'runtimeRestartLeaseExpiresAt',
+  'runtimeRestartPhase',
+] as const;
 
 export async function deleteSession(input: {
   projectId: string;
@@ -72,71 +86,72 @@ export async function deleteSession(input: {
   await releasePromptAttachmentsForSession({ sessionId, projectId, accountId });
 
   const deletedAt = new Date();
-  const [row] = await db
-    .update(projectSessions)
-    .set({
-      status: 'stopped',
-      metadata: {
-        ...(input.metadata ?? {}),
-        deletedAt: deletedAt.toISOString(),
-        deletedBy: userId,
-      },
-      updatedAt: deletedAt,
-    })
-    .where(
-      and(
-        eq(projectSessions.sessionId, sessionId),
-        eq(projectSessions.projectId, projectId),
-        eq(projectSessions.accountId, accountId),
-      ),
-    )
-    .returning();
+  // Merged in SQL: the tombstone must not write back a metadata object read
+  // earlier, which would erase any key a concurrent writer added since.
+  const tombstone = { deletedAt: deletedAt.toISOString(), deletedBy: userId };
+  const deleted = await transitionSession('delete', sessionId, {
+    at: deletedAt,
+    metadata: tombstone,
+    guard: and(
+      eq(projectSessions.projectId, projectId),
+      eq(projectSessions.accountId, accountId),
+    ),
+  });
 
-  if (!row) return { error: 'Not found', status: 404 };
+  if (!deleted) return { error: 'Not found', status: 404 };
 
   await Promise.resolve().then(() => sessionAttachmentStore().removeSession(projectId, sessionId)).catch((error) => {
     console.error('[session-attachments] cleanup failed', { projectId, sessionId, error });
   });
 
   if (sandbox) {
-    await db
-      .update(sessionSandboxes)
-      .set({
-        status: 'archived',
-        metadata: {
-          ...(sandbox.metadata ?? {}),
-          stoppedAt: deletedAt.toISOString(),
-          initStatus: sandbox.status === 'active' ? 'ready' : 'failed',
-          ...(sandbox.status === 'active'
-            ? {}
-            : {
-                lastInitError:
-                  'Session was stopped before sandbox initialization completed',
-              }),
-        },
-        updatedAt: new Date(),
-      })
-      .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId))
-      .catch((err) => {
-        console.warn(
-          `[projects] failed to mark session sandbox archived for ${sessionId}:`,
-          err,
-        );
-      });
+    const removable =
+      !!sandbox.externalId &&
+      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider);
+    // One statement, merged in SQL, from the row the UPDATE locks:
+    //   - strip every lifecycle fence (restart, wake, recovery, turn
+    //     authority), so a detached restart or recovery that is still running
+    //     loses its finalize CAS instead of flipping this row back to active;
+    //   - record the removal intent. Only a confirmed provider removal clears
+    //     it, and reaping/archived-box-removal.ts retries until then.
+    const archivePatch: Record<string, unknown> = {
+      stoppedAt: deletedAt.toISOString(),
+      stopReason: 'manual',
+      initStatus: sandbox.status === 'active' ? 'ready' : 'failed',
+      ...(sandbox.status === 'active'
+        ? {}
+        : { lastInitError: 'Session was stopped before sandbox initialization completed' }),
+      ...(removable ? { [PROVIDER_REMOVAL_PENDING_KEY]: deletedAt.toISOString() } : {}),
+    };
+    const archived = await transitionSandbox('archive', sandbox.sandboxId, {
+      metadata: { strip: DELETED_SESSION_CLEARED_KEYS, merge: archivePatch },
+    }).catch((err) => {
+      console.warn(
+        `[projects] failed to mark session sandbox archived for ${sessionId}:`,
+        err,
+      );
+      return null;
+    });
 
-    if (
-      sandbox.externalId &&
-      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
-        sandbox.provider,
-      )
-    ) {
-      const provider = getProvider(sandbox.provider as SandboxProviderName);
-      void provider.remove(sandbox.externalId).catch((err) => {
-        console.warn(
-          `[projects] failed to remove provider sandbox ${sandbox.externalId} for deleted session ${sessionId}:`,
-          err,
-        );
-      });
+    if (removable && sandbox.externalId) {
+      if (archived) {
+        // First attempt now; the maintenance lane retries a failure.
+        void attemptArchivedBoxRemoval({
+          sandboxId: sandbox.sandboxId,
+          externalId: sandbox.externalId,
+          provider: sandbox.provider,
+          metadata: archivePatch,
+        });
+      } else {
+        // The intent could not be recorded. Keep the old best-effort remove.
+        const provider = getProvider(sandbox.provider as SandboxProviderName);
+        void provider.remove(sandbox.externalId).catch((err) => {
+          console.warn(
+            `[projects] failed to remove provider sandbox ${sandbox.externalId} for deleted session ${sessionId}:`,
+            err,
+          );
+        });
+      }
     }
   }
 
@@ -233,20 +248,13 @@ export async function restartSession(input: {
         ? (session.metadata.opencode_model as string)
         : null;
 
-    await db
-      .update(projectSessions)
-      .set({
-        status: 'provisioning',
-        error: null,
-        sandboxUrl: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(projectSessions.sessionId, sessionId));
+    await transitionSession('provision', sessionId, { error: null, clearSandboxUrl: true });
 
     const runtimeMetadata = { restarted_at: new Date().toISOString() };
     const rehydrate = legacyRehydrateSpec(
       session.metadata,
       loaded.row.metadata,
+      loaded.row.projectId,
     );
     allocateSessionRuntime({
       sessionId,
@@ -412,14 +420,7 @@ export async function restartSession(input: {
         },
       };
     }
-    await db
-      .update(projectSessions)
-      .set({
-        status: 'provisioning',
-        error: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(projectSessions.sessionId, sessionId));
+    await transitionSession('provision', sessionId, { error: null });
 
     // Every abandon is logged. A restart that silently lost its claim left the
     // row in `provisioning` with nothing in the logs: SESS-9 sat there ~350 s
@@ -533,24 +534,12 @@ export async function restartSession(input: {
             },
           );
         }
-        const [finalized] = await db
-          .update(sessionSandboxes)
-          .set({
-            status: 'active',
-            metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-              - 'runtimeRestartId'
-              - 'runtimeRestartStartedAt'
-              - 'runtimeRestartLeaseExpiresAt'
-              - 'runtimeRestartPhase'`,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(sessionSandboxes.sandboxId, sessionId),
-              sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
-            ),
-          )
-          .returning({ sandboxId: sessionSandboxes.sandboxId });
+        // A session deleted during the restart stays deleted: its row is
+        // archived, and `activate` never leaves `archived`.
+        const finalized = await transitionSandbox('activate', sessionId, {
+          metadata: { strip: RESTART_CLAIM_KEYS },
+          guard: sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
+        });
         if (!finalized) {
           logger.warn('[projects] restart abandoned: lost the restart claim', {
             session_id: sessionId,
@@ -561,10 +550,7 @@ export async function restartSession(input: {
           });
           return;
         }
-        await db
-          .update(projectSessions)
-          .set({ status: 'running', updatedAt: new Date() })
-          .where(eq(projectSessions.sessionId, sessionId));
+        await transitionSession('resume', sessionId);
         // A restart is a stop/start of the SAME box: the provider hands back the
         // env it was created with, so this used to cost a full boot and return
         // byte-identical stale config. People restarted precisely to pick up a
@@ -627,38 +613,21 @@ export async function restartSession(input: {
           }
           return;
         }
-        const [failedRestart] = await db
-          .update(sessionSandboxes)
-          .set({
-            status: 'stopped',
-            metadata: sql`(
-              coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-                - 'runtimeRestartId'
-                - 'runtimeRestartStartedAt'
-                - 'runtimeRestartLeaseExpiresAt'
-                - 'runtimeRestartPhase'
-              ) || ${JSON.stringify({
-                runtimeRestartFailedAt: new Date().toISOString(),
-                runtimeRestartError:
-                  err instanceof Error ? err.message : String(err),
-              })}::jsonb`,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(sessionSandboxes.sandboxId, sessionId),
-              eq(sessionSandboxes.externalId, externalId),
-              sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
-            ),
-          )
-          .returning({ sandboxId: sessionSandboxes.sandboxId })
-          .catch(() => []);
+        const failedRestart = await transitionSandbox('stop', sessionId, {
+          metadata: {
+            strip: RESTART_CLAIM_KEYS,
+            merge: {
+              runtimeRestartFailedAt: new Date().toISOString(),
+              runtimeRestartError: err instanceof Error ? err.message : String(err),
+            },
+          },
+          guard: and(
+            eq(sessionSandboxes.externalId, externalId),
+            sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
+          ),
+        }).catch(() => null);
         if (!failedRestart) return;
-        await db
-          .update(projectSessions)
-          .set({ status: 'stopped', updatedAt: new Date() })
-          .where(eq(projectSessions.sessionId, sessionId))
-          .catch(() => {});
+        await transitionSession('park', sessionId).catch(() => false);
       }
     })();
 

@@ -22,7 +22,7 @@ import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
 import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
-import { checkBudget } from './budgets';
+import { checkBudget, releaseBudgetReservation } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
@@ -250,6 +250,9 @@ function extendDeadlineForLlmActivity(sessionId: string | null | undefined): voi
 }
 
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
+  // The request is over: its cost is in the logged spend (or it cost nothing),
+  // so its in-flight budget reservation must stop counting.
+  releaseBudgetReservation(event.projectId, event.actorUserId);
   const pureHoldRefund = isPureHoldRefund(event);
   // A pure hold refund observed nothing — no upstream call happened.
   if (!pureHoldRefund) extendDeadlineForLlmActivity(event.sessionId);
@@ -270,11 +273,17 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
         cacheWriteTokens: event.cacheWriteTokens,
         costUsd: event.finalCost,
         streaming: event.streaming,
+        // One row per gateway request: a retried settlement finds this row,
+        // and the debit keyed on its id (`llm:<event id>`) runs once.
+        requestId: event.requestId,
         metadata: {
           upstreamCostUsd: event.upstreamCost,
           markup: llmPriceMarkup(),
           requestId: event.requestId,
           billingMode: event.billingMode,
+          // The stream ended before the provider reported usage; the token
+          // counts are the gateway's estimate (see usage/estimate.ts).
+          ...(event.usageEstimated ? { usageEstimated: true } : {}),
           // Staff-only: the upstream behind a Kortix-managed model. Customer
           // surfaces read `provider`/`model`, which name Kortix.
           ...(event.upstream
@@ -311,6 +320,9 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
         'llm_reservation_refund',
         `LLM gateway admission-hold refund${event.model && event.model !== 'unknown' ? ` · ${event.model}` : ''}`,
         false,
+        undefined,
+        // A retried settlement of the same request refunds once.
+        event.requestId ? { idempotencyKey: `llm-hold-refund:${event.requestId}` } : undefined,
       );
     }
     return;

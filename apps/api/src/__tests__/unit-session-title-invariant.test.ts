@@ -6,7 +6,7 @@
  * There are exactly two such moments, and therefore exactly one set of hooks:
  *   - create-with-prompt  → projects/lib/sessions.ts
  *   - first HTTP prompt   → sandbox-proxy/routes/preview.ts,
- *                           projects/session-lifecycle/engine.ts (server-side
+ *                           projects/session-lifecycle/continue-session.ts (server-side
  *                           delivery, transport-independent)
  *
  * These tests fail the build when a new create path, a new prompt transport, or
@@ -70,7 +70,7 @@ describe('session-title invariant', () => {
     expect(
       offenders(/from '[^']*session-title-generate'/, [
         'projects/lib/sessions.ts',
-        'projects/session-lifecycle/engine.ts',
+        'projects/session-lifecycle/continue-session.ts',
         'sandbox-proxy/routes/preview.ts',
         // Hook 3, extracted. `runPrePromptEnvSync` is the block that used to sit
         // inline in preview.ts; it calls the generator through an injected

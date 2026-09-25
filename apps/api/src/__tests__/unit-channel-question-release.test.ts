@@ -78,7 +78,7 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
     endpoint: { url: 'http://sandbox.internal', headers: { 'X-Sandbox-Token': 't' } },
   };
 
-  mock.module('../projects/session-lifecycle/engine', () => ({
+  mock.module('../projects/session-lifecycle/runtime-client', () => ({
     resolveSessionOpencodeEndpoint: async () => resolved,
   }));
 

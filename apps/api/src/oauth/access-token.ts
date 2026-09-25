@@ -13,7 +13,8 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { oauthAccessTokens, oauthClients } from '@kortix/db';
 import { db } from '../shared/db';
-import { oauthTokenHashCandidates } from './token-hash';
+import { oauthTokenHashCandidatesAsync } from './token-hash';
+import { markTokenValidated } from '../shared/token-hash';
 
 export const OAUTH_ACCESS_TOKEN_PREFIX = 'kortix_oat_';
 export const OAUTH_REFRESH_TOKEN_PREFIX = 'kortix_ort_';
@@ -60,6 +61,7 @@ export interface OAuthAccessTokenValidation {
 
 export async function validateOAuthAccessToken(token: string): Promise<OAuthAccessTokenValidation> {
   if (!isOAuthAccessToken(token)) return { isValid: false, error: 'Invalid OAuth access token' };
+  const candidates = await oauthTokenHashCandidatesAsync(token);
   const [row] = await db
     .select({
       id: oauthAccessTokens.id,
@@ -74,7 +76,7 @@ export async function validateOAuthAccessToken(token: string): Promise<OAuthAcce
     .innerJoin(oauthClients, eq(oauthClients.clientId, oauthAccessTokens.clientId))
     .where(
       and(
-        inArray(oauthAccessTokens.tokenHash, oauthTokenHashCandidates(token)),
+        inArray(oauthAccessTokens.tokenHash, candidates),
         isNull(oauthAccessTokens.revokedAt),
       ),
     )
@@ -82,6 +84,7 @@ export async function validateOAuthAccessToken(token: string): Promise<OAuthAcce
   if (!row) return { isValid: false, error: 'Invalid OAuth access token' };
   if (row.expiresAt < new Date()) return { isValid: false, error: 'OAuth access token expired' };
   if (!row.clientActive) return { isValid: false, error: 'OAuth client is inactive' };
+  markTokenValidated(token);
   return {
     isValid: true,
     tokenId: row.id,
