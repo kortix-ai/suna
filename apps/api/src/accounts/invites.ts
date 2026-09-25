@@ -18,6 +18,7 @@ import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/roles';
 import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
 import { trustedEmailForUser } from '../iam/email-trust';
+import { isUuid } from '../shared/validate';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -108,12 +109,11 @@ type ValidatedGrant = {
   role: 'manager' | 'member';
   expires_at: string | null;
 };
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
   if (!raw || typeof raw !== 'object') return null;
   const g = raw as Record<string, unknown>;
-  if (typeof g.project_id !== 'string' || !UUID_RE.test(g.project_id)) return null;
+  if (!isUuid(g.project_id)) return null;
   if (typeof g.role !== 'string') return null;
   const role = normalizeProjectRole(g.role);
   if (!role) return null;
@@ -139,7 +139,7 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
 export function validateBootstrapGroup(raw: unknown): { group_id: string } | null {
   if (!raw || typeof raw !== 'object') return null;
   const g = raw as Record<string, unknown>;
-  if (typeof g.group_id !== 'string' || !UUID_RE.test(g.group_id)) return null;
+  if (!isUuid(g.group_id)) return null;
   return { group_id: g.group_id };
 }
 

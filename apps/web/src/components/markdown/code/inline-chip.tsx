@@ -46,7 +46,7 @@ import type React from 'react';
 // fumadocs builds that chip inside its own package, so there is nowhere to
 // hand it this class. Change one, change the other.
 export const INLINE_CODE =
-  'rounded-[5px] bg-inherit dark:bg-card px-1.5 py-[0.08rem] font-mono text-[0.8rem] text-foreground/95 [overflow-wrap:anywhere] border border-border tracking-tight font-medium';
+  'rounded-[5px] bg-card px-1.5 py-[0.08rem] font-mono text-[0.8rem] text-foreground/95 [overflow-wrap:anywhere] border border-border tracking-tight font-medium';
 
 /**
  * The four CSS hex forms and nothing else: `#RGB`, `#RGBA`, `#RRGGBB`,

@@ -16,7 +16,8 @@ import {
   resolveProjectGitConnection,
   resolveProjectUpstream,
 } from '../lib/git';
-import { normalizeString, readBody, serializeProject } from '../lib/serializers';
+import { normalizeString, serializeProject } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 // POST /v1/projects/:projectId/git-token
 // Mint a fresh scoped push token for a *managed* project so the CLI
@@ -181,7 +182,7 @@ projectsApp.openapi(
   // scoped agent via the fold) can't add external collaborators.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const username = normalizeString(body.github_username ?? body.username ?? body.login);
   if (!username) return c.json({ error: 'github_username is required' }, 400);
   const permission = normalizeString(body.permission);

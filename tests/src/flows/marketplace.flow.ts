@@ -196,6 +196,21 @@ flow(
         });
       r.status(403);
     });
+    await ctx.step(
+      'POST OWNER, FEATURED address with a wrong-typed field and no JSON content-type → 400, no source created',
+      async () => {
+        // No JSON content-type, so the route validator does not run. The
+        // handler parses the body with the same schema and rejects it.
+        for (const extra of ['"sparsePaths":[1]', '"sparsePaths":"docs"', '"gitRef":7', '"label":{}']) {
+          const r = await ctx.client
+            .as(ctx.P.OWNER)
+            .post('/v1/marketplace/sources', `{"address":${JSON.stringify(FEATURED_ADDRESS)},${extra}}`, {
+              raw: true,
+            });
+          r.status(400).body().has('$.error', 'Invalid marketplace source');
+        }
+      },
+    );
     await ctx.step('DELETE ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)

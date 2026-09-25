@@ -33,6 +33,7 @@ import {
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { oauthAuthorizationServerMetadata } from './discovery';
 import { isOAuthAccessToken, isOAuthRefreshToken, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_PROFILE } from './access-token';
+import { isUuid } from '../shared/validate';
 
 // ─── Rate Limiter (in-memory, per client_id) ────────────────────────────────
 
@@ -134,13 +135,11 @@ function requireOAuthScope(c: Context, scopes: string[]): Response | null {
     : c.json({ error: 'insufficient_scope', required_scope: scopes.join(' | ') }, 403);
 }
 
-/** A client_id is a uuid column; gate junk before it reaches Postgres (22P02 → 500). */
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 type ClientRow = typeof oauthClients.$inferSelect;
 
+/** A client_id is a uuid column; gate junk before it reaches Postgres (22P02 → 500). */
 async function loadActiveClient(clientId: string): Promise<ClientRow | null> {
-  if (!UUID_REGEX.test(clientId)) return null;
+  if (!isUuid(clientId)) return null;
   const [client] = await db
     .select()
     .from(oauthClients)

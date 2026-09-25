@@ -40,7 +40,7 @@ import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useGatewayCatalogSync } from '@kortix/sdk/react';
-import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({
