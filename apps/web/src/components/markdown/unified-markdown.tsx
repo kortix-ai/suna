@@ -18,12 +18,15 @@ import {
   isInternalUrl,
   isStreamingLinkPlaceholder,
   prepareMarkdownSource,
+  remoteImageHost,
   shouldUseNextLink,
 } from '@/components/markdown/unified-markdown-utils';
 import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
 import { parsePendingSetupLinkHref, parseSetupLinkHref } from '@/components/setup-links/util';
+import { Button } from '@/components/ui/button';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { cn } from '@/lib/utils';
+import { ImageIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import React, { useCallback, useContext, useMemo, useState } from 'react';
 import { parseMarkdownIntoBlocks, Streamdown } from 'streamdown';
@@ -48,11 +51,21 @@ function handleHashClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
 interface MarkdownRenderContextValue {
   isStreaming: boolean;
   proxy: (url: string | undefined) => string | undefined;
+  remoteImages: MarkdownRemoteImages;
 }
+
+/**
+ * `load` fetches every image as it renders. `click-to-load` shows a button in
+ * place of an image hosted outside this app and fetches it only on click, so
+ * rendering third-party content never sends a request to a host that content
+ * chose.
+ */
+export type MarkdownRemoteImages = 'load' | 'click-to-load';
 
 const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
   isStreaming: false,
   proxy: (url) => url,
+  remoteImages: 'load',
 });
 
 /**
@@ -234,9 +247,31 @@ const MARKDOWN_COMPONENTS = {
   ),
 
   img: function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
-    const { proxy } = useContext(MarkdownRenderContext);
+    const { proxy, remoteImages } = useContext(MarkdownRenderContext);
+    const tHardcodedUi = useTranslations('hardcodedUi');
+    const [loadRequested, setLoadRequested] = useState(false);
     if (!src) return null;
     const resolvedSrc = proxy(src) ?? src;
+    const remoteHost = remoteImageHost(src, resolvedSrc);
+    if (remoteImages === 'click-to-load' && remoteHost && !loadRequested) {
+      return (
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          title={alt || undefined}
+          onClick={() => setLoadRequested(true)}
+          className="text-muted-foreground max-w-full"
+        >
+          <ImageIcon className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {tHardcodedUi('componentsMarkdownUnifiedMarkdown.loadRemoteImage', {
+              host: remoteHost,
+            })}
+          </span>
+        </Button>
+      );
+    }
     return (
       <span className="my-5 block">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -358,16 +393,25 @@ export interface UnifiedMarkdownProps {
    * for file/source viewers so markup shows as escaped text instead of broken DOM.
    */
   allowHtml?: boolean;
+  /**
+   * Set `click-to-load` where the content comes from a third party (scraped
+   * pages, connector tool output, public share pages): images hosted outside
+   * this app then load only when the reader asks. Defaults to `load`.
+   */
+  remoteImages?: MarkdownRemoteImages;
 }
 
 // Single source of truth for markdown rendering across the app — clean, minimal,
 // readable in both themes.
 export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
-  ({ content, className, isStreaming = false, allowHtml = true }) => {
+  ({ content, className, isStreaming = false, allowHtml = true, remoteImages = 'load' }) => {
     const tHardcodedUi = useTranslations('hardcodedUi');
     const { proxyUrl } = useSandboxProxy();
     const proxy = useCallback((url: string | undefined) => proxyUrl(url), [proxyUrl]);
-    const renderContext = useMemo(() => ({ isStreaming, proxy }), [isStreaming, proxy]);
+    const renderContext = useMemo(
+      () => ({ isStreaming, proxy, remoteImages }),
+      [isStreaming, proxy, remoteImages],
+    );
 
     // Streamdown renders streaming text block by block and settled text as one
     // document: two different React trees. Switching trees when the turn ends

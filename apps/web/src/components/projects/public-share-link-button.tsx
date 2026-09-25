@@ -3,6 +3,7 @@
 import { CheckIcon as Check, LinkSimpleIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 
+import { PublicShareLinkConfirm } from '@/components/projects/public-share-link-confirm';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
@@ -35,43 +36,46 @@ export function PublicShareLinkButton({
   const disabled = !share.canShare || share.isPending;
 
   return (
-    <Hint
-      label={share.copied ? 'Copied' : tooltip}
-      side="bottom"
-      sideOffset={tooltipSideOffset}
-      className="max-w-56 text-xs"
-    >
-      <Button
-        variant="ghost"
-        size="icon"
-        className={cn('size-8 active:scale-[0.96]', className)}
-        onClick={share.copyLink}
-        disabled={disabled}
-        title={title}
+    <>
+      <Hint
+        label={share.copied ? 'Copied' : tooltip}
+        side="bottom"
+        sideOffset={tooltipSideOffset}
+        className="max-w-56 text-xs"
       >
-        {share.isPending ? (
-          <Loading className={cn(iconClassName, 'shrink-0')} />
-        ) : (
-          <span className={cn('relative inline-flex items-center justify-center', iconClassName)}>
-            <AnimatePresence initial={false} mode="popLayout">
-              <m.span
-                key={share.copied ? 'check' : 'link'}
-                initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                className="absolute inset-0 inline-flex items-center justify-center"
-              >
-                {share.copied ? (
-                  <Check className={cn(iconClassName, 'text-kortix-green')} />
-                ) : (
-                  <LinkSimpleIcon className={iconClassName} />
-                )}
-              </m.span>
-            </AnimatePresence>
-          </span>
-        )}
-      </Button>
-    </Hint>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn('size-8 active:scale-[0.96]', className)}
+          onClick={share.copyLink}
+          disabled={disabled}
+          title={title}
+        >
+          {share.isPending ? (
+            <Loading className={cn(iconClassName, 'shrink-0')} />
+          ) : (
+            <span className={cn('relative inline-flex items-center justify-center', iconClassName)}>
+              <AnimatePresence initial={false} mode="popLayout">
+                <m.span
+                  key={share.copied ? 'check' : 'link'}
+                  initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                  className="absolute inset-0 inline-flex items-center justify-center"
+                >
+                  {share.copied ? (
+                    <Check className={cn(iconClassName, 'text-kortix-green')} />
+                  ) : (
+                    <LinkSimpleIcon className={iconClassName} />
+                  )}
+                </m.span>
+              </AnimatePresence>
+            </span>
+          )}
+        </Button>
+      </Hint>
+      <PublicShareLinkConfirm confirmation={share.confirmation} />
+    </>
   );
 }
