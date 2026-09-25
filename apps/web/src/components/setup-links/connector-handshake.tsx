@@ -21,11 +21,8 @@ const TILE_SIZE = {
 
 /**
  * One tile, used for BOTH marks, so the Kortix tile and the app tile are the
- * same box: same size, same radius, same hairline edge.
- *
- * The edge is a ring on an overlay ABOVE the content, not a border (which
- * shrinks a full-bleed logo) and not an outline (which sits 1px inside, so any
- * logo pixel outside the rounded clip showed around it).
+ * same box: same size, same radius. No border or edge line: the logo fills
+ * the tile and its own shape is the edge.
  */
 function HandshakeTile({
   size,
@@ -45,13 +42,6 @@ function HandshakeTile({
       )}
     >
       {children}
-      <span
-        aria-hidden
-        className={cn(
-          'ring-border pointer-events-none absolute inset-0 ring-1 ring-inset',
-          TILE_SIZE[size],
-        )}
-      />
     </span>
   );
 }
