@@ -50,10 +50,16 @@ export function HtmlPreview({
   path,
   fileName,
   className,
+  reloadKey,
   pendingLabel = 'Starting preview server…',
 }: {
   /** Sandbox path of the file to serve. */
   path: string;
+  /** A change reloads the page in place. Only the frame is re-keyed: the
+   *  server probe and the preview session stay, so a reload is one page load,
+   *  not a cold start. Moved at turn end and by the viewer's Refresh, because
+   *  the agent may have changed a stylesheet the markup only points at. */
+  reloadKey?: string | number;
   /** Frame title — what a screen reader announces for the embedded document. */
   fileName: string;
   className?: string;
@@ -115,7 +121,7 @@ export function HtmlPreview({
     // app's DOM, cookies or storage. Withholding `allow-scripts` instead would
     // make every interactive page a screenshot.
     <iframe
-      key={path}
+      key={`${path}:${reloadKey ?? ''}`}
       src={url}
       title={fileName}
       className={cn(HTML_PREVIEW_IFRAME_CLASS, className)}
