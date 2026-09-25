@@ -141,6 +141,10 @@ describe('every persisted zustand store is covered by the sign-out disk sweep', 
     // store addition. The floor exists so a walker broken by a directory
     // rename or a changed `persist(` call shape fails loud instead of
     // quietly checking zero stores.
+    //
+    // `diagnostics-store.ts` is a shim over the SDK store and has no
+    // `persist(` call, so this walk skips it. `diagnostics-store.test.ts`
+    // asserts its persist name, its registration, and its sign-out reset.
     expect(discovered.length).toBeGreaterThanOrEqual(11);
   });
 
