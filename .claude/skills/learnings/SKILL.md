@@ -200,7 +200,9 @@ guard's stop reason.
 
 **Incident (dev, 2026-09-24):** #7563 made agents their own principal by default, so a shared session no longer reaches one person's ChatGPT connection. Teams channel sessions pinned to `codex/*` then failed every message with "Connect Codex to use this model". The per-message check (`channelTurnModel`) still counted the sender's own connection, so it never replaced the model, and `/model` changed only new sessions. PR #7593.
 
-**Enforcement:** `unit-channel-model-access.test.ts` (a follow-up in a shared session is checked with `personalUserId: null`), `unit-channel-vision-model.test.ts` (probe inputs and cache key carry the scope), `default-model.test.ts` (a shared session's default is checked without personal keys).
+**Follow-up (dev, 2026-09-25):** the same gap sat in `PUT /sessions/:id/model` and `PUT …/provider-secret-pools`: a session shared with the project accepted its owner's own ChatGPT connection and member-granted keys. Both now check with the session's gateway scope, and the web key editor lists only keys the session can use.
+
+**Enforcement:** `unit-channel-model-access.test.ts` (a follow-up in a shared session is checked with `personalUserId: null`), `unit-channel-vision-model.test.ts` (probe inputs and cache key carry the scope), `default-model.test.ts` (a shared session's default is checked without personal keys), `unit-session-model-keys.test.ts` (model change), `provider-secret-pools.test.ts` (a shared session refuses a member-granted key), flow `SEC-POOL-2` (`403 SHARED_SESSION_PERSONAL_KEY`, `400 INVALID_SESSION_MODEL`).
 
 ### A background job runs its tick as a named worker, or its changes read as API traffic (2026-09-24)
 

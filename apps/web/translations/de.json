@@ -102,6 +102,7 @@
     "providerKeys": "Anbieterschlüssel",
     "chooseSharedKeys": "Wählen Sie die freigegebenen Schlüssel aus, die diese Sitzung verwenden darf.",
     "sessionKeyPool": "Sitzungsschlüsselpool",
+    "sharedSessionKeys": "Diese Sitzung ist für das Projekt freigegeben, daher funktionieren hier nur Schlüssel, die für das ganze Projekt freigegeben sind. Ihnen zugewiesene Schlüssel funktionieren in Ihren privaten Sitzungen.",
     "projectDefaultShort": "Projektstandard",
     "rateLimitDescription": "Das Gateway wechselt zwischen ausgewählten Schlüsseln, wenn ein Anbieter ein Ratenlimit meldet.",
     "enableGateway": "Aktivieren Sie das LLM-Gateway in den Projekteinstellungen, um Schlüssel-Pools zu verwenden.",

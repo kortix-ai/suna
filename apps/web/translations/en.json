@@ -104,6 +104,7 @@
     "providerKeys": "Provider keys",
     "chooseSharedKeys": "Choose the shared keys this session can use.",
     "sessionKeyPool": "Session key pool",
+    "sharedSessionKeys": "This session is shared with the project, so only keys shared with the whole project work here. Keys granted to you work in your private sessions.",
     "projectDefaultShort": "Project default",
     "rateLimitDescription": "The gateway rotates through selected keys when a provider reports a rate limit.",
     "enableGateway": "Enable LLM gateway in project settings to use pooled keys."
