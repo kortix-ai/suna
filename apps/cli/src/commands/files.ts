@@ -7,6 +7,7 @@ import {
   takeFlagValue,
   takeFlagBool,
   emitJson,
+  missing,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
@@ -359,11 +360,6 @@ function printCommitList(commits: CommitSummary[], hasMore: boolean): void {
   process.stdout.write(
     `\n  ${C.dim}${commits.length} commit${commits.length === 1 ? '' : 's'}${hasMore ? ' (more available — raise --limit)' : ''}${C.reset}\n\n`,
   );
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }
 
 function trim(s: string, max: number): string {

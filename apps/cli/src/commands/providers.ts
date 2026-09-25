@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline';
 
 import { CATALOG, isProviderAuthSatisfied, primaryAuthEnvVars } from '@kortix/llm-catalog';
+import { formatRelative } from '@kortix/shared';
 
 import { ApiError } from '../api/client.ts';
 import type {
@@ -213,7 +214,8 @@ async function providersLs(opts: CtxOpts, json = false): Promise<number> {
     );
     for (const c of oauthList.items) {
       const expIn = c.expires_in_ms === null ? 'never' : formatDuration(c.expires_in_ms);
-      const ts = formatRelative(c.updated_at);
+      // `dateFallback: {}` prints the locale's numeric date (9/25/2026) past 30 days.
+      const ts = formatRelative(c.updated_at, { dateFallback: {} });
       process.stdout.write(
         `  ${pad(c.provider_id, nameW)}   ${pad(expIn, 13)}  ${C.faded}${ts}${C.reset}\n`,
       );
@@ -473,18 +475,6 @@ function formatDuration(ms: number): string {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   return `${d}d`;
-}
-
-function formatRelative(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diffMs / 60_000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString();
 }
 
 /** Read a plain (non-secret) value with normal echoed input — e.g. a region,
