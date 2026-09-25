@@ -519,7 +519,13 @@ projectsApp.openapi(
     try {
       githubLogin = await resolveGitHubUserLogin(githubUserToken);
     } catch (error) {
-      return c.json({ error: (error as Error).message || 'GitHub authorization failed' }, 502);
+      const message = (error as Error).message || 'GitHub authorization failed';
+      // A token GitHub rejects is the caller's problem, and a 502 would reach
+      // the browser as a 503 (`EDGE_REWRITTEN_STATUSES`, apps/api/src/index.ts)
+      // — "try again later" for something retrying can never fix. A genuine
+      // GitHub outage keeps the 502.
+      const rejected = /invalid or expired|did not return the authorized user/i.test(message);
+      return c.json({ error: message, code: rejected ? 'github_user_token_invalid' : undefined }, rejected ? 400 : 502);
     }
 
     // `expires_in` is seconds and is present only when the App expires user
