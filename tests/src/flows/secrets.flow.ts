@@ -284,6 +284,112 @@ flow('SEC-POOL-4', {
   });
 });
 
+// Bring your own ChatGPT subscription. A plain project member (no
+// project.secret.write) connects and reconnects ChatGPT accounts only they can
+// use; sharing one stays a manager's secret write. Starting a device flow calls
+// OpenAI after every check, so a permitted start answers 200 (device code) or
+// 502 (OpenAI unreachable from this runner) — never 403.
+flow('SEC-POOL-5', {
+  domain: 'secrets', requires: ['database'],
+  routes: [
+    'PATCH /v1/projects/:projectId/features',
+    'POST /v1/projects/:projectId/oauth/:provider/start',
+    'GET /v1/accounts/:accountId/secret-resources',
+    'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
+    'GET /v1/projects/:projectId/model-picker',
+  ],
+}, async (ctx) => {
+  const { Client: PgClient } = await import('pg');
+  const { randomUUID } = await import('node:crypto');
+  const team = await ctx.fixtures.team();
+  const project = await team.project({ seed: true, allowAllSecrets: true });
+  const member = await team.addMember('member');
+  await team.grantProjectRole(project.id, member.userId!, 'user');
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const asMember = ctx.client.as(member);
+  const startPath = '/v1/projects/:projectId/oauth/:provider/start';
+  const startParams = { projectId: project.id, provider: 'openai' };
+  const resourcePath = '/v1/accounts/:accountId/secret-resources';
+  const listPath = `${resourcePath}?project_id=${project.id}`;
+  const params = { accountId: team.id };
+
+  await ctx.step('with the flag off, a named ChatGPT account is refused', async () => {
+    (await asMember.post(startPath, { resource_label: 'ChatGPT · Member', sharing: { mode: 'private', ownerId: member.userId } },
+      { params: startParams })).status(403);
+  });
+  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
+  }
+
+  await ctx.step('a member cannot share a ChatGPT account with the project or another member', async () => {
+    (await asMember.post(startPath, { resource_label: 'Team ChatGPT', sharing: { mode: 'project' } }, { params: startParams }))
+      .status(403);
+    (await asMember.post(startPath, {
+      resource_label: 'Team ChatGPT', sharing: { mode: 'members', memberIds: [member.userId, ctx.P.OWNER.userId] },
+    }, { params: startParams })).status(403);
+  });
+
+  await ctx.step('a member starts a ChatGPT account only they can use, however it is spelled', async () => {
+    for (const sharing of [{ mode: 'private', ownerId: member.userId }, { mode: 'members', memberIds: [member.userId] }]) {
+      const started = await asMember.post(startPath, { resource_label: 'ChatGPT · Member', sharing }, { params: startParams });
+      started.status([200, 502]);
+      if (started.statusCode === 200) started.body().exists('$.flow_id').exists('$.user_code');
+    }
+  });
+
+  // Completing a device login needs a live ChatGPT account, so the accounts
+  // are written the way a completed poll writes them.
+  const mine = randomUUID();
+  const ownersPrivate = randomUUID();
+  const databaseUrl = ctx.env.databaseUrl!;
+  const database = new PgClient({ connectionString: databaseUrl,
+    ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+  await database.connect();
+  try {
+    for (const [secretId, createdBy, label] of [[mine, member.userId!, 'ChatGPT · Member'], [ownersPrivate, ctx.P.OWNER.userId!, 'ChatGPT · Owner']]) {
+      await database.query(`INSERT INTO kortix.account_secret_resources
+        (secret_id, account_id, project_id, access_mode, label, provider_id, name, value_enc, consumer, strategy, created_by)
+        VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', 'v1:not:a:login', 'llm_gateway', 'broker', $5)`,
+      [secretId, team.id, project.id, label, createdBy]);
+      await database.query('INSERT INTO kortix.account_secret_grants (secret_id, account_id, user_id, granted_by) VALUES ($1, $2, $3, $3)',
+        [secretId, team.id, createdBy]);
+    }
+  } finally { await database.end(); }
+
+  await ctx.step("the member sees their own account and not the owner's private one", async () => {
+    const listed = await asMember.get(listPath, { params });
+    listed.status(200);
+    const secrets = listed.json<any>().secrets as any[];
+    const own = secrets.find((secret) => secret.secret_id === mine);
+    if (!own || own.can_use !== true || own.access_mode !== 'members' || 'value' in own) throw new Error('member cannot use their own ChatGPT account');
+    if (secrets.some((secret) => secret.secret_id === ownersPrivate)) throw new Error("owner's private ChatGPT account leaked to a member");
+  });
+
+  await ctx.step('their account lights up ChatGPT subscription models in their picker', async () => {
+    const picker = await asMember.get('/v1/projects/:projectId/model-picker', { params: { projectId: project.id } });
+    picker.status(200);
+    const ids = Object.keys(picker.json<{ models: Record<string, unknown> }>().models);
+    if (!ids.some((id) => id.startsWith('codex/'))) throw new Error(`no ChatGPT subscription model in the member picker: ${ids.join(', ')}`);
+  });
+
+  await ctx.step('the member reconnects only their own account, in place', async () => {
+    const reconnect = await asMember.post(startPath, { resource_id: mine }, { params: startParams });
+    reconnect.status([200, 502]);
+    (await asMember.post(startPath, { resource_id: ownersPrivate }, { params: startParams })).status(403)
+      .body().has('$.error', 'Only the person who connected this ChatGPT account can reconnect it');
+    (await asMember.post(startPath, { resource_id: mine, resource_label: 'Renamed' }, { params: startParams })).status(400);
+    (await asMember.post(startPath, { resource_id: randomUUID() }, { params: startParams })).status(404);
+  });
+
+  await ctx.step('the member deletes their own account', async () => {
+    (await asMember.del(`${resourcePath}/:secretId`, { params: { ...params, secretId: mine } })).status(200);
+    const listed = await asMember.get(listPath, { params });
+    listed.status(200);
+    if ((listed.json<any>().secrets as any[]).some((secret) => secret.secret_id === mine)) throw new Error('deleted ChatGPT account is still listed');
+    (await owner.del(`${resourcePath}/:secretId`, { params: { ...params, secretId: ownersPrivate } })).status(200);
+  });
+});
+
 flow('SEC-POOL-3', {
   domain: 'secrets', requires: ['database'],
   routes: [

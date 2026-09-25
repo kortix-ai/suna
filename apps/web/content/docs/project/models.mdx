@@ -159,11 +159,13 @@ to use provider secret resources. Open **Customize → Models → Providers** an
 choose **Add key** beside a provider. Give each key a distinct label. The value
 is write-only; later screens show its label and access list.
 
-New keys belong to this project. **Everyone in this project** can use them by
-default. Open a key's **⋯ → Manage access** and choose **Specific members** to
-restrict access. Legacy account-wide resources retain their member grants.
-Account membership, project permissions, the agent's secret permissions, and
-session selection still apply.
+New keys belong to this project and are private to you by default (**Only
+you**). Any project member can add a key for their own use. Sharing a key with
+**Everyone in this project** or **Specific members** requires permission to
+manage project secrets; without it, those options are disabled. Open a key's
+**⋯ → Manage access** to change who can use it. Legacy account-wide resources
+retain their member grants. Account membership, project permissions, the
+agent's secret permissions, and session selection still apply.
 A member grant permits use without revealing the key. Rotating a key preserves
 its access and session selections. Deleting it removes access for everyone.
 
@@ -188,17 +190,40 @@ It never replays a partial answer across keys. If every key is rate-limited,
 retry after the earliest cooldown, capped at 60 seconds. An explicit pool does
 not silently borrow another member's key or the legacy project credential.
 
-### ChatGPT accounts
+### ChatGPT accounts (bring your own subscription)
 
-Choose **Add account** under **ChatGPT Plus/Pro**. Each authorization creates a
-separate named connection in this project. **Everyone in this project** can use
-it by default. Use **Manage access → Specific members** to restrict access.
+Every project member can connect their own ChatGPT Plus or Pro subscription.
+Project permissions to manage secrets are not required.
 
-A session can select multiple granted ChatGPT accounts. Without a selection,
-the member's newest usable connection is the default. Another member's shared
-connection requires an explicit selection. The legacy project login remains
-available when the member has no usable connection of their own. A shared
-gateway key cannot borrow its creator's private ChatGPT connection.
+1. In a session, open the model picker and choose **Use your ChatGPT
+   subscription**. Project managers can also use **Models → Providers →
+   ChatGPT accounts**.
+2. Choose **Connect ChatGPT**. The label defaults to `ChatGPT · <your name>`.
+3. Keep **Only you**, then choose **Connect account**. Sign in to ChatGPT with
+   the code shown. If the authorization fails or times out, the dialog shows
+   why; choose **Try again**.
+
+The subscription's models appear in your model picker under **ChatGPT
+subscription**. Each authorization creates a separate named account, so you can
+connect more than one. **Only you** means only you can select the account;
+choosing **Everyone in this project** or **Specific members** requires
+permission to manage project secrets.
+
+If ChatGPT signs you out, open the account's **⋯ → Reconnect** and sign in
+again. Reconnecting keeps the account's name, access, and session selections.
+Only the member who connected an account can reconnect it. Account owners and
+admins can delete any account.
+
+A session can select multiple granted ChatGPT accounts in **Session overrides →
+Provider keys**. Without a selection, the member's newest usable connection is
+the default. Another member's shared connection requires an explicit
+selection. The legacy project login remains available when the member has no
+usable connection of their own. A shared gateway key cannot borrow its
+creator's private ChatGPT connection. An **Only you** account works only in its
+owner's own private sessions; shared and scheduled sessions cannot use it.
+
+A project manager can turn off **ChatGPT subscription** for the whole project
+in **Models → Providers**. The picker then hides the connect entry.
 
 Google Gemini API keys use Google's OpenAI-compatible endpoint with the gateway
 on. Native OpenCode mode continues to use project secrets.

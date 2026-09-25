@@ -308,7 +308,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   {
     key: 'pooled_provider_secrets',
     name: 'Pooled Provider Secrets',
-    description: 'Use multiple project credentials per provider, with optional member restrictions and session selection.',
+    description: 'Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
