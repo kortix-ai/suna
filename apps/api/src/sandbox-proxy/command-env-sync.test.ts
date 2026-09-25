@@ -32,8 +32,8 @@ import {
   type PrePromptEnvSyncDeps,
   bodyWithoutPromptAgent,
   requestedPromptAgent,
+  isTurnStartEnvSync,
   runPrePromptEnvSync,
-  shouldSyncProjectEnvBeforeProxy,
 } from './pre-prompt-env-sync';
 
 const RECORD = {
@@ -128,7 +128,7 @@ function runSync(rec: Recorder, body: ArrayBuffer, requestedAgent: string | null
   );
 }
 
-describe('shouldSyncProjectEnvBeforeProxy', () => {
+describe('isTurnStartEnvSync', () => {
   test('matches every endpoint that starts a user turn, /command included', () => {
     for (const [method, path] of [
       ['POST', '/session/abc123/prompt_async'],
@@ -137,16 +137,16 @@ describe('shouldSyncProjectEnvBeforeProxy', () => {
       ['POST', '/session/abc-123/command?x=1'],
       ['post', '/session/abc123/command'],
     ]) {
-      expect(shouldSyncProjectEnvBeforeProxy(8000, method, path)).toBe(true);
+      expect(isTurnStartEnvSync(8000, method, path)).toBe(true);
     }
   });
 
   test('ignores reads, other ports, and lookalike paths', () => {
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'GET', '/session/abc123/command')).toBe(false);
-    expect(shouldSyncProjectEnvBeforeProxy(3000, 'POST', '/session/abc123/command')).toBe(false);
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'POST', '/session/abc123/commands')).toBe(false);
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'POST', '/not-session/abc/command')).toBe(false);
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'POST', '/session/abc123/shell')).toBe(false);
+    expect(isTurnStartEnvSync(8000, 'GET', '/session/abc123/command')).toBe(false);
+    expect(isTurnStartEnvSync(3000, 'POST', '/session/abc123/command')).toBe(false);
+    expect(isTurnStartEnvSync(8000, 'POST', '/session/abc123/commands')).toBe(false);
+    expect(isTurnStartEnvSync(8000, 'POST', '/not-session/abc/command')).toBe(false);
+    expect(isTurnStartEnvSync(8000, 'POST', '/session/abc123/shell')).toBe(false);
   });
 
   // Deliberate boundary, not an oversight: /summarize is COMPACTION, not a user
@@ -154,8 +154,24 @@ describe('shouldSyncProjectEnvBeforeProxy', () => {
   // user just changed, and blocking a compaction on a secret-grant refusal would
   // wedge a session instead of protecting it. `isTurnStartRequest` covers it for
   // deadline accounting; the env sync deliberately does not.
-  test('does NOT match /summarize', () => {
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'POST', '/session/abc123/summarize')).toBe(false);
+  test('does NOT match /summarize, on either port and behind the in-box prefix', () => {
+    expect(isTurnStartEnvSync(8000, 'POST', '/session/abc123/summarize')).toBe(false);
+    expect(isTurnStartEnvSync(4096, 'POST', '/session/abc123/summarize')).toBe(false);
+    expect(isTurnStartEnvSync(8000, 'POST', '/proxy/4096/session/abc123/summarize')).toBe(false);
+  });
+
+  // THE HOLE THIS CLOSES. `shouldSyncProjectEnvBeforeProxy` answered `port !== 8000
+  // ⇒ false` on the CLIENT-addressed port and never stripped the in-box
+  // `/proxy/<n>/` prefix. Daytona's `routeIngress` is a pass-through, so a prompt
+  // addressed at :4096 kept `port === 4096` and skipped the secret refresh and the
+  // grant re-mint while still getting the config convergence, which keys on
+  // `isTurnStartRequest`. Both OpenCode halves count: a verified reload swaps
+  // which one is live.
+  test('covers both OpenCode halves and the in-box /proxy/<n>/ prefix', () => {
+    expect(isTurnStartEnvSync(4096, 'POST', '/session/abc123/prompt_async')).toBe(true);
+    expect(isTurnStartEnvSync(4097, 'POST', '/session/abc123/message')).toBe(true);
+    expect(isTurnStartEnvSync(8000, 'POST', '/proxy/4096/session/abc123/message')).toBe(true);
+    expect(isTurnStartEnvSync(4096, 'POST', '/proxy/4097/session/abc123/command')).toBe(true);
   });
 });
 

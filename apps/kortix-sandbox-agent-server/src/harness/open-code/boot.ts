@@ -40,7 +40,11 @@ import { ensureInjectedManagedSkills } from '../../managed-skills'
 // `startSessionRuntime` — so every way a session comes up reconciles once.
 // Strictly AFTER `bootMark('opencode-ready')` and never awaited: it adds zero
 // milliseconds to the readiness the API and the frontend poll for.
-import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
+import {
+  configureRuntimeConvergence,
+  convergeRuntimeAssetsAtTurnEnd,
+  scheduleRuntimeAssetsReconcile,
+} from '../../runtime-assets'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
 import { flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './events'
 import { createTurnAutoResumer } from './turn-auto-resume'
@@ -776,6 +780,13 @@ async function startSessionRuntime(
         opencodeSessionId,
       )
       await relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg, unrequestedAbortCause(verdict))
+      // THE SAFE BOUNDARY. A turn has just finished, so this is the one moment
+      // the box knows nothing is running — the only moment a daemon swap costs a
+      // reconnect instead of a lost turn. Converge and apply here, not on a
+      // timer: a timer near a readiness decision is what the config-releases AST
+      // tripwires forbid. `applyStagedAssetsIfIdle` re-asks the turn oracle
+      // anyway, so a CHILD session going idle under a live root turn is refused.
+      convergeRuntimeAssetsAtTurnEnd(cfg)
     })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
