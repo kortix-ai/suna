@@ -174,9 +174,7 @@ export function resolveRenewalGrant(args: {
 }
 
 // ─── Compute instance definitions ───────────────────────────────────────────
-// Single source of truth for the machine tiers we sell.  Prices and specs must
-// stay in sync with the frontend's DISPLAY_PRICES / FALLBACK_TYPES in
-// apps/web/src/hooks/instance/use-server-types.ts.
+// Single source of truth for the machine tiers we sell.
 
 interface ComputeTier {
   label: string;
