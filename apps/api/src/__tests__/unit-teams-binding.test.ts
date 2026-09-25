@@ -31,7 +31,7 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-const { resolveConversationProject, setConversationProject } = await import(
+const { resolveConversationProject, ensureTeamsConversationBinding } = await import(
   '../channels/teams/binding'
 );
 
@@ -49,7 +49,7 @@ describe('Teams conversation binding', () => {
 
   test('refuses to bind a project that is not installed for the tenant', async () => {
     dbResults = [[]];
-    const switched = await setConversationProject({
+    const switched = await ensureTeamsConversationBinding({
       tenantId: 'tenant-1',
       conversationId: 'conv-1',
       projectId: 'proj-other',
@@ -61,7 +61,7 @@ describe('Teams conversation binding', () => {
 
   test('binds the conversation when the project is installed for the tenant', async () => {
     dbResults = [[{ projectId: 'proj-1' }], []];
-    const switched = await setConversationProject({
+    const switched = await ensureTeamsConversationBinding({
       tenantId: 'tenant-1',
       conversationId: 'conv-1',
       projectId: 'proj-1',

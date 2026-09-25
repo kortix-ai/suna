@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Interactivity: agent/model picker clicks persist the channel selection, and
 // the "Open in Kortix" message shortcut resolves a thread to its session URL.
@@ -10,9 +11,20 @@ function makeChain(): any {
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
   return chain;
 }
-mock.module('../shared/db', () => ({ db: { select: () => makeChain() }, hasDatabase: () => true }));
+const inserts: unknown[] = [];
+mock.module('../shared/db', () => ({
+  db: {
+    select: () => makeChain(),
+    insert: () => ({
+      values: (v: unknown) => {
+        inserts.push(v);
+        return { onConflictDoUpdate: async () => [] };
+      },
+    }),
+  },
+  hasDatabase: () => true,
+}));
 
-// Stub the dispatch graph so importing interactivity stays light.
 const actualDispatch = await import('../channels/slack/dispatch');
 mock.module('../channels/slack/dispatch', () => ({
   ...actualDispatch,
@@ -20,11 +32,15 @@ mock.module('../channels/slack/dispatch', () => ({
   pendingPickers: new Map(),
   spawnAgentTurn: async () => {},
 }));
+const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
+  ...realInstallStore,
   loadSlackTokenForProject: async () => 'xoxb',
   saveSlackOauthInstall: async () => {},
 }));
+const realSlackApi = await import('../channels/slack-api');
 mock.module('../channels/slack-api', () => ({
+  ...realSlackApi,
   openDmChannel: async () => 'D1',
   postBlocks: async () => 'ts',
   postEphemeral: async () => true,
@@ -39,7 +55,7 @@ mock.module('../channels/slack/selection', () => ({
   // `./commands` (transitively imported by interactivity.ts for handleSlashCommand)
   // also pulls this in — the mock module shape must cover its full surface or
   // the import fails, not just the bits this file's own code paths exercise.
-  currentChannelSelection: async () => null,
+  currentChannelSelection: async () => ({ projectId: 'proj-1', agentName: null, opencodeModel: null, conversationPolicy: null }),
   setChannelAgent: async (_c: unknown, a: string | null) => {
     setAgentCalls.push(a);
     return setResult ? { ok: true } : { ok: false, reason: setAgentReason };
@@ -65,6 +81,30 @@ mock.module('../channels/slack/model-choice', () => ({
   slackModelScope: async () => null,
 }));
 
+// Channel settings need a linked project manager (core/settings.ts).
+let settingsActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({ resolveProjectChatActor: async () => settingsActor }),
+);
+const realModelGate = await import('../channels/slack/model-gate');
+mock.module('../channels/slack/model-gate', () => ({
+  ...realModelGate,
+  channelModelContext: async () => ({
+    projectId: 'proj-1',
+    accountId: 'acct-1',
+    ownerUserId: 'owner-1',
+    freeManagedOnly: false,
+    llmGatewayEnabled: true,
+  }),
+}));
+const realDefaultModel = await import('../llm-gateway/resolution/default-model');
+mock.module('../llm-gateway/resolution/default-model', () => ({
+  ...realDefaultModel,
+  isModelServableForAccount: async () => true,
+  resolveEffectiveModel: async () => ({ model: null, source: 'platform' }),
+}));
+
+// Stub the dispatch graph so importing interactivity stays light.
 // Capture response_url POSTs.
 const posts: Array<{ url: string; body: any }> = [];
 const realFetch = globalThis.fetch;
@@ -74,6 +114,8 @@ beforeEach(() => {
   setModelCalls.length = 0;
   setResult = true;
   setAgentReason = 'no_binding';
+  settingsActor = { userId: 'user-1' };
+  inserts.length = 0;
   posts.length = 0;
   modelChoices.length = 0;
   globalThis.fetch = (async (url: string, init?: any) => {
@@ -246,5 +288,41 @@ describe('response_url', () => {
       actions: [{ action_id: 'set_agent_reviewer', value: JSON.stringify({ c: 'C1', a: 'reviewer' }) }],
     });
     expect(posts).toHaveLength(0);
+  });
+});
+
+/**
+ * The picker and switch buttons change project settings, so they need the
+ * same linked project manager the slash commands need (core/settings.ts).
+ */
+describe('settings buttons need a linked project manager', () => {
+  test('an agent pick from an unlinked caller is refused; nothing is persisted', async () => {
+    settingsActor = { reason: 'unlinked' };
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'set_agent_reviewer', value: JSON.stringify({ c: 'C1', a: 'reviewer' }) }],
+    });
+    expect(setAgentCalls).toEqual([]);
+    expect(posts[0]?.body.text).toContain('Connect your Kortix account first');
+  });
+
+  test('switching a bound channel to another project without the capability is refused; no binding is written', async () => {
+    settingsActor = { reason: 'not_member' };
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'switch_project_proj-2', value: JSON.stringify({ p: 'proj-2', c: 'C1' }) }],
+    });
+    expect(inserts).toEqual([]);
+    expect(posts[0]?.body.text).toContain('Only a project manager');
+  });
+
+  test('a project manager switches the channel', async () => {
+    dbResults = [[{ id: 'install-2' }]]; // the target is installed in this workspace
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'switch_project_proj-2', value: JSON.stringify({ p: 'proj-2', c: 'C1' }) }],
+    });
+    expect(inserts).toEqual([{ platform: 'slack', workspaceId: 'T1', channelId: 'C1', projectId: 'proj-2', pickerTs: null }]);
+    expect(posts.at(-1)?.body.text).toContain('Switched this channel to');
   });
 });
