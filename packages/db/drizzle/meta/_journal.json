@@ -565,8 +565,15 @@
     {
       "idx": 80,
       "version": "7",
-      "when": 1790301265348,
-      "tag": "20260925015425_schema_contract_declarations",
+      "when": 1790298012393,
+      "tag": "20260925010012_sso_domain_verification",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790301779036,
+      "tag": "20260925020259_schema_contract_declarations",
       "breakpoints": true
     }
   ]

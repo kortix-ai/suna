@@ -1,5 +1,5 @@
 {
-  "id": "43d4e0d2-5942-4a51-81c4-85be3a98c6b7",
+  "id": "022a3155-6811-4bf8-a66f-eb7b65ccc131",
   "prevId": "c8dfb836-d820-4a08-b760-40772a916fde",
   "version": "7",
   "dialect": "postgresql",
@@ -222,40 +222,9 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "is_cancelled": {
-          "name": "is_cancelled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false,
-          "default": false
-        },
-        "is_deleted": {
-          "name": "is_deleted",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false,
-          "default": false
         }
       },
-      "indexes": {
-        "unique_active_deletion_request": {
-          "name": "unique_active_deletion_request",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"account_deletion_requests\".\"is_cancelled\" = false AND \"kortix\".\"account_deletion_requests\".\"is_deleted\" = false",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -511,8 +480,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.group_members": {
-      "name": "group_members",
+    "kortix.account_group_members": {
+      "name": "account_group_members",
       "schema": "kortix",
       "columns": {
         "group_id": {
@@ -559,9 +528,9 @@
         }
       },
       "foreignKeys": {
-        "group_members_group_id_account_groups_group_id_fk": {
-          "name": "group_members_group_id_account_groups_group_id_fk",
-          "tableFrom": "group_members",
+        "account_group_members_group_id_account_groups_group_id_fk": {
+          "name": "account_group_members_group_id_account_groups_group_id_fk",
+          "tableFrom": "account_group_members",
           "tableTo": "account_groups",
           "schemaTo": "kortix",
           "columnsFrom": [
@@ -575,8 +544,8 @@
         }
       },
       "compositePrimaryKeys": {
-        "group_members_group_id_user_id_pk": {
-          "name": "group_members_group_id_user_id_pk",
+        "account_group_members_group_id_user_id_pk": {
+          "name": "account_group_members_group_id_user_id_pk",
           "columns": [
             "group_id",
             "user_id"
@@ -872,8 +841,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.account_memberships": {
-      "name": "account_memberships",
+    "kortix.account_members": {
+      "name": "account_members",
       "schema": "kortix",
       "columns": {
         "user_id": {
@@ -887,6 +856,14 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
+        },
+        "account_role": {
+          "name": "account_role",
+          "type": "account_role",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'owner'"
         },
         "is_super_admin": {
           "name": "is_super_admin",
@@ -910,6 +887,21 @@
         }
       },
       "indexes": {
+        "idx_account_members_user_id": {
+          "name": "idx_account_members_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_account_members_account_id": {
           "name": "idx_account_members_account_id",
           "columns": [
@@ -947,6 +939,74 @@
           "with": {}
         }
       },
+      "foreignKeys": {
+        "account_members_account_id_accounts_account_id_fk": {
+          "name": "account_members_account_id_accounts_account_id_fk",
+          "tableFrom": "account_members",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "account_members_user_id_account_id_pk": {
+          "name": "account_members_user_id_account_id_pk",
+          "columns": [
+            "user_id",
+            "account_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.account_memberships": {
+      "name": "account_memberships",
+      "schema": "kortix",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_super_admin": {
+          "name": "is_super_admin",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "scim_external_id": {
+          "name": "scim_external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "joined_at": {
+          "name": "joined_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
       "foreignKeys": {
         "account_memberships_account_id_accounts_account_id_fk": {
           "name": "account_memberships_account_id_accounts_account_id_fk",
@@ -1945,6 +2005,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "domain_verification_token": {
+          "name": "domain_verification_token",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "domain_verified_at": {
+          "name": "domain_verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_by": {
           "name": "created_by",
@@ -8360,6 +8432,21 @@
         }
       },
       "indexes": {
+        "kortix_credit_accounts_account_id_idx": {
+          "name": "kortix_credit_accounts_account_id_idx",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_credit_accounts_billing_model": {
           "name": "idx_credit_accounts_billing_model",
           "columns": [
@@ -8516,22 +8603,6 @@
             }
           ],
           "isUnique": false,
-          "where": "\"kortix\".\"credit_ledger\".\"idempotency_key\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uniq_credit_ledger_idempotency_key": {
-          "name": "uniq_credit_ledger_idempotency_key",
-          "columns": [
-            {
-              "expression": "idempotency_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
           "where": "\"kortix\".\"credit_ledger\".\"idempotency_key\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
@@ -9448,8 +9519,425 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.role_permissions": {
-      "name": "role_permissions",
+    "kortix.iam_policies": {
+      "name": "iam_policies",
+      "schema": "kortix",
+      "columns": {
+        "policy_id": {
+          "name": "policy_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "principal_type": {
+          "name": "principal_type",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope_type": {
+          "name": "scope_type",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope_id": {
+          "name": "scope_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_iam_policies_account_principal": {
+          "name": "idx_iam_policies_account_principal",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "principal_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "principal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_iam_policies_scope": {
+          "name": "idx_iam_policies_scope",
+          "columns": [
+            {
+              "expression": "scope_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "scope_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_iam_policies_role": {
+          "name": "idx_iam_policies_role",
+          "columns": [
+            {
+              "expression": "role_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "iam_policies_account_id_accounts_account_id_fk": {
+          "name": "iam_policies_account_id_accounts_account_id_fk",
+          "tableFrom": "iam_policies",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "iam_policies_role_id_iam_roles_role_id_fk": {
+          "name": "iam_policies_role_id_iam_roles_role_id_fk",
+          "tableFrom": "iam_policies",
+          "tableTo": "iam_roles",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "role_id"
+          ],
+          "columnsTo": [
+            "role_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.iam_resource_grants": {
+      "name": "iam_resource_grants",
+      "schema": "kortix",
+      "columns": {
+        "grant_id": {
+          "name": "grant_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_type": {
+          "name": "resource_type",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "principal_type": {
+          "name": "principal_type",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effect": {
+          "name": "effect",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'allow'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_iam_resource_grants": {
+          "name": "uq_iam_resource_grants",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "resource_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "resource_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "principal_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "principal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_iam_resource_grants_project_type": {
+          "name": "idx_iam_resource_grants_project_type",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "resource_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_iam_resource_grants_resource": {
+          "name": "idx_iam_resource_grants_resource",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "resource_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "resource_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_iam_resource_grants_principal": {
+          "name": "idx_iam_resource_grants_principal",
+          "columns": [
+            {
+              "expression": "principal_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "principal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_iam_resource_grants_account": {
+          "name": "idx_iam_resource_grants_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "iam_resource_grants_account_id_accounts_account_id_fk": {
+          "name": "iam_resource_grants_account_id_accounts_account_id_fk",
+          "tableFrom": "iam_resource_grants",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "iam_resource_grants_project_id_projects_project_id_fk": {
+          "name": "iam_resource_grants_project_id_projects_project_id_fk",
+          "tableFrom": "iam_resource_grants",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.iam_role_actions": {
+      "name": "iam_role_actions",
       "schema": "kortix",
       "columns": {
         "role_id": {
@@ -9467,10 +9955,10 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "role_permissions_role_id_roles_role_id_fk": {
-          "name": "role_permissions_role_id_roles_role_id_fk",
-          "tableFrom": "role_permissions",
-          "tableTo": "roles",
+        "iam_role_actions_role_id_iam_roles_role_id_fk": {
+          "name": "iam_role_actions_role_id_iam_roles_role_id_fk",
+          "tableFrom": "iam_role_actions",
+          "tableTo": "iam_roles",
           "schemaTo": "kortix",
           "columnsFrom": [
             "role_id"
@@ -9483,8 +9971,8 @@
         }
       },
       "compositePrimaryKeys": {
-        "role_permissions_role_id_action_pk": {
-          "name": "role_permissions_role_id_action_pk",
+        "iam_role_actions_role_id_action_pk": {
+          "name": "iam_role_actions_role_id_action_pk",
           "columns": [
             "role_id",
             "action"
@@ -9496,8 +9984,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.roles": {
-      "name": "roles",
+    "kortix.iam_roles": {
+      "name": "iam_roles",
       "schema": "kortix",
       "columns": {
         "role_id": {
@@ -9538,8 +10026,8 @@
           "notNull": true,
           "default": "'project'"
         },
-        "is_system": {
-          "name": "is_system",
+        "is_builtin": {
+          "name": "is_builtin",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -9602,34 +10090,12 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "uq_roles_system_key": {
-          "name": "uq_roles_system_key",
-          "columns": [
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scope_type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"roles\".\"account_id\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
-        "roles_account_id_accounts_account_id_fk": {
-          "name": "roles_account_id_accounts_account_id_fk",
-          "tableFrom": "roles",
+        "iam_roles_account_id_accounts_account_id_fk": {
+          "name": "iam_roles_account_id_accounts_account_id_fk",
+          "tableFrom": "iam_roles",
           "tableTo": "accounts",
           "schemaTo": "kortix",
           "columnsFrom": [
@@ -10118,22 +10584,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_legacy_sandbox_migrations_active_sandbox": {
-          "name": "idx_legacy_sandbox_migrations_active_sandbox",
-          "columns": [
-            {
-              "expression": "sandbox_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"legacy_sandbox_migrations\".\"status\" IN ('planned', 'running', 'applied', 'verified', 'completed')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -11777,6 +12227,168 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.project_group_grants": {
+      "name": "project_group_grants",
+      "schema": "kortix",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "group_id": {
+          "name": "group_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "project_role",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'member'"
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_project_group_grants_project": {
+          "name": "idx_project_group_grants_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_group_grants_group": {
+          "name": "idx_project_group_grants_group",
+          "columns": [
+            {
+              "expression": "group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_group_grants_account": {
+          "name": "idx_project_group_grants_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_group_grants_project_id_projects_project_id_fk": {
+          "name": "project_group_grants_project_id_projects_project_id_fk",
+          "tableFrom": "project_group_grants",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_group_grants_group_id_account_groups_group_id_fk": {
+          "name": "project_group_grants_group_id_account_groups_group_id_fk",
+          "tableFrom": "project_group_grants",
+          "tableTo": "account_groups",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "group_id"
+          ],
+          "columnsTo": [
+            "group_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_group_grants_account_id_accounts_account_id_fk": {
+          "name": "project_group_grants_account_id_accounts_account_id_fk",
+          "tableFrom": "project_group_grants",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "project_group_grants_project_id_group_id_pk": {
+          "name": "project_group_grants_project_id_group_id_pk",
+          "columns": [
+            "project_id",
+            "group_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "kortix.project_llm_routing_policies": {
       "name": "project_llm_routing_policies",
       "schema": "kortix",
@@ -11896,6 +12508,166 @@
           "value": "jsonb_typeof(\"kortix\".\"project_llm_routing_policies\".\"model_overrides\") = 'object'"
         }
       },
+      "isRLSEnabled": false
+    },
+    "kortix.project_members": {
+      "name": "project_members",
+      "schema": "kortix",
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_role": {
+          "name": "project_role",
+          "type": "project_role",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'member'"
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_project_members_account_user": {
+          "name": "idx_project_members_account_user",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_members_project": {
+          "name": "idx_project_members_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_members_project_user": {
+          "name": "idx_project_members_project_user",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_members_account_id_accounts_account_id_fk": {
+          "name": "project_members_account_id_accounts_account_id_fk",
+          "tableFrom": "project_members",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_members_project_id_projects_project_id_fk": {
+          "name": "project_members_project_id_projects_project_id_fk",
+          "tableFrom": "project_members",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "project_members_project_id_user_id_pk": {
+          "name": "project_members_project_id_user_id_pk",
+          "columns": [
+            "project_id",
+            "user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "kortix.project_monitor_boxes": {
@@ -13187,72 +13959,7 @@
           "notNull": false
         }
       },
-      "indexes": {
-        "idx_secret_handles_lookup": {
-          "name": "idx_secret_handles_lookup",
-          "columns": [
-            {
-              "expression": "lookup_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_secret_handles_session_secret_rev": {
-          "name": "idx_secret_handles_session_secret_rev",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "secret_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "revision",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_secret_handles_one_active": {
-          "name": "idx_secret_handles_one_active",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "secret_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"project_session_secret_handles\".\"status\" = 'active'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "project_session_secret_handles_project_id_projects_project_id_fk": {
           "name": "project_session_secret_handles_project_id_projects_project_id_fk",
@@ -16097,63 +16804,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "uq_role_assignments_identity": {
-          "name": "uq_role_assignments_identity",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "principal_type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "principal_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "role_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scope_type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "COALESCE(\"scope_id\", '00000000-0000-0000-0000-000000000000'::uuid)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "COALESCE(\"object_type\", ''::character varying)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "COALESCE(\"object_id\", ''::text)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -16171,10 +16821,10 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "role_assignments_role_id_roles_role_id_fk": {
-          "name": "role_assignments_role_id_roles_role_id_fk",
+        "role_assignments_role_id_iam_roles_role_id_fk": {
+          "name": "role_assignments_role_id_iam_roles_role_id_fk",
           "tableFrom": "role_assignments",
-          "tableTo": "roles",
+          "tableTo": "iam_roles",
           "schemaTo": "kortix",
           "columnsFrom": [
             "role_id"
@@ -18236,8 +18886,8 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "session_sandboxes_session_id_key": {
-          "name": "session_sandboxes_session_id_key",
+        "session_sandboxes_session_id_unique": {
+          "name": "session_sandboxes_session_id_unique",
           "nullsNotDistinct": false,
           "columns": [
             "session_id"
@@ -18298,6 +18948,33 @@
         }
       },
       "indexes": {
+        "session_tool_approvals_unique": {
+          "name": "session_tool_approvals_unique",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "connector_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "action_path",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "session_tool_approvals_session_idx": {
           "name": "session_tool_approvals_session_idx",
           "columns": [
@@ -18345,17 +19022,7 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "session_tool_approvals_unique": {
-          "name": "session_tool_approvals_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "session_id",
-            "connector_id",
-            "action_path"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -21347,321 +22014,7 @@
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {
-    "kortix.account_members": {
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_role": {
-          "name": "account_role",
-          "type": "account_role",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "is_super_admin": {
-          "name": "is_super_admin",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scim_external_id": {
-          "name": "scim_external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "joined_at": {
-          "name": "joined_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "name": "account_members",
-      "schema": "kortix",
-      "isExisting": true,
-      "materialized": false
-    },
-    "kortix.iam_policies": {
-      "columns": {
-        "policy_id": {
-          "name": "policy_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "principal_type": {
-          "name": "principal_type",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "principal_id": {
-          "name": "principal_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "role_id": {
-          "name": "role_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scope_type": {
-          "name": "scope_type",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scope_id": {
-          "name": "scope_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "granted_by": {
-          "name": "granted_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "name": "iam_policies",
-      "schema": "kortix",
-      "isExisting": true,
-      "materialized": false
-    },
-    "kortix.iam_resource_grants": {
-      "columns": {
-        "grant_id": {
-          "name": "grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resource_type": {
-          "name": "resource_type",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resource_id": {
-          "name": "resource_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "principal_type": {
-          "name": "principal_type",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "principal_id": {
-          "name": "principal_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "effect": {
-          "name": "effect",
-          "type": "varchar(8)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "granted_by": {
-          "name": "granted_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "name": "iam_resource_grants",
-      "schema": "kortix",
-      "isExisting": true,
-      "materialized": false
-    },
-    "kortix.project_group_grants": {
-      "columns": {
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "group_id": {
-          "name": "group_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "role": {
-          "name": "role",
-          "type": "project_role",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "granted_by": {
-          "name": "granted_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "name": "project_group_grants",
-      "schema": "kortix",
-      "isExisting": true,
-      "materialized": false
-    },
-    "kortix.project_members": {
-      "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_role": {
-          "name": "project_role",
-          "type": "project_role",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "granted_by": {
-          "name": "granted_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "name": "project_members",
-      "schema": "kortix",
-      "isExisting": true,
-      "materialized": false
-    }
-  },
+  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

@@ -19138,7 +19138,9 @@
       "text30cef615e8e3": "Resumen de transacciones consultado",
       "textd2c6127fc332": "Diferencias entre versiones consultadas",
       "text8cc0d84b66bb": "Enlace de identidad de Slack previsualizado",
-      "text508b43cc4545": "Enlace de identidad de Teams previsualizado"
+      "text508b43cc4545": "Enlace de identidad de Teams previsualizado",
+      "text467f597e95b0": "Dominio SSO verificado",
+      "text8295f9d4861b": "Verificación del dominio SSO de la cuenta establecida"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20160,5 +20162,18 @@
   },
   "connectorsAppReturn": {
     "done": "Listo. Volver a la app de Kortix"
+  },
+  "ssoDomainVerification": {
+    "title": "Verificación del dominio",
+    "verified": "Verificado",
+    "unverified": "No verificado",
+    "verifiedDescription": "Tu proveedor de identidad es de confianza para {domain}. Exigir SSO se aplica a este dominio.",
+    "unverifiedDescription": "Añade este registro DNS TXT para demostrar que controlas {domain}. Hasta entonces, el inicio de sesión con SSO solo funciona dentro de esta cuenta y exigir SSO no tiene efecto.",
+    "recordName": "Nombre",
+    "recordValue": "Valor",
+    "verify": "Verificar dominio",
+    "verifiedToast": "Dominio verificado",
+    "failedToast": "El dominio aún no está verificado",
+    "enforceNeedsVerification": "Verifica primero el dominio. Exigir SSO solo se aplica a un dominio verificado."
   }
 }

@@ -909,7 +909,8 @@ export function registerMemberRoutes(): void {
 
       const writer = await actorOf(c, accountId);
       await auditAccountRoleRevoked(writer, accountId, targetUserId, newRole);
-      await db
+      // Demoting an owner also clears the super-admin bypass the owner held
+      // (`clearSuperAdminAfterOwnerLoss`, run by the exclusive grant).
       await grantAccountRole(writer, accountId, targetUserId, newRole);
 
       if (newRole === 'owner' || newRole === 'admin') {

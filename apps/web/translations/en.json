@@ -19151,7 +19151,9 @@
       "text30cef615e8e3": "Viewed transaction summary",
       "textd2c6127fc332": "Viewed version diff",
       "text8cc0d84b66bb": "Previewed Slack identity link",
-      "text508b43cc4545": "Previewed Teams identity link"
+      "text508b43cc4545": "Previewed Teams identity link",
+      "text467f597e95b0": "Verified SSO domain",
+      "text8295f9d4861b": "Set account SSO domain verification"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20160,5 +20162,18 @@
   },
   "connectorsAppReturn": {
     "done": "Done. Back to the Kortix app"
+  },
+  "ssoDomainVerification": {
+    "title": "Domain verification",
+    "verified": "Verified",
+    "unverified": "Not verified",
+    "verifiedDescription": "Your identity provider is trusted for {domain}. Enforcing SSO applies to this domain.",
+    "unverifiedDescription": "Add this DNS TXT record to prove you control {domain}. Until then, SSO sign-in works only inside this account, and enforcing SSO has no effect.",
+    "recordName": "Name",
+    "recordValue": "Value",
+    "verify": "Verify domain",
+    "verifiedToast": "Domain verified",
+    "failedToast": "Domain not verified yet",
+    "enforceNeedsVerification": "Verify the domain first. Enforcing SSO applies only to a verified domain."
   }
 }

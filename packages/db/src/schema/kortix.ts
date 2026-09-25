@@ -5182,6 +5182,14 @@ export const accountSsoProviders = kortixSchema.table(
      *  door. Off by default: pre-SSO password accounts keep working until the
      *  org explicitly flips enforcement. */
     enforceSso: boolean('enforce_sso').default(false).notNull(),
+    /** Secret value of the DNS TXT record that proves control of
+     *  primaryDomain (`_kortix-verification.<domain>` =
+     *  `kortix-verification=<token>`). Regenerated when the domain changes. */
+    domainVerificationToken: varchar('domain_verification_token', { length: 64 }),
+    /** When control of primaryDomain was proven. NULL = unverified: an email
+     *  this IdP asserts is trusted only inside this account, and enforceSso
+     *  has no effect. Cleared when primaryDomain changes. */
+    domainVerifiedAt: timestamp('domain_verified_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
