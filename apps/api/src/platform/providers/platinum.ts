@@ -100,6 +100,8 @@ interface PlatinumSandbox {
   replayed?: boolean;
   backupState?: string | null;
   backup_state?: string | null;
+  startedAt?: string | null;
+  started_at?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string | null;
   createdAt?: string | null;
@@ -829,6 +831,17 @@ export class PlatinumProvider implements SandboxProvider {
       String(sandbox.backupState ?? sandbox.backup_state ?? '').toLowerCase() === 'completed'
     ) {
       return (await this.tryRestoreFromBackup(externalId)) ? 'recovering' : 'unavailable';
+    }
+
+    // failed-start is a start that failed, not a box that is gone. Platinum
+    // keeps the disk of a box that ever booted and takes /start again from it
+    // (re-restoring the archive when there is one). 2026-09-25: a Platinum
+    // reconciler race failed 17 prod starts mid-boot with every disk intact on
+    // its host; this answered 'unavailable' for each and the sessions were
+    // reported lost. A refused /start throws, which callers read as unavailable.
+    if (state === 'failed-start' && (sandbox.startedAt ?? sandbox.started_at)) {
+      await this.start(externalId);
+      return 'recovering';
     }
 
     if (['failed-start', 'lost', 'deleted'].includes(state)) return 'unavailable';
