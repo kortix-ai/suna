@@ -1,26 +1,5 @@
 import type { ProviderKind } from '../domain';
 
-// Retained for external callers that referenced the old explicit allowlist —
-// `providerKindForNpm` below no longer requires membership in this set to
-// dispatch a package to the openai-compat transport (openai-compat is the
-// DEFAULT now — see its doc comment), but these are confirmed, common
-// examples worth naming.
-export const OPENAI_COMPATIBLE_NPM = new Set([
-  '@ai-sdk/openai-compatible',
-  '@ai-sdk/openai',
-  '@ai-sdk/azure',
-  '@ai-sdk/groq',
-  '@ai-sdk/mistral',
-  '@ai-sdk/xai',
-  '@ai-sdk/cerebras',
-  '@ai-sdk/togetherai',
-  '@ai-sdk/deepinfra',
-  '@ai-sdk/perplexity',
-  '@ai-sdk/vercel',
-  '@ai-sdk/gateway',
-  '@openrouter/ai-sdk-provider',
-]);
-
 const ANTHROPIC_NPM = '@ai-sdk/anthropic';
 const AMAZON_BEDROCK_NPM = '@ai-sdk/amazon-bedrock';
 

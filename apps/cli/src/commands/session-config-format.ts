@@ -1,0 +1,138 @@
+import type { SessionConfigRelease } from '@kortix/sdk';
+
+/**
+ * What `kortix sessions reload` prints. Pure, so the wording is testable
+ * without a terminal.
+ *
+ * A daemon that serves config releases reports `null` etags and a `release`
+ * block instead. Without this module the CLI printed "running null, latest is
+ * null" and "Up to date (null)", and a reload that ended in a fallback printed
+ * as a green "Reloaded". A response without `release` renders exactly as it
+ * did before releases existed.
+ */
+
+export type ConfigTone = 'ok' | 'warn';
+
+export interface ConfigLine {
+  tone: ConfigTone;
+  text: string;
+}
+
+export interface SessionConfigStatusInput {
+  running_etag: string | null;
+  latest_etag: string | null;
+  stale: boolean | null;
+  sandbox_reachable: boolean;
+  release?: SessionConfigRelease;
+}
+
+export interface SessionReloadOutcomeInput {
+  applied: boolean;
+  previous_etag: string | null;
+  etag: string | null;
+  agent_files?: string;
+  detail: string;
+  release?: SessionConfigRelease;
+}
+
+type Bold = (text: string) => string;
+const plain: Bold = (text) => text;
+
+/** Release IDs are 64 hex characters. Twelve identify one in a project. */
+function short(id: string): string {
+  return id.slice(0, 12);
+}
+
+function runningLabel(release: SessionConfigRelease, bold: Bold): string {
+  // The web header names it the same way ("The platform default config").
+  if (release.source === 'image-default') return 'the platform default config';
+  return release.running_release_id
+    ? `release ${bold(short(release.running_release_id))}`
+    : 'an earlier config';
+}
+
+export function describeConfigStatus(
+  state: SessionConfigStatusInput,
+  sessionRef: string,
+  bold: Bold = plain,
+): ConfigLine {
+  const release = state.release;
+
+  // A fallback is the one state that must be loud even when the box is
+  // otherwise reachable: the base branch holds a config that does not start.
+  // Suggesting a reload would only retry the release that just failed.
+  if (release?.fallback_reason) {
+    const failed = release.failed_release_id
+      ? ` Failed release: ${bold(short(release.failed_release_id))}.`
+      : '';
+    return {
+      tone: 'warn',
+      text:
+        `Fallback — the latest config failed to load: ${release.fallback_reason}. ` +
+        `This session runs ${runningLabel(release, bold)}.${failed} ` +
+        'Fix the config on the base branch; sessions pick up the fix automatically.',
+    };
+  }
+
+  if (state.stale === null) {
+    // Never claim "up to date" when the answer is "could not ask".
+    return {
+      tone: 'warn',
+      text: state.sandbox_reachable
+        ? 'This project has no compiled agent config to compare.'
+        : 'Sandbox unreachable — cannot tell whether this session is current.',
+    };
+  }
+
+  const running = release?.running_release_id
+    ? `release ${bold(short(release.running_release_id))}`
+    : bold(String(state.running_etag));
+  if (state.stale) {
+    const latest = release?.desired_release_id
+      ? bold(short(release.desired_release_id))
+      : bold(String(state.latest_etag));
+    return {
+      tone: 'warn',
+      text: `Behind — running ${running}, latest is ${latest}. Run \`kortix sessions reload ${sessionRef}\`.`,
+    };
+  }
+  return {
+    tone: 'ok',
+    text: release?.running_release_id
+      ? `Up to date (release ${short(release.running_release_id)}).`
+      : `Up to date (${state.running_etag}).`,
+  };
+}
+
+export function describeReloadOutcome(
+  result: SessionReloadOutcomeInput,
+  sessionRef: string,
+  bold: Bold = plain,
+  dim: Bold = plain,
+): ConfigLine {
+  const fallback = Boolean(result.release?.fallback_reason);
+
+  if (!result.applied) {
+    // "Nothing to apply: already current." is a plain success. Everything else
+    // that applied nothing — mid-turn, unreachable, declined — is a warning.
+    const quiet = !fallback && result.agent_files === 'already-current';
+    return { tone: quiet ? 'ok' : 'warn', text: result.detail };
+  }
+
+  // `detail` is the server's sentence and the only thing entitled to say
+  // whether the AGENT changed. Warn on the outcomes where it may not have:
+  // the box could not say, the base branch's files were not applied, or the
+  // new config did not start and an earlier one still runs.
+  const needsAttention =
+    fallback || result.agent_files === 'unknown' || result.agent_files === 'kept-yours';
+
+  // A release is the identity that matters: etags can be equal across two
+  // releases (verification printed "— 37f79103 → 37f79103" for a real change).
+  const transition = result.release?.running_release_id
+    ? ` — release ${short(result.release.running_release_id)}`
+    : ` — ${result.previous_etag ?? 'unknown'} → ${result.etag}`;
+  return {
+    tone: needsAttention ? 'warn' : 'ok',
+    text: `Reloaded ${bold(sessionRef)}${dim(transition)}\n  ${result.detail}`,
+  };
+}

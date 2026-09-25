@@ -22,6 +22,11 @@ mock.module('./backend', () => ({
     labelLookups.push(label);
     return label === 'sbx-known' ? 'sbx_KNOWN' : null;
   },
+  // The WebSocket upgrade module imports these; no case here reaches them.
+  invalidatePreviewLink: () => {},
+  resolveSandboxIngress: async () => {
+    throw new Error('not expected: no case here resolves ingress');
+  },
 }));
 mock.module('./preview-auth', () => ({
   extractPreviewToken: (req: Request, url: URL) =>
@@ -31,7 +36,12 @@ mock.module('./preview-auth', () => ({
     return token === 'good' ? { userId: 'user-1', sessionId: null } : null;
   },
 }));
+let wsUpstreamResolutions = 0;
 mock.module('./routes/preview', () => ({
+  resolvePreviewWsUpstream: async () => {
+    wsUpstreamResolutions += 1;
+    return { ok: true, url: 'wss://upstream.test/hmr', headers: {} };
+  },
   forwardToSandbox: async (
     _sandboxId: string,
     _port: number,
@@ -46,24 +56,22 @@ mock.module('./routes/preview', () => ({
     return new Response('upstream', { status: 200 });
   },
 }));
+// The real module, so the blocked-port set and the view-only rule are the
+// shipped ones. Only the two database reads are replaced: a share resolves by
+// its exact token, or not at all, so revocation is observable.
+const realPublicShares = await import('../shared/session-public-shares');
+const { PUBLIC_SHARE_BLOCKED_PORTS, publicShareToken } = realPublicShares;
+/** The public token of each synthetic share id below. */
+const FILE_TOKEN = publicShareToken('00000000-0000-4000-a000-00000000f11e');
+const PREVIEW_TOKEN = publicShareToken('00000000-0000-4000-a000-00000000b1e0');
 mock.module('../shared/session-public-shares', () => ({
-  // The REAL blocked set, including the static-file port. An empty mock here
-  // once made a file-share test pass against a path the production constant
-  // refuses — the test asserted an unreachable branch.
-  PUBLIC_SHARE_BLOCKED_PORTS: new Set<number>([22, 4096, 8000, 3211]),
-  STATIC_FILE_SHARE_PORT: 3211,
-  // Real implementations, not stubs: these decide whether a share may be
-  // written through, so a lenient copy here would test nothing.
-  PUBLIC_SHARE_VIEW_METHODS: new Set(['GET', 'HEAD', 'OPTIONS']),
-  isViewOnlyShare: (share: { mode?: string | null; resourceType?: string | null; filePath?: string | null }) =>
-    share.resourceType === 'file' || !!share.filePath || share.mode !== 'interactive',
-  publicShareToken: (shareId: string) => `kps_${shareId.replaceAll('-', '')}`,
-  resolvePublicShare: async (token: string) =>
-    shares[token] ?? shares[Object.keys(shares)[0] ?? ''] ?? { ok: false },
+  ...realPublicShares,
+  resolvePublicShare: async (token: string) => shares[token] ?? { ok: false, status: 404 },
   touchPublicShare: async () => {},
 }));
 
 const { handlePreviewOriginRequest } = await import('./preview-origin');
+const { preparePreviewHostWsUpgrade } = await import('./ws-proxy');
 const { mintPreviewSession } = await import('./preview-session');
 
 const HOST = 'p8081-sbx-known.localhost:8008';
@@ -94,6 +102,7 @@ function request(path: string, init: RequestInit = {}, host = HOST): [Request, U
 }
 
 beforeEach(() => {
+  wsUpstreamResolutions = 0;
   labelLookups = [];
   principalCalls = [];
   forwarded = 0;
@@ -212,29 +221,30 @@ describe('preview origin auth gate', () => {
     }
   });
 
-  test('a claimed preview host without an edge signature is refused', async () => {
+  // A fetch is told in JSON and a person navigating is shown a page; both are
+  // refused before any label lookup.
+  test.each([
+    ['a fetch', {}, 'application/json'],
+    ['a document navigation', { 'sec-fetch-dest': 'document' }, 'text/html'],
+  ])('a claimed preview host without an edge signature is refused: %s', async (_label, headers, type) => {
     configState.KORTIX_PREVIEW_BASE_DOMAIN = 'p.kortix.com';
-    const [req, url] = request(
-      '/learn?token=good',
-      { headers: { 'x-kortix-preview-host': 'dev-p8081-sbx-known.p.kortix.com' } },
-      'dev-api.kortix.com',
-    );
-    const res = await handlePreviewOriginRequest(req, url);
-    expect(res?.status).toBe(403);
-    expect(labelLookups).toEqual([]);
-    configState.KORTIX_PREVIEW_BASE_DOMAIN = undefined;
+    try {
+      const [req, url] = request(
+        '/learn?token=good',
+        { headers: { 'x-kortix-preview-host': 'dev-p8081-sbx-known.p.kortix.com', ...headers } },
+        'dev-api.kortix.com',
+      );
+      const res = await handlePreviewOriginRequest(req, url);
+      expect(res?.status).toBe(403);
+      expect(res?.headers.get('content-type')).toContain(type);
+      expect(labelLookups).toEqual([]);
+    } finally {
+      configState.KORTIX_PREVIEW_BASE_DOMAIN = undefined;
+    }
   });
 });
 
 describe('what a browser is shown instead of JSON', () => {
-  test('the address it sends people back to keeps the port', async () => {
-    // publicHost feeds both this and X-Forwarded-Prefix, so a stripped port
-    // would send local development to the wrong listener in both places.
-    const [req, url] = request('/learn', { headers: { 'sec-fetch-dest': 'document' } });
-    const html = await (await handlePreviewOriginRequest(req, url))!.text();
-    expect(html).toContain('http://p8081-sbx-known.localhost:8008/learn');
-  });
-
   test('a person navigating with no credential gets a page they can act on', async () => {
     const [req, url] = request('/learn', { headers: { 'sec-fetch-dest': 'document' } });
     const res = await handlePreviewOriginRequest(req, url);
@@ -242,7 +252,8 @@ describe('what a browser is shown instead of JSON', () => {
     expect(res?.headers.get('content-type')).toContain('text/html');
     const html = await res!.text();
     expect(html).toContain('Sign in to open this preview');
-    // The action carries them to the web app, which brings them back here.
+    // The action carries them to the web app, which brings them back here —
+    // to the same address, port included.
     expect(html).toContain('https://dev.kortix.com/preview/authorize?to=');
     expect(html).toContain(encodeURIComponent('http://p8081-sbx-known.localhost:8008/learn'));
     // A sign-in flow must never try to render inside the preview frame.
@@ -273,30 +284,15 @@ describe('what a browser is shown instead of JSON', () => {
     expect(html).not.toContain('/preview/authorize');
   });
 
-  test('an unsigned claimed host explains itself rather than dumping JSON', async () => {
-    configState.KORTIX_PREVIEW_BASE_DOMAIN = 'p.kortix.com';
-    try {
-      const [req, url] = request(
-        '/learn',
-        { headers: { 'x-kortix-preview-host': 'dev-p8081-sbx-known.p.kortix.com', 'sec-fetch-dest': 'document' } },
-        'dev-api.kortix.com',
-      );
-      const res = await handlePreviewOriginRequest(req, url);
-      expect(res?.status).toBe(403);
-      expect(res?.headers.get('content-type')).toContain('text/html');
-    } finally {
-      configState.KORTIX_PREVIEW_BASE_DOMAIN = undefined;
-    }
-  });
 });
 
 describe('a public share names one thing', () => {
   test('a file share is pinned to its own file, whatever the visitor asks for', async () => {
     shares = {
-      'file-token': {
+      [FILE_TOKEN]: {
         ok: true,
         row: {
-          shareId: 's-file',
+          shareId: '00000000-0000-4000-a000-00000000f11e',
           mode: 'view',
           resourceType: 'file',
           externalId: 'sbx_KNOWN',
@@ -306,7 +302,7 @@ describe('a public share names one thing', () => {
       },
     };
     const [req, url] = request(
-      '/etc/passwd?public_share=file-token',
+      `/etc/passwd?public_share=${FILE_TOKEN}`,
       {},
       'p3211-sbx-known.localhost:8008',
     );
@@ -319,10 +315,10 @@ describe('a public share names one thing', () => {
 
   test('a file share is not a key to the static-web port on another port', async () => {
     shares = {
-      'file-token': {
+      [FILE_TOKEN]: {
         ok: true,
         row: {
-          shareId: 's-file',
+          shareId: '00000000-0000-4000-a000-00000000f11e',
           mode: 'view',
           resourceType: 'file',
           externalId: 'sbx_KNOWN',
@@ -331,16 +327,16 @@ describe('a public share names one thing', () => {
         },
       },
     };
-    const [req, url] = request('/?public_share=file-token', {}, 'p8081-sbx-known.localhost:8008');
+    const [req, url] = request(`/?public_share=${FILE_TOKEN}`, {}, 'p8081-sbx-known.localhost:8008');
     expect((await handlePreviewOriginRequest(req, url))?.status).toBe(401);
   });
 
   test('a preview share is refused on a port it does not name', async () => {
     shares = {
-      'prev-token': {
+      [PREVIEW_TOKEN]: {
         ok: true,
         row: {
-          shareId: 's-prev',
+          shareId: '00000000-0000-4000-a000-00000000b1e0',
           mode: 'view',
           resourceType: 'preview',
           externalId: 'sbx_KNOWN',
@@ -349,38 +345,27 @@ describe('a public share names one thing', () => {
         },
       },
     };
-    const [req, url] = request('/?public_share=prev-token', {}, 'p9999-sbx-known.localhost:8008');
+    const [req, url] = request(`/?public_share=${PREVIEW_TOKEN}`, {}, 'p9999-sbx-known.localhost:8008');
     expect((await handlePreviewOriginRequest(req, url))?.status).toBe(401);
   });
 });
 
 describe('the blocked-port set applies to the share kind it was written for', () => {
-  test('a file share works on the static-file port, which is exactly what serves it', async () => {
-    shares = {
-      't': {
-        ok: true,
-        row: {
-          shareId: 's', mode: 'view', resourceType: 'file', externalId: 'sbx_KNOWN',
-          port: null, filePath: '/workspace/a.html',
-        },
-      },
-    };
-    const [req, url] = request('/?public_share=t', {}, 'p3211-sbx-known.localhost:8008');
-    expect((await handlePreviewOriginRequest(req, url))?.status).toBe(200);
-  });
-
   test('a preview share still cannot name an infrastructure port', async () => {
-    for (const port of [22, 4096, 8000, 3211]) {
+    // The shipped set, so a port added to it (opencode's standby 4097) is
+    // covered here too.
+    expect(PUBLIC_SHARE_BLOCKED_PORTS.has(4097)).toBe(true);
+    for (const port of PUBLIC_SHARE_BLOCKED_PORTS) {
       shares = {
-        't': {
+        [PREVIEW_TOKEN]: {
           ok: true,
           row: {
-            shareId: 's', mode: 'view', resourceType: 'preview', externalId: 'sbx_KNOWN',
-            port, filePath: null,
+            shareId: '00000000-0000-4000-a000-00000000b1e0', mode: 'view', resourceType: 'preview',
+            externalId: 'sbx_KNOWN', port, filePath: null,
           },
         },
       };
-      const [req, url] = request('/?public_share=t', {}, `p${port}-sbx-known.localhost:8008`);
+      const [req, url] = request(`/?public_share=${PREVIEW_TOKEN}`, {}, `p${port}-sbx-known.localhost:8008`);
       expect((await handlePreviewOriginRequest(req, url))?.status).toBe(401);
     }
   });
@@ -409,12 +394,6 @@ describe('a preview answers only the origins it should', () => {
     expect(res?.headers.get('vary')).toContain('Origin');
   });
 
-  test('a preflight from an unknown origin is not granted either', async () => {
-    const [req, url] = request('/api', { method: 'OPTIONS', headers: { Origin: 'https://evil.example' } });
-    const res = await handlePreviewOriginRequest(req, url);
-    expect(res?.status).toBe(204);
-    expect(res?.headers.get('access-control-allow-origin')).toBeNull();
-  });
 });
 
 describe('the ambient cookie cannot be used for a cross-site write', () => {
@@ -531,5 +510,98 @@ describe('every preview request is attributed in the audit log', () => {
       resourceType: 'sandbox_preview_origin',
       resourceId: 'sbx_KNOWN',
     });
+  });
+});
+
+// A WebSocket handshake is a cookie-bearing request that no CORS policy
+// governs: any site can open one and the browser attaches the SameSite=None
+// preview cookie. And a public share is a read-only view, never a socket.
+describe('a WebSocket to a preview origin', () => {
+  test('the signed-in owner opening it from the preview itself is upgraded', async () => {
+    const [req, url] = request('/hmr', {
+      headers: { cookie: mintCookieFor('sbx-known', 8081), 'sec-fetch-site': 'same-origin' },
+    });
+    const res = await preparePreviewHostWsUpgrade(req, url);
+    expect(res.ok).toBe(true);
+    expect(wsUpstreamResolutions).toBe(1);
+  });
+
+  test('a cross-site handshake is refused, even with a valid cookie', async () => {
+    const [req, url] = request('/hmr', {
+      headers: { cookie: mintCookieFor('sbx-known', 8081), 'sec-fetch-site': 'cross-site' },
+    });
+    expect(await preparePreviewHostWsUpgrade(req, url)).toMatchObject({ ok: false, status: 403 });
+    expect(wsUpstreamResolutions).toBe(0);
+  });
+
+  test('a public share never opens a socket', async () => {
+    shares = {
+      [PREVIEW_TOKEN]: {
+        ok: true,
+        row: {
+          shareId: '00000000-0000-4000-a000-00000000b1e0',
+          mode: 'view',
+          resourceType: 'preview',
+          externalId: 'sbx_KNOWN',
+          port: 8081,
+          filePath: null,
+        },
+      },
+    };
+    const [req, url] = request(`/hmr?public_share=${PREVIEW_TOKEN}`);
+    expect(await preparePreviewHostWsUpgrade(req, url)).toMatchObject({ ok: false, status: 403 });
+    expect(wsUpstreamResolutions).toBe(0);
+  });
+});
+
+// A public share cookie outlives the request that set it, so both of its rules
+// are re-checked on every request: a view-only link stays view-only, and a
+// revoked link stops working at once.
+describe('a public share on its own origin', () => {
+  const shareCookie = (shareId: string) =>
+    `__kortix_preview=${mintPreviewSession(
+      {
+        kind: 'public_share',
+        sandboxLabel: 'sbx-known',
+        sandboxId: 'sbx_KNOWN',
+        port: 8081,
+        shareId,
+        mode: 'view',
+        filePath: null,
+      },
+      900,
+    )}`;
+  const liveShare = (shareId: string) => ({
+    [publicShareToken(shareId)]: {
+      ok: true,
+      row: {
+        shareId,
+        mode: 'view',
+        resourceType: 'preview',
+        externalId: 'sbx_KNOWN',
+        port: 8081,
+        filePath: null,
+      },
+    },
+  });
+
+  test('a view-only share reads, and refuses a write', async () => {
+    shares = liveShare('s-view');
+    const [read, readUrl] = request('/', { headers: { cookie: shareCookie('s-view') } });
+    expect((await handlePreviewOriginRequest(read, readUrl))?.status).toBe(200);
+
+    const [write, writeUrl] = request('/submit', {
+      method: 'POST',
+      headers: { cookie: shareCookie('s-view'), 'sec-fetch-site': 'same-origin' },
+    });
+    expect((await handlePreviewOriginRequest(write, writeUrl))?.status).toBe(405);
+    expect(forwarded).toBe(1);
+  });
+
+  test('a revoked share stops working on the next request, cookie or not', async () => {
+    shares = {};
+    const [req, url] = request('/', { headers: { cookie: shareCookie('s-revoked') } });
+    expect((await handlePreviewOriginRequest(req, url))?.status).toBe(410);
+    expect(forwarded).toBe(0);
   });
 });

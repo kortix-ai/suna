@@ -5,6 +5,8 @@ import { useTranslations } from '@/i18n/use-translations';
 import type { ComponentProps, ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
+import { DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   Item,
   ItemActions,
@@ -263,13 +265,14 @@ function GatewayMetaLine({
  * chain in the DOM (and in static markup) while closed — the same pattern
  * `error-details.tsx` uses for a stack.
  */
-function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDetails }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const failures = details?.attemptFailures;
-  if (!failures?.length) return null;
-
+/**
+ * A closed-by-default fold for diagnostics beneath an error sentence. A native
+ * `<details>` keeps the content in the DOM (and in static markup) while closed —
+ * the same pattern `error-details.tsx` uses for a stack.
+ */
+function DiagnosticFold({ summary, children }: { summary: ReactNode; children: ReactNode }) {
   return (
-    <details className="group/failures text-xs">
+    <details className="group/fold text-xs">
       <summary
         className={cn(
           'text-muted-foreground hover:text-foreground flex w-fit cursor-pointer list-none',
@@ -277,11 +280,30 @@ function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDeta
           '[&::-webkit-details-marker]:hidden',
         )}
       >
-        <CaretRightIcon className="size-3 shrink-0 group-open/failures:rotate-90" />
-        {failures.length === 1
-          ? tI18nComplete.raw('textce4c96225f63')
-          : `${failures.length} attempts`}
+        <CaretRightIcon className="size-3 shrink-0 group-open/fold:rotate-90" />
+        {summary}
       </summary>
+      {children}
+    </details>
+  );
+}
+
+/**
+ * The per-candidate failure chain, collapsed. It is the diagnostic, not the
+ * message: a reader who wants to know WHY every route failed opens it; everyone
+ * else sees one line saying how many were tried.
+ */
+function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDetails }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const failures = details?.attemptFailures;
+  if (!failures?.length) return null;
+
+  return (
+    <DiagnosticFold
+      summary={
+        failures.length === 1 ? tI18nComplete.raw('textce4c96225f63') : `${failures.length} attempts`
+      }
+    >
       <ol className="text-muted-foreground mt-1 list-decimal space-y-1 pl-4 wrap-anywhere">
         {failures.map((failure) => (
           <li key={failure.attempt}>
@@ -293,7 +315,139 @@ function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDeta
           </li>
         ))}
       </ol>
-    </details>
+    </DiagnosticFold>
+  );
+}
+
+/**
+ * Which row a plain-text turn error renders, and whether it opens. The one
+ * decision `TurnErrorDisplay` makes for `errorText`, exported so the debug page
+ * can check it instead of re-deriving it. (A typed send failure can also reach
+ * a billing card through `error.kind`; that path is not described here.)
+ */
+export function describeTurnErrorRow({
+  text,
+  gateway,
+  raw,
+}: {
+  text: string;
+  gateway?: TurnErrorGatewayDetails;
+  raw?: string;
+}): { kind: 'billing-card' | 'checkpoint'; expandable: boolean } {
+  if (isInsufficientCreditsError(text) || isUsageLimitError(text)) {
+    return { kind: 'billing-card', expandable: false };
+  }
+  const hasMeta = Boolean(gateway?.provider || gateway?.code || gateway?.requestId);
+  const hasAttempts = Boolean(gateway?.attemptFailures?.length);
+  return { kind: 'checkpoint', expandable: hasMeta || hasAttempts || Boolean(raw) };
+}
+
+/**
+ * A failed turn, as a checkpoint row in the activity lane — the same lane,
+ * glyph slot, type and caret as "Thought for 1s", through the same
+ * `ChainOfThoughtStep` disclosure. Closed, it says what happened. Open, it
+ * holds the diagnostics support needs: provider, code and request id, the
+ * attempt chain, and the provider's raw text. The gateway's suggestion is what
+ * the reader acts on, so it stays visible under the row, closed or open.
+ */
+function TurnErrorCheckpoint({
+  text,
+  gateway,
+  raw,
+  defaultOpen,
+  className,
+}: {
+  text: string;
+  gateway?: TurnErrorGatewayDetails;
+  raw?: string;
+  defaultOpen?: boolean;
+  className?: string;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const suggestion =
+    gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined;
+  const failures = gateway?.attemptFailures ?? [];
+  const canOpen = describeTurnErrorRow({ text, gateway, raw }).expandable;
+
+  const row = (
+    <div className="flex w-full items-center gap-3 text-left text-sm leading-[1.5]">
+      <WarningCircleIcon className="text-kortix-red size-4 flex-none" />
+      <span className="text-foreground flex-none font-medium">
+        {tI18nComplete.raw('text1a4f630ac1b6')}
+      </span>
+      <span
+        className={cn(
+          'text-muted-foreground min-w-0 wrap-anywhere',
+          canOpen && 'group-hover/trigger:text-foreground duration-fast transition-colors',
+        )}
+      >
+        {text}
+      </span>
+      {canOpen ? (
+        <CaretRightIcon
+          className={cn(
+            'text-muted-foreground size-3.5 flex-none',
+            'transition-transform group-data-[state=open]/step:rotate-90',
+          )}
+        />
+      ) : null}
+    </div>
+  );
+
+  const hint = suggestion ? (
+    <p className="text-muted-foreground mt-1 pl-7 text-xs text-pretty wrap-anywhere">
+      {suggestion}
+    </p>
+  ) : null;
+
+  if (!canOpen) {
+    return (
+      <div role="alert" className={className}>
+        {row}
+        {hint}
+      </div>
+    );
+  }
+
+  return (
+    <div role="alert" className={className}>
+      <ChainOfThoughtStep defaultOpen={defaultOpen}>
+        {/* Trigger + content are ONE child: the step's rail holds slot 0 and
+            `Disclosure` renders exactly two slots (see activity-burst.tsx). */}
+        <>
+          <DisclosureTrigger>
+            <div className="group/trigger cursor-pointer">{row}</div>
+          </DisclosureTrigger>
+          {hint}
+          <DisclosureContent>
+            <div className="mt-3 flex flex-col gap-2 pl-7">
+              <GatewayMetaLine details={gateway} />
+              {failures.length > 0 ? (
+                <ol className="text-muted-foreground list-decimal space-y-1 pl-4 text-xs wrap-anywhere">
+                  {failures.map((failure) => (
+                    <li key={failure.attempt}>
+                      <span className="text-foreground font-medium">
+                        {failureTarget(failure)}
+                      </span>{' '}
+                      ·{' '}
+                      {failure.status !== undefined
+                        ? tI18nComplete('textf6a6d0e934f4', { value0: failure.status })
+                        : ''}
+                      {String(failure.code)} · {failure.message}
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+              {raw ? (
+                <pre className="bg-muted text-muted-foreground max-h-40 overflow-auto rounded-md px-3 py-2 font-mono text-xs whitespace-pre-wrap wrap-anywhere">
+                  {raw}
+                </pre>
+              ) : null}
+            </div>
+          </DisclosureContent>
+        </>
+      </ChainOfThoughtStep>
+    </div>
   );
 }
 
@@ -312,6 +466,14 @@ interface TurnErrorDisplayProps {
    * provided (its own `.gateway` wins).
    */
   errorDetails?: TurnErrorGatewayDetails | null;
+  /**
+   * The technical text behind `errorText` (from `getTurnErrorRawText()`),
+   * folded beneath the sentence. Omit it when it would only repeat the text.
+   */
+  errorRaw?: string;
+  /** Start with the detail open — the debug page and markup tests use it; the
+   *  transcript leaves the row closed. */
+  defaultDetailsOpen?: boolean;
   /**
    * Typed send failure from the SDK's `classifySendError` (send/command/reply
    * catch paths). When present, billing-vs-runtime routing reads `.kind`
@@ -344,6 +506,8 @@ interface TurnErrorDisplayProps {
 export function TurnErrorDisplay({
   errorText,
   errorDetails,
+  errorRaw,
+  defaultDetailsOpen,
   error,
   isAbort,
   className,
@@ -392,29 +556,15 @@ export function TurnErrorDisplay({
     return <UsageLimitCard errorText={text} className={className} />;
   }
 
-  // Real errors → one row, three registers. The message is the title; the
-  // gateway's suggestion (what to do about it) is the description; provider,
-  // code and request id sit in a meta line so support can find the request
-  // without the user having to read past them. Attempt failures list beneath.
-  const suggestion =
-    gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined;
-
+  // Real errors → a checkpoint row in the activity lane, not a boxed alert.
   return (
-    <ErrorRow role="alert" className={className}>
-      <StatusTile tone="error">
-        <StatusGlyph icon={WarningCircleIcon} />
-      </StatusTile>
-      <ItemContent className="min-w-0 gap-1">
-        <ItemTitle className="w-full text-pretty wrap-anywhere">{text}</ItemTitle>
-        {suggestion ? (
-          <ItemDescription className="line-clamp-none text-xs text-pretty wrap-anywhere">
-            {suggestion}
-          </ItemDescription>
-        ) : null}
-        <GatewayMetaLine details={gateway} />
-        <GatewayAttemptFailureList details={gateway} />
-      </ItemContent>
-    </ErrorRow>
+    <TurnErrorCheckpoint
+      text={text}
+      gateway={gateway}
+      raw={errorRaw}
+      defaultOpen={defaultDetailsOpen}
+      className={className}
+    />
   );
 }
 

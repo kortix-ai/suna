@@ -1,16 +1,16 @@
 /**
- * One case per session ORIGIN: whatever started the session, the create-time
- * title source is the user's own words — never the scaffolded envelope a channel
- * renders around them, and never a leaked workspace/channel/chat identifier
- * (channel sessions are `visibility: 'project'`, so their title is team-visible).
+ * Create-time title source for the channels that have no behavioural
+ * create-body test yet: trigger, Telegram, email. Whatever started the session,
+ * the title source is the user's own words, never the envelope a channel
+ * renders around them (channel sessions are `visibility: 'project'`, so their
+ * title is team-visible).
  *
- * Each origin is pinned twice:
- *   1. semantics — `titleSourceForCreate` over the body shape that origin builds;
- *   2. wiring — the literal field in that origin's create body, read out of the
- *      source, so renaming/dropping it fails here instead of silently reverting
- *      a channel to titling from its rendered envelope.
- * The renderers themselves stay private; asserting on the source keeps this
- * honest without a process-global `mock.module`.
+ * Each row pins the semantics (`titleSourceForCreate` over the body shape that
+ * origin builds) and the wiring (the literal field in that origin's create
+ * body, read from the source). Slack and Teams prove the wiring behaviourally
+ * in `unit-slack-dispatch-session.test.ts` and `unit-teams-session.test.ts`;
+ * the stored, capped source is proven in `e2e-project-session-contract.test.ts`.
+ * A row here retires when its channel's own suite asserts the create body.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -57,52 +57,6 @@ describe('session-title origins — create-time title source', () => {
     expect(source).not.toContain('title_source');
   });
 
-  test('slack: the user message, not the rendered envelope', () => {
-    const body = {
-      agent_name: 'default',
-      initial_prompt: [
-        "You're answering a message on Slack as a teammate.",
-        'Workspace:  T0123',
-        'Channel:    C0456',
-        'Thread ts:  1700000000.0001',
-        'Message:',
-        'can you bump the node version in CI',
-      ].join('\n'),
-      title_source: 'can you bump the node version in CI',
-    };
-    const title = titleSourceForCreate(body);
-    expect(title).toBe('can you bump the node version in CI');
-    expect(title).not.toContain('Workspace:');
-    expect(title).not.toContain('Thread ts:');
-    expect(title).not.toContain('T0123');
-
-    const source = createBody('channels/slack/session.ts', 'slackSessionLifecycle.createSession(');
-    expect(source).toContain('title_source: event.text ?? null');
-  });
-
-  test('teams: the activity text, not the rendered envelope', () => {
-    const body = {
-      initial_prompt: [
-        "You're answering a message on Microsoft Teams as a teammate.",
-        'Tenant:        tenant-1',
-        'Conversation:  conv-1',
-        'Message:',
-        'summarize yesterday standup',
-      ].join('\n'),
-      title_source: 'summarize yesterday standup',
-    };
-    const title = titleSourceForCreate(body);
-    expect(title).toBe('summarize yesterday standup');
-    expect(title).not.toContain('Tenant:');
-    expect(title).not.toContain('Conversation:');
-
-    // The words the person typed — minus the `<at>…</at>` markup Teams wraps
-    // around a channel mention of the bot (a title of "<at>Kortix Dev</at>summ…"
-    // is what the first live channel run produced).
-    const source = createBody('channels/teams/session.ts', 'teamsSessionLifecycle.createSession(');
-    expect(source).toContain('title_source: activity.text ? stripTeamsMentions(activity.text) || null : null');
-  });
-
   test('telegram: message text, falling back to a photo caption', () => {
     const text = {
       initial_prompt: 'You received a message on Telegram.\nChat:        99 (private)\n…',
@@ -139,44 +93,5 @@ describe('session-title origins — create-time title source', () => {
     expect(source).toContain('title_source: messageSubject(event) ?? messageSummary(event)');
     // The full rendered envelope still reaches the agent via postCreate.
     expect(read('channels/email/session.ts')).toContain("type: 'deliver_prompt'");
-  });
-
-  test('the clean source is PERSISTED, so a fallback hook cannot re-title from the envelope', () => {
-    // Hook 1 is not guaranteed: its gateway call can 429. Seconds later the
-    // queued initial prompt drains through continueSession, whose only text
-    // IS the rendered envelope — and `needsTitle` is still true. Storing the
-    // clean source at create is what keeps that retry honest.
-    const create = read('projects/lib/sessions.ts');
-    expect(create).toContain('const explicitTitleSource = normalizeString(body.title_source');
-    expect(create).toContain('title_source: explicitTitleSource.slice(0, TITLE_SOURCE_MAX_CHARS)');
-    expect(read('projects/session-title-generate.ts')).toContain(
-      'storedTitleSource(row) ?? suppliedText',
-    );
-  });
-
-  test('ui (web new-session): no create-time prompt → the proxy hook owns the title', () => {
-    // apps/web never sets initial_prompt; it stashes the prompt client-side and
-    // sends it over the OpenCode REST proxy once the session exists.
-    expect(titleSourceForCreate({ base_ref: 'main', agent_name: 'default' })).toBeNull();
-  });
-
-  test('sdk/api (POST /sessions with a prompt): that prompt is the title', () => {
-    expect(
-      titleSourceForCreate({ base_ref: 'main', initial_prompt: 'migrate the auth module' }),
-    ).toBe('migrate the auth module');
-  });
-
-  test('pre-named platform sessions keep their fixed labels', () => {
-    // body.name is the documented "I already know the title" escape hatch:
-    // sessions.ts writes it to metadata.name, so needsTitle() is false and
-    // generation never overwrites it.
-    for (const [rel, marker, name] of [
-      ['projects/routes/sandboxes.ts', "source: 'system:sandbox-build-fix'", "name: 'Fix sandbox build'"],
-      ['projects/routes/marketplace-install-session.ts', 'const result = await createSession({', 'name: `Add ${'],
-    ] as const) {
-      const source = createBody(rel, marker);
-      expect(source).toContain(name);
-      expect(source).not.toContain('title_source');
-    }
   });
 });

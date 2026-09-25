@@ -3,6 +3,8 @@ import { type ExtractedUsage, IncrementalSseScanner, type SseErrorFrame } from '
 export interface StreamRelayOptions {
   upstreamBody: ReadableStream<Uint8Array>;
   requestId: string;
+  upstreamProvider?: string;
+  upstreamModel?: string;
   logger: {
     warn: (...args: unknown[]) => void;
     // Required: a failed usage settlement is unrecorded revenue and must be
@@ -23,11 +25,7 @@ export interface StreamRelayOptions {
   signal?: AbortSignal;
   heartbeatMs?: number;
   inactivityTimeoutMs?: number;
-  /**
-   * Rewrites the relayed text before the client receives it. Called only with
-   * whole lines (a partial trailing line waits for the next chunk). Usage and
-   * error scanning always read the original upstream text.
-   */
+  /** Rewrites complete relayed lines. Usage and error scanning read the upstream text. */
   rewriteLines?: (text: string) => string;
 }
 
@@ -41,6 +39,24 @@ export interface StreamObservation {
 const HEARTBEAT = new TextEncoder().encode(': keep-alive\n\n');
 const DEFAULT_HEARTBEAT_MS = 10_000;
 const DEFAULT_INACTIVITY_MS = 90 * 60_000;
+// The relay must hold an incomplete line to decide whether the next complete
+// JSON chunk needs an event boundary. Bound that hold for a provider that never
+// sends a newline; an 8 MiB single SSE line is already outside normal model
+// output and cannot be safely rewritten for a managed model.
+const MAX_SSE_LINE_CHARS = 8 * 1024 * 1024;
+
+function completeJsonDataLine(line: string): boolean {
+  if (!line.startsWith('data:')) return false;
+  const payload = line.slice(5).trim();
+  if (payload === '[DONE]') return true;
+  if (!payload.startsWith('{') || !payload.endsWith('}')) return false;
+  try {
+    const value: unknown = JSON.parse(payload);
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+  } catch {
+    return false;
+  }
+}
 
 function messageOf(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 2_000);
@@ -57,21 +73,73 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
   let tail = '';
   // Upstream text after the last newline, held back until its line completes.
   let carry = '';
+  let previousDataLineEnding = '';
+  let framingRepairLogged = false;
   const encoder = new TextEncoder();
-  const relay = (controller: ReadableStreamDefaultController<Uint8Array>, value: Uint8Array, text: string): void => {
-    if (!options.rewriteLines) {
-      controller.enqueue(value);
-      return;
-    }
+  const reportFramingRepair = (): void => {
+    if (framingRepairLogged) return;
+    framingRepairLogged = true;
+    options.logger.warn('[gateway] repaired missing SSE event boundary', {
+      event: 'gateway.sse_framing_repaired',
+      requestId: options.requestId,
+      provider: options.upstreamProvider,
+      model: options.upstreamModel,
+    });
+  };
+  const relay = (controller: ReadableStreamDefaultController<Uint8Array>, text: string): boolean => {
     const buffered = carry + text;
     const cut = buffered.lastIndexOf('\n') + 1;
     carry = buffered.slice(cut);
-    if (cut > 0) controller.enqueue(encoder.encode(options.rewriteLines(buffered.slice(0, cut))));
+    if (carry.length > MAX_SSE_LINE_CHARS) {
+      throw new Error(`provider SSE line exceeded ${MAX_SSE_LINE_CHARS} characters`);
+    }
+    if (cut === 0) return false;
+    const lines = buffered.slice(0, cut);
+    let output = '';
+    let start = 0;
+    for (let end = lines.indexOf('\n'); end >= 0; end = lines.indexOf('\n', start)) {
+      const line = lines.slice(start, end + 1);
+      if (line.length > MAX_SSE_LINE_CHARS) {
+        throw new Error(`provider SSE line exceeded ${MAX_SSE_LINE_CHARS} characters`);
+      }
+      const complete = completeJsonDataLine(line);
+      if (complete && previousDataLineEnding) {
+        // OpenAI chat-completion chunks are independent SSE events. Some
+        // providers send consecutive complete `data:` JSON lines without the
+        // blank line that dispatches the first event. EventSourceParser then
+        // joins them with a newline and JSON.parse rejects the whole event.
+        output += previousDataLineEnding;
+        reportFramingRepair();
+      }
+      output += line;
+      if (complete) previousDataLineEnding = line.endsWith('\r\n') ? '\r\n' : '\n';
+      else if (line === '\n' || line === '\r\n' || line.startsWith('data:')) previousDataLineEnding = '';
+      start = end + 1;
+    }
+    controller.enqueue(encoder.encode(options.rewriteLines ? options.rewriteLines(output) : output));
+    tail = (tail + output).slice(-2);
+    return true;
   };
   const flushCarry = (controller: ReadableStreamDefaultController<Uint8Array>): void => {
-    if (!options.rewriteLines || !carry) return;
-    controller.enqueue(encoder.encode(options.rewriteLines(carry)));
+    if (!carry) {
+      if (previousDataLineEnding) {
+        controller.enqueue(encoder.encode(previousDataLineEnding));
+        reportFramingRepair();
+        previousDataLineEnding = '';
+      }
+      return;
+    }
+    const complete = completeJsonDataLine(carry);
+    const repairedBoundary = complete && Boolean(previousDataLineEnding);
+    // EventSourceParser does not dispatch an unterminated final event. A
+    // complete OpenAI chunk at EOF needs the same blank line as every other
+    // event, including when the provider omitted its final newline entirely.
+    const output = (repairedBoundary ? previousDataLineEnding : '') + carry + (complete ? '\n\n' : '');
+    if (complete) reportFramingRepair();
+    controller.enqueue(encoder.encode(options.rewriteLines ? options.rewriteLines(output) : output));
+    tail = (tail + output).slice(-2);
     carry = '';
+    previousDataLineEnding = '';
   };
   let settled = false;
   let pendingRead: ReturnType<typeof reader.read> | null = null;
@@ -112,63 +180,65 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
 
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
-      if (options.signal?.aborted) {
-        clientStop ??= { message: 'client aborted', code: 'client_aborted' };
-        await reader.cancel('client aborted').catch(() => undefined);
-        await settle(clientStop);
-        controller.close();
-        return;
-      }
-
       let timer: ReturnType<typeof setTimeout> | undefined;
-      pendingRead ??= reader.read();
-      const currentRead = pendingRead;
-      const read = currentRead.then((value) => ({ kind: 'read' as const, value }));
-      const beat = new Promise<{ kind: 'beat' }>((resolve) => {
-        timer = setTimeout(() => resolve({ kind: 'beat' }), heartbeatMs);
-      });
-
       try {
-        const next = await Promise.race([read, beat]);
-        if (timer) clearTimeout(timer);
-        if (next.kind === 'beat') {
-          if (Date.now() - lastByteAt >= inactivityMs) {
-            await reader.cancel('provider inactivity timeout').catch(() => undefined);
-            const error = {
-              message: `provider sent no bytes for ${inactivityMs}ms`,
-              code: 'upstream_inactivity_timeout',
-            };
-            await settle(error);
-            controller.error(new Error(error.message));
+        for (;;) {
+          if (options.signal?.aborted) {
+            clientStop ??= { message: 'client aborted', code: 'client_aborted' };
+            await reader.cancel('client aborted').catch(() => undefined);
+            await settle(clientStop);
+            controller.close();
             return;
           }
-          if (!tail || tail.endsWith('\n\n')) controller.enqueue(HEARTBEAT);
-          return;
-        }
+          pendingRead ??= reader.read();
+          const currentRead = pendingRead;
+          const read = currentRead.then((value) => ({ kind: 'read' as const, value }));
+          const beat = new Promise<{ kind: 'beat' }>((resolve) => {
+            timer = setTimeout(() => resolve({ kind: 'beat' }), heartbeatMs);
+          });
 
-        const { done, value } = next.value;
-        pendingRead = null;
-        if (done) {
-          // Flush the decoder and the scanner's carry: a provider whose last
-          // line has no trailing newline keeps its usage frame in the carry,
-          // and without this that turn is billed as zero tokens.
-          const trailing = decoder.decode();
-          if (trailing) {
-            scanner.push(trailing);
-            carry += trailing;
+          const next = await Promise.race([read, beat]);
+          if (timer) clearTimeout(timer);
+          timer = undefined;
+          if (next.kind === 'beat') {
+            if (Date.now() - lastByteAt >= inactivityMs) {
+              await reader.cancel('provider inactivity timeout').catch(() => undefined);
+              const error = {
+                message: `provider sent no bytes for ${inactivityMs}ms`,
+                code: 'upstream_inactivity_timeout',
+              };
+              await settle(error);
+              controller.error(new Error(error.message));
+              return;
+            }
+            if (!tail || tail.endsWith('\n\n')) {
+              controller.enqueue(HEARTBEAT);
+              return;
+            }
+            continue;
           }
-          flushCarry(controller);
-          scanner.finish();
-          await settle(clientStop);
-          controller.close();
-          return;
+
+          const { done, value } = next.value;
+          pendingRead = null;
+          if (done) {
+            // Flush the decoder and scanner's carry before settling usage.
+            const trailing = decoder.decode();
+            if (trailing) {
+              scanner.push(trailing);
+              relay(controller, trailing);
+            }
+            flushCarry(controller);
+            scanner.finish();
+            await settle(clientStop);
+            controller.close();
+            return;
+          }
+          if (!value) continue;
+          lastByteAt = Date.now();
+          const text = decoder.decode(value, { stream: true });
+          scanner.push(text);
+          if (relay(controller, text)) return;
         }
-        if (!value) return;
-        lastByteAt = Date.now();
-        const text = decoder.decode(value, { stream: true });
-        scanner.push(text);
-        tail = (tail + text).slice(-2);
-        relay(controller, value, text);
       } catch (error) {
         if (timer) clearTimeout(timer);
         const streamError = { message: messageOf(error), code: 'upstream_stream_error' };

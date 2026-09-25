@@ -61,9 +61,9 @@ export interface PreviewPrincipal {
 }
 
 /**
- * Same authentication as {@link authenticatePreviewPrincipal}, but also returns
- * the session the credential is bound to. Prefer this on any surface that then
- * makes a session-visibility decision.
+ * Authenticate a preview credential (PAT, service-account token, account API
+ * key, or Supabase JWT) for one sandbox, and return the principal it proves
+ * with the session the credential is bound to.
  */
 export async function authenticatePreviewPrincipalDetailed(
   token: string | null | undefined,
@@ -179,13 +179,3 @@ export function extractPreviewToken(req: Request, url: URL): string | null {
   return null;
 }
 
-/**
- * Back-compat wrapper: the principal id only. Existing callers that make no
- * session-scoped decision (subdomain gate) keep using this.
- */
-export async function authenticatePreviewPrincipal(
-  token: string | null | undefined,
-  sandboxId: string,
-): Promise<string | null> {
-  return (await authenticatePreviewPrincipalDetailed(token, sandboxId))?.userId ?? null;
-}

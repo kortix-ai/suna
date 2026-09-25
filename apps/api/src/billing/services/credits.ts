@@ -1,32 +1,23 @@
-import { getCreditAccount } from '../repositories/credit-accounts';
-import { MINIMUM_CREDIT_FOR_RUN, TOKEN_PRICE_MULTIPLIER } from './tiers';
+import type { getCreditAccount } from '../repositories/credit-accounts';
+import { TOKEN_PRICE_MULTIPLIER } from './tiers';
 import { getManagedModel } from '@kortix/llm-catalog';
 import { calculateCost as calculateGatewayCost } from '@kortix/llm-gateway';
 import { requireModelPricing } from '../../router/config/models';
 
-// Credit movements live in billing/wallet. This module derives a spendable
-// summary from a credit row and prices tokens.
+// Credit movements live in billing/wallet. This module derives the bucket
+// summary from a credit row and prices tokens. Whether an account may run is
+// billing-state.ts's answer, not the wallet floor's.
 
-export async function getCreditSummary(
-  accountId: string,
-  prefetchedAccount?: Awaited<ReturnType<typeof getCreditAccount>>,
-) {
-  const account = prefetchedAccount !== undefined ? prefetchedAccount : await getCreditAccount(accountId);
+export function getCreditSummary(account: Awaited<ReturnType<typeof getCreditAccount>>) {
   if (!account) {
-    return { total: 0, daily: 0, monthly: 0, extra: 0, canRun: false };
+    return { total: 0, daily: 0, monthly: 0, extra: 0 };
   }
 
-  const daily = Number(account.dailyCreditsBalance) || 0;
-  const monthly = Number(account.expiringCredits) || 0;
-  const extra = Number(account.nonExpiringCredits) || 0;
-  const total = Number(account.balance) || 0;
-
   return {
-    total,
-    daily,
-    monthly,
-    extra,
-    canRun: total >= MINIMUM_CREDIT_FOR_RUN,
+    total: Number(account.balance) || 0,
+    daily: Number(account.dailyCreditsBalance) || 0,
+    monthly: Number(account.expiringCredits) || 0,
+    extra: Number(account.nonExpiringCredits) || 0,
   };
 }
 

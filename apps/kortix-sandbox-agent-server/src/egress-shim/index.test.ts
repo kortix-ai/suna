@@ -16,7 +16,6 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import net from 'node:net'
 
 import {
-  __resetEgressShimForTests,
   egressShimEnv,
   stopEgressShim,
   syncEgressShim,
@@ -77,7 +76,6 @@ let squatter: net.Server | null = null
 
 afterEach(async () => {
   stopEgressShim()
-  __resetEgressShimForTests()
   if (squatter) {
     const server = squatter
     squatter = null

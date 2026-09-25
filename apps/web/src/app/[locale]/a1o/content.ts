@@ -14,7 +14,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * two independent strings drifted apart once already (a face reading TRUST
  * while the copy read Governance).
  *
- * HONESTY RULES (same bar as features/marketing/security/content.ts):
+ * HONESTY RULES (same bar as features/marketing/security-page/content.ts):
  * - SOC 2 Type II is IN PROGRESS. Never "compliant" / "certified" until the
  *   report lands.
  * - Do NOT advertise multi-harness / harness-agnostic / ACP. OpenCode REST +

@@ -49,7 +49,7 @@ let root: string
 let origin: string
 let work: string
 
-const SESSION_ID = '5edfa699-4af7-42a4-b323-d317c8137cf8'
+const SESSION_ID = '00000000-0000-4000-8000-00000000a0b1'
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-refresh-'))
@@ -89,22 +89,18 @@ function cfg(): Config {
 }
 
 describe('refreshRepo with an unpushed session branch', () => {
-  test('does not throw — there is simply nothing upstream to pull', async () => {
+  test('does not throw, and the session keeps its own commits on its own branch', async () => {
     // Before the fix this rejected with
     // `git fetch refresh failed: fatal: couldn't find remote ref …`.
-    const result = await refreshRepo(cfg())
-    expect(result.before.commit).toBeTruthy()
-    expect(result.after.commit).toBe(result.before.commit)
-  })
-
-  test('the session keeps its own commits', async () => {
     writeFileSync(join(work, 'agent-work.txt'), 'work\n')
     git(['add', '.'], work)
     git(['-c', 'user.email=a@k.dev', '-c', 'user.name=A', 'commit', '-m', 'agent work'], work)
     const head = gitOut(['rev-parse', 'HEAD'], work)
 
-    await refreshRepo(cfg())
+    const result = await refreshRepo(cfg())
 
+    expect(result.before.commit).toBe(head)
+    expect(result.after.commit).toBe(head)
     expect(gitOut(['rev-parse', 'HEAD'], work)).toBe(head)
     expect(gitOut(['rev-parse', '--abbrev-ref', 'HEAD'], work)).toBe(SESSION_ID)
   })

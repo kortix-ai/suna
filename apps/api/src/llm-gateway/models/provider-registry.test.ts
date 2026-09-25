@@ -89,6 +89,5 @@ describe('runtime catalog provider resolution', () => {
     // doc comment above).
     if (upstream?.kind === 'bedrock') throw new Error('expected openai-compat, got bedrock');
     expect(upstream?.baseUrl).toBe('https://openrouter.ai/api/v1');
-    expect(upstream?.baseUrl).toBeTruthy();
   });
 });
