@@ -6763,3 +6763,20 @@ to its initial stopped or archived state, stops the target, and requeues the
 session before a controller restart. A separate worker confirms target archives.
 The fleet uses a shared Platinum create budget and retries transient create
 responses with bounded exponential backoff.
+
+### 2026-09-25 — Verify migrated workspace files after runtime materialization
+
+**Near miss.** A provider transfer restored a durable workspace folder before
+the first runtime boot. Git materialization then cleared the workspace contents.
+History verification still passed because the transcript database lived outside
+the workspace.
+
+**Rule.** A migration into a runtime-managed checkout stages durable workspace
+files outside the checkout before first boot. It restores them only after Git
+materialization completes. It verifies the exact file inventory and content
+again after the public session start. Pre-boot presence is not migration proof.
+
+**Enforcement.** The transfer controller records separate workspace staged,
+restored, and end-to-end verified events. The final event runs after the public
+start route reaches ready. Archive completion cannot mark the session verified
+without that final workspace event.
