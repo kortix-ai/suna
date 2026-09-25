@@ -143,6 +143,23 @@ export function runtimeWakeProgressPatch(
   };
 }
 
+/**
+ * The patch that keeps a claimed wake alive while the provider restores the
+ * box from cold storage INSIDE start(). The status loop never sees that
+ * restore (it runs before the loop, and the box reads `stopped` throughout),
+ * and under load it outlasts the lease: past it, maintenance stamps
+ * `wake_lease_expired` and its late-start guard stops the box the moment it
+ * boots. The provider bounds how long it reports this; RUNTIME_WAKE_HARD_MS
+ * still ends the wake as a whole.
+ */
+export function runtimeWakeRestoreProgressPatch(now: Date = new Date()): Record<string, unknown> {
+  return {
+    runtimeWakeProviderStatus: 'restoring',
+    runtimeWakeProgressAt: now.toISOString(),
+    runtimeWakeLeaseExpiresAt: new Date(now.getTime() + RUNTIME_WAKE_LEASE_MS).toISOString(),
+  };
+}
+
 export function runtimeWakeInProgress(
   metadata: Record<string, unknown> | null | undefined,
   now: Date = new Date(),

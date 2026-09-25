@@ -61,6 +61,7 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
   SandboxProvider,
+  SandboxStartOptions,
   SandboxStatus,
 } from './index';
 import {
@@ -79,13 +80,15 @@ const START_CONFLICT_POLL_MS = 250;
 // call before its 202 could arrive; give it the server's wait plus margin, as
 // create() does for its 60 s long-poll.
 export const START_CALL_TIMEOUT_MS = 60_000;
-// How long start() carries a box through a restore from cold storage. It must
-// return inside the session wake lease (RUNTIME_WAKE_LEASE_MS, 240 s) with room
-// for one last /start: past the lease, wake maintenance declares the wake dead
-// and stops the box the moment it boots. Session boxes restore in ~60 s (p90,
-// prod 2026-09-25); a restore that outlasts this finishes on its own and the
-// next wake finds the box stopped and boots it in seconds.
-export const START_RESTORE_BUDGET_MS = 150_000;
+// How long start() carries a box through a restore from cold storage. A 6 GB
+// session box restores in ~100 s alone on dev and past 150 s with a second
+// restore on the same host (2026-09-25); the slowest prod unarchive that day
+// took 546 s. The session wake must still confirm the box inside its
+// RUNTIME_WAKE_HARD_MS (10 min), after this and one last /start.
+export const START_RESTORE_BUDGET_MS = 8 * 60_000;
+// How often a caller's lease is renewed (opts.onProgress) while a restore is
+// seen in progress. The wake and restart leases run 240 s.
+export const START_PROGRESS_INTERVAL_MS = 30_000;
 const START_RESTORE_POLL_MS = 1_000;
 
 interface PlatinumSandbox {
@@ -568,10 +571,18 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
-  async start(externalId: string): Promise<void> {
-    const deadline = Date.now() + START_CONFLICT_GRACE_MS;
+  async start(externalId: string, opts: SandboxStartOptions = {}): Promise<void> {
+    let deadline = Date.now() + START_CONFLICT_GRACE_MS;
     const restoreDeadline = Date.now() + START_RESTORE_BUDGET_MS;
     let firstConflict: unknown = null;
+    // true = the box is back on disk and gets a fresh /start. That /start
+    // gets a fresh stop grace too: another waiter may win the race to it, and
+    // this one must then see the box through `starting`, not fail at once.
+    const restored = async () => {
+      if (!(await this.waitForRestore(externalId, restoreDeadline, opts.onProgress))) return false;
+      deadline = Date.now() + START_CONFLICT_GRACE_MS;
+      return true;
+    };
 
     attempt: for (;;) {
       try {
@@ -590,7 +601,7 @@ export class PlatinumProvider implements SandboxProvider {
         // 241 prod unarchives on 2026-09-25 outran the inline wait).
         const state = String(started.body?.state ?? '').toLowerCase();
         if (started.status !== 202 && !state.includes('archiv')) return;
-        if (await this.waitForRestore(externalId, restoreDeadline)) continue;
+        if (await restored()) continue;
         return;
       } catch (error) {
         // Platinum acknowledges stop before the VM always reaches `stopped`.
@@ -602,7 +613,7 @@ export class PlatinumProvider implements SandboxProvider {
         // The CALL gave up, not Platinum: a restore it started keeps going
         // server-side. Wait on the box's real state instead of failing the wake.
         if (/ timed out after /.test(message) && Date.now() < restoreDeadline) {
-          if (await this.waitForRestore(externalId, restoreDeadline)) continue;
+          if (await restored()) continue;
           return;
         }
         if (!/ -> 409\b/.test(message)) throw error;
@@ -618,7 +629,7 @@ export class PlatinumProvider implements SandboxProvider {
         // still being written. Either outlasts the stop grace, and re-posting
         // /start meanwhile only collects 409s: wait on the box instead.
         if (state.includes('archiv')) {
-          if (await this.waitForRestore(externalId, restoreDeadline)) continue attempt;
+          if (await restored()) continue attempt;
           return;
         }
         if (!['starting', 'stopping', 'pending'].includes(state) || Date.now() >= deadline) {
@@ -636,8 +647,15 @@ export class PlatinumProvider implements SandboxProvider {
    * `archived`) and needs its /start now; false = it moved on without one
    * (someone else started it, or it failed) and status polling takes over.
    * Throws when `until` passes first: the box is not coming up on this call.
+   * `onProgress` fires on the first in-progress read, then every
+   * START_PROGRESS_INTERVAL_MS while it lasts.
    */
-  private async waitForRestore(externalId: string, until: number): Promise<boolean> {
+  private async waitForRestore(
+    externalId: string,
+    until: number,
+    onProgress?: () => Promise<void>,
+  ): Promise<boolean> {
+    let reportedAt = Number.NEGATIVE_INFINITY;
     while (Date.now() < until) {
       await Bun.sleep(START_RESTORE_POLL_MS);
       const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`).catch(
@@ -646,6 +664,10 @@ export class PlatinumProvider implements SandboxProvider {
       const state = String(sandbox?.state ?? '').toLowerCase();
       if (state === 'stopped' || state === 'archived') return true;
       if (state && !state.includes('archiv')) return false;
+      if (state && onProgress && Date.now() - reportedAt >= START_PROGRESS_INTERVAL_MS) {
+        reportedAt = Date.now();
+        await onProgress().catch(() => undefined);
+      }
     }
     throw new Error(
       `platinum sandbox ${externalId} still restoring from archive after ${START_RESTORE_BUDGET_MS / 1000}s`,

@@ -35,6 +35,7 @@ import {
   RUNTIME_WAKE_LEASE_MS,
   runtimeWakeInProgress,
   runtimeWakeProgressPatch,
+  runtimeWakeRestoreProgressPatch,
   stampedRuntimeFailureState,
 } from './runtime-wake-fence';
 
@@ -118,6 +119,19 @@ describe('INVARIANT 2 — the wake exemption is never narrowed, and never unboun
     // …and the fence is closed anyway, so nothing stays exempt for ever.
     expect(runtimeWakeInProgress(metadata, at(RUNTIME_WAKE_HARD_MS - 1_000))).toBe(true);
     expect(runtimeWakeInProgress(metadata, at(RUNTIME_WAKE_HARD_MS + 1))).toBe(false);
+  });
+
+  test('a restore inside start() holds the wake past the lease, and still ends at the ceiling', () => {
+    // The provider renews every 30 s while it restores the box from cold
+    // storage, for up to its 8 min budget. The status loop sees none of it.
+    let metadata: Record<string, unknown> = { ...openWake };
+    for (let elapsed = 30_000; elapsed <= 8 * 60_000; elapsed += 30_000) {
+      metadata = { ...metadata, ...runtimeWakeRestoreProgressPatch(at(elapsed)) };
+    }
+    expect(runtimeWakeInProgress(metadata, at(RUNTIME_WAKE_LEASE_MS + 1))).toBe(true);
+    expect(runtimeWakeInProgress(metadata, at(8 * 60_000 + 1))).toBe(true);
+    expect(runtimeWakeInProgress(metadata, at(RUNTIME_WAKE_HARD_MS + 1))).toBe(false);
+    expect(metadata.runtimeWakeStartedAt).toBe(openWake.runtimeWakeStartedAt);
   });
 
   test('progress NEVER moves runtimeWakeStartedAt — the ceiling cannot be reset', () => {

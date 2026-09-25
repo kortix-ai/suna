@@ -8,7 +8,9 @@
 // /start before even that 202 arrived. Each case below scripts a fake Platinum
 // and asserts the exact conversation start() holds with it.
 import { afterEach, beforeEach, expect, mock, setSystemTime, test } from 'bun:test';
+import { RUNTIME_RESTART_LEASE_MS } from '../../projects/session-lifecycle/runtime-restart-fence';
 import {
+  RUNTIME_WAKE_HARD_MS,
   RUNTIME_WAKE_LEASE_MS,
   isAmbiguousRuntimeStartError,
 } from '../../projects/session-lifecycle/runtime-wake-fence';
@@ -125,9 +127,49 @@ test('a restore another caller started is waited on, not hammered with /start', 
   ]);
 }, 15_000);
 
+test('losing the race to the post-restore /start still sees the box up', async () => {
+  // Two waiters sat out the same restore; the other one's /start landed
+  // first. Each poll costs 20 fake seconds, so the restore alone outlasts the
+  // 30 s stop grace this /start began with.
+  getAdvancesMs = 20_000;
+  starts = [restoring, conflict];
+  gets = [ok('unarchiving'), ok('stopped'), ok('starting'), ok('running')];
+  await (await provider()).start('sbx_1');
+  expect(events).toEqual([
+    'POST 202',
+    'GET unarchiving',
+    'GET stopped',
+    'POST 409',
+    'GET starting',
+    'GET running',
+  ]);
+}, 15_000);
+
+test("a long restore renews the caller's lease as it goes, and a failed renewal is not fatal", async () => {
+  // Each poll costs 20 fake seconds: renewals land on the first in-progress
+  // read and then once per 30 s, at t = 20, 60 and 100 s.
+  getAdvancesMs = 20_000;
+  starts = [restoring, ok('starting')];
+  gets = [...Array(5).fill(ok('unarchiving')), ok('stopped')];
+  let renewals = 0;
+  await (await provider()).start('sbx_1', {
+    onProgress: async () => {
+      renewals += 1;
+      if (renewals === 1) throw new Error('lease write failed');
+    },
+  });
+  expect(renewals).toBe(3);
+  expect(events).toEqual([
+    'POST 202',
+    ...Array(5).fill('GET unarchiving'),
+    'GET stopped',
+    'POST 200',
+  ]);
+}, 15_000);
+
 test('a restore that outlasts the budget fails the start outright', async () => {
-  // Each poll costs a fake minute, so the 150 s budget runs out on the third.
-  getAdvancesMs = 60_000;
+  // Each poll costs 200 fake seconds, so the 8 min budget runs out on the third.
+  getAdvancesMs = 200_000;
   starts = [restoring];
   gets = [ok('unarchiving')];
   const error = await (await provider()).start('sbx_1').then(
@@ -141,9 +183,12 @@ test('a restore that outlasts the budget fails the start outright', async () => 
   expect(isAmbiguousRuntimeStartError(error)).toBe(false);
 }, 15_000);
 
-test('start() returns inside the session wake lease', async () => {
-  // Past the lease, wake maintenance declares the wake dead and stops the box
-  // the moment it boots: the restore budget plus one last /start must fit.
-  const { START_CALL_TIMEOUT_MS, START_RESTORE_BUDGET_MS } = await import('./platinum');
-  expect(START_RESTORE_BUDGET_MS + START_CALL_TIMEOUT_MS).toBeLessThan(RUNTIME_WAKE_LEASE_MS);
+test('the restore budget fits the wake, and renewals outpace every lease they keep', async () => {
+  const { START_CALL_TIMEOUT_MS, START_PROGRESS_INTERVAL_MS, START_RESTORE_BUDGET_MS } =
+    await import('./platinum');
+  // start() plus one last /start, with the status loop's confirmation after.
+  expect(START_RESTORE_BUDGET_MS + START_CALL_TIMEOUT_MS).toBeLessThan(RUNTIME_WAKE_HARD_MS);
+  // At least two renewals per lease, so one lost write never lets it lapse.
+  expect(START_PROGRESS_INTERVAL_MS * 2).toBeLessThan(RUNTIME_WAKE_LEASE_MS);
+  expect(START_PROGRESS_INTERVAL_MS * 2).toBeLessThan(RUNTIME_RESTART_LEASE_MS);
 });
