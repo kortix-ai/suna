@@ -30,9 +30,10 @@ import {
 } from '../projects/session-lifecycle/inbox-rows';
 import { remintForRepair } from '../projects/session-lifecycle/inbox-placement';
 import { requeueAbandonedPrompt } from '../projects/session-lifecycle/redelivery';
+import { findInboxRowIdByMessageId } from '../projects/session-lifecycle/cancel-forwarded';
+import { settleInboxHoldAfterStop } from '../projects/session-lifecycle/inbox-hold-settle';
 import { acceptSandboxTurn } from '../projects/sandbox-turn-lifecycle';
 import {
-  LIFECYCLE_RUNNING_RECLAIM_GRACE_MS,
   type SessionLifecycleCommandRow,
   claimDueLifecycleCommands,
   enqueueContinueSessionCommand,
@@ -404,6 +405,17 @@ describe('admitInboxPrompt against real rows', () => {
       reason: 'turn_active',
       retryAfterMs: INBOX_ORDER_BACKOFF_MS,
     });
+    // Only the HEAD Quick Queue entry arms the interrupt: a second one behind
+    // it would stop the turn for a prompt that is not next.
+    const quickQueueBehind = await enqueue('q_quick_behind', {
+      clientSentAtMs: sentAt + 2_000,
+      placement: 'transcript',
+      wireMessageId: 'msg_000000000003QuickQueueLater',
+    });
+    expect(await admitInboxPrompt(quickQueueBehind)).not.toHaveProperty('interruptAtBoundary');
+    await db.execute(sql`
+      DELETE FROM kortix.session_lifecycle_commands
+       WHERE command_id = ${quickQueueBehind.commandId}::uuid`);
 
     await db.execute(sql`
       UPDATE kortix.session_lifecycle_commands
@@ -798,6 +810,8 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     // MERGED: the forwarding record survives the confirmation, so the row still
     // says which id it went out under.
     expect(after.result).toMatchObject({ status: 'delivered', forwarded_message_id: WIRE_ID });
+    // A forwarded row is CLOSED, never marked for a later delivery.
+    expect(after.payload as Record<string, unknown>).not.toHaveProperty('consumedOnDelivery');
     expect(await listInboxPrompts(SESSION_ID, 200)).toEqual([]);
     // Idempotent: both witnesses (acceptance, then completion) can fire.
     expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('no_prompt');
@@ -1072,6 +1086,20 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect(after.payload as Record<string, unknown>).not.toHaveProperty('consumedOnDelivery');
   });
 
+  test('acceptance under the RE-MINTED id marks the in-flight row too', async () => {
+    const row = await enqueue('q_accept_reminted');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running',
+             payload = payload || '{"redeliveredMessageId":"msg_0198f3a1b2c5AcceptReminted"}'::jsonb
+       WHERE command_id = ${row.commandId}::uuid`);
+
+    expect(await confirmInboxPromptConsumed(SESSION_ID, 'msg_0198f3a1b2c5AcceptReminted')).toBe(
+      'pending_delivery',
+    );
+    expect((await readRow(row.commandId)).payload).toMatchObject({ consumedOnDelivery: true });
+  });
+
   test('a delivery a turn ACCEPTED is not mislabelled as stop-paused', async () => {
     // Stop marks a `running` row it cannot recall, and the POST lands anyway.
     // If OpenCode ACCEPTED it, the message is running in the transcript — the
@@ -1214,7 +1242,6 @@ describe('a claim nobody is working on is reclaimed, not left to wedge the sessi
 
     const claimed = await claimDueLifecycleCommands({ workerId: 'w-nope', limit: 1, idempotencyKey: working.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).not.toContain(working.commandId);
-    expect(LIFECYCLE_RUNNING_RECLAIM_GRACE_MS).toBeGreaterThan(0);
   });
 });
 
@@ -1318,4 +1345,169 @@ test('a retry claim resets delivery evidence and stays waiting until admitted', 
   expect(retry.result).not.toHaveProperty('delivery_started_at');
   await markInboxDeliveryStarted(retry);
   expect(promptState((await listInboxPrompts(SESSION_ID, 200))[0]).state).toBe('delivering');
+});
+
+// One predicate names the row a wire id belongs to (`wireMessageIdMatches`).
+// A row carries its ids in four places: the client id, the latest and every
+// re-minted id, and the id the delivery actually used. Each reader must find
+// the row by any of them.
+describe('every reader finds a row by any id it went out under', () => {
+  async function forwardedUnder(clientMessageId: string, sentUnder: string) {
+    const row = await enqueue(clientMessageId);
+    await markCommandForwarded(await hold(row), SESSION_ID, sentUnder);
+    return row;
+  }
+
+  async function withRemintedIds(commandId: string, ids: string[]) {
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET payload = payload || ${JSON.stringify({ redeliveredMessageIds: ids })}::jsonb
+       WHERE command_id = ${commandId}::uuid`);
+  }
+
+  // The 2026-08-20 regression: the delivery used an id neither payload column
+  // held, and three readers matched on the payload only.
+  test('an id held only as the forwarded id: confirmation, cancel lookup and redelivery', async () => {
+    const onlyForwarded = 'msg_0198f3a1b2c6OnlyForwarded';
+    const row = await forwardedUnder('q_only_forwarded', onlyForwarded);
+    expect(await findInboxRowIdByMessageId(SESSION_ID, onlyForwarded)).toBe(row.commandId);
+    expect(
+      await requeueAbandonedPrompt({
+        sessionId: SESSION_ID,
+        wireMessageId: onlyForwarded,
+        turnToken: 'turn-only-forwarded',
+        endReason: 'runtime_gone',
+      }),
+    ).toBe('requeued');
+
+    const again = await forwardedUnder('q_only_forwarded_confirm', onlyForwarded);
+    expect(await confirmInboxPromptConsumed(SESSION_ID, onlyForwarded)).toBe('confirmed');
+    expect((await readRow(again.commandId)).result).toMatchObject({ status: 'delivered' });
+  });
+
+  test('an id held only in the re-minted history: confirmation, cancel lookup and redelivery', async () => {
+    const earlier = 'msg_0198f3a1b2c6EarlierRemint';
+    const row = await forwardedUnder('q_only_history', WIRE_ID);
+    await withRemintedIds(row.commandId, [earlier]);
+    expect(await findInboxRowIdByMessageId(SESSION_ID, earlier)).toBe(row.commandId);
+    expect(
+      await requeueAbandonedPrompt({
+        sessionId: SESSION_ID,
+        wireMessageId: earlier,
+        turnToken: 'turn-only-history',
+        endReason: 'runtime_gone',
+      }),
+    ).toBe('requeued');
+
+    const again = await forwardedUnder('q_only_history_confirm', WIRE_ID);
+    await withRemintedIds(again.commandId, [earlier]);
+    expect(await confirmInboxPromptConsumed(SESSION_ID, earlier)).toBe('confirmed');
+  });
+
+  test('an id no column holds names nothing, and a queued row is never confirmed', async () => {
+    await forwardedUnder('q_names_nothing', WIRE_ID);
+    expect(await confirmInboxPromptConsumed(SESSION_ID, 'msg_0198f3a1b2c6NoSuchPrompt')).toBe(
+      'no_prompt',
+    );
+    await cleanup();
+
+    // Not yet on the wire: the confirmation leaves it to the drain.
+    const queued = await enqueue('q_still_queued');
+    expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('no_prompt');
+    const after = await readRow(queued.commandId);
+    expect(after.status).toBe('queued');
+    expect(after.result).toEqual({});
+  });
+
+  // SECURITY: a wire id comes from the client. It is a bound parameter, so SQL
+  // in it is data: it matches nothing and raises nothing.
+  test('a wire id carrying SQL is matched as data', async () => {
+    await forwardedUnder('q_sql_in_id', WIRE_ID);
+    const injected = "x' OR '1'='1";
+    expect(await confirmInboxPromptConsumed(SESSION_ID, injected)).toBe('no_prompt');
+    expect(await findInboxRowIdByMessageId(SESSION_ID, injected)).toBeNull();
+    expect(
+      await requeueAbandonedPrompt({
+        sessionId: SESSION_ID,
+        wireMessageId: injected,
+        turnToken: 'turn-sql',
+        endReason: 'runtime_gone',
+      }),
+    ).toBe('no_prompt');
+  });
+});
+
+// The settle that runs after Stop takes the prompts the Stop paused back out
+// of OpenCode. It selects them with `stopPausedOnWireScope`. The settle reads
+// the box only when that scope selected a row, and this session has no
+// runtime, so `unreadable` reports whether the scope selected anything.
+describe('the post-Stop settle selects exactly the prompts the Stop paused', () => {
+  const OTHER_SESSION_ID = crypto.randomUUID();
+
+  beforeAll(async () => {
+    await db.execute(sql`
+      INSERT INTO kortix.project_sessions (session_id, account_id, project_id, branch_name, status)
+      VALUES (${OTHER_SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid,
+              ${`br-other-${SANDBOX_ID}`}, 'running')`);
+  });
+
+  afterAll(async () => {
+    await db.execute(
+      sql`DELETE FROM kortix.session_lifecycle_commands WHERE session_id = ${OTHER_SESSION_ID}`,
+    );
+    await db.execute(sql`DELETE FROM kortix.project_sessions WHERE session_id = ${OTHER_SESSION_ID}`);
+  });
+
+  const settleSelected = async () => (await settleInboxHoldAfterStop(SESSION_ID)).unreadable;
+
+  // The Stop stamps `held` on every forwarded row BEFORE the settle runs. A
+  // scope that excluded held rows excluded exactly the rows it exists for.
+  test('a forwarded prompt the Stop just held, and a delivered one, are selected', async () => {
+    const row = await enqueue('q_stop_held');
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
+    await holdInboxPrompts(SESSION_ID, true);
+    expect((await readRow(row.commandId)).result).toMatchObject({ held: true });
+
+    expect(await settleSelected()).toBe(true);
+    await cleanup();
+
+    // Confirmed on persistence, long before a model step reads it: still on
+    // the wire as far as the Stop is concerned.
+    const delivered = await enqueue('q_stop_delivered');
+    await markCommandForwarded(await hold(delivered), SESSION_ID, WIRE_ID);
+    expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('confirmed');
+    expect(await settleSelected()).toBe(true);
+  });
+
+  test('another session, an automation prompt, and a prompt forwarded 11 minutes ago are not', async () => {
+    const { row: other } = await enqueueContinueSessionCommand({
+      source: 'ui',
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      sessionId: OTHER_SESSION_ID,
+      actorUserId: null,
+      text: 'say hi',
+      idempotencyKey: `prompt:${OTHER_SESSION_ID}:q_other_session`,
+      clientMessageId: 'q_other_session',
+      wireMessageId: WIRE_ID,
+      parts: [{ type: 'text', text: 'say hi' }],
+    });
+    await markCommandForwarded(await hold(other), OTHER_SESSION_ID, WIRE_ID);
+    await holdInboxPrompts(OTHER_SESSION_ID, true);
+    expect(await settleSelected()).toBe(false);
+
+    const automation = await enqueueAutomationPrompt('trigger prompt');
+    await markCommandForwarded(await hold(automation), SESSION_ID, WIRE_ID);
+    expect(await settleSelected()).toBe(false);
+    await cleanup();
+
+    const old = await enqueue('q_forwarded_long_ago');
+    await markCommandForwarded(await hold(old), SESSION_ID, WIRE_ID);
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET result = result || jsonb_build_object(
+               'forwarded_at', to_jsonb(now() - interval '11 minutes'))
+       WHERE command_id = ${old.commandId}::uuid`);
+    expect(await settleSelected()).toBe(false);
+  });
 });

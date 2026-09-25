@@ -250,6 +250,20 @@ describe('F2 — postPrompt Idempotency-Key', () => {
     expect(capturedIdempotencyKeys).toEqual(['cmd-c', 'cmd-c']);
   });
 
+  // A row that already went out once: the proxy still holds the previous
+  // attempt's 10-minute dedupe claim, so reusing the key would answer the
+  // replacement delivery `200 {"deduplicated": true}` and deliver nothing.
+  test('a row that already went out sends a key suffixed with its delivery attempt', async () => {
+    await executeQueuedContinue(
+      baseRow({
+        commandId: 'cmd-d',
+        payload: { text: 'please approve and continue', deliveryAttempt: 2 },
+      }),
+    );
+
+    expect(capturedIdempotencyKeys).toEqual(['cmd-d:r2']);
+  });
+
   test('a direct (non-queued) continueSession call with no commandId still sends a key', async () => {
     // `applyPostCreateActions`'s non-retryable create path and every direct
     // channel caller (Slack, email, voice, triggers) have no durable row of

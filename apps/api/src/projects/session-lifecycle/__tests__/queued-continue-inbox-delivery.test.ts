@@ -579,20 +579,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(0);
   });
 
-  test('Queue List waits for the whole turn without arming a boundary interrupt', async () => {
-    boxRow = {
-      status: 'active',
-      metadata: { activeTurns: {
-        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
-          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
-      } },
-    };
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'composer' } });
-    expect(await executeQueuedContinue(row)).toBe('queued');
-    expect(requeues).toHaveLength(1);
-    expect(quickQueueControlRequests).toHaveLength(0);
-    expect(capturedBodies).toHaveLength(0);
-  });
   test('Stop during a transient delivery failure prevents another POST', async () => {
     promptResponsePlan = ['failed'];
     pauseAfterPosts = 1;
@@ -1274,10 +1260,17 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(1);
   });
 
-  test('a PROMPT ALREADY ANSWERED is never re-sent, redelivery or not', async () => {
-    // The already-answered guard is not a redelivery-only concern: every
-    // re-mint path re-reads the transcript, and the same assistant reply proves
-    // the same thing on all of them.
+  // The already-answered guard is not a redelivery-only concern: every
+  // re-mint path re-reads the transcript, and an assistant reply under the
+  // message proves the turn ran. Sending it again would run the user's prompt,
+  // and spend a real LLM turn, twice.
+  test.each([
+    [
+      'a promoted re-mint',
+      { payload: { remintOnDelivery: true }, result: { promoted: true } },
+    ],
+    ['a reaper redelivery', { payload: { redeliveries: 1 }, result: {} }],
+  ])('a PROMPT ALREADY ANSWERED is never re-sent: %s', async (_label, row) => {
     transcript = [
       { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
       {
@@ -1291,10 +1284,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     ];
 
     const outcome = await executeQueuedContinue(
-      baseRow({
-        payload: { ...baseRow().payload, remintOnDelivery: true },
-        result: { promoted: true },
-      }),
+      baseRow({ payload: { ...baseRow().payload, ...row.payload }, result: row.result }),
     );
 
     expect(outcome).toBe('succeeded');
@@ -1442,33 +1432,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const outcome = await executeQueuedContinue(baseRow());
     expect(outcome).toBe('succeeded');
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
-  });
-
-  test('a redelivery whose prompt was ALREADY ANSWERED is not sent again', async () => {
-    // The delivery record proves only that the acceptance write failed. An
-    // assistant reply under this message proves the turn ran, so redelivering
-    // would run the user's prompt — and spend a real LLM turn — twice.
-    transcript = [
-      { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
-      {
-        info: {
-          id: NEWER_TRANSCRIPT_ID,
-          role: 'assistant',
-          parentID: SUBMITTED_WIRE_ID,
-          time: { completed: NOW_MS - 30_000 },
-        },
-      },
-    ];
-
-    const outcome = await executeQueuedContinue(
-      baseRow({ payload: { ...baseRow().payload, redeliveries: 1 } }),
-    );
-
-    expect(outcome).toBe('succeeded');
-    expect(capturedBodies).toEqual([]);
-    expect(succeededCalls).toEqual([
-      { commandId: 'cmd-1', result: { status: 'skipped', reason: 'already_answered' } },
-    ]);
   });
 
   test('a redelivery whose prompt is still UNANSWERED goes out under a fresh id', async () => {

@@ -95,13 +95,13 @@ const CLAIMED_POLL_MS = 100;
  * re-minted wire id, and the user saw the same prompt twice — once unanswered,
  * once answered (the "KNOWN COST" documented in `holdInboxPrompts`). The
  * exclusion was invisible to the unit tests because every one of them stubs
- * `listStopPaused`; see the compiled-SQL test that now pins it.
+ * `listStopPaused`; integration-prompt-inbox runs it on real rows.
  *
  * A row that is `queued` and held (this settle's own `holdAsQueued` outcome,
  * or a prompt that never went out) is still excluded — by `status`
  * (`succeeded`) and by `result.status`, not by the held marker.
  */
-export function stopPausedOnWireScope(sessionId: string) {
+function stopPausedOnWireScope(sessionId: string) {
   return and(
     inboxScope(sessionId),
     eq(sessionLifecycleCommands.status, 'succeeded'),

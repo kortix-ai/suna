@@ -369,15 +369,8 @@ describe('executeQueuedContinue — inbox prompts across a staged revert', () =>
     expect(succeededCalls).toEqual([]);
     expect(failedCalls).toEqual([]);
     expect(events).toContain('prompt');
-  });
-
-  test('the guard does not even read the sandbox for a never-waited inbox row', async () => {
-    // A read that cannot change the outcome is a 5s timeout on the delivery
-    // path of every single composer send.
-    sessionInfoBody = { id: OC_SESSION_ID, revert: { messageID: 'msg-99' } };
-
-    await executeQueuedContinue(inboxRow());
-
+    // The guard never even reads the sandbox for a never-waited inbox row: a
+    // read that cannot change the outcome is a 5s timeout on every send.
     expect(events.some((e) => e.startsWith('fetch:'))).toBe(false);
   });
 
