@@ -270,9 +270,8 @@ describe('daemon proxy auth gate', () => {
 
     finalizeInitialSession(bootState, 'ses_root_abc')
 
+    // The gate lets the caller through to OpenCode (unreachable here: 502).
     expect((await request()).status).toBe(502)
-    const health = (await (await app.request('/kortix/health')).json()) as { runtimeReady: boolean }
-    expect(health.runtimeReady).toBe(true)
   })
 
   it('keeps OpenCode proxy disabled when auto-clone is enabled but no repo is present', async () => {

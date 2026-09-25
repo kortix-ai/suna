@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { loadOpenCodeConfig as loadConfig } from '../harness/open-code/config'
-import { resolveHintedOpencodeConfigDir } from '../harness/open-code/config'
 import { __setScaffoldRepoPathForTests, buildFastBootBundleUrl, isShallowRepo, materializeRepo } from '../git'
 
 const roots: string[] = []
@@ -220,18 +219,3 @@ describe('fast-boot delta materialization', () => {
   }, 20_000)
 })
 
-describe('resolveHintedOpencodeConfigDir', () => {
-  const cfg = loadConfig({ KORTIX_PROJECT_TARGET: '/workspace', KORTIX_DEFAULT_OPENCODE_CONFIG_DIR: '/ephemeral/oc' })
-  test('maps the API hint to the dir OpenCode will read at Instance init', () => {
-    expect(resolveHintedOpencodeConfigDir({ ...cfg, opencodeConfigDirHint: '.kortix/opencode' })).toBe(
-      '/workspace/.kortix/opencode',
-    )
-    expect(resolveHintedOpencodeConfigDir({ ...cfg, opencodeConfigDirHint: '' })).toBe('/ephemeral/oc')
-    expect(resolveHintedOpencodeConfigDir({ ...cfg, opencodeConfigDirHint: undefined })).toBeNull()
-  })
-  test('refuses anything that is not a plain relative path', () => {
-    for (const bad of ['/etc', '../x', 'a/../b', '-flag', ':(top)*']) {
-      expect(resolveHintedOpencodeConfigDir({ ...cfg, opencodeConfigDirHint: bad })).toBeNull()
-    }
-  })
-})

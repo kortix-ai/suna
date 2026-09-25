@@ -77,10 +77,10 @@ describe('wallet failure branches', () => {
     ).rejects.toThrow('Failed query');
   });
 
-  test('a reset refused as a duplicate is a no-op, and any other failure propagates', async () => {
+  // The duplicate half (a replayed reset is a no-op) is proven on PostgreSQL by
+  // tests/migration/wallet-ledger.test.ts "a replayed reset key is a silent no-op".
+  test('a reset failure other than a duplicate propagates', async () => {
     const renewal = { accountId: 'acct', amount: 5, description: 'x', key: { event: 'in_1' } };
-    executeError = duplicate;
-    await expect(wallet.reset(renewal)).resolves.toBeUndefined();
     executeError = lostConnection;
     await expect(wallet.reset(renewal)).rejects.toThrow('Failed query');
   });

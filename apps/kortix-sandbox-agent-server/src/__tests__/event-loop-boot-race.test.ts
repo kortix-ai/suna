@@ -95,7 +95,7 @@ describe('event-loop boot race — the SSE subscribe must not sleep through open
     const harness = createOpenCodeHarnessService({
       workspace: '/seed',
       opencodeInternalPort: server.port,
-    } as Config, '/seed-config')
+    } as Config)
     // Construction must not spawn OpenCode or subscribe using seed config.
     expect(harness.native.getPid()).toBeNull()
     expect(requestedWorkspaces).toEqual([])

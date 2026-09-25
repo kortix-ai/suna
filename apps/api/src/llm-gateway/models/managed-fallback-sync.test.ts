@@ -10,27 +10,16 @@ import { MANAGED_MODELS } from '@kortix/llm-catalog';
 // Imported across app boundaries ON PURPOSE: this file is the tripwire that
 // fails the moment the managed lineup and that hand-maintained table drift.
 import { BUNDLED_MANAGED_MODELS } from '../../../../kortix-sandbox-agent-server/src/harness/open-code/lifecycle';
-import { gatewayModelCatalog } from './catalog-models';
 
 const managedIds = MANAGED_MODELS.map((m) => m.id).sort();
 const bundledIds = Object.keys(BUNDLED_MANAGED_MODELS).sort();
 
 describe('daemon bundled managed set vs the managed lineup', () => {
-  test('every @kortix/llm-catalog managed model exists in the daemon fallback', () => {
-    const missing = managedIds.filter((id) => !BUNDLED_MANAGED_MODELS[id]);
-    expect(missing).toEqual([]);
-  });
-
-  // The other direction matters just as much: a bundled entry for a model the
-  // gateway no longer serves resolves as model_not_found and 400s every turn
-  // that selects it (for example, a stale DeepSeek V4 Flash fallback entry).
-  test('the daemon fallback advertises no model the managed lineup dropped', () => {
-    const extra = bundledIds.filter((id) => !managedIds.includes(id));
-    expect(extra).toEqual([]);
-  });
-
-  test('the fallback matches what the gateway actually serves as managed-only', () => {
-    expect(bundledIds).toEqual(Object.keys(gatewayModelCatalog(undefined)).sort());
+  // Both directions matter. A served model missing from the fallback answers
+  // ModelNotFound; a fallback entry the lineup dropped resolves as
+  // model_not_found and 400s every turn that selects it.
+  test('the daemon fallback lists exactly the @kortix/llm-catalog managed lineup', () => {
+    expect(bundledIds).toEqual(managedIds);
   });
 
   test('every bundled managed entry is branded as a Kortix-managed bare id', () => {

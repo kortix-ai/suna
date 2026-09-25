@@ -153,14 +153,13 @@ describe('auth', () => {
 
   it('keeps an ordinary refresh open to a proxied caller', async () => {
     // Only the destructive flag needs the direct call: a user pulling their own
-    // workspace and the API's `config_dir=1` reload keep working without it.
-    for (const path of ['/kortix/refresh', '/kortix/refresh?restart=0&config_dir=1']) {
-      const res = await app({}).request(path, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}` },
-      })
-      expect(res.status).toBe(409)
-    }
+    // workspace keeps working without it. No repo here, so the repo work
+    // answers 409; the gate did not refuse it.
+    const res = await app({}).request('/kortix/refresh', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}` },
+    })
+    expect(res.status).toBe(409)
   })
 
   it('rejects an invalid base_sha before any Git execution', async () => {

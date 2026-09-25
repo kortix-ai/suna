@@ -131,14 +131,27 @@ describe('daemon file write routes', () => {
     })
   }
 
-  it('health advertises file import and append while preserving existing health fields', async () => {
+  it('health advertises file import, append and config releases while preserving existing health fields', async () => {
     const response = await fetch(`${base}/kortix/health`)
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({
+    const body = (await response.json()) as Record<string, unknown>
+    expect(body).toMatchObject({
       daemon: 'ok',
       opencode: 'ok',
-      capabilities: ['file.import', 'file.append'],
+      capabilities: ['file.import', 'file.append', 'config.release.v1'],
     })
+    // docs/specs/config-releases.md, "Health": the config block and the
+    // legacy config_dir_sha field.
+    expect(Object.keys(body.config as object).sort()).toEqual([
+      'desired_release_id',
+      'failed_release_id',
+      'fallback_reason',
+      'mode',
+      'proven',
+      'release_id',
+      'source',
+    ])
+    expect(body).toHaveProperty('config_dir_sha')
   })
 
   it('uploads a file via the `path` + `file` convention', async () => {

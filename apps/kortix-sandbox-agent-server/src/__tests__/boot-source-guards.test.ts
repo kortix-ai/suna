@@ -1,6 +1,6 @@
 /**
- * Ordering contracts inside `harness/open-code/boot.ts` that no behavioral test
- * reaches yet.
+ * Ordering contracts inside `harness/open-code/boot.ts` (and the one boot path it
+ * hands the clone to, `boot-config-path.ts`) that no behavioral test reaches yet.
  *
  * `startSessionRuntime` and `maybeCreateInitialOpencodeSession` are private and
  * run only inside a full boot. Until a boot keeper drives them over a fake
@@ -9,7 +9,7 @@
  * prevents. They are the ONLY source-text assertions allowed on boot.ts.
  *
  * Rules for this file:
- * - Read boot.ts through `code()`, which strips comments first. A guard that
+ * - Read sources through `stripComments()` first. A guard that
  *   matched a word inside a comment once passed with the `return` it named
  *   deleted from the code.
  * - Anchor each assertion inside the function or block that owns it.
@@ -55,6 +55,9 @@ function stripComments(src: string): string {
 }
 
 const BOOT = stripComments(readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8'))
+const BOOT_PATH = stripComments(
+  readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'boot-config-path.ts'), 'utf8'),
+)
 
 /** The text of one top-level function, from its declaration to the next one. */
 function fn(signature: string): string {
@@ -75,48 +78,31 @@ function expectOrder(body: string, needles: string[]): void {
 }
 
 describe('runOpenCode: early spawn', () => {
-  test('the LLM proxy is up before compiled OpenCode spawns', () => {
+  test('the LLM proxy is up before OpenCode can spawn', () => {
     // OpenCode's provider baseURL points at the local proxy; a spawn before it
     // listens boots a provider map that answers nothing.
     expectOrder(BOOT, [
       'const llmUrl = startLlmProxy(',
       'process.env.KORTIX_LLM_PROXY_URL = llmUrl',
-      'const compiledOpencodeStartPromise',
-      'await opencode.start()',
+      'await bootOpenCodeConfig({',
     ])
   })
 
-  test('compiled OpenCode starts before the checkout is awaited', () => {
-    // The compiled config needs no checkout; waiting for it cost the whole
-    // clone on every compiled boot.
-    const repo = BOOT.indexOf('const repoMaterializePromise')
-    const compiledStart = BOOT.indexOf('const compiledOpencodeStartPromise', repo)
-    const checkoutWait = BOOT.indexOf('await repoMaterializePromise', compiledStart)
-    expect(repo).toBeGreaterThan(-1)
-    expect(compiledStart).toBeGreaterThan(repo)
-    expect(checkoutWait).toBeGreaterThan(compiledStart)
-    expect(BOOT.slice(compiledStart, checkoutWait)).toContain('await opencode.start()')
+  test('OpenCode spawns before the checkout completes: the clone is handed over, never awaited here', () => {
+    // Waiting for the checkout before the spawn cost the whole clone on every
+    // boot. The boot path owns the clone promise and starts OpenCode first.
+    expect(BOOT).not.toContain('await repoMaterializePromise')
+    const bootPath = BOOT.indexOf('await bootOpenCodeConfig({')
+    expect(bootPath).toBeGreaterThan(BOOT.indexOf('const repoMaterializePromise'))
+    expect(BOOT.slice(bootPath, BOOT.indexOf('onReady:', bootPath))).toContain('workspace: repoMaterializePromise')
+    expectOrder(BOOT_PATH, ['const started = input.start()', 'await input.workspace'])
   })
 
-  test('the workspace gate closes only for an early spawn and opens only once the workspace is complete', () => {
+  test('the workspace gate is closed before the lifecycle exists', () => {
     // An Instance created before the checkout keeps a tool registry whose
-    // imports failed, for the life of the process. The gate was once opened
-    // right after start(), which made the fix inert (the gate opened ~170 ms
-    // before the checkout landed).
-    expect(BOOT).toContain('if (earlyOpencodeConfigDir) bootState.workspaceReady = false')
-    const early = BOOT.slice(
-      BOOT.indexOf('const earlyOpencodeStartPromise'),
-      BOOT.indexOf('const compiledOpencodeConfigDir'),
-    )
-    expect(early).not.toContain('markWorkspaceReady')
-    expectOrder(BOOT, [
-      'await ensureOpencodeConfigDeps(opencodeConfigDir)',
-      'await ensureInjectedManagedSkills(opencodeConfigDir)',
-      'harness.configuration.reconfigure(cfg, opencodeConfigDir, projectEnv)',
-      'opencode.markWorkspaceReady()',
-      'const reloaded = await harness.configuration.reloadForWorkspace()',
-      'await opencode.restart()',
-    ])
+    // imports failed, for the life of the process. Where the gate opens (once,
+    // after the proof) is boot-path-tripwire T3.
+    expectOrder(BOOT, ['bootState.workspaceReady = false', 'const harness = createOpenCodeHarnessService('])
   })
 })
 
@@ -133,9 +119,11 @@ describe('startSessionRuntime', () => {
     expect(runtime.slice(subscribeAt, attemptAt)).not.toContain('await harness.events.subscribe')
   })
 
-  test('both runtime-ready exits run the one ready tail, and it pushes the boot projection', () => {
-    expect(runtime.split('runtimeReadyTail(cfg, bootState)').length - 1).toBe(2)
-    expect(fn('function runtimeReadyTail(')).toContain("scheduleRuntimeProjectionPush('boot')")
+  test('both runtime-ready exits run the one ready tail: boot projection push and config convergence', () => {
+    expect(runtime.split('runtimeReadyTail(opencode, cfg, bootState, bootMark)').length - 1).toBe(2)
+    const tail = fn('function runtimeReadyTail(')
+    expect(tail).toContain("scheduleRuntimeProjectionPush('boot')")
+    expect(tail).toContain('scheduleConvergenceAfterReady(opencode, cfg, bootMark)')
   })
 })
 

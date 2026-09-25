@@ -379,3 +379,126 @@ describe('ensureOpencodeConfigDeps working-tree cleanliness', () => {
     }
   })
 })
+
+// A config RELEASE is the platform's own copy (/opt/kortix/config/<id>), not
+// the user's tree. OpenCode is spawned on the boot link, a SYMLINK to it, and
+// npm's Arborist re-extracts the whole node_modules tree when its root path is
+// a symlink: 5.4–9.6 s instead of 1.85 s on a real 2-vCPU box for the
+// old-starter dependency set (boot regression, 2026-09-22). The release is
+// therefore prepared so OpenCode's installer has nothing to do.
+describe('ensureOpencodeConfigDeps on a platform-owned release copy', () => {
+  const oldStarter = {
+    name: 'kortix-opencode-config',
+    private: true,
+    dependencies: {
+      '@mendable/firecrawl-js': '^4.25.1',
+      '@opencode-ai/plugin': '1.17.11',
+      '@tavily/core': '^0.7.3',
+      replicate: '^1.4.0',
+    },
+    overrides: { axios: '1.18.0', 'form-data': '4.0.6' },
+  }
+
+  async function makeRelease(pkg: object) {
+    const root = await mkdtemp(join(tmpdir(), 'oc-deps-release-'))
+    const configDir = join(root, 'release')
+    const bakedDir = join(root, 'baked')
+    await mkdir(configDir, { recursive: true })
+    await mkdir(join(bakedDir, 'node_modules'), { recursive: true })
+    await writeFile(join(configDir, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`)
+    await writeFile(join(configDir, 'bun.lock'), '{"lockfileVersion":1,"project":true}\n')
+    await writeFile(join(bakedDir, 'bun.lock'), '{"lockfileVersion":1,"baked":true}\n')
+    await writeFile(
+      join(bakedDir, 'package.json'),
+      JSON.stringify({ dependencies: { ...oldStarter.dependencies, '@opencode-ai/plugin': '1.18.23' } }),
+    )
+    return { root, configDir, bakedDir }
+  }
+
+  /** A fake `bun install`: installs every dependency the staged package.json declares. */
+  function installDeclared(seen: { pin?: unknown }, skip: string[] = []) {
+    return async (stagingDir: string) => {
+      const pkg = JSON.parse(await readFile(join(stagingDir, 'package.json'), 'utf8'))
+      seen.pin = pkg.dependencies?.['@opencode-ai/plugin']
+      for (const name of Object.keys(pkg.dependencies ?? {})) {
+        if (skip.includes(name)) continue
+        await mkdir(join(stagingDir, 'node_modules', name), { recursive: true })
+        await writeFile(join(stagingDir, 'node_modules', name, 'package.json'), JSON.stringify({ name }))
+      }
+    }
+  }
+
+  it('pins the plugin to the baked binary version before installing, as OpenCode would', async () => {
+    const { root, configDir, bakedDir } = await makeRelease(oldStarter)
+    try {
+      const seen: { pin?: unknown } = {}
+      await ensureOpencodeConfigDeps(configDir, { bakedDir, install: installDeclared(seen), platformOwned: true })
+
+      expect(seen.pin).toBe('1.18.23')
+      const packageJson = JSON.parse(await readFile(join(configDir, 'package.json'), 'utf8'))
+      expect(packageJson.dependencies['@opencode-ai/plugin']).toBe('1.18.23')
+      expect(packageJson.overrides).toEqual(oldStarter.overrides)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('writes the install sentinel for a customized dependency set once every name is installed', async () => {
+    const { root, configDir, bakedDir } = await makeRelease(oldStarter)
+    try {
+      await ensureOpencodeConfigDeps(configDir, { bakedDir, install: installDeclared({}), platformOwned: true })
+
+      const packageLock = JSON.parse(await readFile(join(configDir, 'package-lock.json'), 'utf8'))
+      expect(packageLock.kortixOpenCodeInstallSentinel).toBe(1)
+      expect(Object.keys(packageLock.packages[''].dependencies).sort()).toEqual([
+        '@mendable/firecrawl-js',
+        '@opencode-ai/plugin',
+        '@tavily/core',
+        'replicate',
+      ])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps OpenCode’s installer when a declared dependency did not install', async () => {
+    const { root, configDir, bakedDir } = await makeRelease(oldStarter)
+    try {
+      await ensureOpencodeConfigDeps(configDir, {
+        bakedDir,
+        install: installDeclared({}, ['replicate']),
+        platformOwned: true,
+      })
+
+      expect(await exists(join(configDir, 'package-lock.json'))).toBe(false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps OpenCode’s installer when the plugin is neither declared nor installed', async () => {
+    const { root, configDir, bakedDir } = await makeRelease({ name: 'custom', dependencies: { replicate: '^1.4.0' } })
+    try {
+      await ensureOpencodeConfigDeps(configDir, { bakedDir, install: installDeclared({}), platformOwned: true })
+
+      expect(await exists(join(configDir, 'package-lock.json'))).toBe(false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves a working-tree config exactly as before: no pin rewrite, no sentinel', async () => {
+    const { root, configDir, bakedDir } = await makeRelease(oldStarter)
+    try {
+      const seen: { pin?: unknown } = {}
+      await ensureOpencodeConfigDeps(configDir, { bakedDir, install: installDeclared(seen) })
+
+      expect(seen.pin).toBe('1.17.11')
+      const packageJson = JSON.parse(await readFile(join(configDir, 'package.json'), 'utf8'))
+      expect(packageJson.dependencies['@opencode-ai/plugin']).toBe('1.17.11')
+      expect(await exists(join(configDir, 'package-lock.json'))).toBe(false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})

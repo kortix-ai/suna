@@ -115,25 +115,29 @@ describe('native configuration behind the host boundary', () => {
       opencodeInternalPort: 4096,
       opencodeStandbyPort: 4097,
       defaultOpencodeConfigDir: DEFAULT_DIR,
-      opencodeConfigDirHint: undefined,
     })
+    // The API's boot-time config-dir HINT is gone: the boot path asks the API
+    // for the release itself, so no second, earlier answer exists to disagree.
+    expect('opencodeConfigDirHint' in native).toBe(false)
   })
 
-  test('reads supplied host and native overrides, including an empty boot hint', () => {
+  test('reads supplied host and native overrides', () => {
     const native = loadOpenCodeConfig({
       KORTIX_SERVICE_PORT: '8123',
       KORTIX_OPENCODE_INTERNAL_PORT: '4123',
       KORTIX_OPENCODE_STANDBY_PORT: '4124',
       KORTIX_DEFAULT_OPENCODE_CONFIG_DIR: '/custom/native/config',
-      KORTIX_OPENCODE_CONFIG_DIR_HINT: '',
+      KORTIX_OPENCODE_CONFIG_DIR_HINT: '.kortix/opencode',
     })
     expect(native).toMatchObject({
       servicePort: 8123,
       opencodeInternalPort: 4123,
       opencodeStandbyPort: 4124,
       defaultOpencodeConfigDir: '/custom/native/config',
-      opencodeConfigDirHint: '',
     })
+    // A stale hint from an older API is READ BY NOTHING, so it cannot steer a
+    // boot any more.
+    expect('opencodeConfigDirHint' in native).toBe(false)
     expect(() => loadOpenCodeConfig({ KORTIX_OPENCODE_INTERNAL_PORT: 'invalid' })).toThrow()
   })
 })

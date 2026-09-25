@@ -558,6 +558,7 @@ This page lists 677 route actions and 64 other events.
 | `project.cli_token.create` | Created project CLI token | `POST /v1/projects/:projectId/cli-token` |
 | `project.cli_token.list` | Listed project CLI tokens | `GET /v1/projects/:projectId/cli-token` |
 | `project.cli_token.revoke` | Revoked project CLI token | `DELETE /v1/projects/:projectId/cli-token/:tokenId` |
+| `project.config_archive.download` | Downloaded project config archive | `GET /v1/projects/:projectId/config-archives/:configTreeId` |
 | `project.create` | Created project | `POST /v1/projects` |
 | `project.default_agent.update` | Updated default agent | `PUT /v1/projects/:projectId/default-agent` |
 | `project.delete` | Deleted project | `DELETE /v1/projects/:projectId` |
@@ -718,6 +719,7 @@ This page lists 677 route actions and 64 other events.
 | `session.agent_config.reload` | Reloaded session agent config | `POST /v1/projects/:projectId/sessions/:sessionId/reload` (also `POST /v1/projects/:projectId/sessions/:sessionId/reload-stream`) |
 | `session.attachment.download` | Downloaded session attachment | `GET /v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId` |
 | `session.attachment.upload` | Uploaded session attachment | `POST /v1/projects/:projectId/sessions/:sessionId/attachments` |
+| `session.config_release.resolve` | Resolved session config release | `POST /v1/projects/:projectId/sessions/:sessionId/config-release` |
 | `session.create` | Created session | `POST /v1/projects/:projectId/sessions` |
 | `session.delete` | Deleted session | `DELETE /v1/projects/:projectId/sessions/:sessionId` |
 | `session.environment.read` | Viewed session environment | `GET /v1/projects/:projectId/sessions/:sessionId/environment` |

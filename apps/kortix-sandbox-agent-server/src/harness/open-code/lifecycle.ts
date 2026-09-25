@@ -16,6 +16,9 @@ import { spawn, type ChildProcess } from 'node:child_process'
  * `turnEnded` is only ever true for the respawn path — a dispose re-reads the
  * config in place and interrupts nothing.
  */
+/** How long a candidate opencode gets to start serving, and pass the proven check, before we give up. */
+export const VERIFY_READY_TIMEOUT_MS = 90_000
+
 export interface ReloadConfigResult {
   how: 'disposed' | 'restarted' | 'kept-old'
   turnEnded: boolean | null
@@ -35,10 +38,37 @@ export type VerifiedReloadResult =
        */
       turnEnded: boolean | null
     }
-  | { outcome: 'kept-old'; reason: string }
+  | {
+      outcome: 'kept-old'
+      reason: string
+      /**
+       * True when a candidate spawned and then failed: it never served, or it
+       * failed the caller's `prove` check. False when the reload could not
+       * start a candidate at all (no binary, shutdown, desynced ports). Only a
+       * candidate failure says anything about the config.
+       */
+      candidateFailed?: boolean
+    }
+
+/**
+ * A caller-supplied check on the candidate, after it serves the session API
+ * and before it is promoted. `deadline` is the end of the verify budget, in
+ * epoch milliseconds.
+ */
+export type CandidateProof = (
+  baseUrl: string,
+  deadline: number,
+) => Promise<{ ok: true } | { ok: false; reason: string }>
+
+export interface VerifiedReloadOptions {
+  forceFail?: boolean
+  /** Runs on the candidate before promotion; a failure keeps the running process. */
+  prove?: CandidateProof
+}
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { OPENCODE_HOME } from './paths'
+import { describeOpencodeError, isConfigErrorName } from './proven-check'
 import { access, constants, open, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
@@ -55,6 +85,8 @@ import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
 } from '../../secret-capabilities'
+import { configReleaseNoticePath } from '../../config-release/notice'
+import { bootLinkPath } from '../../boot-config'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -254,6 +286,8 @@ export async function buildOpencodeConfigContent(
   opts: {
     injectedSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    /** The config-release notice, when one exists (config-release/notice.ts). */
+    configReleaseNoticePath?: string | null
   } = {},
 ): Promise<string | undefined> {
   const connectorToken = env.KORTIX_TOKEN
@@ -362,13 +396,14 @@ export async function buildOpencodeConfigContent(
   }
   const out: Record<string, unknown> = { ...base }
 
-  if (secretCapabilitiesInstructionPath) {
+  // Instruction files the platform contributes. Appended, never clobbering
+  // what the project's own config declares.
+  for (const instructionPath of [secretCapabilitiesInstructionPath, opts.configReleaseNoticePath]) {
+    if (!instructionPath) continue
     const instructions = Array.isArray(out.instructions)
       ? out.instructions.filter((item): item is string => typeof item === 'string')
       : []
-    out.instructions = instructions.includes(secretCapabilitiesInstructionPath)
-      ? instructions
-      : [...instructions, secretCapabilitiesInstructionPath]
+    out.instructions = instructions.includes(instructionPath) ? instructions : [...instructions, instructionPath]
   }
 
   // (5) Injected managed skills — append to whatever `skills.paths` the base
@@ -804,11 +839,13 @@ export async function writeKortixOpencodeConfig(
     configPath?: string
     injectedSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    configReleaseNoticePath?: string | null
   } = {},
 ): Promise<string | null> {
   const content = await buildOpencodeConfigContent(env, {
     injectedSkillsDir: opts.injectedSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
+    configReleaseNoticePath: opts.configReleaseNoticePath,
   })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
@@ -1581,8 +1618,13 @@ export type Opencode = HarnessLifecycleService & {
    * before they ever reach a sandbox, so no supported input can produce a
    * config that fails to start.
    */
-  reloadVerified(opts?: { forceFail?: boolean }): Promise<VerifiedReloadResult>
-  reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore): void
+  reloadVerified(opts?: VerifiedReloadOptions): Promise<VerifiedReloadResult>
+  /**
+   * Re-bind the session's configuration and project env. It does NOT name a
+   * config directory: `OPENCODE_CONFIG_DIR` is the boot link, and what OpenCode
+   * reads is changed by repointing that link (`pointBootLink`).
+   */
+  reconfigure(nextCfg: Config, nextProjectEnv?: ProjectEnvStore): void
   getPid(): number | null
   getInternalUrl(): string
   /**
@@ -1660,12 +1702,10 @@ export interface OpencodeLifecycleOptions {
 
 export function createOpencodeLifecycle(
   cfg: Config,
-  opencodeConfigDir: string,
   projectEnv?: ProjectEnvStore,
   options: OpencodeLifecycleOptions = {},
 ): Opencode {
   let currentCfg = cfg
-  let currentOpencodeConfigDir = opencodeConfigDir
   let currentProjectEnv = projectEnv
   let child: ChildProcess | null = null
   let activePort = cfg.opencodeInternalPort
@@ -1759,9 +1799,12 @@ export function createOpencodeLifecycle(
    */
   /**
    * Compose + write the Kortix OpenCode config exactly as a spawn does: the
-   * injected managed-skills dir under the CURRENT config dir and the secret
-   * capability instruction. Shared by spawn and by the in-place reloads so a
-   * reload can never drop a contributor the spawn declared.
+   * injected managed-skills dir under the CURRENT config dir, the secret
+   * capability instruction, and the config-release notice that tells the
+   * session which commit's config it runs. Shared by spawn and by the
+   * in-place reloads so a reload can never drop a contributor the spawn
+   * declared — which is what makes the notice survive the restart a
+   * convergence performs.
    */
   async function writeComposedConfig(baseEnv: NodeJS.ProcessEnv): Promise<string | null> {
     let secretCapabilitiesInstructionPath: string | null = null
@@ -1774,8 +1817,9 @@ export function createOpencodeLifecycle(
     }
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
-      injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
+      injectedSkillsDir: join(bootLinkPath(), 'skills'),
       secretCapabilitiesInstructionPath,
+      configReleaseNoticePath: configReleaseNoticePath(),
     })
   }
 
@@ -1798,7 +1842,11 @@ export function createOpencodeLifecycle(
     let env: NodeJS.ProcessEnv = applyManagedOpencodeEnv({
       ...baseEnv,
       ...buildGitIdentityEnv(currentCfg),
-      OPENCODE_CONFIG_DIR: currentOpencodeConfigDir,
+      // THE one assignment of OpenCode's config dir, in the whole daemon
+      // (PLAN-one-boot-path T1). It is always the boot link, so changing what
+      // OpenCode reads is one atomic `pointBootLink` and never a second env
+      // writer, a hint, or a spawn-time decision.
+      OPENCODE_CONFIG_DIR: bootLinkPath(),
       // Every non-interactive shell opencode spawns (`bash -c`) sources this,
       // so live project secrets reach the agent's commands without any
       // opencode plugin/config. Interactive shells + terminals get it from the
@@ -2069,8 +2117,6 @@ export function createOpencodeLifecycle(
     }, delay)
   }
 
-  /** How long a candidate opencode gets to start serving before we give up. */
-  const VERIFY_READY_TIMEOUT_MS = 90_000
 
   /**
    * Reload the config by BOOTING THE NEW OPENCODE FIRST.
@@ -2100,13 +2146,14 @@ export function createOpencodeLifecycle(
    * the caller must either promote it or retire it.
    */
   async function verifyCandidateBoots(
-    opts: { forceFail?: boolean } = {},
+    opts: VerifiedReloadOptions = {},
   ): Promise<
     | { ok: true; candidate: ChildProcess; port: number }
-    | { ok: false; reason: string }
+    | { ok: false; reason: string; candidateFailed: boolean }
   > {
-    if (!binaryPath) return { ok: false, reason: 'opencode binary not resolved yet' }
-    if (stopping) return { ok: false, reason: 'lifecycle is shutting down' }
+    const deadline = Date.now() + VERIFY_READY_TIMEOUT_MS
+    if (!binaryPath) return { ok: false, reason: 'opencode binary not resolved yet', candidateFailed: false }
+    if (stopping) return { ok: false, reason: 'lifecycle is shutting down', candidateFailed: false }
 
     const candidatePort = livePort() === currentCfg.opencodeInternalPort
       ? currentCfg.opencodeStandbyPort
@@ -2123,13 +2170,17 @@ export function createOpencodeLifecycle(
         candidatePort,
         pid: child?.pid ?? null,
       })
-      return { ok: false, reason: `port ${candidatePort} already answers; the port pair is desynced` }
+      return {
+        ok: false,
+        reason: `port ${candidatePort} already answers; the port pair is desynced`,
+        candidateFailed: false,
+      }
     }
     let candidate: ChildProcess
     try {
       candidate = await spawnChild(binaryPath, { port: candidatePort, supervise: false })
     } catch (err) {
-      return { ok: false, reason: `could not spawn candidate: ${(err as Error).message}` }
+      return { ok: false, reason: `could not spawn candidate: ${(err as Error).message}`, candidateFailed: true }
     }
 
     // Fault injection (see the `verify_fail` note on POST /kortix/refresh).
@@ -2137,14 +2188,41 @@ export function createOpencodeLifecycle(
     // the point is to exercise the ACTUAL decline path — candidate spawned,
     // candidate retired, incumbent untouched — rather than a shortcut that
     // proves only the plumbing.
-    const candidateReady = await probeUntilReady(candidatePort, VERIFY_READY_TIMEOUT_MS, candidate)
+    const probeFailure: { reason?: string } = {}
+    const candidateReady = await probeUntilReady(
+      candidatePort,
+      Math.max(0, deadline - Date.now()),
+      candidate,
+      probeFailure,
+    )
     const ready = candidateReady && !opts.forceFail
     if (!ready) {
       await killProcessGroup(candidate, 'SIGTERM').catch(() => {})
       logger.warn('[opencode] candidate never became ready; keeping the running instance', {
         candidatePort,
+        cause: probeFailure.reason ?? null,
       })
-      return { ok: false, reason: 'the new opencode did not start; the previous one is still running' }
+      // The concrete cause, when the candidate showed one: a config error it
+      // answered with, or its exit. Found at once, not at the 90 s deadline.
+      if (probeFailure.reason && !opts.forceFail) {
+        return { ok: false, reason: probeFailure.reason, candidateFailed: true }
+      }
+      // prettier-ignore
+      return { ok: false, reason: 'the new opencode did not start; the previous one is still running', candidateFailed: true }
+    }
+    if (opts.prove) {
+      const proof = await opts.prove(`http://127.0.0.1:${candidatePort}`, deadline).catch((err: unknown) => ({
+        ok: false as const,
+        reason: `proven check threw: ${err instanceof Error ? err.message : String(err)}`,
+      }))
+      if (!proof.ok) {
+        await killProcessGroup(candidate, 'SIGTERM').catch(() => {})
+        logger.warn('[opencode] candidate failed the proven check; keeping the running instance', {
+          candidatePort,
+          reason: proof.reason,
+        })
+        return { ok: false, reason: proof.reason, candidateFailed: true }
+      }
     }
     logger.info('[opencode] candidate config verified', { candidatePort })
     return { ok: true, candidate, port: candidatePort }
@@ -2165,20 +2243,36 @@ export function createOpencodeLifecycle(
     port: number,
     timeoutMs: number,
     proc: ChildProcess,
+    failure: { reason?: string } = {},
   ): Promise<boolean> {
     const deadline = Date.now() + timeoutMs
+    // A config OpenCode refuses to load answers every directory route with a
+    // `Config…` error (ConfigJsonError on a syntax error, measured on 1.18.31).
+    // It will not go away by waiting.
+    const observe = (status: number, text: string) => {
+      if (status < 400 || status >= 500) return
+      try {
+        if (isConfigErrorName((JSON.parse(text) as { name?: unknown }).name)) {
+          failure.reason = describeOpencodeError(status, text, bootLinkPath())
+        }
+      } catch {}
+    }
     while (Date.now() < deadline) {
       if (stopping) return false
-      if (proc.exitCode !== null || proc.signalCode !== null) return false
+      if (proc.exitCode !== null || proc.signalCode !== null) {
+        failure.reason = `the new opencode exited (${proc.exitCode !== null ? `code ${proc.exitCode}` : `signal ${proc.signalCode}`}) before it served`
+        return false
+      }
       // Same rule as the readiness loop: nothing is sent before the candidate
       // announced its handler (or the fallback deadline passed).
       if (!mayProbe(proc)) {
         await new Promise((r) => setTimeout(r, 50))
         continue
       }
-      if (await probeOpencodeSessionApi(`http://127.0.0.1:${port}`, currentCfg.projectTarget, 2_000)) {
+      if (await probeOpencodeSessionApi(`http://127.0.0.1:${port}`, currentCfg.projectTarget, 2_000, observe)) {
         return true
       }
+      if (failure.reason) return false
       await new Promise((r) => setTimeout(r, 500))
     }
     return false
@@ -2425,7 +2519,7 @@ export function createOpencodeLifecycle(
       await killProcessGroup(child, signal)
     },
 
-    async restart() {
+    async restart(opts?: { finalizeTurn?: boolean }) {
       await this.stop('SIGTERM')
       restartDelayMs = 500
       // A restart is where a freshly converged OpenCode must take effect. The
@@ -2435,6 +2529,10 @@ export function createOpencodeLifecycle(
       // kept running until the daemon itself was relaunched).
       binaryResolutionPromise = null
       await this.start()
+      // At boot no turn exists yet, and the fallback chain restarts OpenCode on
+      // configs that may never become ready. Waiting RESPAWN_FINALIZE_TIMEOUT_MS
+      // there only delays the next step by 60 s (verification DEF-4c).
+      if (opts?.finalizeTurn === false) return
       // A PLANNED restart strands its turn exactly like a crash does, and only
       // the crash path was cleaning up: `proc.on('exit')` returns early while
       // `stopping` is set — which `stop()` sets and this goes through — so
@@ -2534,9 +2632,9 @@ export function createOpencodeLifecycle(
     },
 
     /** Promote the verified process before retiring the previous process. */
-    async reloadVerified(opts: { forceFail?: boolean } = {}): Promise<VerifiedReloadResult> {
+    async reloadVerified(opts: VerifiedReloadOptions = {}): Promise<VerifiedReloadResult> {
       const proven = await verifyCandidateBoots(opts)
-      if (!proven.ok) return { outcome: 'kept-old', reason: proven.reason }
+      if (!proven.ok) return { outcome: 'kept-old', reason: proven.reason, candidateFailed: proven.candidateFailed }
 
       const previous = child
       const previousPort = livePort()
@@ -2579,7 +2677,7 @@ export function createOpencodeLifecycle(
       }
     },
 
-    reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore) {
+    reconfigure(nextCfg: Config, nextProjectEnv?: ProjectEnvStore) {
       currentCfg = nextCfg
       if (
         activePort !== nextCfg.opencodeInternalPort &&
@@ -2587,13 +2685,9 @@ export function createOpencodeLifecycle(
       ) {
         activePort = nextCfg.opencodeInternalPort
       }
-      currentOpencodeConfigDir = nextOpencodeConfigDir
       if (nextProjectEnv) currentProjectEnv = nextProjectEnv
       state = 'starting'
-      logger.info('[opencode] reconfigured', {
-        projectId: nextCfg.projectId,
-        opencodeConfigDir: nextOpencodeConfigDir,
-      })
+      logger.info('[opencode] reconfigured', { projectId: nextCfg.projectId, opencodeConfigDir: bootLinkPath() })
     },
 
     getPid() {
@@ -2636,12 +2730,16 @@ async function probeOpencodeSessionApi(
   baseUrl: string,
   directory: string,
   timeoutMs = 1_000,
+  /** Sees every answer that is not ready, with its body. */
+  observe?: (status: number, text: string) => void,
 ): Promise<boolean> {
   try {
     const res = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(directory)}`, {
       signal: AbortSignal.timeout(timeoutMs),
     })
-    return res.status >= 200 && res.status < 400
+    const ready = res.status >= 200 && res.status < 400
+    if (!ready && observe) observe(res.status, await res.text().catch(() => ''))
+    return ready
   } catch {
     return false
   }

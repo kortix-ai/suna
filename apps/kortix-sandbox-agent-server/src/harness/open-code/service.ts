@@ -53,11 +53,10 @@ export interface OpenCodeHarnessService extends HarnessService {
 /** Create the OpenCode lifecycle and compose every service over it. */
 export function createOpenCodeHarnessService(
   cfg: Config,
-  opencodeConfigDir: string,
   projectEnv?: ProjectEnvStore,
   options: OpencodeLifecycleOptions = {},
 ): OpenCodeHarnessService {
-  return composeOpenCodeHarnessService(cfg, createOpencodeLifecycle(cfg, opencodeConfigDir, projectEnv, options))
+  return composeOpenCodeHarnessService(cfg, createOpencodeLifecycle(cfg, projectEnv, options))
 }
 
 /**
@@ -123,7 +122,7 @@ export const openCodeDefinition: HarnessDefinition = {
   },
   createService: (cfg, projectEnv, options) => {
     const native = requireOpenCodeConfig(cfg)
-    return createOpenCodeHarnessService(native, native.defaultOpencodeConfigDir, projectEnv, options)
+    return createOpenCodeHarnessService(native, projectEnv, options)
   },
   run: async (context) => (await import('./boot')).runOpenCode({ ...context, cfg: requireOpenCodeConfig(context.cfg) }),
   runWarmSeed: async (context) => (await import('./boot')).runOpenCodeWarmSeed({ ...context, cfg: requireOpenCodeConfig(context.cfg) }),

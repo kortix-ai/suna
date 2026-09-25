@@ -36,6 +36,8 @@ import {
   type OpencodeLifecycleOptions,
 } from '../harness/open-code/lifecycle'
 import { createOpenCodeHarnessService } from '../harness/open-code/service'
+import { bootLinkPath } from '../boot-config'
+import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
 import { createProjectEnvStore, type ProjectEnvStore } from '../project-env'
 
 let root: string
@@ -54,6 +56,7 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  restoreTestConfigRoot()
   await lifecycle?.stop()
   for (const pid of grandchildPids()) {
     try {
@@ -201,7 +204,6 @@ if (mode === '503-then-exit') setTimeout(() => process.exit(1), 1_500)
 interface Rig {
   lifecycle: Opencode
   cfg: Config
-  configDir: string
   primary: number
   standby: number
   binary: string
@@ -214,9 +216,7 @@ function rig(
   options: OpencodeLifecycleOptions & { projectEnv?: ProjectEnvStore; binary?: string } = {},
 ): Rig {
   const workspace = join(root, 'workspace')
-  const configDir = join(root, 'config')
   mkdirSync(workspace, { recursive: true })
-  mkdirSync(join(configDir, 'skills'), { recursive: true })
   const binary = options.binary ?? join(root, 'opencode')
   if (!options.binary && !options.binaryPathResolverOverride) writeFakeOpencode(binary)
   const primary = reservePort()
@@ -231,7 +231,7 @@ function rig(
   } as Config
   const marks: Rig['marks'] = []
   const { projectEnv, binary: _binary, ...lifecycleOptions } = options
-  const created = createOpencodeLifecycle(cfg, configDir, projectEnv, {
+  const created = createOpencodeLifecycle(cfg, projectEnv, {
     ...(options.binaryPathResolverOverride ? {} : { binaryPathOverride: binary }),
     configPathOverride: join(root, 'runtime-config.json'),
     ...lifecycleOptions,
@@ -244,7 +244,6 @@ function rig(
   return {
     lifecycle: created,
     cfg,
-    configDir,
     primary,
     standby,
     binary,
@@ -494,10 +493,8 @@ describe('listening announcement', () => {
 describe('verified reload', () => {
   test('harness service promotes verified candidates, preserves failed reloads, and restarts through lifecycle', async () => {
     const workspace = join(root, 'workspace')
-    const configDir = join(root, 'config')
     const binary = join(root, 'opencode')
     mkdirSync(workspace)
-    mkdirSync(configDir)
     writeFakeOpencode(binary)
     const primary = reservePort()
     const standby = reservePort()
@@ -510,7 +507,7 @@ describe('verified reload', () => {
       gitUserEmail: 'agent@kortix.ai',
     } as Config
     let spawned = 0
-    const harness = createOpenCodeHarnessService(cfg, configDir, undefined, {
+    const harness = createOpenCodeHarnessService(cfg, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
       onStartupMark: (label) => {
@@ -654,7 +651,7 @@ describe('verified reload', () => {
 
     // The only code path that rewrites the port variable without touching the
     // process: a config whose pair does not contain the live port.
-    r.lifecycle.reconfigure({ ...r.cfg, opencodeStandbyPort: reservePort() } as Config, r.configDir)
+    r.lifecycle.reconfigure({ ...r.cfg, opencodeStandbyPort: reservePort() } as Config)
 
     expect(r.lifecycle.getActivePort()).toBe(r.standby)
     expect(r.lifecycle.getInternalUrl()).toBe(`http://127.0.0.1:${r.standby}`)
@@ -692,6 +689,10 @@ describe('verified reload', () => {
 describe('reloadConfig', () => {
   test('a confirmed dispose re-reads the config in place, composed like a spawn', async () => {
     setCtl('dispose', 'json-true')
+    // OPENCODE_CONFIG_DIR is the boot link: point it at a real config dir.
+    const configDir = join(root, 'config')
+    mkdirSync(join(configDir, 'skills'), { recursive: true })
+    await serveTestConfigDir(configDir, join(root, 'boot-store'))
     const projectEnv = createProjectEnvStore({})
     const r = rig({ projectEnv })
     const pid = await startReady(r)
@@ -705,7 +706,9 @@ describe('reloadConfig', () => {
     expect(r.lifecycle.getPid()).toBe(pid)
     const config = JSON.parse(readFileSync(join(ctl, 'config-at-dispose.json'), 'utf8'))
     expect(config.theme).toBe('reload-probe')
-    expect(config.skills.paths).toContain(join(r.configDir, 'skills'))
+    // The config dir is the boot link, so a release swap repoints the link and
+    // the injected-skills path keeps resolving.
+    expect(config.skills.paths).toContain(join(bootLinkPath(), 'skills'))
   }, 30_000)
 
   test.each([
@@ -784,6 +787,22 @@ describe('onUnplannedRespawn', () => {
 
     expect(calls).toHaveLength(1)
     expect(await calls[0]!.servedWhenCalled).toBe(true)
+  }, 30_000)
+
+  test('a boot-time restart that asks not to finalize returns without waiting for readiness', async () => {
+    // The boot fallback chain restarts OpenCode on configs that may never
+    // become ready, before any turn exists. Waiting the 60 s finalize budget
+    // there only delays the next fallback step.
+    const { r, calls } = hookRig()
+    await startReady(r)
+    setCtl('session-503')
+
+    const started = Date.now()
+    await r.lifecycle.restart({ finalizeTurn: false })
+
+    expect(Date.now() - started).toBeLessThan(10_000)
+    expect(await sessionAnswers(r.lifecycle.getInternalUrl())).toBe(false)
+    expect(calls).toHaveLength(0)
   }, 30_000)
 
   test('a throwing hook cannot break the restart', async () => {
