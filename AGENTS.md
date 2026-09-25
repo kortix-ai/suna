@@ -111,15 +111,16 @@ symlink to it. Add a skill in `.agents/skills/`, then add the symlink. Third-par
 from `npx skills add` and are pinned in `skills-lock.json`. The PR procedure is the
 **contributing** skill. Browser work is the **agent-browser** skill.
 
-## Learnings: incident rules live in the `learnings` skill
+## Learnings: the episodic ledger in the `learnings` skill
 
-`.agents/skills/learnings/SKILL.md` is the append-only register of rules paid
-for with real downtime — each with the incident that taught it and the
-automation that enforces it. Load it before writing or reviewing a DB
-migration, touching deploy/release workflows, planning a promote, or responding
-to a prod incident. After resolving ANY incident or near-miss, append its rule
-there in the same session — an incident that leaves no learning behind is not
-finished.
+`.agents/skills/learnings/` is the append-only, timestamped ledger of rules paid
+for with real downtime. `MEMORY.md` indexes it newest first, and each entry is
+one file in `entries/`: the rule, the incident that taught it, and the
+automation that enforces it. Search it before writing or reviewing a DB
+migration, touching deploy/release workflows, planning a promote, or
+responding to a prod incident. After resolving ANY incident or near-miss,
+record a new entry in the same session with `scripts/new-entry.sh`. An incident
+that leaves no entry behind is not finished.
 
 ## NEVER write customer data or PII into anything we publish or commit
 

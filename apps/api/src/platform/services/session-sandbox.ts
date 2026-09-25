@@ -417,8 +417,8 @@ export async function provisionSessionSandbox(opts: {
           // those suites die at import with `SyntaxError: Export named
           // 'ensurePiWorkerImage' not found` — attributed to no test, and it
           // takes an unrelated parallel worker down with it. The register's
-          // rule is "fix the import, not the mocks"
-          // (.agents/skills/learnings/SKILL.md:39). This edge is reached once,
+          // rule is "fix the import, not the mocks" (learnings entry
+          // 2026-08-27T142521Z-a-new-import-edge-into-a-widely-mocked-graph-breaks-hand-wri.md). This edge is reached once,
           // on the pi-worker branch only, so deferring it costs nothing and
           // needs no test churn.
           import('../../snapshots/builder').then(({ ensurePiWorkerImage }) =>
