@@ -12,8 +12,10 @@
  * the extracted version, which the lifecycle's unplanned-respawn hook now calls
  * too.
  */
-import { afterEach, describe, expect, test } from 'bun:test'
-
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { finalizeOrphanedTurn } from '../harness/open-code/boot'
 import { TURN_PROBE_WINDOW, inspectOpencodeRoot,
@@ -21,6 +23,7 @@ import { TURN_PROBE_WINDOW, inspectOpencodeRoot,
   opencodeDeliveryInFlight,
   opencodeTurnInFlight,
 } from '../harness/open-code/opencode-turn-state';
+import { writeOpenCodeSessionPin } from '../harness/open-code/runtime-state';
 import { createHealthRouter } from '../routes/health';
 import { createOpenCodeDiagnosticsService, observeRequestedTurn } from '../harness/open-code/diagnostics';
 
@@ -81,9 +84,28 @@ function stubFetch(
   };
 }
 
+// The reload gate asks about the PINNED root, so each test gets its own state
+// directory and pins the root it asks about (or pins nothing).
+let stateDir: string;
+let priorStateDir: string | undefined;
+beforeEach(() => {
+  priorStateDir = process.env.KORTIX_RUNTIME_STATE_DIR;
+  stateDir = mkdtempSync(join(tmpdir(), 'kortix-turn-probe-'));
+  process.env.KORTIX_RUNTIME_STATE_DIR = stateDir;
+});
+
 afterEach(() => {
   (globalThis as { fetch: unknown }).fetch = ORIGINAL_FETCH;
+  if (priorStateDir === undefined) delete process.env.KORTIX_RUNTIME_STATE_DIR;
+  else process.env.KORTIX_RUNTIME_STATE_DIR = priorStateDir;
+  rmSync(stateDir, { recursive: true, force: true });
 });
+
+/** `opencodeTurnInFlight` for the given pinned root (`null` = nothing pinned). */
+function turnInFlightWithPin(root: string | null): Promise<boolean | null> {
+  if (root) writeOpenCodeSessionPin(root);
+  return opencodeTurnInFlight(BASE, WORKSPACE);
+}
 
 const assistantTurn = (completed?: number) => [
   { info: { role: 'user', time: { completed: 1 } } },
@@ -253,12 +275,12 @@ describe('inspectOpencodeRoot — could-not-tell is its own answer', () => {
 
 describe('opencodeTurnInFlight — the reload gate reads this', () => {
   test('no root is a definite false — nothing has ever run in this sandbox', async () => {
-    expect(await opencodeTurnInFlight(BASE, WORKSPACE, null)).toBe(false);
+    expect(await turnInFlightWithPin(null)).toBe(false);
   });
 
   test('a running turn is true', async () => {
     stubFetch(assistantTurn(undefined));
-    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(true);
+    expect(await turnInFlightWithPin(SESSION)).toBe(true);
   });
 
   test('a trailing user message is NO LONGER in flight — it is an orphaned prompt', async () => {
@@ -270,14 +292,14 @@ describe('opencodeTurnInFlight — the reload gate reads this', () => {
     // ALLOWS a restart here, which is exactly what unsticks it, and the inbox
     // redelivers the prompt (see `orphanedPrompt`).
     stubFetch([{ info: { role: 'user', time: { completed: 1 } } }]);
-    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(false);
+    expect(await turnInFlightWithPin(SESSION)).toBe(false);
   });
 
   test('an unreadable box is NULL, so the gate refuses instead of restarting', async () => {
     // The bug this closes: returning false here handed the reload a green light
     // while a turn was running and opencode was merely slow to answer.
     stubFetch(null, { messagesOk: false });
-    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBeNull();
+    expect(await turnInFlightWithPin(SESSION)).toBeNull();
   });
 
   // ASK, DON'T INFER. The step boundary inside ONE turn — latest step completed,
@@ -285,13 +307,13 @@ describe('opencodeTurnInFlight — the reload gate reads this', () => {
   // transcript and plain to `/session/status`. The gate must not restart here.
   test('a busy root is in flight even when the transcript reads finished', async () => {
     stubFetch(assistantTurn(1_700_000_000), { sessionStatus: { [SESSION]: { type: 'busy' } } });
-    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(true);
+    expect(await turnInFlightWithPin(SESSION)).toBe(true);
     expect(calls.some((url) => url.includes('/session/status'))).toBe(true);
   });
 
   test('a retrying root is in flight', async () => {
     stubFetch(assistantTurn(1_700_000_000), { sessionStatus: { [SESSION]: { type: 'retry' } } });
-    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(true);
+    expect(await turnInFlightWithPin(SESSION)).toBe(true);
   });
 
   // The oracle CANNOT clear a husk: an assistant message left open by a writer
@@ -300,7 +322,7 @@ describe('opencodeTurnInFlight — the reload gate reads this', () => {
   // the transcript keeps its one-directional vote.
   test('an idle root does NOT clear an open assistant message left by a dead writer', async () => {
     stubFetch(assistantTurn(undefined), { sessionStatus: { [SESSION]: { type: 'idle' } } });
-    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(true);
+    expect(await turnInFlightWithPin(SESSION)).toBe(true);
   });
 });
 
@@ -490,7 +512,7 @@ describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
       },
     ]);
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
-    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(false);
+    expect(await turnInFlightWithPin(SESSION)).toBe(false);
   });
 
   test('a retryable assistant error remains active during backoff', async () => {
@@ -506,7 +528,7 @@ describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
       },
     ], { sessionStatus: { [SESSION]: { type: 'retry' } } });
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
-    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(true);
+    expect(await turnInFlightWithPin(SESSION)).toBe(true);
   });
 
   test('a completed assistant for the exact user message is terminal', async () => {

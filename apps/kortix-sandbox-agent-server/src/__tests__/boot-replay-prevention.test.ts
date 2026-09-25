@@ -263,7 +263,7 @@ describe('the boot path is wired to the defer outcome, not just resolveExistingR
     // T22: `priorPin` must be captured BEFORE `resolveExistingRoot` runs, so it
     // reflects only what a PRIOR boot pinned — never this boot's own pending
     // write (see `pinOpencodeSessionFile` further down the same function).
-    const priorPinReadAt = body.indexOf('const priorPin = readPinnedOpencodeSessionId()')
+    const priorPinReadAt = body.indexOf('const priorPin = readOpenCodeSessionPin()')
     const resolveCallAt = body.indexOf('await resolveExistingRoot(')
     const pinWriteAt = body.indexOf('pinOpencodeSessionFile(')
     expect(priorPinReadAt).toBeGreaterThan(-1)

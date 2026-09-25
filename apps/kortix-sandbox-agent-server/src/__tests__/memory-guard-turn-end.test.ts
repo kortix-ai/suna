@@ -19,8 +19,11 @@
  * pinned at 97 %.
  */
 import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-import * as realTurnState from '../harness/open-code/opencode-turn-state'
+import { writeOpenCodeSessionPin } from '../harness/open-code/runtime-state'
 import * as realResources from '../resources'
 
 const ROOT = 'ses_root'
@@ -56,22 +59,8 @@ mock.module('../resources', () => ({
     ),
 }))
 
-// The pin file path is frozen when runtime-state.ts is first imported, and
-// `bun test` shares one process across files — so the pinned root is injected
-// the same flag-gated way instead of through a file.
-const realTurn = { ...realTurnState }
-mock.module('../harness/open-code/opencode-turn-state', () => ({
-  ...realTurn,
-  readPinnedSessionId: () => (injectPressure ? ROOT : realTurn.readPinnedSessionId()),
-  opencodeTurnInFlight: (baseUrl: string, workspace: string, root?: string | null) =>
-    realTurn.opencodeTurnInFlight(
-      baseUrl,
-      workspace,
-      root === undefined ? (injectPressure ? ROOT : realTurn.readPinnedSessionId()) : root,
-    ),
-}))
-
 const ENV_KEYS = [
+  'KORTIX_RUNTIME_STATE_DIR',
   'KORTIX_MEMORY_GUARD_PCT',
   'KORTIX_ATTACHMENT_OFFLOAD',
   'KORTIX_PROJECT_ID',
@@ -89,6 +78,7 @@ const ORIGINAL_FETCH = globalThis.fetch
 let aborts: string[] = []
 let turnStreamBodies: Array<Record<string, unknown>> = []
 let stopMonitor: (() => void) | null = null
+let stateDir: string | null = null
 
 function stubOpenCodeAndApi(opts: { turnRunning: boolean }): void {
   aborts = []
@@ -146,6 +136,8 @@ afterEach(() => {
   stopMonitor = null
   injectPressure = false
   ;(globalThis as { fetch: unknown }).fetch = ORIGINAL_FETCH
+  if (stateDir) rmSync(stateDir, { recursive: true, force: true })
+  stateDir = null
   for (const [key, value] of savedEnv) {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
@@ -160,6 +152,9 @@ async function runGuardAtPressure(opts: { turnRunning: boolean }): Promise<void>
   process.env.KORTIX_SESSION_ID = 'sess-1'
   process.env.KORTIX_TOKEN = 'test-token'
   process.env.KORTIX_API_URL = 'http://api.test'
+  stateDir = mkdtempSync(join(tmpdir(), 'kortix-memory-guard-'))
+  process.env.KORTIX_RUNTIME_STATE_DIR = stateDir
+  writeOpenCodeSessionPin(ROOT)
   stubOpenCodeAndApi(opts)
   injectPressure = true
 

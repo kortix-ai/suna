@@ -22,8 +22,8 @@ import {
   inspectOpencodeRoot,
   observeOpencodeDelivery,
   opencodeSessionInFlight,
-  readPinnedSessionId,
 } from './opencode-turn-state'
+import { readOpenCodeSessionPin } from './runtime-state'
 
 import type { OpenCodeBootState } from './boot-state'
 
@@ -179,7 +179,7 @@ async function readOpenCodeHealth(
   const observedTurn = resolveTurnObservationIdentity(
     query.turn?.sessionId,
     query.turn?.messageId,
-    readPinnedSessionId(),
+    readOpenCodeSessionPin(),
   )
   const turn =
     query.turn !== undefined

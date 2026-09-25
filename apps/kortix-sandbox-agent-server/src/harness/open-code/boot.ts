@@ -40,7 +40,7 @@ import { ensureInjectedManagedSkills } from '../../managed-skills'
 // Strictly AFTER `bootMark('opencode-ready')` and never awaited: it adds zero
 // milliseconds to the readiness the API and the frontend poll for.
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
-import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
+import { isSharedSeedBakedRoot } from './opencode-fork-root'
 import { flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './events'
 import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from '../../kortix-event-bus'
@@ -48,7 +48,8 @@ import { runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, auditRelayToken, createAuditRelay } from './opencode-audit-relay'
 import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
-  OPENCODE_SESSION_PIN_PATH,
+  openCodeSeedBakedPinPath,
+  openCodeSessionPinPath,
   readOpenCodeSessionPin,
   resolveOpenCodeAuditSpoolPath,
   writeOpenCodeSeedBakedPin,
@@ -168,7 +169,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   onUnplannedRespawn: () => {
       // opencode died on its own and is back. Close whatever turn it was
       // writing, or the client streams a part that will never complete.
-      const pinned = readPinnedOpencodeSessionId()
+      const pinned = readOpenCodeSessionPin()
       if (!pinned) return
       // RETURNED, not fire-and-forget. The boolean is whether a turn was really
       // interrupted, and the reload surfaces it so the user can be told to
@@ -1105,7 +1106,7 @@ async function runWarmSeedMode(
   onUnplannedRespawn: () => {
       // opencode died on its own and is back. Close whatever turn it was
       // writing, or the client streams a part that will never complete.
-      const pinned = readPinnedOpencodeSessionId()
+      const pinned = readOpenCodeSessionPin()
       if (!pinned) return
       // RETURNED, not fire-and-forget. The boolean is whether a turn was really
       // interrupted, and the reload surfaces it so the user can be told to
@@ -1429,7 +1430,7 @@ async function maybeCreateInitialOpencodeSession(
   // opencode); a big root-ready means it's our bootstrap.
   // Captured BEFORE this boot writes its own pin below, so it reflects only
   // what a PRIOR boot of this sandbox left behind — see the T22 note above.
-  const priorPin = readPinnedOpencodeSessionId()
+  const priorPin = readOpenCodeSessionPin()
   // F1: likewise captured BEFORE this boot could possibly write its own
   // marker (delivery, below, hasn't happened yet) — reflects only a PRIOR
   // boot's successful delivery, never this one's own pending write.
@@ -1627,7 +1628,7 @@ function pinOpencodeSessionFile(sessionId: string): void {
 
 /**
  * F1: durable proof that `deliverInitialOpenCodePrompt` actually SUCCEEDED —
- * not just that boot intended to deliver it. `OPENCODE_SESSION_PIN_PATH` is
+ * not just that boot intended to deliver it. The session pin is
  * written BEFORE delivery (see `pinOpencodeSessionFile` above, called ahead
  * of the delivery call at this function's call site). A daemon crash after
  * that write can leave the pin behind but never deliver. A bare-pin check
@@ -1637,17 +1638,16 @@ function pinOpencodeSessionFile(sessionId: string): void {
  * `deliverInitialOpenCodePrompt` returns successfully, right next to the pin,
  * so its mere existence is the delivery receipt the pin alone can't provide.
  */
-const OPENCODE_INITIAL_PROMPT_DELIVERED_PIN_PATH = join(
-  dirname(OPENCODE_SESSION_PIN_PATH),
-  'opencode-initial-prompt-delivered',
-)
+function initialPromptDeliveredMarkerPath(): string {
+  return join(dirname(openCodeSessionPinPath()), 'opencode-initial-prompt-delivered')
+}
 
 /** Best-effort read of the F1 delivery marker. False (never true-by-accident)
  *  on any read failure — the same "unknown reads never skip delivery" bias as
  *  the rest of this gate; see `reusedRootAlreadyDelivered`. */
 function readInitialPromptDeliveredMarker(): boolean {
   try {
-    return existsSync(OPENCODE_INITIAL_PROMPT_DELIVERED_PIN_PATH)
+    return existsSync(initialPromptDeliveredMarkerPath())
   } catch {
     return false
   }
@@ -1658,7 +1658,7 @@ function readInitialPromptDeliveredMarker(): boolean {
  *  boot) already created it. */
 function markInitialPromptDelivered(): void {
   try {
-    writeFileSync(OPENCODE_INITIAL_PROMPT_DELIVERED_PIN_PATH, '1', { encoding: 'utf8', mode: 0o600 })
+    writeFileSync(initialPromptDeliveredMarkerPath(), '1', { encoding: 'utf8', mode: 0o600 })
   } catch (err) {
     logger.warn('[boot] failed to write initial-prompt-delivered marker', err)
   }
@@ -1677,8 +1677,9 @@ function markSeedBakedSession(sessionId: string): void {
 
 function readSeedBakedSessionId(): string | null {
   try {
-    if (!existsSync(OPENCODE_SEED_BAKED_PIN_PATH)) return null
-    const id = readFileSync(OPENCODE_SEED_BAKED_PIN_PATH, 'utf8').trim()
+    const path = openCodeSeedBakedPinPath()
+    if (!existsSync(path)) return null
+    const id = readFileSync(path, 'utf8').trim()
     return id.length > 0 ? id : null
   } catch {
     return null
@@ -1689,7 +1690,8 @@ function readSeedBakedSessionId(): string | null {
  *  restarts then reuse the fork's root via the normal idempotent reuse path. */
 function clearSeedBakedMarker(): void {
   try {
-    if (existsSync(OPENCODE_SEED_BAKED_PIN_PATH)) unlinkSync(OPENCODE_SEED_BAKED_PIN_PATH)
+    const path = openCodeSeedBakedPinPath()
+    if (existsSync(path)) unlinkSync(path)
   } catch (err) {
     logger.warn('[boot] failed to clear seed-baked marker', err)
   }
@@ -1820,7 +1822,7 @@ export async function waitForOpencodeRootReadiness(
 async function resolveExistingRoot(
   baseUrl: string,
   workspace: string,
-  priorPin: string | null = readPinnedOpencodeSessionId(),
+  priorPin: string | null = readOpenCodeSessionPin(),
   rootListDeadlineMs = OPENCODE_ROOT_RESOLUTION_DEADLINE_MS,
   onListening?: () => void,
 ): Promise<ExistingRootResult> {
@@ -3045,7 +3047,7 @@ export async function reconcileFinishedFirstTurn(
   cfg: Config,
 ): Promise<void> {
   if (!sandboxRelayContext()) return
-  const rootId = readPinnedOpencodeSessionId()
+  const rootId = readOpenCodeSessionPin()
   if (!rootId) return
   const turn = await readRootTurnState(rootId, opencode, cfg)
   // Only reconcile a turn that has actually completed; a still-running turn will
@@ -3134,16 +3136,6 @@ export function buildInitialPromptBody(prompt: string, claimedMessageId?: string
     ...(model ? { model } : {}),
     ...(agent ? { agent } : {}),
   }
-}
-
-/** Read the pinned OpenCode session id. Returns null if no session was pinned — caller decides
- *  whether to fail or fall back to creating a fresh session.
- *
- *  Reading, writing and validating this file all live in runtime-state.ts; this
- *  is the long-standing name the rest of the harness imports. A pin that does
- *  not match `isValidOpenCodeSessionId` reads as "not pinned". */
-export function readPinnedOpencodeSessionId(): string | null {
-  return readOpenCodeSessionPin()
 }
 
 /** Claim warm-seed boot before the host considers monitor or session mode. */

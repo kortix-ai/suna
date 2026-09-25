@@ -10,7 +10,7 @@ import { requiresRespawn, type Opencode } from './lifecycle'
 import { reconcileProjectEnv } from '../../project-env'
 import { refreshRepo, syncConfigDirToBase, syncWorkspaceToBase } from '../../git'
 import { scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
-import { readPinnedOpencodeSessionId } from './boot'
+import { readOpenCodeSessionPin } from './runtime-state'
 import type { QuickQueueInterrupt } from './quick-queue-interrupt'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
@@ -362,7 +362,7 @@ export function createOpenCodeControlService(
           }
         },
         async abort() {
-          const sessionId = readPinnedOpencodeSessionId()
+          const sessionId = readOpenCodeSessionPin()
           if (!sessionId) {
             return { outcome: 'not-pinned', body: { ok: false, error: 'No opencode session pinned.' } }
           }

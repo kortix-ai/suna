@@ -9,8 +9,8 @@ import {
   TURN_PROBE_WINDOW,
   opencodeSessionInFlight,
   opencodeTurnInFlight,
-  readPinnedSessionId,
 } from './opencode-turn-state'
+import { readOpenCodeSessionPin } from './runtime-state'
 import { OpencodeDb } from './opencode-db'
 import { QuickQueueInterrupt, quickQueueSnapshotFromPage } from './quick-queue-interrupt'
 import {
@@ -32,7 +32,7 @@ export function createOpenCodeQuickQueueInterrupt(
     opencodeSessionId: string
     messageId: string
   }) => {
-    if (readPinnedSessionId() !== input.opencodeSessionId) {
+    if (readOpenCodeSessionPin() !== input.opencodeSessionId) {
       return { state: 'stale' as const, runningTool: false }
     }
     const inFlight = await opencodeSessionInFlight(
@@ -124,7 +124,7 @@ export function startOpenCodeBackground(
       formatReason: formatOpenCodeMemoryGuardReason,
       turnInFlight,
       abortTurn: async (reason) => {
-        const sessionId = readPinnedSessionId()
+        const sessionId = readOpenCodeSessionPin()
         guardedSessionId = sessionId
         guardedTurnMessageId = null
         if (!sessionId) return false
