@@ -133,3 +133,15 @@ describe('SSO card — domain field explains its consequence (live incident)', (
     expect(flatSource).toContain("raw('textcd93ff59e7c2')");
   });
 });
+
+describe('SSO card — domain verification', () => {
+  test('shows the DNS TXT record and verifies through the SDK', () => {
+    expect(source).toContain('provider.domain_verification.record_name');
+    expect(source).toContain('provider.domain_verification.record_value');
+    expect(source).toContain('verifySsoDomain(accountId)');
+  });
+
+  test('enforce SSO can be turned on only for a verified domain, and always off', () => {
+    expect(flatSource).toContain('(!domainVerified && !provider.enforce_sso)');
+  });
+});

@@ -298,8 +298,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
-      'No dedicated routes. The secret write paths (POST /secrets and PUT ' +
-      '/secrets/:id/strategy in projects/routes/r3.ts) reject a request that ' +
+      'No dedicated routes. The secret write paths (POST /secrets in ' +
+      'projects/routes/secrets.ts, PUT /secrets/:id/strategy in ' +
+      'projects/routes/secret-delivery.ts) reject a request that ' +
       'moves a secret INTO egress delivery when the flag is off. A secret that ' +
       'is already egress keeps serving and stays editable, so turning the flag ' +
       'off never strands an existing enforced secret.',
@@ -307,7 +308,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   {
     key: 'pooled_provider_secrets',
     name: 'Pooled Provider Secrets',
-    description: 'Use multiple project credentials per provider, with optional member restrictions and session selection.',
+    description: 'Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,

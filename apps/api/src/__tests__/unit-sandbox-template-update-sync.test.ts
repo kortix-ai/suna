@@ -10,7 +10,7 @@ import { join } from 'node:path';
 
 describe('sandbox template update synchronization', () => {
   test('PATCH schedules the updated slug on every enabled template provider', () => {
-    const source = readFileSync(join(import.meta.dir, '..', 'projects', 'routes', 'r2.ts'), 'utf8');
+    const source = readFileSync(join(import.meta.dir, '..', 'projects', 'routes', 'sandbox-templates.ts'), 'utf8');
     const routeStart = source.indexOf('// PATCH /v1/projects/:projectId/sandbox-templates/:templateId');
     const routeEnd = source.indexOf('// DELETE /v1/projects/:projectId/sandbox-templates/:templateId');
     expect(routeStart).toBeGreaterThan(-1);

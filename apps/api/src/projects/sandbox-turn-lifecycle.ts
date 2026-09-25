@@ -208,7 +208,7 @@ function endedLedgerTurns(value: unknown): EndedTurnRecord[] {
  * bound JS array as a record and Postgres rejects `cannot cast type record to
  * text[]`. Every value is still a bound parameter.
  */
-/** What the daemon said went wrong, as `routes/r4.ts` reads it off an end frame. */
+/** What the daemon said went wrong, as `routes/turn-stream.ts` reads it off an end frame. */
 export interface SandboxTurnEndError {
   name?: string;
   message?: string;
@@ -230,11 +230,18 @@ export const ABORT_END_ERROR_NAMES = ['MessageAbortedError', 'AbortError'];
 
 // A STOP SOMEBODY ASKED FOR IS NOT A FAILURE, and the end frame cannot say so:
 // a requested stop and an abort nobody asked for both reach the ledger as the
-// same OpenCode "Aborted" frame. So the request is stamped on the OPEN turn, at
-// the one place each kind of request passes through the control plane:
+// same OpenCode "Aborted" frame. So the request is stamped on the OPEN turn,
+// BEFORE the abort can reach OpenCode, at every place a request passes through
+// the control plane:
 //
-//   UserStop        every client abort (web, mobile, SDK, CLI) is an OpenCode
-//                   `POST /session/:id/abort` through the sandbox proxy.
+//   UserStop        - `POST .../prompts/hold {held:true}`, the first request of
+//                     a web, SDK or mobile Stop. Its settle
+//                     (`inbox-hold-settle.ts`) can abort the box before the
+//                     client's own abort arrives.
+//                   - every client abort (web, mobile, SDK, CLI): an OpenCode
+//                     `POST /session/:id/abort` through the sandbox proxy.
+//                   - `abortRuntimeTurn(…, { requestedStop: true })`: the hold
+//                     settle's re-abort, and Slack/Teams Stop.
 //   QueueInterrupt  a prompt sent into a busy session arms an interrupt at the
 //                   next tool boundary (`armQuickQueueInterrupt`).
 //

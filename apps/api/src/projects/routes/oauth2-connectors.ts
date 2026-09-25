@@ -32,7 +32,7 @@ import {
   isTrustedManagedChannelAuthorization,
 } from '../lib/connection-access';
 import { requestAgentPrincipalReach } from '../lib/personal-resources';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 function callbackUrl(requestUrl: string): string {
   return nativeOAuth2CallbackUrl(requestUrl, config.KORTIX_URL);
@@ -120,7 +120,7 @@ async function loadMutableConnection(c: any, projectId: string, connectionId: st
       metadata: connection.metadata,
     }),
   });
-  // Same rule as `mayMutateConnection` in r4: your own private account is
+  // Same rule as `mayMutateConnection` in connection-actions.ts: your own private account is
   // yours; anything shared with the project needs the manage capability.
   const allowed = reachable && (connection.ownerType === 'member' || mayManage);
   return allowed ? { loaded, connection } : null;
@@ -168,7 +168,7 @@ projectsApp.put('/:projectId/connections/:connectionId/oauth2/application', asyn
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
-  const parsed = OAuth2ApplicationInputSchema.safeParse(await readBody(c));
+  const parsed = OAuth2ApplicationInputSchema.safeParse(await readJsonObject(c));
   if (!parsed.success) {
     return c.json(
       {
@@ -197,7 +197,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/discover', async 
   if (!(await loadMutableConnection(c, projectId, connectionId))) {
     return c.json({ error: 'Not found' }, 404);
   }
-  const parsed = OAuth2DiscoveryInputSchema.safeParse(await readBody(c));
+  const parsed = OAuth2DiscoveryInputSchema.safeParse(await readJsonObject(c));
   if (!parsed.success) return c.json({ error: 'invalid discovery URL' }, 400);
   try {
     return c.json({
@@ -221,7 +221,7 @@ projectsApp.post(
     if (!(await loadMutableConnection(c, projectId, connectionId))) {
       return c.json({ error: 'Not found' }, 404);
     }
-    const parsed = OAuth2ResourceDiscoveryInputSchema.safeParse((await readBody(c)) ?? {});
+    const parsed = OAuth2ResourceDiscoveryInputSchema.safeParse(await readJsonObject(c));
     if (!parsed.success) return c.json({ error: 'invalid resource URL' }, 400);
     try {
       return c.json({
@@ -243,7 +243,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/register', async 
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
-  const parsed = OAuth2ClientRegistrationInputSchema.safeParse(await readBody(c));
+  const parsed = OAuth2ClientRegistrationInputSchema.safeParse(await readJsonObject(c));
   if (!parsed.success) {
     return c.json(
       { error: parsed.error.issues[0]?.message ?? 'invalid client registration input' },
@@ -268,7 +268,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/authorize', async
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
-  const parsed = OAuth2AuthorizationStartInputSchema.safeParse(await readBody(c));
+  const parsed = OAuth2AuthorizationStartInputSchema.safeParse(await readJsonObject(c));
   if (!parsed.success) return c.json({ error: 'invalid authorization input' }, 400);
   try {
     const successRedirectUri = allowedRedirectUri(parsed.data.success_redirect_uri, projectId);
@@ -295,7 +295,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/device', async (c
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
-  const parsed = OAuth2DeviceAuthorizationStartInputSchema.safeParse(await readBody(c));
+  const parsed = OAuth2DeviceAuthorizationStartInputSchema.safeParse(await readJsonObject(c));
   if (!parsed.success) return c.json({ error: 'invalid device authorization input' }, 400);
   try {
     const started = await createDeviceAuthorizationSession({

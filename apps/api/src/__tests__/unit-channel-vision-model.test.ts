@@ -227,6 +227,42 @@ describe('channelTurnModel', () => {
     ).toBeNull();
   });
 
+  test('a /model choice the session does not run yet is returned, so it travels with the prompt', async () => {
+    expect(
+      await channelTurnModel({ ...base, currentModel: 'kortix/deepseek-v4-flash', hasImage: false, explicit: true, sessionId: 's1' }),
+    ).toBe('deepseek-v4-flash');
+  });
+
+  test('an unservable choice is still replaced, never sent', async () => {
+    expect(await channelTurnModel({ ...base, currentModel: 'retired-model-v1', hasImage: false, explicit: true })).toBe(
+      'deepseek-v4-flash',
+    );
+  });
+
+  test('a new session`s keys and the live session`s scope reach the probe', async () => {
+    probeInputs.length = 0;
+    await channelTurnModel({
+      ...base,
+      currentModel: 'codex/gpt-6-astra',
+      hasImage: false,
+      personalUserId: null,
+      providerSecretPools: { codex: ['k1'] },
+    });
+    expect(probeInputs[0]).toMatchObject({ userId: 'u1', personalUserId: null, providerSecretPools: { codex: ['k1'] } });
+    probeInputs.length = 0;
+    await channelTurnModel({ ...base, currentModel: 'codex/gpt-6-astra', hasImage: false, personalUserId: null, sessionId: 's1' });
+    expect(probeInputs[0]).toMatchObject({ sessionId: 's1', personalUserId: null });
+    expect(probeInputs[0]).not.toHaveProperty('providerSecretPools');
+  });
+
+  test('a probe with other keys or another person`s scope is not answered from the cache', async () => {
+    probeCalls.length = 0;
+    await channelTurnModel({ ...base, currentModel: 'codex/gpt-6-astra', hasImage: false, personalUserId: 'u1' });
+    await channelTurnModel({ ...base, currentModel: 'codex/gpt-6-astra', hasImage: false, personalUserId: null });
+    await channelTurnModel({ ...base, currentModel: 'codex/gpt-6-astra', hasImage: false, providerSecretPools: { codex: ['k1'] } });
+    expect(probeCalls).toEqual(['codex/gpt-6-astra', 'codex/gpt-6-astra', 'codex/gpt-6-astra']);
+  });
+
   test('the servability answer is cached, so a burst of messages probes once', async () => {
     probeCalls.length = 0;
     await channelTurnModel({ ...base, currentModel: 'retired-model-v1', hasImage: false });
@@ -255,9 +291,12 @@ mock.module('../billing/services/entitlements', () => ({
 
 // Mirrors dev: the configured vision target is refused, the rest are not.
 const probeCalls: string[] = [];
+const probeInputs: Array<Record<string, unknown>> = [];
 mock.module('../llm-gateway/resolution/default-model', () => ({
-  isModelServableForAccount: async ({ model }: { model: string }) => {
+  isModelServableForAccount: async (input: { model: string }) => {
+    const { model } = input;
     probeCalls.push(model);
+    probeInputs.push(input);
     // Mirrors dev: the configured vision target and the retired pin are
     // refused. `glm-5.3-flash` is refused too, standing in for a model the
     // catalog still lists while the gateway will not serve it.

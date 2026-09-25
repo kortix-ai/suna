@@ -229,7 +229,11 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // OpenCode config while it indexes /workspace, then restores the exact checkout.
 // v44: install the shared shell tool floor (rg, fd, bat, jq, fzf, …) from
 // @kortix/shared/sandbox shell-tools.ts, with `fd`/`bat` linked to Debian's names.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v44';
+// v45: bake /etc/profile.d/zz-kortix.sh + an /etc/bash.bashrc hook
+// (kortixShellProfileRun). Debian's /etc/profile resets PATH in the web
+// terminal's `bash -l`, so pnpm/uv/bun tools (opencode) were not found on
+// Debian-based custom templates; terminals also never loaded project secrets.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v45';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

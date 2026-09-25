@@ -1,4 +1,5 @@
 import { NODE_VERSION, OPENCODE_VERSION, PNPM_VERSION } from '../runtime-versions';
+import { kortixShellProfileRun } from './dockerfile-layer';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
   SANDBOX_SHELL_TOOL_LINK_COMMAND,
@@ -106,6 +107,7 @@ ${META_AGENT_GUIDE}
 KORTIX_META_AGENT_GUIDE
 COPY --chown=kortix:kortix ${options.catalogPath} /opt/kortix/llm-catalog.json
 COPY --chown=kortix:kortix ${options.managedSkillsPath} /opt/kortix/managed-skills
+${kortixShellProfileRun()}
 
 ENV KORTIX_WORKSPACE=/workspace \\
     KORTIX_PROJECT_AUTO_CLONE=0 \\

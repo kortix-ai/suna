@@ -76,6 +76,7 @@ describe('ephemeral self-host preview stack', () => {
       'INTERNAL_SERVICE_KEY=i',
     ].join('\n');
     const stack = {
+      instanceId: 'kortix-preview-pr-6337',
       origin: 'https://x.example.test',
       sha: SHA,
       apiImage: 'a',
@@ -178,6 +179,7 @@ describe('ephemeral self-host preview stack', () => {
     const configured = applyPreviewEnvironment(
       'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\nAPI_KEY_SECRET=tokenhash\n',
       {
+        instanceId: 'kortix-preview-pr-6337',
         origin: 'https://preview.example',
         sha: SHA,
         apiImage: `kortix/kortix-api:pr-${SHA}`,
@@ -205,6 +207,7 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
+    expect(configured.runtimeEnv).toContain('KORTIX_INSTANCE_ID=kortix-preview-pr-6337');
     expect(configured.runtimeEnv).toContain('MORPH_API_KEY=morph');
     // The preview edge drops request bodies above ~124 KiB, Storage uploads included.
     expect(configured.runtimeEnv).toContain('PROMPT_ATTACHMENT_UPLOAD_MODE=chunked');
@@ -261,6 +264,42 @@ describe('ephemeral self-host preview stack', () => {
     expect(wired.runtimeEnv).toContain('PLATINUM_API_URL=https://api.platinum.dev');
     expect(wired.runtimeEnv).toContain('PLATINUM_API_KEY=pt_live_example');
 
+    // Without the host's instance id (an older bootstrap), workers (and so the
+    // box reaper) stay off. The Platinum idle timer is then the only stop, and
+    // the 720 min default filled the shared org RAM pool on 2026-09-23.
+    expect(wired.runtimeEnv).toContain('KORTIX_WORKERS_ENABLED=false\n');
+    expect(wired.runtimeEnv).not.toContain('KORTIX_INSTANCE_ID');
+    expect(wired.runtimeEnv).toContain('KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES=60\n');
+
+    // With it, the deadline reaper runs, scoped to this preview's own boxes.
+    const reaped = applyPreviewEnvironment(
+      base,
+      { ...input, platinumApiUrl: 'https://api.platinum.dev', instanceId: 'kortix-env-feature-x' },
+      { ...secrets, PLATINUM_API_KEY: 'pt_live_example' },
+    ).runtimeEnv;
+    for (const line of [
+      'KORTIX_INSTANCE_ID=kortix-env-feature-x',
+      'KORTIX_WORKERS_ENABLED=true',
+      'KORTIX_PROJECT_MAINTENANCE_ENABLED=true',
+      'KORTIX_ACTIVE_TURN_RENEWAL_ENABLED=true',
+      // Singleton work a test stack must not do stays off.
+      'KORTIX_TRIGGER_SCHEDULER_ENABLED=false',
+      'SCHEDULER_ENABLED=false',
+      'KORTIX_LEGACY_MIGRATION_WORKER_ENABLED=false',
+      'KORTIX_SUNA_MIGRATION_WORKER_ENABLED=false',
+      'KORTIX_SKIP_STARTUP_PREBUILD=true',
+      'KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES=60',
+    ]) {
+      expect(reaped).toContain(`${line}\n`);
+    }
+    expect(() =>
+      applyPreviewEnvironment(
+        base,
+        { ...input, platinumApiUrl: 'https://api.platinum.dev', instanceId: 'primary' },
+        { ...secrets, PLATINUM_API_KEY: 'pt_live_example' },
+      ),
+    ).toThrow('invalid preview instance id');
+
     // The preview pipeline holds no cloud identity (infra/scripts/test-ecs-preview-runtime.py):
     // AWS credentials are outside the allowlist, so the project-snapshot bucket is never named.
     expect(() => validatePreviewRuntimeSecrets({ AWS_ACCESS_KEY_ID: 'ASIAEXAMPLE' })).toThrow('AWS_ACCESS_KEY_ID');
@@ -273,6 +312,7 @@ describe('ephemeral self-host preview stack', () => {
       applyPreviewEnvironment(
         'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n',
         {
+          instanceId: 'kortix-preview-pr-6337',
           origin: 'https://preview.example',
           sha: SHA,
           apiImage: 'api',

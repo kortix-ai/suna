@@ -781,12 +781,10 @@ flow(
  * server-side (`publicShareToken(shareId)`) and resolves through the exact
  * same `resolvePublicShare()` SESS-13 covers, so it inherits identical
  * 404 (unknown) / 410 (revoked or expired) / 503 (sandbox not provisioned
- * yet) semantics — and ANY existing share for the session (created as a
- * `preview` or a `file`, the only kinds the CRUD supports today) unlocks the
- * transcript view too: a share token already proves the owner handed this
- * link to someone outside the account, and the read-only conversation is not
- * more sensitive than the live preview or workspace file that SAME token
- * already exposes.
+ * yet) semantics. A share grants exactly the resource it names: a `preview`
+ * share names one app port and a `file` share one document, so neither reads
+ * the conversation — `.../messages` answers 404 for both (SCOPE-4 pins this on
+ * the local profile).
  *
  * The metadata route (`GET /:shareId`) is DB-only (title/status/timestamps),
  * so it does not itself 503 on an inactive sandbox — only `resolvePublicShare`'s
@@ -864,15 +862,12 @@ flow(
     );
 
     await ctx.step(
-      'anon: read the sanitized transcript for the real share → 200 (digest) or 503 (sandbox not up)',
+      'anon: a preview share does not read the transcript → 404 (the share names one app port)',
       async () => {
         const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
           params: { shareId },
         });
-        r.status([200, 503]);
-        if (r.statusCode === 200) {
-          r.body().exists('$.available').exists('$.messages').exists('$.message_count');
-        }
+        r.status(404).body().has('$.error', 'This share does not include the conversation');
       },
     );
 

@@ -50,6 +50,7 @@ import {
   isRepositoryProjectAction,
   sessionWorkspaceAllowsRepositoryAccess,
 } from './session-workspace-access';
+import { isUuid } from '../../shared/validate';
 
 // Enforce the per-account project cap (free → 1, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
@@ -441,13 +442,15 @@ export async function loadSessionForSharing(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; actor?: Actor | null },
   sessionId: string,
   /**
-   * The CALLER's own session when the credential is bound to one. REQUIRED —
-   * see loadVisibleSession. Sharing is the worst surface to leave unnarrowed:
+   * The caller's AGENT/SANDBOX token binding — always `callerKortixSessionId(c)`,
+   * never the raw `c.get('sessionId')` (that is the Supabase LOGIN session id
+   * for a signed-in human, which would narrow every human away from a
+   * backend-origin session). Sharing is the worst surface to leave unnarrowed:
    * a public share is UNAUTHENTICATED and its router is mounted before auth,
    * so minting one against another end-user's session exposes their live app
    * port and workspace files to anyone holding the URL.
    */
-  callerSessionId: string | null,
+  boundCredentialSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   isOwner: boolean;
@@ -466,7 +469,8 @@ export async function loadSessionForSharing(
   if (!isSessionTargetVisibleToCaller({
     origin: row.origin ?? null,
     sessionId,
-    callerSessionId,
+    callerSessionId: boundCredentialSessionId,
+    boundCredentialSessionId,
   })) {
     return null;
   }
@@ -474,11 +478,13 @@ export async function loadSessionForSharing(
   if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
     // Spec §2: an agent session manages share links only for sessions it
     // owns (its own and its children), never the launcher's others.
-    const standing = agentSessionStanding(callerSessionId, row, true);
+    const standing = agentSessionStanding(boundCredentialSessionId, row, true);
     if (!standing.visible) return null;
     isOwner = standing.isOwner;
   }
-  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  // Same standing rule as loadVisibleSession: a session-bound credential acts
+  // for one session and does not carry the launching user's manage role.
+  const canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
   const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
     ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
     : false;
@@ -928,16 +934,6 @@ export async function assertAgentSessionWorkspaceAllowsRepository(
   throw new HTTPException(403, {
     message: 'session workspace does not allow repository access',
   });
-}
-
-// `projects.project_id` is a Postgres `uuid` column, so a malformed id
-// (e.g. a truncated "fda4e35e") makes the lookup throw `invalid input syntax
-// for type uuid` (SQLSTATE 22P02) before any guard runs — surfacing as an
-// opaque 500. Validate the shape first so a bad id is a clean 404, not a 500.
-const PROJECT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function isUuid(value: string): boolean {
-  return PROJECT_ID_RE.test(value);
 }
 
 /**

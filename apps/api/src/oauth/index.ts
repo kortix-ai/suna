@@ -18,7 +18,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { eq, and, inArray, isNull, lt, or } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { randomAlphanumeric, verifySecretKey } from '../shared/crypto';
-import { hashOauthToken, oauthTokenHashCandidates } from './token-hash';
+import { hashOauthToken, oauthTokenHashCandidatesAsync } from './token-hash';
 import { supabaseAuth } from '../middleware/auth';
 import { config } from '../config';
 import {
@@ -33,6 +33,7 @@ import {
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { oauthAuthorizationServerMetadata } from './discovery';
 import { isOAuthAccessToken, isOAuthRefreshToken, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_PROFILE } from './access-token';
+import { isUuid } from '../shared/validate';
 
 // ─── Rate Limiter (in-memory, per client_id) ────────────────────────────────
 
@@ -72,12 +73,13 @@ async function oauthTokenAuth(c: Context, next: Next) {
   const token = authHeader.slice(7);
   if (!token) throw new HTTPException(401, { message: 'Missing token' });
 
+  const accessCandidates = await oauthTokenHashCandidatesAsync(token);
   const [row] = await db
     .select()
     .from(oauthAccessTokens)
     .where(
       and(
-        inArray(oauthAccessTokens.tokenHash, oauthTokenHashCandidates(token)),
+        inArray(oauthAccessTokens.tokenHash, accessCandidates),
         isNull(oauthAccessTokens.revokedAt),
       ),
     )
@@ -133,13 +135,11 @@ function requireOAuthScope(c: Context, scopes: string[]): Response | null {
     : c.json({ error: 'insufficient_scope', required_scope: scopes.join(' | ') }, 403);
 }
 
-/** A client_id is a uuid column; gate junk before it reaches Postgres (22P02 → 500). */
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 type ClientRow = typeof oauthClients.$inferSelect;
 
+/** A client_id is a uuid column; gate junk before it reaches Postgres (22P02 → 500). */
 async function loadActiveClient(clientId: string): Promise<ClientRow | null> {
-  if (!UUID_REGEX.test(clientId)) return null;
+  if (!isUuid(clientId)) return null;
   const [client] = await db
     .select()
     .from(oauthClients)
@@ -666,12 +666,13 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
   const refreshTokenRaw = body['refresh_token'] as string;
   if (!refreshTokenRaw) return c.json({ error: 'invalid_request', error_description: 'Missing refresh_token' }, 400);
 
+  const refreshCandidates = await oauthTokenHashCandidatesAsync(refreshTokenRaw);
   const [refreshRow] = await db
     .select()
     .from(oauthRefreshTokens)
     .where(
       and(
-        inArray(oauthRefreshTokens.tokenHash, oauthTokenHashCandidates(refreshTokenRaw)),
+        inArray(oauthRefreshTokens.tokenHash, refreshCandidates),
         eq(oauthRefreshTokens.clientId, client.clientId),
         isNull(oauthRefreshTokens.revokedAt),
       ),
@@ -736,12 +737,13 @@ oauthApp.openapi(
     const now = new Date();
     let revoked = false;
     if (isOAuthRefreshToken(token)) {
+      const candidates = await oauthTokenHashCandidatesAsync(token);
       const rows = await db
         .update(oauthRefreshTokens)
         .set({ revokedAt: now })
         .where(
           and(
-            inArray(oauthRefreshTokens.tokenHash, oauthTokenHashCandidates(token)),
+            inArray(oauthRefreshTokens.tokenHash, candidates),
             eq(oauthRefreshTokens.clientId, client.clientId),
             isNull(oauthRefreshTokens.revokedAt),
           ),
@@ -752,12 +754,13 @@ oauthApp.openapi(
       }
       revoked = rows.length > 0;
     } else if (isOAuthAccessToken(token)) {
+      const candidates = await oauthTokenHashCandidatesAsync(token);
       const rows = await db
         .update(oauthAccessTokens)
         .set({ revokedAt: now })
         .where(
           and(
-            inArray(oauthAccessTokens.tokenHash, oauthTokenHashCandidates(token)),
+            inArray(oauthAccessTokens.tokenHash, candidates),
             eq(oauthAccessTokens.clientId, client.clientId),
             isNull(oauthAccessTokens.revokedAt),
           ),

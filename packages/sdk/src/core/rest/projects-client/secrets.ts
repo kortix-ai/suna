@@ -227,12 +227,19 @@ export type ProviderOAuthPoll =
 export async function startProjectProviderOAuth(
   projectId: string,
   provider: string,
-  input?: { sharing?: ConnectorSharing; resourceLabel?: string },
+  input?: {
+    sharing?: ConnectorSharing;
+    resourceLabel?: string;
+    /** Reconnect this existing account resource in place. Its label, access,
+     *  and session selections stay; send it without a label or sharing. */
+    resourceId?: string;
+  },
 ): Promise<ProviderOAuthStart> {
   return unwrap(
     await backendApi.post<ProviderOAuthStart>(`/projects/${projectId}/oauth/${provider}/start`, {
       sharing: input?.sharing,
       ...(input?.resourceLabel === undefined ? {} : { resource_label: input.resourceLabel }),
+      ...(input?.resourceId === undefined ? {} : { resource_id: input.resourceId }),
     }),
   );
 }

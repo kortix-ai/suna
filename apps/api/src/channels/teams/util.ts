@@ -130,6 +130,15 @@ export function conversationScope(activity: {
 }
 
 /**
+ * A one-to-one chat with the bot, by Teams' own word only. `conversationScope`
+ * falls back to `personal` for a missing type; a decision that makes a
+ * session private or spends one person's keys must not.
+ */
+export function isPersonalChat(activity: { conversation?: { conversationType?: string } }): boolean {
+  return (activity.conversation?.conversationType ?? '').toLowerCase() === 'personal';
+}
+
+/**
  * What to call this conversation in the bindings table. Teams conversation ids
  * (`19:…@thread.tacv2;messageid=…`, `a:1FQyR…`) mean nothing to a person; the
  * team + channel name, "Group chat", or the person's name do.

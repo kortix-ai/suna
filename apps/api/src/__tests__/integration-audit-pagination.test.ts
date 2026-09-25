@@ -5,7 +5,7 @@ import pg from 'pg';
 import { db } from '../shared/db';
 import { buildAuditCursorCondition, parseAuditCursor } from '../shared/audit-query';
 
-const databaseUrl = process.env.AUDIT_V2_DATABASE_URL;
+const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'c7100000-0000-4000-a000-000000000001';
 const OLDER = 'c7100000-0000-4000-a000-000000000011';
 const NEWER = 'c7100000-0000-4000-a000-000000000012';

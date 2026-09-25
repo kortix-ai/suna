@@ -821,10 +821,13 @@ describe('kortix sessions files', () => {
     const upload = calls('POST', `${daemon}/file/upload`)[0]?.body as Record<string, string>;
     expect(upload.path).toBe('/workspace/out');
     expect(upload.filename).toMatch(/^\.note\.txt\.kortix-write-/);
-    // Backup the target, move the temp into place, drop the backup.
+    // One rename moves the temp onto the target. The target is never moved
+    // aside, so nothing is deleted.
     const renames = calls('POST', `${daemon}/file/rename`).map((c) => c.body as { from: string; to: string });
-    expect(renames.some((r2) => r2.to === '/workspace/out/note.txt')).toBe(true);
-    expect(calls('DELETE', `${daemon}/file`)).toHaveLength(1);
+    expect(renames).toHaveLength(1);
+    expect(renames[0]?.to).toBe('/workspace/out/note.txt');
+    expect(renames[0]?.from).toMatch(/^\/workspace\/out\/\.note\.txt\.kortix-write-/);
+    expect(calls('DELETE', `${daemon}/file`)).toHaveLength(0);
   });
 
   test('write reads stdin when there is no --from', async () => {
@@ -842,7 +845,22 @@ describe('kortix sessions files', () => {
     const r = await runCli(['sessions', 'files', SESSION, 'touch', 'out/empty.txt', ...P], config);
     expect(r.code).toBe(0);
     expect(calls('POST', `${daemon}/file/upload`)).toHaveLength(1);
+    expect(calls('POST', `${daemon}/file/rename`)[0]?.body).toMatchObject({
+      to: '/workspace/out/empty.txt',
+      overwrite: false,
+    });
   });
+
+  for (const existing of ['out/report.md', 'out/assets']) {
+    test(`touch on an existing path (${existing}) fails and writes nothing`, async () => {
+      const r = await runCli(['sessions', 'files', SESSION, 'touch', existing, ...P], config);
+      expect(r.code).not.toBe(0);
+      expect(r.stderr + r.stdout).toContain('already exists');
+      expect(calls('POST', `${daemon}/file/upload`)).toHaveLength(0);
+      expect(calls('POST', `${daemon}/file/rename`)).toHaveLength(0);
+      expect(calls('DELETE', `${daemon}/file`)).toHaveLength(0);
+    });
+  }
 
   test('a missing subcommand exits 2 with the help', async () => {
     const r = await runCli(['sessions', 'files', SESSION, ...P], config);

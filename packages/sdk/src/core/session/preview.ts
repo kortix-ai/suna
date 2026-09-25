@@ -45,7 +45,9 @@ function isPreviewProxyUrl(candidateUrl: string, serverUrl?: string): boolean {
     if (typeof window !== 'undefined') {
       trustedOrigins.add(window.location.origin);
     }
-    return trustedOrigins.size === 0 || trustedOrigins.has(url.origin);
+    // No known origin means nothing can be trusted: the bearer is never sent
+    // to an origin the caller did not name.
+    return trustedOrigins.has(url.origin);
   } catch {
     return false;
   }
@@ -54,7 +56,8 @@ function isPreviewProxyUrl(candidateUrl: string, serverUrl?: string): boolean {
 /**
  * Resolve the `POST /…/p/auth` endpoint that sets the `__preview_session`
  * cookie for a given preview URL. Returns null when the URL isn't a trusted
- * preview-proxy URL.
+ * preview-proxy URL. Trusted means the origin of `serverUrl` or, in a browser,
+ * the page's own origin; with neither known, nothing is trusted.
  */
 export function buildPreviewAuthEndpoint(
   previewUrl: string,
@@ -70,6 +73,11 @@ export function buildPreviewAuthEndpoint(
 /**
  * Preview ORIGIN form: `p{port}-{sandbox}.{host}` locally, or the deployed
  * `{env}-p{port}-{sandbox}.{domain}`.
+ *
+ * A SHAPE test only. It says which credential form a preview would need, not
+ * whether a host may receive one: any host can carry this shape. The SDK's own
+ * token paths (`authorizePreviewUrl`, `useAuthenticatedPreviewUrl`) also require
+ * the origin to match the deployment's advertised preview template.
  *
  * These can't use the host-only `/v1/p/` session cookie — it never reaches
  * another hostname — so they authenticate the FIRST request with a one-shot

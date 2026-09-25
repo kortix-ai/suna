@@ -82,6 +82,89 @@ import {
 export const KORTIX_USER_PATH_DIRS =
   '/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin';
 
+/**
+ * Live project secrets on tmpfs. The kortix-agent daemon writes this file
+ * (apps/kortix-sandbox-agent-server/src/agent-env-file.ts `AGENT_ENV_SH`).
+ */
+export const KORTIX_AGENT_ENV_FILE = '/dev/shm/kortix/agent-env.sh';
+
+/**
+ * Login-shell hook baked into every image that runs the web terminal. The
+ * `zz-` prefix sorts it last in /etc/profile.d, so no other profile script can
+ * undo it.
+ */
+export const KORTIX_SHELL_PROFILE_PATH = '/etc/profile.d/zz-kortix.sh';
+
+/**
+ * The login-shell hook: restore the Kortix tool directories on PATH, then load
+ * the live project secrets.
+ *
+ * Why it exists. The web terminal spawns `/bin/bash -l`
+ * (kortix-sandbox-agent-server routes/pty.ts). A login shell sources
+ * /etc/profile. Debian's /etc/profile resets PATH for every login shell
+ * (non-root: `/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games`), so
+ * `opencode`, `pnpm`, `python`, and `bun` were `command not found` in the
+ * terminal of every Debian-based custom template. Ubuntu's /etc/profile does
+ * not touch PATH. The agent's own shells are non-login `bash -c` and were never
+ * affected.
+ *
+ * Contract:
+ * - Prepends only the Kortix dirs that are missing, in `KORTIX_USER_PATH_DIRS`
+ *   order. Every other entry keeps its position, including root's sbin dirs.
+ *   Sourcing it again changes nothing.
+ * - Never adds an empty PATH entry (the current directory).
+ * - Loads project secrets only when the file is readable. The daemon writes it
+ *   0600 as `kortix`, so other users skip it.
+ * - POSIX sh (dash sources /etc/profile.d too). No single quotes and no
+ *   backslashes, so `kortixShellProfileRun` can emit each line as one
+ *   single-quoted `echo` argument that every provider's Dockerfile parser
+ *   keeps intact (E2B strips the backslash from a quoted `\n`, buildah rejects
+ *   heredocs).
+ */
+export function kortixShellProfileScript(): string {
+  const dirs = KORTIX_USER_PATH_DIRS.split(':').join(' ');
+  return [
+    '# Kortix sandbox shell hook. Written by the Kortix runtime layer. Do not edit.',
+    '# Debian resets PATH in /etc/profile for login shells: restore the Kortix tool dirs.',
+    'kortix_path_prefix=',
+    `for kortix_path_dir in ${dirs}; do`,
+    '  case ":${PATH-}:" in',
+    '    *":${kortix_path_dir}:"*) ;;',
+    '    *) kortix_path_prefix="${kortix_path_prefix}${kortix_path_dir}:" ;;',
+    '  esac',
+    'done',
+    'if [ -n "${PATH-}" ]; then PATH="${kortix_path_prefix}${PATH}"; else PATH="${kortix_path_prefix%:}"; fi',
+    'export PATH',
+    'unset kortix_path_prefix kortix_path_dir',
+    '# Live project secrets, written by the kortix-agent daemon on tmpfs.',
+    `if [ -r ${KORTIX_AGENT_ENV_FILE} ]; then . ${KORTIX_AGENT_ENV_FILE}; fi`,
+    '',
+  ].join('\n');
+}
+
+/**
+ * The Dockerfile RUN step that installs `kortixShellProfileScript` at
+ * `KORTIX_SHELL_PROFILE_PATH` and sources it from /etc/bash.bashrc, so login
+ * shells (the web terminal) and non-login interactive shells both get it.
+ * Must run as root. The bashrc line is appended once, even when the step runs
+ * on an image that already has it.
+ */
+export function kortixShellProfileRun(): string {
+  const bashrcLine = `if [ -r ${KORTIX_SHELL_PROFILE_PATH} ]; then . ${KORTIX_SHELL_PROFILE_PATH}; fi`;
+  const echoLines = kortixShellProfileScript()
+    .replace(/\n$/, '')
+    .split('\n')
+    .map((line) => `      echo '${line}'; \\`);
+  return [
+    'RUN { \\',
+    ...echoLines,
+    `    } > ${KORTIX_SHELL_PROFILE_PATH} \\`,
+    `    && chmod 0644 ${KORTIX_SHELL_PROFILE_PATH} \\`,
+    `    && { grep -qxF '${bashrcLine}' /etc/bash.bashrc 2>/dev/null \\`,
+    `         || echo '${bashrcLine}' >> /etc/bash.bashrc; }`,
+  ].join('\n');
+}
+
 export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
   '# syntax=docker/dockerfile:1.7',
   '# Kortix platform default sandbox base.',
@@ -689,6 +772,12 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     // Fail the build loudly if the CLI didn't land — every sandbox must ship it.
     '    && kortix --version \\',
     '    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral',
+    '',
+    // Web-terminal login shells: keep the Kortix tool dirs on PATH on Debian
+    // bases and load project secrets. Written here, still as root, and in the
+    // artifact tail so it sits below the Chromium layer and never moves that
+    // layer's build-cache key. See kortixShellProfileScript.
+    kortixShellProfileRun(),
     '',
     // The daemon clones the project workspace at boot using KORTIX_PROJECT_AUTO_CLONE
     // — nothing project-specific is baked into the image. /workspace is created

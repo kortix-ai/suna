@@ -7,8 +7,6 @@
  * traffic runs over the edge, never through the session proxy.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq } from 'drizzle-orm';
-import { projectSessions } from '@kortix/db';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import {
@@ -17,11 +15,11 @@ import {
   SessionEnvironmentError,
   stopSessionEnvironment,
 } from '../../platform/services/session-environment';
-import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { UUID_V4_REGEX } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { guardSession, sessionAccessDenied, type SessionNeed } from '../lib/session-access';
 
 const EnvironmentSchema = z.object({
   session_id: z.string(),
@@ -38,13 +36,19 @@ interface SessionForEnvironment {
 }
 
 /**
- * Shared gate: the project loads for the caller, the session exists in it,
- * and — when the caller IS a session — it may only touch its OWN environment.
- * Returns the pieces every handler needs or a Response to send as-is.
+ * Shared gate: the project loads for the caller, and the session resolves
+ * through the shared session guard — scoped to THIS project and account,
+ * visible to the caller, not deleted. `read` needs only visibility; `ensure`
+ * and `stop` spend or stop compute, so they need lifecycle authority (owner or
+ * project manager). A session-scoped caller (the worker's KORTIX_TOKEN) may
+ * only address its OWN environment — a compromised worker cannot enumerate or
+ * boot siblings. Returns the pieces every handler needs or a Response to send
+ * as-is.
  */
 async function authorizeEnvironmentCall(
   c: Parameters<Parameters<typeof projectsApp.openapi>[1]>[0],
   action: (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTIONS],
+  need: SessionNeed,
 ): Promise<
   | { kind: 'error'; response: Response }
   | {
@@ -63,13 +67,11 @@ async function authorizeEnvironmentCall(
 > {
   const projectId = c.req.param('projectId') ?? '';
   const sessionId = c.req.param('sessionId') ?? '';
-  if (!UUID_V4_REGEX.test(sessionId)) {
+  if (!isUuid(sessionId)) {
     return { kind: 'error', response: c.json({ error: 'Invalid session id' }, 400) };
   }
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return { kind: 'error', response: c.json({ error: 'Not found' }, 404) };
-  // A session-scoped caller (the worker's KORTIX_TOKEN) may only address its
-  // own environment — a compromised worker cannot enumerate or boot siblings.
   const callerSession = callerKortixSessionId(c);
   if (callerSession && callerSession !== sessionId) {
     return { kind: 'error', response: c.json({ error: 'Forbidden' }, 403) };
@@ -77,18 +79,9 @@ async function authorizeEnvironmentCall(
   if (!callerSession) {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
   }
-  const [session] = await db
-    .select({
-      agentName: projectSessions.agentName,
-      baseRef: projectSessions.baseRef,
-      metadata: projectSessions.metadata,
-    })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
-    .limit(1);
-  if (!session || (session.metadata as Record<string, unknown> | null)?.deletedAt) {
-    return { kind: 'error', response: c.json({ error: 'Not found' }, 404) };
-  }
+  const guard = await guardSession(c, loaded, sessionId, need);
+  if (!guard.ok) return { kind: 'error', response: sessionAccessDenied(c, guard) };
+  const session = guard.session.row;
   return {
     kind: 'ok',
     projectId,
@@ -136,7 +129,7 @@ projectsApp.openapi(
     },
   }),
   async (c) => {
-    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_START, 'lifecycle');
     if (gate.kind === 'error') return gate.response as never;
     // Environments exist for worker sessions only: an OpenCode session's own
     // sandbox IS its environment, and ensuring a second box for it would just
@@ -191,7 +184,7 @@ projectsApp.openapi(
     },
   }),
   async (c) => {
-    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_READ, 'read');
     if (gate.kind === 'error') return gate.response as never;
     const info = await readSessionEnvironment(gate.sessionId);
     if (!info) return c.json({ error: 'No environment' }, 404);
@@ -215,7 +208,7 @@ projectsApp.openapi(
     },
   }),
   async (c) => {
-    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP, 'lifecycle');
     if (gate.kind === 'error') return gate.response as never;
     const info = await stopSessionEnvironment(gate.sessionId);
     if (!info) return c.json({ error: 'No environment' }, 404);

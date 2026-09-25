@@ -109,7 +109,7 @@ flow(
     // (apps/api/src/sandbox-proxy/routes/preview.ts REAL_PRE_PROMPT_DEPS). A
     // session whose only prompt was claimed by the daemon during boot
     // never crosses that proxy, so it "never crosses a titling hook again" —
-    // apps/api/src/projects/routes/r4.ts says exactly that in its own comment.
+    // apps/api/src/projects/routes/turn-stream.ts says exactly that in its own comment.
     // Waiting for the mirror straight after an initial_prompt boot is therefore
     // unsatisfiable by construction. Drive ONE real turn through the proxy, the
     // way every client does, and then assert the mirror the flow is about.

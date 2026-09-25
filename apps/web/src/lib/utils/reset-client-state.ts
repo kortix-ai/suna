@@ -11,6 +11,7 @@ import { withTimeBudget } from '@/lib/utils/time-budget';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { resetAllRegisteredPersistedStores } from '@/stores/persisted-store-registry';
 import { clearImpersonationSession } from '@kortix/sdk';
+import { resetIdentityState } from '@kortix/sdk/react';
 import { clearSessionIDBCache } from '@kortix/sdk/internal/idb-sync-cache'; // eslint-disable-line no-restricted-imports
 
 /**
@@ -26,7 +27,8 @@ import { clearSessionIDBCache } from '@kortix/sdk/internal/idb-sync-cache'; // e
  *      — plus the SDK's impersonation session, which lives partly at module
  *      scope (`current`/`hydrated` in
  *      `packages/sdk/src/core/http/impersonation.ts`) and so cannot be forgotten
- *      by deleting its sessionStorage key alone.
+ *      by deleting its sessionStorage key alone, and the SDK's per-user session
+ *      state (`resetIdentityState` from `@kortix/sdk/react`).
  *   4. Remaining per-user localStorage AND sessionStorage — a PREFIX sweep,
  *      not a delete-list; see `clear-local-storage.ts`. Runs AFTER step 3 so a
  *      store that just had its in-memory state reset has nothing left to
@@ -96,6 +98,16 @@ export async function resetClientState({
     clearImpersonationSession();
   } catch (error) {
     console.error('Failed to clear impersonation session:', error);
+  }
+
+  // The SDK's per-user in-memory state: transcripts, pending permission and
+  // question asks, turn receipts, and model picks. Without it a cross-tab
+  // sign-in keeps the previous user's transcripts on screen, and the next
+  // model pick writes the previous user's picks back to storage.
+  try {
+    resetIdentityState();
+  } catch (error) {
+    console.error('Failed to reset SDK identity state:', error);
   }
 
   try {

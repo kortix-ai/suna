@@ -23,13 +23,13 @@ import { and, eq, or } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
-  UUID_V4_REGEX,
   hasOwn,
   normalizeString,
-  readBody,
   requestAuditContext,
   serializeSession,
 } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
@@ -41,31 +41,10 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
-
-const SERVER_MANAGED_SESSION_METADATA_KEYS = [
-  'deletedAt',
-  'deletedBy',
-  'opencode_model',
-  'opencode_model_source',
-  'source',
-  'trigger_kind',
-  'trigger_slug',
-  'name',
-  'title_source',
-  // Agents as principals (spec 2026-09-22 §2.3): the mint reads these to decide
-  // `on_behalf_of`. A client that could set `spawned_by_session` would inherit
-  // another session's human; one that could forge the cleared stamp is harmless
-  // but still not the client's to write.
-  'spawned_by_session',
-  'on_behalf_of_cleared_at',
-] as const;
-
-const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
-  ...SERVER_MANAGED_SESSION_METADATA_KEYS,
-  'workspace_mode',
-  'repository_access',
-  'sandbox_slug',
-] as const;
+import {
+  PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
+  SERVER_MANAGED_SESSION_METADATA_KEYS,
+} from '../lib/session-metadata-keys';
 
 function serverManagedSessionMetadataKey(
   value: unknown,
@@ -99,7 +78,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const serverManagedMetadataKey = serverManagedSessionMetadataKey(body.metadata);
   if (serverManagedMetadataKey) {
     return c.json(
@@ -377,7 +356,7 @@ projectsApp.openapi(
   async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -426,9 +405,9 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -514,9 +493,9 @@ projectsApp.openapi(
   async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -545,7 +524,7 @@ projectsApp.openapi(
   // metadata.deletedAt / deletedBy are SERVER-MANAGED soft-delete markers.
   // deleteSession() is the only legitimate writer; they are consumed by
   // isSessionVisibleTo (session-inventory.ts — hides the session from every member's
-  // list), the continue-session guard (session-lifecycle/engine.ts:236 —
+  // list), the continue-session guard (session-lifecycle/continue-session.ts `continueSession` —
   // returns 'no-session' so queued Slack/trigger follow-ups 404), and the
   // sandbox reaper (sandbox-reaper.ts:477 — tombstones the live box).
   // Letting a client forge either via PATCH lets any project member hide
@@ -647,7 +626,7 @@ projectsApp.openapi(
   async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);

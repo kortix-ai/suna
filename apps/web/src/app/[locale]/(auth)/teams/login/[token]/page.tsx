@@ -4,7 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 
 import { ChatIdentityConnect } from '@/features/auth/chat-identity-connect';
-import { bindTeamsIdentity } from '@kortix/sdk';
+import { bindTeamsIdentity, previewTeamsIdentity } from '@kortix/sdk';
 
 /**
  * Teams bind page — the Teams twin of `/slack/login/<token>`. The bot sends a
@@ -22,6 +22,7 @@ export default function TeamsLoginPage() {
       token={token}
       loginPath={`/teams/login/${token}`}
       bind={bindTeamsIdentity}
+      preview={previewTeamsIdentity}
       missingLinkMessage={tI18nComplete.raw('text7390830dc0eb')}
       disconnectNote={
         <>

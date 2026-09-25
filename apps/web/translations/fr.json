@@ -43,7 +43,26 @@
     "connectAccount": "Connecter le compte",
     "oauthWaiting": "En attente d’autorisation…",
     "oauthExpired": "L’autorisation a expiré. Réessayez.",
-    "oauthPrivateDescription": "Les nouveaux comptes ChatGPT sont accessibles à ce projet par défaut. Vous pouvez limiter chaque compte à certains membres.",
+    "oauthPrivateDescription": "Utilisez votre abonnement ChatGPT Plus ou Pro dans ce projet. Les nouveaux comptes restent privés jusqu’à ce que vous les partagiez.",
+    "chatGptSubscription": "Abonnement ChatGPT",
+    "useYourChatGpt": "Utiliser votre abonnement ChatGPT",
+    "manageChatGptAccounts": "Gérer les comptes ChatGPT",
+    "connect": "Connecter",
+    "connectChatGpt": "Connecter ChatGPT",
+    "noChatGptAccounts": "Aucun compte ChatGPT pour l’instant",
+    "oauthCreationDescription": "Connectez-vous avec votre compte ChatGPT Plus ou Pro. Kortix stocke la connexion chiffrée et ne l’affiche jamais.",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "Vous uniquement",
+    "onlyYouDescription": "Vous seul pouvez la sélectionner dans une session.",
+    "onlyOwner": "{name} uniquement",
+    "shareRequiresPermission": "Pour partager avec d’autres personnes, vous devez pouvoir gérer les secrets du projet.",
+    "accountConnected": "Compte ChatGPT connecté",
+    "accountReconnected": "Compte ChatGPT reconnecté",
+    "connectFailed": "L’autorisation ChatGPT a échoué. Réessayez.",
+    "reconnectAccount": "Reconnecter",
+    "reconnectTitle": "Reconnecter {label}",
+    "reconnectDescription": "Reconnectez-vous à ChatGPT. Le compte conserve son nom, ses accès et ses sélections de session.",
+    "needsReconnection": "Reconnexion requise",
     "accountLabelPlaceholder": "p. ex. Mon compte ChatGPT",
     "chooseProvider": "Choisissez un fournisseur.",
     "saved": "Secret enregistré",
@@ -52,7 +71,7 @@
     "deleteError": "Impossible de supprimer le secret",
     "accessError": "Impossible de modifier l’accès",
     "sharedTitle": "Connexions aux fournisseurs",
-    "sharedDescription": "Ajoutez plusieurs clés API et comptes ChatGPT. Par défaut, tous les membres du projet peuvent les utiliser. Limitez l’accès par connexion et choisissez les clés par session.",
+    "sharedDescription": "Ajoutez des clés API et des comptes ChatGPT. Les nouveaux restent privés jusqu’à ce que vous les partagiez. Choisissez ceux que chaque session utilise.",
     "legacyProjectKey": "Clé de projet existante · Utilisée si aucune clé n’est sélectionnée pour cette session",
     "keyCount": "{count, plural, one {# clé} other {# clés}}",
     "providerKeysFor": "Clés API de {provider}",
@@ -102,6 +121,7 @@
     "providerKeys": "Clés du fournisseur",
     "chooseSharedKeys": "Choisissez les clés partagées que cette session peut utiliser.",
     "sessionKeyPool": "Groupe de clés de session",
+    "sharedSessionKeys": "Cette session est partagée avec le projet : seules les clés partagées avec tout le projet fonctionnent ici. Les clés qui vous sont attribuées fonctionnent dans vos sessions privées.",
     "projectDefaultShort": "Valeur par défaut du projet",
     "rateLimitDescription": "La passerelle passe aux autres clés sélectionnées lorsqu’un fournisseur signale une limite de débit.",
     "enableGateway": "Activez la passerelle LLM dans les paramètres du projet pour utiliser les groupes de clés.",
@@ -1109,7 +1129,7 @@
         },
         "pooled_provider_secrets": {
           "name": "Secrets de fournisseur partagés",
-          "description": "Partagez plusieurs clés de fournisseur avec les membres et choisissez un groupe de clés pour chaque session."
+          "description": "Les membres connectent leurs propres abonnements ChatGPT et clés de fournisseur, les partagent si besoin et choisissent ceux que chaque session utilise."
         },
         "pi_worker": {
           "name": "Environnement du worker Pi (compilé)",
@@ -1594,6 +1614,7 @@
     "backToProject": "Retour au projet",
     "delete": "Supprimer la session",
     "failedLabel": "Session échouée",
+    "loadingConversation": "Chargement de la conversation",
     "prompt": {
       "queueFailed": "Impossible de mettre le prompt enregistré en file d’attente",
       "unavailable": "Aucun prompt enregistré n’est disponible.",
@@ -6226,7 +6247,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Toutes les exécutions Worker sont actuellement en pause."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Aucun contenu"
+      "line1115JsxTextNoContent": "Aucun contenu",
+      "loadRemoteImage": "Charger l'image depuis {host}"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Appuyez sur Entrée pour démarrer..."
@@ -18672,7 +18694,9 @@
       "texta0bcee97cbb3": "Paiement intégré confirmé",
       "text0b751a917c97": "Installation GitHub connectée",
       "text8b7a8797d532": "Locataire Microsoft Teams connecté",
+      "text83c0e255d4bb": "Installation de Microsoft Teams terminée",
       "text17a8cf884e2a": "Espace de travail Slack connecté",
+      "textf887cb0e6800": "Installation de l’app Slack terminée",
       "textc7f9ec5ed69c": "Agent du Computer Tunnel connecté",
       "textafd58fcedeee": "Boîte de réception e-mail connectée",
       "text2eda12b4ed38": "Application GitHub existante connectée",
@@ -19135,7 +19159,28 @@
       "text2afef4702cc0": "Bannière d’état du système consultée",
       "textbda3fcd4343c": "Configurations des niveaux consultées",
       "text30cef615e8e3": "Récapitulatif des transactions consulté",
-      "textd2c6127fc332": "Diff de version consulté"
+      "textd2c6127fc332": "Diff de version consulté",
+      "text8cc0d84b66bb": "Lien d'identité Slack prévisualisé",
+      "text508b43cc4545": "Lien d'identité Teams prévisualisé",
+      "text467f597e95b0": "Domaine SSO vérifié",
+      "text8295f9d4861b": "Vérification du domaine SSO du compte définie"
+    },
+    "publicShareConfirm": {
+      "title": "Créer un lien public ?",
+      "description": "Toute personne disposant du lien peut le consulter sans se connecter. Le lien reste actif jusqu'à ce que vous le révoquiez.",
+      "confirm": "Créer le lien"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "Compte {service}",
+      "chatWorkspace": "Espace de travail {service}",
+      "checking": "Vérification du lien…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} n’a pas été connecté",
+      "mismatch": "Cette installation a été lancée depuis un autre compte Kortix ou pour un autre projet. Connectez-vous avec ce compte, ou relancez l’installation depuis le projet.",
+      "expired": "Ce lien d’installation est invalide ou a expiré. Relancez l’installation depuis le projet.",
+      "failed": "L’installation n’a pas pu être terminée. Relancez-la depuis le projet.",
+      "backToProject": "Retour au projet"
     }
   },
   "projectOnboarding": {
@@ -20147,5 +20192,18 @@
   },
   "connectorsAppReturn": {
     "done": "Terminé. Retour à l’app Kortix"
+  },
+  "ssoDomainVerification": {
+    "title": "Vérification du domaine",
+    "verified": "Vérifié",
+    "unverified": "Non vérifié",
+    "verifiedDescription": "Votre fournisseur d’identité est approuvé pour {domain}. L’obligation SSO s’applique à ce domaine.",
+    "unverifiedDescription": "Ajoutez cet enregistrement DNS TXT pour prouver que vous contrôlez {domain}. D’ici là, la connexion SSO ne fonctionne que dans ce compte et l’obligation SSO n’a aucun effet.",
+    "recordName": "Nom",
+    "recordValue": "Valeur",
+    "verify": "Vérifier le domaine",
+    "verifiedToast": "Domaine vérifié",
+    "failedToast": "Domaine pas encore vérifié",
+    "enforceNeedsVerification": "Vérifiez d’abord le domaine. L’obligation SSO ne s’applique qu’à un domaine vérifié."
   }
 }

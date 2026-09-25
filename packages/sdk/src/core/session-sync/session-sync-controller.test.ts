@@ -88,6 +88,107 @@ function createScheduler() {
 }
 
 describe('SessionSyncController', () => {
+  // A read proxied to the sandbox can park forever (a wedged runtime or a
+  // stalled proxy hop answers nothing and never errors). That read must not
+  // hold the single-flight slot: every later repair — turn end, SSE gap,
+  // liveness poll — would otherwise wait on it until the controller dies.
+  test('a tail read that never settles is abandoned after readTimeoutMs and later reconciles read again', async () => {
+    const clock = createScheduler();
+    const signals: AbortSignal[] = [];
+    let calls = 0;
+    const hydrated: string[][] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      scheduler: clock.scheduler,
+      readTimeoutMs: 15_000,
+      loadPage: (_request, signal) => {
+        calls += 1;
+        if (signal) signals.push(signal);
+        // First read: parks forever and ignores its signal.
+        if (calls === 1) return new Promise<SessionSyncPage>(() => {});
+        return Promise.resolve(page(['message-2']));
+      },
+      hydrate: (messages) => hydrated.push(messages.map((m) => m.info.id)),
+      markLoaded: () => {},
+    });
+    try {
+      const first = controller.reconcile('initial');
+      expect(calls).toBe(1);
+      // While the read is inside its budget, a second reconcile shares it.
+      void controller.reconcile('turn-end');
+      expect(calls).toBe(1);
+
+      clock.advance(15_000);
+      await first;
+      // The hung read's own signal is aborted so a signal-aware loader frees
+      // its socket.
+      expect(signals[0]?.aborted).toBe(true);
+
+      await controller.reconcile('turn-end');
+      expect(calls).toBe(2);
+      expect(hydrated).toEqual([['message-2']]);
+      expect(controller.getSnapshot().freshness).toBe('fresh');
+    } finally {
+      controller.destroy();
+    }
+  });
+
+  test('an abandoned tail read is retried without anyone asking', async () => {
+    const clock = createScheduler();
+    let calls = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      scheduler: clock.scheduler,
+      readTimeoutMs: 15_000,
+      loadPage: () => {
+        calls += 1;
+        if (calls === 1) return new Promise<SessionSyncPage>(() => {});
+        return Promise.resolve(page(['message-1']));
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+    try {
+      const first = controller.reconcile('initial');
+      clock.advance(15_000);
+      await first;
+      clock.advance(60_000);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(calls).toBe(2);
+      expect(controller.getSnapshot().freshness).toBe('fresh');
+    } finally {
+      controller.destroy();
+    }
+  });
+
+  test('the default read budget bounds a hung read at 120s', async () => {
+    const clock = createScheduler();
+    let calls = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      scheduler: clock.scheduler,
+      loadPage: () => {
+        calls += 1;
+        if (calls === 1) return new Promise<SessionSyncPage>(() => {});
+        return Promise.resolve(page(['message-1']));
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+    try {
+      const first = controller.reconcile('initial');
+      clock.advance(119_000);
+      void controller.reconcile('manual');
+      expect(calls).toBe(1);
+      clock.advance(1_000);
+      await first;
+      await controller.reconcile('manual');
+      expect(calls).toBe(2);
+    } finally {
+      controller.destroy();
+    }
+  });
+
   for (const status of [404, 410]) {
     test(`does not automatically retry a missing conversation (${status}) but permits explicit recovery`, async () => {
       const clock = createScheduler();

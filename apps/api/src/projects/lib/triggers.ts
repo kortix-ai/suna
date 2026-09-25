@@ -63,10 +63,10 @@ import {
   type ProjectRow,
   type RequestAuditContext,
   deriveKortixApiRoot,
-  isPlainObject,
   normalizeBoolean,
   normalizeString,
 } from './serializers';
+import { isPlainObject } from '../../shared/json';
 
 /**
  * Who asked for this fire. `monitor` is the third trigger type's source
@@ -912,10 +912,19 @@ async function enqueueTriggerPrompt(input: {
   /** The trigger's configured model; carried on the prompt for a re-prompted session. */
   model?: string | null;
 }): Promise<'queued' | 'no-session' | 'failed'> {
+  // Scoped to the trigger's own project and account. A pinned `session_id` is
+  // manifest text, so a session of any other project is "no session" here and
+  // the fire falls through to the trigger's own reuse/create path.
   const [session] = await db
     .select({ status: projectSessions.status, metadata: projectSessions.metadata })
     .from(projectSessions)
-    .where(eq(projectSessions.sessionId, input.sessionId))
+    .where(
+      and(
+        eq(projectSessions.sessionId, input.sessionId),
+        eq(projectSessions.projectId, input.project.projectId),
+        eq(projectSessions.accountId, input.project.accountId),
+      ),
+    )
     .limit(1);
   if (!session) return 'no-session';
   if (session.status === 'failed') return 'failed';

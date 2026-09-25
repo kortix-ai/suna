@@ -1,7 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import type { AppEnv } from '../../types';
-import { deductCredits, calculateTokenCost } from '../services/credits';
+import { calculateTokenCost } from '../services/credits';
+import { wallet } from '../wallet';
 import { getVisibleTiers } from '../services/tiers';
 import { getCreditBalance } from '../repositories/credit-accounts';
 import { getTransactionsSummary } from '../repositories/transactions';
@@ -60,16 +61,18 @@ creditsRouter.openapi(
       return c.json({ success: true, cost: 0, new_balance: 0 });
     }
 
-    const result = await deductCredits(
+    const result = await wallet.debit({
       accountId,
-      cost,
-      `LLM: ${body.model} (${body.prompt_tokens}/${body.completion_tokens} tokens)`,
-    );
+      amount: cost,
+      description: `LLM: ${body.model} (${body.prompt_tokens}/${body.completion_tokens} tokens)`,
+      kind: 'usage',
+      key: null,
+    });
 
     return c.json({
-      success: result.success,
-      cost: result.cost,
-      new_balance: result.newBalance,
+      success: true,
+      cost: result.amount,
+      new_balance: result.balance,
       transaction_id: result.transactionId,
     });
   },
@@ -104,16 +107,18 @@ creditsRouter.openapi(
       return c.json({ success: true, cost: 0, new_balance: 0 });
     }
 
-    const result = await deductCredits(
+    const result = await wallet.debit({
       accountId,
-      body.amount,
-      body.description || `Agent run usage: $${body.amount.toFixed(4)}`,
-    );
+      amount: body.amount,
+      description: body.description || `Agent run usage: $${body.amount.toFixed(4)}`,
+      kind: 'usage',
+      key: null,
+    });
 
     return c.json({
-      success: result.success,
-      cost: result.cost,
-      new_balance: result.newBalance,
+      success: true,
+      cost: result.amount,
+      new_balance: result.balance,
       transaction_id: result.transactionId,
     });
   },

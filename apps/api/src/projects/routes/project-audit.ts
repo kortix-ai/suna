@@ -14,7 +14,7 @@ import { accountTokens, auditEvents, connectors, connectorCalls, projectSessions
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import { buildFilters } from '../../accounts/audit-filters';
@@ -497,7 +497,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     let limit: number;
     let cursor: ReturnType<typeof parseAuditSessionCursor>;

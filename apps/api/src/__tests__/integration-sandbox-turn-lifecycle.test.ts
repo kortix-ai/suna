@@ -874,7 +874,7 @@ describe('session_turns ledger', () => {
     expect(await abandonSandboxTurn({ sandboxId: SANDBOX_ID }, t('ledger-abandon'))).toBe(true);
 
     // Every failed delivery takes this path (preview.ts 3xx/401/503/4xx/
-    // unreachable, r4.ts turn_abandoned). Leaving the row 'delivering' makes
+    // unreachable, turn-stream.ts turn_abandoned). Leaving the row 'delivering' makes
     // the ledger claim a turn is running for ever.
     expect((await readRow()).metadata.activeTurns).toEqual({});
     expect(await readTurn(t('ledger-abandon'))).toMatchObject({
@@ -1259,6 +1259,28 @@ describe('end_error: causes, requested stops, and which one wins', () => {
     await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT });
     await end(ABORT);
     expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
+  // prod 2026-09-25: a web Stop's hold settle aborted the box ~450 ms before
+  // the client's proxied abort. The first "Aborted" frame closed the turn, and
+  // the proxy's stamp then found no open turn to mark.
+  test('a stamp that lands after the abort closed the turn cannot rescue it', async () => {
+    const token = await openTurn();
+    await end(ABORT); // the settle's unstamped abort
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // proxy, too late
+    await end(ABORT); // the client's abort
+    expect((await readTurn(token))?.end_error).toEqual(ABORT);
+  });
+
+  test('the hold stamps first, so every later abort of the same Stop keeps it a stop', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // hold route
+    await end(ABORT); // the settle's abort
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // proxy
+    await end(ABORT); // the client's abort
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('failed');
+    expect(row?.end_error).toEqual({ name: 'UserStop', message: null });
   });
 
   test('a named cause beats a requested stop: the mark never hides a real failure', async () => {

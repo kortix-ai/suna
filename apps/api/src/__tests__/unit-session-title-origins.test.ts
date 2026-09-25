@@ -171,8 +171,8 @@ describe('session-title origins — create-time title source', () => {
     // sessions.ts writes it to metadata.name, so needsTitle() is false and
     // generation never overwrites it.
     for (const [rel, marker, name] of [
-      ['projects/routes/r2.ts', "source: 'system:sandbox-build-fix'", "name: 'Fix sandbox build'"],
-      ['projects/routes/r10.ts', 'const result = await createSession({', 'name: `Add ${'],
+      ['projects/routes/sandboxes.ts', "source: 'system:sandbox-build-fix'", "name: 'Fix sandbox build'"],
+      ['projects/routes/marketplace-install-session.ts', 'const result = await createSession({', 'name: `Add ${'],
     ] as const) {
       const source = createBody(rel, marker);
       expect(source).toContain(name);

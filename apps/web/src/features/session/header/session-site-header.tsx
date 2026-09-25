@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useSidebar } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { CompactModal } from '@/features/session/header/compact-modal';
@@ -317,7 +318,13 @@ export function SessionSiteHeader({
                   variant="ghost"
                   className="text-foreground/80 hover:text-foreground data-[state=open]:bg-card group h-auto min-w-0 shrink justify-start gap-3 rounded-md px-2.5 py-1 transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] has-[>svg]:px-2.5"
                 >
-                  <span className="min-w-0 truncate">{headerTitle}</span>
+                  {headerTitle ? (
+                    <span className="min-w-0 truncate">{headerTitle}</span>
+                  ) : (
+                    // No name yet: `SavedSessionSkeleton` renders this header
+                    // before the session row has answered.
+                    <Skeleton className="h-3.5 w-24 py-0 motion-reduce:animate-none" />
+                  )}
                   <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]:rotate-180" />
                 </Button>
               </DropdownMenuTrigger>

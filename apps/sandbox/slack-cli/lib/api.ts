@@ -120,9 +120,19 @@ async function parseResponse<T>(res: Response): Promise<T> {
     }
   }
   if (!res.ok) {
-    const message = (body && typeof body === 'object' && 'error' in body
-      ? String((body as { error: unknown }).error)
-      : text || res.statusText) || `HTTP ${res.status}`;
+    // The API's structured denial is `{ error: true, message, code, action }`
+    // (see apps/api/src/iam/denial-message.ts) — `error` is a BOOLEAN flag, not
+    // the text. Reading it as the message printed `HTTP 403: true` and hid the
+    // actionable reason ("This agent session is not granted …"). Prefer the
+    // server's `message`, then a string `error` (older/simple bodies), then the
+    // raw body.
+    const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
+    const message =
+      (record && typeof record.message === 'string' && record.message) ||
+      (record && typeof record.error === 'string' && record.error) ||
+      text ||
+      res.statusText ||
+      `HTTP ${res.status}`;
     throw new CliError(`HTTP ${res.status}: ${message}`, 'API_ERROR', 1, { status: res.status });
   }
   return body as T;

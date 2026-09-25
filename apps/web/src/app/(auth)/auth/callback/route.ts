@@ -38,7 +38,6 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type'); // signup, recovery, etc.
   const next = sanitizeAuthReturnUrl(searchParams.get('returnUrl') || searchParams.get('redirect'));
   const termsAccepted = searchParams.get('terms_accepted') === 'true';
-  const email = searchParams.get('email') || ''; // Email passed from magic link redirect URL
   const desktop = searchParams.get('desktop') === 'true';
   const mobile = searchParams.get('mobile_callback') === '1' && Boolean(searchParams.get('state'));
   const runtimeEnv = getServerPublicEnv();
@@ -101,7 +100,6 @@ export async function GET(request: NextRequest) {
       // Redirect to auth page with expired state to show resend form
       const expiredUrl = new URL(`${baseUrl}/auth`);
       expiredUrl.searchParams.set('expired', 'true');
-      if (email) expiredUrl.searchParams.set('email', email);
       if (next) expiredUrl.searchParams.set('returnUrl', next);
 
       return NextResponse.redirect(expiredUrl);
@@ -146,8 +144,7 @@ export async function GET(request: NextRequest) {
           // Redirect to auth page with expired state to show resend form
           const expiredUrl = new URL(`${baseUrl}/auth`);
           expiredUrl.searchParams.set('expired', 'true');
-          if (email) expiredUrl.searchParams.set('email', email);
-          if (next) expiredUrl.searchParams.set('returnUrl', next);
+              if (next) expiredUrl.searchParams.set('returnUrl', next);
 
           return NextResponse.redirect(expiredUrl);
         }

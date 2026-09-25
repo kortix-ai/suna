@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { getTraceHeaders } from '../../lib/request-context';
 import { previewOriginFor } from '../preview-hosts';
+import { ingressTargetUrl } from '../../platform/providers/ingress-url';
 import {
   PUBLIC_SHARE_BLOCKED_PORTS,
   STATIC_FILE_SHARE_PORT,
@@ -37,8 +38,26 @@ function stripFrameAncestors(csp: string): string | null {
   return kept.length ? kept.join('; ') : null;
 }
 
-function publicResponseHeaders(upstreamHeaders: Headers, origin: string): Headers {
+/**
+ * The path form serves share-author content on the API origin. That origin
+ * carries the viewer's `__preview_session` cookie (`Path=/v1/p/`) and shares a
+ * registrable domain with the web app, so author content must not act as the
+ * API origin:
+ *   - `Content-Security-Policy: sandbox` without `allow-same-origin` runs the
+ *     document in an opaque origin. Its script cannot read same-origin API
+ *     responses, and the browser sends it no API cookies.
+ *   - `Set-Cookie` is dropped. A cookie set here would land on the API host,
+ *     or, with a `Domain` attribute, on the web app.
+ * The preview origin (`preview-origin.ts`) is the full-fidelity home of a
+ * shared app; document navigations are redirected there when this deployment
+ * has one (`previewNavigationRedirect`).
+ */
+export const PUBLIC_SHARE_SANDBOX_CSP =
+  'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads';
+
+export function publicResponseHeaders(upstreamHeaders: Headers, origin: string): Headers {
   const headers = new Headers(upstreamHeaders);
+  headers.delete('set-cookie');
   headers.delete('x-frame-options');
   for (const key of ['content-security-policy', 'content-security-policy-report-only']) {
     const csp = headers.get(key);
@@ -48,12 +67,37 @@ function publicResponseHeaders(upstreamHeaders: Headers, origin: string): Header
       else headers.delete(key);
     }
   }
+  // Appended, not set: multiple CSP headers are all enforced, so the author's
+  // own policy still applies alongside the sandbox.
+  headers.append('Content-Security-Policy', PUBLIC_SHARE_SANDBOX_CSP);
+  headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('Referrer-Policy', 'no-referrer');
   if (origin) {
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Access-Control-Allow-Credentials', 'false');
   }
   return headers;
+}
+
+/**
+ * A browser navigating to the path form goes to the share's preview origin
+ * instead, when this deployment has a preview domain. The path form stays for
+ * programmatic clients and for a self-host without a preview domain.
+ */
+export function previewNavigationRedirect(input: {
+  method: string;
+  fetchDest: string | undefined;
+  previewOrigin: string | null;
+  path: string;
+  search: string;
+  token: string;
+}): string | null {
+  if (!input.previewOrigin) return null;
+  if (input.method !== 'GET' && input.method !== 'HEAD') return null;
+  if (input.fetchDest !== 'document' && input.fetchDest !== 'iframe') return null;
+  const params = new URLSearchParams(input.search);
+  params.set('public_share', input.token);
+  return `${input.previewOrigin}${normalizeProxyPath(input.path)}?${params.toString()}`;
 }
 
 function normalizeProxyPath(value: string | undefined): string {
@@ -164,8 +208,7 @@ async function forwardPublicShare(c: any, args: {
         path: args.remainingPath,
         transport: 'http',
       });
-      const previewUrl = ingress.url;
-      const targetUrl = previewUrl.replace(/\/$/, '') + args.remainingPath + args.queryString;
+      const targetUrl = ingressTargetUrl(ingress, args.remainingPath + args.queryString);
       const headers = new Headers();
       for (const [key, value] of c.req.raw.headers.entries()) {
         if (STRIP_FORWARD_HEADERS.has(key.toLowerCase())) continue;
@@ -184,7 +227,7 @@ async function forwardPublicShare(c: any, args: {
       for (const [key, value] of Object.entries(authHeaders)) {
         headers.set(key, value);
       }
-      const previewOrigin = new URL(previewUrl);
+      const previewOrigin = new URL(ingress.url);
       if (headers.has('origin')) headers.set('origin', previewOrigin.origin);
       headers.set('x-forwarded-host', previewOrigin.host);
       headers.set('X-Forwarded-Prefix', `${publicOrigin(c)}${args.redirectPrefix}`);
@@ -249,6 +292,17 @@ async function forwardFileShare(c: any, args: {
   if (!isFileEntry) {
     return c.json({ error: 'Not authorized for this file path' }, 403);
   }
+  const redirect = previewNavigationRedirect({
+    method: c.req.method.toUpperCase(),
+    fetchDest: c.req.header('sec-fetch-dest'),
+    previewOrigin: args.share.externalId
+      ? previewOriginFor(args.share.externalId, STATIC_FILE_SHARE_PORT)
+      : null,
+    path: '/open',
+    search: '',
+    token: args.token,
+  });
+  if (redirect) return c.redirect(redirect, 302);
   return forwardPublicShare(c, {
     token: args.token,
     share: args.share,
@@ -312,6 +366,15 @@ publicShareApp.all('/:token/:port/*', async (c) => {
     prefixIndex !== -1 ? fullPath.slice(prefixIndex + prefix.length) : '/',
   );
   const upstreamUrl = new URL(c.req.url);
+  const redirect = previewNavigationRedirect({
+    method: c.req.method.toUpperCase(),
+    fetchDest: c.req.header('sec-fetch-dest'),
+    previewOrigin: share.externalId ? previewOriginFor(share.externalId, port) : null,
+    path: remainingPath,
+    search: upstreamUrl.search,
+    token,
+  });
+  if (redirect) return c.redirect(redirect, 302);
   return forwardPublicShare(c, {
     token,
     share,
