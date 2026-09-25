@@ -112,15 +112,17 @@ async function setup(): Promise<void> {
   manifest = manifest.replace(/^runtime:.*\n/m, '');
   if (runtime === 'pi') manifest = manifest.replace(/^kortix_version:\s*2\s*\n/m, (m) => `${m}runtime: pi\n`);
   writeFileSync(manifestPath, manifest);
-  const agentsDir = join(work, '.kortix', 'opencode', 'agents');
-  execFileSync('mkdir', ['-p', agentsDir]);
   const defaultAgent = /^default_agent:\s*(\S+)/m.exec(manifest)?.[1] ?? 'build';
-  writeFileSync(join(agentsDir, `${defaultAgent}.md`), AGENT_MD);
+  // The agent's own `file:` in kortix.yaml (the root layout), else the legacy path.
+  const fileRef = new RegExp(`^  ${defaultAgent}:[^\\n]*\\n(?:    [^\\n]*\\n)*?    file:\\s*(\\S+)`, 'm').exec(manifest)?.[1];
+  const agentPath = join(work, fileRef ?? join('.kortix', 'opencode', 'agents', `${defaultAgent}.md`));
+  execFileSync('mkdir', ['-p', join(agentPath, '..')]);
+  writeFileSync(agentPath, AGENT_MD);
   g('add', '-A');
   g('-c', 'user.name=pi-e2e', '-c', 'user.email=pi-e2e@kortix.test', 'commit', '-q', '-m', `e2e: runtime ${runtime}`);
   g('push', '-q', 'origin', 'HEAD:main');
   const sha = g('rev-parse', 'HEAD');
-  console.log(JSON.stringify({ project_id: projectId, name, runtime, default_agent: defaultAgent, sha, manifest_head: manifest.split('\n').slice(0, 4) }));
+  console.log(JSON.stringify({ project_id: projectId, name, runtime, default_agent: defaultAgent, agent_file: agentPath.slice(work.length + 1), sha, manifest_head: manifest.split('\n').slice(0, 4) }));
 }
 
 /** Register a project straight in the DB (the flows' database-project fixture), pointing at a local repo. */
