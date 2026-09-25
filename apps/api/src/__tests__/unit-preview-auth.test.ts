@@ -48,8 +48,8 @@ mock.module('../repositories/api-keys', () => ({
 }));
 
 mock.module('../shared/crypto', () => ({
-  // Spread the real module: mock.module replaces it WHOLESALE, and the auth
-  // middleware now reaches shared/crypto through oauth/token-hash too.
+  // Spread the real module: mock.module replaces it WHOLESALE, so every
+  // export that a transitively imported module uses must stay present.
   ...realCrypto,
   // Constants
   KEY_PREFIX: 'kortix_',

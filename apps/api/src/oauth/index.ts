@@ -17,8 +17,8 @@ import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { eq, and, isNull, lt, or } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { randomAlphanumeric, verifySecretKey } from '../shared/crypto';
-import { hashOauthToken, hashPresentedOauthToken } from './token-hash';
+import { hashSecretKey, randomAlphanumeric, verifySecretKey } from '../shared/crypto';
+import { hashSecretKeyAsync } from '../shared/token-hash';
 import { supabaseAuth } from '../middleware/auth';
 import { config } from '../config';
 import {
@@ -73,7 +73,7 @@ async function oauthTokenAuth(c: Context, next: Next) {
   const token = authHeader.slice(7);
   if (!token) throw new HTTPException(401, { message: 'Missing token' });
 
-  const tokenHash = await hashPresentedOauthToken(token);
+  const tokenHash = await hashSecretKeyAsync(token);
   const [row] = await db
     .select()
     .from(oauthAccessTokens)
@@ -301,7 +301,7 @@ async function issueTokenPair(params: { clientId: string; userId: string; accoun
   const [accessRow] = await db
     .insert(oauthAccessTokens)
     .values({
-      tokenHash: hashOauthToken(accessToken),
+      tokenHash: hashSecretKey(accessToken),
       clientId: params.clientId,
       userId: params.userId,
       accountId: params.accountId,
@@ -311,7 +311,7 @@ async function issueTokenPair(params: { clientId: string; userId: string; accoun
     .returning();
 
   await db.insert(oauthRefreshTokens).values({
-    tokenHash: hashOauthToken(refreshToken),
+    tokenHash: hashSecretKey(refreshToken),
     accessTokenId: accessRow.id,
     clientId: params.clientId,
     userId: params.userId,
@@ -661,7 +661,7 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
   const refreshTokenRaw = body['refresh_token'] as string;
   if (!refreshTokenRaw) return c.json({ error: 'invalid_request', error_description: 'Missing refresh_token' }, 400);
 
-  const refreshHash = await hashPresentedOauthToken(refreshTokenRaw);
+  const refreshHash = await hashSecretKeyAsync(refreshTokenRaw);
   const [refreshRow] = await db
     .select()
     .from(oauthRefreshTokens)
@@ -732,7 +732,7 @@ oauthApp.openapi(
     const now = new Date();
     let revoked = false;
     if (isOAuthRefreshToken(token)) {
-      const tokenHash = await hashPresentedOauthToken(token);
+      const tokenHash = await hashSecretKeyAsync(token);
       const rows = await db
         .update(oauthRefreshTokens)
         .set({ revokedAt: now })
@@ -749,7 +749,7 @@ oauthApp.openapi(
       }
       revoked = rows.length > 0;
     } else if (isOAuthAccessToken(token)) {
-      const tokenHash = await hashPresentedOauthToken(token);
+      const tokenHash = await hashSecretKeyAsync(token);
       const rows = await db
         .update(oauthAccessTokens)
         .set({ revokedAt: now })

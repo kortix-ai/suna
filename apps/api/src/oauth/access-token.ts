@@ -13,8 +13,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { oauthAccessTokens, oauthClients } from '@kortix/db';
 import { db } from '../shared/db';
-import { hashPresentedOauthToken } from './token-hash';
-import { markTokenValidated } from '../shared/token-hash';
+import { hashSecretKeyAsync, markTokenValidated } from '../shared/token-hash';
 
 export const OAUTH_ACCESS_TOKEN_PREFIX = 'kortix_oat_';
 export const OAUTH_REFRESH_TOKEN_PREFIX = 'kortix_ort_';
@@ -61,7 +60,7 @@ export interface OAuthAccessTokenValidation {
 
 export async function validateOAuthAccessToken(token: string): Promise<OAuthAccessTokenValidation> {
   if (!isOAuthAccessToken(token)) return { isValid: false, error: 'Invalid OAuth access token' };
-  const tokenHash = await hashPresentedOauthToken(token);
+  const tokenHash = await hashSecretKeyAsync(token);
   const [row] = await db
     .select({
       id: oauthAccessTokens.id,
