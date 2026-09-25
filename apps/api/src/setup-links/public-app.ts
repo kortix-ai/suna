@@ -166,14 +166,44 @@ setupLinksPublicApp.get('/connectors/:token', async (c) => {
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'connector') return c.json({ error: 'Wrong link type' }, 400);
 
+  const [name, identity] = await Promise.all([
+    projectName(resolved.projectId),
+    connectorIdentity(resolved.projectId, resolved.payload.slug),
+  ]);
   return c.json({
     kind: 'connector',
-    project_name: await projectName(resolved.projectId),
+    project_name: name,
     slug: resolved.payload.slug,
     app: resolved.payload.app,
+    name: identity.name,
+    icon_url: identity.iconUrl,
     expires_at: new Date(resolved.payload.exp).toISOString(),
   });
 });
+
+/**
+ * The display name and logo the in-chat card shows, so a connect link reads
+ * "Connect Google Calendar" with its logo instead of a generic plug.
+ *
+ * Read from the project's connector row, the same `config.icon_url` the
+ * connectors page renders. Both are `null` when the row is gone or the catalog
+ * had no logo; the card then falls back to a monogram, never a guessed URL.
+ */
+async function connectorIdentity(
+  projectId: string,
+  slug: string,
+): Promise<{ name: string | null; iconUrl: string | null }> {
+  const [row] = await db
+    .select({ name: connectors.name, config: connectors.config })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+    .limit(1);
+  const iconUrl = (row?.config as { icon_url?: unknown } | null | undefined)?.icon_url;
+  return {
+    name: row?.name ?? null,
+    iconUrl: typeof iconUrl === 'string' && iconUrl.length > 0 ? iconUrl : null,
+  };
+}
 
 /**
  * Shared gate for the two connector consume routes: resolve the token, confirm

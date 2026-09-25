@@ -176,6 +176,43 @@ describe('GET /secret/:token', () => {
   });
 });
 
+describe('GET /connectors/:token', () => {
+  test('returns the connector display name and icon so the chat card can name the app', async () => {
+    connectorRows = [
+      { name: 'Smartlead', config: { icon_url: 'https://cdn.example.test/smartlead.svg' } },
+    ];
+    const res = await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      kind: 'connector',
+      project_name: 'Kortix Company',
+      slug: 'smartlead',
+      app: 'smartlead',
+      name: 'Smartlead',
+      icon_url: 'https://cdn.example.test/smartlead.svg',
+    });
+  });
+
+  test('a connector without a catalog icon reports icon_url null, not a guessed URL', async () => {
+    connectorRows = [{ name: 'Smartlead', config: {} }];
+    const body = await (
+      await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`)
+    ).json();
+    expect(body.name).toBe('Smartlead');
+    expect(body.icon_url).toBeNull();
+  });
+
+  test('a link whose connector row is gone still resolves, with null identity', async () => {
+    connectorRows = [];
+    const res = await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.name).toBeNull();
+    expect(body.icon_url).toBeNull();
+  });
+});
+
 describe('POST /secret/:token', () => {
   function submit(token: string, values: Record<string, string> = { DRATA_API_KEY: 'v-1' }) {
     return setupLinksPublicApp.request(`/secret/${token}`, {
