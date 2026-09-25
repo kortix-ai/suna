@@ -3,8 +3,10 @@ import vectors from '../../../../tests/spec/wire-message-id.vectors.json';
 import {
   WIRE_MESSAGE_ID,
   isWireIdAheadOf,
+  maxWireIdClock,
   mintWireMessageId,
   newestWireIdTime,
+  wireIdClockDelta,
   wireIdTime,
 } from './wire-message-id';
 
@@ -42,6 +44,18 @@ describe('newestWireIdTime — golden vectors shared with @kortix/sdk', () => {
     test(vector.name, () => {
       const newest = newestWireIdTime(vector.ids, vector.nowMs ?? undefined);
       expect(newest === null ? null : newest.toString(16).padStart(12, '0')).toBe(vector.expected);
+    });
+  }
+});
+
+describe('wireIdClockDelta / maxWireIdClock — golden vectors shared with @kortix/sdk', () => {
+  for (const vector of vectors.delta) {
+    test(vector.name, () => {
+      const clock = BigInt(`0x${vector.clock}`);
+      const reference = BigInt(`0x${vector.reference}`);
+      expect(wireIdClockDelta(clock, reference)).toBe(BigInt(vector.expected));
+      const newest = maxWireIdClock([clock, reference]);
+      expect(newest).toBe(BigInt(vector.expected) >= BigInt(0) ? clock : reference);
     });
   }
 });

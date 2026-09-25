@@ -7,10 +7,13 @@
  * sorts every local one AFTER every placed one, so a reply minted here must
  * carry a real clock and sort strictly after the user message it answers.
  *
- * Mirrors apps/api/src/projects/wire-message-id.ts. The daemon ships inside
- * the sandbox image and cannot import apps/api, so the codec is duplicated
- * deliberately; `pi-wire-id.test.ts` reads the API's regex off disk and
- * asserts every id minted here satisfies it, so the two cannot drift silently.
+ * A deliberate copy of the platform codec, `@kortix/sdk/wire-message-id`
+ * (packages/sdk/src/core/session/wire-message-id.ts), which names this file as
+ * its one remaining copy. kortixd is a standalone compiled binary with no
+ * workspace dependencies, so it does not import the SDK. `pi-wire-id.test.ts`
+ * reads the SDK's regex off disk and asserts every id minted here satisfies
+ * it, so the format cannot drift silently. Ordering here is plain `>`: a pi
+ * session mints its own ids on one clock and never spans ~2.2 years.
  */
 import { createHash } from 'node:crypto'
 

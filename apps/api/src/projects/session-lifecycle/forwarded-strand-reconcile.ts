@@ -44,7 +44,7 @@ import {
   closeSandboxTurnByMessageId,
 } from '../sandbox-turn-lifecycle';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-import { wireIdTime } from '../wire-message-id';
+import { wireIdClockDelta, wireIdTime } from '../wire-message-id';
 import { drainSessionLifecycleQueue } from './drain';
 import { resolveSessionOpencodeEndpoint } from './runtime-client';
 import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, parsePlacementTip, strandedPlacement, tipIsBusy } from './forwarded-placement';
@@ -262,7 +262,7 @@ export async function reconcileForwardedTurnsAtEnd(
   for (const turn of forwarded) {
     const at = wireIdTime(turn.messageId!);
     if (at === null || turn.messageId === endedMessageId) continue;
-    if (at < endedAt) older.push(turn);
+    if (wireIdClockDelta(at, endedAt) < BigInt(0)) older.push(turn);
     else newer.push(turn);
   }
   for (const turn of older) {

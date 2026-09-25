@@ -6,7 +6,7 @@
  */
 
 import { sessionLifecycleCommands } from '@kortix/db';
-import { type SQL, and, eq, gte, inArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import {
@@ -20,14 +20,14 @@ import {
   boxClockSkewMs,
   mintLivePlacement,
   noteBoxClockSample,
+  remintFloorTime,
   strandedPlacement,
 } from './forwarded-placement';
 import {
   MAX_WIRE_ID_CLOCK_CORRECTION,
-  WIRE_ID_TIME_MASK,
   WIRE_ID_TIME_SCALE,
-  isWireIdAheadOf,
-  wireIdTime,
+  newestWireIdTime,
+  wireIdClockDelta,
 } from '../wire-message-id';
 import { type InboxTranscriptState, readInboxTranscriptState } from './runtime-client';
 
@@ -43,18 +43,23 @@ const DELIVERED_WIRE_ID_FLOOR_WINDOW_MS = Number(
   MAX_WIRE_ID_CLOCK_CORRECTION / WIRE_ID_TIME_SCALE,
 );
 
-/** The 48-bit wire-id clock of this instant. */
-function wireIdClockNow(): bigint {
-  return (BigInt(Date.now()) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
-}
+/**
+ * Rows read for the delivered floor. A session sends far fewer prompts than
+ * this inside one `DELIVERED_WIRE_ID_FLOOR_WINDOW_MS`; the newest rows are
+ * read first, so a cap that is ever hit drops only the oldest ids.
+ */
+const DELIVERED_WIRE_ID_FLOOR_ROW_LIMIT = 500;
 
 /**
  * The newest wire id THIS SESSION has already put on the wire, read from our
  * own rows rather than from OpenCode's transcript.
  *
- * The clock is decoded IN SQL rather than by sorting the ids as text: the id's
- * 12-char prefix is hex, and text ordering under a non-C collation is not the
- * ordering of the number it encodes.
+ * SQL returns the ids; the SDK orders them (`newestWireIdTime`, on the 48-bit
+ * ring). A SQL `max()` over the decoded clock would rank every pre-wrap id
+ * above every post-wrap one, and would duplicate the clock arithmetic. An id
+ * more than MAX_WIRE_ID_CLOCK_CORRECTION ahead of the clock (the pre-fix CLI
+ * minted the HIGH bits, ~40 days out) is skipped by the same call: it would
+ * otherwise BE the newest and hide every real floor under it.
  *
  * Fails OPEN (`null`), like every other read on this path: a floor that cannot
  * be read must not block a prompt, and the transcript floor still applies.
@@ -63,30 +68,12 @@ async function readDeliveredWireIdFloor(
   row: SessionLifecycleCommandRow,
 ): Promise<bigint | null> {
   if (!row.sessionId) return null;
-  // `substr(id, 5, 12)` skips the `msg_` prefix. `lpad` to 16 hex chars makes
-  // the value a legal `bit(64)`, which is the only width with a bigint cast.
-  //
-  // An id more than MAX_WIRE_ID_CLOCK_CORRECTION ahead of the clock on the
-  // 48-bit ring is excluded IN SQL: one such row (the pre-fix CLI minted the
-  // HIGH bits, ~40 days out) would otherwise BE the max and hide every real
-  // floor under it.
-  const nowClock = wireIdClockNow();
-  const decoded = (source: SQL) =>
-    sql`('x' || lpad(substr(${source}, 5, 12), 16, '0'))::bit(64)::bigint`;
-  const clock = (source: SQL) => sql`CASE
-    WHEN ${source} ~ '^msg_[0-9a-f]{12}'
-     AND ((${decoded(source)} - ${nowClock.toString()}::bigint) & ${WIRE_ID_TIME_MASK.toString()}::bigint)
-         NOT BETWEEN ${(MAX_WIRE_ID_CLOCK_CORRECTION + BigInt(1)).toString()}::bigint
-             AND ${(WIRE_ID_TIME_MASK / BigInt(2)).toString()}::bigint
-    THEN ${decoded(source)}
-  END`;
   try {
-    const [found] = await db
+    const rows = await db
       .select({
-        newest: sql<string | number | null>`GREATEST(
-          max(${clock(sql`${sessionLifecycleCommands.payload}->>'wireMessageId'`)}),
-          max(${clock(sql`${sessionLifecycleCommands.payload}->>'redeliveredMessageId'`)}),
-          max(${clock(sql`${sessionLifecycleCommands.result}->>'forwarded_message_id'`)}))`,
+        submitted: sql<string | null>`${sessionLifecycleCommands.payload}->>'wireMessageId'`,
+        redelivered: sql<string | null>`${sessionLifecycleCommands.payload}->>'redeliveredMessageId'`,
+        forwarded: sql<string | null>`${sessionLifecycleCommands.result}->>'forwarded_message_id'`,
       })
       .from(sessionLifecycleCommands)
       // Served by idx_session_lifecycle_commands_session.
@@ -100,13 +87,12 @@ async function readDeliveredWireIdFloor(
           ),
         ),
       )
-      .limit(1);
-    if (found?.newest === null || found?.newest === undefined) return null;
-    const newest = BigInt(found.newest);
-    // Same rule as the SQL filter, for a reader that returned one anyway.
-    const ahead = ((newest - wireIdClockNow()) & WIRE_ID_TIME_MASK);
-    if (ahead > MAX_WIRE_ID_CLOCK_CORRECTION && ahead < WIRE_ID_TIME_MASK / BigInt(2)) return null;
-    return newest;
+      .orderBy(desc(sessionLifecycleCommands.updatedAt))
+      .limit(DELIVERED_WIRE_ID_FLOOR_ROW_LIMIT);
+    return newestWireIdTime(
+      rows.flatMap((found) => [found.submitted, found.redelivered, found.forwarded]),
+      Date.now(),
+    );
   } catch (err) {
     console.warn('[session-lifecycle] delivered wire-id floor read failed — using the transcript', {
       sessionId: row.sessionId,
@@ -156,18 +142,6 @@ export async function remintWireMessageId(
   payload: QueuedContinueSessionPayload,
   transcript: InboxTranscriptState,
 ): Promise<string> {
-  // A submitted id far AHEAD of the clock (the pre-fix CLI's high-bits mint,
-  // ~40 days out) was placed by nothing, so it is no floor: taken as one, the
-  // 1h lift cap refuses it and the prompt goes out below the live reply.
-  const submitted =
-    payload.wireMessageId && !isWireIdAheadOf(payload.wireMessageId, Date.now())
-      ? wireIdTime(payload.wireMessageId)
-      : null;
-  const floor = transcript.read
-    ? transcript.newest
-    : // OpenCode's own minting rule, so an id it wrote a second ago is still
-      // beaten: `Date.now()` scaled into the id clock, with no backdate.
-      (BigInt(Date.now()) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
   // THE TRANSCRIPT IS NOT THE ONLY FLOOR — it lags. OpenCode persists a
   // mid-turn user message ~4s after the POST (measured against a real sandbox
   // in `inbox-midturn-forward.live.test.ts`), and two prompts sent
@@ -176,9 +150,13 @@ export async function remintWireMessageId(
   // they run in the wrong order, or the loser sorts under an assistant reply
   // and OpenCode reads it as already answered and never runs it. The inbox
   // already knows every id it put on the wire; that is the missing floor.
-  const delivered = await readDeliveredWireIdFloor(row);
-  const known = delivered !== null && (floor === null || delivered > floor) ? delivered : floor;
-  const newest = known !== null && (submitted === null || known > submitted) ? known : submitted;
+  // `remintFloorTime` merges the three floors on the 48-bit ring.
+  const newest = remintFloorTime({
+    transcript,
+    deliveredNewest: await readDeliveredWireIdFloor(row),
+    submittedMessageId: payload.wireMessageId,
+    nowMs: Date.now(),
+  });
 
   // Placed at the BOX's clock "now" when it is known (see forwarded-placement
   // .ts): newest+1 is only safe while nothing else is minting, and a live turn
@@ -188,7 +166,7 @@ export async function remintWireMessageId(
     newestKnownTime: newest,
     boxSkewMs: row.sessionId ? boxClockSkewMs(row.sessionId) : null,
   });
-  if (newest !== null && minted.time <= newest) {
+  if (newest !== null && wireIdClockDelta(minted.time, newest) <= BigInt(0)) {
     // The lift refused: `MAX_WIRE_ID_CLOCK_CORRECTION` (1h) caps how far a
     // transcript may drag an id, and past that cap the id we are about to send
     // sorts BELOW what is on record.

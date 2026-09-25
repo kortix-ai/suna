@@ -32,7 +32,7 @@ import {
   promptState,
   serializePrompt,
 } from '../lib/session-prompt-view';
-import { isWireIdAheadOf } from '../wire-message-id';
+import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -54,7 +54,6 @@ import { isWireIdAheadOf } from '../wire-message-id';
 // own rows, because that answer changes between the POST and the delivery. A
 // live turn holds later prompts until its terminal event releases the next row.
 
-const PROMPT_WIRE_MESSAGE_ID = /^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
 const PROMPT_LIST_LIMIT = 200;
 
 const SessionPromptSchema = z.object({
@@ -186,7 +185,7 @@ projectsApp.openapi(
     if (!clientMessageId || clientMessageId.length > 128) {
       return c.json({ error: 'client_message_id is required (1..128 chars)' }, 400);
     }
-    if (!messageId || !PROMPT_WIRE_MESSAGE_ID.test(messageId)) {
+    if (!messageId || !WIRE_MESSAGE_ID.test(messageId)) {
       // Rejected rather than repaired: an id this endpoint cannot verify the
       // ordering of is one OpenCode may read as already answered, and a
       // dropped turn is worse than a refused request.

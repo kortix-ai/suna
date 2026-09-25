@@ -708,7 +708,7 @@ That is the whole map — learn it once.
 | `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health, `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
 | `@kortix/sdk/react` | hooks and providers: `useSession`, every `useOpenCode*`, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
-| `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
+| `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
 
 The root really is canonical, and that is a test rather than a promise:

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { WIRE_MESSAGE_ID, mintWireMessageId, wireIdTime } from '../projects/wire-message-id';
+import { WIRE_MESSAGE_ID, mintWireMessageId, newestWireIdTime, wireIdTime } from '../projects/wire-message-id';
 import {
   isPromptWireIdRepairPath,
   promptTranscriptReadPath,
@@ -70,6 +70,34 @@ describe('repairPromptWireId', () => {
     // Every other field survives the rewrite.
     expect(forwarded.parts).toEqual([{ type: 'text', text: 'stop looping' }]);
     expect(result.effectiveMessageId).toBe(forwarded.messageID);
+  });
+
+  describe('across the 48-bit wrap (2026-08-14T11:19:55.136Z)', () => {
+    const WRAP_MS = 1_786_706_395_136;
+    const nowMs = WRAP_MS + 120_000;
+    const PRE_WRAP_NEWEST = 'msg_fffff8ad0000AAAAAAAAAAAAAA';
+    const POST_WRAP_NEWEST = 'msg_000007530000AAAAAAAAAAAAAA';
+
+    test('a pre-wrap client id below a post-wrap newest is RE-MINTED above it', () => {
+      const newest = newestWireIdTime([PRE_WRAP_NEWEST, POST_WRAP_NEWEST], nowMs);
+      expect(newest).toBe(BigInt('0x000007530000'));
+      const body = enc({ messageID: 'msg_fffff15a0000AAAAAAAAAAAAAA', parts: [] });
+      const result = repairPromptWireId({ body, newestKnownTime: newest, nowMs, random: () => 0 });
+      expect(result.outcome).toBe('reminted');
+      expect(wireIdTime(result.effectiveMessageId!)).toBe(BigInt('0x000007530001'));
+    });
+
+    test('a post-wrap client id above a pre-wrap newest is kept', () => {
+      const body = enc({ messageID: POST_WRAP_NEWEST, parts: [] });
+      const result = repairPromptWireId({
+        body,
+        newestKnownTime: wireIdTime(PRE_WRAP_NEWEST),
+        nowMs,
+        random: () => 0,
+      });
+      expect(result.outcome).toBe('kept');
+      expect(result.effectiveMessageId).toBe(POST_WRAP_NEWEST);
+    });
   });
 
   test('a malformed client id is re-minted rather than forwarded for OpenCode to misorder', () => {

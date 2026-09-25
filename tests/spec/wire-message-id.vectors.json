@@ -1,5 +1,5 @@
 {
-  "note": "Frozen contract for the OpenCode wire message-id clock. ONE implementation mints and orders these ids: packages/sdk/src/core/session/wire-message-id.ts (the `@kortix/sdk/wire-message-id` subpath). apps/api (src/projects/wire-message-id.ts) and apps/mobile (lib/session/wire-message-id.ts) re-export it; their suites run these vectors through their own names. `vectors` pins the mint; `newest` pins the ordering of transcript ids. The 48-bit clock wraps every 2^36 ms; the last wrap was 2026-08-14T11:19:55.136Z (nowMs 1786706395136 + offsets below).",
+  "note": "Frozen contract for the OpenCode wire message-id clock. The implementation is packages/sdk/src/core/session/wire-message-id.ts (the `@kortix/sdk/wire-message-id` subpath). apps/api (src/projects/wire-message-id.ts) and apps/mobile (lib/session/wire-message-id.ts) re-export it and run these vectors through their own names; apps/api compares clocks only through wireIdClockDelta and maxWireIdClock. The one remaining copy is the pi harness in kortixd (apps/kortix-sandbox-agent-server/src/harness/pi/wire-id.ts), a standalone binary with no workspace dependencies; its test asserts its ids match this module's regex. packages/sdk/src/core/session/wire-id-unwrap.ts (internal) unwraps the clock for display ordering from this module's constants. `vectors` pins the mint; `newest` pins the ordering of transcript ids, including the prefix rule (an id counts by its 12 lowercase-hex prefix, whatever its tail); `delta` pins the signed ring distance between two clocks. The 48-bit clock wraps every 2^36 ms; the last wrap was 2026-08-14T11:19:55.136Z (nowMs 1786706395136 + offsets below).",
   "format": "msg_ + the low 48 bits of (clockMs * 0x1000) as 12 lowercase hex chars + 14 random base62 chars",
   "timeScaleHex": "1000",
   "timeMaskHex": "ffffffffffff",
@@ -138,6 +138,57 @@
         "msg_000004e20000AAAAAAAAAAAAAA"
       ],
       "expected": "000004e20000"
+    },
+    {
+      "name": "prefix rule: an id with a hex clock prefix but a non-wire tail still counts by its clock",
+      "nowMs": null,
+      "ids": [
+        "msg_8bbf25e40000AAAAAAAAAAAAAA",
+        "msg_8bbf43300000_legacy"
+      ],
+      "expected": "8bbf43300000"
+    },
+    {
+      "name": "format rule: an uppercase-hex or non-hex prefix is not a clock",
+      "nowMs": null,
+      "ids": [
+        "msg_8BBF43300000AAAAAAAAAAAAAA",
+        "msg_zzzzzzzzzzzz_legacy",
+        "msg_8bbf25e40000AAAAAAAAAAAAAA"
+      ],
+      "expected": "8bbf25e40000"
+    }
+  ],
+  "delta": [
+    {
+      "name": "no wrap: clock ahead of reference",
+      "clock": "8bbf43300000",
+      "reference": "8bbf25e40000",
+      "expected": "491520000"
+    },
+    {
+      "name": "no wrap: clock behind reference",
+      "clock": "8bbf25e40000",
+      "reference": "8bbf43300000",
+      "expected": "-491520000"
+    },
+    {
+      "name": "equal clocks",
+      "clock": "8bbf25e40000",
+      "reference": "8bbf25e40000",
+      "expected": "0"
+    },
+    {
+      "name": "wrap: a post-wrap clock is ahead of a pre-wrap reference",
+      "clock": "000007530000",
+      "reference": "fffff8ad0000",
+      "expected": "245760000"
+    },
+    {
+      "name": "wrap: a pre-wrap clock is behind a post-wrap reference",
+      "clock": "fffff15a0000",
+      "reference": "000007530000",
+      "expected": "-368640000"
     }
   ]
 }

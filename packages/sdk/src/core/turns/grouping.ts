@@ -10,12 +10,8 @@
 
 import type { MessageWithPartsLike, PartLike, PartWithMessage, ToolPartLike, TurnLike } from './types';
 import { isTextPart, isToolPart } from './parts';
-import {
-  WIRE_ID_CLOCK_TOLERANCE,
-  absoluteWireIdClockAt,
-  unwrapWireIdClock,
-  wireIdClock,
-} from '../session/wire-message-id';
+import { WIRE_ID_CLOCK_TOLERANCE, wireIdClock } from '../session/wire-message-id';
+import { absoluteWireIdClockAt, unwrapWireIdClock } from '../session/wire-id-unwrap';
 
 // ============================================================================
 // Internal wire shapes (structural casts, never exported)
@@ -87,8 +83,6 @@ interface TextPartLike extends PartLike {
  * against the newest timestamp in the list being sorted — the stub is the
  * newest thing the user did — or, compared pairwise, against the current clock.
  */
-const WIRE_DISPLAY_ID = /^msg_[0-9a-f]{12}/;
-
 type DisplayOrdered = { info: { id: string; time?: { created?: number } } };
 
 /** The absolute id clock a placed message is ordered by. */
@@ -104,7 +98,7 @@ function placedDisplayClock(message: DisplayOrdered, untimedAnchor: bigint): big
 
 /** `0` for a message the server has placed, `1` for one only this tab knows. */
 function displaySegment(id: string): 0 | 1 {
-  return WIRE_DISPLAY_ID.test(id) ? 0 : 1;
+  return wireIdClock(id) === null ? 1 : 0;
 }
 
 function compareIds(a: string, b: string): number {

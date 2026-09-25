@@ -1,11 +1,16 @@
 /**
  * The OpenCode wire message-id clock, under the names the control plane uses.
  *
- * There is ONE implementation: `@kortix/sdk/wire-message-id`
+ * The implementation is `@kortix/sdk/wire-message-id`
  * (`packages/sdk/src/core/session/wire-message-id.ts`). That subpath is a
  * single file with no imports, so the API loads it without the SDK's root
  * barrel. This module only maps the SDK names onto the ones API callers
  * already use; it holds no arithmetic of its own.
+ *
+ * The clock wraps every ~2.2 years. API code never compares two clocks with
+ * `>`, `<` or `<=`: it uses `wireIdClockDelta(a, b)` (signed distance on the
+ * ring) and `maxWireIdClock(clocks)`. `WIRE_ID_TIME_SCALE` is re-exported only
+ * to convert the tolerance to milliseconds.
  *
  * WHY THE ID IS A POSITION AND NOT JUST A NAME:
  *
@@ -28,11 +33,13 @@
 export {
   WIRE_ID_BACKDATE_MS,
   WIRE_ID_CLOCK_TOLERANCE as MAX_WIRE_ID_CLOCK_CORRECTION,
-  WIRE_ID_TIME_MASK,
   WIRE_ID_TIME_SCALE,
   WIRE_MESSAGE_ID,
   isWireIdAheadOf,
+  maxWireIdClock,
   mintWireMessageIdAbove as mintWireMessageId,
   newestWireIdClock as newestWireIdTime,
   wireIdClock as wireIdTime,
+  wireIdClockAt,
+  wireIdClockDelta,
 } from '@kortix/sdk/wire-message-id';

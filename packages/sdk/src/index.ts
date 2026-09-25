@@ -151,14 +151,14 @@ export {
   WIRE_ID_TIME_MASK,
   WIRE_ID_TIME_SCALE,
   WIRE_MESSAGE_ID,
-  absoluteWireIdClockAt,
   isWireIdAheadOf,
+  maxWireIdClock,
   mintWireMessageId,
   mintWireMessageIdAbove,
   newestWireIdClock,
-  unwrapWireIdClock,
   wireIdClock,
   wireIdClockAt,
+  wireIdClockDelta,
 } from './core/session/wire-message-id';
 export type {
   MintWireMessageIdAboveInput,

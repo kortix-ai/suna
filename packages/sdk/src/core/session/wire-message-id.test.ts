@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import wireIdVectors from '../../../../../tests/spec/wire-message-id.vectors.json';
 import { mintWireMessageId as mintFromRoot } from '../../index';
 import {
@@ -8,11 +10,12 @@ import {
   WIRE_MESSAGE_ID,
   isWireIdAheadOf,
   mintWireMessageId,
+  maxWireIdClock,
   mintWireMessageIdAbove,
   newestWireIdClock,
-  unwrapWireIdClock,
   wireIdClock,
   wireIdClockAt,
+  wireIdClockDelta,
 } from './wire-message-id';
 
 const clockHex = (id: string) => id.slice(4, 16);
@@ -54,6 +57,23 @@ describe('golden vectors — tests/spec/wire-message-id.vectors.json', () => {
     }
   });
 
+  describe('maxWireIdClock (the same ids, decoded first)', () => {
+    for (const vector of wireIdVectors.newest.filter((v) => v.nowMs === null)) {
+      test(vector.name, () => {
+        expect(hex(maxWireIdClock(vector.ids.map((id) => wireIdClock(id))))).toBe(vector.expected);
+      });
+    }
+  });
+
+  describe('wireIdClockDelta', () => {
+    for (const vector of wireIdVectors.delta) {
+      test(vector.name, () => {
+        const delta = wireIdClockDelta(BigInt(`0x${vector.clock}`), BigInt(`0x${vector.reference}`));
+        expect(delta).toBe(BigInt(vector.expected));
+      });
+    }
+  });
+
   test('the fixture constants are the module constants', () => {
     expect(WIRE_ID_TIME_SCALE).toBe(BigInt(`0x${wireIdVectors.timeScaleHex}`));
     expect(WIRE_ID_TIME_MASK).toBe(BigInt(`0x${wireIdVectors.timeMaskHex}`));
@@ -68,6 +88,11 @@ describe('mintWireMessageIdAbove', () => {
     expect(at(0.9999).slice(16)).toBe('zzzzzzzzzzzzzz');
     expect(at(1).slice(16)).toBe('zzzzzzzzzzzzzz');
     expect(at(0.5)).toMatch(WIRE_MESSAGE_ID);
+  });
+
+  test('backdateMs: 0 mints at the given clock itself', () => {
+    const minted = mintWireMessageIdAbove({ nowMs: 1755500000000, backdateMs: 0, random: () => 0 });
+    expect(minted.time).toBe(wireIdClockAt(1755500000000));
   });
 
   test('time is the clock the id encodes', () => {
@@ -107,6 +132,13 @@ describe('mintWireMessageId — the pre-fix CLI shape', () => {
     expect(wireIdClock(id)).toBe(wireIdClockAt(nowMs - 120_000));
   });
 
+  test('prefix rule: an id with a hex clock prefix lifts the mint, whatever its tail', () => {
+    // Pinned on purpose: every host orders placed messages by the 12-char
+    // prefix alone, so a mint must clear anything that sorts by that prefix.
+    const id = mintWireMessageId({ nowMs: 1755500000000, after: ['msg_8bbf43300000_legacy'] });
+    expect(clockHex(id)).toBe('8bbf43300001');
+  });
+
   test('lifts across the 48-bit wrap', () => {
     // Newest reply sits just below the wrap; now is just after it.
     const wrapMs = Date.parse('2026-08-14T11:19:55.136Z');
@@ -130,10 +162,31 @@ describe('isWireIdAheadOf', () => {
   });
 });
 
-describe('unwrapWireIdClock', () => {
-  test('orders ids from both sides of the 2026-08-14 wrap', () => {
-    const before = unwrapWireIdClock(BigInt('0xffcb5ca00001'), BigInt(Date.parse('2026-08-13T20:00:00Z')) * BigInt(4096));
-    const after = unwrapWireIdClock(BigInt('0x00024b200001'), BigInt(Date.parse('2026-08-14T12:00:00Z')) * BigInt(4096));
-    expect(before < after).toBe(true);
+describe('wireIdClockDelta', () => {
+  test('is antisymmetric across the wrap', () => {
+    const pre = BigInt('0xffffffffff00');
+    const post = BigInt('0x000000000100');
+    expect(wireIdClockDelta(post, pre)).toBe(BigInt(0x200));
+    expect(wireIdClockDelta(pre, post)).toBe(-BigInt(0x200));
+  });
+});
+
+describe('maxWireIdClock', () => {
+  test('skips null and undefined, and is null when nothing is left', () => {
+    expect(maxWireIdClock([null, undefined])).toBeNull();
+    expect(maxWireIdClock([null, BigInt(5), undefined, BigInt(3)])).toBe(BigInt(5));
+  });
+  test('the post-wrap clock wins over the pre-wrap one, in either order', () => {
+    const pre = BigInt('0xfffff8ad0000');
+    const post = BigInt('0x000007530000');
+    expect(maxWireIdClock([pre, post])).toBe(post);
+    expect(maxWireIdClock([post, pre])).toBe(post);
+  });
+});
+
+describe('module shape', () => {
+  test('wire-message-id.ts has no imports, so its subpath loads one file', () => {
+    const source = readFileSync(resolve(import.meta.dir, 'wire-message-id.ts'), 'utf8');
+    expect(source).not.toMatch(/^\s*(import|export\s+(\*|\{[^}]*\})\s+from)\s/m);
   });
 });

@@ -748,6 +748,19 @@ newestKnownTime })`, which returns `{ id, time }`. `newestWireIdClock(ids)`
 finds that clock. Every comparison is on the ring, so ids on both sides of a
 wrap keep their true order.
 
+The 48-bit clock wraps every ~2.2 years, so never compare two clocks with `>`
+or `<=`: an id minted just after a wrap is numerically smaller than one minted
+just before it. Use `wireIdClockDelta(clock, reference)`, the signed distance
+on the ring (positive when `clock` is ahead), and `maxWireIdClock(clocks)` for
+the newest of several:
+
+```ts
+import { maxWireIdClock, wireIdClockDelta } from '@kortix/sdk/wire-message-id';
+
+const floor = maxWireIdClock([transcriptNewest, deliveredNewest]);
+const stale = floor !== null && wireIdClockDelta(clientClock, floor) <= 0n;
+```
+
 #### Server-side isolation
 
 `createKortix` stores its config, including the token function, in one

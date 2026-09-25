@@ -121,6 +121,17 @@ describe('reconcileForwardedTurnsAtEnd', () => {
     expect(out.candidates).toBe(0);
   });
 
+  test('across the 48-bit wrap: a pre-wrap forwarded turn is OLDER than a post-wrap ended one', async () => {
+    const WRAP_MS = 1_786_706_395_136;
+    const pre = id(WRAP_MS - 1_000, 'PREWRAPPREWRAP');
+    const ended = id(WRAP_MS + 1_000, 'ENDEDENDEDENDE');
+    const { deps, calls } = fakeDeps({ open: [turn(pre), turn(ended)], tip: [] });
+    const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's', opencodeSessionId: 'ses_root', endedMessageId: ended }, deps);
+    expect(out.closedOlder).toBe(1);
+    expect(calls.closeOlder.map((c) => c[2])).toEqual([pre]);
+    expect(out.candidates).toBe(0);
+  });
+
   test('a stranded newer prompt is removed, re-queued, its turn closed, and the drain kicked', async () => {
     const tip = tipOf([
       { id: M, role: 'user' },
