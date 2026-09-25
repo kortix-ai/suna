@@ -251,20 +251,23 @@ Already in place — run before every push:
 
 ```bash
 cd apps/api
-bun test src/__tests__/billing/per-seat-pricing.test.ts \
-         src/__tests__/billing/e2e-compute-metering.test.ts \
-         src/__tests__/billing/e2e-per-seat-webhooks.test.ts \
+bun test --isolate --env-file=scripts/test.env --timeout=15000 \
+         src/__tests__/billing/per-seat-pricing.test.ts \
+         src/billing/services/compute-metering.test.ts \
          src/__tests__/billing/credits.test.ts \
          src/billing/wallet/wallet.test.ts \
          src/__tests__/billing/subscriptions.test.ts \
          src/__tests__/billing/webhooks.test.ts
 ```
 
-The ledger rows every wallet operation writes are pinned against a real,
+The ledger rows every wallet operation writes, compute metering, the Stripe
+customer mapping, and gateway usage settlement are pinned against a real,
 migrated PostgreSQL (Docker required):
 
 ```bash
-pnpm test -- --db-only tests/migration/wallet-ledger   # from the repository root
+# from the repository root
+pnpm test -- --db-only tests/migration/wallet-ledger tests/migration/credit-rpc-overloads \
+  tests/migration/usage-breakdown-ledger-type compute-metering compute-sessions customers usage-settlement
 ```
 
 `pnpm test` runs it in the `db-suites` lane on every core run and in CI.

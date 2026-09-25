@@ -139,10 +139,10 @@ const STOP_CONCURRENCY = 8;
  * `archived` are terminal. The release-gate incident that motivated this found
  * 47 sessions in exactly these non-`active` states with live Daytona boxes.
  */
-export const RECLAIMABLE_SANDBOX_STATUSES = ['provisioning', 'active', 'error'] as const;
+const RECLAIMABLE_SANDBOX_STATUSES = ['provisioning', 'active', 'error'] as const;
 
 /** `project_sessions` states that still claim the session is doing something. */
-export const LIVE_SESSION_STATUSES = [
+const LIVE_SESSION_STATUSES = [
   'queued',
   'branching',
   'provisioning',

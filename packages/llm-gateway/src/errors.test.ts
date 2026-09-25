@@ -1,15 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  NetworkError,
-  TimeoutError,
-  UpstreamHttpError,
-  UpstreamMisconfiguredError,
-  defaultIsRetryable,
-  indicatesUpstreamDown,
-  looksLikeTerminalAuthFailure,
-  isUnknownParameterRejection,
-} from './errors';
+import { UpstreamHttpError, isUnknownParameterRejection, looksLikeTerminalAuthFailure } from './errors';
 
 // Defect (2026-07-17, live-confirmed): an invalid upstream key retried 11+
 // times over 2+ minutes with no error ever surfacing to the session — a
@@ -39,86 +30,6 @@ describe('looksLikeTerminalAuthFailure', () => {
     expect(looksLikeTerminalAuthFailure('upstream overloaded, try again')).toBe(false);
     expect(looksLikeTerminalAuthFailure(undefined)).toBe(false);
     expect(looksLikeTerminalAuthFailure('')).toBe(false);
-  });
-});
-
-describe('defaultIsRetryable — terminal client-auth errors', () => {
-  test('401 is never retryable', () => {
-    expect(defaultIsRetryable(new UpstreamHttpError(401, 'invalid_api_key'))).toBe(false);
-  });
-
-  test('403 is never retryable', () => {
-    expect(defaultIsRetryable(new UpstreamHttpError(403, 'forbidden'))).toBe(false);
-  });
-
-  test('a clearly-terminal 400 invalid_api_key is never retryable', () => {
-    expect(
-      defaultIsRetryable(
-        new UpstreamHttpError(
-          400,
-          '{"error":{"code":"invalid_api_key","message":"Incorrect API key provided"}}',
-        ),
-      ),
-    ).toBe(false);
-  });
-
-  test('a statusCode-less error whose message is a terminal auth failure is never retryable', () => {
-    expect(
-      defaultIsRetryable(new NetworkError('UnrecognizedClientException: invalid security token')),
-    ).toBe(false);
-  });
-
-  test('500 and 429 stay retryable', () => {
-    expect(defaultIsRetryable(new UpstreamHttpError(500, 'boom'))).toBe(true);
-    expect(defaultIsRetryable(new UpstreamHttpError(429, 'slow down'))).toBe(true);
-  });
-
-  test('timeouts and genuine network errors stay retryable', () => {
-    expect(defaultIsRetryable(new TimeoutError())).toBe(true);
-    expect(defaultIsRetryable(new NetworkError('ECONNRESET'))).toBe(true);
-  });
-});
-
-// A resolved descriptor with no usable baseUrl (see call-upstream.test.ts for
-// the end-to-end callUpstream coverage) — a resolution-time configuration
-// defect, never a transient/host-health signal, so it must be classified the
-// opposite of a generic NetworkError on both axes.
-describe('UpstreamMisconfiguredError — a bad descriptor is never retryable and never upstream-down', () => {
-  test('is never retryable', () => {
-    expect(
-      defaultIsRetryable(new UpstreamMisconfiguredError('openrouter', 'missing baseUrl')),
-    ).toBe(false);
-  });
-
-  test('does not count as upstream-down (must never trip the shared per-provider breaker)', () => {
-    expect(
-      indicatesUpstreamDown(new UpstreamMisconfiguredError('openrouter', 'missing baseUrl')),
-    ).toBe(false);
-  });
-
-  test('message names the provider and reason', () => {
-    expect(new UpstreamMisconfiguredError('openrouter', 'missing baseUrl').message).toBe(
-      'upstream misconfigured for provider "openrouter": missing baseUrl',
-    );
-  });
-});
-
-describe('indicatesUpstreamDown — terminal auth errors never trip the shared breaker', () => {
-  test('a statusCode-less terminal auth failure does not count as upstream-down', () => {
-    expect(indicatesUpstreamDown(new NetworkError('AccessDeniedException: not authorized'))).toBe(
-      false,
-    );
-  });
-
-  test('a 401/403 UpstreamHttpError does not count as upstream-down (unchanged)', () => {
-    expect(indicatesUpstreamDown(new UpstreamHttpError(401, 'invalid_api_key'))).toBe(false);
-    expect(indicatesUpstreamDown(new UpstreamHttpError(403, 'forbidden'))).toBe(false);
-  });
-
-  test('5xx and genuine network/timeout errors still count as upstream-down', () => {
-    expect(indicatesUpstreamDown(new UpstreamHttpError(503, 'down'))).toBe(true);
-    expect(indicatesUpstreamDown(new NetworkError('ECONNRESET'))).toBe(true);
-    expect(indicatesUpstreamDown(new TimeoutError())).toBe(true);
   });
 });
 

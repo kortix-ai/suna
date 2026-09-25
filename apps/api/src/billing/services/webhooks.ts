@@ -392,7 +392,7 @@ async function activateSubscriptionForAccount(params: {
   );
 
   // A real subscription ends an admin-issued trial: mark it converted so the
-  // trial overlay (effective-tier.ts) stops masking the purchased plan.
+  // trial overlay (resolve-billing.ts) stops masking the purchased plan.
   // `trial_status` is admin-owned, so it cannot ride along in the patch above —
   // it goes through the narrow cross-domain helper in trial-admin.ts.
   if (existingAccount?.trialStatus === 'active') {

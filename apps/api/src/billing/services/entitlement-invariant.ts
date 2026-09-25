@@ -38,7 +38,7 @@ import {
  * the expiring bucket — while still catching any real grant-sizing bug, whose
  * smallest possible error is a whole tier increment.
  */
-export const ENTITLEMENT_DRIFT_TOLERANCE_USD = 0.5;
+const ENTITLEMENT_DRIFT_TOLERANCE_USD = 0.5;
 
 /**
  * Legitimate headroom above the allowance, on top of the numeric tolerance.
@@ -58,7 +58,7 @@ export const ENTITLEMENT_DRIFT_TOLERANCE_USD = 0.5;
 const FIRST_CYCLE_FREE_GRANT_HEADROOM_USD = 2;
 
 /** Total excess, in dollars, that is reported as a breach on a PAID tier. */
-export const ENTITLEMENT_BREACH_THRESHOLD_USD =
+const ENTITLEMENT_BREACH_THRESHOLD_USD =
   ENTITLEMENT_DRIFT_TOLERANCE_USD + FIRST_CYCLE_FREE_GRANT_HEADROOM_USD;
 
 /**
