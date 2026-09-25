@@ -196,9 +196,11 @@ model that only such keys reach is refused too, instead of failing every turn.
 The CLI, the SDK, and Teams and Slack name a model but no keys. When that model
 runs only on pooled keys, the session gets every key its creator may use for
 that provider, up to ten, so they rotate. The agent must be allowed the key's
-name in its `secrets`. Changing a running session to such a model does the
-same when the session has no selection for that provider. A selection made on
-purpose, an empty one included, is left alone.
+name in its `secrets`. Otherwise the turn fails with `agent_grant_excludes`:
+add the name, for example `CODEX_AUTH_JSON` for ChatGPT, to the agent's
+`secrets`, or choose another agent. Changing a running session to such a model
+does the same when the session has no selection for that provider. A selection
+made on purpose, an empty one included, is left alone.
 
 Your own keys and ChatGPT connections count only in a session that is private
 to you and acts on your behalf. In a shared session only keys shared with the
@@ -232,6 +234,17 @@ If ChatGPT signs you out, open the account's **⋯ → Reconnect** and sign in
 again. Reconnecting keeps the account's name, access, and session selections.
 Only the member who connected an account can reconnect it. Account owners and
 admins can delete any account.
+
+A turn that fails for this reason shows the fix in the session:
+
+- `provider_reauth_required` shows **Reconnect ChatGPT**. It appears in your
+  own private session, and in a shared session that selects ChatGPT accounts.
+- `provider_not_connected` shows **Connect ChatGPT**. It appears only in your
+  own private session without a ChatGPT selection. A session with a selection
+  is fixed in **Session overrides → Provider keys** instead.
+
+Both open your ChatGPT accounts. After you connect or reconnect, send your
+message again.
 
 A session can select multiple granted ChatGPT accounts in **Session overrides →
 Provider keys**. Without a selection, the member's newest usable connection is

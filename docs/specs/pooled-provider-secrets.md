@@ -108,6 +108,25 @@ point outside Customize, and an expired account had no reconnect.
 - Verification: `unit-project-oauth-byos.test.ts`, flow `SEC-POOL-5`, and the
   member journey in `30-pooled-provider-secrets.spec.ts`.
 
+### Failed-turn actions
+
+- A refused ChatGPT turn carries the gateway body: `code`, `requested_model`,
+  and `resolved_model` (`provider` is empty for a resolution error). The SDK
+  exposes the two model ids on `GatewayErrorDetails`.
+- The session error row offers **Reconnect ChatGPT** for
+  `provider_reauth_required` and **Connect ChatGPT** for
+  `provider_not_connected` on a `codex/*` model, with the flag and the gateway
+  on and ChatGPT not disabled. The action opens the ChatGPT accounts dialog.
+- The action appears only where the dialog can fix the turn: connect in the
+  viewer's own private session without a ChatGPT selection; reconnect there,
+  or in a shared session with a selection. A shared session without a
+  selection runs on the project login, which the dialog does not manage.
+- An agent grant that omits the credential name now returns
+  `agent_grant_excludes` instead of `provider_not_connected`, for ChatGPT and
+  BYOK pools. A new connection cannot fix it, so no action is offered.
+- Verification: `resolve-candidates.test.ts`, `chatgpt-connection-action.test.ts`,
+  and the failed-turn journey in `30-pooled-provider-secrets.spec.ts`.
+
 ## UI follow-up, 2026-09-18
 
 - One session footer saves every staged provider selection and default reset.
