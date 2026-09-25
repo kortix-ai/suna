@@ -7,10 +7,9 @@ import { isBrowserReturnPath } from '@/lib/session/connect-model';
  * navigate: a warm link keeps the current screen, a cold start begins at the
  * splash screen.
  *
- * In-app browser return URLs (`kortix://providers/…`, `kortix://connectors/…`,
- * `kortix://connections/…`) only close the browser session. On Android they
- * also arrive as a deep link; the same rule keeps the user on the screen that
- * opened the browser.
+ * In-app browser return URLs (`kortix://providers/…`, `kortix://connectors/…`)
+ * only close the browser session. On Android they also arrive as a deep link;
+ * the same rule keeps the user on the screen that opened the browser.
  */
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }) {
   try {
