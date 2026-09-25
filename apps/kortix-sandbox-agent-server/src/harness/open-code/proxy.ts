@@ -9,7 +9,7 @@ import type { OpenCodeBootState } from './boot-state'
 import { stripInlineAttachmentBytes } from '../../inline-attachments'
 import {
   abortTargetOf,
-  isLoopStartRequest,
+  loopStartTargetOf,
   noteOpencodeStopRequested,
   type InstanceGuard,
 } from './instance-guard'
@@ -170,7 +170,8 @@ export function createOpenCodeProxyService(
       // would interrupt the build and the instance would keep the interrupt.
       // Wait for the daemon's own warm-up (bounded); the prompt then joins
       // caches the daemon built.
-      if (instanceGuard && isLoopStartRequest(method, input.path)) await instanceGuard.settled()
+      const loopTarget = loopStartTargetOf(method, input.path)
+      if (instanceGuard && loopTarget) await instanceGuard.settled(undefined, loopTarget)
 
       // Bound only the wait for opencode's response (headers) — not the abort
       // controller's whole lifetime — so we can free-run a stream once it starts.

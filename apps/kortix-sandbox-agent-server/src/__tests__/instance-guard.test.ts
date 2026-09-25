@@ -317,6 +317,27 @@ describe('settled', () => {
     expect(Date.now() - started).toBeLessThan(1_000)
   })
 
+  test("a Stop releases its session's held prompt at once, and only that session's", async () => {
+    const hung = createInstanceGuard({
+      getInternalUrl: () => mock.base,
+      workspace: () => '/workspace',
+      fetchImpl: (() => new Promise<Response>(() => {})) as unknown as typeof fetch,
+    })
+    void hung.warm('boot')
+    const started = Date.now()
+    let releasedA = 0
+    let releasedB = 0
+    const heldA = hung.settled(5_000, 'ses_a').then(() => (releasedA = Date.now() - started))
+    void hung.settled(400, 'ses_b').then(() => (releasedB = Date.now() - started))
+    await Bun.sleep(50)
+    noteOpencodeStopRequested('ses_a', 'test')
+    await heldA
+    expect(releasedA).toBeLessThan(300)
+    expect(releasedB).toBe(0)
+    await Bun.sleep(450)
+    expect(releasedB).toBeGreaterThanOrEqual(400)
+  })
+
   test('resolves at once with no warm-up in flight', async () => {
     const started = Date.now()
     await guard.settled(5_000)

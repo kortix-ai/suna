@@ -55,7 +55,6 @@ import {
   MinusCircleIcon as CircleMinus,
   PlusCircleIcon as CirclePlus,
   DotsThreeIcon as Ellipsis,
-  SidebarSimpleIcon as PanelLeft,
   ArrowClockwiseIcon as RotateCw,
   MagnifyingGlassIcon as Search,
   UploadIcon as Upload,
@@ -97,6 +96,7 @@ import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
 import { downloadBlob } from '@/lib/utils/download';
 import { loadSharedPdfEngine } from './pdf-thumbnail-utils';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 export type PDFViewerPageOverlayProps = {
   pageNumber: number;
