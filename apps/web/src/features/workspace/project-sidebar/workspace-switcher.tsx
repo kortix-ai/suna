@@ -96,10 +96,9 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   // Seeds `selectedAccountId` for a brand-new sign-in. Pre-merge this ran here
   // by way of a `UserMenu` in the project sidebar's FOOTER. That footer menu no
   // longer exists: `ProjectSidebar` renders THIS control and nothing else menu-
-  // like (`project-sidebar.tsx:116`), and `UserMenu`'s only remaining mount is
-  // the app header (`features/layout/app-header.tsx:108`, reached only from the
-  // `app/(app)/accounts` tree). So the call moved here with the control rather
-  // than being silently dropped: without it, every account-scoped settings tab
+  // like (`project-sidebar.tsx:116`), and `UserMenu` has no remaining mount.
+  // So the call moved here with the control rather than being silently
+  // dropped: without it, every account-scoped settings tab
   // opened on a project whose detail query has not resolved yet has no account
   // id to probe with, and renders as though the permission were denied. Same
   // `useAccountsList()` hook as every other caller, so React Query serves them

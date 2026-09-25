@@ -9,9 +9,10 @@
    else.
 
    They used to be copied by hand and had drifted into four different band
-   heights — 60px in this file's comment, 52px for `.kx-app-header`, 40px for
-   the tab bar and both sidebar headers, and a 26px centre line hard-coded into
-   two React components. Derive them all from one table instead.
+   heights — 60px in this file's comment, 52px for the standalone-page
+   breadcrumb header, 40px for the tab bar and both sidebar headers, and a
+   26px centre line hard-coded into two React components. Derive them all
+   from one table instead.
 
    The web half mirrors this as CSS custom properties on
    `html[data-desktop-platform='macos']` in apps/web/src/app/globals.css;
