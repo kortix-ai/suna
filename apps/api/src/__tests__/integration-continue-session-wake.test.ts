@@ -38,14 +38,18 @@ const rows = (result: unknown) => ((result as { rows?: Row[] }).rows ?? result) 
 let project: SeededProject;
 const created: string[] = [];
 
-async function fixture(sessionStatus: 'stopped' | 'completed'): Promise<string> {
+async function fixture(
+  sessionStatus: 'stopped' | 'completed',
+  sessionMetadata: Row = {},
+): Promise<string> {
   const sessionId = crypto.randomUUID();
   await db.execute(sql`
     insert into kortix.project_sessions
       (session_id, account_id, project_id, branch_name, agent_name, status, metadata)
     values
       (${sessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid, ${sessionId},
-       'default', ${sessionStatus}::kortix.project_session_status, '{}'::jsonb)`);
+       'default', ${sessionStatus}::kortix.project_session_status,
+       ${JSON.stringify(sessionMetadata)}::jsonb)`);
   await db.execute(sql`
     insert into kortix.session_sandboxes
       (sandbox_id, session_id, account_id, project_id, external_id, provider, status, metadata)
@@ -138,5 +142,19 @@ describe('the pre-delivery wake', () => {
     };
     expect(await deliver(sessionId)).toBe('pending');
     expect(await statuses(sessionId)).toEqual({ session: 'running', sandbox: 'active' });
+  });
+
+  // A deleted session keeps its row, `stopped`, with `metadata.deletedAt`. A
+  // late prompt (a trigger fire, a retry) must never wake it back up.
+  test('a deleted session is never woken, and its runtime is never opened', async () => {
+    const sessionId = await fixture('stopped', { deletedAt: '2026-09-25T10:00:00.000Z' });
+    let opened = false;
+    openSessionImpl = async () => {
+      opened = true;
+      return { stage: 'ready', sandbox: null, opencode_session_id: null };
+    };
+    expect(await deliver(sessionId)).toBe('no-session');
+    expect(opened).toBe(false);
+    expect((await statuses(sessionId)).session).toBe('stopped');
   });
 });

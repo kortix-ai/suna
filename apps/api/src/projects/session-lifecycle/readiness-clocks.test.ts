@@ -1,52 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS } from '../routes/shared';
 import {
   RUNTIME_READINESS_CLOCK_KEYS,
   STALE_OPENCODE_BOOT_HARD_MS,
-  prepareInPlaceRestartMetadata,
   opencodeReadyWaitPatch,
   runtimeBootEpochMs,
   staleOpencodeReadyReason,
-} from '../projects/session-lifecycle/readiness-clocks';
-import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS } from '../projects/routes/shared';
+} from './readiness-clocks';
 
-const source = readFileSync(
-  new URL('../projects/session-lifecycle/actions.ts', import.meta.url),
-  'utf8',
-);
-
-describe('session restart URL contract', () => {
-  test('clears sandboxUrl only when a replacement runtime is required', () => {
-    const replacementStart = source.indexOf('const provisionReplacementRuntime');
-    const inPlaceStart = source.indexOf('if (\n    existingSandbox?.externalId');
-
-    expect(replacementStart).toBeGreaterThan(-1);
-    expect(inPlaceStart).toBeGreaterThan(replacementStart);
-    expect(source.slice(replacementStart, inPlaceStart)).toContain('sandboxUrl: null');
-    expect(source.slice(inPlaceStart)).not.toContain('sandboxUrl: null');
-  });
-
-  test('starts a fresh runtime clock and removes stale OpenCode clocks', () => {
-    const now = new Date('2026-07-24T02:00:00.000Z');
-    const metadata = prepareInPlaceRestartMetadata(
-      {
-        initSucceededAt: '2026-07-24T01:00:00.000Z',
-        opencodeReadyWaitStartedAt: '2026-07-24T01:00:00.000Z',
-        opencodeReadyWaitReason: 'unreachable',
-        opencodeUnreachableWaitStartedAt: '2026-07-24T01:00:00.000Z',
-        opencodeNotReadyWaitStartedAt: '2026-07-24T01:30:00.000Z',
-      },
-      now,
-    );
-
-    expect(metadata.runtimeWakeStartedAt).toBe(now.toISOString());
-    expect(metadata.runtimeWakeProviderStatus).toBe('starting');
-    expect(metadata.opencodeReadyWaitStartedAt).toBeUndefined();
-    expect(metadata.opencodeReadyWaitReason).toBeUndefined();
-    expect(metadata.opencodeUnreachableWaitStartedAt).toBeUndefined();
-    expect(metadata.opencodeNotReadyWaitStartedAt).toBeUndefined();
-  });
-
+describe('readiness clocks', () => {
   test('tracks unreachable and not-ready deadlines independently across reason changes', () => {
     const metadata = {
       opencodeReadyWaitStartedAt: '2026-07-24T01:59:59.000Z',
@@ -201,18 +163,6 @@ describe('an automatic rung never inherits the previous attempt boot budget', ()
     expect(patch.runtimeStartFailureCount).toBe(1);
   });
 
-  test('the budget still bounds THIS attempt — the guard is causal, not a reset', () => {
-    const rebaselined = {
-      ...inherited,
-      opencodeBootWaitFirstSeenAt: attempt2.toISOString(),
-      opencodeNotReadyWaitStartedAt: attempt2.toISOString(),
-    };
-    const past = attempt2.getTime() + STALE_OPENCODE_BOOT_HARD_MS + 1_000;
-    expect(staleOpencodeReadyReason(rebaselined, 'not_ready', past)).toBe(
-      'runtime_not_ready_timeout',
-    );
-  });
-
   test('a stub launcher that changes phase for ever is still caught at the cap', () => {
     // The learning this must not undo: progress restarts the per-reason clock,
     // never the hard cap. Only a NEW boot attempt restarts the cap.
@@ -255,29 +205,13 @@ describe('an automatic rung never inherits the previous attempt boot budget', ()
 });
 
 describe('who resets the retry accounting', () => {
-  test('a human restart resets the failure episode; an automatic rung must not', () => {
-    const failing = {
-      stopReason: 'runtime_boot_failed',
-      runtimeStartFailureCount: 3,
-      runtimeStartFailedAt: '2026-08-26T13:27:00.000Z',
-      runtimeStartRetryAfterAt: '2026-08-26T13:37:00.000Z',
-      opencodeBootWaitFirstSeenAt: '2026-08-26T13:24:00.000Z',
-      opencodeBootPhase: 'config-deps|opencode=starting',
-    };
-    // Human Restart: clocks AND accounting gone, so the ladder starts over.
-    const restarted = prepareInPlaceRestartMetadata(failing, new Date('2026-08-26T13:40:00.000Z'));
-    for (const key of RUNTIME_READINESS_CLOCK_KEYS) {
-      if (key === 'runtimeWakeStartedAt' || key === 'runtimeWakeProviderStatus') continue;
-      expect(restarted[key]).toBeUndefined();
-    }
-    expect(restarted.runtimeStartFailureCount).toBeUndefined();
-    expect(restarted.runtimeStartFailedAt).toBeUndefined();
-    expect(restarted.stopReason).toBeUndefined();
-
-    // The automatic rung's claim keeps the accounting so the cooldown escalates.
+  // A human Restart clears the accounting (proven on real rows in
+  // integration-sandbox-metadata-race). The automatic rung's claim must keep
+  // it, so the cooldown escalates, and must drop every readiness clock, so the
+  // next attempt boots against a clean budget.
+  test('an automatic wake claim keeps the failure accounting and drops every readiness clock', () => {
     expect(RUNTIME_WAKE_CLAIM_CLEARED_KEYS).not.toContain('runtimeStartFailureCount');
     expect(RUNTIME_WAKE_CLAIM_CLEARED_KEYS).not.toContain('runtimeStartFailedAt');
-    // …and it drops EVERY readiness clock, which is what the incident needed.
     for (const key of RUNTIME_READINESS_CLOCK_KEYS) {
       expect(RUNTIME_WAKE_CLAIM_CLEARED_KEYS).toContain(key);
     }

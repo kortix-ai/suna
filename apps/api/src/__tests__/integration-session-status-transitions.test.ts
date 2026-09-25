@@ -15,12 +15,16 @@ import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import * as realProviders from '../platform/providers';
+import * as realSessionAttachments from '../projects/lib/session-attachments';
 import { db } from '../shared/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
 let providerStops = 0;
 /** What the provider stop does besides counting. Reset after each park case. */
 let onProviderStop: () => Promise<void> = async () => {};
+/** What the provider remove does. Reset after each delete case. */
+let onProviderRemove: () => Promise<void> = async () => {};
+let providerStatus = 'stopped';
 mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
@@ -28,7 +32,15 @@ mock.module('../platform/providers', () => ({
       providerStops += 1;
       await onProviderStop();
     },
+    remove: async () => onProviderRemove(),
+    getStatus: async () => providerStatus,
   }),
+}));
+// The delete clears the session's stored attachments in object storage, which
+// this lane does not run. The database half of the delete is the subject.
+mock.module('../projects/lib/session-attachments', () => ({
+  ...realSessionAttachments,
+  sessionAttachmentStore: () => ({ removeSession: async () => undefined }),
 }));
 
 const { applyStoppedState } = await import('../projects/reaping/sandbox-state-sync');
@@ -39,8 +51,14 @@ const {
   preserveEstablishedRuntime,
 } = await import('../projects/runtime-identity');
 const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
+const { deleteSession } = await import('../projects/session-lifecycle/actions');
+const { stopSession } = await import('../projects/session-lifecycle/stop');
+const { beginSandboxTurn } = await import('../projects/sandbox-turn-lifecycle');
 const { transitionRuntime, transitionSandbox, transitionSession } = await import(
   '../projects/session-lifecycle/status-transitions'
+);
+const { RUNTIME_WAKE_LATE_START_GUARD_MS } = await import(
+  '../projects/session-lifecycle/runtime-wake-fence'
 );
 
 type Row = Record<string, unknown>;
@@ -57,6 +75,7 @@ interface Fixture {
 
 async function fixture(input: {
   sessionStatus: string;
+  sessionError?: string;
   sandboxStatus: string;
   sessionMetadata?: Row;
   sandboxMetadata?: Row;
@@ -67,10 +86,11 @@ async function fixture(input: {
   const externalId = `sbx_transition_${sessionId.slice(0, 8)}`;
   await db.execute(sql`
     insert into kortix.project_sessions
-      (session_id, account_id, project_id, branch_name, agent_name, status, metadata)
+      (session_id, account_id, project_id, branch_name, agent_name, status, error, metadata)
     values
       (${sessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid, ${sessionId},
        'default', ${input.sessionStatus}::kortix.project_session_status,
+       ${input.sessionError ?? null},
        ${JSON.stringify(input.sessionMetadata ?? {})}::jsonb)`);
   await db.execute(sql`
     insert into kortix.session_sandboxes
@@ -186,8 +206,12 @@ describe('stop (applyStoppedState)', () => {
     }
   });
 
-  test('keeps a dead-lettered `failed` session failed', async () => {
-    const f = await fixture({ sessionStatus: 'failed', sandboxStatus: 'active' });
+  test('keeps a dead-lettered `failed` session failed, with its error', async () => {
+    const f = await fixture({
+      sessionStatus: 'failed',
+      sessionError: 'prompt delivery dead-lettered: out of retries',
+      sandboxStatus: 'active',
+    });
     await applyStoppedState({
       sandboxId: f.sandboxId,
       sessionId: f.sessionId,
@@ -197,6 +221,7 @@ describe('stop (applyStoppedState)', () => {
     const { session, sandbox } = await read(f);
     expect(sandbox.status).toBe('stopped');
     expect(session.status).toBe('failed');
+    expect(session.error).toBe('prompt delivery dead-lettered: out of retries');
   });
 
   test('leaves the archived row of a deleted session archived', async () => {
@@ -358,11 +383,17 @@ describe('park (parkEstablishedRuntime)', () => {
   test('a new prompt and a restart refuse the row while the stop is in flight', async () => {
     const f = await fixture({ sessionStatus: 'running', sandboxStatus: 'active' });
     let restartClaimed = null as boolean | null;
+    let promptDuringStop = null as string | null;
     let claimDuringStop = undefined as Record<string, unknown> | undefined;
     onProviderStop = async () => {
       claimDuringStop = (await read(f)).sandbox.metadata.lifecycleStopClaim as
         | Record<string, unknown>
         | undefined;
+      promptDuringStop = await beginSandboxTurn(
+        { sandboxId: f.sandboxId },
+        { token: crypto.randomUUID(), opencodeSessionId: 'ses_root', messageId: 'msg_during_stop' },
+        60_000,
+      );
       const startedAt = new Date();
       restartClaimed = await claimInPlaceRestart({
         sandboxId: f.sandboxId,
@@ -379,8 +410,8 @@ describe('park (parkEstablishedRuntime)', () => {
     } finally {
       onProviderStop = async () => {};
     }
-    // The claim `beginSandboxTurn` refuses a prompt on.
     expect(claimDuringStop).toMatchObject({ token: expect.any(String) });
+    expect(promptDuringStop).toBe('no_box');
     expect(restartClaimed).toBe(false);
     expect((await read(f)).sandbox.status).toBe('stopped');
   });
@@ -466,7 +497,11 @@ describe('in-place restart claim', () => {
     const { sandbox } = await read(f);
     expect(sandbox.status).toBe('provisioning');
     expect(typeof sandbox.metadata.runtimeRestartId).toBe('string');
+    // The unexpired claim fences a second restart, and keeps its own id.
     expect(await claimFor(f)).toBe(false);
+    expect((await read(f)).sandbox.metadata.runtimeRestartId).toBe(
+      sandbox.metadata.runtimeRestartId,
+    );
   });
 
   test('never claims the archived row of a deleted session', async () => {
@@ -540,12 +575,15 @@ describe('first provisioning (session-sandbox writers)', () => {
 });
 
 describe('the transition module against real rows', () => {
-  test('`wake` moves a stopped session, and only a stopped or completed one', async () => {
-    const stopped = await fixture({ sessionStatus: 'stopped', sandboxStatus: 'stopped' });
-    expect(await transitionSession('wake', stopped.sessionId, { error: null })).toBe(true);
-    expect((await read(stopped)).session.status).toBe('running');
-    // Already running: the transition does not apply.
-    expect(await transitionSession('wake', stopped.sessionId)).toBe(false);
+  test.each([
+    ['stopped', true],
+    ['completed', true],
+    ['running', false],
+    ['provisioning', false],
+  ] as const)('`wake` from %s applies: %p', async (from, applies) => {
+    const f = await fixture({ sessionStatus: from, sandboxStatus: 'stopped' });
+    expect(await transitionSession('wake', f.sessionId, { error: null })).toBe(applies);
+    expect((await read(f)).session.status).toBe(applies ? 'running' : from);
   });
 
   test('`wake` refuses a session deleted after the caller read it', async () => {
@@ -572,15 +610,24 @@ describe('the transition module against real rows', () => {
     expect(await transitionSession('fail', deleted.sessionId, { error: 'x' })).toBe(false);
   });
 
-  test('`reconcileStuck` stops a deleted session that still reads running', async () => {
-    const f = await fixture({
-      sessionStatus: 'running',
-      sandboxStatus: 'archived',
-      sessionMetadata: { deletedAt: '2026-09-25T10:00:00.000Z' },
-    });
-    expect(await transitionSession('reconcileStuck', f.sessionId)).toBe(true);
-    expect((await read(f)).session.status).toBe('stopped');
-    // Not an active status any more.
+  // A deleted session only ever moves toward `stopped`, and these three writes
+  // are the ones that must still reach it: otherwise a deleted session that
+  // still reads `running` holds a concurrent-session slot for ever.
+  test.each(['delete', 'stop', 'reconcileStuck'] as const)(
+    '`%s` stops a deleted session that still reads running',
+    async (transition) => {
+      const f = await fixture({
+        sessionStatus: 'running',
+        sandboxStatus: 'archived',
+        sessionMetadata: { deletedAt: '2026-09-25T10:00:00.000Z' },
+      });
+      expect(await transitionSession(transition, f.sessionId)).toBe(true);
+      expect((await read(f)).session.status).toBe('stopped');
+    },
+  );
+
+  test('`reconcileStuck` does not apply to a session that is no longer active', async () => {
+    const f = await fixture({ sessionStatus: 'stopped', sandboxStatus: 'stopped' });
     expect(await transitionSession('reconcileStuck', f.sessionId)).toBe(false);
   });
 
@@ -635,5 +682,137 @@ describe('the transition module against real rows', () => {
     expect(session.status).toBe('running');
     expect(session.error).toBeNull();
     expect(sandbox.status).toBe('active');
+  });
+});
+
+describe('manual stop (stopSession)', () => {
+  // The row is already `stopped` while a wake is in flight. The stop cancels
+  // the wake, and the guard window keeps a provider start that lands late
+  // from leaving a running box behind a stopped row.
+  test('cancels an in-flight wake on a stopped row and records the late-start guard', async () => {
+    const f = await fixture({
+      sessionStatus: 'stopped',
+      sandboxStatus: 'stopped',
+      sandboxMetadata: {
+        runtimeWakeId: 'wake-in-flight',
+        runtimeWakeStartedAt: new Date().toISOString(),
+        runtimeWakeLeaseExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+      },
+    });
+    const before = Date.now();
+    const stopsBefore = providerStops;
+
+    const result = await stopSession({
+      projectId: project.project_id,
+      sessionId: f.sessionId,
+      accountId: project.account_id,
+      userId: 'user-1',
+    });
+
+    expect(result.status).toBe(200);
+    expect(providerStops).toBe(stopsBefore + 1);
+    const { sandbox } = await read(f);
+    expect(sandbox.status).toBe('stopped');
+    expect(sandbox.metadata.stoppedBy).toBe('user-1');
+    expect(sandbox.metadata).not.toHaveProperty('runtimeWakeId');
+    expect(Date.parse(sandbox.metadata.runtimeWakeCleanupUntilAt as string)).toBeGreaterThanOrEqual(
+      before + RUNTIME_WAKE_LATE_START_GUARD_MS,
+    );
+  });
+});
+
+describe('delete (deleteSession)', () => {
+  async function waitForRemovalOutcome(f: Fixture): Promise<Row> {
+    for (let i = 0; i < 100; i += 1) {
+      const { metadata } = (await read(f)).sandbox;
+      if ('providerRemovedAt' in metadata || 'providerRemovalAttempts' in metadata) return metadata;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('the provider removal never recorded an outcome');
+  }
+
+  async function deleteFixture(): Promise<Fixture> {
+    const f = await fixture({
+      sessionStatus: 'running',
+      sandboxStatus: 'active',
+      sandboxMetadata: {
+        runtimeRestartId: 'restart-1',
+        runtimeRestartLeaseExpiresAt: '2099-01-01T00:00:00.000Z',
+        runtimeWakeId: 'wake-1',
+        runtimeRecoveryLeaseId: 'recovery-1',
+      },
+    });
+    // Written by another writer after any read the route made.
+    await concurrentMetadataWrite(f, { egressPin: 'pin-1' });
+    return f;
+  }
+
+  const runDelete = (f: Fixture) =>
+    deleteSession({
+      projectId: project.project_id,
+      sessionId: f.sessionId,
+      accountId: project.account_id,
+      userId: 'user-1',
+    });
+
+  // The archive strips every lifecycle fence, so a detached restart, wake or
+  // recovery loses its finalize CAS instead of flipping the row back to
+  // `active`. The removal intent is recorded in the same write, and only a
+  // confirmed removal clears it.
+  test('archives the row without its fences, and a confirmed removal clears the intent', async () => {
+    const f = await deleteFixture();
+    onProviderRemove = async () => {};
+
+    expect(await runDelete(f)).toEqual({ ok: true });
+
+    const { session, sandbox } = await read(f);
+    expect(session.status).toBe('stopped');
+    expect(session.metadata).toMatchObject({ deletedBy: 'user-1' });
+    expect(sandbox.status).toBe('archived');
+    for (const key of ['runtimeRestartId', 'runtimeWakeId', 'runtimeRecoveryLeaseId']) {
+      expect(sandbox.metadata).not.toHaveProperty(key);
+    }
+    expect(sandbox.metadata.egressPin).toBe('pin-1');
+    const removed = await waitForRemovalOutcome(f);
+    expect(typeof removed.providerRemovedAt).toBe('string');
+    expect(removed).not.toHaveProperty('providerRemovalPendingAt');
+  });
+
+  test('a refused removal keeps the intent and schedules a retry', async () => {
+    const f = await deleteFixture();
+    providerStatus = 'stopped';
+    onProviderRemove = async () => {
+      throw new Error('sandbox is transitioning');
+    };
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      await runDelete(f);
+      const failed = await waitForRemovalOutcome(f);
+      expect(failed.providerRemovalAttempts).toBe(1);
+      expect(Date.parse(failed.providerRemovalRetryAfterAt as string)).toBeGreaterThan(Date.now());
+      expect(typeof failed.providerRemovalPendingAt).toBe('string');
+      expect(failed).not.toHaveProperty('providerRemovedAt');
+    } finally {
+      console.warn = warn;
+      onProviderRemove = async () => {};
+    }
+  });
+
+  test('a remove that fails because the box is already gone counts as removed', async () => {
+    const f = await deleteFixture();
+    providerStatus = 'removed';
+    onProviderRemove = async () => {
+      throw new Error('sandbox not found');
+    };
+    try {
+      await runDelete(f);
+      const removed = await waitForRemovalOutcome(f);
+      expect(typeof removed.providerRemovedAt).toBe('string');
+      expect(removed).not.toHaveProperty('providerRemovalPendingAt');
+    } finally {
+      providerStatus = 'stopped';
+      onProviderRemove = async () => {};
+    }
   });
 });

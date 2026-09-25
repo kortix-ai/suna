@@ -103,11 +103,6 @@ interface CacheEntry {
 
 const rosterCache = new Map<string, CacheEntry>();
 
-/** Test seam + restart hygiene: forget every cached roster. */
-export function clearRuntimeAgentRosterCache(): void {
-  rosterCache.clear();
-}
-
 /**
  * Read (and cache) the agent names a session's runtime reports.
  *

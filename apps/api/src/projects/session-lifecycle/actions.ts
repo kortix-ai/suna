@@ -64,7 +64,6 @@ export async function deleteSession(input: {
   sessionId: string;
   accountId: string;
   userId: string;
-  metadata?: Record<string, unknown> | null;
 }): Promise<{ ok: true } | { error: string; status: number }> {
   const { projectId, sessionId, accountId, userId } = input;
   const [sandbox] = await db

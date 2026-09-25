@@ -373,18 +373,22 @@ mock.module('../../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
 
-// The wake path now converges the box before every delivery (continue-session.ts
+// The wake path converges the box before every delivery (continue-session.ts
 // `continueSession`): it reads the service key and ingress and calls
-// `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
-// the wire, not about the sync (see continue-session-env-sync.test.ts).
+// `syncSandboxEnvForPrompt`. The order of that sync is proven in
+// continue-session-runtime-env.test.ts; this file records whether it ran.
+let serviceKeyAvailable = true;
+let envSyncCalls = 0;
 mock.module('../../../platform/service-key', () => ({
-  serviceKeyForExternalId: async () => 'svc-key-1',
+  serviceKeyForExternalId: async () => (serviceKeyAvailable ? 'svc-key-1' : null),
 }));
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {},
+  syncSandboxEnvForPrompt: async () => {
+    envSyncCalls += 1;
+  },
 }));
 
 mock.module('../runtime-prompt-file', () => ({
@@ -459,6 +463,8 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 }
 
 beforeEach(() => {
+  serviceKeyAvailable = true;
+  envSyncCalls = 0;
   projectMetadataExpression = undefined;
   pauseAfterPosts = null;
   requeues = [];
@@ -534,6 +540,15 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  // A box whose env cannot be converged would run the prompt against a stale
+  // gateway URL, stale secrets and a stale model catalog. It waits instead.
+  test('a box whose service key cannot be read is not delivered blind — the prompt stays queued', async () => {
+    serviceKeyAvailable = false;
+    expect(await executeQueuedContinue(baseRow())).toBe('queued');
+    expect(envSyncCalls).toBe(0);
+    expect(capturedBodies).toHaveLength(0);
+  });
+
   test('the project flag lookup correlates with the outer session under Drizzle single-table rendering', async () => {
     expect(await executeQueuedContinue(baseRow())).toBe('succeeded');
     expect(projectMetadataExpression).toBeDefined();

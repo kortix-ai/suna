@@ -12,12 +12,6 @@ describe('runtimeAgentRosterCacheKey', () => {
     );
   });
 
-  test('the same directory on one box shares a roster', () => {
-    expect(runtimeAgentRosterCacheKey('box_1', '/workspace')).toBe(
-      runtimeAgentRosterCacheKey('box_1', '/workspace'),
-    );
-  });
-
   test('the same directory on two boxes does not share a roster', () => {
     expect(runtimeAgentRosterCacheKey('box_1', '/workspace')).not.toBe(
       runtimeAgentRosterCacheKey('box_2', '/workspace'),

@@ -10,7 +10,8 @@
  * twice.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { sql } from 'drizzle-orm';
+import { sessionLifecycleCommands } from '@kortix/db';
+import { eq, sql } from 'drizzle-orm';
 import {
   INBOX_ORDER_BACKOFF_MS,
   admitInboxPrompt,
@@ -27,6 +28,7 @@ import {
   releaseInboxHold,
   retryInboxPrompt,
 } from '../projects/session-lifecycle/inbox-rows';
+import { remintForRepair } from '../projects/session-lifecycle/inbox-placement';
 import { requeueAbandonedPrompt } from '../projects/session-lifecycle/redelivery';
 import { acceptSandboxTurn } from '../projects/sandbox-turn-lifecycle';
 import {
@@ -105,6 +107,14 @@ async function readRow(commandId: string): Promise<Record<string, unknown>> {
   const rows = ((result as { rows?: Array<Record<string, unknown>> }).rows ??
     result) as Array<Record<string, unknown>>;
   return rows[0];
+}
+
+/** The stored row, as the delivery path holds it when it re-places a prompt. */
+async function storedRow(commandId: string): Promise<SessionLifecycleCommandRow[]> {
+  return db
+    .select()
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.commandId, commandId));
 }
 
 async function setBox(status: 'active' | 'stopped', activeTurns: Record<string, unknown>) {
@@ -805,6 +815,25 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect((await readRow(row.commandId)).result).toMatchObject({ status: 'delivered' });
   });
 
+  // A prompt can be re-minted more than once (it waits behind a live turn,
+  // then a strand re-places it). Every id it went out under must still name
+  // its row, or a ledger row keyed on the first re-minted id matches nothing
+  // and the row reads `delivering` for ever.
+  test('a prompt re-minted twice keeps EVERY id it went out under', async () => {
+    const row = await forward('q_reminted_twice');
+    const [stored] = await storedRow(row.commandId);
+    const first = await remintForRepair(stored!, null);
+    const second = await remintForRepair(stored!, null);
+    expect(second).not.toBe(first);
+
+    expect((await readRow(row.commandId)).payload).toMatchObject({
+      redeliveredMessageId: second,
+      redeliveredMessageIds: [first, second],
+      deliveryAttempt: 2,
+    });
+    expect(await confirmInboxPromptConsumed(SESSION_ID, first)).toBe('confirmed');
+  });
+
   test('the sweep closes a row whose turn RAN but whose confirmation never landed', async () => {
     const row = await forward('q_sweep_ran');
     await ageRow(row.commandId, 60_000);
@@ -1198,6 +1227,15 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     return rows[0].status as string;
   }
 
+  async function triggerRuntimeRows(): Promise<Array<Record<string, unknown>>> {
+    const result = await db.execute(sql`
+      SELECT slug, last_status, last_error FROM kortix.project_trigger_runtime
+       WHERE project_id = ${PROJECT_ID}::uuid`);
+    return ((result as { rows?: Array<Record<string, unknown>> }).rows ?? result) as Array<
+      Record<string, unknown>
+    >;
+  }
+
   test('a browser prompt that dead-letters leaves the session running', async () => {
     const mine = await enqueue('q_dead');
     await markCommandFailed(await hold(mine), 'delivery outcome: failed', {
@@ -1210,6 +1248,8 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     // The user is watching, the row shows `failed`, and there is a retry
     // button. Parking their session would take a working session away.
     expect(await sessionStatus()).toBe('running');
+    // A prompt with no trigger slug touches no trigger runtime row.
+    expect(await triggerRuntimeRows()).toEqual([]);
   });
 
   test('an AUTOMATION prompt that dead-letters still parks the session', async () => {
@@ -1224,8 +1264,19 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     });
 
     expect(await sessionStatus()).toBe('failed');
+    // The triggers API reads the dead-letter from the runtime row; left alone
+    // it would show the last fire frozen at `queued`.
+    expect(await triggerRuntimeRows()).toEqual([
+      {
+        slug: 'daily-digest',
+        last_status: 'failed',
+        last_error: 'delivery outcome: failed',
+      },
+    ]);
     await db.execute(sql`
       UPDATE kortix.project_sessions SET status = 'running' WHERE session_id = ${SESSION_ID}`);
+    await db.execute(sql`
+      DELETE FROM kortix.project_trigger_runtime WHERE project_id = ${PROJECT_ID}::uuid`);
   });
 });
 
