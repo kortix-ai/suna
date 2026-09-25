@@ -102,11 +102,11 @@ function callbackRedirectUri(baseUrl: string): string {
 }
 
 function signState(state: OauthState): string {
-  return signChannelState('teams-oauth', { ...state }, STATE_TTL_MS);
+  return signChannelState('teams-install', { ...state }, STATE_TTL_MS);
 }
 
 function verifyState(token: string | undefined): OauthState | null {
-  const payload = verifyChannelState('teams-oauth', token);
+  const payload = verifyChannelState('teams-install', token);
   if (!payload) return null;
   if (
     typeof payload.projectId !== 'string' ||

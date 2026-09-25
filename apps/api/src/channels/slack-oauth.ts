@@ -24,11 +24,11 @@ interface StatePayload {
 }
 
 function signState(payload: StatePayload): string {
-  return signChannelState('slack-oauth', { ...payload }, STATE_TTL_MS);
+  return signChannelState('slack-install', { ...payload }, STATE_TTL_MS);
 }
 
 function verifyState(token: string): StatePayload | null {
-  const payload = verifyChannelState('slack-oauth', token);
+  const payload = verifyChannelState('slack-install', token);
   if (!payload) return null;
   if (typeof payload.projectId !== 'string' || typeof payload.userId !== 'string') return null;
   return { projectId: payload.projectId, userId: payload.userId };

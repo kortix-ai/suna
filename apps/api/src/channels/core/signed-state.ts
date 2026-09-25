@@ -11,7 +11,7 @@ import { config } from '../../config';
  * throws without a key, and verifying answers null: an HMAC keyed with an
  * empty string is one anyone can compute.
  */
-export type ChannelStatePurpose = 'slack-login' | 'teams-login' | 'slack-oauth' | 'teams-oauth';
+export type ChannelStatePurpose = 'slack-login' | 'teams-login' | 'slack-install' | 'teams-install';
 
 export interface ChannelStateEnvelope {
   exp: number;
