@@ -1,3 +1,4 @@
+import { GitHubPersonalAccountCreateUnsupportedError } from './lib/github-create-errors';
 import { createHmac, createSign, timingSafeEqual } from 'node:crypto';
 import { getTraceHeaders } from '../lib/request-context';
 import { resolveAppIdentity } from '../platform/services/github-app-identity';
@@ -1062,28 +1063,6 @@ async function resolveDefaultOwner(auth?: GitHubAuthContext): Promise<{ owner: s
   // the token's authenticated account only if it somehow wasn't provided.
   const me = await ghFetch<{ login: string }>(`/user`, undefined, auth);
   return { owner: me.login, isOrg: false };
-}
-
-/**
- * A repository create was asked for under a PERSONAL GitHub owner with a GitHub
- * App installation token. GitHub does not accept that token on
- * `POST /user/repos` — the endpoint is absent from its "Endpoints available for
- * GitHub App installation access tokens", while `POST /orgs/{org}/repos` is
- * present — so it answers `403 Resource not accessible by integration`.
- *
- * Thrown before the request, so callers map one typed cause instead of
- * pattern-matching GitHub's 403 text.
- */
-export class GitHubPersonalAccountCreateUnsupportedError extends Error {
-  readonly code = 'github_personal_account_create_unsupported';
-
-  constructor(readonly owner: string) {
-    super(
-      `GitHub does not let the Kortix app create repositories in the personal account ${owner}. ` +
-        'Create the repository on GitHub, then import it.',
-    );
-    this.name = 'GitHubPersonalAccountCreateUnsupportedError';
-  }
 }
 
 export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {

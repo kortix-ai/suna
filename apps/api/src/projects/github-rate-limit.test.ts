@@ -5,12 +5,8 @@
 // cannot back off correctly without it.
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import {
-  GitHubApiError,
-  GitHubPersonalAccountCreateUnsupportedError,
-  createRepo,
-  githubRetryAfterSeconds,
-} from './github';
+import { GitHubApiError, createRepo, githubRetryAfterSeconds } from './github';
+import { GitHubPersonalAccountCreateUnsupportedError } from './lib/github-create-errors';
 import { createRepoFailureResult } from './provision-core';
 
 const originalFetch = globalThis.fetch;

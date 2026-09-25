@@ -29,8 +29,8 @@ import {
   pushVerifiedSeed,
 } from './managed-repo-seed';
 import { normalizeStarterTemplateId } from './starter';
-import {
-  GitHubPersonalAccountCreateUnsupportedError, GitHubApiError } from './github';
+import { GitHubApiError } from './github';
+import { GitHubPersonalAccountCreateUnsupportedError } from './lib/github-create-errors';
 import {
   buildProjectSeedFiles,
   buildProjectSeedFilesFromItem,

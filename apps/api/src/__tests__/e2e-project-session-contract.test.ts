@@ -349,7 +349,14 @@ mock.module('../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a factory
+// that only lists the exports it overrides deletes every other one — and the
+// next export added to `projects/github.ts` becomes
+// `SyntaxError: Export named 'X' not found` in this file, which that change
+// never touched (.claude/skills/learnings/SKILL.md).
+const actualGithub = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...actualGithub,
   parseGitHubRepoUrl: (repoUrl: string) => ({
     owner: TEST_GITHUB_OWNER,
     repo:

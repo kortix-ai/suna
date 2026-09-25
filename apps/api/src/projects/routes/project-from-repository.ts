@@ -6,12 +6,12 @@ import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isSelfHostOperator } from '../../shared/platform-roles';
 import { managedGithubToken } from '../git-backends';
 import {
-  GitHubPersonalAccountCreateUnsupportedError,
   addRepositoryToInstallation,
   commitFile,
   createRepo,
   getFileSha,
 } from '../github';
+import { GitHubPersonalAccountCreateUnsupportedError } from '../lib/github-create-errors';
 import { resolveGitHubUserToken } from '../lib/github-user-token';
 import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';

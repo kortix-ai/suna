@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
   GitHubApiError,
-  GitHubPersonalAccountCreateUnsupportedError,
   addRepositoryToInstallation,
   createRepo,
   deleteRepo,
@@ -10,6 +9,7 @@ import {
   listOwnerRepositories,
   listRepositoryBranches,
 } from './github';
+import { GitHubPersonalAccountCreateUnsupportedError } from './lib/github-create-errors';
 
 const originalFetch = globalThis.fetch;
 

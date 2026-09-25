@@ -17,6 +17,8 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import { GitHubPersonalAccountCreateUnsupportedError } from '../lib/github-create-errors';
+
 const FAKE_ACCOUNT_ID = '00000000-0000-4000-a000-000000009930';
 const FAKE_USER_ID = '00000000-0000-4000-a000-000000009931';
 
@@ -108,7 +110,7 @@ const mockAddRepositoryToInstallation = mock(
 );
 const mockCreateRepo = mock(async (input: { name: string; auth?: { source?: string } }) => {
   if (currentOwner.type === 'User' && input.auth?.source !== 'user_token') {
-    throw new realGithub.GitHubPersonalAccountCreateUnsupportedError(currentOwner.login);
+    throw new GitHubPersonalAccountCreateUnsupportedError(currentOwner.login);
   }
   return fakeRepo(currentOwner.login, input.name);
 });
