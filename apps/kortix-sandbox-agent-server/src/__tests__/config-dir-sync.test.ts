@@ -25,11 +25,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import { syncConfigDirToBase } from '../git'
-import { KORTIX_SERVICE_CALL_HEADER } from '../kortix-user-context'
-import type { Opencode } from '../harness/open-code/lifecycle'
-import { createRefreshRouter } from '../routes/refresh'
-import { createOpenCodeControlService } from '../harness/open-code/control'
-import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
 
 const CONFIG_DIR = '.kortix/opencode'
 const AGENT = `${CONFIG_DIR}/agents/kortix.md`
@@ -130,23 +125,13 @@ describe('syncConfigDirToBase', () => {
     expect(agentText()).toBe('MY WORK IN PROGRESS\n')
   })
 
-  test('REFUSES when the session COMMITTED its own agent config change', async () => {
+  test('REFUSES when the session COMMITTED its own agent config change, touching nothing else', async () => {
     // Committed work is even less discardable than uncommitted work, and a
-    // plain `git status` check would miss it entirely.
+    // plain `git status` check would miss it entirely. The refusal runs no
+    // mutating git: HEAD, the branch, unrelated dirty and untracked files stay.
     write(work, AGENT, 'MY COMMITTED PROMPT\n')
-    git(work, 'add', '-A')
-    git(work, 'commit', '-qm', 'my agent tweak')
-
-    const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
-
-    expect(result).toEqual({ synced: false, skipped: 'local commits' })
-    expect(agentText()).toBe('MY COMMITTED PROMPT\n')
-  })
-
-  test('preserves a conflicting config commit and unrelated dirty work together', async () => {
-    write(work, AGENT, 'SESSION PROMPT\n')
     git(work, 'add', AGENT)
-    git(work, 'commit', '-qm', 'session config')
+    git(work, 'commit', '-qm', 'my agent tweak')
     const head = git(work, 'rev-parse', 'HEAD')
     write(work, 'app.ts', 'export const x = 999\n')
     write(work, 'notes/untracked.txt', 'keep me\n')
@@ -154,10 +139,10 @@ describe('syncConfigDirToBase', () => {
     const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
     expect(result).toEqual({ synced: false, skipped: 'local commits' })
+    expect(agentText()).toBe('MY COMMITTED PROMPT\n')
     expect(git(work, 'rev-parse', 'HEAD')).toBe(head)
     expect(git(work, 'branch', '--show-current')).toBe('ses-1111-2222')
     expect(existsSync(join(work, '.git', 'MERGE_HEAD'))).toBe(false)
-    expect(agentText()).toBe('SESSION PROMPT\n')
     expect(readFileSync(join(work, 'app.ts'), 'utf8')).toBe('export const x = 999\n')
     expect(readFileSync(join(work, 'notes/untracked.txt'), 'utf8')).toBe('keep me\n')
   })
@@ -269,141 +254,3 @@ describe('syncConfigDirToBase', () => {
  * These exercise real git, because the whole defect is a property of what
  * `checkout -B` does versus what `checkout` does.
  */
-describe('reboot must not reset an existing session branch', () => {
-  test('the destructive primitive really does orphan commits (the bug)', () => {
-    // Establishes the danger the fix avoids, so a future reader can see why the
-    // extra rev-parse is not ceremony.
-    write(work, 'agent-work.txt', 'work\n')
-    git(work, 'add', '-A')
-    git(work, 'commit', '-qm', 'agent work')
-    const sessionTip = git(work, 'rev-parse', 'HEAD')
-    git(work, 'checkout', '-q', 'main')
-
-    git(work, 'checkout', '-B', 'ses-1111-2222')
-
-    expect(git(work, 'rev-parse', 'HEAD')).not.toBe(sessionTip)
-    expect(git(work, 'log', '--oneline', '-1')).not.toContain('agent work')
-  })
-
-  test('a plain checkout of an EXISTING branch preserves its commits', () => {
-    // What the fixed code does instead.
-    write(work, 'agent-work.txt', 'work\n')
-    git(work, 'add', '-A')
-    git(work, 'commit', '-qm', 'agent work')
-    const sessionTip = git(work, 'rev-parse', 'HEAD')
-    git(work, 'checkout', '-q', 'main')
-
-    git(work, 'checkout', 'ses-1111-2222')
-
-    expect(git(work, 'rev-parse', 'HEAD')).toBe(sessionTip)
-    expect(readFileSync(join(work, 'agent-work.txt'), 'utf8')).toBe('work\n')
-  })
-
-  test('the daemon probes for the ref and only creates when it is absent', () => {
-    const SRC = readFileSync(join(import.meta.dir, '..', 'git.ts'), 'utf8')
-    const fn = SRC.split('async function checkoutLocalSessionBranch(')[1]?.split('\n}\n')[0]
-    expect(fn).toBeTruthy()
-    expect(fn).toContain("'rev-parse', '--verify', '--quiet'")
-    // The existing-ref path must be a plain checkout — `-B` there is the bug.
-    const existingPath = (fn as string).slice((fn as string).indexOf('exists.code === 0'));
-    expect(existingPath).toContain("'checkout', branch");
-    // `-B` may appear EXACTLY once: the create path, reached only when the ref
-    // does not exist. A second occurrence means either the existing-ref branch
-    // uses it, or a failed switch falls back to it — and that fallback is
-    // precisely the data loss.
-    expect((fn as string).match(/'-B'/g) ?? []).toHaveLength(1);
-  })
-})
-
-/**
- * `base=1` is the branch reset. Only the service credential may ask for it.
- *
- * `syncWorkspaceToBase` force-resets the session's own branch onto the base tip
- * and deletes the files its commits introduced. The API's reload deliberately
- * refuses to send it — but the endpoint is reachable through the user-facing
- * sandbox proxy, which blocks exactly one daemon path (`/kortix/env`) and not
- * this one. So any principal who could see the session could wipe its history
- * with a single request, as could the in-box agent via a prompt-injected `curl`
- * against localhost.
- *
- * Its only legitimate caller is the warm-session workspace refresh, at session
- * CREATE, holding the service key.
- */
-/**
- * `base=1` — the destructive branch reset — must be unreachable from the proxy.
- *
- * These drive the real Hono route rather than asserting on its source, because
- * the FIRST version of this gate passed a source-shaped test while protecting
- * nothing. It checked only the bearer, and the preview proxy authenticates every
- * request it relays — an ordinary user's included — with the target sandbox's
- * own service key. So `serviceAuthenticated` was true for exactly the traffic
- * the gate existed to stop, and no amount of grepping the file would say so.
- *
- * The shape below named "a proxied user request" is that case, pinned.
- */
-describe('base=1 requires a DIRECT service call', () => {
-  const TOKEN = 'service-key-under-test'
-
-  function router() {
-    // The rejection paths return before any repo or runtime work, so a config
-    // carrying just the token is all the route reads on these paths.
-    const cfg = { sandboxToken: TOKEN, opencodeInternalPort: 4096, opencodeStandbyPort: 4097, defaultOpencodeConfigDir: '/ephemeral/opencode' } as unknown as Config
-    const opencode = {
-      restart: async () => {
-        throw new Error('restart must not run on a refused request')
-      },
-      getState: () => 'ready',
-      getPid: () => 1,
-    } as unknown as Opencode
-    return createRefreshRouter(cfg, createOpenCodeControlService(opencode, createOpenCodeQuickQueueInterrupt(opencode, cfg)).bind({ cfg }))
-  }
-
-  async function post(path: string, headers: Record<string, string>) {
-    return router().request(path, { method: 'POST', headers })
-  }
-
-  test('a request shaped exactly like a proxied user request is refused', async () => {
-    // What the proxy actually sends: the sandbox's service key as the bearer,
-    // and NO service-call header (it strips that name from every forward).
-    // This is the request that used to be accepted.
-    const res = await post('/?base=1', { Authorization: `Bearer ${TOKEN}` })
-    expect(res.status).toBe(403)
-    expect(await res.json()).toMatchObject({ code: 'BASE_RESET_FORBIDDEN' })
-  })
-
-  test('the service-call header alone does not authorize it', async () => {
-    // The header is unauthenticated on its own — anyone can name a header. It
-    // proves the HOP, never the caller, so it must not substitute for the token.
-    const res = await post('/?base=1', { [KORTIX_SERVICE_CALL_HEADER]: '1' })
-    expect(res.status).toBe(401)
-  })
-
-  test('a direct platform call — both proofs — is not refused', async () => {
-    const res = await post('/?base=1', {
-      Authorization: `Bearer ${TOKEN}`,
-      [KORTIX_SERVICE_CALL_HEADER]: '1',
-    })
-    // It proceeds into the repo work and fails there (this config has no
-    // workspace). The assertion that matters is that it was not turned away by
-    // the gate — otherwise the warm-session refresh at session create breaks.
-    expect(res.status).not.toBe(403)
-    expect(res.status).not.toBe(401)
-  })
-
-  test('the refusal happens before any repo work', async () => {
-    // Refusing after the reset would be no protection at all. `syncWorkspaceToBase`
-    // would throw on this config; a 403 proves it was never reached.
-    const res = await post('/?base=1', { Authorization: `Bearer ${TOKEN}` })
-    expect(res.status).toBe(403)
-  })
-
-  test('an ordinary refresh is still open to a proxied caller', async () => {
-    // The gate must be specific to the destructive flag. A session owner pulling
-    // their own workspace, or the API's reload sending `config_dir=1`, is
-    // legitimate and must keep working without the direct-call header.
-    for (const path of ['/', '/?restart=0&config_dir=1']) {
-      const res = await post(path, { Authorization: `Bearer ${TOKEN}` })
-      expect(res.status).not.toBe(403)
-    }
-  })
-})

@@ -124,11 +124,6 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
   })
 }
 
-/** Runtime-assets reconciliation must not restart a runtime during boot. */
-export function refreshMayConvergeRuntime(runtimeState: string): boolean {
-  return runtimeState === 'ok'
-}
-
 /** Native control operations. HTTP parsing, authorization and status mapping stay in routes. */
 export function createOpenCodeControlService(
   opencode: Opencode,
@@ -330,7 +325,7 @@ export function createOpenCodeControlService(
           // API's start budget expired on both boxes). main.ts schedules the
           // post-boot pass itself once `opencode-ready` is marked; this call is
           // for a box that is already up.
-          if (refreshMayConvergeRuntime(opencode.getState())) scheduleRuntimeAssetsReconcile(cfg)
+          if (opencode.getState() === 'ok') scheduleRuntimeAssetsReconcile(cfg)
           return {
             // The repo work succeeded either way; `reload.outcome` carries whether
             // the new config actually took. Reporting ok:false here would hide a

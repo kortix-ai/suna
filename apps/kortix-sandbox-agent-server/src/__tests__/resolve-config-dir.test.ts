@@ -12,7 +12,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { loadConfig, resolveSandboxOnBoot } from '../config'
+import { loadConfig } from '../config'
 import { loadOpenCodeConfig, requireOpenCodeConfig, resolveOpencodeConfigDir, type OpenCodeConfig as Config } from '../harness/open-code/config'
 
 let workspace: string
@@ -105,33 +105,6 @@ describe('resolveOpencodeConfigDir', () => {
     expect(await resolveOpencodeConfigDir(cfg())).toBe(DEFAULT_DIR)
   })
 })
-
-describe('resolveSandboxOnBoot', () => {
-  test('returns null when no manifest exists', async () => {
-    expect(await resolveSandboxOnBoot(cfg())).toBeNull()
-  })
-
-  test('reads sandbox.on_boot from kortix.yaml', async () => {
-    writeFileSync(join(workspace, 'kortix.yaml'), 'sandbox:\n  on_boot: "pnpm dev"\n')
-    expect(await resolveSandboxOnBoot(cfg())).toBe('pnpm dev')
-  })
-
-  test('reads an unquoted sandbox.on_boot from kortix.yaml', async () => {
-    writeFileSync(join(workspace, 'kortix.yaml'), 'sandbox:\n  on_boot: pnpm dev\n')
-    expect(await resolveSandboxOnBoot(cfg())).toBe('pnpm dev')
-  })
-
-  test('reads [sandbox] on_boot from legacy kortix.toml', async () => {
-    writeFileSync(join(workspace, 'kortix.toml'), '[sandbox]\non_boot = "pnpm dev"\n')
-    expect(await resolveSandboxOnBoot(cfg())).toBe('pnpm dev')
-  })
-
-  test('returns null when sandbox.on_boot is unset', async () => {
-    writeFileSync(join(workspace, 'kortix.yaml'), 'sandbox:\n  cpu: 4\n')
-    expect(await resolveSandboxOnBoot(cfg())).toBeNull()
-  })
-})
-
 
 describe('native configuration behind the host boundary', () => {
   test('an empty environment yields the flat defaults', () => {

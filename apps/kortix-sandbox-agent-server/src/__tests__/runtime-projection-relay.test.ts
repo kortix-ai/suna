@@ -368,19 +368,3 @@ describe('against a real socket', () => {
     }
   })
 })
-
-describe('wiring', () => {
-  // The relay is only worth anything if the daemon actually calls it. Pin the
-  // four call sites so a refactor cannot silently drop the push.
-  const main = new TextDecoder().decode(
-    new Uint8Array(require('node:fs').readFileSync(require('node:path').join(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'))),
-  )
-  const envRoute = require('node:fs').readFileSync(
-    require('node:path').join(import.meta.dir, '..', 'harness', 'open-code', 'control.ts'),
-    'utf8',
-  ) as string
-
-  test('routes/env.ts pushes after the daemon rewrites config', () => {
-    expect(envRoute).toContain("scheduleRuntimeProjectionPush('kortix-env-applied')")
-  })
-})

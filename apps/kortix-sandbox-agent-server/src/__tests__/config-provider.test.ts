@@ -31,7 +31,7 @@ import {
   type ProjectSnapshotDescriptor,
 } from '../config-provider/s3/s3-config-provider'
 import { ConfigProviderError } from '../config-provider/types'
-import { __clearRepoIdentityMemoForTests, __setScaffoldRepoPathForTests, readRepoInfo } from '../git'
+import { __setScaffoldRepoPathForTests, readRepoInfo } from '../git'
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111'
 const EXTERNAL_ID = '424242'
@@ -333,7 +333,6 @@ let archive: Snapshot
 let api: FakeApi
 
 beforeEach(async () => {
-  __clearRepoIdentityMemoForTests()
   root = tmp('kortix-config-provider-')
   source = makeSourceRepo(root)
   archive = await makeSnapshot(root, source)
@@ -747,10 +746,10 @@ describe('materializeProject — require-s3 and git', () => {
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
   })
 
-  test('mode unset in the config object behaves as git', async () => {
+  test('with KORTIX_PROJECT_SNAPSHOT_MODE unset the box boots from git, with zero snapshot traffic', async () => {
+    // The production default, through loadConfig: a box the API gives no mode.
     const target = join(root, 'ws')
-    const cfg = makeConfig(api, target, archive.sha)
-    delete cfg.projectSnapshotMode
+    const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_MODE: undefined })
     const result = await materializeProject(cfg)
     expect(result.provider).toBe('git')
     expect(api.requests).toHaveLength(0)

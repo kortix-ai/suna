@@ -15,7 +15,7 @@
  * requiresRespawn(opencodeEnvNames)`. The dispose fast path is preserved for
  * pure model/auth/deny changes that touch no project secret.
  */
-import { afterAll, describe, expect, it } from 'bun:test'
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,12 +26,28 @@ import { Hono } from 'hono'
 import { createEnvRouter } from '../routes/env'
 import { createOpenCodeControlService } from '../harness/open-code/control'
 import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
+import {
+  __resetRuntimeProjectionRelayForTests,
+  __setRuntimeProjectionStateReaderForTests,
+} from '../harness/open-code/runtime-projection-relay'
 
 const TEST_TOKEN = 'respawn-test-kortix-token-32-chars'
 const TEST_ENV_DIR = mkdtempSync(join(tmpdir(), 'kortix-env-respawn-'))
 let testEnvFileSequence = 0
 
 afterAll(() => rmSync(TEST_ENV_DIR, { recursive: true, force: true }))
+
+// The route writes process.env (runtime env names, revoked secrets). One
+// `bun test` process runs every file, so each row restores what it changed.
+let envSnapshot: NodeJS.ProcessEnv
+beforeEach(() => {
+  envSnapshot = { ...process.env }
+  delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
+})
+afterEach(() => {
+  for (const key of Object.keys(process.env)) if (!(key in envSnapshot)) delete process.env[key]
+  Object.assign(process.env, envSnapshot)
+})
 
 function baseConfig(): Config {
   return {
@@ -75,7 +91,7 @@ function fakeOpencode(): { opencode: Opencode; calls: ReloadCall[] } {
     restart: async () => {},
     reloadConfig: async (opts: { mustRespawn?: boolean } = {}) => {
       calls.push({ mustRespawn: Boolean(opts.mustRespawn) })
-      return 'restarted' as const
+      return { how: 'restarted' as const, turnEnded: false }
     },
   } as unknown as Opencode
   return { opencode, calls }
@@ -112,7 +128,6 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
       KORTIX_PROJECT_SECRET_NAMES: '',
-      KORTIX_SECRET_CAPABILITIES: '{"version":1,"capabilities":[]}',
     } as NodeJS.ProcessEnv)
     const app = buildTestApp(opencode, store)
 
@@ -131,81 +146,32 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(calls).toEqual([{ mustRespawn: true }])
   })
 
-  it('a project-secret CHANGE (value moved) forces a respawn', async () => {
+  // Any value delta in the project secrets: the opencode child's PROCESS env
+  // (set at spawn by mergeProjectEnv) is stale, and a dispose would report
+  // success while the PID kept the old set.
+  it.each([
+    ['CHANGE (value moved)', { API_KEY: 'v1' }, { API_KEY: 'v2' }],
+    ['ADD (new secret granted)', { API_KEY: 'v1' }, { API_KEY: 'v1', STRIPE_KEY: 'sk_live_new' }],
+    ['REVOCATION (secret dropped)', { API_KEY: 'v1', STRIPE_KEY: 'sk_live_old' }, { API_KEY: 'v1' }],
+  ])('a project-secret %s forces a respawn', async (_name, boot, next) => {
     const { opencode, calls } = fakeOpencode()
-    // Boot store already has API_KEY=v1.
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
-      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
-      API_KEY: 'v1',
+      KORTIX_PROJECT_SECRET_NAMES: Object.keys(boot).join(','),
+      ...boot,
     } as NodeJS.ProcessEnv)
     const app = buildTestApp(opencode, store)
 
-    // Push a new revision where API_KEY's value moved. refreshModels=true asks
-    // for the reload; the project-secret delta is what demands a RESPAWN.
     const { status, json } = await postEnv(app, {
       revision: 'rev-2',
-      env: { API_KEY: 'v2' },
-      names: ['API_KEY'],
+      env: next,
+      names: Object.keys(next),
       refreshModels: true,
     })
 
     expect(status).toBe(200)
     expect(json.changed).toBe(true)
-    // Exactly one reload, and it MUST have been a respawn (mustRespawn=true).
-    expect(calls).toHaveLength(1)
-    expect(calls[0]!.mustRespawn).toBe(true)
-  })
-
-  it('a project-secret ADD (new secret granted) forces a respawn', async () => {
-    const { opencode, calls } = fakeOpencode()
-    const store = createProjectEnvStore({
-      KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
-      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
-      API_KEY: 'v1',
-    } as NodeJS.ProcessEnv)
-    const app = buildTestApp(opencode, store)
-
-    // The allowlist widens: a brand-new secret STRIPE_KEY is granted. The
-    // opencode process env did not have it before, so a respawn is required to
-    // run mergeProjectEnv and add it.
-    const { status, json } = await postEnv(app, {
-      revision: 'rev-2',
-      env: { API_KEY: 'v1', STRIPE_KEY: 'sk_live_new' },
-      names: ['API_KEY', 'STRIPE_KEY'],
-      refreshModels: true,
-    })
-
-    expect(status).toBe(200)
-    expect(json.changed).toBe(true)
-    expect(calls).toHaveLength(1)
-    expect(calls[0]!.mustRespawn).toBe(true)
-  })
-
-  it('a project-secret REVOCATION (secret dropped) forces a respawn', async () => {
-    const { opencode, calls } = fakeOpencode()
-    const store = createProjectEnvStore({
-      KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
-      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY,STRIPE_KEY',
-      API_KEY: 'v1',
-      STRIPE_KEY: 'sk_live_old',
-    } as NodeJS.ProcessEnv)
-    const app = buildTestApp(opencode, store)
-
-    // STRIPE_KEY is revoked: it leaves the env. The opencode process env still
-    // holds it from spawn, so a respawn is required to clear it via
-    // mergeProjectEnv's knownNames delete pass.
-    const { status, json } = await postEnv(app, {
-      revision: 'rev-2',
-      env: { API_KEY: 'v1' },
-      names: ['API_KEY'],
-      refreshModels: true,
-    })
-
-    expect(status).toBe(200)
-    expect(json.changed).toBe(true)
-    expect(calls).toHaveLength(1)
-    expect(calls[0]!.mustRespawn).toBe(true)
+    expect(calls).toEqual([{ mustRespawn: true }])
   })
 
   it('removes a revoked project secret from the daemon environment', async () => {
@@ -296,40 +262,101 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(calls[0]!.mustRespawn).toBe(false)
   })
 
-  it('re-pushing the SAME connectors-MCP value does not reload at all', async () => {
-    // The fleet default now sets this at boot, so it is present on every box
-    // and gets re-sent by any caller that includes it. Respawning on an
-    // unchanged value would put an ~8s restart on a routine push — the route
-    // compares against process.env before marking the name changed, so an
-    // identical value produces no reload whatsoever, not merely a cheap one.
+  it('a connectors-MCP push reloads once and sets the env; re-pushing the SAME value reloads nothing', async () => {
+    // The fleet default sets this at boot, so every caller that includes it
+    // re-sends it. The route compares against process.env before marking the
+    // name changed: an identical value produces no reload at all.
     const { opencode, calls } = fakeOpencode()
-    const store = createProjectEnvStore({
-      KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
-      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
-      API_KEY: 'v1',
-    } as NodeJS.ProcessEnv)
-    const app = buildTestApp(opencode, store)
-    process.env.KORTIX_CONNECTORS_MCP_ENABLED = '1'
-    try {
-      const { status } = await postEnv(app, {
-        revision: 'rev-1',
-        env: { API_KEY: 'v1' },
-        names: ['API_KEY'],
+    const app = buildTestApp(opencode, createProjectEnvStore({} as NodeJS.ProcessEnv))
+    const push = () =>
+      postEnv(app, {
+        revision: 'rev-email-mcp',
+        env: {},
+        names: [],
         refreshModels: true,
         opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
       })
 
-      expect(status).toBe(200)
-      expect(calls).toHaveLength(0)
-    } finally {
-      delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
-    }
+    const first = await push()
+    expect(first.status).toBe(200)
+    expect(first.json).toMatchObject({ opencode_env_changed: true, opencode_env_names: ['KORTIX_CONNECTORS_MCP_ENABLED'] })
+    expect(process.env.KORTIX_CONNECTORS_MCP_ENABLED as string | undefined).toBe('1')
+    expect(calls).toHaveLength(1)
+
+    const replay = await push()
+    expect(replay.status).toBe(200)
+    expect(replay.json).toMatchObject({ opencode_env_changed: false, opencode_env_names: [] })
+    expect(calls).toHaveLength(1)
+  })
+
+  it('a runtime env value sets process.env and reloads; null deletes it and reloads again', async () => {
+    const { opencode, calls } = fakeOpencode()
+    delete process.env.KORTIX_LLM_BASE_URL
+    const app = buildTestApp(opencode, createProjectEnvStore({} as NodeJS.ProcessEnv))
+
+    const on = await postEnv(app, {
+      revision: 'rev-gateway-on',
+      env: {},
+      names: [],
+      refreshModels: true,
+      opencodeEnv: { KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm' },
+    })
+    expect(on.json).toMatchObject({ opencode_env_changed: true, opencode_env_names: ['KORTIX_LLM_BASE_URL'] })
+    expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
+
+    const off = await postEnv(app, {
+      revision: 'rev-gateway-off',
+      env: {},
+      names: [],
+      refreshModels: true,
+      opencodeEnv: { KORTIX_LLM_BASE_URL: null },
+    })
+    expect(off.json).toMatchObject({ opencode_env_changed: true, opencode_env_names: ['KORTIX_LLM_BASE_URL'] })
+    expect(process.env.KORTIX_LLM_BASE_URL).toBeUndefined()
+    expect(calls).toEqual([{ mustRespawn: false }, { mustRespawn: false }])
+  })
+
+  it('the compiled agent config is live-updatable; an unknown KORTIX_* name is ignored', async () => {
+    // Every runtime env name must be on the route's allowlist, or the API can
+    // never change it on a running box. An unlisted name must not reach the
+    // environment at all.
+    const { opencode, calls } = fakeOpencode()
+    delete process.env.KORTIX_COMPILED_AGENT_CONFIG
+    delete process.env.KORTIX_FOO
+    // The project secrets do not move (same revision), so only the runtime env
+    // name can trigger a reload.
+    const app = buildTestApp(
+      opencode,
+      createProjectEnvStore({ KORTIX_PROJECT_SECRETS_REVISION: 'rev-1' } as NodeJS.ProcessEnv),
+    )
+
+    const unknown = await postEnv(app, {
+      revision: 'rev-1',
+      env: {},
+      names: [],
+      refreshModels: true,
+      opencodeEnv: { KORTIX_FOO: 'x' },
+    })
+    expect(unknown.json).toMatchObject({ opencode_env_changed: false, opencode_env_names: [] })
+    expect(process.env.KORTIX_FOO).toBeUndefined()
+    expect(calls).toHaveLength(0)
+
+    const compiled = JSON.stringify({ agent: { support: { mode: 'primary' } } })
+    const applied = await postEnv(app, {
+      revision: 'rev-1',
+      env: {},
+      names: [],
+      refreshModels: true,
+      opencodeEnv: { KORTIX_COMPILED_AGENT_CONFIG: compiled },
+    })
+    expect(applied.json).toMatchObject({ opencode_env_changed: true, opencode_env_names: ['KORTIX_COMPILED_AGENT_CONFIG'] })
+    expect(process.env.KORTIX_COMPILED_AGENT_CONFIG as string | undefined).toBe(compiled)
+    expect(calls).toHaveLength(1)
   })
 
   it('a byte-identical push (no change at all) does not reload opencode', async () => {
-    // The boot-revision-matches guard is unchanged: nothing moved, nothing to
-    // reload. This is the contract the proxy-auth "matches the boot revision"
-    // test also asserts.
+    // The boot-revision-matches guard: nothing moved, nothing to reload, even
+    // with refreshModels set.
     const { opencode, calls } = fakeOpencode()
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRETS_REVISION: 'rev-boot',
@@ -374,5 +401,44 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(status).toBe(200)
     expect(json.changed).toBe(true)
     expect(calls).toHaveLength(0)
+  })
+
+  it('an applied env push re-pushes the runtime projection to the control plane', async () => {
+    // The daemon owns this write, so it tells the server-side projection
+    // instead of waiting for an SSE frame to hint at the change.
+    const posts: string[] = []
+    const api = Bun.serve({
+      port: 0,
+      fetch(req) {
+        posts.push(new URL(req.url).pathname)
+        return Response.json({ ok: true })
+      },
+    })
+    try {
+      __resetRuntimeProjectionRelayForTests()
+      __setRuntimeProjectionStateReaderForTests(async () => ({ doc: { built_at: 'now' } as never, etag: 'etag-env' }))
+      process.env.KORTIX_SESSION_ID = 'sess-1'
+      process.env.KORTIX_TOKEN = 'sandbox-token'
+      process.env.KORTIX_API_URL = `http://127.0.0.1:${api.port}/v1`
+      process.env.KORTIX_PROJECTION_RELAY_DEBOUNCE_MS = '5'
+      const { opencode } = fakeOpencode()
+      const app = buildTestApp(opencode, createProjectEnvStore({} as NodeJS.ProcessEnv))
+
+      const { status } = await postEnv(app, {
+        revision: 'rev-2',
+        env: {},
+        names: [],
+        refreshModels: true,
+        opencodeEnv: { KORTIX_OPENCODE_MODEL: 'kortix/claude-sonnet-4' },
+      })
+      expect(status).toBe(200)
+
+      const deadline = Date.now() + 2_000
+      while (posts.length === 0 && Date.now() < deadline) await Bun.sleep(10)
+      expect(posts).toEqual(['/v1/platform/runtime-projection'])
+    } finally {
+      __resetRuntimeProjectionRelayForTests()
+      api.stop(true)
+    }
   })
 })
