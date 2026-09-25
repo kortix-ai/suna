@@ -234,7 +234,7 @@
       "actionImport": "Увези постојећи репозиторијум",
       "ownerTypePersonal": "Лични налог",
       "ownerTypeOrg": "Организација",
-      "createPersonalUnsupported": "GitHub ne dozvoljava Kortixu da kreira repozitorijume na ličnom nalogu. Kreirajte repozitorijum na GitHubu, a zatim ga uvezite."
+      "createPersonalAuthorize": "Kortix će prvi put zatražiti vašu autorizaciju na GitHubu kada kreirate repozitorijum na ličnom nalogu."
     }
   },
   "projectHome": {

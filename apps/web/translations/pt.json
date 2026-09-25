@@ -234,7 +234,7 @@
       "actionImport": "Importar um repositório existente",
       "ownerTypePersonal": "Conta pessoal",
       "ownerTypeOrg": "Organização",
-      "createPersonalUnsupported": "O GitHub não permite que o Kortix crie repositórios em uma conta pessoal. Crie o repositório no GitHub e depois importe-o."
+      "createPersonalAuthorize": "Na primeira vez que você criar um repositório em uma conta pessoal, o Kortix pedirá sua autorização no GitHub."
     }
   },
   "projectHome": {

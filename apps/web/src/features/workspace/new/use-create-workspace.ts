@@ -19,15 +19,18 @@ import {
   resolveDefaultCreatableAccountId,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
+import { createRepoWithGitHubAuthorization } from '@/features/workspace/new/github-user-authorization';
 import { onboardingPath } from '@/features/workspace/new/onboarding-param';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import {
   isManagedGitUnavailableError,
   isProjectLimitError,
 } from '@/lib/onboarding/provision-errors';
+import { requestGitHubUserProof } from '@/lib/github-user-proof';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   createProjectRepo,
+  storeGitHubUserToken,
   linkRepository,
   PROVISION_IN_FLIGHT_CODE,
   provisionProject,
@@ -769,7 +772,15 @@ export function useCreateWorkspace(): {
         // so there is nothing for `runProvisionAttempt`'s machinery to do. A
         // failed attempt surfaces through `messageFor` and the user presses
         // Try again, which is the whole retry story for these two.
-        createGitHubRepoProject: createProjectRepo,
+        // A personal GitHub owner needs the user's own authorization before
+        // GitHub will create the repository (`github-user-authorization.ts`).
+        // One popup, one retry; an organization never reaches it.
+        createGitHubRepoProject: (payload) =>
+          createRepoWithGitHubAuthorization(payload, {
+            create: createProjectRepo,
+            requestProof: requestGitHubUserProof,
+            storeToken: storeGitHubUserToken,
+          }),
         // `linkRepository` answers `{ project, git_connection }`; the
         // orchestration only ever needs the project, and unwrapping HERE (not
         // inside `runCreate`) keeps every source's success path identical.

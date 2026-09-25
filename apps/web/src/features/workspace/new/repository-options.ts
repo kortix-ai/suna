@@ -119,15 +119,17 @@ export function repositoryAction(state: Pick<NewWorkspaceFormState, 'source'>): 
 }
 
 /**
- * Whether "Create a new repository" can work under this git account.
+ * Whether creating a repository under this git account needs the user's own
+ * GitHub authorization first.
  *
- * Not under a personal GitHub account. A create authenticates with the
- * account's GitHub App installation token, and GitHub accepts that token on
- * `POST /orgs/{org}/repos` but not on `POST /user/repos`. The server refuses
- * the same case (`github_personal_account_create_unsupported`).
+ * A personal account does. GitHub accepts the account's App installation token
+ * on `POST /orgs/{org}/repos` but not on `POST /user/repos`, so a personal
+ * create runs on a GitHub App USER access token instead. The server asks for
+ * one with `409 github_user_authorization_required`, and `/new` answers it with
+ * a single popup (`github-user-authorization.ts`).
  */
-export function canCreateRepository(option: GitAccountOption): boolean {
-  return githubOwnerKind(option.ownerType) !== 'personal';
+export function createNeedsGitHubAuthorization(option: GitAccountOption): boolean {
+  return githubOwnerKind(option.ownerType) === 'personal';
 }
 
 function sourceFor(kind: GitAccountOption['kind'], action: RepositoryAction): RepositorySource {
@@ -137,8 +139,7 @@ function sourceFor(kind: GitAccountOption['kind'], action: RepositoryAction): Re
 
 /**
  * Apply a git-account pick. The action carries over between GitHub owners
- * (a user importing from one org who switches to another is still importing),
- * except that a personal account always imports (`canCreateRepository`);
+ * (a user importing from one org who switches to another is still importing);
  * `managed` has no action. Delegates the clearing rules to
  * `withRepositoryChoice`, so a switch never leaks a repository or a branch
  * across owners.
@@ -147,9 +148,8 @@ export function withGitAccount(
   state: NewWorkspaceFormState,
   option: GitAccountOption,
 ): NewWorkspaceFormState {
-  const action = canCreateRepository(option) ? repositoryAction(state) : 'import';
   return withRepositoryChoice(state, {
-    kind: sourceFor(option.kind, action),
+    kind: sourceFor(option.kind, repositoryAction(state)),
     installationId: option.installationId,
   });
 }

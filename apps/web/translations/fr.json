@@ -234,7 +234,7 @@
       "actionImport": "Importer un dépôt existant",
       "ownerTypePersonal": "Compte personnel",
       "ownerTypeOrg": "Organisation",
-      "createPersonalUnsupported": "GitHub ne permet pas à Kortix de créer des dépôts dans un compte personnel. Créez le dépôt sur GitHub, puis importez-le."
+      "createPersonalAuthorize": "Kortix demande votre autorisation à GitHub la première fois que vous créez un dépôt dans un compte personnel."
     }
   },
   "projectHome": {

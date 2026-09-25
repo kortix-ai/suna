@@ -234,7 +234,7 @@
       "actionImport": "既存のリポジトリをインポート",
       "ownerTypePersonal": "個人アカウント",
       "ownerTypeOrg": "組織",
-      "createPersonalUnsupported": "GitHub では、Kortix が個人アカウントにリポジトリを作成することはできません。GitHub でリポジトリを作成してから、インポートしてください。"
+      "createPersonalAuthorize": "個人アカウントにリポジトリを初めて作成するとき、Kortix は GitHub で認可を求めます。"
     }
   },
   "projectHome": {
