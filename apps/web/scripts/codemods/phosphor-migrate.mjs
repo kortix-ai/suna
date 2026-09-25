@@ -18,7 +18,6 @@ const PHOSPHOR = new Set(Object.keys(phosphorAll));
 const SKIP_FILES = new Set(
   [
     'components/ui/kortix-icons.ts',
-    'components/ui/agent-avatar.tsx',
     'features/icon/icon.tsx',
     'components/brand/brand-logos.tsx',
     'lib/utils/icon-utils.ts',

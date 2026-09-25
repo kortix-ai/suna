@@ -61,7 +61,7 @@ describe('reconcileForwardedTurnsAtEnd', () => {
   test('no-op without an ended message id when the tip has no finished assistant either', async () => {
     const { deps, calls } = fakeDeps({ open: [turn(u1)], tip: [] });
     const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's' }, deps);
-    expect(out).toEqual({ closedOlder: 0, candidates: 0, stranded: 0, orphaned: 0, requeued: 0, reordered: 0 });
+    expect(out).toEqual({ closedOlder: 0, candidates: 0, stranded: 0, orphaned: 0, requeued: 0 });
     expect(calls.closeOlder).toHaveLength(0);
   });
 
@@ -75,7 +75,7 @@ describe('reconcileForwardedTurnsAtEnd', () => {
     ]);
     const { deps, calls } = fakeDeps({ open: [turn(u1), turn(u4, 'delivering')], tip });
     const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's' }, deps);
-    expect(out).toEqual({ closedOlder: 1, candidates: 1, stranded: 1, orphaned: 0, requeued: 1, reordered: 0 });
+    expect(out).toEqual({ closedOlder: 1, candidates: 1, stranded: 1, orphaned: 0, requeued: 1 });
     expect(calls.closeOlder.map((c) => c[2])).toEqual([u1]);
     expect(calls.remove).toEqual([['s', u4]]);
   });
@@ -140,7 +140,7 @@ describe('reconcileForwardedTurnsAtEnd', () => {
     ]);
     const { deps, calls } = fakeDeps({ open: [turn(u4, 'delivering')], tip });
     const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's', opencodeSessionId: 'ses_root', endedMessageId: M }, deps);
-    expect(out).toEqual({ closedOlder: 0, candidates: 1, stranded: 1, orphaned: 0, requeued: 1, reordered: 0 });
+    expect(out).toEqual({ closedOlder: 0, candidates: 1, stranded: 1, orphaned: 0, requeued: 1 });
     expect(calls.remove).toEqual([['s', u4]]);
     expect(calls.requeue).toEqual([['s', u4]]);
     expect(calls.closeStranded).toEqual([['s', u4]]);
@@ -157,13 +157,13 @@ describe('reconcileForwardedTurnsAtEnd', () => {
     ]);
     const { deps, calls } = fakeDeps({ open: [turn(u5)], tip });
     const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's', opencodeSessionId: 'ses_root', endedMessageId: M }, deps);
-    expect(out).toEqual({ closedOlder: 0, candidates: 1, stranded: 0, orphaned: 0, requeued: 0, reordered: 0 });
+    expect(out).toEqual({ closedOlder: 0, candidates: 1, stranded: 0, orphaned: 0, requeued: 0 });
     expect(calls.remove).toHaveLength(0);
     expect(calls.closeStranded).toHaveLength(0);
   });
 
-  // EXPECTATION FLIPPED 2026-08-20 (live incident, SampleCo session
-  // d1b74954): an unreached prompt at the TIP with the loop exited (the tip's
+  // EXPECTATION FLIPPED 2026-08-20 (live incident on a prod session): an
+  // unreached prompt at the TIP with the loop exited (the tip's
   // newest assistant is COMPLETED) is not "in line" — nothing will ever read
   // it. Left alone, the reaper cleared its turn `unknown` and the prompt was
   // swallowed. It now requeues exactly like a stranded row.
@@ -243,7 +243,7 @@ describe('reconcileForwardedTurnsAtEnd', () => {
       { sessionId: 's', opencodeSessionId: 'ses_root', endedMessageId: M },
       deps,
     );
-    expect(out).toEqual({ closedOlder: 0, candidates: 2, stranded: 1, orphaned: 0, requeued: 0, reordered: 0 });
+    expect(out).toEqual({ closedOlder: 0, candidates: 2, stranded: 1, orphaned: 0, requeued: 0 });
     expect(calls.remove).toHaveLength(0);
     expect(calls.requeue).toHaveLength(0);
   });
@@ -286,7 +286,8 @@ describe('reconcileForwardedTurnsAtEnd', () => {
       deps,
     );
     expect(out.requeued).toBe(1);
-    expect(out.reordered).toBe(0);
+    // Only the stranded row is re-queued; the reached sibling stays in place.
+    expect(calls.requeue.map((call) => call.slice(0, 2))).toEqual([['s', u4]]);
     expect(calls.remove).toEqual([['s', u4]]);
   });
 

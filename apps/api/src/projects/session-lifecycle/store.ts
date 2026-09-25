@@ -74,7 +74,7 @@ export function withRemintedWireId(id: string): SQL {
     coalesce(${sessionLifecycleCommands.payload}->'redeliveredMessageIds', '[]'::jsonb) || ${JSON.stringify([id])}::jsonb)`;
 }
 
-export function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
+function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
   return {
     body: command.body,
     requestingPrincipalType: command.requestingPrincipalType,
@@ -549,7 +549,7 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
  * never matches it, and a pod that dies mid-create leaves the idempotency key
  * answering `pending` for ever.
  */
-export function buildCreateSessionCommandValues(
+function buildCreateSessionCommandValues(
   command: CreateSessionCommand,
   opts: { initialStatus: 'queued' | 'running'; reason?: string | null },
   now: Date,
@@ -919,7 +919,7 @@ const RUNTIME_UNREACHABLE_BACKOFF_MS = [30_000, 120_000, 480_000] as const;
 /** Set by {@link parkPromptForUnreachableRuntime} on a row waiting for a box. */
 export const RUNTIME_UNREACHABLE_REASON = 'runtime_unreachable';
 
-export function runtimeUnreachableRetries(payload: unknown): number {
+function runtimeUnreachableRetries(payload: unknown): number {
   const value = (payload as { runtimeUnreachableRetries?: unknown } | null)
     ?.runtimeUnreachableRetries;
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;

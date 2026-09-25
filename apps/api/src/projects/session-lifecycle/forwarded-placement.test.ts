@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import {
   type PlacementTipMessage,
   boxClockSkewMs,
@@ -9,7 +9,6 @@ import {
   noteBoxClockSample,
   parsePlacementTip,
   remintFloorTime,
-  resetBoxClockSkewForTests,
   strandedPlacement,
 } from './forwarded-placement';
 import { WIRE_ID_TIME_SCALE, wireIdClockAt, wireIdTime } from '../wire-message-id';
@@ -239,8 +238,9 @@ describe('parsePlacementTip', () => {
   });
 });
 
+// Only the first case writes the process-wide skew registry, under its own
+// session key; the others pass the skew in.
 describe('box clock + live placement', () => {
-  afterEach(() => resetBoxClockSkewForTests());
 
   test('skew is a lower bound (created − ack) and expires', () => {
     expect(noteBoxClockSample('s1', 1_000, 1_250, 10_000)).toBe(-250);
@@ -282,8 +282,6 @@ describe('box clock + live placement', () => {
 const WRAP_MS = 1_786_706_395_136;
 
 describe('across the 48-bit wrap', () => {
-  afterEach(() => resetBoxClockSkewForTests());
-
   test('mintLivePlacement lifts to a post-wrap box clock above a pre-wrap floor', () => {
     const newest = wireIdTime(id(WRAP_MS - 500));
     const m = mintLivePlacement({ nowMs: WRAP_MS + 1_000, newestKnownTime: newest, boxSkewMs: 0, random: () => 0 });

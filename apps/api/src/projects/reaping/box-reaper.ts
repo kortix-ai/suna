@@ -38,7 +38,7 @@ import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
-import { REAP_CONCURRENCY } from '../reaper-constants';
+import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
@@ -133,19 +133,6 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
   },
 };
 
-/**
- * How old an accepted turn record must be before "no assistant message, root
- * idle" counts as an ORPHANED PROMPT rather than a turn that is merely starting.
- *
- * The daemon's `turn_orphaned_prompt` is a statement about the messages on
- * record, and for a few moments after OpenCode ACKs a prompt those messages look
- * identical to a dropped one: the user message exists, nothing has answered it,
- * and `/session/status` has not flipped busy yet. Redelivering into that window
- * runs the prompt twice. 30s is far past that window — a root that is genuinely
- * working reports busy, which is `inFlight: true` and never reaches here — and
- * still well inside one reaper pass, so it costs a dropped prompt nothing.
- */
-const ORPHANED_PROMPT_MIN_AGE_MS = 30_000;
 
 /**
  * Per-sandbox probe back-off after an `unknown` turn observation, in this

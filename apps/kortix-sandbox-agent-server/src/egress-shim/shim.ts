@@ -58,24 +58,10 @@ export interface EgressShimOptions {
   readonly projectId: string
   /** The session credential — already in the guest; grants no new authority. */
   readonly token: string
-  /**
-   * Test seam: replace the broker call. Production leaves this unset.
-   *
-   * The only seam here. An `upstreamOptions` hook was carried over from the
-   * API-side ancestor and deleted: the blind-tunnel path uses `net.connect`,
-   * never `https.request`, so nothing read it. A seam a test can set but the
-   * code never consults is worse than none — it reads like coverage.
-   */
-  readonly brokerFetch?: typeof fetch
   readonly onError?: (where: string, err: Error) => void
 }
 
 const BROKER_TIMEOUT_MS = 30_000
-
-// Re-exported from its own module so `relay-client.ts` can read the same set
-// without importing this file (which imports it). See ./blocked-headers.ts for
-// why the list is a copy and what pins it to the broker's.
-export { BLOCKED_REQUEST_HEADERS } from './blocked-headers'
 
 /**
  * The broker's own request ceiling (`MAX_REQUEST_BYTES`,
@@ -224,12 +210,11 @@ async function relayBuffered(
     payload = decoded
   }
 
-  const call = options.brokerFetch ?? fetch
   const target = new URL(request.url)
   const url =
     `${options.apiUrl.replace(/\/$/, '')}/projects/${options.projectId}` +
     `/secrets/${encodeURIComponent(rule.identifier)}/broker`
-  const response = await call(url, {
+  const response = await fetch(url, {
     method: 'POST',
     headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/json' },
     body: JSON.stringify({

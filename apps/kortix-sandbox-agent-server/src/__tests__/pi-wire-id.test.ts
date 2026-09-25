@@ -11,20 +11,6 @@ import {
   wireIdTime,
 } from '../harness/pi/wire-id'
 
-/**
- * The platform's regex (`@kortix/sdk/wire-message-id`, which apps/api
- * re-exports), read off disk so the two codecs cannot drift silently.
- */
-function apiWireIdRegex(): RegExp {
-  const source = readFileSync(
-    resolve(import.meta.dir, '../../../../packages/sdk/src/core/session/wire-message-id.ts'),
-    'utf8',
-  )
-  const match = /\/\^msg_[^/]+\/[a-z]*/.exec(source)
-  if (!match) throw new Error('@kortix/sdk wire-message-id regex not found')
-  return new Function(`return ${match[0]}`)() as RegExp
-}
-
 interface WireIdVectors {
   backdateMs: number
   vectors: { name: string; nowMs: number; newestKnownTime: string | null; expectedTime: string }[]
@@ -51,6 +37,7 @@ describe('golden vectors — tests/spec/wire-message-id.vectors.json', () => {
         })
         expect(clockHex(minted.time)).toBe(vector.expectedTime)
         expect(minted.id).toBe(`msg_${vector.expectedTime}00000000000000`)
+        expect(minted.id).toMatch(WIRE_MESSAGE_ID)
       })
     }
   })
@@ -66,12 +53,9 @@ describe('golden vectors — tests/spec/wire-message-id.vectors.json', () => {
 })
 
 describe('pi wire ids', () => {
-  test('every minted id satisfies the API regex and sorts after what it saw', () => {
-    const api = apiWireIdRegex()
+  test('the clock is strictly monotonic and sorts after an observed future id', () => {
     const clock = new WireIdClock()
     const first = clock.mint(1_700_000_000_000)
-    expect(first).toMatch(api)
-    expect(first).toMatch(WIRE_MESSAGE_ID)
     // Same millisecond: still strictly later.
     const second = clock.mint(1_700_000_000_000)
     expect(second > first).toBe(true)

@@ -8,24 +8,9 @@
  * daemon has no control-plane config (local / self-host boots).
  */
 import { logger } from '../../logger'
+import { sandboxRelayContext, sessionChannel, type SandboxRelayContext } from '../../relay-context'
 
-interface RelayContext {
-  projectId: string
-  sessionId: string
-  token: string
-  apiRoot: string
-}
-
-export function relayContext(env: NodeJS.ProcessEnv = process.env): RelayContext | null {
-  const projectId = env.KORTIX_PROJECT_ID?.trim()
-  const sessionId = env.KORTIX_SESSION_ID?.trim()
-  const token = (env.KORTIX_TOKEN || '').trim()
-  const apiUrl = env.KORTIX_API_URL?.replace(/\/+$/, '')
-  if (!projectId || !sessionId || !token || !apiUrl) return null
-  return { projectId, sessionId, token, apiRoot: apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1` }
-}
-
-async function postTurnStream(ctx: RelayContext, body: Record<string, unknown>, timeoutMs = 15_000): Promise<Response> {
+async function postTurnStream(ctx: SandboxRelayContext, body: Record<string, unknown>, timeoutMs = 15_000): Promise<Response> {
   return fetch(`${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/turn-stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
@@ -43,20 +28,12 @@ export interface InitialTurnClaim {
 let claimedInitialTurn: InitialTurnClaim | null = null
 let claimInFlight: Promise<InitialTurnClaim | null> | null = null
 
-export function __resetPiRelaysForTests(): void {
-  claimedInitialTurn = null
-  claimInFlight = null
-  relayedTurnBegins.clear()
-  relayedTurnEnds.clear()
-  lastPushedProjectionEtag = null
-}
-
 /** Claim the pending first turn (memoized: the prefetch and the boot path share one call). */
 export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
   if (claimedInitialTurn) return Promise.resolve(claimedInitialTurn)
   if (claimInFlight) return claimInFlight
   claimInFlight = (async () => {
-    const ctx = relayContext()
+    const ctx = sandboxRelayContext()
     if (!ctx) return null
     let lastError: unknown = null
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -86,24 +63,16 @@ export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
 }
 
 export async function relayInitialTurnAccepted(rootId: string, messageId: string, turnToken: string): Promise<boolean> {
-  const ctx = relayContext()
+  const ctx = sandboxRelayContext()
   if (!ctx) return false
   const res = await postTurnStream(ctx, { kind: 'turn_accepted', opencode_session_id: rootId, turn_message_id: messageId, turn_token: turnToken })
   if (!res.ok) throw new Error(`initial turn acceptance rejected: ${res.status} ${(await res.text().catch(() => '')).slice(0, 200)}`)
   return ((await res.json().catch(() => ({}))) as { ok?: boolean }).ok === true
 }
 
-export async function relayInitialTurnAbandoned(turnToken: string): Promise<boolean> {
-  const ctx = relayContext()
-  if (!ctx) return false
-  const res = await postTurnStream(ctx, { kind: 'turn_abandoned', turn_token: turnToken })
-  if (!res.ok) throw new Error(`initial turn abandonment rejected: ${res.status}`)
-  return ((await res.json().catch(() => ({}))) as { ok?: boolean }).ok === true
-}
-
 /** Set the durable root pin server-side (Slack/trigger sessions never open a browser). */
 export async function relayBootstrapPin(rootId: string): Promise<void> {
-  const ctx = relayContext()
+  const ctx = sandboxRelayContext()
   if (!ctx) return
   try {
     const res = await postTurnStream(ctx, { kind: 'opencode_session', opencode_session_id: rootId })
@@ -116,7 +85,7 @@ export async function relayBootstrapPin(rootId: string): Promise<void> {
 const relayedTurnBegins = new Set<string>()
 
 export async function relayTurnBegin(rootId: string, messageId: string): Promise<void> {
-  const ctx = relayContext()
+  const ctx = sandboxRelayContext()
   if (!ctx || relayedTurnBegins.has(messageId)) return
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -145,7 +114,7 @@ export async function relayTurnEnd(
   status: 'idle' | 'error',
   error?: { name: string; message?: string },
 ): Promise<void> {
-  const ctx = relayContext()
+  const ctx = sandboxRelayContext()
   if (!ctx || relayedTurnEnds.has(messageId)) return
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
@@ -180,7 +149,7 @@ export async function relayQuestion(
   request: { id: string; sessionID: string; questions: unknown[] },
   answer: (answers: string[][]) => void,
 ): Promise<void> {
-  const ctx = relayContext()
+  const ctx = sandboxRelayContext()
   if (!ctx) return
   try {
     await fetch(`${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/turn-question`, {
@@ -192,16 +161,13 @@ export async function relayQuestion(
   } catch (err) {
     logger.warn('[pi] turn-question post failed (non-fatal)', { err: (err as Error).message })
   }
-  // A CHANNEL session — Slack or Teams. This read SLACK_* only, so a Teams pi
-  // session's question was never released here and the turn hung, exactly as
-  // in the OpenCode daemon (harness/open-code/boot.ts `channelRelayContext`).
-  // apps/api now releases channel questions itself inside /turn-question —
-  // before this fetch resolves — so this is the fallback for when that fails;
-  // a release that loses the race is a harmless 404 on the runtime side.
-  const teams = Boolean(process.env.MS_TEAMS_CONVERSATION_ID || process.env.MS_TEAMS_TENANT_ID)
-  const slack = Boolean(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)
-  if (!teams && !slack) return
-  const where = teams ? 'the Teams conversation' : 'the Slack thread'
+  // A CHANNEL session — Slack or Teams (`sessionChannel`). apps/api now
+  // releases channel questions itself inside /turn-question — before this
+  // fetch resolves — so this is the fallback for when that fails; a release
+  // that loses the race is a harmless 404 on the runtime side.
+  const channel = sessionChannel()
+  if (!channel) return
+  const where = channel === 'Teams' ? 'the Teams conversation' : 'the Slack thread'
   // No "rather than the question tool" tail: both channel prompts now tell the
   // agent to USE the tool, and the old line contradicted them.
   const sentinel =
@@ -216,7 +182,7 @@ let lastPushedProjectionEtag: string | null = null
 
 /** Debounced, etag-gated push of the state document (gzip, same route as OpenCode's relay). */
 export function schedulePiProjectionPush(read: () => { doc: Record<string, unknown>; etag: string } | null, reason: string): void {
-  const ctx = relayContext()
+  const ctx = sandboxRelayContext()
   if (!ctx) return
   if (projectionTimer) clearTimeout(projectionTimer)
   const debounce = Number.parseInt(process.env.KORTIX_PROJECTION_RELAY_DEBOUNCE_MS || '', 10)

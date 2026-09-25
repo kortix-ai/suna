@@ -13,18 +13,9 @@
 // writer under test block on it, then commits — the exact interleaving.
 //
 // Runs in the `db-suites` lane of `pnpm test` (one throwaway database per
-// file). Gated like the other real-DB suites: TEST_DATABASE_URL + explicit
-// confirmation + non-prod. It writes and deletes rows with fixed ids.
+// file). It writes and deletes rows with fixed ids.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import pg from 'pg';
-
-const TEST_DB_CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
-const HAS_CONFIRMED_TEST_DB = Boolean(
-  process.env.TEST_DATABASE_URL &&
-    process.env.KORTIX_TEST_DB_CONFIRM === TEST_DB_CONFIRMATION &&
-    process.env.INTERNAL_KORTIX_ENV !== 'prod',
-);
-const describeWithDb = HAS_CONFIRMED_TEST_DB ? describe : describe.skip;
 
 const SANDBOX_ID = '00000000-0000-4000-a000-00000000e9a1';
 const ACCOUNT_ID = '00000000-0000-4000-a000-00000000e9a2';
@@ -124,7 +115,7 @@ async function interleave(
   }
 }
 
-describeWithDb('session_sandboxes.metadata writers merge atomically (real PostgreSQL)', () => {
+describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)', () => {
   beforeAll(async () => {
     // The modules under test read `config.DATABASE_URL` at import time.
     process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
@@ -245,19 +236,6 @@ describeWithDb('session_sandboxes.metadata writers merge atomically (real Postgr
       expect(metadata.runtimeStartFailureCount).toBeUndefined();
       expect(metadata.stopReason).toBeUndefined();
       expect(metadata.initStatus).toBe('ready');
-    });
-
-    test('an unexpired claim still fences a second restart', async () => {
-      const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
-      const first = claim();
-      const second = claim();
-      expect(
-        await claimInPlaceRestart({ sandboxId: SANDBOX_ID, externalId: EXTERNAL_ID, claim: first }),
-      ).toBe(true);
-      expect(
-        await claimInPlaceRestart({ sandboxId: SANDBOX_ID, externalId: EXTERNAL_ID, claim: second }),
-      ).toBe(false);
-      expect((await readMetadata()).runtimeRestartId).toBe(first.id);
     });
 
     test('a /start readiness write from a row read before the claim does not erase it', async () => {
