@@ -16,7 +16,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 }));
 
 mock.module('../billing/services/credits', () => ({
-  getCreditSummary: async () => creditSummary,
+  getCreditSummary: () => creditSummary,
   calculateTokenCost: () => 0,
 }));
 
@@ -59,7 +59,7 @@ describe('buildMinimalAccountState revenuecat', () => {
       revenuecatCancelAtPeriodEnd: null,
     };
 
-    creditSummary = { total: 25, daily: 0, monthly: 20, extra: 5, canRun: true };
+    creditSummary = { total: 25, daily: 0, monthly: 20, extra: 5 };
     autoTopup = { enabled: true, threshold: 1, amount: 5 };
     isAdmin = false;
   });

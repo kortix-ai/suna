@@ -22,10 +22,10 @@ function git(cwd: string, ...args: string[]): string {
     cwd,
     env: {
       ...process.env,
-      GIT_AUTHOR_NAME: 'Ivan Bagarić',
-      GIT_AUTHOR_EMAIL: 'ino.bagaric.1@gmail.com',
-      GIT_COMMITTER_NAME: 'Ivan Bagarić',
-      GIT_COMMITTER_EMAIL: 'ino.bagaric.1@gmail.com',
+      GIT_AUTHOR_NAME: 'Test Author',
+      GIT_AUTHOR_EMAIL: 'author@example.com',
+      GIT_COMMITTER_NAME: 'Test Author',
+      GIT_COMMITTER_EMAIL: 'author@example.com',
     },
     encoding: 'utf8',
   }).trim()

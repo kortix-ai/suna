@@ -2,10 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { createGateway } from '@kortix/llm-gateway';
 import type { GatewayHooks, UpstreamDescriptor, UsageEvent } from '@kortix/llm-gateway';
 
-// Live e2e against real OpenRouter through the UNIFIED pipeline (the same
-// @kortix/llm-gateway code that runs in-API and in the standalone pod). Skipped
-// unless RUN_LIVE_LLM_TESTS=1 and OPENROUTER_API_KEY are set — it spends real
-// (tiny) credits. Run: `bash scripts/test.sh live`.
+// Manual live proof. No CI lane runs this file: `scripts/test.sh` excludes
+// `*.live.test.ts` from its default and integration sets, and the root suite
+// does not call its `live` mode. Run it by hand with `bash scripts/test.sh live`
+// (dotenvx supplies OPENROUTER_API_KEY and MORPH_API_KEY). It spends real,
+// small credits against OpenRouter and Morph through the same
+// @kortix/llm-gateway pipeline that runs in-API and in the standalone pod.
 const LIVE_KEY = process.env.OPENROUTER_API_KEY ?? '';
 const RUN_LIVE = !!LIVE_KEY && process.env.RUN_LIVE_LLM_TESTS === '1';
 const CHEAP_MODEL = process.env.LIVE_TEST_MODEL ?? 'deepseek/deepseek-v4-flash';
@@ -53,7 +55,7 @@ describeLive('llm-gateway unified pipeline — LIVE OpenRouter (RUN_LIVE_LLM_TES
     await settle();
     expect(recorded).toHaveLength(1);
     expect(recorded[0].completionTokens).toBeGreaterThan(0);
-    expect(recorded[0].finalCost).toBeGreaterThanOrEqual(0);
+    expect(recorded[0].finalCost).toBeGreaterThan(0);
   });
 
   test('streaming completion relays SSE and records usage from the final chunk', async () => {
@@ -76,11 +78,15 @@ describeLive('llm-gateway unified pipeline — LIVE OpenRouter (RUN_LIVE_LLM_TES
   });
 });
 
-// Live e2e for Kortix-managed routing: Morph direct first, the ZDR OpenRouter
+// Kortix-managed routing, for every model this deployment serves: Morph direct first, the ZDR OpenRouter
 // pool on failure, and Kortix as the only identity a client sees. Needs
 // MORPH_API_KEY and OPENROUTER_API_KEY (dotenvx) and KORTIX_MANAGED_PROVIDER_ENABLED.
 const RUN_MANAGED_LIVE = RUN_LIVE && !!process.env.MORPH_API_KEY;
 const describeManagedLive = RUN_MANAGED_LIVE ? describe : describe.skip;
+// Imported only for a live run: the module validates API config at load.
+const SERVED_MODELS = RUN_MANAGED_LIVE
+  ? (await import('../models/served-managed-models')).SERVED_MANAGED_MODELS
+  : [];
 const UPSTREAM_IDENTITY =
   /openrouter|morph|coreweave|wafer|together|parasail|deepinfra|baseten|phala|fireworks|z-ai\/|moonshotai\/|deepseek\/|provider_name/i;
 // 32×32 solid red PNG.
@@ -101,28 +107,28 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter', () => 
     return { gateway: createGateway(hooks), recorded };
   }
 
-  for (const model of ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kimi-k3']) {
-    test(`${model}: Morph serves text and image; the client sees only Kortix`, async () => {
+  for (const model of SERVED_MODELS) {
+    const upstream = model.morphModelId ? 'morph' : 'openrouter';
+    const content = model.vision
+      ? [
+          { type: 'text', text: 'What color is this image? One word.' },
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${RED_PNG}` } },
+        ]
+      : 'Reply with the single word: red';
+    test(`${model.id}: ${upstream} serves the turn; the client sees only Kortix`, async () => {
       const { gateway, recorded } = await managedGateway();
       const res = await gateway.chatCompletions({
         authorization: 'Bearer live',
-        rawBody: JSON.stringify({
-          model,
-          max_tokens: 2000,
-          messages: [{ role: 'user', content: [
-            { type: 'text', text: 'What color is this image? One word.' },
-            { type: 'image_url', image_url: { url: `data:image/png;base64,${RED_PNG}` } },
-          ] }],
-        }),
+        rawBody: JSON.stringify({ model: model.id, max_tokens: 2000, messages: [{ role: 'user', content }] }),
       });
       const text = await res.text();
       expect(res.status).toBe(200);
       expect(text).not.toMatch(UPSTREAM_IDENTITY);
       const json = JSON.parse(text);
-      expect(json.model).toBe(model);
+      expect(json.model).toBe(model.id);
       expect(json.choices[0].message.content.toLowerCase()).toContain('red');
       await settle();
-      expect(recorded[0]).toMatchObject({ provider: 'kortix', model, upstream: { provider: 'morph' } });
+      expect(recorded[0]).toMatchObject({ provider: 'kortix', model: model.id, upstream: { provider: upstream } });
       expect(recorded[0].finalCost).toBeGreaterThan(0);
     }, 120_000);
   }

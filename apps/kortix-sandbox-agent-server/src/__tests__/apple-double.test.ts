@@ -45,6 +45,8 @@ describe('pruneAppleDoubleFiles — repairing a macOS-baked config dir', () => {
     expect(existsSync(join(dir, 'tools', '._web_search.ts'))).toBe(false)
     expect(existsSync(join(dir, 'tools', 'lib', '._get-env.ts'))).toBe(false)
     expect(existsSync(join(dir, 'agents', '._kortix.md'))).toBe(false)
+    // node_modules is not walked: its sidecar survives (and is not counted).
+    expect(existsSync(join(dir, 'node_modules', 'zod', '._index.js'))).toBe(true)
   })
 
   test('leaves every real tool, agent, and config file untouched', async () => {
@@ -56,14 +58,6 @@ describe('pruneAppleDoubleFiles — repairing a macOS-baked config dir', () => {
     expect(readFileSync(join(dir, 'tools', 'web_search.ts'), 'utf8')).toBe('export const tool = 1\n')
     expect(readFileSync(join(dir, 'tools', 'lib', 'get-env.ts'), 'utf8')).toBe('export const env = 1\n')
     expect(readFileSync(join(dir, 'agents', 'kortix.md'), 'utf8')).toBe('# kortix\n')
-  })
-
-  test('does not walk node_modules', async () => {
-    const dir = poisonedConfigDir()
-
-    await pruneAppleDoubleFiles(dir)
-
-    expect(existsSync(join(dir, 'node_modules', 'zod', '._index.js'))).toBe(true)
   })
 
   test('reports nothing removed for a clean dir and never throws on a missing one', async () => {

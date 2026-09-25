@@ -1,4 +1,5 @@
 import { logger } from '../../logger'
+import { readControlPlaneEnv } from '../../relay-context'
 import { runtimeStateStore, type RuntimeStateDoc } from './runtime-state-projection'
 
 /**
@@ -27,7 +28,7 @@ import { runtimeStateStore, type RuntimeStateDoc } from './runtime-state-project
  */
 
 /** The server's decompressed-body cap (PROJECTION_MAX_BYTES on the API side). */
-export const PROJECTION_RELAY_MAX_BYTES = 256 * 1024
+const PROJECTION_RELAY_MAX_BYTES = 256 * 1024
 
 const DEFAULT_DEBOUNCE_MS = 2_000
 const DEFAULT_RETRY_MS = 2_000
@@ -84,11 +85,8 @@ function unrefd(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
  * env route armed this and the timer fired mid sibling test).
  */
 function projectionConfigured(): boolean {
-  return Boolean(
-    process.env.KORTIX_SESSION_ID?.trim() &&
-      (process.env.KORTIX_TOKEN || '').trim() &&
-      process.env.KORTIX_API_URL?.trim(),
-  )
+  const { sessionId, token, apiRoot } = readControlPlaneEnv()
+  return Boolean(sessionId && token && apiRoot)
 }
 
 export function scheduleRuntimeProjectionPush(reason: string): void {
@@ -130,10 +128,9 @@ async function runPush(reason: string): Promise<void> {
 }
 
 async function doPush(reason: string, unavailableRetries = 0): Promise<void> {
-  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  const token = (process.env.KORTIX_TOKEN || '').trim()
-  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/+$/, '')
-  if (!sessionId || !token || !apiUrl) return
+  // The projection route is session-scoped; it needs no project id.
+  const { sessionId, token, apiRoot } = readControlPlaneEnv()
+  if (!sessionId || !token || !apiRoot) return
 
   let state: Awaited<ReturnType<StateReader>>
   try {
@@ -146,7 +143,6 @@ async function doPush(reason: string, unavailableRetries = 0): Promise<void> {
   const { doc, etag } = state
   if (etag === lastPushedEtag) return
 
-  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
   const url = `${apiRoot}/platform/runtime-projection`
 
   // Pre-shed proactively when we can already see the document exceeding the
