@@ -428,7 +428,7 @@ function coerceOpacityDmx(value: number | undefined): number | undefined {
   return Math.min(1, Math.max(0, value));
 }
 
-export function remapOpacityToTriplet(
+function remapOpacityToTriplet(
   opacity: number,
   opacityBase: number | undefined,
   opacityMid: number | undefined,
@@ -471,7 +471,7 @@ export function remapOpacityToTriplet(
 /** Remapped opacity where bloom begins (weakest glow); scales linearly to full bloom at 1. */
 const DMX_BLOOM_OPACITY_MIN = 0.6;
 
-export function opacityToBloomLevel(remappedOpacity: number): number {
+function opacityToBloomLevel(remappedOpacity: number): number {
   return Math.max(
     0,
     Math.min(1, (remappedOpacity - DMX_BLOOM_OPACITY_MIN) / (1 - DMX_BLOOM_OPACITY_MIN)),
@@ -839,7 +839,7 @@ function getPattern3Indexes(pattern: MatrixPattern = 'full'): number[] {
   return PATTERN_INDEXES_3[pattern];
 }
 
-export function rowMajorIndex3(row: number, col: number): number {
+function rowMajorIndex3(row: number, col: number): number {
   return row * MATRIX_SIZE_3 + col;
 }
 
@@ -862,7 +862,7 @@ function manhattanDistance3(index: number): number {
 
 const MAX_DIAGONAL_3 = (MATRIX_SIZE_3 - 1) * 2;
 
-export type DiagonalWave3Direction = 'tr-bl' | 'tl-br' | 'br-tl' | 'bl-tr';
+type DiagonalWave3Direction = 'tr-bl' | 'tl-br' | 'br-tl' | 'bl-tr';
 
 function trBlPath3NormFromIndex(index: number): number {
   const { row, col } = indexToCoord3(index);
@@ -891,7 +891,7 @@ const DIAGONAL_PATH_3: Record<DiagonalWave3Direction, (index: number) => number>
   'bl-tr': blTrPath3NormFromIndex,
 };
 
-export function diagonalWave3PathNormFromIndex(
+function diagonalWave3PathNormFromIndex(
   index: number,
   direction: DiagonalWave3Direction,
 ): number {
@@ -1015,7 +1015,7 @@ interface DotMatrix3BaseProps extends DotMatrixCommonProps {
   animationResolver?: DotAnimationResolver;
 }
 
-export function DotMatrix3Base({
+function DotMatrix3Base({
   scale: scaleProp,
   size: sizeProp = 24,
   dotSize: dotSizeProp = 3,
@@ -1364,7 +1364,7 @@ function glyphSpinSmoothstep(value: number): number {
   return t * t * (3 - 2 * t);
 }
 
-export function rotate3x3(pattern: readonly number[], turns: number): readonly number[] {
+function rotate3x3(pattern: readonly number[], turns: number): readonly number[] {
   const t =
     ((turns % GLYPH_SPIN_ROTATION_STEPS) + GLYPH_SPIN_ROTATION_STEPS) % GLYPH_SPIN_ROTATION_STEPS;
   if (t === 0) {
