@@ -24,6 +24,7 @@ import * as realShared from '../projects/routes/shared';
 // makes bun fail the whole file on a missing export.
 import * as realBackend from '../sandbox-proxy/backend';
 import * as realOwnership from '../shared/preview-ownership';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -126,11 +127,9 @@ async function seedMember(
   projectRole?: 'manager',
 ): Promise<string> {
   const userId = crypto.randomUUID();
-  await db.insert(accountMembers).values({ userId, accountId: ACCOUNT, accountRole });
+  await insertIntoView(db, accountMembers, { userId, accountId: ACCOUNT, accountRole });
   if (projectRole) {
-    await db
-      .insert(projectMembers)
-      .values({ accountId: ACCOUNT, projectId: PROJECT, userId, projectRole });
+    await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId, projectRole });
   }
   return userId;
 }

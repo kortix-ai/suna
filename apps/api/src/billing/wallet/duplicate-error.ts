@@ -2,7 +2,8 @@
  * Is this write failure the credit-grant idempotency key doing its job?
  *
  * A duplicate `stripe_event_id` (`kortix_unique_stripe_event`) or idempotency
- * key means the grant already landed and the database refused the second copy.
+ * key (`uniq_credit_ledger_idempotency_key`) means the grant already landed and
+ * the database refused the second copy.
  * That is a NO-OP, not a fault: the wallet reports it as a replay and never
  * logs it as an error.
  *
@@ -18,6 +19,7 @@
 
 const CREDIT_GRANT_DUPLICATE_MARKERS = [
   'kortix_unique_stripe_event',
+  'uniq_credit_ledger_idempotency_key',
   'idx_kortix_credit_ledger_idempotency',
 ];
 
