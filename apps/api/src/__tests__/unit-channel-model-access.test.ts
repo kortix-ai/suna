@@ -72,6 +72,10 @@ mock.module('../secrets/account-resource', () => ({
     return usableKeys.filter((key) =>
       (!input.providerId || key.providerId === input.providerId) && (!input.name || key.name === input.name));
   },
+  // A channel selects keys as an account member, never through the keys-only check.
+  queryUsableGatewaySecrets: async () => {
+    throw new Error('channels select keys through listUsableGatewaySecrets');
+  },
 }));
 
 mock.module('../channels/slack/model-gate', () => ({

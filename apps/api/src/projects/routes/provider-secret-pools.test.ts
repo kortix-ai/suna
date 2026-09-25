@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
-import { accountMembers, accountSecretResources, projectSessions, sessionProviderSecretPools } from '@kortix/db';
+import { projectSessions, sessionProviderSecretPools } from '@kortix/db';
 
 const accountId = '10000000-0000-4000-8000-000000000000';
 const projectId = '11111111-1111-4111-8111-111111111111';
@@ -33,8 +33,12 @@ let sessionPersonal: string | null = ownerId;
 let agentEnv = ['ANTHROPIC_API_KEY', 'CODEX_AUTH_JSON'];
 /** Users IAM lets read the project. */
 let readers = new Set(users);
-/** Principals with an `account_members` row. */
-let members = new Set(users);
+/** Each keys-only check (`queryUsableGatewaySecrets`), as the route asks it. */
+let keyChecks: Array<{ grantUserId: string | null; providerId?: string; name?: string; ids?: string[] }> = [];
+/** Each member-gated listing (`listUsableGatewaySecrets`), as the model change asks it. */
+let memberListings: Array<{ userId: string; grantUserId?: string | null }> = [];
+/** Each project-access gate (`memberMayReadProject`), by user. */
+let readGates: string[] = [];
 /** Who makes the request. */
 let callerId = managerId;
 /** The session model as stored by `PUT /sessions/:id/model`. */
@@ -97,60 +101,50 @@ mock.module('../../llm-gateway/models/provider-registry', () => ({
 mock.module('../lib/secret-grant', () => ({ resolveSessionAgentGrant: async () => ({ env: agentEnv }) }));
 mock.module('../agents', () => ({ DEFAULT_AGENT_SENTINEL: 'default' }));
 mock.module('../lib/personal-resources', () => ({ resolveSessionPersonalOwner: async () => sessionPersonal }));
-const realAuthorize = await import('../../iam/authorize');
-mock.module('../../iam/authorize', () => ({
-  ...realAuthorize,
-  authorize: async (actor: { userId: string }) => ({ allowed: readers.has(actor.userId) }),
-}));
 
-/**
- * A query over the pooled keys as PostgreSQL answers it: active keys of the
- * named provider (and key name, when the query names one) among the named ids
- * (every key, when the query names none),
- * each with the grant of the one user the grant join names.
- */
-function keyRows(where: unknown[], grantUser: string | null) {
-  const names = where.filter((p): p is string => typeof p === 'string' && /^[A-Z][A-Z0-9_]*$/.test(p));
-  const ids = where.filter((p): p is string => typeof p === 'string' && p.startsWith(keyId(0).slice(0, 24)));
+// The key reads are mocked at their seam in secrets/account-resource.ts. The
+// SQL behind them (provider, key name, ids, member join, grant join) runs
+// against PostgreSQL in __tests__/integration-usable-gateway-secrets.test.ts.
+// Here a key is usable by the same rule the SQL rows pass through.
+const realAccountResource = await import('../../secrets/account-resource');
+function usableKeys(q: { projectId: string; grantUserId: string | null; providerId?: string; name?: string; ids?: string[] }) {
   return keys
-    .filter((key) => key.active && where.includes(key.providerId) && (!ids.length || ids.includes(key.secretId)))
-    .filter((key) => !names.length || names.includes(key.name))
-    .map((key) => ({
-      id: key.secretId, secretId: key.secretId, providerId: key.providerId, name: key.name, label: key.secretId,
-      projectId: key.projectId, accessMode: key.accessMode,
-      grantUserId: grantUser && key.grants.includes(grantUser) ? grantUser : null,
-    }));
+    .filter((key) => key.active && (!q.providerId || key.providerId === q.providerId) && (!q.name || key.name === q.name))
+    .filter((key) => !q.ids || q.ids.includes(key.secretId))
+    .filter((key) => realAccountResource.secretUsableInProject(
+      key, q.projectId, q.grantUserId !== null && key.grants.includes(q.grantUserId),
+    ))
+    .map((key) => ({ secretId: key.secretId, providerId: key.providerId, name: key.name, label: key.secretId, accessMode: key.accessMode }));
 }
+mock.module('../../secrets/account-resource', () => ({
+  ...realAccountResource,
+  memberMayReadProject: async (_accountId: string, _projectId: string, userId: string) => {
+    readGates.push(userId);
+    return readers.has(userId);
+  },
+  queryUsableGatewaySecrets: async (q: Parameters<typeof usableKeys>[0] & { accountId: string }) => {
+    const { accountId: _a, projectId: _p, ...check } = q;
+    keyChecks.push(check);
+    return usableKeys(q);
+  },
+  listUsableGatewaySecrets: async (q: Parameters<typeof usableKeys>[0] & { accountId: string; userId: string }) => {
+    memberListings.push({ userId: q.userId, grantUserId: q.grantUserId });
+    if (!readers.has(q.userId)) return [];
+    return usableKeys({ ...q, grantUserId: q.grantUserId === undefined ? q.userId : q.grantUserId });
+  },
+}));
 
 mock.module('../../shared/db', () => ({ db: {
   select: () => ({ from: (table: unknown) => {
+    if (table !== sessionProviderSecretPools) throw new Error('unexpected select');
     let rows: unknown[] = [];
-    let grantUser: string | null = null;
-    /** The principal an `account_members` join requires; undefined when the query has no such join. */
-    let memberJoin: string | undefined;
     const query: any = {
-      $dynamic: () => query,
-      innerJoin: (joined: unknown, condition: SQL) => {
-        if (joined === accountMembers) memberJoin = paramsOf(condition).find((p) => p !== accountId) as string;
-        return query;
-      },
-      leftJoin: (_joined: unknown, condition: SQL) => {
-        grantUser = (paramsOf(condition).find((p) => users.includes(p as string)) as string | undefined) ?? null;
-        return query;
-      },
       where: (condition: SQL) => {
         const params = paramsOf(condition);
-        if (table === accountMembers) {
-          rows = params.some((p) => members.has(p as string)) ? [{ userId: params.find((p) => members.has(p as string)) }] : [];
-          return query;
-        }
-        rows = table === accountSecretResources
-          ? (memberJoin !== undefined && !members.has(memberJoin) ? [] : keyRows(params, grantUser))
-          : [...pools].filter(([providerId]) => !params.some((p) => p !== sessionId) || params.includes(providerId))
-            .map(([providerId, ids]) => ({ provider_id: providerId, secret_ids: ids, ids }));
+        rows = [...pools].filter(([providerId]) => !params.some((p) => p !== sessionId) || params.includes(providerId))
+          .map(([providerId, ids]) => ({ provider_id: providerId, secret_ids: ids, ids, sessionId }));
         return query;
       },
-      orderBy: () => query,
       limit: () => Promise.resolve(rows),
       then: (resolve: (value: unknown[]) => unknown) => Promise.resolve(rows).then(resolve),
     };
@@ -196,7 +190,9 @@ beforeEach(() => {
   canManage = true;
   agentEnv = ['ANTHROPIC_API_KEY', 'CODEX_AUTH_JSON'];
   readers = new Set(users);
-  members = new Set(users);
+  keyChecks = [];
+  memberListings = [];
+  readGates = [];
   callerId = managerId;
   storedModel = null;
   writes = 0;
@@ -300,8 +296,8 @@ test('a key stored under another name for the provider is refused', async () => 
   expect((await put('anthropic', [keyId(1)])).status).toBe(403);
 });
 
-test('a selection is refused when the member it is checked for cannot read the project', async () => {
-  // The gateway serves pooled keys only to a member who may read the project
+test('a selection is refused when the session owner cannot read the project', async () => {
+  // The gateway serves pooled keys only to an owner who may read the project
   // (resolveSessionProviderSecrets); the selection is checked the same way.
   keys = [projectKey(1)];
   readers.delete(ownerId);
@@ -311,12 +307,25 @@ test('a selection is refused when the member it is checked for cannot read the p
     error: 'The session owner can no longer read this project, so the session cannot use provider secrets',
     code: 'SESSION_OWNER_NO_PROJECT_ACCESS',
   });
-  readers = new Set(users);
-  readers.delete(managerId);
-  const caller = await put('anthropic', [keyId(1)]);
-  expect(caller.status).toBe(403);
-  expect(await caller.json()).toEqual({ error: 'Secret unavailable or not granted' });
   expect(writes).toBe(0);
+});
+
+test('one project-access gate, for the owner; each key check names only whose grants count', async () => {
+  // The route authorized the caller. The owner's gate runs once, then both
+  // checks read keys only: the caller's grants, then the session's.
+  keys = [projectKey(1)];
+  expect((await put('anthropic', [keyId(1)])).status).toBe(200);
+  expect(readGates).toEqual([ownerId]);
+  const check = { providerId: 'anthropic', name: 'ANTHROPIC_API_KEY', ids: [keyId(1)] };
+  expect(keyChecks).toEqual([{ ...check, grantUserId: managerId }, { ...check, grantUserId: ownerId }]);
+  expect(memberListings).toEqual([]);
+
+  keyChecks = [];
+  readGates = [];
+  sessionPersonal = null;
+  expect((await put('anthropic', [keyId(1)])).status).toBe(200);
+  expect(readGates).toEqual([ownerId]);
+  expect(keyChecks).toEqual([{ ...check, grantUserId: managerId }, { ...check, grantUserId: null }]);
 });
 
 test('a shared session whose owner cannot read the project names that cause, not the key`s sharing', async () => {
@@ -385,26 +394,6 @@ test('a service-account caller cannot select a key granted to one member', async
   expect(writes).toBe(0);
 });
 
-test('a member-granted key counts only for a caller with an account membership', async () => {
-  keys = [projectKey(1, { accessMode: 'members', grants: [managerId, ownerId] })];
-  members.delete(managerId);
-  const response = await put('anthropic', [keyId(1)]);
-  expect(response.status).toBe(403);
-  expect(await response.json()).toEqual({ error: 'Secret unavailable or not granted' });
-  expect(writes).toBe(0);
-});
-
-test('the session check keeps the member gate: an owner with no account membership gets no key', async () => {
-  // The gateway joins `account_members` on the owner when it serves the keys.
-  callerId = serviceAccountId;
-  keys = [projectKey(1)];
-  members.delete(ownerId);
-  const response = await put('anthropic', [keyId(1)]);
-  expect(response.status).toBe(403);
-  expect(await response.json()).toEqual({ error: 'The session owner cannot use every selected secret' });
-  expect(writes).toBe(0);
-});
-
 describe('PUT /sessions/:id/model to a model only pooled keys reach', () => {
   const model = 'anthropic/claude-sonnet-4-5';
 
@@ -417,6 +406,10 @@ describe('PUT /sessions/:id/model to a model only pooled keys reach', () => {
     expect(body.opencode_model).toBe(storedModel!);
     expect(storedModel).toContain(model);
     expect(pools.get('anthropic')).toEqual([keyId(1), keyId(2)]);
+    // Listed as the owner, a member, with nobody's grants: the caller is not the owner.
+    expect(memberListings).toEqual([{ userId: ownerId, grantUserId: null }]);
+    // The caller's check reads keys only, with the service account's grants: it holds none.
+    expect(keyChecks[0]).toMatchObject({ grantUserId: serviceAccountId, ids: [keyId(1), keyId(2)] });
   });
 
   test('a member caller stores the same selection', async () => {

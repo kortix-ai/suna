@@ -1,25 +1,37 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 // The pooled keys a session may run on (secrets/provider-key-selection.ts).
-// The pool routes check a selection with mayUseProviderKeys. Session create
-// and model change fall back to usableProviderKeys, and the chat channels
-// select with it. Both ask for the key name the gateway reads, derived from
-// the provider: no caller passes a name.
+// The pool routes check a selection with mayUseProviderKeys: it checks keys
+// only, through queryUsableGatewaySecrets, because the route has authorized
+// the principal. Session create, model change and the chat channels select
+// with usableProviderKeys, which lists as one account member through the
+// member-gated listUsableGatewaySecrets. Both ask for the key name the
+// gateway reads, derived from the provider: no caller passes a name.
 
 mock.module('../llm-gateway/models/provider-registry', () => ({
   resolveCatalogUpstream: (id: string) => (id === 'anthropic' ? { envVar: 'ANTHROPIC_API_KEY' } : null),
 }));
 
 const queries: Array<Record<string, unknown>> = [];
+/** Which account-resource reader answered each query. */
+const readers: Array<'member-gated' | 'keys-only'> = [];
 let rows: Array<{ secretId: string; providerId: string; name: string; label: string; accessMode: string }> = [];
-// As listUsableGatewaySecrets filters in SQL: provider, key name, ids.
+// As the SQL filters: provider, key name, ids. Scope and grants are covered
+// against PostgreSQL in __tests__/integration-usable-gateway-secrets.test.ts.
+const filtered = (input: { providerId?: string; name?: string; ids?: string[] }) => rows.filter((row) =>
+  (!input.providerId || row.providerId === input.providerId) &&
+  (!input.name || row.name === input.name) &&
+  (!input.ids || input.ids.includes(row.secretId)));
 mock.module('./account-resource', () => ({
   listUsableGatewaySecrets: async (input: { providerId?: string; name?: string; ids?: string[] }) => {
     queries.push(input);
-    return rows.filter((row) =>
-      (!input.providerId || row.providerId === input.providerId) &&
-      (!input.name || row.name === input.name) &&
-      (!input.ids || input.ids.includes(row.secretId)));
+    readers.push('member-gated');
+    return filtered(input);
+  },
+  queryUsableGatewaySecrets: async (input: { providerId?: string; name?: string; ids?: string[] }) => {
+    queries.push(input);
+    readers.push('keys-only');
+    return filtered(input);
   },
 }));
 
@@ -29,6 +41,7 @@ const input = { accountId: 'acct', projectId: 'proj', userId: 'ivan', grantUserI
 
 beforeEach(() => {
   queries.length = 0;
+  readers.length = 0;
   rows = [];
 });
 
@@ -43,13 +56,14 @@ describe('providerEnvVarOf', () => {
 describe('mayUseProviderKeys', () => {
   const key = (secretId: string, name = 'ANTHROPIC_API_KEY') =>
     ({ secretId, providerId: 'anthropic', name, label: secretId, accessMode: 'project' });
-  const scope = { accountId: 'acct', projectId: 'proj', userId: 'owner', grantUserId: null, providerId: 'anthropic' };
+  const scope = { accountId: 'acct', projectId: 'proj', grantUserId: null, providerId: 'anthropic' };
 
-  test('asks for the named keys under the provider`s key name, as one member with one member`s grants', async () => {
+  test('checks the named keys under the provider`s key name with one user`s grants, and no principal', async () => {
     rows = [key('k1'), key('k2')];
-    expect(await mayUseProviderKeys({ ...scope, ids: ['k1', 'k2'] })).toBe(true);
+    expect(await mayUseProviderKeys({ ...scope, grantUserId: 'owner', ids: ['k1', 'k2'] })).toBe(true);
+    expect(readers).toEqual(['keys-only']);
     expect(queries[0]).toEqual({
-      accountId: 'acct', projectId: 'proj', userId: 'owner', grantUserId: null,
+      accountId: 'acct', projectId: 'proj', grantUserId: 'owner',
       providerId: 'anthropic', name: 'ANTHROPIC_API_KEY', ids: ['k1', 'k2'],
     });
   });
@@ -86,11 +100,6 @@ describe('mayUseProviderKeys', () => {
     expect(queries[0]).toMatchObject({ ids: ['k1'] });
   });
 
-  test('a principal that is not an account member is asked for with no member and no grants', async () => {
-    rows = [key('k1')];
-    expect(await mayUseProviderKeys({ ...scope, userId: null, grantUserId: null, ids: ['k1'] })).toBe(true);
-    expect(queries[0]).toMatchObject({ userId: null, grantUserId: null, ids: ['k1'] });
-  });
 });
 
 describe('providerKeyOf', () => {
@@ -112,8 +121,9 @@ describe('usableProviderKeys', () => {
     expect(await usableProviderKeys({ ...input, model: 'anthropic/claude-opus-4-8' })).toEqual({
       providerId: 'anthropic', envVar: 'ANTHROPIC_API_KEY', secretIds: ['k1', 'k2'], labels: ['Team', 'Ivan'],
     });
+    expect(readers).toEqual(['member-gated']);
     expect(queries[0]).toEqual({
-      accountId: 'acct', projectId: 'proj', userId: 'ivan', grantUserId: 'ivan', providerId: 'anthropic', name: 'ANTHROPIC_API_KEY', ids: undefined,
+      accountId: 'acct', projectId: 'proj', userId: 'ivan', grantUserId: 'ivan', providerId: 'anthropic', name: 'ANTHROPIC_API_KEY',
     });
   });
 

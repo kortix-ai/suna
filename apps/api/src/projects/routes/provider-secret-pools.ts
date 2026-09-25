@@ -7,7 +7,7 @@ import { requireFeatureFlag } from '../../feature-flags/gate';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv } from '../../iam/agent-scope';
-import { isAccountMember, memberMayReadProject } from '../../secrets/account-resource';
+import { memberMayReadProject } from '../../secrets/account-resource';
 import { MAX_KEYS_PER_PROVIDER, mayUseProviderKeys, providerEnvVarOf } from '../../secrets/provider-key-selection';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { mayChangeSessionModel } from '../lib/session-model-change';
@@ -26,11 +26,10 @@ const Input = z.object({ secret_ids: z.array(z.string().uuid()).max(MAX_KEYS_PER
  * the provider's key name, and each key must be one the caller may use: shared
  * with the whole project, or granted to the caller.
  *
+ * The route has already authorized the caller, so no member check runs here.
  * A caller that is not an account member, such as a service account with a
- * project role, has no member grants and no `account_members` row. The route
- * has already authorized it, so it may select keys shared with the whole
- * project. The session-side check still runs as the session owner, the user
- * the gateway serves the selection as.
+ * project role, holds no grant (grants are written only for account members),
+ * so it may select only keys shared with the whole project.
  */
 export async function validateProviderSecretPool(input: {
   accountId: string; projectId: string; repoUrl: string; defaultBranch: string | null;
@@ -54,10 +53,9 @@ export async function validateProviderSecretPool(input: {
     return { status: 409, error: 'Agent grant unavailable' };
   }
   if (!agentMayUseEnv(grant, envVar)) return { status: 403, error: 'Agent cannot use this provider secret' };
-  const member = (await isAccountMember(input.accountId, input.userId)) ? input.userId : null;
   const usable = await mayUseProviderKeys({
     accountId: input.accountId, projectId: input.projectId, providerId: input.providerId, ids: input.ids,
-    userId: member, grantUserId: member,
+    grantUserId: input.userId,
   });
   return usable ? null : { status: 403, error: 'Secret unavailable or not granted' };
 }
@@ -146,7 +144,8 @@ projectsApp.openapi(createRoute({
     // use is refused, not stored.
     const ownerId = visible.row.createdBy!;
     // The gateway serves pooled keys only to an owner who may read the
-    // project. Checked first, so the refusal names that cause and not the keys.
+    // project. This is the session's one principal check: it runs first, so
+    // the refusal names that cause, and mayUseProviderKeys checks only keys.
     if (!(await memberMayReadProject(loaded.row.accountId, projectId, ownerId))) {
       return c.json({
         error: 'The session owner can no longer read this project, so the session cannot use provider secrets',
@@ -156,9 +155,7 @@ projectsApp.openapi(createRoute({
     const personalUserId = await resolveSessionPersonalOwner({
       projectId, accountId: loaded.row.accountId, sessionId, legacyUserId: ownerId,
     }).catch(() => null);
-    if (!(await mayUseProviderKeys({
-      accountId: loaded.row.accountId, projectId, providerId, ids, userId: ownerId, grantUserId: personalUserId,
-    }))) {
+    if (!(await mayUseProviderKeys({ accountId: loaded.row.accountId, projectId, providerId, ids, grantUserId: personalUserId }))) {
       return c.json(personalUserId === null
         ? {
             error: 'This session is shared, so it can use only keys shared with the whole project',
