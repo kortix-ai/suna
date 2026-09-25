@@ -515,6 +515,10 @@
       "path": "/v1/accounts/:accountId/iam/sso/provider/from-metadata"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/sso/provider/verify-domain"
+    },
+    {
       "method": "GET",
       "path": "/v1/accounts/:accountId/invites"
     },
@@ -641,6 +645,10 @@
     {
       "method": "POST",
       "path": "/v1/admin/api/accounts/:id/session-limit"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/admin/api/accounts/:id/sso-domain-verification"
     },
     {
       "method": "GET",

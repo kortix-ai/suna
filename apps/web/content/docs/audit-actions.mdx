@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 673 route actions and 63 other events.
+This page lists 675 route actions and 64 other events.
 
 ## `account.`
 
@@ -52,6 +52,7 @@ This page lists 673 route actions and 63 other events.
 | `admin.account.overrides.set` | Set account entitlement overrides | `PUT /v1/admin/api/accounts/:id/overrides` |
 | `admin.account.project.list` | Listed account projects as admin | `GET /v1/admin/api/accounts/:id/projects` |
 | `admin.account.session_limit.set` | Updated account session limit | `POST /v1/admin/api/accounts/:id/session-limit` |
+| `admin.account.sso_domain.set` | Set account SSO domain verification | `PUT /v1/admin/api/accounts/:id/sso-domain-verification` |
 | `admin.account.subscription.read` | Viewed account Stripe subscription | `GET /v1/admin/api/accounts/:id/subscription` |
 | `admin.account.tier.set` | Updated account tier | `POST /v1/admin/api/accounts/:id/tier` |
 | `admin.account.trial.grant` | Granted account trial | `POST /v1/admin/api/accounts/:id/trial` |
@@ -459,6 +460,7 @@ This page lists 673 route actions and 63 other events.
 | `iam.sso.mapping.list` | Listed SSO group mappings | `GET /v1/accounts/:accountId/iam/sso/mappings` |
 | `iam.sso.provider.create` | Created SSO provider | `POST /v1/accounts/:accountId/iam/sso/provider/from-metadata` |
 | `iam.sso.provider.delete` | Removed SSO provider | `DELETE /v1/accounts/:accountId/iam/sso/provider` |
+| `iam.sso.provider.domain_verify` | Verified SSO domain | `POST /v1/accounts/:accountId/iam/sso/provider/verify-domain` |
 | `iam.sso.provider.read` | Viewed SSO provider | `GET /v1/accounts/:accountId/iam/sso/provider` |
 | `iam.sso.provider.update` | Updated SSO provider | `PUT /v1/accounts/:accountId/iam/sso/provider` |
 
@@ -902,6 +904,7 @@ Sandboxes, background jobs, database triggers, and handlers record these for som
 | `iam.assignment.expired` | Expired a role |
 | `iam.assignment.granted` | Granted a role |
 | `iam.assignment.revoked` | Revoked a role assignment |
+| `iam.member.super_admin.revoke` | Revoked super-admin |
 | `iam.mfa_required.disable` | Disabled MFA requirement |
 | `iam.mfa_required.enable` | Required MFA for the account |
 | `iam.session_oversight.disable` | Stopped admins opening every session |
