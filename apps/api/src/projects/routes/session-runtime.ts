@@ -17,7 +17,7 @@ import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
 import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
-import { UUID_V4_REGEX } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
@@ -52,7 +52,7 @@ projectsApp.openapi(
   async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     // Floor 'session' (= project.session.start) so the human gate matches
     // restart/stop and a custom role that withholds session.start is denied here
@@ -184,7 +184,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -238,7 +238,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -356,7 +356,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     // A read, not a mutation: the 'read' tier plus the session-content leaf,
     // exactly like GET /sessions/:sessionId. No agent-scope assert and no

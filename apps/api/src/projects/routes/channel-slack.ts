@@ -19,7 +19,7 @@ import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 interface SlackAuthTest {
   ok: boolean;
@@ -285,7 +285,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const result = await uploadSlackFile(projectId, {
       channel: String(body.channel ?? ''),
       filename: String(body.filename ?? ''),

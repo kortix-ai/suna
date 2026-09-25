@@ -1,11 +1,10 @@
-// Shared request helpers for the IAM V2 route modules: body parsing, the
-// context-bound audit writer, the Postgres unique-violation classifier, and
+// Shared request helpers for the IAM V2 route modules: the context-bound
+// audit writer, the Postgres unique-violation classifier, and
 // the compact HttpError used by the policy-parser short-circuits.
 
 import { Context } from 'hono';
 import { recordAuditEvent } from '../../shared/audit';
 import { requestClientIp } from '../../shared/client-ip';
-import { readJsonBody } from '../../shared/http-body';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import type { TierEntitlements } from '../../types';
 
@@ -42,11 +41,6 @@ export async function requireEntitlement(
     },
     402,
   );
-}
-
-/** The JSON body as an object: `{}` when it is missing, malformed, or JSON `null`. */
-export async function readBody(c: Context): Promise<Record<string, unknown>> {
-  return (await readJsonBody<Record<string, unknown> | null>(c, null)) ?? {};
 }
 
 /**

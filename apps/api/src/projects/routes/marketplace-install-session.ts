@@ -26,7 +26,8 @@ import { readManifestFromRepo } from '../git/files';
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
-import { readBody, requestAuditContext } from '../lib/serializers';
+import { requestAuditContext } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { sendSessionCreateError } from '../lib/sessions';
 import { createSession } from '../session-lifecycle';
 
@@ -89,7 +90,7 @@ async function handleMarketplaceInstallSession(c: any) {
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'marketplace');
   if (gate) return gate;
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const id = typeof body?.id === 'string' ? body.id.trim() : '';
   if (!id) return c.json({ error: 'id is required' }, 400);
 

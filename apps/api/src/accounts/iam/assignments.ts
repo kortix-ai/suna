@@ -29,7 +29,8 @@ import {
 } from '../../iam/assignments';
 import { loadPermissionCatalog, type ObjectType, type ScopeType } from '../../iam/catalog';
 import { iamRouter, AccountIdParam } from './app';
-import { readBody, requireEntitlement } from './helpers';
+import { requireEntitlement } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 
 const PRINCIPAL_TYPES = ['user', 'group', 'service_account', 'pending'] as const;
@@ -96,10 +97,6 @@ function oneOf<T extends readonly string[]>(values: T, raw: unknown): T[number] 
     ? (raw as T[number])
     : undefined;
 }
-
-// `principal_id`, `scope_id` and `role_id` are all bound into `::uuid` casts.
-// A malformed one used to reach Postgres and come back as SQLSTATE 22P02 — an
-// opaque 500 for what is plainly a client error.
 
 // ─── GET /accounts/{accountId}/iam/assignments ──────────────────────────────
 
@@ -192,7 +189,7 @@ iamRouter.openapi(
   }),
   async (c: any) => {
     const accountId = c.req.param('accountId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
 
     const principalType = oneOf(PRINCIPAL_TYPES, body.principal_type ?? body.principalType);
     const principalId = body.principal_id ?? body.principalId;

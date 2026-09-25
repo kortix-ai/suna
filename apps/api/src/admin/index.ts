@@ -20,12 +20,9 @@ import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { MAX_ACCOUNT_SESSION_LIMIT, setAccountSessionLimit } from './account-session-limit';
 import { analyticsApp } from './analytics';
 import { isUuid } from '../shared/validate';
+import { readJsonObject } from '../shared/http-body';
 
 export const adminApp = makeOpenApiApp<AppEnv>();
-
-// `account_id` reaches Postgres as a `uuid`, where a malformed value is a
-// 22P02 cast error long before any guard runs — a 500 on input the caller
-// controls. Shape-check first so a typo is a clean 400.
 
 // Drizzle wraps the Postgres error: `e.message` is "Failed query: <sql> …" and
 // the real reason (undefined column, statement timeout, constraint) hides in
@@ -365,7 +362,7 @@ adminApp.openapi(
     const accountId = c.req.param('id');
     const userId = c.req.param('userId');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const roleRaw = String(body.role || '').trim();
 
     if (roleRaw !== 'owner' && roleRaw !== 'admin' && roleRaw !== 'member') {
@@ -783,7 +780,7 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const amount = Number(body.amount);
     const description = String(body.description || 'Admin credit grant');
     const isExpiring = body.isExpiring !== false;
@@ -837,7 +834,7 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const amount = Number(body.amount);
     const description = String(body.description || 'Admin credit debit');
     if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
@@ -893,7 +890,7 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const tier = String(body.tier || '').trim();
 
     const { isValidTier } = await import('../billing/services/tiers');
@@ -989,7 +986,7 @@ adminApp.openapi(
     try {
       const accountId = c.req.param('id');
       const actorUserId = c.get('userId') as string | undefined;
-      const body = await c.req.json().catch(() => ({}));
+      const body = await readJsonObject(c);
       const enabled = body.enabled;
       if (typeof enabled !== 'boolean') {
         return c.json({ error: 'enabled must be a boolean' }, 400);
@@ -1595,12 +1592,14 @@ adminApp.openapi(
     responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const src = (body && typeof body.weights === 'object') ? body.weights : body;
+    const body = await readJsonObject(c);
+    const src = (
+      typeof body.weights === 'object' && body.weights !== null ? body.weights : body
+    ) as Record<string, unknown>;
     const { config } = await import('../config');
     const weights: Record<string, number> = {};
     for (const p of config.ALLOWED_SANDBOX_PROVIDERS) {
-      const w = Number(src?.[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
+      const w = Number(src[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
     }
     const { db } = await import('../shared/db');
     const { platformSettings } = await import('@kortix/db');
@@ -1636,7 +1635,7 @@ adminApp.openapi(
     responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const value = { enabled: body?.enabled === true };
     const { db } = await import('../shared/db');
     const { platformSettings } = await import('@kortix/db');
@@ -1690,7 +1689,7 @@ adminApp.openapi(
   }),
   async (c: any) => {
     const sessionId = c.req.param('sessionId');
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const target = String(body.targetProvider || '');
     const { config } = await import('../config');
     if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(target)) return c.json({ error: 'invalid targetProvider' }, 400);

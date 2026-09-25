@@ -936,13 +936,6 @@ export async function assertAgentSessionWorkspaceAllowsRepository(
   });
 }
 
-// `projects.project_id` is a Postgres `uuid` column, so a malformed id
-// (e.g. a truncated "fda4e35e") makes the lookup throw `invalid input syntax
-// for type uuid` (SQLSTATE 22P02) before any guard runs — surfacing as an
-// opaque 500. Validate the shape first so a bad id is a clean 404, not a 500.
-// Re-exported for the route modules that import it from here.
-export { isUuid } from '../../shared/validate';
-
 /**
  * The full platform-admin-bypass decision — pure (the DB/header lookups are
  * already resolved into `isPlatformAdmin`/`bypassHeaderPresent` by the

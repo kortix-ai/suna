@@ -6,7 +6,7 @@
 // email.
 import { emailDomain, isWorkEmail } from '../accounts/personal-email';
 import { config } from '../config';
-import { escapeHtml } from './email/template';
+import { escapeHtml } from '../shared/html';
 import { isEmailConfigured, sendEmail } from './email/transport';
 
 export interface DemoRequestLead {

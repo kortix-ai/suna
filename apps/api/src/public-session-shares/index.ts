@@ -36,7 +36,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json, makeOpenApiApp } from '../openapi';
-import { UUID_V4_REGEX } from '../projects/lib/serializers';
+import { isUuid } from '../shared/validate';
 import { createPublicSessionShareRateLimitMiddleware } from '../shared/rate-limit';
 import { publicShareToken, resolvePublicShare } from '../shared/session-public-shares';
 import { getPublicSessionInfo, getPublicSessionMessages } from '../shared/public-session-share-view';
@@ -49,7 +49,7 @@ publicSessionSharesApp.use('/:shareId/messages', createPublicSessionShareRateLim
 const ShareParams = z.object({ shareId: z.string() });
 
 async function resolveShareId(shareId: string, opts: { requireTranscript?: boolean } = {}) {
-  if (!UUID_V4_REGEX.test(shareId)) {
+  if (!isUuid(shareId)) {
     return { ok: false as const, status: 400, error: 'Invalid share id' };
   }
   return resolvePublicShare(publicShareToken(shareId), opts);

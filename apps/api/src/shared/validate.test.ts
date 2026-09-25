@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isUuid, UUID_RE } from './validate';
+import { isUuid } from './validate';
 
 describe('isUuid — the shape a PostgreSQL uuid column accepts', () => {
   test('accepts RFC 4122 ids of every version', () => {
@@ -43,8 +43,8 @@ describe('isUuid — the shape a PostgreSQL uuid column accepts', () => {
     }
   });
 
-  test('UUID_RE is stateless across calls', () => {
+  test('isUuid is stateless across calls', () => {
     const id = 'a7100000-0000-4000-a000-000000000001';
-    expect([UUID_RE.test(id), UUID_RE.test(id), UUID_RE.test(id)]).toEqual([true, true, true]);
+    expect([isUuid(id), isUuid(id), isUuid(id)]).toEqual([true, true, true]);
   });
 });

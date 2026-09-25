@@ -9,7 +9,7 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash } from 'node:crypto';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientKey } from '../shared/client-ip';
 import { connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type Context, Hono, type Next } from 'hono';
@@ -47,7 +47,7 @@ const setupLinkLimiter = new TokenBucketRateLimiter('setup_link');
 function createSetupLinkRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
     const rawToken = c.req.param('token');
-    const key = rawToken && TOKEN_LIKE_REGEX.test(rawToken) ? rawToken : `ip:${requestClientIp(c) ?? 'unknown'}`;
+    const key = rawToken && TOKEN_LIKE_REGEX.test(rawToken) ? rawToken : `ip:${requestClientKey(c)}`;
     // Never persist the raw bearer token (it's a live capability) — audit on a
     // truncated hash so hits on the same link/attempt are still correlatable.
     const resourceId = rawToken

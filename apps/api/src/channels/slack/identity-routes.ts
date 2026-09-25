@@ -27,6 +27,7 @@ import { spawnAgentTurn } from './dispatch';
 import { consumePendingSlackAuthMessage, replaceSlackAuthPromptConnected } from './auth-resume';
 import { verifyLoginState } from './login';
 import { isAccountMember, linkSlackIdentity } from './identity';
+import { readJsonObject } from '../../shared/http-body';
 
 export const slackIdentityApp = makeOpenApiApp();
 
@@ -90,7 +91,7 @@ slackIdentityApp.openapi(
   }),
   async (c: any) => {
     if (!config.SLACK_REQUIRE_USER_IDENTITY) return c.json({ error: 'Not found' }, 404);
-    const { token } = (await c.req.json().catch(() => ({}))) as { token?: string };
+    const { token } = (await readJsonObject(c)) as { token?: string };
     if (!token) return c.json({ error: 'Missing token' }, 400);
 
     const payload = verifyLoginState(token);
@@ -143,7 +144,7 @@ slackIdentityApp.openapi(
     // Whole feature is flag-gated — the bind endpoint is inert when off.
     if (!config.SLACK_REQUIRE_USER_IDENTITY) return c.json({ error: 'Not found' }, 404);
     const userId = c.get('userId') as string;
-    const { token } = (await c.req.json().catch(() => ({}))) as { token?: string };
+    const { token } = (await readJsonObject(c)) as { token?: string };
     if (!token) return c.json({ error: 'Missing token' }, 400);
 
     const payload = verifyLoginState(token);

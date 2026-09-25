@@ -21,7 +21,6 @@ import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '.
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
 import { requestClientIp } from '../../shared/client-ip';
 import { db } from '../../shared/db';
-import { readJsonBody } from '../../shared/http-body';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import {
   type SnapshotErrorCategory,
@@ -55,9 +54,6 @@ export type RequestAuditContext = {
   userAgent: string | null;
   clientReportedSource?: string | null;
 };
-
-// The loose uuid shape (any version). The historical name stays for its importers.
-export { UUID_RE as UUID_V4_REGEX } from '../../shared/validate';
 
 // Session-status constants live in a dependency-free module so lean callers (the
 // sandbox reaper) can import them without this heavy serializer graph. Re-exported
@@ -720,11 +716,6 @@ export function deriveProjectName(repoUrl: string): string {
   const tail = cleaned.split(/[/:]/).filter(Boolean).pop();
   if (!tail) return 'Untitled Project';
   return tail.replace(/[-_]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-/** The JSON body, `{}` when it is missing or malformed. A JSON `null` body stays `null`. */
-export function readBody(c: Context) {
-  return readJsonBody<Record<string, unknown>>(c, {});
 }
 
 export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotBuilds>>[number]) {

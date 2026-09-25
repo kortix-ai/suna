@@ -15,7 +15,8 @@ import {
   SandboxProviderTransitionStateSchema,
   projectsApp,
 } from '../lib/app';
-import { readBody, serializeProject } from '../lib/serializers';
+import { serializeProject } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
 import { isFeatureFlagKey } from '../../feature-flags/registry';
 import { runFeatureFlagToggleEffects } from '../../feature-flags/toggle-effects';
@@ -90,7 +91,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -207,7 +208,7 @@ projectsApp.openapi(
 const patchFeatureFlagHandler = async (c: any) => {
   const projectId = c.req.param('projectId');
   // Strict body: malformed JSON is a client error, not an empty object —
-  // readBody() would swallow the parse failure and mis-report "unknown flag".
+  // readJsonObject() would swallow the parse failure and mis-report "unknown flag".
   let body: Record<string, unknown>;
   try {
     body = await c.req.json();
@@ -330,7 +331,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const raw = body.provider ?? body.sandbox_provider;
     // Floor 'read'; project.customize.write is the human gate below (was
     // 'manage' → project.write, so unchecking customize.write did nothing here).

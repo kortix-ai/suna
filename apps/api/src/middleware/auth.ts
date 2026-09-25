@@ -16,7 +16,7 @@ import { setContextField } from '../lib/request-context';
 import { createHash } from 'node:crypto';
 import { extractSsoProviderId, syncSsoMembership } from '../iam/sso-sync';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientKey } from '../shared/client-ip';
 import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { buildActor } from '../iam/actor';
@@ -190,7 +190,7 @@ async function resolveApiKeyAuth(c: Context, next: Next) {
 
   if (!result.isValid) {
     console.warn(
-      `[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${requestClientIp(c) ?? 'unknown'}`,
+      `[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${requestClientKey(c)}`,
     );
     auditLoginFail({
       c,

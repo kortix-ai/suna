@@ -37,7 +37,8 @@ import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
 import { reconcileAuditEvents } from '../shared/audit-reconciliation';
 import type { AppEnv } from '../types';
 import { type AuditFilterInput, buildFilters } from './audit-filters';
-import { readBody, requireEntitlement } from './iam/helpers';
+import { requireEntitlement } from './iam/helpers';
+import { readJsonObject } from '../shared/http-body';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
 
@@ -555,7 +556,7 @@ auditRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
 
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name) return c.json({ error: 'name is required' }, 400);
@@ -662,7 +663,7 @@ auditRouter.openapi(
       .limit(1);
     if (!before) return c.json({ error: 'webhook not found' }, 404);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const updates: Record<string, unknown> = { updatedAt: new Date() };
 
     if (typeof body.name === 'string') {

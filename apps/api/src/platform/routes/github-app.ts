@@ -66,6 +66,7 @@ import {
   envManagedConflictBody,
   resolveInstanceGitMutability,
 } from '../services/instance-git-mutability';
+import { readJsonObject } from '../../shared/http-body';
 
 export const githubAppSetupRouter = makeOpenApiApp<AppEnv>();
 
@@ -507,7 +508,7 @@ githubAppSetupRouter.openapi(
     if (gate) return gate;
     try {
       const accountId = c.get('userId') as string;
-      const body = await c.req.json().catch(() => ({}));
+      const body = await readJsonObject(c);
       const org = typeof body?.org === 'string' && body.org.trim() ? body.org.trim() : undefined;
 
       const manifest = buildGithubAppManifest({
@@ -1130,7 +1131,7 @@ githubAppSetupRouter.openapi(
     const gate = envManagedGate(c);
     if (gate) return gate;
 
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const appId = typeof body?.app_id === 'string' ? body.app_id.trim() : '';
     const privateKey = typeof body?.private_key === 'string' ? body.private_key.trim() : '';
     const installationId =
@@ -1308,7 +1309,7 @@ githubAppSetupRouter.openapi(
     const gate = envManagedGate(c);
     if (gate) return gate;
 
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const token = typeof body?.token === 'string' ? body.token.trim() : '';
     const owner = typeof body?.owner === 'string' ? body.owner.trim() : '';
     if (!token || !owner) {

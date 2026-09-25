@@ -20,7 +20,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 function teamsPublicBaseUrl(): string | undefined {
   return config.KORTIX_URL?.startsWith('https://') ? config.KORTIX_URL : undefined;
@@ -324,7 +324,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
     if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const result = await postToTeamsConversation(projectId, {
       conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
       text: typeof body.text === 'string' ? body.text : undefined,
@@ -374,7 +374,7 @@ projectsApp.openapi(
     if (!teamsChannelEnabled(loaded.row.metadata)) {
       return c.json(featureDisabledBody('teams'), 403);
     }
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const result = await initiateTeamsUpload(projectId, {
       serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
       conversationId: String(body.conversation_id ?? body.conversationId ?? ''),

@@ -11,7 +11,8 @@ import { and, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, readBody } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { mayChangeSessionModel } from '../lib/session-model-change';
@@ -29,7 +30,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -89,7 +90,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -112,7 +113,7 @@ projectsApp.openapi(
       );
     }
 
-    const body = (await readBody(c)) as { refresh_repo?: unknown; force?: unknown };
+    const body = (await readJsonObject(c)) as { refresh_repo?: unknown; force?: unknown };
 
     const result = await reloadSessionConfig({
       projectId,
@@ -175,7 +176,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -196,7 +197,7 @@ projectsApp.openapi(
       );
     }
 
-    const body = (await readBody(c)) as { refresh_repo?: unknown; force?: unknown };
+    const body = (await readJsonObject(c)) as { refresh_repo?: unknown; force?: unknown };
 
     return new Response(
       new ReadableStream({

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { escapeHtml } from './template';
+import { escapeHtml } from './html';
 
 describe('escapeHtml', () => {
   test('escapes the five HTML-significant characters', () => {

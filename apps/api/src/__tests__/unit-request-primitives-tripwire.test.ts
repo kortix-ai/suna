@@ -1,13 +1,19 @@
 /**
  * Tripwire: request primitives have one implementation each.
  *
- *   client address   → shared/client-ip.ts   (clientIpFromHeaders, requestClientIp)
- *   UUID shape check → shared/validate.ts    (isUuid, UUID_RE)
- *   HTML escaping    → lib/email/template.ts (escapeHtml)
+ *   client address   → shared/client-ip.ts (requestClientIp, requestClientKey)
+ *   UUID shape check → shared/validate.ts  (isUuid)
+ *   JSON object body → shared/http-body.ts (readJsonObject)
+ *   HTML escaping    → shared/html.ts      (escapeHtml)
  *
- * A private copy drifts. The leftmost X-Forwarded-For entry is written by the
- * caller, and a strict UUID regex refuses ids a looser one accepted on write.
+ * A private copy drifts. An address read outside the trusted-proxy rule is not
+ * the address KORTIX_TRUSTED_PROXY_HOPS selects, and a strict UUID regex refuses
+ * ids a looser one accepted on write. An inline `c.req.json().catch(() => ({}))`
+ * returns JSON `null` as `null`, so `body.x` throws a TypeError (a 500).
  * This test fails on a new copy in non-test source under apps/api/src.
+ *
+ * Out of scope: `c.req.json().catch(() => null)` sites. They pass the result to
+ * a zod `safeParse` or read it with `?.`, so a JSON `null` body is a 400.
  *
  * Every allowlist entry names its reason. Remove an entry when its reason ends.
  */
@@ -73,10 +79,14 @@ const UUID_ALLOW: Record<string, string> = {
   'iam/sso-sync.ts': 'open SSO identity work edits this file',
 };
 
+// An inline JSON body read that falls back to `{}`.
+const JSON_OBJECT_INLINE = /\.req\.json(?:<[^>]*>)?\(\)\s*\.catch\(\s*\(\)\s*=>\s*\(\s*\{\s*\}\s*\)\s*\)/;
+const JSON_OBJECT_ALLOW: Record<string, string> = {};
+
 const ESCAPE_HTML_DEF = /function\s+escapeHtml\b|\bescapeHtml\s*=\s*(?:\(|function)/;
 const ESCAPE_HTML_ALLOW: Record<string, string> = {
-  'lib/email/template.ts': 'the one implementation',
-  // TODO(follow-up): import lib/email/template.ts once PR #7180 lands.
+  'shared/html.ts': 'the one implementation',
+  // TODO(follow-up): import shared/html.ts once PR #7180 lands.
   'apps/public-proxy.ts': 'open PR #7180 edits this file',
 };
 
@@ -91,7 +101,12 @@ describe('request primitives have one implementation', () => {
     expect(staleAllowlist(UUID_LITERAL, UUID_ALLOW)).toEqual([]);
   });
 
-  test('escapeHtml is defined only in lib/email/template.ts', () => {
+  test('JSON object bodies are read only through shared/http-body.ts', () => {
+    expect(offenders(JSON_OBJECT_INLINE, JSON_OBJECT_ALLOW)).toEqual([]);
+    expect(staleAllowlist(JSON_OBJECT_INLINE, JSON_OBJECT_ALLOW)).toEqual([]);
+  });
+
+  test('escapeHtml is defined only in shared/html.ts', () => {
     expect(offenders(ESCAPE_HTML_DEF, ESCAPE_HTML_ALLOW)).toEqual([]);
     expect(staleAllowlist(ESCAPE_HTML_DEF, ESCAPE_HTML_ALLOW)).toEqual([]);
   });

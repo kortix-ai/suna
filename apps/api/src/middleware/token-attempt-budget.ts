@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../config';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientKey } from '../shared/client-ip';
 import { isTokenHashCached, isTokenValidated } from '../shared/token-hash';
 
 /**
@@ -87,7 +87,7 @@ export async function withTokenAttemptBudget<T>(
   run: () => Promise<T>,
 ): Promise<T> {
   if (!token || !token.startsWith('kortix_') || isTokenHashCached(token)) return run();
-  const address = requestClientIp(c) ?? 'unknown';
+  const address = requestClientKey(c);
   const now = Date.now();
   const window = current(address, now);
   if (window && window.count >= limit()) {

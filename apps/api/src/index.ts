@@ -163,6 +163,7 @@ import {
   wsHandlers as tunnelWsHandlers,
 } from './tunnel';
 import { isUuid } from './shared/validate';
+import { readJsonObject } from './shared/http-body';
 
 /**
  * The streaming secret relay routes, matched on the raw pathname in
@@ -765,7 +766,7 @@ app.openapi(
       return c.json({ error: 'Admin access required' }, 403);
     }
     if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const maintenanceConfig = {
       ...DEFAULT_MAINTENANCE,
       ...body,
@@ -1836,8 +1837,8 @@ async function dispatchInbound(
     // Include the source address so an unauthenticated attacker who learns a
     // tunnelId cannot consume the real machine's reconnect budget.
     const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-    const { clientIpFromHeaders } = await import('./shared/client-ip');
-    const clientIp = clientIpFromHeaders((name) => req.headers.get(name)) ?? 'unknown';
+    const { clientKeyFromHeaders } = await import('./shared/client-ip');
+    const clientIp = clientKeyFromHeaders((name) => req.headers.get(name));
     const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
     if (!wsIpRateCheck.allowed) {
       return new Response(

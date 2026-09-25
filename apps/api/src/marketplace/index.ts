@@ -24,6 +24,7 @@ import {
   warmMarketplaceCatalog,
 } from './catalog';
 import { addSource, listSources, removeSource } from './sources-store';
+import { readJsonObject } from '../shared/http-body';
 
 // Wire DB-persisted sources into the catalog. Done here (not in catalog.ts) so
 // catalog.ts stays free of the config/db import graph for pure unit tests.
@@ -225,12 +226,12 @@ marketplaceApp.openapi(
     },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     // Adding an arbitrary source is admin-only; the curated FEATURED_MARKETPLACES
     // are vetted, public, read-only git repos (they resolve out of the box and
     // carry no SSRF/LFI surface) so any signed-in user may enable one to explore
     // it. See the module-level comment above for the full rationale.
-    const address = String((body as { address?: unknown })?.address ?? '').trim();
+    const address = String(body.address ?? '').trim();
     if (!FEATURED_SOURCE_ADDRESSES.has(address)) {
       // Throws (401/403) on failure — caught by the app's global onError and
       // turned into the right response; resolves to undefined on success.
@@ -238,8 +239,15 @@ marketplaceApp.openapi(
     }
     try {
       // LFI/SSRF guard — reject local-folder + private/non-https URL sources.
-      assertAllowedSourceAddress(String(body?.address ?? ''));
-      const source = await addSource(body);
+      assertAllowedSourceAddress(String(body.address ?? ''));
+      const source = await addSource({
+        address,
+        gitRef: typeof body.gitRef === 'string' ? body.gitRef : undefined,
+        sparsePaths: Array.isArray(body.sparsePaths)
+          ? body.sparsePaths.filter((p): p is string => typeof p === 'string')
+          : undefined,
+        label: typeof body.label === 'string' ? body.label : undefined,
+      });
       _resetExternalCache();
       warmMarketplaceCatalog();
       return c.json({ source });

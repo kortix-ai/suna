@@ -22,9 +22,11 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroups, accountMembers, connectors } from '@kortix/db';
 import { and, eq, inArray, or } from 'drizzle-orm';
 import { config } from '../../config';
-import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
+import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
+import { normalizeString } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { resolveEffectiveSessionConnectorBindings } from '../lib/session-connector-bindings';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
@@ -216,7 +218,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     );
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const resourceType = normalizeString(body.resource_type ?? body.resourceType);
     const resourceId = normalizeString(body.resource_id ?? body.resourceId);
     const principalType = normalizeString(body.principal_type ?? body.principalType);

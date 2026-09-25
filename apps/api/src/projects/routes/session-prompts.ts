@@ -10,7 +10,9 @@ import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-sco
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
+import { normalizeString } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import {
   deleteInboxPrompt,
   drainSessionLifecycleQueue,
@@ -137,7 +139,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     // FLOOR 'session', NOT 'write'. Sending a prompt is running the session,
     // not editing the project — it must pass exactly the check `/start` and
@@ -176,7 +178,7 @@ projectsApp.openapi(
       return c.json({ error: 'Session is deleted' }, 409);
     }
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const clientMessageId = normalizeString(body.client_message_id);
     const messageId = normalizeString(body.message_id);
     if (body.placement !== undefined && body.placement !== 'transcript' && body.placement !== 'composer') {
@@ -358,7 +360,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -407,10 +409,10 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const promptId = c.req.param('promptId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
     // A prompt is named by its row id (uuid) OR by its wire message id — the
     // handle the bubble still has after the row leaves the list.
-    if (!UUID_V4_REGEX.test(promptId) && !/^msg_[A-Za-z0-9]{6,40}$/.test(promptId)) {
+    if (!isUuid(promptId) && !/^msg_[A-Za-z0-9]{6,40}$/.test(promptId)) {
       return c.json({ error: 'Invalid prompt id' }, 400);
     }
 
@@ -508,8 +510,8 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const promptId = c.req.param('promptId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-    if (!UUID_V4_REGEX.test(promptId)) return c.json({ error: 'Invalid prompt id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(promptId)) return c.json({ error: 'Invalid prompt id' }, 400);
 
     // Floor 'session' — see the POST /prompts gate comment. "Retry"/"send now"
     // on your own queued message is running the session, not editing the project.
@@ -572,7 +574,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     // Floor 'session' — see the POST /prompts gate comment. Stop/hold is the
     // counterpart of send; a member who can send must be able to hold.
@@ -589,7 +591,7 @@ projectsApp.openapi(
     const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     if (typeof body.held !== 'boolean') {
       return c.json({ error: 'held must be a boolean' }, 400);
     }

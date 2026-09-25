@@ -32,7 +32,7 @@
  * through by every intermediary, and a crawler or monitor should see them.
  */
 
-import { escapeHtml } from '../lib/email/template';
+import { escapeHtml } from '../shared/html';
 
 /**
  * Names the state on every response, HTML included, so a probe or a log can
