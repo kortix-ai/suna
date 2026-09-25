@@ -872,7 +872,7 @@ test('suppresses storage-disabled WebView null.getItem TypeErrors (V8 + JSC)', (
 // unhandledrejection — never reached a React error boundary), release
 // `c330eda4d96e7aee557618254a86df7d16ba5d9b` (v0.12.0), request URLs
 // `https://kortix.com/auth` (first occurrence) and
-// `https://kortix.com/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf` (second
+// `https://kortix.com/projects/00000000-0000-4000-8000-000000000001` (second
 // occurrence, referer `https://accounts.google.com/` post-Google OAuth), Chrome
 // 151.0.0.0 on Windows. Stack trace: NONE — `call_site_file`/`call_site_function`
 // are null, `call_stack_hash` is null, no frames at all.
@@ -949,7 +949,7 @@ test('suppresses the Supabase TOKEN_EXPIRED Sentry event via the beforeSend gate
   // (post-Google-OAuth redirect), referer `https://accounts.google.com/`.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf' },
+      request: { url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000001' },
       exception: {
         values: [
           {
@@ -1666,7 +1666,7 @@ test('suppresses the injectedScript.bundle.js sendMessage Sentry event via the b
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
         request: {
-          url: 'https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688',
+          url: 'https://kortix.com/auth?redirect=%2Fprojects%2F00000000-0000-4000-8000-000000000002%2Fthread%2F00000000-0000-4000-8000-000000000003',
         },
         exception: {
           values: [
@@ -1719,7 +1719,7 @@ test('pins the production Better Stack pattern 95a70e66…', () => {
   //       function `u`
   //     app:///injectedScript.bundle.js function `n` colno 84147
   //   mechanism: auto.browser.global_handlers.onunhandledrejection
-  //   request URL: https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688
+  //   request URL: https://kortix.com/auth?redirect=%2Fprojects%2F00000000-0000-4000-8000-000000000002%2Fthread%2F00000000-0000-4000-8000-000000000003
   //   better-stack pattern: 95a70e668e9fbeb0c139131ac78db4aff62d5ab3675ed376666f9526c2cbb02c
   assert.equal(
     isInjectedScriptSendMessageNoise({
@@ -1737,7 +1737,7 @@ test('pins the production Better Stack pattern 95a70e66…', () => {
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688',
+        url: 'https://kortix.com/auth?redirect=%2Fprojects%2F00000000-0000-4000-8000-000000000002%2Fthread%2F00000000-0000-4000-8000-000000000003',
       },
       exception: {
         values: [
@@ -2288,7 +2288,7 @@ test('does NOT suppress a same-shaped message reading a different property', () 
 const CLIENT_REQUEST_TIMEOUT_EVENTS = [
   // The exact assigned occurrence — endpoint varies per call, so match the
   // SDK's `Request timed out after <N>s: ` prefix, not the full URL.
-  'Request timed out after 30s: /projects/24e99500-c925-481a-bc88-5b89dba4d965/sessions/88488045-8cd7-4c6b-ad0f-2b56a4c9cb25/audit',
+  'Request timed out after 30s: /projects/00000000-0000-4000-8000-000000000004/sessions/00000000-0000-4000-8000-000000000005/audit',
   // The budget is configurable per call; the seconds value is not load-bearing.
   'Request timed out after 60s: /accounts',
   // The ApiError-class-prefixed wrapper.
@@ -3573,7 +3573,7 @@ test('suppresses the post-0.10.13 Sentry 10.x "No error message" placeholder eve
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/auth?redirect=%2Fprojects%2F038ce7cd-c239-47eb-9ad3-83f2e5345aa6%2Fthread%2F75e8053d-85f9-4f18-a6e5-2ac4f0600e44',
+        url: 'https://kortix.com/auth?redirect=%2Fprojects%2F00000000-0000-4000-8000-000000000006%2Fthread%2F00000000-0000-4000-8000-000000000007',
       },
       exception: {
         values: [
@@ -3608,7 +3608,7 @@ test('suppresses the sibling post-0.10.13 pattern 19ee7c2f… (different dpl, sa
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/auth?redirect=%2Fprojects%2F59aa5850-de1d-4e56-81fb-34d532146f01%2Fthread%2F2149cad0-e79e-4d38-84ac-273364cfb434',
+        url: 'https://kortix.com/auth?redirect=%2Fprojects%2F00000000-0000-4000-8000-000000000008%2Fthread%2F00000000-0000-4000-8000-000000000009',
       },
       exception: {
         values: [
@@ -4528,7 +4528,7 @@ test('does NOT suppress a real first-party Proxy `set` failure on a DIFFERENT pr
 // `JSON.parse(undefined)` regression throws inside an app chunk (or a
 // de-minified `apps/web/src/…` frame) and is never matched.
 const USERSCRIPT_MANAGER_FRAME =
-  'app:///userscript.html?name=YoutubeDL.user.js&id=303c1708-e3a7-42b9-bdd1-9c21ea14f6b4';
+  'app:///userscript.html?name=YoutubeDL.user.js&id=00000000-0000-4000-8000-000000000010';
 
 const USERSCRIPT_MANAGER_FRAMES: Array<{ filename: unknown; function: unknown }> = [
   { filename: USERSCRIPT_MANAGER_FRAME, function: '?' },
@@ -4824,8 +4824,8 @@ test('does NOT suppress the Android bridge message with NO bridge frame (conserv
 // library's own internal `getDocumentStateOrThrow` / `getDocumentState`
 // helpers throw `<Interaction|Selection> state not found for document:
 // <docId>`. Both Better Stack patterns are the SAME doc id
-// (`doc-1785904808253-gbsixyvii`), same Safari 26.5 session
-// (`be897489-001b-4ca4-b9ca-a1aa770c4082`), same minified chunk
+// (`doc-0000000000000-synthetic`), same Safari 26.5 session
+// (`00000000-0000-4000-8000-000000000011`), same minified chunk
 // `17631.2j-4o95.js`, last 2026-08-05 04:40:45 UTC (POST-v0.12.3), UNCAUGHT
 // (`handled:false`, mechanism `addEventListener`), NO first-party
 // `apps/web/src/…` frame. 28 occurrences (interaction) + 2 occurrences
@@ -4840,12 +4840,12 @@ test('does NOT suppress the Android bridge message with NO bridge frame (conserv
 // The exact interaction-state message from the production event (pattern
 // 6d6fa794…, 28 occurrences).
 const DOCUMENT_STATE_INTERACTION_MESSAGE =
-  'Interaction state not found for document: doc-1785904808253-gbsixyvii';
+  'Interaction state not found for document: doc-0000000000000-synthetic';
 
 // The exact selection-state message from the production event (pattern
 // a954c7e7…, 2 occurrences, SAME doc id).
 const DOCUMENT_STATE_SELECTION_MESSAGE =
-  'Selection state not found for document: doc-1785904808253-gbsixyvii';
+  'Selection state not found for document: doc-0000000000000-synthetic';
 
 // Pattern 6d6fa794 — the production stack frames (oldest-first → throwing
 // frame last): the entry `r` in chunk `13jg6.ewllp.z.js`, then the editor
@@ -4870,7 +4870,7 @@ const DOCUMENT_STATE_SELECTION_FRAMES = [
 // co-worker session page.
 const DOCUMENT_STATE_INTERACTION_EVENT = {
   request: {
-    url: 'https://kortix.com/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
+    url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000012/sessions/00000000-0000-4000-8000-000000000011',
   },
   exception: {
     values: [
@@ -5126,7 +5126,7 @@ test('suppresses the assigned editor re-render-loop React #185 Sentry events via
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
         request: {
-          url: 'https://kortix.com/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
+          url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000012/sessions/00000000-0000-4000-8000-000000000011',
         },
         exception: {
           values: [
@@ -6458,7 +6458,7 @@ test('suppresses the inpage.js "No error message" Sentry event via the beforeSen
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/auth?expired=true&returnUrl=%2Fprojects%2F9c64dfec-6272-45c0-b61b-5bd0c4826ef8%2Fthread%2F9a4057da-1f55-41a2-9fe9-cd7d52c99674',
+        url: 'https://kortix.com/auth?expired=true&returnUrl=%2Fprojects%2F00000000-0000-4000-8000-000000000013%2Fthread%2F00000000-0000-4000-8000-000000000014',
       },
       exception: {
         values: [
@@ -6742,7 +6742,7 @@ test('suppresses the assigned @embedpdf tiling React #185 Sentry event via the b
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/c4d70885-ce86-4283-b373-bc2fbcd92b85/sessions/917c2468-11bf-4cf0-92e6-20d17fa58e77',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000015/sessions/00000000-0000-4000-8000-000000000016',
       },
       exception: {
         values: [
@@ -6993,7 +6993,7 @@ test('suppresses both @embedpdf tiling tile-destructure Sentry events via the be
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
         request: {
-          url: 'https://kortix.com/projects/7254bee8-0000-0000-0000-000000000000/sessions/bd1306e9-0000-0000-0000-000000000000',
+          url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000017/sessions/00000000-0000-4000-8000-000000000018',
         },
         exception: {
           values: [
@@ -7203,7 +7203,7 @@ test('suppresses the assigned Firefox React #327 Sentry event via the beforeSend
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/3cdc1df5-01e6-492d-b2ab-d81bb8c42fa2/sessions/c102f5de-1b6b-4baf-8cd6-cdd11855330f',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000019/sessions/00000000-0000-4000-8000-000000000020',
       },
       exception: {
         values: [
@@ -8145,7 +8145,7 @@ test('suppresses the post-OAuth OperationError popErrorScope Sentry event (secon
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/198b319d-b710-4443-a797-d813ba16f07a',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000021',
       },
       exception: {
         values: [
@@ -8338,7 +8338,7 @@ test('suppresses the frameless network error Sentry event via the beforeSend gat
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/66f6788a-0000-0000-0000-000000000000/sessions/d16b4555-0000-0000-0000-000000000000',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000022/sessions/00000000-0000-4000-8000-000000000023',
       },
       exception: {
         values: [
@@ -8969,7 +8969,7 @@ test('suppresses the Firefox DOM-mutation prod event via the Sentry beforeSend g
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/be079cac-091c-4857-8b3f-f7982027b27c/sessions/f3d44320-846b-4dd3-be26-18d9ca05c931',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000024/sessions/00000000-0000-4000-8000-000000000025',
       },
       exception: {
         values: [
@@ -9396,7 +9396,7 @@ test('classifies the production Failed to send message transport noise (exact pr
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/834686a1-bf0c-4bd5-87ea-b2679288e191/sessions/54f7abe9-cad8-4b46-bd04-de8f1723dfd1',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000026/sessions/00000000-0000-4000-8000-000000000027',
       },
       exception: {
         values: [
@@ -9637,7 +9637,7 @@ test('classifies the production Cannot redefine property: webdriver noise (exact
   );
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      request: { url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000028' },
       exception: {
         values: [
           {
@@ -9699,7 +9699,7 @@ test('classifies the frameless Cannot redefine property: webdriver variant as no
   );
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      request: { url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000028' },
       exception: {
         values: [{ value: REDEFINE_WEBDRIVER_MESSAGE, stacktrace: { frames: [] } }],
       },
@@ -9709,7 +9709,7 @@ test('classifies the frameless Cannot redefine property: webdriver variant as no
   // Also when the stacktrace key is omitted entirely (frames default to []).
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      request: { url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000028' },
       exception: {
         values: [{ value: REDEFINE_WEBDRIVER_MESSAGE }],
       },
@@ -9910,7 +9910,7 @@ test('classifies the production signal timed out noise (frameless, exact prod sh
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/6c60bc35-4371-46a0-bf49-6f82ea9fd878/sessions/c0111ad4-06bc-428b-a27a-df5ecdc0e0fa',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000029/sessions/00000000-0000-4000-8000-000000000030',
       },
       exception: {
         values: [
@@ -9932,7 +9932,7 @@ test('classifies the production signal timed out noise (frameless, exact prod sh
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/6c60bc35-4371-46a0-bf49-6f82ea9fd878/sessions/c0111ad4-06bc-428b-a27a-df5ecdc0e0fa',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000029/sessions/00000000-0000-4000-8000-000000000030',
       },
       exception: {
         values: [
