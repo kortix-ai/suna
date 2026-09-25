@@ -40,6 +40,9 @@ mock.module('../../llm-gateway/models/provider-registry', () => ({
 }));
 mock.module('../lib/secret-grant', () => ({ resolveSessionAgentGrant: async () => ({ env: ['ANTHROPIC_API_KEY'] }) }));
 mock.module('../agents', () => ({ DEFAULT_AGENT_SENTINEL: 'default' }));
+/** The session's personal user as the gateway resolves it: its owner in private, null when shared. */
+let sessionPersonal: string | null = ownerId;
+mock.module('../lib/personal-resources', () => ({ resolveSessionPersonalOwner: async () => sessionPersonal }));
 mock.module('../../shared/db', () => ({ db: {
   select: () => ({ from: (table: unknown) => {
     let rows: unknown[] = [];
@@ -68,6 +71,7 @@ await import('./provider-secret-pools');
 
 beforeEach(() => {
   boundSession = null;
+  sessionPersonal = ownerId;
   ownerHasGrant = false;
   ownerIsMachine = false;
   canManage = true;
@@ -110,5 +114,18 @@ test('a machine-owned session cannot select personal resources', async () => {
   expect((await app.request(`${base}/anthropic`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ secret_ids: [secretId] }),
   })).status).toBe(403);
+  expect(writes).toBe(0);
+});
+
+test('a shared session never selects a key granted to one member, even its owner', async () => {
+  // The gateway serves a shared session with no personal user (spec
+  // 2026-09-22 §2.3), so a member-granted key would never be used.
+  sessionPersonal = null;
+  ownerHasGrant = true;
+  const response = await app.request(`${base}/anthropic`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ secret_ids: [secretId] }),
+  });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: 'SHARED_SESSION_PERSONAL_KEY' });
   expect(writes).toBe(0);
 });
