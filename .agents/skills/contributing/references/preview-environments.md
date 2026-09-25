@@ -42,7 +42,11 @@ also gives the test state:
 - `live and tested`: `--target-full` passed on this commit.
 - `live; NOT tested`: a push redeploy. The suite did not run.
 - `live; tests failed`: the environment is up. Read `/_tests/` and the run log.
-- `deployment failed`: no origin. Read the run log.
+- `deployment failed`: no origin was published. Read the run log. The environment can still
+  be up: when `--target-full` hits the 90-minute worker cap (`Platinum worker exceeded
+  5400000ms`), the job fails after the deploy. Find the origin in the log
+  (`grep -o 'https://8080-[^ ]*sbx.platinum.dev'`) and check `<origin>/health`. Its `commit`
+  field names the deployed SHA. Push, or re-add the label, to publish it again.
 
 ## Sign in
 
