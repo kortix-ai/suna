@@ -81,6 +81,8 @@ describe('extractGatewayErrorDetails — recovering the structured envelope', ()
       suggestion: 'Add an openai API key in project settings, then retry.',
       upstreamStatus: undefined,
       requestId: 'req_abc123',
+      requestedModel: 'openai/gpt-4.1',
+      resolvedModel: 'openai/gpt-4.1',
     });
   });
 
