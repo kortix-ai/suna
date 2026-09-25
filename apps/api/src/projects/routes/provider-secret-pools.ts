@@ -7,6 +7,7 @@ import { requireFeatureFlag } from '../../feature-flags/gate';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv } from '../../iam/agent-scope';
+import { memberMayReadProject } from '../../secrets/account-resource';
 import { MAX_KEYS_PER_PROVIDER, mayUseProviderKeys, providerEnvVarOf } from '../../secrets/provider-key-selection';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { mayChangeSessionModel } from '../lib/session-model-change';
@@ -137,6 +138,14 @@ projectsApp.openapi(createRoute({
     // keys shared with the whole project. A selection the gateway would not
     // use is refused, not stored.
     const ownerId = visible.row.createdBy!;
+    // The gateway serves pooled keys only to an owner who may read the
+    // project. Checked first, so the refusal names that cause and not the keys.
+    if (!(await memberMayReadProject(loaded.row.accountId, projectId, ownerId))) {
+      return c.json({
+        error: 'The session owner can no longer read this project, so the session cannot use provider secrets',
+        code: 'SESSION_OWNER_NO_PROJECT_ACCESS',
+      }, 403);
+    }
     const personalUserId = await resolveSessionPersonalOwner({
       projectId, accountId: loaded.row.accountId, sessionId, legacyUserId: ownerId,
     }).catch(() => null);

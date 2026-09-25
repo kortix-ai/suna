@@ -124,70 +124,75 @@ beforeEach(() => {
 
 describe('admitSessionModelChange — checked as the gateway runs the session', () => {
   test('a shared session never counts the owner`s own ChatGPT connection; it selects the project`s', async () => {
-    const result = await change();
+    expect(await change()).toBe(true);
     expect(probes[0]).toMatchObject({ userId: OWNER, sessionId: 'sess', personalUserId: null });
     expect(keyQueries[0]).toMatchObject({ grantUserId: null });
-    expect(result).toEqual({ servable: true, selected: { providerId: 'codex', secretIds: [PROJECT_KEY] } });
+    expect(stored).toEqual([{ sessionId: 'sess', providerId: 'codex', secretIds: [PROJECT_KEY] }]);
   });
 
   test('a shared session with no key shared with the project is refused, not accepted and then failed', async () => {
     projectKeys = [];
-    expect(await change()).toEqual({ servable: false, selected: null });
+    expect(await change()).toBe(false);
+    expect(stored).toEqual([]);
   });
 
   test('the owner`s private session keeps using their own connection, and selects nothing', async () => {
     gatewayPersonal = OWNER;
-    expect(await change()).toEqual({ servable: true, selected: null });
+    expect(await change()).toBe(true);
     expect(keyQueries).toHaveLength(0);
+    expect(stored).toEqual([]);
   });
 
   test('in the owner`s private session their own keys are selected — only when the owner makes the change', async () => {
     gatewayPersonal = OWNER;
-    expect(await change({ model: 'anthropic/claude-opus-4-8' })).toEqual({
-      servable: true,
-      selected: { providerId: 'anthropic', secretIds: [PROJECT_KEY, OWNER_KEY] },
-    });
+    expect(await change({ model: 'anthropic/claude-opus-4-8' })).toBe(true);
     // A manager changing it gets keys shared with the project, never the owner's.
     selections = new Set();
-    expect(await change({ caller: OTHER, model: 'anthropic/claude-opus-4-8' })).toEqual({
-      servable: true,
-      selected: { providerId: 'anthropic', secretIds: [PROJECT_KEY] },
-    });
+    expect(await change({ caller: OTHER, model: 'anthropic/claude-opus-4-8' })).toBe(true);
     expect(keyQueries.map((q) => q.grantUserId)).toEqual([OWNER, null]);
+    expect(stored).toEqual([
+      { sessionId: 'sess', providerId: 'anthropic', secretIds: [PROJECT_KEY, OWNER_KEY] },
+      { sessionId: 'sess', providerId: 'anthropic', secretIds: [PROJECT_KEY] },
+    ]);
   });
 
   test('a caller who may not select the keys gets none, and the model is refused', async () => {
     callerMaySelect = false;
-    expect(await change()).toEqual({ servable: false, selected: null });
+    expect(await change()).toBe(false);
+    expect(stored).toEqual([]);
   });
 
   test('a selection made on purpose stays: no new selection, the model is refused', async () => {
     selections.add('sess/codex');
-    expect(await change()).toEqual({ servable: false, selected: null });
+    expect(await change()).toBe(false);
+    expect(stored).toEqual([]);
     expect(selectionQueries).toEqual([['sess', 'codex']]);
     expect(keyQueries).toHaveLength(0);
   });
 
   test('a selection for another provider or another session does not count', async () => {
     selections = new Set(['sess/anthropic', 'other-sess/codex']);
-    expect(await change()).toEqual({ servable: true, selected: { providerId: 'codex', secretIds: [PROJECT_KEY] } });
+    expect(await change()).toBe(true);
     expect(selectionQueries).toEqual([['sess', 'codex']]);
+    expect(stored).toEqual([{ sessionId: 'sess', providerId: 'codex', secretIds: [PROJECT_KEY] }]);
   });
 
   test('without pooled keys (flag off, or a machine-owned session) nothing is selected', async () => {
-    expect(await change({ mayPool: false })).toEqual({ servable: false, selected: null });
+    expect(await change({ mayPool: false })).toBe(false);
     expect(keyQueries).toHaveLength(0);
+    expect(stored).toEqual([]);
   });
 
   test('a model no key pays for (a Kortix model) is only checked', async () => {
-    expect(await change({ model: 'glm-5.3-flash' })).toEqual({ servable: false, selected: null });
+    expect(await change({ model: 'glm-5.3-flash' })).toBe(false);
     expect(probes).toHaveLength(1);
+    expect(stored).toEqual([]);
   });
 });
 
 describe('admitSessionModelChange — stores the selection it makes', () => {
   test('a selected pool is stored for exactly this session and provider', async () => {
-    expect(await change()).toEqual({ servable: true, selected: { providerId: 'codex', secretIds: [PROJECT_KEY] } });
+    expect(await change()).toBe(true);
     expect(stored).toEqual([{ sessionId: 'sess', providerId: 'codex', secretIds: [PROJECT_KEY] }]);
   });
 
@@ -206,7 +211,7 @@ describe('admitSessionModelChange — stores the selection it makes', () => {
 
   test('a selection another request stores first wins: the model is judged with it, nothing is overwritten', async () => {
     concurrentSelection = 'sess/codex';
-    expect(await change()).toEqual({ servable: false, selected: null });
+    expect(await change()).toBe(false);
     expect(stored).toEqual([]);
     // The last probe asks as the session is stored, not with the keys this change chose.
     expect(probes.at(-1)).not.toHaveProperty('providerSecretPools');

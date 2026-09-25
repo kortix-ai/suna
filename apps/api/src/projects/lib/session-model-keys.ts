@@ -32,14 +32,9 @@ async function hasProviderSelection(sessionId: string, providerId: string): Prom
   return Boolean(existing);
 }
 
-export interface SessionModelChange {
-  servable: boolean;
-  /** The keys stored as the session's selection for the provider; null when none were stored. */
-  selected: { providerId: string; secretIds: string[] } | null;
-}
-
 /**
- * Decides whether the session may switch to `model`. When the model needs
+ * Decides whether the session may switch to `model`: true when the gateway can
+ * serve it for this session. When the model needs
  * pooled keys and the session has no selection for its provider, stores the
  * selection that makes it servable. A selection another request stores first
  * wins: the model is then judged with that selection.
@@ -58,7 +53,7 @@ export async function admitSessionModelChange(input: {
   mayPool: boolean;
   /** The route's check that the caller may select these keys (agent grant, the caller's own access). */
   callerMaySelect: (providerId: string, secretIds: string[]) => Promise<boolean>;
-}): Promise<SessionModelChange> {
+}): Promise<boolean> {
   const personalUserId = await resolveSessionPersonalOwner({
     projectId: input.projectId,
     accountId: input.accountId,
@@ -74,12 +69,12 @@ export async function admitSessionModelChange(input: {
     model: input.model,
     personalUserId,
   };
-  if (await isModelServableForAccount(probe)) return { servable: true, selected: null };
-  if (!input.mayPool) return { servable: false, selected: null };
+  if (await isModelServableForAccount(probe)) return true;
+  if (!input.mayPool) return false;
 
   const provider = providerKeyOf(input.model);
   if (!provider || (await hasProviderSelection(input.sessionId, provider.providerId))) {
-    return { servable: false, selected: null };
+    return false;
   }
   // The session's own scope, and personal keys only when the owner makes the
   // change: another person, a manager, never selects the owner's own keys.
@@ -91,21 +86,19 @@ export async function admitSessionModelChange(input: {
     model: input.model,
   }).catch(() => null);
   if (!selection || !(await input.callerMaySelect(selection.providerId, selection.secretIds))) {
-    return { servable: false, selected: null };
+    return false;
   }
-  const selected = { providerId: selection.providerId, secretIds: selection.secretIds };
-  const servable = await isModelServableForAccount({
-    ...probe,
-    providerSecretPools: { [selected.providerId]: selected.secretIds },
-  });
-  if (!servable) return { servable: false, selected: null };
+  const { providerId, secretIds } = selection;
+  if (!(await isModelServableForAccount({ ...probe, providerSecretPools: { [providerId]: secretIds } }))) {
+    return false;
+  }
   const stored = await db
     .insert(sessionProviderSecretPools)
-    .values({ sessionId: input.sessionId, providerId: selected.providerId, secretIds: selected.secretIds })
+    .values({ sessionId: input.sessionId, providerId, secretIds })
     .onConflictDoNothing({ target: [sessionProviderSecretPools.sessionId, sessionProviderSecretPools.providerId] })
     .returning({ sessionId: sessionProviderSecretPools.sessionId });
-  if (stored.length) return { servable: true, selected };
+  if (stored.length) return true;
   // Another request stored a selection first. It stays; the model is judged
   // with it, as a later request would be.
-  return { servable: await isModelServableForAccount(probe), selected: null };
+  return isModelServableForAccount(probe);
 }

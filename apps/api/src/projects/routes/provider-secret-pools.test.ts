@@ -243,10 +243,32 @@ test('a selection is refused when the member it is checked for cannot read the p
   // (resolveSessionProviderSecrets); the selection is checked the same way.
   keys = [projectKey(1)];
   readers.delete(ownerId);
-  expect((await put('anthropic', [keyId(1)])).status).toBe(403);
+  const owner = await put('anthropic', [keyId(1)]);
+  expect(owner.status).toBe(403);
+  expect(await owner.json()).toEqual({
+    error: 'The session owner can no longer read this project, so the session cannot use provider secrets',
+    code: 'SESSION_OWNER_NO_PROJECT_ACCESS',
+  });
   readers = new Set(users);
   readers.delete(managerId);
-  expect((await put('anthropic', [keyId(1)])).status).toBe(403);
+  const caller = await put('anthropic', [keyId(1)]);
+  expect(caller.status).toBe(403);
+  expect(await caller.json()).toEqual({ error: 'Secret unavailable or not granted' });
+  expect(writes).toBe(0);
+});
+
+test('a shared session whose owner cannot read the project names that cause, not the key`s sharing', async () => {
+  // Every key is shared with the whole project, so "shared session" is not
+  // why the selection is refused.
+  keys = [projectKey(1)];
+  readers.delete(ownerId);
+  sessionPersonal = null;
+  const response = await put('anthropic', [keyId(1)]);
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({
+    error: 'The session owner can no longer read this project, so the session cannot use provider secrets',
+    code: 'SESSION_OWNER_NO_PROJECT_ACCESS',
+  });
   expect(writes).toBe(0);
 });
 

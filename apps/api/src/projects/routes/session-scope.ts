@@ -648,7 +648,7 @@ projectsApp.openapi(
       const owner = visible.row.createdBy ?? loaded.userId;
       // Checked in the key scope the gateway uses for this session; stores the
       // pooled keys it selects (lib/session-model-keys.ts).
-      const { servable } = await admitSessionModelChange({
+      const servable = await admitSessionModelChange({
         accountId: loaded.row.accountId,
         projectId,
         sessionId,
