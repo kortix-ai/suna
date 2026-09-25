@@ -1613,6 +1613,7 @@
     "backToProject": "Volver al proyecto",
     "delete": "Eliminar sesión",
     "failedLabel": "Sesión fallida",
+    "loadingConversation": "Cargando la conversación",
     "prompt": {
       "queueFailed": "No se pudo poner en cola el mensaje guardado",
       "unavailable": "No hay ningún mensaje guardado disponible.",

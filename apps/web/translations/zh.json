@@ -1613,6 +1613,7 @@
     "backToProject": "返回项目",
     "delete": "删除会话",
     "failedLabel": "会话失败",
+    "loadingConversation": "正在加载对话",
     "prompt": {
       "queueFailed": "无法将已保存的提示词加入队列",
       "unavailable": "没有可用的已保存提示词。",

@@ -82,6 +82,7 @@ import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
+import { resolveSavedTranscript } from '../core/session-sync/saved-transcript';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
@@ -889,6 +890,7 @@ const DISABLED_CHAT_ENGINE_SYNC = {
   retryTranscript: () => {},
   isBusy: false,
   isLoading: false,
+  mirrorState: 'idle' as ReturnType<typeof useSessionSync>['mirrorState'],
   diffs: [] as ReturnType<typeof useSessionSync>['diffs'],
   todos: [] as ReturnType<typeof useSessionSync>['todos'],
   hasOlder: false,
@@ -1161,6 +1163,24 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     () => messagesBeforeRewind(sync.messages, restRewind),
     [sync.messages, restRewind],
   );
+  // 5a. Can this session show its saved conversation before the computer
+  // wakes? A host paints placeholder rows while the answer is `loading` and
+  // its boot screen only on `none` — see `core/session-sync/saved-transcript`.
+  const savedTranscript = resolveSavedTranscript({
+    enabled: startEnabled && chatEngine,
+    hasMessages: sync.messages.length > 0,
+    history: !transcriptHistoryEnabled
+      ? transcriptHistoryFlag.isLoading
+        ? 'loading'
+        : 'off'
+      : transcriptHistory.isLoading
+        ? 'loading'
+        : transcriptHistory.envelope
+          ? 'present'
+          : 'absent',
+    mirror: sync.mirrorState,
+    root: ocSessionId ? 'known' : canonicalSession.pinSettled ? 'unknown' : 'pending',
+  });
 
   useEffect(() => {
     setRewindPending(false);
@@ -1584,6 +1604,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     isBusy: working.state === 'working',
     isCompacting,
     isLoading: sync.isLoading,
+    /**
+     * Can the saved conversation show before the computer wakes?
+     * `loading` — a saved copy may still paint (show placeholder rows);
+     * `shown` — messages are in the store; `none` — nothing can paint until
+     * the runtime answers (show the boot screen). An unknown is `loading`,
+     * never `none`.
+     */
+    savedTranscript,
     isError: terminal || !!startError || !!runtimeSessionError,
     /** Whether there are open interactive prompts (questions/permissions). */
     hasPending: questions.length > 0 || permissions.length > 0,

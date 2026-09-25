@@ -1613,6 +1613,7 @@
     "backToProject": "Назад на пројекат",
     "delete": "Обриши сесију",
     "failedLabel": "Неуспешна сесија",
+    "loadingConversation": "Учитавање разговора",
     "prompt": {
       "queueFailed": "Није могуће ставити сачувани упит у ред",
       "unavailable": "Сачувани упит није доступан.",

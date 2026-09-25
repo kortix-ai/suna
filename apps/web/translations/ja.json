@@ -1613,6 +1613,7 @@
     "backToProject": "プロジェクトに戻る",
     "delete": "セッションを削除",
     "failedLabel": "失敗したセッション",
+    "loadingConversation": "会話を読み込んでいます",
     "prompt": {
       "queueFailed": "保存済みのプロンプトをキューに追加できませんでした",
       "unavailable": "利用できる保存済みのプロンプトはありません。",
