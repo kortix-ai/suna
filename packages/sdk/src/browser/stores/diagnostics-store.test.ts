@@ -48,12 +48,17 @@ describe('persistence through sessionStorage', () => {
   // Each case installs its own `window` and bare `sessionStorage` global. Put
   // the originals back so no mutation leaks into another case.
   const globals = globalThis as Record<string, unknown>;
-  const ORIGINAL = { window: globals.window, sessionStorage: globals.sessionStorage };
+  const ORIGINAL = {
+    window: globals.window,
+    localStorage: globals.localStorage,
+    sessionStorage: globals.sessionStorage,
+  };
   const PERSIST_KEY = 'kortix-diagnostics';
 
   beforeEach(() => useDiagnosticsStore.getState().clearAll());
   afterEach(() => {
     globals.window = ORIGINAL.window;
+    globals.localStorage = ORIGINAL.localStorage;
     globals.sessionStorage = ORIGINAL.sessionStorage;
   });
 
@@ -83,6 +88,32 @@ describe('persistence through sessionStorage', () => {
     storage.map.set(PERSIST_KEY, written!);
     await useDiagnosticsStore.persist.rehydrate();
     expect(useDiagnosticsStore.getState().byFile['/workspace/a.ts']).toMatchObject([{ message: 'boom' }]);
+  });
+
+  test('corrupt saved JSON rehydrates to nothing and never throws', async () => {
+    const storage = mapStorage();
+    globals.window = { sessionStorage: storage };
+    useDiagnosticsStore.setState({ byFile: { '/workspace/kept.ts': [{ file: '/workspace/kept.ts', ...diag }] } });
+    storage.map.set(PERSIST_KEY, '{not json');
+
+    // rehydrate() returns a thenable, not a Promise; awaiting it throws if it rejects.
+    await useDiagnosticsStore.persist.rehydrate();
+    expect(useDiagnosticsStore.getState().byFile['/workspace/kept.ts']).toHaveLength(1);
+  });
+
+  test('clearStorage removes the sessionStorage entry and leaves localStorage alone', () => {
+    const session = mapStorage();
+    const local = mapStorage();
+    globals.window = { sessionStorage: session, localStorage: local };
+    globals.localStorage = local;
+    local.map.set(PERSIST_KEY, 'local-copy');
+
+    useDiagnosticsStore.getState().setFileDiagnostics('/workspace/a.ts', [{ file: '/workspace/a.ts', ...diag }]);
+    expect(session.map.has(PERSIST_KEY)).toBe(true);
+
+    useDiagnosticsStore.persist.clearStorage();
+    expect(session.map.has(PERSIST_KEY)).toBe(false);
+    expect(local.map.get(PERSIST_KEY)).toBe('local-copy');
   });
 
   test('a null sessionStorage (embedded WebView) keeps the store in memory and never throws', async () => {

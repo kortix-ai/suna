@@ -2,11 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import {
-  safeSessionGetItem,
-  safeSessionRemoveItem,
-  safeSessionSetItem,
-} from '../../platform/storage/managed-storage';
+import { createSafeSessionJSONStorage } from '../../platform/storage/managed-storage';
 
 // ============================================================================
 // Types
@@ -401,26 +397,10 @@ export const useDiagnosticsStore = create<DiagnosticsState>()(
 }),
   {
     name: 'kortix-diagnostics',
-    // Every read and write goes through the SDK's never-throw sessionStorage
-    // helpers. Where storage is missing, blocked or `null` (React Native, Safari
-    // private mode, embedded WebViews), diagnostics stay in memory only.
-    storage: {
-      getItem: (name) => {
-        const str = safeSessionGetItem(name);
-        if (!str) return null;
-        try {
-          return JSON.parse(str);
-        } catch {
-          return null;
-        }
-      },
-      setItem: (name, value) => {
-        safeSessionSetItem(name, JSON.stringify(value));
-      },
-      removeItem: (name) => {
-        safeSessionRemoveItem(name);
-      },
-    },
+    // The SDK's never-throw sessionStorage. Where storage is missing, blocked
+    // or `null` (React Native, Safari private mode, embedded WebViews),
+    // diagnostics stay in memory only. Corrupt saved JSON hydrates nothing.
+    storage: createSafeSessionJSONStorage<DiagnosticsState>(),
     partialize: (state) => ({ byFile: state.byFile }) as unknown as DiagnosticsState,
   },
 ));

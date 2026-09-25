@@ -22,6 +22,8 @@
  *     on every write, so an ephemeral key space can't grow unbounded.
  *  3. `createSafeJSONStorage` gives every zustand `persist` store the same
  *     never-throw guarantee, so no store can ever be the crash site again.
+ *     `createSafeSessionJSONStorage` is the same for a store that persists to
+ *     sessionStorage.
  *
  * Anything that should be sacrificed under memory pressure must register its
  * key family here (ScopedCache does this for you). Durable user preferences are
@@ -329,4 +331,21 @@ export const safeLocalStorage: StateStorage = {
 /** Drop-in replacement for `createJSONStorage(() => localStorage)`. */
 export function createSafeJSONStorage<S>() {
   return createJSONStorage<S>(() => safeLocalStorage);
+}
+
+/**
+ * The sessionStorage twin of `safeLocalStorage`. A write that does not fit, or
+ * a missing, blocked or `null` sessionStorage, degrades to "nothing saved".
+ */
+export const safeSessionStorage: StateStorage = {
+  getItem: (name) => safeSessionGetItem(name),
+  setItem: (name, value) => {
+    safeSessionSetItem(name, value);
+  },
+  removeItem: (name) => safeSessionRemoveItem(name),
+};
+
+/** Drop-in replacement for `createJSONStorage(() => sessionStorage)`. */
+export function createSafeSessionJSONStorage<S>() {
+  return createJSONStorage<S>(() => safeSessionStorage);
 }

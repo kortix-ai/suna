@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
+  createSafeSessionJSONStorage,
   registerDisposableKey,
   pruneAllRegisteredCaches,
   safeGetItem,
@@ -7,6 +8,7 @@ import {
   safeSessionGetItem,
   safeSessionRemoveItem,
   safeSessionSetItem,
+  safeSessionStorage,
   safeSetItem,
   ScopedCache,
 } from './managed-storage';
@@ -71,6 +73,19 @@ function install(budget: number): BudgetStorage {
   globals.localStorage = store;
   globals.sessionStorage = store;
   return store;
+}
+
+/**
+ * A browser with a distinct object behind each accessor, so a case can prove a
+ * helper touched the storage it names and left the other one alone.
+ */
+function installSeparate(budget: number): { local: BudgetStorage; session: BudgetStorage } {
+  const local = new BudgetStorage(budget);
+  const session = new BudgetStorage(budget);
+  globals.window = { localStorage: local, sessionStorage: session };
+  globals.localStorage = local;
+  globals.sessionStorage = session;
+  return { local, session };
 }
 
 /**
@@ -229,12 +244,71 @@ describe('storage whose reads throw after it resolves', () => {
 });
 
 describe('sessionStorage helpers', () => {
-  test('write, read and remove through window.sessionStorage', () => {
-    const store = install(10_000);
+  test('set, get and remove touch window.sessionStorage and never window.localStorage', () => {
+    const { local, session } = installSeparate(10_000);
+
     expect(safeSessionSetItem('s', '1')).toBe(true);
+    expect(session.getItem('s')).toBe('1');
+    expect(local.keys()).toEqual([]);
     expect(safeSessionGetItem('s')).toBe('1');
-    expect(store.getItem('s')).toBe('1');
+
     safeSessionRemoveItem('s');
+    expect(session.keys()).toEqual([]);
     expect(safeSessionGetItem('s')).toBeNull();
+    expect(local.keys()).toEqual([]);
+  });
+
+  test('a key present in both storages resolves and removes only the sessionStorage copy', () => {
+    const { local, session } = installSeparate(10_000);
+    local.setItem('both', 'local');
+    session.setItem('both', 'session');
+
+    expect(safeSessionGetItem('both')).toBe('session');
+    safeSessionRemoveItem('both');
+    expect(session.getItem('both')).toBeNull();
+    expect(local.getItem('both')).toBe('local');
+  });
+});
+
+describe('safeSessionStorage', () => {
+  test('routes every StateStorage call to window.sessionStorage', () => {
+    const { local, session } = installSeparate(10_000);
+
+    safeSessionStorage.setItem('z', 'v');
+    expect(session.getItem('z')).toBe('v');
+    expect(safeSessionStorage.getItem('z')).toBe('v');
+    safeSessionStorage.removeItem('z');
+    expect(session.keys()).toEqual([]);
+    expect(local.keys()).toEqual([]);
+  });
+
+  test('never throws on a null sessionStorage', () => {
+    installNullStorage();
+    expect(safeSessionStorage.getItem('z')).toBeNull();
+    expect(() => safeSessionStorage.setItem('z', 'v')).not.toThrow();
+    expect(() => safeSessionStorage.removeItem('z')).not.toThrow();
+  });
+});
+
+describe('createSafeSessionJSONStorage', () => {
+  test('round-trips JSON through window.sessionStorage only', () => {
+    const { local, session } = installSeparate(10_000);
+    const storage = createSafeSessionJSONStorage<{ n: number }>()!;
+
+    storage.setItem('p', { state: { n: 1 }, version: 0 });
+    expect(JSON.parse(session.getItem('p')!)).toEqual({ state: { n: 1 }, version: 0 });
+    expect(storage.getItem('p')).toEqual({ state: { n: 1 }, version: 0 });
+
+    storage.removeItem('p');
+    expect(session.keys()).toEqual([]);
+    expect(local.keys()).toEqual([]);
+  });
+
+  test('a null sessionStorage reads as empty and drops writes without throwing', () => {
+    installNullStorage();
+    const storage = createSafeSessionJSONStorage<{ n: number }>()!;
+    expect(storage.getItem('p')).toBeNull();
+    expect(() => storage.setItem('p', { state: { n: 1 }, version: 0 })).not.toThrow();
+    expect(() => storage.removeItem('p')).not.toThrow();
   });
 });

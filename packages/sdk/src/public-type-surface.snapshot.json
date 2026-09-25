@@ -4205,6 +4205,7 @@
   "./internal/managed-storage": [
     "ScopedCache",
     "createSafeJSONStorage",
+    "createSafeSessionJSONStorage",
     "pruneAllRegisteredCaches",
     "pruneDisposableCaches",
     "registerDisposableFamily",
@@ -4215,6 +4216,7 @@
     "safeSessionGetItem",
     "safeSessionRemoveItem",
     "safeSessionSetItem",
+    "safeSessionStorage",
     "safeSetItem"
   ],
   "./opencode-client": [
