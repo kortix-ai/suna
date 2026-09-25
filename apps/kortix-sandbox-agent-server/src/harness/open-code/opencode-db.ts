@@ -63,7 +63,7 @@ export const DB_BUSY_TIMEOUT_MS = 2_000
  *
  * Duplicated, not imported: this daemon ships inside the sandbox image and
  * cannot import from the monorepo (same constraint `proxy.ts` documents for
- * `isBlockingTurnRequest`). `opencode-db.versions.test.ts` asserts the pin in
+ * `isBlockingTurnRequest`). `opencode-db.test.ts` asserts the pin in
  * `packages/shared/src/runtime-versions.json` is still covered here, so a bump
  * that outruns this list fails a test instead of a production read.
  */

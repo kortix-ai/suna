@@ -18,12 +18,12 @@ import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import type { Opencode } from '../harness/open-code/lifecycle'
 import { OpencodeDb } from '../harness/open-code/opencode-db'
 import { RuntimeStateStore } from '../harness/open-code/runtime-state-projection'
-import { KortixEventBus, kortixEventBus, resetKortixEventBusForTests } from '../kortix-event-bus'
+import { kortixEventBus, resetKortixEventBusForTests } from '../kortix-event-bus'
 import { createRuntimeRouter } from '../routes/runtime'
 import { createOpenCodeQueryService } from '../harness/open-code/queries'
 
 const TOKEN = 'sandbox-token'
-const SESSION = 'ses_fc5a2a353ffe4n9mPmwVuEVg5u'
+const SESSION = 'ses_test00000000000000routes'
 const auth = { Authorization: `Bearer ${TOKEN}` }
 
 // --------------------------------------------------------------------------
@@ -36,6 +36,7 @@ const TEMPLATE = '# Init\nDo the thing.\n'.repeat(80)
 
 let server: ReturnType<typeof Bun.serve>
 let opencodeCalls: string[] = []
+let opencodeUrls: string[] = []
 let acts: Array<{ path: string; body: unknown }> = []
 let permissions: unknown[] = []
 let failConfig = false
@@ -46,6 +47,7 @@ function startFakeOpencode() {
     async fetch(req) {
       const url = new URL(req.url)
       opencodeCalls.push(url.pathname)
+      opencodeUrls.push(url.pathname + url.search)
       if (req.method === 'POST') {
         acts.push({ path: url.pathname, body: await req.json().catch(() => null) })
         if (url.pathname.includes('/unknown/')) return Response.json({ error: 'nope' }, { status: 404 })
@@ -230,6 +232,7 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-runtime-'))
   dbPath = join(root, 'opencode.db')
   opencodeCalls = []
+  opencodeUrls = []
   acts = []
   permissions = []
   failConfig = false
@@ -246,7 +249,17 @@ afterEach(() => {
 describe('auth', () => {
   test('every route refuses an unauthenticated call', async () => {
     const { app } = makeRouter()
-    for (const path of ['/state', `/messages/${SESSION}`, '/events', '/turn/msg_1']) {
+    for (const path of [
+      '/state',
+      `/messages/${SESSION}`,
+      '/events',
+      '/turn/msg_1',
+      '/vcs-diff',
+      '/project-current',
+      '/config',
+      `/session/${SESSION}`,
+      `/todo/${SESSION}`,
+    ]) {
       expect((await app.request(`http://d${path}`)).status).toBe(401)
     }
     expect((await app.request('http://d/act', { method: 'POST', body: '{}' })).status).toBe(401)
@@ -450,6 +463,7 @@ describe('GET /messages/:sessionId', () => {
     const { app } = makeRouter()
     const older = (await (await app.request(`http://d/messages/${SESSION}?limit=2&before=msg_004`, { headers: auth })).json()) as any
     expect(older.messages.map((m: any) => m.info.id)).toEqual(['msg_002', 'msg_003'])
+    expect(older.has_more).toBe(true)
     const newer = (await (await app.request(`http://d/messages/${SESSION}?limit=10&after=msg_004`, { headers: auth })).json()) as any
     expect(newer.messages.map((m: any) => m.info.id)).toEqual(['msg_005', 'msg_006'])
     expect(newer.has_more).toBe(false)
@@ -480,9 +494,12 @@ describe('GET /messages/:sessionId', () => {
   })
 
   test('the page limit is bounded', async () => {
+    rmSync(dbPath, { force: true })
+    buildDb(205, 8)
     const { app } = makeRouter()
     const body = (await (await app.request(`http://d/messages/${SESSION}?limit=99999`, { headers: auth })).json()) as any
-    expect(body.count).toBe(6)
+    expect(body.count).toBe(200)
+    expect(body.has_more).toBe(true)
   })
 })
 
@@ -556,9 +573,7 @@ describe('GET /events (SSE)', () => {
 
   test('an unreplayable cursor gets kortix.resync and then live events, never a silent hole', async () => {
     const { app } = makeRouter()
-    // A tiny ring so the gap is guaranteed unreplayable.
-    const bus = new KortixEventBus('e-test', 2)
-    ;(globalThis as any).__unusedBus = bus
+    // A cursor from another daemon boot cannot be replayed onto this one.
     const live = kortixEventBus()
     for (let i = 0; i < 5; i++) publishOpenCodeEvent(live, { type: 'x', properties: {} })
 
@@ -573,24 +588,34 @@ describe('GET /events (SSE)', () => {
     expect(events[2]).toMatchObject({ type: 'session.idle', seq: 6 })
   })
 
-  test('the heartbeat is a TYPED event and carries no seq', async () => {
-    const cfg = { sandboxToken: TOKEN, workspace: '/workspace', opencodeInternalPort: 4096, opencodeStandbyPort: 4097, defaultOpencodeConfigDir: '/workspace/.kortix/opencode' } as Config
-    const opencode = { getInternalUrl: () => `http://127.0.0.1:${server.port}` } as unknown as Opencode
-    const db = new OpencodeDb(dbPath)
-    const app = createRuntimeRouter(cfg, createOpenCodeQueryService(opencode, {
-      db,
-      state: new RuntimeStateStore({ opencode, cfg, db, pinnedSessionId: () => SESSION, daemonBuild: () => null }),
-      pinnedSessionId: () => SESSION,
-    }).bind({ cfg }))
-    const res = await app.request('http://d/events', { headers: auth })
-    const [hello] = await readFrames(res, 1)
+  test('the heartbeat is a TYPED event every 15 s and carries no seq', async () => {
+    // Capture the stream's interval instead of sleeping 15 s. What matters is
+    // the WIRE FORM: a `:` comment would be swallowed by every SSE parser and
+    // leave consumer watchdogs blind — the defect sse-keepalive.ts records.
+    const { app } = makeRouter()
+    const realSetInterval = globalThis.setInterval
+    const intervals: Array<{ tick: () => void; ms: number | undefined }> = []
+    globalThis.setInterval = ((tick: () => void, ms?: number) => {
+      intervals.push({ tick, ms })
+      return realSetInterval(() => {}, 1 << 30)
+    }) as typeof setInterval
+    let res: Response
+    try {
+      res = await app.request('http://d/events', { headers: auth })
+    } finally {
+      globalThis.setInterval = realSetInterval
+    }
+    const framesPromise = readFrames(res, 2)
+    await Bun.sleep(10)
+    expect(intervals.map((i) => i.ms)).toEqual([15_000])
+    intervals[0]!.tick()
+    const [hello, heartbeat] = await framesPromise
     expect(hello).toContain('event: kortix.hello')
-    // Cadence itself is asserted by the constant, not by sleeping 15 s in a
-    // unit test. What matters here is the WIRE FORM: a `:` comment would be
-    // swallowed by every SSE parser and leave consumer watchdogs blind — the
-    // defect sse-keepalive.ts records from the 2026-08-26 incident.
-    const { EVENT_HEARTBEAT_MS } = await import('../routes/runtime')
-    expect(EVENT_HEARTBEAT_MS).toBe(15_000)
+    expect(heartbeat!.split('\n')[0]).toBe('event: kortix.heartbeat')
+    expect(heartbeat).not.toMatch(/^id:/m)
+    const data = dataOf(heartbeat!)
+    expect(data.type).toBe('kortix.heartbeat')
+    expect(data).not.toHaveProperty('seq')
   })
 
   test('cancelling the stream unsubscribes', async () => {
@@ -641,6 +666,18 @@ describe('POST /act', () => {
     })
     expect(res.status).toBe(200)
     expect(acts[0]!.path).toBe(`/session/${SESSION}/abort`)
+  })
+
+  test('stop with no session named and none pinned is a 409, and reaches nothing', async () => {
+    const { app } = makeRouter({ pinnedSessionId: () => null })
+    const res = await app.request('http://d/act', {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'stop' }),
+    })
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ ok: false, error: 'no opencode session pinned' })
+    expect(acts).toEqual([])
   })
 
   test('revert and unrevert both work, and revert needs a message id', async () => {
@@ -748,12 +785,8 @@ describe('GET /kortix/opencode/* passthroughs — the last raw reads move onto /
     const { app } = makeRouter()
     const res = await app.request('http://d/vcs-diff?mode=git', { headers: auth })
     expect(res.status).toBe(200)
-    expect(opencodeCalls).toContain('/vcs/diff')
-  })
-
-  test('a passthrough refuses an unauthenticated request', async () => {
-    const { app } = makeRouter()
-    expect((await app.request('http://d/vcs-diff')).status).toBe(401)
+    const forwarded = new URL(`http://x${opencodeUrls.find((u) => u.startsWith('/vcs/diff'))}`)
+    expect(forwarded.searchParams.get('mode')).toBe('git')
   })
 })
 

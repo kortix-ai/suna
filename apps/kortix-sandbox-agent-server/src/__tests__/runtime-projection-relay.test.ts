@@ -256,6 +256,26 @@ describe('scheduleRuntimeProjectionPush', () => {
     expect(posts).toBe(3)
   })
 
+  test("a 503 with Retry-After waits the server's delay, not the ladder step", async () => {
+    // The ladder base here is 10 ms; Retry-After: 1 asks for 1 s.
+    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    const at: number[] = []
+    globalThis.fetch = (async () => {
+      at.push(performance.now())
+      if (at.length === 1) {
+        return new Response('{"error":"busy"}', { status: 503, headers: { 'Retry-After': '1' } })
+      }
+      return new Response('{}', { status: 200 })
+    }) as unknown as typeof fetch
+
+    scheduleRuntimeProjectionPush('boot')
+    await settle(250)
+    expect(at).toHaveLength(1)
+    await settle(1_000)
+    expect(at).toHaveLength(2)
+    expect(at[1]! - at[0]!).toBeGreaterThanOrEqual(950)
+  })
+
   test('503 retries are bounded — a permanently unavailable API is abandoned', async () => {
     __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
     let posts = 0
