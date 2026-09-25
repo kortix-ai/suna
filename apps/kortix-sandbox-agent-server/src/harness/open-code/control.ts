@@ -3,6 +3,7 @@ import { requireOpenCodeConfig, resolveOpencodeConfigDirRelative } from './confi
 import { writeAgentEnvFile } from '../../agent-env-file'
 import { syncEgressShim } from '../../egress-shim'
 import { invalidateRuntimeState } from './runtime-state-projection'
+import { noteOpencodeStopRequested } from './instance-guard'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { llmProxyBaseUrl, setLlmProxyToken } from '../../llm-proxy'
 import { logger } from '../../logger'
@@ -369,6 +370,7 @@ export function createOpenCodeControlService(
 
           const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
           const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/abort?directory=${encodeURIComponent(workspace)}`
+          noteOpencodeStopRequested(sessionId, 'kortix-abort')
           try {
             // CodeQL js/file-access-to-http (alert 6375) flags `url` here because
             // `sessionId` comes from the pin FILE. Nothing leaves the sandbox:

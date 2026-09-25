@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { WIRE_ID_TIME_SCALE, wireIdTime } from '../wire-message-id';
 import type { PlacementTipMessage } from './forwarded-placement';
@@ -202,5 +202,29 @@ describe('stopPausedOnWireScope', () => {
     expect(sql).toContain("IN ('forwarded', 'delivered')");
     // Recent only — an old delivered row is history, not a Stop's business.
     expect(sql).toContain("interval '10 minutes'");
+  });
+});
+
+/**
+ * The settle's re-abort is part of the Stop the user pressed. It reaches
+ * OpenCode without passing the sandbox proxy that stamps `UserStop`, and it
+ * usually reaches OpenCode FIRST: the hold route starts it before the client
+ * sends its own abort. An unstamped re-abort closed the user's own turn as
+ * `failed` with a bare `MessageAbortedError`, and the web showed "This turn
+ * stopped before it finished. No reason was reported." (prod 2026-09-25).
+ */
+describe('the settle re-abort is a requested stop', () => {
+  const aborts: Array<[string, unknown]> = [];
+  mock.module('./abort-runtime-turn', () => ({
+    abortRuntimeTurn: async (sessionId: string, opts?: unknown) => {
+      aborts.push([sessionId, opts]);
+      return true;
+    },
+  }));
+
+  test('the live abort stamps UserStop on the open turn before it aborts', async () => {
+    const { liveHoldSettleDeps } = await import('./inbox-hold-settle');
+    expect(await liveHoldSettleDeps.abort('ses-1')).toBe(true);
+    expect(aborts).toEqual([['ses-1', { requestedStop: true }]]);
   });
 });

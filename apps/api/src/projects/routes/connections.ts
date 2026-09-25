@@ -22,7 +22,7 @@ import {
 } from '../lib/connection-access';
 import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
 import { requestAgentPrincipalReach } from '../lib/personal-resources';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { canonicalConnectorAlias } from '../lib/session-connector-bindings';
 import { ConnectionViewSchema, serializeConnection } from '../lib/connection-view';
 
@@ -300,7 +300,7 @@ projectsApp.openapi(
     if (c.get('authType') === 'service_account') {
       return c.json({ error: 'Only human members can reconcile user connections' }, 403);
     }
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const connectorAlias = canonicalConnectorAlias(
       typeof body.connector_alias === 'string' ? body.connector_alias.trim() : '',
     );
@@ -385,7 +385,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
     );
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const requestedAlias =
       typeof body.connector_alias === 'string' ? body.connector_alias.trim() : '';
     const connectorAlias = canonicalConnectorAlias(requestedAlias);

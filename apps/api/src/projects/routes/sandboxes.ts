@@ -30,6 +30,7 @@ import { sendSessionCreateError } from '../lib/sessions';
 import { createSession } from '../session-lifecycle';
 import { rebuildFailureResponse, runProviderActions } from '../../snapshots/provider-actions';
 import { templateProviderObservation } from '../lib/template-provider-observation';
+import { readJsonObject } from '../../shared/http-body';
 
 /**
  * Derive the ONE sandbox status every surface renders — sidebar alert, Customize
@@ -377,12 +378,7 @@ projectsApp.openapi(
   // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
-  let body: { slug?: unknown; sandbox_slug?: unknown } = {};
-  try {
-    body = (await c.req.json()) ?? {};
-  } catch {
-    /* empty body is fine */
-  }
+  const body = await readJsonObject(c);
   const slugRaw = (typeof body.slug === 'string' && body.slug)
     || (typeof body.sandbox_slug === 'string' && body.sandbox_slug)
     || undefined;

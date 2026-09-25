@@ -6,6 +6,8 @@ import {
   getEnv,
   handleError,
   kortixConnectorCall,
+  kortixDownload,
+  kortixGet,
   kortixPost,
   kortixProjectId,
   kortixSessionId,
@@ -29,33 +31,9 @@ function resolveDownloadOutput(outPath: string): string {
 }
 
 async function downloadFile(url: string, outPath: string) {
-  const apiUrl = getEnv('KORTIX_API_URL');
-  const tok = getEnv('KORTIX_TOKEN');
   const projectId = kortixProjectId();
-  if (!apiUrl || !tok || !projectId) {
-    throw new CliError(
-      'KORTIX_API_URL / KORTIX_TOKEN / KORTIX_PROJECT_ID not set — cannot download.',
-    );
-  }
-  const proxyUrl = new URL(
-    `/v1/projects/${projectId}/channels/teams/file?url=${encodeURIComponent(url)}`,
-    apiUrl,
-  ).href;
-  const res = await fetch(proxyUrl, {
-    headers: { Authorization: `Bearer ${tok}` },
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!res.ok) {
-    let msg = `Download failed: HTTP ${res.status}`;
-    try {
-      const j = (await res.json()) as { error?: string };
-      if (j?.error) msg = j.error;
-    } catch {
-      /* keep */
-    }
-    throw new CliError(msg);
-  }
-  const buf = await res.arrayBuffer();
+  if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set — cannot download.');
+  const buf = await kortixDownload(`/projects/${projectId}/channels/teams/file`, { url });
   const resolvedOut = resolveDownloadOutput(outPath);
   mkdirSync(dirname(resolvedOut), { recursive: true });
   await Bun.write(resolvedOut, Buffer.from(buf));
@@ -262,15 +240,7 @@ async function main(): Promise<void> {
     case 'conversations': {
       const projectId = kortixProjectId();
       if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set.');
-      const apiUrl = getEnv('KORTIX_API_URL');
-      const tok = getEnv('KORTIX_TOKEN');
-      if (!apiUrl || !tok) throw new CliError('KORTIX_API_URL / KORTIX_TOKEN not set.');
-      const res = await fetch(
-        new URL(`/v1/projects/${projectId}/channels/teams/conversations`, apiUrl).href,
-        { headers: { Authorization: `Bearer ${tok}` }, signal: AbortSignal.timeout(30_000) },
-      );
-      if (!res.ok) throw new CliError(`Could not list conversations: HTTP ${res.status}`);
-      out(await res.json());
+      out(await kortixGet(`/projects/${projectId}/channels/teams/conversations`));
       break;
     }
     case 'post': {

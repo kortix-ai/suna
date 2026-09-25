@@ -116,8 +116,13 @@ is rejected rather than used to select that old root.
 - `E2E_GREP='33 — ' pnpm test -- --browser-only`: opens sessions with `/start` held and the
   saved-copy reads delayed 800 ms. A session with a saved copy (flag on or off, by URL or from
   the sidebar) shows skeleton rows and then the conversation, never the full-screen boot screen;
-  a session without one still shows the boot screen. `BENCH_OUT=<file>` writes the timeline, and
-  the run saves skeleton and conversation screenshots in both themes and at 720x480.
+  a session without one still shows the boot screen. Each session draws its own skeleton rows,
+  seeded by its id, and the same rows from the route's loading boundary, the server render, and
+  the page: the journey fails if the rows change while shown, if two sessions draw the same rows,
+  or if a hydration error names the skeleton. One pulse travels down the rows, so their opacities
+  differ at any instant; with reduced motion every row holds still. `BENCH_OUT=<file>` writes the
+  timeline, and the run saves skeleton and conversation screenshots in both themes and at
+  720x480, plus four frames of the pulse.
 - `apps/api/src/__tests__/integration-session-transcript-capture.test.ts`: real PostgreSQL writes
   for more than 500 messages, retries, idempotence, concurrent captures, and flag rollback.
 - SDK hook tests cover disabled reads, missing history, session switching, and late responses.

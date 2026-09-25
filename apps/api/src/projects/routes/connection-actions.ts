@@ -26,7 +26,7 @@ import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { projectsApp } from '../lib/app';
 import { loadMutableConnection } from '../lib/connection-mutation';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { ConnectionViewSchema, serializeConnection } from '../lib/connection-view';
 
 projectsApp.openapi(
@@ -50,8 +50,8 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const connectionId = c.req.param('connectionId');
-    const body = await readBody(c);
-    const validated = validateConnectionLabel(body?.label);
+    const body = await readJsonObject(c);
+    const validated = validateConnectionLabel(body.label);
     if (!validated.ok) return c.json({ error: validated.error }, 400);
     const mutable = await loadMutableConnection(c, projectId, connectionId);
     if (!mutable) return c.json({ error: 'Not found' }, 404);
@@ -132,13 +132,13 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
       if (!mutable) return c.json({ error: 'Not found' }, 404);
       const { loaded, connection } = mutable;
       if (operation === 'credential') {
-        const body = await readBody(c);
+        const body = await readJsonObject(c);
         const parsed = UpdateConnectionCredentialInputSchema.safeParse(body);
         if (!parsed.success) {
           return c.json(
             {
               error:
-                body?.oauth2 != null
+                body.oauth2 != null
                   ? (parsed.error.issues[0]?.message ?? 'invalid OAuth2 credential')
                   : 'value is required',
             },
@@ -324,7 +324,7 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
         const stableUserId = composioUserId(connectionId);
         const metadata = (connection.metadata ?? {}) as Record<string, unknown>;
         if (operation === 'connect') {
-          const body = await readBody(c);
+          const body = await readJsonObject(c);
           const redirects =
             body.success_redirect_uri || body.error_redirect_uri
               ? {
@@ -432,7 +432,7 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
         return c.json({ error: 'not a pipedream connector' }, 404);
       }
       if (operation === 'connect') {
-        const body = await readBody(c);
+        const body = await readJsonObject(c);
         const redirects =
           body.success_redirect_uri || body.error_redirect_uri
             ? {
