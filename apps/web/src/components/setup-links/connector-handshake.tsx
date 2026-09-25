@@ -33,9 +33,13 @@ export function ConnectorAppMark({
   return (
     <span
       className={cn(
-        'border-border flex shrink-0 items-center justify-center overflow-hidden border',
+        'flex shrink-0 items-center justify-center overflow-hidden',
+        // An outline, not a border: it is painted over the image, so a full-bleed
+        // logo keeps the tile's exact size and a white-ground logo (Linear,
+        // Asana) still has an edge on a light card instead of floating.
+        'outline-border outline-1 -outline-offset-1',
         LOGO_TILE_BACKGROUND,
-        size === 'md' ? 'size-8 rounded-md p-1' : 'size-5 rounded-sm p-0.5',
+        size === 'md' ? 'size-8 rounded-md' : 'size-5 rounded-sm',
       )}
     >
       {/* eslint-disable-next-line @next/next/no-img-element -- third-party catalog logo on an arbitrary host */}
@@ -73,11 +77,25 @@ export function ConnectorHandshake({
       <span className="bg-foreground text-background flex size-8 shrink-0 items-center justify-center rounded-md">
         <KortixLogo variant="icon" size={14} />
       </span>
-      <span className="flex items-center gap-0.5">
-        <span className="bg-muted-foreground size-0.5 rounded-full" />
-        <span className="bg-muted-foreground size-0.5 rounded-full" />
-        <span className="bg-muted-foreground size-0.5 rounded-full" />
-      </span>
+      {/*
+        The bridge is one SVG, not five sized spans. Dots of 2–3px on the
+        fractional spacing grid (`--spacing` is 0.23rem) land on sub-pixel
+        positions and anti-alias into capsules and dashes. Drawn in a viewBox,
+        they are exact circles on one centre line, however the row is scaled.
+      */}
+      <svg
+        width="24"
+        height="6"
+        viewBox="0 0 24 6"
+        className="text-muted-foreground shrink-0"
+        fill="currentColor"
+      >
+        <circle cx="2" cy="3" r="1" opacity="0.3" />
+        <circle cx="7" cy="3" r="1.25" opacity="0.7" />
+        <circle cx="12" cy="3" r="1.75" />
+        <circle cx="17" cy="3" r="1.25" opacity="0.7" />
+        <circle cx="22" cy="3" r="1" opacity="0.3" />
+      </svg>
       <span className="relative flex">
         <ConnectorAppMark name={name} iconUrl={iconUrl} />
         {connected ? (
