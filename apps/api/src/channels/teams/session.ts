@@ -15,7 +15,16 @@ import { buildAgentUnavailableCard } from './agent-picker';
 import { resolveAgentGrant } from '../../projects/agents';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
-import { postTeamsIdentityPrompt, resolveTeamsActor, teamsUserId } from './identity';
+import { postTeamsIdentityPrompt, teamsUserId } from './identity';
+import { chatUser, resolveChatActor } from '../core/identity';
+import {
+  type ChatThreadKey,
+  dropChatThread,
+  findChatThread,
+  findChatThreadSession,
+  followUpRoute,
+  touchChatThread,
+} from '../core/threads';
 import {
   buildTeamsTurnEnv,
   closeAbandonedTurn,
@@ -76,7 +85,7 @@ async function resolveTeamsTurnActor(
   }
 
   const senderId = teamsUserId(activity);
-  const actor = await resolveTeamsActor(tenantId, senderId ?? '', accountId, projectId);
+  const actor = await resolveChatActor(chatUser('teams', tenantId, senderId ?? ''), { projectId, accountId });
   if ('userId' in actor) return actor.userId;
 
   // The live card is already on screen (it goes out before identity is
@@ -100,37 +109,11 @@ export async function hasConversationSession(
   conversationId: string,
   projectId?: string,
 ): Promise<boolean> {
-  if (!tenantId || !conversationId) return false;
-  const [row] = await db
-    .select({ sessionId: chatThreads.sessionId })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.platform, 'teams'),
-        eq(chatThreads.workspaceId, tenantId),
-        eq(chatThreads.threadId, conversationId),
-        projectId ? eq(chatThreads.projectId, projectId) : undefined,
-      ),
-    )
-    .limit(1);
-  return Boolean(row);
+  return !!(await findChatThread(conversationThread(tenantId, conversationId), projectId));
 }
 
-/** The project that owns this conversation's session mapping, if any. */
-async function conversationThreadProject(tenantId: string, conversationId: string): Promise<string | null> {
-  if (!tenantId || !conversationId) return null;
-  const [row] = await db
-    .select({ projectId: chatThreads.projectId })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.platform, 'teams'),
-        eq(chatThreads.workspaceId, tenantId),
-        eq(chatThreads.threadId, conversationId),
-      ),
-    )
-    .limit(1);
-  return row?.projectId ?? null;
+function conversationThread(tenantId: string, conversationId: string): ChatThreadKey {
+  return { platform: 'teams', workspaceId: tenantId, threadId: conversationId };
 }
 
 export async function deliverTeamsFollowUpToSession(input: {
@@ -390,16 +373,7 @@ async function deliverFollowUp(input: {
   });
 
   if (outcome === 'delivered') {
-    await db
-      .update(chatThreads)
-      .set({ lastMessageAt: new Date() })
-      .where(
-        and(
-          eq(chatThreads.platform, 'teams'),
-          eq(chatThreads.workspaceId, tenantId),
-          eq(chatThreads.threadId, conversationId),
-        ),
-      );
+    await touchChatThread(conversationThread(tenantId, conversationId));
     return 'done';
   }
 
@@ -436,15 +410,7 @@ async function deliverFollowUp(input: {
   // stale mapping so the caller creates a fresh session on the same card.
   console.warn('[teams-webhook] conversation mapped to a deleted session — replacing', { tenantId, conversationId, sessionId });
   if (handle) await deleteTurn(sessionId);
-  await db
-    .delete(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.platform, 'teams'),
-        eq(chatThreads.workspaceId, tenantId),
-        eq(chatThreads.threadId, conversationId),
-      ),
-    );
+  await dropChatThread(conversationThread(tenantId, conversationId));
   await clearConversationErrorNotice(tenantId, conversationId);
   return 'revive';
 }
@@ -475,14 +441,15 @@ export async function createOrJoinTeamsConversationSession(input: {
   // only against the one the conversation currently resolves to (a `/use`
   // re-points the conversation, but its running session stays where it was
   // created until `/new`).
-  const threadProjectId = await conversationThreadProject(tenantId, conversationId);
-  if (threadProjectId && threadProjectId !== projectId) {
-    if (input.ownThreadsOnly) {
-      console.warn('[teams-webhook] conversation session belongs to another project — ignoring', { projectId });
-      return;
-    }
-    if (!(await projectFeatureFlagEnabled(threadProjectId, 'teams'))) return;
-    projectId = threadProjectId;
+  const threadProject = (await findChatThread(conversationThread(tenantId, conversationId)))?.projectId;
+  const route = followUpRoute(threadProject, projectId, { ownThreadsOnly: input.ownThreadsOnly });
+  if (route.kind === 'refused') {
+    console.warn('[teams-webhook] conversation session belongs to another project — ignoring', { projectId });
+    return;
+  }
+  if (route.kind === 'thread_project') {
+    if (!(await projectFeatureFlagEnabled(route.projectId, 'teams'))) return;
+    projectId = route.projectId;
     [project] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
     if (!project) return;
   }
@@ -505,25 +472,7 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   let revived = false;
   if (tenantId && conversationId) {
-    const [existing] = await db
-      .select({
-        sessionId: chatThreads.sessionId,
-        createdBy: projectSessions.createdBy,
-        agentName: projectSessions.agentName,
-        metadata: projectSessions.metadata,
-        status: projectSessions.status,
-      })
-      .from(chatThreads)
-      .innerJoin(projectSessions, eq(projectSessions.sessionId, chatThreads.sessionId))
-      .where(
-        and(
-          eq(chatThreads.platform, 'teams'),
-          eq(chatThreads.workspaceId, tenantId),
-          eq(chatThreads.threadId, conversationId),
-          eq(chatThreads.projectId, projectId),
-        ),
-      )
-      .limit(1);
+    const existing = await findChatThreadSession(conversationThread(tenantId, conversationId), projectId);
     if (existing) {
       const next = await deliverFollowUp({
         projectId,
