@@ -7,7 +7,7 @@
 import { mock } from 'bun:test';
 import * as realProviders from '../../platform/providers';
 import * as realSandboxReaper from '../../projects/sandbox-reaper';
-import { createFakeWallet } from '../../billing/wallet/fake';
+import { createFakeWallet } from '../helpers/fake-wallet';
 
 // ─── Global Mock Registry ─────────────────────────────────────────────────────
 

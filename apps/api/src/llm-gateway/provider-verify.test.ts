@@ -1,258 +1,165 @@
-/**
- * GAP C1 — "Connected" today only means a secret row exists; it never proves
- * the key actually works. verifyProviderConnection makes one cheap, single-
- * attempt completion against the resolved upstream and classifies the
- * outcome so the UI can render "Verified" vs "Key rejected" vs "Couldn't
- * verify" instead of a blind green checkmark. Pure-logic unit tests via
- * injected deps (mirrors unit-connector-gateway.test.ts's GatewayDeps style)
- * — no DB, no network.
- */
-import { describe, expect, test } from 'bun:test';
-import {
-  GatewayResolutionError,
-  UpstreamHttpError,
-  NetworkError,
-  TimeoutError,
-} from '@kortix/llm-gateway';
+// verifyProviderConnection classifies one cheap live completion into the
+// verdict the provider UI renders. Resolution is injected; the completion
+// runs through the real `callUpstream` with `globalThis.fetch` stubbed, so
+// each row exercises the same transport a real turn uses.
+import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { GatewayResolutionError } from '@kortix/llm-gateway';
 import type { AuthedPrincipal, UpstreamDescriptor } from '@kortix/llm-gateway';
 import { verifyProviderConnection, type ProviderVerifyDeps } from './provider-verify';
 
-function principal(overrides: Partial<AuthedPrincipal> = {}): AuthedPrincipal {
-  return { userId: 'user-1', accountId: 'acct-1', projectId: 'project-1', ...overrides };
+const PRINCIPAL: AuthedPrincipal = { userId: 'user-1', accountId: 'acct-1', projectId: 'project-1' };
+
+const OPENAI_COMPAT: UpstreamDescriptor = {
+  provider: 'openai',
+  kind: 'openai-compat',
+  baseUrl: 'https://upstream.example.test/v1',
+  apiKey: 'sk-test',
+  billingMode: 'none',
+  markup: 0,
+  resolvedModel: 'gpt-4o-mini',
+};
+
+const ANTHROPIC: UpstreamDescriptor = {
+  provider: 'anthropic',
+  kind: 'anthropic',
+  baseUrl: 'https://upstream.example.test/v1',
+  apiKey: 'sk-ant-test',
+  billingMode: 'none',
+  markup: 0,
+  resolvedModel: 'claude-haiku-4-5',
+  npm: '@ai-sdk/anthropic',
+};
+
+const realFetch = globalThis.fetch;
+let fetchCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
+
+function stubFetch(answer: () => Response | Promise<Response>): void {
+  fetchCalls = [];
+  globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    fetchCalls.push({ url: String(input), body: JSON.parse(String(init?.body ?? '{}')) });
+    return answer();
+  }) as unknown as typeof fetch;
 }
 
-function descriptor(overrides: Partial<UpstreamDescriptor> = {}): UpstreamDescriptor {
+function deps(overrides: Partial<ProviderVerifyDeps> = {}): Partial<ProviderVerifyDeps> {
   return {
-    provider: 'openai',
-    kind: 'openai-compat',
-    baseUrl: 'https://api.openai.com/v1',
-    apiKey: 'sk-test',
-    billingMode: 'none',
-    markup: 0,
-    resolvedModel: 'gpt-4o-mini',
-    npm: '@ai-sdk/openai',
+    pickVerificationModel: () => 'openai/gpt-4o-mini',
+    resolveCandidates: async () => [OPENAI_COMPAT],
     ...overrides,
   };
 }
 
-function makeDeps(o: Partial<ProviderVerifyDeps> = {}): ProviderVerifyDeps {
-  return {
-    pickVerificationModel: o.pickVerificationModel ?? (() => 'openai/gpt-4o-mini'),
-    resolveCandidates: o.resolveCandidates ?? (async () => [descriptor()]),
-    callUpstream: o.callUpstream ?? (async () => new Response('{}', { status: 200 })),
-  };
-}
+const errorBody = (message: string) => JSON.stringify({ error: { message } });
 
-describe('verifyProviderConnection', () => {
-  test('no catalog model to verify against -> unknown, never calls resolveCandidates', async () => {
-    let resolveCalled = false;
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+describe('verifyProviderConnection before the upstream call', () => {
+  test('no catalog model to verify against is unknown and resolves nothing', async () => {
+    const resolveCandidates = mock(async () => [OPENAI_COMPAT]);
+
     const result = await verifyProviderConnection(
-      principal(),
+      PRINCIPAL,
       'made-up-provider',
-      makeDeps({
-        pickVerificationModel: () => null,
+      deps({ pickVerificationModel: () => null, resolveCandidates }),
+    );
+
+    expect(result).toEqual({
+      status: 'unknown',
+      message: 'No catalog model is known for "made-up-provider" to verify against.',
+    });
+    expect(resolveCandidates).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['provider_not_connected', 'not_connected'],
+    ['provider_reauth_required', 'invalid'],
+    ['model_not_found', 'unknown'],
+  ] as const)('a %s resolution error is %s and calls no upstream', async (code, status) => {
+    stubFetch(() => new Response('{}'));
+
+    const result = await verifyProviderConnection(
+      PRINCIPAL,
+      'openai',
+      deps({
         resolveCandidates: async () => {
-          resolveCalled = true;
-          return [];
+          throw new GatewayResolutionError(code, `resolution failed: ${code}`, 'hint');
         },
       }),
     );
-    expect(result.status).toBe('unknown');
-    expect(resolveCalled).toBe(false);
+
+    expect(result).toEqual({ status, message: `resolution failed: ${code}` });
+    expect(fetchCalls).toEqual([]);
   });
 
-  test('resolveCandidates throws provider_not_connected -> not_connected, never calls upstream', async () => {
-    let upstreamCalled = false;
-    const result = await verifyProviderConnection(
-      principal(),
-      'openai',
-      makeDeps({
-        resolveCandidates: async () => {
-          throw new GatewayResolutionError(
-            'provider_not_connected',
-            'No openai API key is connected for this project.',
-            'Add a key.',
-          );
-        },
-        callUpstream: async () => {
-          upstreamCalled = true;
-          return new Response('{}', { status: 200 });
-        },
-      }),
+  test('no resolved candidate is unknown', async () => {
+    const result = await verifyProviderConnection(PRINCIPAL, 'openai', deps({ resolveCandidates: async () => [] }));
+
+    expect(result).toEqual({ status: 'unknown', message: 'No upstream candidate was resolved for this provider.' });
+  });
+});
+
+describe('verifyProviderConnection upstream verdicts', () => {
+  test('an accepted key is verified after one bounded, non-streaming ping', async () => {
+    stubFetch(() => Response.json({ choices: [] }));
+
+    const result = await verifyProviderConnection(PRINCIPAL, 'openai', deps());
+
+    expect(result).toEqual({ status: 'verified', message: 'The provider accepted the key.' });
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0]?.url).toBe('https://upstream.example.test/v1/chat/completions');
+    expect(fetchCalls[0]?.body).toMatchObject({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: 'ping' }],
+      stream: false,
+      max_tokens: 16,
+    });
+  });
+
+  test.each([
+    ['a 401 with a provider message is invalid', 401, errorBody('Incorrect API key provided'), 'invalid', 'Incorrect API key provided'],
+    ['a 403 without a body is invalid', 403, '', 'invalid', 'The provider rejected the key (HTTP 403).'],
+    ['a 429 is unknown', 429, errorBody('slow down'), 'unknown', "Rate limited while verifying — couldn't confirm the key."],
+    ['a 400 with a provider message is unknown', 400, errorBody('model requires more tokens'), 'unknown', 'model requires more tokens'],
+    ['a 500 without a body is unknown', 500, '', 'unknown', "The provider returned HTTP 500 — couldn't confirm."],
+  ] as const)('an openai-compatible upstream answering %s', async (_name, status, body, verdict, message) => {
+    stubFetch(() => new Response(body, { status }));
+
+    expect(await verifyProviderConnection(PRINCIPAL, 'openai', deps())).toEqual({ status: verdict, message });
+  });
+
+  test('an AI SDK upstream rejecting the key throws, and the verdict is invalid with its message', async () => {
+    stubFetch(
+      () =>
+        new Response(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        }),
     );
-    expect(result.status).toBe('not_connected');
-    expect(result.message).toContain('No openai API key');
-    expect(upstreamCalled).toBe(false);
-  });
 
-  test('resolveCandidates throws provider_reauth_required -> invalid (needs reconnect)', async () => {
     const result = await verifyProviderConnection(
-      principal(),
-      'codex',
-      makeDeps({
-        resolveCandidates: async () => {
-          throw new GatewayResolutionError(
-            'provider_reauth_required',
-            'Your Codex session has expired or was revoked.',
-            'Reconnect.',
-          );
-        },
-      }),
-    );
-    expect(result.status).toBe('invalid');
-  });
-
-  test('resolveCandidates throws a non-credential resolution error (e.g. model_not_found) -> unknown', async () => {
-    const result = await verifyProviderConnection(
-      principal(),
-      'openai',
-      makeDeps({
-        resolveCandidates: async () => {
-          throw new GatewayResolutionError(
-            'model_not_found',
-            '"foo" is not a recognized model.',
-            'Check the id.',
-          );
-        },
-      }),
-    );
-    expect(result.status).toBe('unknown');
-  });
-
-  test('resolveCandidates returns no candidates -> unknown', async () => {
-    const result = await verifyProviderConnection(
-      principal(),
-      'openai',
-      makeDeps({ resolveCandidates: async () => [] }),
-    );
-    expect(result.status).toBe('unknown');
-  });
-
-  test('upstream call succeeds (2xx) -> verified', async () => {
-    const result = await verifyProviderConnection(
-      principal(),
-      'openai',
-      makeDeps({ callUpstream: async () => new Response('{"choices":[]}', { status: 200 }) }),
-    );
-    expect(result.status).toBe('verified');
-  });
-
-  test('upstream call sends one bounded, low-token request', async () => {
-    let seenBody: Record<string, unknown> | null = null;
-    let seenSignal: AbortSignal | undefined;
-    await verifyProviderConnection(
-      principal(),
-      'openai',
-      makeDeps({
-        callUpstream: async (body, _descriptor, opts) => {
-          seenBody = body;
-          seenSignal = opts?.signal;
-          return new Response('{}', { status: 200 });
-        },
-      }),
-    );
-    expect(seenBody).toBeTruthy();
-    expect((seenBody as any).stream).toBe(false);
-    expect(seenSignal).toBeInstanceOf(AbortSignal);
-  });
-
-  test('upstream throws UpstreamHttpError 401 -> invalid, surfaces the provider error body as a hint', async () => {
-    const result = await verifyProviderConnection(
-      principal(),
-      'openai',
-      makeDeps({
-        callUpstream: async () => {
-          throw new UpstreamHttpError(
-            401,
-            JSON.stringify({ error: { message: 'Incorrect API key provided' } }),
-            'openai',
-          );
-        },
-      }),
-    );
-    expect(result.status).toBe('invalid');
-    expect(result.message).toContain('Incorrect API key provided');
-  });
-
-  test('upstream throws UpstreamHttpError 403 -> invalid', async () => {
-    const result = await verifyProviderConnection(
-      principal(),
+      PRINCIPAL,
       'anthropic',
-      makeDeps({
-        callUpstream: async () => {
-          throw new UpstreamHttpError(403, '', 'anthropic');
-        },
-      }),
+      deps({ pickVerificationModel: () => 'anthropic/claude-haiku-4-5', resolveCandidates: async () => [ANTHROPIC] }),
     );
-    expect(result.status).toBe('invalid');
+
+    expect(result).toEqual({ status: 'invalid', message: 'invalid x-api-key' });
+    expect(fetchCalls).toHaveLength(1);
   });
 
-  test('upstream throws UpstreamHttpError 429 -> unknown (rate limited, not proof the key is bad)', async () => {
-    const result = await verifyProviderConnection(
-      principal(),
-      'openai',
-      makeDeps({
-        callUpstream: async () => {
-          throw new UpstreamHttpError(429, '', 'openai');
-        },
-      }),
-    );
-    expect(result.status).toBe('unknown');
-  });
+  test.each([
+    [
+      'a timed-out fetch',
+      () => new DOMException('The operation timed out.', 'TimeoutError'),
+      "Verification timed out — couldn't confirm the key.",
+    ],
+    ['a network failure', () => new TypeError('fetch failed: connection refused'), 'fetch failed: connection refused'],
+  ] as const)('%s is unknown', async (_name, failure, message) => {
+    stubFetch(() => {
+      throw failure();
+    });
 
-  test('upstream throws UpstreamHttpError 400 (bad request unrelated to auth) -> unknown, never invalid', async () => {
-    const result = await verifyProviderConnection(
-      principal(),
-      'openai',
-      makeDeps({
-        callUpstream: async () => {
-          throw new UpstreamHttpError(
-            400,
-            JSON.stringify({ error: { message: 'model requires more tokens' } }),
-            'openai',
-          );
-        },
-      }),
-    );
-    expect(result.status).toBe('unknown');
-  });
-
-  test('upstream throws UpstreamHttpError 500 -> unknown', async () => {
-    const result = await verifyProviderConnection(
-      principal(),
-      'openai',
-      makeDeps({
-        callUpstream: async () => {
-          throw new UpstreamHttpError(500, '', 'openai');
-        },
-      }),
-    );
-    expect(result.status).toBe('unknown');
-  });
-
-  test('upstream throws TimeoutError -> unknown, not invalid', async () => {
-    const result = await verifyProviderConnection(
-      principal(),
-      'openai',
-      makeDeps({
-        callUpstream: async () => {
-          throw new TimeoutError('attempt 1 exceeded 8000ms');
-        },
-      }),
-    );
-    expect(result.status).toBe('unknown');
-  });
-
-  test('upstream throws NetworkError -> unknown, not invalid', async () => {
-    const result = await verifyProviderConnection(
-      principal(),
-      'openai',
-      makeDeps({
-        callUpstream: async () => {
-          throw new NetworkError('ai-sdk call to openai failed');
-        },
-      }),
-    );
-    expect(result.status).toBe('unknown');
+    expect(await verifyProviderConnection(PRINCIPAL, 'openai', deps())).toEqual({ status: 'unknown', message });
   });
 });

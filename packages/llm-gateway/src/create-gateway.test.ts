@@ -129,3 +129,35 @@ describe('gateway.messages (Anthropic Messages ingress)', () => {
     ]);
   });
 });
+
+describe('gateway.listModels — scope plumbing', () => {
+  function gatewayWithSpy() {
+    const seen: Array<{ managedOnly?: boolean } | undefined> = [];
+    const gateway = createGateway(
+      makeHooks({
+        listModels: async (_principal, opts) => {
+          seen.push(opts);
+          return opts?.managedOnly ? { 'grok-4.6': { name: 'Grok 4.6' } } : { 'a/b': { name: 'B' } };
+        },
+      }),
+    );
+    return { seen, gateway };
+  }
+
+  test.each([
+    [{ managedOnly: true }, { 'grok-4.6': { name: 'Grok 4.6' } }],
+    [undefined, { 'a/b': { name: 'B' } }],
+  ])('passes the options %p straight to the catalog hook', async (opts, models) => {
+    const { seen, gateway } = gatewayWithSpy();
+    const res = await gateway.listModels('Bearer good', opts);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ models });
+    expect(seen).toEqual([opts]);
+  });
+
+  test('the scope never bypasses auth', async () => {
+    const { gateway } = gatewayWithSpy();
+    expect((await gateway.listModels(undefined, { managedOnly: true })).status).toBe(401);
+    expect((await gateway.listModels('Bearer bad', { managedOnly: true })).status).toBe(401);
+  });
+});
