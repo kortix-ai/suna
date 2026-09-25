@@ -4,8 +4,9 @@ import pg from 'pg';
  * The one reader of the `kortix` schema catalog and the migration ledger.
  *
  * `schema-contract.ts`, `verify-live-schema.ts` and `migrate.ts status`
- * (`migration-status.ts`) read a database only through this module. Each of
- * them is a pure comparison over what it returns.
+ * (`migration-status.ts`) read a database only through `readDatabase`. This
+ * module owns the connection: it opens it, runs both reads, and closes it.
+ * Each gate is a pure comparison over what `readDatabase` returns.
  *
  * Every read is read-only twice over: the session opens with
  * `default_transaction_read_only = on`, and the reads run inside
@@ -63,7 +64,7 @@ export function assertReadOnlySetting(setting: string, value: string | undefined
 
 /**
  * A `pg.Client` on a read-only session, inside an open `BEGIN READ ONLY`
- * transaction. `end()` discards the transaction.
+ * transaction. `end()` discards the transaction. Only `withReadOnly` calls it.
  *
  * `default_transaction_read_only` travels as a startup parameter. `pg` lets an
  * `options=` query parameter in the URL replace it, and a connection pooler
@@ -72,7 +73,7 @@ export function assertReadOnlySetting(setting: string, value: string | undefined
  * the client is closed and the call throws. Nothing is read before both
  * checks pass.
  */
-export async function connectReadOnly(databaseUrl: string): Promise<pg.Client> {
+async function connectReadOnly(databaseUrl: string): Promise<pg.Client> {
   const client = new pg.Client({
     connectionString: databaseUrl,
     options: '-c default_transaction_read_only=on',
@@ -93,6 +94,21 @@ export async function connectReadOnly(databaseUrl: string): Promise<pg.Client> {
   } catch (error) {
     await client.end().catch(() => {});
     throw error;
+  }
+}
+
+/**
+ * Runs `read` on a client from `connectReadOnly` and always closes the client.
+ *
+ * Test seam: the gates call `readDatabase`, never this. Tests use it to prove
+ * the session refuses writes.
+ */
+export async function withReadOnly<T>(databaseUrl: string, read: (client: pg.Client) => Promise<T>): Promise<T> {
+  const client = await connectReadOnly(databaseUrl);
+  try {
+    return await read(client);
+  } finally {
+    await client.end();
   }
 }
 
@@ -168,17 +184,40 @@ export function catalogFromRow(row: CatalogRow | undefined): Catalog {
   return catalog;
 }
 
-export async function readCatalog(client: pg.Client, schema = 'kortix'): Promise<Catalog> {
+async function readCatalog(client: pg.Client, schema = 'kortix'): Promise<Catalog> {
   const { rows } = await client.query<CatalogRow>(CATALOG_SQL, [schema]);
   return catalogFromRow(rows[0]);
 }
 
-/** Applied migration names in ledger run order. An absent ledger table reads as empty. */
-export async function readLedger(client: pg.Client): Promise<string[]> {
+/**
+ * Applied migration names in ledger run order (`ORDER BY run_on, id`: the
+ * order node-pg-migrate `up --check-order` compares). An absent ledger table
+ * reads as empty. A ledger the role cannot read throws.
+ */
+async function readLedger(client: pg.Client): Promise<string[]> {
   const { rows } = await client.query<{ exists: boolean }>(
     `SELECT to_regclass('${LEDGER_TABLE}') IS NOT NULL AS exists`,
   );
   if (!rows[0]?.exists) return [];
   const ledger = await client.query<{ name: string }>(`SELECT name FROM ${LEDGER_TABLE} ORDER BY run_on, id`);
   return ledger.rows.map((row) => row.name);
+}
+
+export interface Database {
+  /** The catalog of one schema. */
+  catalog: Catalog;
+  /** Applied migration names in ledger run order; empty when there is no ledger table. */
+  ledger: string[];
+}
+
+/**
+ * The one entry point of the schema gates: the catalog of `schema` and the
+ * migration ledger, read in one `BEGIN READ ONLY` transaction on one
+ * read-only session, which is closed before this returns.
+ */
+export async function readDatabase(databaseUrl: string, schema = 'kortix'): Promise<Database> {
+  return withReadOnly(databaseUrl, async (client) => ({
+    catalog: await readCatalog(client, schema),
+    ledger: await readLedger(client),
+  }));
 }

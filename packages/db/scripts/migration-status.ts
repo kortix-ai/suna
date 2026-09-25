@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
-import { connectReadOnly, readLedger } from './catalog';
+import { readDatabase } from './catalog';
 
 /**
  * `migrate.ts status`: which migrations has this database not applied yet?
@@ -101,7 +101,6 @@ export async function readMigrationStatus(options: {
   checkOrder: boolean;
 }): Promise<MigrationStatusPlan> {
   const fileNames = migrationNamesInRunOrder(options.migrationsDir);
-  const client = await connectReadOnly(options.databaseUrl);
-  const ledgerNames = await readLedger(client).finally(() => client.end());
-  return planMigrationStatus(fileNames, ledgerNames, { checkOrder: options.checkOrder });
+  const { ledger } = await readDatabase(options.databaseUrl);
+  return planMigrationStatus(fileNames, ledger, { checkOrder: options.checkOrder });
 }

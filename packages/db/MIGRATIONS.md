@@ -107,8 +107,8 @@ DATABASE_URL="$(env -i PATH="$PATH" HOME="$HOME" npx -y @dotenvx/dotenvx get DAT
 
 `status` lists the migration files, reads `kortix_migrations.pgmigrations`,
 and prints the difference (`scripts/migration-status.ts`). The ledger read
-goes through `scripts/catalog.ts`, the one reader that `schema-contract.ts`
-and `verify-live-schema.ts` share: its connection opens with
+goes through `readDatabase` in `scripts/catalog.ts`, the one reader that
+`schema-contract.ts` and `verify-live-schema.ts` share: its connection opens with
 `default_transaction_read_only = on` and reads inside `BEGIN READ ONLY`; if
 the server does not report both settings, `status` exits 1 before it reads
 anything. It takes no
@@ -502,10 +502,14 @@ indexes, `account_memberships` had no primary key, and 8 other constraints were
 absent, all because prod's baseline was faked (the `20260925023833525` …
 `20260925023837104` migrations close it).
 
-Run it read-only against any environment. Both connections go through
-`scripts/catalog.ts`: one catalog query and one ledger query each, on a
-read-only session inside `BEGIN READ ONLY`. The catalog is read from
-`pg_catalog`, so a role that cannot `SELECT` a table still sees it:
+Run it read-only against any environment. Both databases are read through
+`readDatabase` in `scripts/catalog.ts`: one catalog query and one ledger
+query each, on a read-only session inside `BEGIN READ ONLY`. The catalog is
+read from `pg_catalog`, so a role that cannot `SELECT` a table still sees it.
+The ledger is not: the live role needs `SELECT` on
+`kortix_migrations.pgmigrations`, or the script exits 2. Only indexes on
+base tables are compared and counted; an index on a leftover materialized
+view is ignored.
 
 ```bash
 # 1. A throwaway canonical database (PostgreSQL 15 or 16).
@@ -517,7 +521,7 @@ DATABASE_URL="$CANONICAL_DB_URL" pnpm --filter @kortix/db migrate
 # 2. The environment to check (dev | staging | prod). Bare env: see the dotenvx-secrets skill.
 export LIVE_DB_URL="$(env -i PATH="$PATH" HOME="$HOME" npx -y @dotenvx/dotenvx get DATABASE_URL -f apps/api/.env.prod)"
 
-# 3. Compare. Exit 0 = nothing missing, 1 = drift, 2 = usage or connection error.
+# 3. Compare. Exit 0 = nothing missing, 1 = drift, 2 = usage, connection or ledger-read error.
 cd packages/db && bun scripts/verify-live-schema.ts
 ```
 

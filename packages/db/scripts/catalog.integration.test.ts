@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import pg from 'pg';
-import { connectReadOnly, readCatalog, readLedger } from './catalog';
+import { readDatabase, withReadOnly } from './catalog';
 
 /**
- * The one catalog query and the one ledger query, against real PostgreSQL.
+ * `readDatabase` (the one catalog query and the one ledger query) against
+ * real PostgreSQL.
  * The db-suites lane supplies TEST_DATABASE_URL: a fresh clone of the
  * migrated template. The fixture lives in its own schema.
  */
@@ -12,6 +13,7 @@ const databaseUrl = process.env.TEST_DATABASE_URL;
 const suite = databaseUrl ? describe : describe.skip;
 const SCHEMA = 'catalog_probe';
 const READER = `catalog_probe_reader_${process.pid}`;
+const NO_LEDGER = `catalog_probe_no_ledger_${process.pid}`;
 
 async function asOwner(sql: string): Promise<void> {
   const client = new pg.Client({ connectionString: databaseUrl });
@@ -23,9 +25,22 @@ async function asOwner(sql: string): Promise<void> {
   }
 }
 
-async function read<T>(url: string, reader: (client: pg.Client) => Promise<T>): Promise<T> {
-  const client = await connectReadOnly(url);
-  return reader(client).finally(() => client.end());
+async function ownerRows<T>(sql: string): Promise<T[]> {
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    return (await client.query(sql)).rows as T[];
+  } finally {
+    await client.end();
+  }
+}
+
+/** `databaseUrl` logged in as `role` (password = role name). */
+function urlAs(role: string): string {
+  const url = new URL(databaseUrl!);
+  url.username = role;
+  url.password = role;
+  return url.toString();
 }
 
 suite('catalog.ts — real PostgreSQL', () => {
@@ -49,17 +64,28 @@ suite('catalog.ts — real PostgreSQL', () => {
       DROP ROLE IF EXISTS ${READER};
       CREATE ROLE ${READER} LOGIN PASSWORD '${READER}';
       GRANT USAGE ON SCHEMA ${SCHEMA} TO ${READER};
+      GRANT USAGE ON SCHEMA kortix_migrations TO ${READER};
+      GRANT SELECT ON kortix_migrations.pgmigrations TO ${READER};
+      DROP ROLE IF EXISTS ${NO_LEDGER};
+      CREATE ROLE ${NO_LEDGER} LOGIN PASSWORD '${NO_LEDGER}';
+      GRANT USAGE ON SCHEMA kortix_migrations TO ${NO_LEDGER};
     `);
     // A failed CONCURRENTLY build leaves an INVALID index behind.
     await asOwner(`CREATE UNIQUE INDEX CONCURRENTLY child_id_unique ON ${SCHEMA}.child (id)`).catch(() => {});
   });
 
   afterAll(async () => {
-    await asOwner(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE; DROP ROLE IF EXISTS ${READER};`);
+    await asOwner(`
+      DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE;
+      REVOKE ALL ON kortix_migrations.pgmigrations FROM ${READER}, ${NO_LEDGER};
+      REVOKE ALL ON SCHEMA kortix_migrations FROM ${READER}, ${NO_LEDGER};
+      DROP ROLE IF EXISTS ${READER};
+      DROP ROLE IF EXISTS ${NO_LEDGER};
+    `);
   });
 
   test('reads relations, columns, enum values, indexes and constraints', async () => {
-    const catalog = await read(databaseUrl!, (client) => readCatalog(client, SCHEMA));
+    const { catalog } = await readDatabase(databaseUrl!, SCHEMA);
 
     expect(catalog.relations).toEqual(
       new Map([['parent', 'table'], ['child', 'table'], ['open_children', 'view']]),
@@ -91,54 +117,84 @@ suite('catalog.ts — real PostgreSQL', () => {
   });
 
   test('a schema that does not exist is an empty catalog', async () => {
-    const catalog = await read(databaseUrl!, (client) => readCatalog(client, 'no_such_schema'));
+    const { catalog } = await readDatabase(databaseUrl!, 'no_such_schema');
     expect(catalog.relations.size + catalog.columns.size + catalog.indexes.size + catalog.constraints.size).toBe(0);
   });
 
   test('a role without privileges on a table still sees it', async () => {
-    const reader = new URL(databaseUrl!);
-    reader.username = READER;
-    reader.password = READER;
-    const catalog = await read(reader.toString(), (client) => readCatalog(client, SCHEMA));
+    const { catalog } = await readDatabase(urlAs(READER), SCHEMA);
     expect(catalog.relations.get('child')).toBe('table');
     expect(catalog.columns.has('child.state')).toBe(true);
   });
 
-  test('the ledger reads in run order', async () => {
-    const ledger = await read(databaseUrl!, readLedger);
-    expect(ledger.length).toBeGreaterThan(100);
-    const client = new pg.Client({ connectionString: databaseUrl });
-    await client.connect();
+  test('a ledger the role cannot read fails the read; it is not read as empty', async () => {
+    await expect(readDatabase(urlAs(NO_LEDGER), SCHEMA)).rejects.toThrow(/permission denied/);
+  });
+
+  test('the ledger reads in run order: run_on, then id', async () => {
+    // Rows whose run_on order differs from their id order and from their name
+    // order. ledger_c and ledger_b share a run_on; id breaks the tie. Rows are
+    // inserted in none of the three orders.
+    await asOwner(`
+      CREATE TABLE kortix_migrations.pgmigrations_saved AS TABLE kortix_migrations.pgmigrations;
+      DELETE FROM kortix_migrations.pgmigrations;
+      INSERT INTO kortix_migrations.pgmigrations (id, name, run_on) VALUES
+        (5, 'ledger_b', '2026-01-02 00:00:00'),
+        (2, 'ledger_a', '2026-01-03 00:00:00'),
+        (1, 'ledger_c', '2026-01-02 00:00:00'),
+        (3, 'ledger_d', '2026-01-01 00:00:00');
+    `);
     try {
-      const { rows } = await client.query<{ name: string }>(
-        'SELECT name FROM kortix_migrations.pgmigrations ORDER BY run_on, id',
-      );
-      expect(ledger).toEqual(rows.map((row) => row.name));
+      expect((await readDatabase(databaseUrl!, SCHEMA)).ledger).toEqual(['ledger_d', 'ledger_c', 'ledger_b', 'ledger_a']);
     } finally {
-      await client.end();
+      await asOwner(`
+        DELETE FROM kortix_migrations.pgmigrations;
+        INSERT INTO kortix_migrations.pgmigrations SELECT * FROM kortix_migrations.pgmigrations_saved;
+        DROP TABLE kortix_migrations.pgmigrations_saved;
+      `);
     }
   });
 
   test('a missing ledger reads as empty and is not created', async () => {
     await asOwner('ALTER TABLE kortix_migrations.pgmigrations RENAME TO pgmigrations_hidden');
     try {
-      expect(await read(databaseUrl!, readLedger)).toEqual([]);
+      expect((await readDatabase(databaseUrl!, SCHEMA)).ledger).toEqual([]);
     } finally {
       await asOwner('ALTER TABLE kortix_migrations.pgmigrations_hidden RENAME TO pgmigrations');
     }
   });
 
   test('every read runs in a read-only transaction', async () => {
-    const client = await connectReadOnly(databaseUrl!);
-    try {
+    await withReadOnly(databaseUrl!, async (client) => {
       expect((await client.query('SHOW transaction_read_only')).rows[0]).toEqual({ transaction_read_only: 'on' });
       await expect(client.query(`CREATE TABLE ${SCHEMA}.must_not_exist (id integer)`)).rejects.toThrow(
         /read-only transaction/,
       );
-    } finally {
-      await client.end();
+    });
+    const { catalog } = await readDatabase(databaseUrl!, SCHEMA);
+    expect(catalog.relations.has('must_not_exist')).toBe(false);
+  });
+
+  test('readDatabase closes its session, also when a read fails', async () => {
+    const tag = `catalog_probe_${process.pid}`;
+    const url = new URL(databaseUrl!);
+    url.searchParams.set('application_name', tag);
+    await readDatabase(url.toString(), SCHEMA);
+    await expect(
+      withReadOnly(url.toString(), async (client) => {
+        await client.query('SELECT 1 FROM no_such_table');
+      }),
+    ).rejects.toThrow(/no_such_table/);
+    // A backend leaves pg_stat_activity shortly after its client disconnects.
+    const openSessions = async () =>
+      (await ownerRows<{ n: number }>(
+        `SELECT count(*)::int AS n FROM pg_stat_activity WHERE application_name = '${tag}'`,
+      ))[0]!.n;
+    let open = await openSessions();
+    for (let attempt = 0; open > 0 && attempt < 20; attempt += 1) {
+      await Bun.sleep(100);
+      open = await openSessions();
     }
-    const after = await read(databaseUrl!, (c) => readCatalog(c, SCHEMA));
-    expect(after.relations.has('must_not_exist')).toBe(false);
+    expect(open).toBe(0);
   });
 });

@@ -70,11 +70,29 @@ describe('catalog.ts is the only catalog and ledger reader of the schema gates',
     }
   });
 
+  test('the gates read through readDatabase and hold no client lifecycle', () => {
+    for (const file of ['schema-contract.ts', 'verify-live-schema.ts', 'migration-status.ts']) {
+      const text = source(file);
+      const imported = [...text.matchAll(/import \{([^}]*)\} from '\.\/catalog'/g)]
+        .flatMap((match) => match[1]!.split(','))
+        .map((name) => name.trim())
+        .filter((name) => name && !name.startsWith('type '));
+      expect(imported, file).toEqual(['readDatabase']);
+      expect(text, file).toMatch(/\breadDatabase\(/);
+      expect(text, file).not.toMatch(/withReadOnly|connectReadOnly|\bclient\.|\.end\(\)/);
+    }
+  });
+
+  test('catalog.ts exports one database entry point and one test seam', () => {
+    const exported = [...source('catalog.ts').matchAll(/^export (?:async )?function (\w+)/gm)].map((m) => m[1]).sort();
+    expect(exported).toEqual(['assertReadOnlySetting', 'catalogFromRow', 'readDatabase', 'withReadOnly']);
+  });
+
   test('BEGIN READ ONLY is issued only by connectReadOnly', () => {
     const files = readdirSync(scriptsDir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
     expect(files.filter((f) => source(f).includes('BEGIN READ ONLY'))).toEqual(['catalog.ts']);
     const catalog = source('catalog.ts');
-    const body = catalog.slice(catalog.indexOf('export async function connectReadOnly'), catalog.indexOf('const CATALOG_SQL'));
+    const body = catalog.slice(catalog.indexOf('async function connectReadOnly'), catalog.indexOf('export async function withReadOnly'));
     const issued = (text: string) => text.split("query('BEGIN READ ONLY')").length - 1;
     expect(issued(body)).toBe(1);
     expect(issued(catalog)).toBe(1);

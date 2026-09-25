@@ -25,7 +25,7 @@
  */
 import { is } from 'drizzle-orm';
 import { PgTable, PgView, getTableConfig, getViewConfig } from 'drizzle-orm/pg-core';
-import { type Catalog, connectReadOnly, readCatalog } from './catalog';
+import { type Catalog, readDatabase } from './catalog';
 import { SQL_ONLY, type SqlOnlyList } from './schema-contract-sql-only';
 
 const SCHEMA = 'kortix';
@@ -193,8 +193,7 @@ async function main() {
     process.exit(2);
   }
   const declared = declaredContract(await import('../src/schema/kortix'));
-  const client = await connectReadOnly(databaseUrl);
-  const catalog = await readCatalog(client, SCHEMA).finally(() => client.end());
+  const { catalog } = await readDatabase(databaseUrl, SCHEMA);
   const { contract: live, invalid } = liveContract(catalog);
   const drift = diffContract(declared, live, SQL_ONLY, invalid);
   console.log(

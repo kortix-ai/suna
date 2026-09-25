@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { type Catalog, type CatalogRow, catalogFromRow } from './catalog';
 import {
+  comparedObjects,
+  countsLine,
   definitionKey,
   diffMissing,
   diffStructure,
@@ -88,6 +90,8 @@ describe('diffMissing (presence: canonical ⊆ live)', () => {
 
 type Part = (row: CatalogRow) => void;
 const table = (name: string): Part => (row) => row.relations.push({ name, kind: 'table', columns: [] });
+/** A view or materialized view: catalog.ts reports relkind v and m as 'view'. */
+const view = (name: string, columns: string[] = []): Part => (row) => row.relations.push({ name, kind: 'view', columns });
 const index = (name: string, tbl: string, def: string, valid = true): Part => (row) =>
   row.indexes.push({
     name,
@@ -168,6 +172,40 @@ describe('diffStructure (indexes and constraints, canonical ⊆ live)', () => {
     const canon = catalogOf([table('credit_ledger'), index('idx_credit_ledger_account_id', 'credit_ledger', LEDGER_ACCOUNT_IDX)]);
     const live = catalogOf([table('credit_ledger'), index('idx_credit_ledger_account_id', 'credit_ledger', LEDGER_ACCOUNT_IDX, false)]);
     expect(diffStructure(canon, live, NO_WAIVERS).invalidIndexes).toEqual(['idx_credit_ledger_account_id on credit_ledger']);
+  });
+
+  test('an INVALID index on a live materialized view is neither drift nor counted', () => {
+    const canon = catalogOf([table('credit_ledger'), index('idx_credit_ledger_account_id', 'credit_ledger', LEDGER_ACCOUNT_IDX)]);
+    const live = catalogOf([
+      table('credit_ledger'),
+      index('idx_credit_ledger_account_id', 'credit_ledger', LEDGER_ACCOUNT_IDX),
+      view('legacy_usage_rollup', ['day']),
+      index('legacy_usage_rollup_day', 'legacy_usage_rollup', 'CREATE UNIQUE INDEX legacy_usage_rollup_day ON kortix.legacy_usage_rollup USING btree (day)', false),
+    ]);
+    expect(diffStructure(canon, live, NO_WAIVERS)).toMatchObject({ invalidIndexes: [], extraIndexes: [], missingIndexes: [] });
+    // Its columns are counted: the catalog lists the columns of every relation, views included.
+    expect(countsLine(live)).toBe('1 tables, 1 columns, 0 enum values, 1 indexes, 0 constraints.');
+    // The same INVALID index on a table is drift.
+    const onTable = catalogOf([
+      table('credit_ledger'),
+      index('idx_credit_ledger_account_id', 'credit_ledger', LEDGER_ACCOUNT_IDX),
+      table('legacy_usage_rollup'),
+      index('legacy_usage_rollup_day', 'legacy_usage_rollup', 'CREATE UNIQUE INDEX legacy_usage_rollup_day ON kortix.legacy_usage_rollup USING btree (day)', false),
+    ]);
+    expect(diffStructure(canon, onTable, NO_WAIVERS).invalidIndexes).toEqual(['legacy_usage_rollup_day on legacy_usage_rollup']);
+    expect(countsLine(onTable)).toBe('2 tables, 0 columns, 0 enum values, 2 indexes, 0 constraints.');
+  });
+
+  test('comparedObjects normalizes every index and constraint definition once', () => {
+    const compared = comparedObjects(
+      catalogOf([
+        table('t'),
+        index('t_a_idx', 't', 'CREATE INDEX t_a_idx ON ONLY kortix.t USING btree (a)'),
+        constraint('t_fk', 't', 'f', 'FOREIGN KEY (a) REFERENCES kortix.u(id) NOT VALID', false),
+      ]),
+    );
+    expect(compared.indexes.get('t_a_idx')?.definition).toBe('CREATE INDEX ON t USING btree (a)');
+    expect(compared.constraints.get('t_fk')?.definition).toBe('FOREIGN KEY (a) REFERENCES u(id)');
   });
 
   test('indexes on a table live lacks are left to the table check', () => {
