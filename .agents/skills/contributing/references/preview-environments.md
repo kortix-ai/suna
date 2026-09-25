@@ -47,10 +47,11 @@ also gives the test state:
 ## Sign in
 
 - Sign-up is open, with magic link and password. Email auto-confirm is off.
-- Use a synthetic address such as `pr-demo-<epoch>@example.test`. Request a magic link at
-  `/auth`, then read it from Mailpit:
-  `.agents/skills/contributing/scripts/preview-auth-email.sh <origin> <email> <since-epoch>`.
-  It prints the verify link, or the 6-digit code when the email has no link.
+- `.agents/skills/contributing/scripts/preview-sign-in.sh <origin> <agent-browser-session>`
+  signs a new synthetic user (`pr-demo-<epoch>@example.test`) in to that browser session.
+- It is built on `preview-auth-email.sh <origin> <email> <since-epoch>`, which reads the
+  newest auth email from Mailpit. It prints the verify link, or the 6-digit code when the
+  email has no link. Use that script alone for a non-browser flow.
 - Billing is on with Stripe test mode. A new account is free tier, and its agents answer with
   the faux model provider. For real model output, subscribe with a Stripe test card
   (`4242 4242 4242 4242`) or connect a BYOK key.

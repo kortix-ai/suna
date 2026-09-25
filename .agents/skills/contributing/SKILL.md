@@ -56,6 +56,8 @@ gh pr create --draft --base main --label preview \
 
 - Build `<body.md>` from `.github/pull_request_template.md`, with every section filled.
   Leave the demo video line as a local path for now (step 6 replaces it).
+- Video already recorded (local stack, or no UI)? Add `--attach ./output/pr/demo.mp4` to
+  `gh pr create`. That uploads the video and rewrites the path in one step, so skip step 6.
 - Put `body.md` and the recordings in the gitignored `output/pr/` directory. Keep them out
   of tracked paths.
 - The `preview` label builds a full self-host environment for the branch and runs the
@@ -78,27 +80,32 @@ The demo is a short video of the changed behaviour on a real surface. Record on 
 preview origin by default. Use the local stack (`pnpm dev`) only when the change cannot
 reach a preview.
 
+Run it as a bash script from the repo root. zsh does not word-split, so a command stored
+in a variable fails there.
+
 ```bash
-S=$(.agents/skills/contributing/scripts/preview-origin.sh <pr> --wait)  # blocks until the head commit is live
+#!/usr/bin/env bash
+set -euo pipefail
+PR=<pr>
+S=$(.agents/skills/contributing/scripts/preview-origin.sh "$PR" --wait)   # blocks until the head commit is live
 SESSION=$(agent-browser session id --scope worktree --prefix pr-demo)
-EMAIL="pr-demo-$(date +%s)@example.test"; T0=$(date +%s)
+ab() { agent-browser --session "$SESSION" "$@"; }
 
-# Sign in first, before recording. The video never shows an auth form.
-agent-browser --session "$SESSION" open "$S/auth"
-agent-browser --session "$SESSION" snapshot -i          # find the email field and the magic-link button
-agent-browser --session "$SESSION" fill @eN "$EMAIL"
-agent-browser --session "$SESSION" click @eM
-LINK=$(.agents/skills/contributing/scripts/preview-auth-email.sh "$S" "$EMAIL" "$T0")
-agent-browser --session "$SESSION" open "$LINK"         # a 6-digit code instead: fill it into the form
+# Sign in before recording, so the video never shows an auth form.
+.agents/skills/contributing/scripts/preview-sign-in.sh "$S" "$SESSION"   # prints the synthetic email
 
-# Record the change.
 mkdir -p output/pr
-agent-browser --session "$SESSION" set viewport 1440 900
-agent-browser --session "$SESSION" record start output/pr/demo.mp4 "$S/<changed route>" --cursor
-#   …drive the change: snapshot -i, click, fill, `wait 800` between actions so a person can follow…
-agent-browser --session "$SESSION" record stop
-agent-browser --session "$SESSION" close
+ab set viewport 1440 900
+ab record start output/pr/demo.mp4 "$S/<changed route>" --cursor
+#   Drive the change: `ab snapshot -i`, then `ab click @eN`, `ab fill @eN …`.
+#   Put `ab wait 800` between actions so a person can follow.
+ab record stop
+ab close
 ```
+
+`preview-sign-in.sh` creates `pr-demo-<epoch>@example.test` and requests the sign-in email.
+It reads the link or code from the preview's Mailpit and waits until the browser leaves
+`/auth`. Load `agent-browser skills get core` for the full command set.
 
 Rules for the video:
 
@@ -135,11 +142,15 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 
 ### 7. Keep it green and current
 
+- Keep the PR mergeable: `gh pr view <pr> --json mergeable` must not say `CONFLICTING`.
+  While it conflicts, GitHub runs no `pull_request` workflow (CI, `Tests`, secret scans).
+  Only the preview runs. Merge `main` into the branch and push.
 - A push redeploys the preview in place. That redeploy skips `--target-full`, and the
   sticky comment says `live; NOT tested`. Remove and re-add `preview` to test the new
   head commit.
 - When the behaviour in the video changes, record the video again and repeat step 6.
-- Merge `main` into the branch daily.
+- Merge `main` into the branch daily. Git's rename detection carries `main`'s edits
+  through moved files. GitHub's conflict check does not, so push the merge.
 
 ### 8. Hand off
 
