@@ -19181,6 +19181,11 @@
       "expired": "このインストールリンクは無効か期限切れです。プロジェクトからインストールをやり直してください。",
       "failed": "インストールを完了できませんでした。プロジェクトからやり直してください。",
       "backToProject": "プロジェクトに戻る"
+    },
+    "secretIntakeWithheld": {
+      "title": "保存しましたが、{agent} はまだ読み取れません",
+      "grant": "{count, plural, other {# 件のシークレット}}（{names}）はエージェント {agent} のシークレットに含まれていません。カスタマイズ → エージェント → {agent} → シークレット を開いて{count, plural, =1 {それ} other {それら}}を有効にしてください。",
+      "allowlist": "{count, plural, other {# 件のシークレット}}（{names}）はこのセッションのシークレットの範囲外です。{count, plural, =1 {それ} other {それら}}を使用するには新しいセッションを開始してください。"
     }
   },
   "projectOnboarding": {

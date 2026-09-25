@@ -228,12 +228,30 @@ export function SecretIntakeForm({
       );
     case 'done':
       if (withheldNotice) {
+        const { agent, byGrant, byAllowlist } = withheldNotice;
+        const description = [
+          byGrant.length > 0
+            ? tI18nHardcoded('secretIntakeWithheld.grant', {
+                names: byGrant.join(', '),
+                count: byGrant.length,
+                agent,
+              })
+            : null,
+          byAllowlist.length > 0
+            ? tI18nHardcoded('secretIntakeWithheld.allowlist', {
+                names: byAllowlist.join(', '),
+                count: byAllowlist.length,
+              })
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' ');
         return (
           <StatusNotice
             icon={WarningCircleIcon}
             tone="warning"
-            title={withheldNotice.title}
-            description={withheldNotice.description}
+            title={tI18nHardcoded('secretIntakeWithheld.title', { agent })}
+            description={description}
           />
         );
       }

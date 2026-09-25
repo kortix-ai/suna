@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import { HostBoundaryError } from '@kortix/sdk';
+import { createTranslator } from 'next-intl';
+
+import en from '../../../translations/en.json';
+import sr from '../../../translations/sr.json';
 import {
   classifySetupLinkError,
   describeWithheldSecrets,
@@ -312,31 +316,46 @@ describe('describeWithheldSecrets', () => {
     expect(describeWithheldSecrets({ agent: 'analyst', withheld: [] })).toBeNull();
   });
 
-  test('a grant exclusion names the agent and the exact Customize path', () => {
+  test('splits withheld names by the fix each one needs', () => {
     expect(
       describeWithheldSecrets({
         agent: 'analyst',
-        withheld: [{ name: 'API_KEY', reason: 'agent_grant' }],
+        withheld: [
+          { name: 'A_KEY', reason: 'agent_grant' },
+          { name: 'B_KEY', reason: 'agent_grant' },
+          { name: 'C_KEY', reason: 'session_allowlist' },
+        ],
       }),
-    ).toEqual({
-      title: "Saved, but analyst can't read it yet",
-      description:
-        "API_KEY is not in the analyst agent's secrets. Open Customize → Agents → analyst → Secrets and enable it.",
-    });
+    ).toEqual({ agent: 'analyst', byGrant: ['A_KEY', 'B_KEY'], byAllowlist: ['C_KEY'] });
+  });
+});
+
+describe('secretIntakeWithheld catalog strings', () => {
+  // Render the real catalog entries the form uses, so a broken ICU plural
+  // fails here rather than on the form after a person saved a value.
+  const t = createTranslator({ locale: 'en', messages: en, namespace: 'hardcodedUi' });
+
+  test('title and grant fix name the agent and the Customize path', () => {
+    expect(t('secretIntakeWithheld.title', { agent: 'analyst' })).toBe(
+      "Saved, but analyst can't read it yet",
+    );
+    expect(
+      t('secretIntakeWithheld.grant', { names: 'A_KEY', count: 1, agent: 'analyst' }),
+    ).toBe(
+      "A_KEY is not in the analyst agent's secrets. Open Customize → Agents → analyst → Secrets and enable it.",
+    );
   });
 
-  test('several names and an allowlist exclusion each get their own fix', () => {
-    const notice = describeWithheldSecrets({
-      agent: 'analyst',
-      withheld: [
-        { name: 'A_KEY', reason: 'agent_grant' },
-        { name: 'B_KEY', reason: 'agent_grant' },
-        { name: 'C_KEY', reason: 'session_allowlist' },
-      ],
-    });
-    expect(notice?.description).toContain('A_KEY, B_KEY are not in the analyst agent');
-    expect(notice?.description).toContain('enable them.');
-    expect(notice?.description).toContain('C_KEY is outside this session');
-    expect(notice?.description).toContain('Start a new session to use it.');
+  test('plurals agree with the number of names', () => {
+    expect(
+      t('secretIntakeWithheld.grant', { names: 'A_KEY, B_KEY', count: 2, agent: 'analyst' }),
+    ).toContain('A_KEY, B_KEY are not in the analyst agent');
+    expect(t('secretIntakeWithheld.allowlist', { names: 'C_KEY', count: 1 })).toBe(
+      "C_KEY is outside this session's secrets. Start a new session to use it.",
+    );
+    const tsr = createTranslator({ locale: 'sr', messages: sr, namespace: 'hardcodedUi' });
+    expect(
+      tsr('secretIntakeWithheld.grant', { names: 'A_KEY, B_KEY', count: 2, agent: 'analyst' }),
+    ).toContain('нису');
   });
 });

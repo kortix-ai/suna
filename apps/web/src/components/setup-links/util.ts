@@ -189,34 +189,20 @@ export function setupLinkChipLabel(raw: string, token: string, fallback: string)
 
 /**
  * The one outcome the human must still act on: the value is saved, but the
- * agent that asked for it is not allowed to receive it. Said here because this
- * form is the only moment the human is present — the agent otherwise reports
- * the secret as unset and the human re-enters a value that was already saved.
+ * agent that asked for it is not allowed to receive it. Said on the form
+ * because it is the only moment the human is present — the agent otherwise
+ * reports the secret as unset and the human re-enters a value already saved.
+ * Returns structure only; the form renders it through the locale catalog
+ * (`hardcodedUi.secretIntakeWithheld`).
  */
 export function describeWithheldSecrets(
   result: Pick<SecretSetupLinkSubmitResult, 'agent' | 'withheld'>,
-): { title: string; description: string } | null {
+): { agent: string; byGrant: string[]; byAllowlist: string[] } | null {
   const withheld = result.withheld ?? [];
   if (!result.agent || withheld.length === 0) return null;
-  const agent = result.agent;
-  const byGrant = withheld.filter((w) => w.reason === 'agent_grant').map((w) => w.name);
-  const byAllowlist = withheld
-    .filter((w) => w.reason === 'session_allowlist')
-    .map((w) => w.name);
-  const sentences: string[] = [];
-  if (byGrant.length > 0) {
-    sentences.push(
-      `${byGrant.join(', ')} ${byGrant.length === 1 ? 'is' : 'are'} not in the ${agent} agent's ` +
-        `secrets. Open Customize → Agents → ${agent} → Secrets and enable ` +
-        `${byGrant.length === 1 ? 'it' : 'them'}.`,
-    );
-  }
-  if (byAllowlist.length > 0) {
-    sentences.push(
-      `${byAllowlist.join(', ')} ${byAllowlist.length === 1 ? 'is' : 'are'} outside this ` +
-        "session's secrets. Start a new session to use " +
-        `${byAllowlist.length === 1 ? 'it' : 'them'}.`,
-    );
-  }
-  return { title: `Saved, but ${agent} can't read it yet`, description: sentences.join(' ') };
+  return {
+    agent: result.agent,
+    byGrant: withheld.filter((w) => w.reason === 'agent_grant').map((w) => w.name),
+    byAllowlist: withheld.filter((w) => w.reason === 'session_allowlist').map((w) => w.name),
+  };
 }

@@ -19181,6 +19181,11 @@
       "expired": "Ovaj link za instalaciju je nevažeći ili je istekao. Ponovo pokrenite instalaciju iz projekta.",
       "failed": "Instalacija nije mogla da se završi. Ponovo je pokrenite iz projekta.",
       "backToProject": "Nazad na projekat"
+    },
+    "secretIntakeWithheld": {
+      "title": "Сачувано, али {agent} још не може да га прочита",
+      "grant": "{names} {count, plural, one {није} other {нису}} међу тајнама агента {agent}. Отвори Прилагоди → Агенти → {agent} → Тајне и {count, plural, one {укључи је} other {укључи их}}.",
+      "allowlist": "{names} {count, plural, one {је} other {су}} ван тајни ове сесије. Покрени нову сесију да {count, plural, one {би је користио} other {би их користио}}."
     }
   },
   "projectOnboarding": {
