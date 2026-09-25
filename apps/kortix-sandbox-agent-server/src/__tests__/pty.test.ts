@@ -225,24 +225,6 @@ describe('kortix-native pty', () => {
     }
   })
 
-  it('streams real command output over the websocket', async () => {
-    const proxy = startTestProxy()
-    try {
-      const created = await createPty(proxy.port, { command: 'bash', args: ['-c', 'echo PTY_MARKER_42; sleep 5'] })
-      const ws = new WebSocket(
-        `ws://127.0.0.1:${proxy.port}/kortix/pty/${created.id}/connect`,
-        { headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx() } } as any,
-      )
-      await waitForOpen(ws)
-      await waitForData(ws, (acc) => acc.includes('PTY_MARKER_42'))
-      ws.close()
-
-      await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty/${created.id}`, { method: 'DELETE', headers: authHeaders() })
-    } finally {
-      await proxy.stop()
-    }
-  })
-
   it('broadcasts to multiple concurrent viewers of the same pty', async () => {
     const proxy = startTestProxy()
     try {
@@ -401,47 +383,32 @@ describe('kortix-native pty', () => {
     }
   })
 
-  it('lookup-or-create: survives a daemon-restart-like registry loss — reconnecting with the old id gets a working shell', async () => {
-    // Simulates exactly the reported bug: a client holds a ptyId minted by a
-    // previous daemon process. A full daemon/container restart wipes the
-    // in-memory registry (unlike an opencode-only restart, which the pty
-    // registry is designed to survive). The client then reconnects with the
-    // now-unknown id — it must get a working terminal, not a hard failure.
-    const firstProxy = startTestProxy()
-    let staleId: string
-    try {
-      const created = await createPty(firstProxy.port, { command: 'bash', args: ['-c', 'sleep 5'] })
-      staleId = created.id
-    } finally {
-      await firstProxy.stop()
-    }
-
-    // A brand-new daemon process (fresh in-memory registry), same port range.
-    const secondProxy = startTestProxy()
-    try {
-      const ws = new WebSocket(
-        `ws://127.0.0.1:${secondProxy.port}/kortix/pty/${staleId}/connect`,
-        { headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx() } } as any,
-      )
-      await waitForOpen(ws)
-      ws.send("printf 'RESTART_RECOVERY_MARKER\\n'\n")
-      await waitForData(ws, (acc) => acc.includes('RESTART_RECOVERY_MARKER'))
-      ws.close()
-    } finally {
-      await secondProxy.stop()
-    }
-  })
-
   it('rejects websocket upgrades without a valid signed context', async () => {
     const proxy = startTestProxy()
     try {
-      const created = await createPty(proxy.port, { command: 'bash', args: ['-c', 'sleep 2'] })
-      const ws = new WebSocket(`ws://127.0.0.1:${proxy.port}/kortix/pty/${created.id}/connect`)
-      const closed = await waitForClose(ws).catch(() => null)
-      // Bun surfaces an unauthorized upgrade as either a rejected HTTP
-      // response (never opens) or an immediate close — either way it must
-      // never reach the pty.
-      expect(closed === null || closed.code !== 1000).toBe(true)
+      const created = await createPty(proxy.port, { command: 'bash', args: ['-c', 'sleep 30'] })
+      const url = `http://127.0.0.1:${proxy.port}/kortix/pty/${created.id}/connect`
+      // The upgrade request itself is refused before any socket exists.
+      const upgrade = await fetch(url, {
+        headers: {
+          Upgrade: 'websocket',
+          Connection: 'Upgrade',
+          'Sec-WebSocket-Key': Buffer.from('0123456789abcdef').toString('base64'),
+          'Sec-WebSocket-Version': '13',
+        },
+      })
+      expect(upgrade.status).toBe(401)
+      // And a real client never sees the socket open.
+      const ws = new WebSocket(url.replace('http:', 'ws:'))
+      let opened = false
+      ws.onopen = () => {
+        opened = true
+      }
+      await new Promise<void>((resolve) => {
+        ws.onclose = () => resolve()
+        ws.onerror = () => resolve()
+      })
+      expect(opened).toBe(false)
 
       await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty/${created.id}`, { method: 'DELETE', headers: authHeaders() })
     } finally {

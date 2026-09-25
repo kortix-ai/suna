@@ -104,7 +104,7 @@ export function inlineAttachmentsOf(part: Record<string, unknown>): AttachmentLi
   return out
 }
 
-export function isOffloadable(a: AttachmentLike, minBytes: number): boolean {
+function isOffloadable(a: AttachmentLike, minBytes: number): boolean {
   return (
     typeof a.id === 'string' &&
     typeof a.url === 'string' &&
@@ -114,7 +114,7 @@ export function isOffloadable(a: AttachmentLike, minBytes: number): boolean {
   )
 }
 
-export function decodeDataUrl(url: string): { mime: string | null; bytes: Buffer } | null {
+function decodeDataUrl(url: string): { mime: string | null; bytes: Buffer } | null {
   const m = DATA_URL_RE.exec(url)
   if (!m) return null
   const payload = m[3] ?? ''
@@ -160,7 +160,7 @@ interface PartRow {
  * attachments EXCEPT those carrying one of the session's newest `keepNewest`
  * attachments, and never the session's newest message.
  */
-export function selectCandidates(
+function selectCandidates(
   rows: Array<
     Pick<PartRow, 'id' | 'session_id' | 'message_id' | 'time_created'> & {
       attachmentCount: number

@@ -292,7 +292,7 @@ async function readMessagesOverHttp(
   }
 }
 
-export function findAttachment(
+function findAttachment(
   parts: Array<Record<string, unknown>> | undefined,
   partID: string,
 ): AttachmentLike | null {

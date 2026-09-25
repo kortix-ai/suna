@@ -63,21 +63,17 @@ function post(app: ReturnType<typeof createPresentationRouter>, format: string, 
 }
 
 describe('parseScriptResult', () => {
-  it('parses a success line', () => {
-    expect(parseScriptResult('{"success": true, "output_path": "/x.pdf"}')).toEqual({ success: true })
-  })
-  it('parses a failure line with the error', () => {
-    expect(parseScriptResult('{"success": false, "error": "no slides"}')).toEqual({
-      success: false,
-      error: 'no slides',
-    })
-  })
-  it('finds the JSON result among noisy stderr-like lines', () => {
-    const out = 'warning: something\n{"success": true, "output_path": "/x.pptx"}\n'
-    expect(parseScriptResult(out)).toEqual({ success: true })
-  })
-  it('returns null when there is no result line', () => {
-    expect(parseScriptResult('just some logs\nno json here')).toBeNull()
+  it.each([
+    ['a success line', '{"success": true, "output_path": "/x.pdf"}', { success: true }],
+    ['a failure line with the error', '{"success": false, "error": "no slides"}', { success: false, error: 'no slides' }],
+    [
+      'the JSON result among noisy stderr-like lines',
+      'warning: something\n{"success": true, "output_path": "/x.pptx"}\n',
+      { success: true },
+    ],
+    ['output with no result line', 'just some logs\nno json here', null],
+  ])('parses %s', (_name, out, expected) => {
+    expect(parseScriptResult(out)).toEqual(expected)
   })
 })
 

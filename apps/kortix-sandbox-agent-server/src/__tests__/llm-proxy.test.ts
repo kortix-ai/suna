@@ -100,20 +100,21 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
     }
   })
 
-  test('connector proxy injects + swaps its token independently', async () => {
+  test('the connector and LLM proxies hold separate tokens: a swap on one leaves the other', async () => {
     const up = mockUpstream()
     try {
+      startLlmProxy(14319, up.url, 'llm-A')
       startConnectorProxy(14320, up.url, 'exec-A')
-      const base = connectorProxyBaseUrl()
-      expect(base).toBe('http://127.0.0.1:14320')
+      expect(connectorProxyBaseUrl()).toBe('http://127.0.0.1:14320')
       expect(connectorProxyReady()).toBe(true)
-
-      const r1 = await fetchJson(`${base}/v1/projects/p/exec`)
-      expect(r1.auth).toBe('Bearer exec-A')
+      expect((await fetchJson(`${connectorProxyBaseUrl()}/v1/projects/p/exec`)).auth).toBe('Bearer exec-A')
 
       setConnectorProxyToken('exec-B')
-      const r2 = await fetchJson(`${base}/v1/projects/p/exec`)
-      expect(r2.auth).toBe('Bearer exec-B')
+      expect((await fetchJson(`${connectorProxyBaseUrl()}/v1/projects/p/exec`)).auth).toBe('Bearer exec-B')
+      expect((await fetchJson(`${llmProxyBaseUrl()}/v1/llm/models`)).auth).toBe('Bearer llm-A')
+
+      setLlmProxyToken('llm-B')
+      expect((await fetchJson(`${connectorProxyBaseUrl()}/v1/projects/p/exec`)).auth).toBe('Bearer exec-B')
     } finally {
       up.stop()
     }
@@ -181,6 +182,16 @@ describe('in-sandbox inline image window (SampleCo 2026-08-25: >128 MiB vision b
       })
       expect(res.status).toBe(200)
       expect(up.seen()!.images).toBe(2)
+
+      // Only chat-shaped paths are windowed: 25 images to another path all pass.
+      const many = [{ role: 'user', content: Array.from({ length: 25 }, (_, i) => img(i)) }]
+      const other = await fetch(`${llmProxyBaseUrl()}/v1/llm/embeddings`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'x', messages: many }),
+      })
+      expect(other.status).toBe(200)
+      expect(up.seen()!.images).toBe(25)
     } finally {
       up.stop()
     }
