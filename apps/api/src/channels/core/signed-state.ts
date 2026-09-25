@@ -48,16 +48,16 @@ export function signChannelState(
 }
 
 /**
- * The payload of a token signed for `purpose`, or null when the token is
+ * The payload of a value signed for `purpose`, or null when the token is
  * malformed, forged, expired, or no key is configured. Callers check the
  * shape of their own fields.
  */
 export function verifyChannelState(
   purpose: ChannelStatePurpose,
-  token: string | null | undefined,
+  signed: string | null | undefined,
 ): (Record<string, unknown> & ChannelStateEnvelope) | null {
-  if (!token) return null;
-  const [body, given] = token.split('.');
+  if (!signed) return null;
+  const [body, given] = signed.split('.');
   if (!body || !given) return null;
   let expected: string;
   try {
