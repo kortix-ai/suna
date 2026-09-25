@@ -201,10 +201,30 @@ describe('canonical audit ledger', () => {
       expect.arrayContaining([
         'idx_audit_events_account_project_sequence',
         'idx_audit_events_account_session_sequence',
+        'idx_audit_events_session_sequence',
         'idx_audit_events_source_phase',
         'idx_audit_events_action_pattern',
       ]),
     );
+  });
+
+  test('serves the bare session-scoped audit read from an index', () => {
+    // GET /v1/projects/:projectId/sessions/:sessionId/audit runs
+    //   where session_id = $1 order by session_sequence asc, event_id asc limit $2
+    // with NO account predicate (chain completeness — see the route). Without an
+    // index leading with session_id that query seq-scans the whole ledger and
+    // dies on the 25 s request-path statement_timeout (prod 2026-09-25, 57014).
+    // Regression guard: some index must carry (session_id, session_sequence,
+    // event_id) as its leading columns, in that order, so the planner walks the
+    // index and stops at LIMIT.
+    const indexColumns = getTableConfig(auditEvents).indexes.map((i) =>
+      i.config.columns.map((c: any) => c.name as string | undefined),
+    );
+    const servesSessionRead = indexColumns.some(
+      (cols) =>
+        cols[0] === 'session_id' && cols[1] === 'session_sequence' && cols[2] === 'event_id',
+    );
+    expect(servesSessionRead).toBe(true);
   });
 
   test('preserves tenant scope when the account record is deleted', () => {
