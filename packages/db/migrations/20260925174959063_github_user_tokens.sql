@@ -35,5 +35,12 @@ CREATE TABLE "kortix"."account_github_user_tokens" (
 --> statement-breakpoint
 ALTER TABLE "kortix"."account_github_user_tokens" ADD CONSTRAINT "account_github_user_tokens_account_id_accounts_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "kortix"."accounts"("account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "uniq_account_github_user_tokens_account_user" ON "kortix"."account_github_user_tokens" USING btree ("account_id","user_id");--> statement-breakpoint
-CREATE INDEX "idx_account_github_user_tokens_account" ON "kortix"."account_github_user_tokens" USING btree ("account_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_account_github_installations_owner" ON "kortix"."account_github_installations" USING btree ("account_id","owner_login");
+CREATE INDEX "idx_account_github_user_tokens_account" ON "kortix"."account_github_user_tokens" USING btree ("account_id");
+-- drizzle-kit also proposed uniq_account_github_installations_owner here. It is
+-- already built CONCURRENTLY by
+-- 20260925164209388_github_installations_one_per_owner_index (the table is live;
+-- a plain CREATE INDEX would block its writers). Removed on purpose — the
+-- snapshot carries it, so it is not proposed again.
+
+-- Both indexes above are on a table created in this same migration, so they take
+-- no lock anyone can see and need no CONCURRENTLY escape hatch.
