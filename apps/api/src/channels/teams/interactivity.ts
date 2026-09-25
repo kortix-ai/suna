@@ -1,7 +1,5 @@
-import { labelForModelRef } from '../../llm-gateway/models/picker';
-import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
-import { setChannelAgent, setChannelModel } from '../slack/selection';
+import { setChannelAgent } from '../slack/selection';
 import { setConversationProject, teamsChannelCtx } from './binding';
 import {
   MANAGED_TEAMS_INBOUND,
@@ -21,6 +19,7 @@ import {
 import { decideTeamsThreadJoin } from './participants';
 import { createOrJoinTeamsConversationSession } from './session';
 import { stopTeamsTurn } from './stop';
+import { applyTeamsModelChoice } from './model-choice';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
 export interface TeamsInvokeResponse {
@@ -99,6 +98,11 @@ async function conversationInScope(
   return (await conversationProjectFor(inbound, convo.tenantId, convo.conversationId)) === inbound.projectId;
 }
 
+/**
+ * A model card's button or its dropdown's Use button. It used to store any
+ * model it was sent with no check at all; it now runs the same check and key
+ * selection as `/model` (model-choice.ts), as the person who pressed it.
+ */
 async function handleSetModel(
   activity: TeamsActivity,
   data: Record<string, unknown>,
@@ -108,14 +112,15 @@ async function handleSetModel(
   if (!convo) return cardResponse(buildNoticeCard("I couldn't update the model."));
   if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
   const model = typeof data.model === 'string' ? data.model : '';
-  const ctx = teamsChannelCtx(convo.tenantId, convo.conversationId);
-  if (!model) {
-    await setChannelModel(ctx, null);
-    return cardResponse(buildNoticeCard('Model reset to the project default.', '✅'));
-  }
-  const stored = toOpencodeModelRef(model);
-  await setChannelModel(ctx, stored);
-  return cardResponse(buildNoticeCard(`Model set to ${labelForModelRef(stored)}.`, '✅'));
+  return cardResponse(
+    await applyTeamsModelChoice(
+      activity,
+      convo.tenantId,
+      convo.conversationId,
+      model,
+      inbound.kind === 'managed' ? undefined : inbound.projectId,
+    ),
+  );
 }
 
 /**

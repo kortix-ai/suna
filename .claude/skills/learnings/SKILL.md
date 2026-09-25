@@ -194,6 +194,14 @@ started a second Platinum keepalive through a copied, unlocked `pt-ka.lock`.
 `guest_tmp_test.go`; kortixd `resources.test.ts` names RAM-backed files in the
 guard's stop reason.
 
+### A model check that says "usable" must use the scope the gateway uses, or a chat pins a model that fails every turn (2026-09-24)
+
+**Rule:** Every check made before a request — a picker list, a servability probe, a create-time validation, a per-message replacement check — resolves with the personal-key scope the gateway uses at request time (`resolveSessionPersonalOwner`, `personalUserId`). When a change narrows what a session may reach, find every such check of that resource and move it in the same PR.
+
+**Incident (dev, 2026-09-24):** #7563 made agents their own principal by default, so a shared session no longer reaches one person's ChatGPT connection. Teams channel sessions pinned to `codex/*` then failed every message with "Connect Codex to use this model". The per-message check (`channelTurnModel`) still counted the sender's own connection, so it never replaced the model, and `/model` changed only new sessions. PR #7593.
+
+**Enforcement:** `unit-channel-model-access.test.ts` (a follow-up in a shared session is checked with `personalUserId: null`), `unit-channel-vision-model.test.ts` (probe inputs and cache key carry the scope), `default-model.test.ts` (a shared session's default is checked without personal keys).
+
 ### A background job runs its tick as a named worker, or its changes read as API traffic (2026-09-24)
 
 **Rule:** Wrap every background job's tick in `runWorkerTick('<name>', tick)` (`shared/audit-scope.ts`), at the tick function when handlers also kick it. A tenant-state change the job makes writes its own semantic row, which inherits the worker.

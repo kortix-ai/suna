@@ -30,7 +30,10 @@ mock.module('../selection', () => ({
   listProjectAgents: async () => [],
   isValidModelId: () => true,
 }));
-mock.module('../model-gate', () => ({ channelModelContext: async () => null }));
+mock.module('../model-gate', () => ({
+  channelModelContext: async () => null,
+  projectModelContext: async () => null,
+}));
 mock.module('../participants', () => ({
   conversationPolicyLabel: () => 'Owner approval',
   normalizeConversationPolicy: () => 'owner_approval',

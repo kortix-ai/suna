@@ -29,14 +29,20 @@ import {
   startTurn,
 } from './turn';
 import { sessionWebUrl } from '../slack/util';
-import { channelTurnModel, modelReadsImages, promptModelOverride } from '../vision-model';
+import { modelReadsImages, promptModelOverride } from '../vision-model';
+import {
+  type ChannelModelScope,
+  planChannelFollowUp,
+  planChannelSessionStart,
+  projectChannelModelScope,
+} from '../model-access';
 import {
   extractTeamsAttachments,
   teamsMessageHasImage,
   type TeamsActivity,
   type TeamsLiveTurn,
 } from './types';
-import { describeTeamsConversation, stripTeamsMentions, teamsMessageText } from './util';
+import { describeTeamsConversation, isPersonalChat, stripTeamsMentions, teamsMessageText } from './util';
 import { ensureTeamsThreadParticipant, normalizeConversationPolicy, rememberTeamsThreadOwner } from './participants';
 
 const defaultTeamsSessionLifecycle = {
@@ -163,10 +169,44 @@ function agentGrantEnvFor(
   };
 }
 
+/** The project's default agent, as its manifest mirror records it. */
+function projectDefaultAgentOf(metadata: unknown): string | null {
+  const value = (metadata as Record<string, unknown> | null | undefined)?.default_agent;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 /** The model this session is pinned to, as `createProjectSession` recorded it. */
 function sessionModelOf(metadata: Record<string, unknown> | null | undefined): string | null {
   const value = metadata?.opencode_model;
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Who a conversation's session is for. A personal chat with the bot is one
+ * person's conversation, so its session is private to them, as a web session
+ * is by default — and only a private session reaches that person's own API
+ * keys and ChatGPT subscription (spec 2026-09-22 §2.3). Group chats and
+ * channels stay shared with the project. With `TEAMS_REQUIRE_USER_IDENTITY`
+ * off, sessions run as the account owner, not as the person typing, so they
+ * stay shared and no one's personal keys count.
+ */
+function teamsSessionIsPersonal(activity: TeamsActivity): boolean {
+  return config.TEAMS_REQUIRE_USER_IDENTITY && isPersonalChat(activity);
+}
+
+/** The model scope of a Teams turn run as `userId` (see channels/model-access.ts). */
+async function teamsTurnScope(
+  project: { projectId: string; accountId: string; metadata: unknown },
+  activity: TeamsActivity,
+  userId: string,
+): Promise<ChannelModelScope | null> {
+  return projectChannelModelScope(project, {
+    linkedUserId: config.TEAMS_REQUIRE_USER_IDENTITY ? userId : null,
+    oneToOne: teamsSessionIsPersonal(activity),
+  }).catch((err) => {
+    console.warn('[teams-webhook] model scope unavailable; the legacy model check applies', err);
+    return null;
+  });
 }
 
 async function bindTurnToSession(handle: TeamsLiveTurn | null, sessionId: string): Promise<void> {
@@ -241,6 +281,8 @@ function turnIsLive(turn: TeamsLiveTurn | null, sessionStatus: string | null): b
 async function deliverFollowUp(input: {
   projectId: string;
   accountId: string;
+  /** The project row, for the conversation's model scope. */
+  project: { projectId: string; accountId: string; metadata: unknown };
   agentGrantEnv?: () => Promise<readonly string[] | 'all' | null>;
   tenantId: string;
   conversationId: string;
@@ -258,8 +300,8 @@ async function deliverFollowUp(input: {
   // Who may continue this session (owner-only / owner-approval / open). The
   // verdict's notice replaces the requester's own live card; nothing reaches
   // the session until they are allowed in.
+  const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
   if (config.TEAMS_REQUIRE_USER_IDENTITY && activity.serviceUrl) {
-    const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
     const verdict = await ensureTeamsThreadParticipant({
       projectId,
       tenantId,
@@ -323,11 +365,15 @@ async function deliverFollowUp(input: {
 
   const hasImage = teamsMessageHasImage(activity);
   const currentModel = sessionModelOf(input.sessionMetadata);
-  const turnModel = await channelTurnModel({
+  // The conversation's `/model` choice travels with this prompt, with its keys
+  // on the session; an unservable model is replaced for this turn.
+  const turnModel = await planChannelFollowUp({
     projectId,
     accountId: input.accountId,
     userId,
-    currentModel,
+    scope: await teamsTurnScope(input.project, activity, userId),
+    session: { sessionId, ownerUserId: input.sessionOwnerId, pinnedModel: currentModel },
+    chosenModel: selection?.opencodeModel,
     hasImage,
     agentGrantEnv: input.agentGrantEnv,
   });
@@ -463,6 +509,7 @@ export async function createOrJoinTeamsConversationSession(input: {
       .select({
         sessionId: chatThreads.sessionId,
         createdBy: projectSessions.createdBy,
+        agentName: projectSessions.agentName,
         metadata: projectSessions.metadata,
         status: projectSessions.status,
       })
@@ -481,7 +528,9 @@ export async function createOrJoinTeamsConversationSession(input: {
       const next = await deliverFollowUp({
         projectId,
         accountId: project.accountId,
-        agentGrantEnv: agentGrantEnvFor(project, null),
+        project,
+        // The session's own agent: its secret grant decides which keys it may use.
+        agentGrantEnv: agentGrantEnvFor(project, existing.agentName ?? null),
         tenantId,
         conversationId,
         sessionId: existing.sessionId,
@@ -502,14 +551,20 @@ export async function createOrJoinTeamsConversationSession(input: {
     const sessionId = await waitForConversationSession(tenantId, conversationId, projectId);
     if (sessionId) {
       const [row] = await db
-        .select({ createdBy: projectSessions.createdBy, metadata: projectSessions.metadata, status: projectSessions.status })
+        .select({
+          createdBy: projectSessions.createdBy,
+          agentName: projectSessions.agentName,
+          metadata: projectSessions.metadata,
+          status: projectSessions.status,
+        })
         .from(projectSessions)
         .where(eq(projectSessions.sessionId, sessionId))
         .limit(1);
       await deliverFollowUp({
         projectId,
         accountId: project.accountId,
-        agentGrantEnv: agentGrantEnvFor(project, null),
+        project,
+        agentGrantEnv: agentGrantEnvFor(project, row?.agentName ?? null),
         tenantId,
         conversationId,
         sessionId,
@@ -535,16 +590,19 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   // A conversation that OPENS with an image has to start on a model that can
   // read one, and a `/model` pick that has since been retired has to be
-  // replaced — the session pin is what every later turn inherits.
-  const createModel =
-    (await channelTurnModel({
-      projectId,
-      accountId: project.accountId,
-      userId,
-      currentModel: selection?.opencodeModel,
-      hasImage: teamsMessageHasImage(activity),
-      agentGrantEnv: agentGrantEnvFor(project, selection?.agentName ?? null),
-    })) ?? selection?.opencodeModel;
+  // replaced — the session pin is what every later turn inherits. A pick that
+  // runs on provider keys starts with every key this conversation may use.
+  const start = await planChannelSessionStart({
+    projectId,
+    accountId: project.accountId,
+    userId,
+    scope: await teamsTurnScope(project, activity, userId),
+    chosenModel: selection?.opencodeModel,
+    agentName: selection?.agentName || projectDefaultAgentOf(project.metadata),
+    hasImage: teamsMessageHasImage(activity),
+    agentGrantEnv: agentGrantEnvFor(project, selection?.agentName ?? null),
+  });
+  const createModel = start.model;
 
   const result = await teamsSessionLifecycle.createSession({
     source: 'teams',
@@ -555,6 +613,7 @@ export async function createOrJoinTeamsConversationSession(input: {
       base_ref: project.defaultBranch,
       agent_name: selection?.agentName || 'default',
       ...(createModel ? { opencode_model: createModel } : {}),
+      ...(start.pools ? { provider_secret_pools: start.pools } : {}),
       initial_prompt: renderAgentPrompt(activity, revived),
       // Title from the user's actual words — without the `<at>…</at>` mention
       // markup Teams wraps around the bot's name in channels.
@@ -579,7 +638,7 @@ export async function createOrJoinTeamsConversationSession(input: {
       tenantId && conversationId
         ? [{ type: 'bind_chat_thread', platform: 'teams', workspaceId: tenantId, threadId: conversationId }]
         : undefined,
-    visibility: 'project',
+    visibility: teamsSessionIsPersonal(activity) ? 'private' : 'project',
     metadata: {
       source: 'teams',
       teams: {

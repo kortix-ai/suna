@@ -38,6 +38,15 @@ export async function channelModelContext(ctx: ChannelCtx): Promise<ChannelModel
     .where(eq(projects.projectId, selection.projectId))
     .limit(1);
   if (!project) return null;
+  return projectModelContext({ projectId: selection.projectId, ...project });
+}
+
+/** `channelModelContext` for a project row the caller already holds. */
+export async function projectModelContext(project: {
+  projectId: string;
+  accountId: string;
+  metadata: unknown;
+}): Promise<ChannelModelContext> {
   const [owner] = [...(await accountRoleMap(project.accountId)).entries()]
     .filter(([, role]) => role === 'owner')
     .map(([userId]) => ({ userId }));
@@ -52,7 +61,7 @@ export async function channelModelContext(ctx: ChannelCtx): Promise<ChannelModel
   // off, so the self-host short-circuit no longer needs restating here.
   const freeManagedOnly = !(await accountMayUseManagedModels(project.accountId));
   return {
-    projectId: selection.projectId,
+    projectId: project.projectId,
     accountId: project.accountId,
     ownerUserId: owner?.userId ?? project.accountId,
     freeManagedOnly,
