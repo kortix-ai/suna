@@ -6,7 +6,7 @@ and **[A migration failed in prod](#a-migration-failed-in-prod)**.
 
 **Engine: [node-pg-migrate](https://github.com/salsita/node-pg-migrate)** (battle-tested, Postgres-native). One tracking table. One source of truth. No ORM applying schema at runtime, no manual `psql` against prod.
 
-> We invoke node-pg-migrate through a ~60-line bun adapter (`scripts/migrate.ts`) that calls its programmatic `runner()`. Reason: our deploy runtime is bun-only (`oven/bun:slim`, no `node`), and node-pg-migrate's CLI bin does optional `tryImport()`s that bun's resolver rejects. The adapter is invocation glue only — **all** migration logic (advisory lock, the `pgmigrations` tracking table, per-migration transactions, dry-run, fake) is node-pg-migrate's.
+> We invoke node-pg-migrate through a ~60-line bun adapter (`scripts/migrate.ts`) that calls its programmatic `runner()`. Reason: our deploy runtime is bun-only (`oven/bun:slim`, no `node`), and node-pg-migrate's CLI bin does optional `tryImport()`s that bun's resolver rejects. The adapter is invocation glue only — **all** migration logic (advisory lock, the `pgmigrations` tracking table, per-migration transactions, fake) is node-pg-migrate's. The one exception is `status`: it never calls the runner (see [`migrate:status` is read-only](#migratestatus-is-read-only)).
 
 ---
 
@@ -80,12 +80,12 @@ bootstrap does the equivalent automatically).
 
 ## Commands
 
-From repo root (`DATABASE_URL` from env, or `--target=<env>` reads `<ENV>_DB_URL` from `apps/api/.env`):
+From repo root (`DATABASE_URL` from env; see the note under the table for `--target`):
 
 | Command | What it does |
 |---|---|
 | `pnpm migrate` | Apply pending migrations (advisory-locked, transactional). |
-| `pnpm migrate:status` | List pending migrations (dry-run, writes nothing). Exit 1 if any pending. |
+| `pnpm migrate:status` | List pending migrations. Read-only: reads the ledger on a read-only session and never runs a migration. Exit 1 if any pending. |
 | `pnpm migrate:create <slug>` | Scaffold a hand-written SQL migration with the house-rules template (lock_timeout/statement_timeout header, expand/contract checklist, annotation slots). |
 | `pnpm migrate:create <slug> --concurrent` | Scaffold the `.concurrent.ts` CONCURRENTLY escape hatch (`pgm.noTransaction()` pre-filled). |
 | `pnpm migrate:generate <slug>` | Generate SQL from a `kortix.ts` change (drizzle-kit) into a timestamped file. |
@@ -95,7 +95,29 @@ From repo root (`DATABASE_URL` from env, or `--target=<env>` reads `<ENV>_DB_URL
 | `pnpm --filter @kortix/db migrate:lint` | Just the filename/structure/mixed-version/enum-value checks (no squawk, no network). |
 | `pnpm --filter @kortix/db lint:squawk` | Just squawk, scoped to new (non-grandfathered) migrations. Auto-downloads a checksum-pinned binary on first run. |
 
-Target a specific DB (secrets never go through the shell): the adapter reads `DATABASE_URL`, or `--target=dev`/`--target=prod` resolves `DEV_DB_URL`/`PROD_DB_URL` from `apps/api/.env`. The prod deploy passes `DATABASE_URL` directly.
+Target a specific DB with `DATABASE_URL`. The deploy workflows pass it directly. By hand, decrypt it with a bare environment (see the `dotenvx-secrets` skill):
+
+```bash
+DATABASE_URL="$(env -i PATH="$PATH" HOME="$HOME" npx -y @dotenvx/dotenvx get DATABASE_URL -f apps/api/.env.prod)" pnpm migrate:status
+```
+
+`--target=<env>` reads `<ENV>_DB_URL` (`DATABASE_URL` for `local`) from `apps/api/.env` as plain text. Every committed profile is dotenvx-encrypted and none defines `<ENV>_DB_URL`, so `--target` exits 1 with the reason and the command above is the working form.
+
+### `migrate:status` is read-only
+
+`status` lists the migration files, reads `kortix_migrations.pgmigrations`
+inside `BEGIN READ ONLY … ROLLBACK`, and prints the difference
+(`scripts/migration-status.ts`). Its connection opens with
+`default_transaction_read_only = on`; if the server does not report that
+setting after connect, `status` exits 1 before it reads anything. It takes no
+advisory lock, creates no ledger table, and exits 1 on the same ledger-order
+mismatch that `up` refuses.
+
+It never calls node-pg-migrate's `runner({ dryRun: true })`. In
+node-pg-migrate 8.0.4 that dry run still calls every pending migration's
+`up()`, and statements that `up()` runs through `pgm.db.query()` (the batched
+`.concurrent.ts` data passes) execute and commit. Before 2026-09-25, `status`
+used that dry run.
 
 ---
 
@@ -437,7 +459,7 @@ touches `packages/db/migrations`.
 The migration step runs **before** the new version serves traffic, so a failure aborts the deploy and **the old version keeps running**. You are not down.
 
 1. **Read the error** in the deploy logs (the failing `migrate up` step).
-2. `pnpm migrate:status --target=prod` — anything pending?
+2. `DATABASE_URL=<prod url> pnpm migrate:status` — anything pending? Read-only; the decrypt command is under [Commands](#commands).
 3. node-pg-migrate runs the pending set in a single transaction (`singleTransaction`), so a failure **rolls back atomically** — nothing was applied. *(Exception: if a `.concurrent.ts` migration in the batch already ran and committed before the failure — see [Roll-forward safety](#roll-forward-safety-transactions-per-file-and-the-concurrently-escape-hatch) — that one migration IS applied even though the batch reports failure. Check `kortix_migrations.pgmigrations` if a `.concurrent.ts` migration was in the pending set.)* Fix the migration (a NEW migration if the bad one is already applied elsewhere) and redeploy.
 4. **Do not** hand-edit prod schema and walk away. If you must intervene manually, make the DB match a migration file, then record it (next section).
 5. Roll back app code the normal way (previous image). Schema rollback is a **new forward migration**, not a down — most schema changes aren't losslessly reversible. (Our migrations don't define `-- Down Migration` sections by policy.)
@@ -447,7 +469,7 @@ The migration step runs **before** the new version serves traffic, so a failure 
 If you applied a change by hand (emergency only):
 
 1. Write a migration file whose SQL matches what you ran.
-2. Mark it applied without re-running: `pnpm migrate:fake --target=prod`.
+2. Mark it applied without re-running: `DATABASE_URL=<prod url> pnpm migrate:fake`.
    `fake` marks every pending file as applied without executing it.
 
 ---
@@ -507,8 +529,8 @@ The nightly `DB Drift Sentinel` (`.github/workflows/db-drift.yml`,
 To put an existing DB (whose schema already matches the baseline) onto this system:
 
 1. Confirm the env's live schema matches the baseline: run [`verify-live-schema.ts`](#verify-a-live-database) against it.
-2. `pnpm migrate:fake --target=<env>` — creates `kortix_migrations.pgmigrations` and marks the baseline applied without running it.
-3. `pnpm migrate:status --target=<env>` → "Up to date".
+2. `DATABASE_URL=<env url> pnpm migrate:fake` — creates `kortix_migrations.pgmigrations` and marks the baseline applied without running it.
+3. `DATABASE_URL=<env url> pnpm migrate:status` → "Up to date".
 
 This touches only the tracking table — never schema or data. **Careful:** a
 faked environment can silently miss enum values added between the snapshot it
