@@ -57,7 +57,7 @@ An assignment can name one object inside a project: an `agent`, a `skill`, a `se
 
 - **Agents are closed by default.** A member reaches an agent only when an assignment names them, one of their groups, or everyone in the project.
 - **Every other object type is open by default.** With no assignment on the object, a member reaches it. A shared connector account with an assignment is usable only by the people it names — see [Choose who can use a shared account](/docs/connect/connectors#choose-who-can-use-a-shared-account).
-- **Everyone in the project is a principal too.** In the **Grant access** dialog, pick **Everyone in {project}** to give an agent to every member at once (`principal_type: "project"`, `principal_id` = the project id). It holds object assignments only — never a role — so each person keeps their own project role.
+- **Everyone in the project is a principal too.** In the **Grant access** dialog, pick **Everyone in** followed by the project's name to give an agent to every member at once (`principal_type: "project"`, `principal_id` = the project id). It holds object assignments only — never a role — so each person keeps their own project role.
 - **An object assignment restricts a project manager too.** That is what makes "scope this agent to the finance group" mean anything. What the manager role buys is the unscoped default, not an exemption.
 - **Account owners and admins are never restricted by an object assignment**, and neither is a service account acting on its own assignments.
 
