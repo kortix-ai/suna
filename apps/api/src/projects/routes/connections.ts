@@ -16,6 +16,7 @@ import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import {
   type ConnectionOwnerType,
+  type ConnectionReachabilityActor,
   connectionIsReachable,
   connectionRowIsReachable,
 } from '../lib/connection-access';
@@ -24,8 +25,6 @@ import { requestAgentPrincipalReach } from '../lib/personal-resources';
 import { readBody } from '../lib/serializers';
 import { canonicalConnectorAlias } from '../lib/session-connector-bindings';
 import { ConnectionViewSchema, serializeConnection } from '../lib/connection-view';
-
-type AgentPrincipalReach = Awaited<ReturnType<typeof requestAgentPrincipalReach>>;
 
 /**
  * The owner/admin roster shape is narrower than Connection.
@@ -55,22 +54,15 @@ function mayReadConnection(
     providerType: string;
     connectorConfig: Record<string, unknown>;
   },
-  userId: string,
-  actingPrincipalIsServiceAccount: boolean,
+  actor: ConnectionReachabilityActor,
   /** Connection ids the CALLER'S session is bound to, or null when the caller is
    *  not session-bound. See connector-connection-visibility.ts: a sandbox's token
    *  carries the WRAPPER's user id, so without this every end-user's agent could
    *  enumerate every other end-user's connection and then bind it. */
   sessionBoundConnectionIds: ReadonlySet<string> | null,
-  /** Agent-principal reach (spec 2026-09-22 §2.3); null = legacy rule. */
-  agentPrincipal: AgentPrincipalReach | null = null,
 ): boolean {
   if (!sessionMayEnumerateConnection(connection, sessionBoundConnectionIds)) return false;
-  return connectionRowIsReachable(connection, {
-    userId,
-    isServiceAccount: actingPrincipalIsServiceAccount,
-    agentPrincipal,
-  });
+  return connectionRowIsReachable(connection, actor);
 }
 
 async function reconcileConnectionRow(input: {
@@ -158,8 +150,11 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
-    const agentReach = await requestAgentPrincipalReach(c, loaded.actor);
+    const actor: ConnectionReachabilityActor = {
+      userId: loaded.userId,
+      isServiceAccount: c.get('authType') === 'service_account',
+      agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
+    };
     // A sandbox connector token is bound to ONE session. Load what that session was
     // actually GIVEN so the enumeration below can be narrowed to it. null for
     // every non-session caller, which leaves the operator's view unchanged.
@@ -195,15 +190,7 @@ projectsApp.openapi(
       .where(eq(connectorConnections.projectId, projectId));
     return c.json({
       connections: rows
-        .filter((connection) =>
-          mayReadConnection(
-            connection,
-            loaded.userId,
-            actingPrincipalIsServiceAccount,
-            sessionBoundConnectionIds,
-            agentReach,
-          ),
-        )
+        .filter((connection) => mayReadConnection(connection, actor, sessionBoundConnectionIds))
         .map(serializeConnection),
     });
   },

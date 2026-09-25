@@ -27,6 +27,12 @@ export type ConnectionOwnerType =
   | 'subject'
   | 'external';
 
+/** Agent-principal session reach: its on-behalf-of human and its own session visibility. */
+export interface ConnectionAgentPrincipalReach {
+  onBehalfOfUserId: string | null;
+  visibility: 'private' | 'project' | 'restricted' | null;
+}
+
 /**
  * | owner_type | reachable by                                                    |
  * |------------|-----------------------------------------------------------------|
@@ -49,11 +55,6 @@ export type ConnectionOwnerType =
  * `ownerId === onBehalfOfUserId` AND the session is `private`. An unattended
  * run (`onBehalfOfUserId` null) and a shared session reach no member row.
  */
-export interface ConnectionAgentPrincipalReach {
-  onBehalfOfUserId: string | null;
-  visibility: 'private' | 'project' | 'restricted' | null;
-}
-
 export function connectionIsReachable(input: {
   ownerType: ConnectionOwnerType;
   ownerId: string | null;
