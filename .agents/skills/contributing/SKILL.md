@@ -161,6 +161,10 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
   sticky comment says `live; NOT tested`. Remove and re-add `preview` to test the new
   head commit.
 - When the behaviour in the video changes, record the video again and repeat step 6.
+- Edit the body after an upload from the live copy:
+  `gh pr view <pr> --json body --jq .body > output/pr/body.md`. The old local file still holds
+  `./output/pr/demo.mp4`. `--body-file` without `--attach` would publish that path as a broken
+  link.
 - Merge `main` into the branch daily. Git's rename detection carries `main`'s edits
   through moved files. GitHub's conflict check does not, so push the merge.
 
