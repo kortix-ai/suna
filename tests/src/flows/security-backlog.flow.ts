@@ -735,7 +735,9 @@ flow(
 // Supabase PostgREST accepts the public anon key and every user's own JWT. The
 // 2026-09-24 incident: both could call SECURITY DEFINER functions and the
 // wallet RPCs (mint/drain credits on any account) and read `kortix` tables.
-// Migration 20260924194804787_client_role_lockdown revokes those grants. This
+// Migration 20260924194804787_client_role_lockdown revokes those grants, and
+// 20260925013304428_wallet_private_schema moves the wallet functions into the
+// private `kortix_wallet` schema. This
 // flow calls PostgREST directly, as the anon key and as a real user, and
 // requires a permission refusal. GET runs the RPC in a read-only transaction,
 // so a regression cannot write anything.
@@ -798,6 +800,33 @@ flow('SEC-K', { domain: 'security', routes: [] }, async (ctx) => {
               `SEC-K: ${who} reached rpc/${fn}: ${res.status} ${body.slice(0, 200)}`,
             );
           }
+        }
+      },
+    );
+
+    await ctx.step(
+      `${who}: the private kortix_wallet functions are not reachable`,
+      async () => {
+        for (const fn of ['grant_credits', 'debit_credits', 'reset_expiring_credits']) {
+          const res = await fetch(`${base}/rest/v1/rpc/${fn}`, {
+            method: 'POST',
+            headers: {
+              apikey: anonKey,
+              authorization: `Bearer ${bearer}`,
+              'content-profile': 'kortix_wallet',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ p_account_id: NIL_UUID }),
+          });
+          const body = await res.text();
+          // 406 PGRST106 = schema not exposed; 401/403 42501 = exposed but no grant.
+          const ok =
+            (res.status === 406 && body.includes('PGRST106')) ||
+            refused(res.status, body);
+          if (!ok)
+            throw new Error(
+              `SEC-K: ${who} reached kortix_wallet.${fn}: ${res.status} ${body.slice(0, 200)}`,
+            );
         }
       },
     );
