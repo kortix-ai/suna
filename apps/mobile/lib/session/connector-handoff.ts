@@ -16,8 +16,7 @@
  *
  * The connect hand-off itself prefers the project's own Pipedream connect
  * round trip (`lib/projects/projects-client.ts` `pipedreamConnect` /
- * `pipedreamFinalize`, the same one `components/pages/ConnectorsPage.tsx`
- * already uses) over opening the agent's `connect_url` directly: the
+ * `pipedreamFinalize`) over opening the agent's `connect_url` directly: the
  * project-scoped flow mints a URL that supports a `kortix://` redirect, so
  * the in-app browser auto-dismisses; the public `/connect/<token>` page does
  * not, and is kept only as a fallback (`ConnectorAuthSheet`).
@@ -35,7 +34,7 @@ import { partInput, partOutput } from './tool-part-accessors';
 import { parseConnectorOutput } from './tool-output-parsers';
 
 /** "google_drive" / "gmail" → "Google Drive" / "Gmail" — a friendly fallback
- *  name from a slug. Ported from `ConnectorsPage.tsx`'s `prettifyAppName`. */
+ *  name from a slug. */
 export function prettifyConnectorName(slug: string): string {
   const out = slug
     .split(/[_-]+/)
@@ -223,8 +222,7 @@ export function connectorHandoffToast(providerLabel: string, connected: boolean)
 }
 
 /**
- * Mirrors `ConnectorsPage.tsx`'s `needsConnect` (inverted): a connector
- * counts as connected once it has a stored credential. `credentialMode` is
+ * A connector counts as connected once it has a stored credential. `credentialMode` is
  * always `'shared'` today, so `secretSet` alone is the whole answer — kept as
  * a function (not an inline `.secretSet` read) so the one rule has one name.
  */

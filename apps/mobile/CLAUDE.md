@@ -346,7 +346,7 @@ that drops props silently breaks the screens that still pass them.
 
    Check it against the captured upstream sources. **Normalize the import path
    first** — the RNR installer rewrites `'@/lib/utils'` to `'@/lib/utils/index'`
-   in every file it emits, so a naive `diff` reports all 30 `cn`-importing files
+   in every file it emits, so a naive `diff` reports all 17 `cn`-importing files
    as forked and tells you nothing:
 
    ```bash
