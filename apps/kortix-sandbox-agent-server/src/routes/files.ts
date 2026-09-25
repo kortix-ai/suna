@@ -880,13 +880,21 @@ export function createFilesRouter(cfg: Config): Hono {
   })
 
   // POST /file/rename — rename or move a file/directory.
+  //
+  // `overwrite` (default true) replaces an existing FILE at the target
+  // atomically — the overwrite-in-place write path depends on it. With
+  // `overwrite: false` an existing target answers 409 `EEXIST` and nothing
+  // changes (create-only). A DIRECTORY at the target is never replaced, in
+  // either mode: 409 `EISDIR`.
   app.post('/rename', async (c) => {
     let from: string | undefined
     let to: string | undefined
+    let overwrite: boolean
     try {
-      const parsed = await c.req.json<{ from: string; to: string }>()
+      const parsed = await c.req.json<{ from: string; to: string; overwrite?: boolean }>()
       from = parsed.from
       to = parsed.to
+      overwrite = parsed.overwrite !== false
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400)
     }
@@ -908,8 +916,32 @@ export function createFilesRouter(cfg: Config): Hono {
     const stat = await fs.stat(fromResolved).catch(() => null)
     if (!stat) return c.json({ error: 'Source file not found' }, 404)
 
+    const target = await fs.lstat(toResolved).catch(() => null)
+    // The same inode is a case-only rename on a case-insensitive filesystem.
+    const sameEntry = target !== null && target.ino === stat.ino && target.dev === stat.dev
+    if (target?.isDirectory() && !sameEntry) {
+      return c.json({ error: 'Target is a directory', code: 'EISDIR' }, 409)
+    }
+    if (!overwrite && target && !sameEntry) {
+      return c.json({ error: 'Target already exists', code: 'EEXIST' }, 409)
+    }
+
     await fs.mkdir(path.dirname(toResolved), { recursive: true })
-    await fs.rename(fromResolved, toResolved)
+    if (!overwrite && stat.isFile()) {
+      // link() fails with EEXIST atomically, so a target created after the
+      // check above is still never replaced. Filesystems without hard links
+      // fall back to the checked rename.
+      try {
+        await fs.link(fromResolved, toResolved)
+        await fs.unlink(fromResolved)
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code
+        if (code === 'EEXIST') return c.json({ error: 'Target already exists', code: 'EEXIST' }, 409)
+        await fs.rename(fromResolved, toResolved)
+      }
+    } else {
+      await fs.rename(fromResolved, toResolved)
+    }
     logger.info('[files] renamed', { from: fromResolved, to: toResolved })
     return c.json(true)
   })

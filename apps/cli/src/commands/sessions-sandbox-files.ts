@@ -36,7 +36,7 @@ Subcommands:
                            contents (ripgrep) instead. --limit <N>. --json.
   write <path>             Overwrite a file atomically (upload → rename →
                            drop backup). Reads stdin, or --from <local file>.
-  touch <path>             Create an empty file.
+  touch <path>             Create an empty file (fails if the path exists).
   mkdir <path>             Create a directory (recursive, idempotent).
   mv <from> <to>           Rename or move.
   rm <path>                Delete a file or directory (recursive). Asks first;
@@ -232,8 +232,8 @@ export async function runSessionsFiles(argv: string[]): Promise<number> {
             : await readStdin();
           // The daemon's upload endpoint never overwrites (it uniquifies a
           // colliding name), so this goes through the SDK's atomic write:
-          // upload to a temp name, back the target up, rename into place,
-          // drop the backup — and restore the original if the rename fails.
+          // upload to a temp name, then rename it over the target. A failed
+          // rename leaves the original untouched.
           const result = await files.write(toSandboxAbsolutePath(arg1!), content);
           if (json) {
             emitJson(result);
