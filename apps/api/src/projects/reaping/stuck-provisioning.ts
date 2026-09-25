@@ -34,6 +34,7 @@ import {
   attemptArchivedBoxRemoval,
 } from './archived-box-removal';
 import { applyStoppedState } from './sandbox-state-sync';
+import { transitionSandbox, transitionSession } from '../session-lifecycle/status-transitions';
 
 /** A row with no lease that has not changed for this long has no live owner. */
 export const STUCK_WITHOUT_LEASE_MS = 30 * 60_000;
@@ -92,13 +93,15 @@ export function decideStuckProvisioning(input: {
   return 'skip';
 }
 
-/** The lease identity a converge write CASes on: unchanged since it was read. */
+/**
+ * The lease identity a converge write CASes on: unchanged since it was read.
+ * The `provisioning` status is the transition's own `from`.
+ */
 function sameLease(metadata: Record<string, unknown>) {
   const restartId = typeof metadata.runtimeRestartId === 'string' ? metadata.runtimeRestartId : '';
   const recoveryId =
     typeof metadata.runtimeRecoveryLeaseId === 'string' ? metadata.runtimeRecoveryLeaseId : '';
   return and(
-    eq(sessionSandboxes.status, 'provisioning'),
     sql`coalesce(${sessionSandboxes.metadata}->>'runtimeRestartId', '') = ${restartId}`,
     sql`coalesce(${sessionSandboxes.metadata}->>'runtimeRecoveryLeaseId', '') = ${recoveryId}`,
   );
@@ -158,15 +161,11 @@ export async function convergeStuckProvisioningRuntimes(now = new Date()): Promi
           stopReason: 'manual',
           [PROVIDER_REMOVAL_PENDING_KEY]: now.toISOString(),
         };
-        const [archived] = await db
-          .update(sessionSandboxes)
-          .set({
-            status: 'archived',
-            metadata: sql`(${stripMetadataKeys([...DELETED_SESSION_CLEARED_KEYS, ...LEASE_KEYS])}) || ${JSON.stringify(patch)}::jsonb`,
-            updatedAt: now,
-          })
-          .where(and(eq(sessionSandboxes.sandboxId, row.sandboxId), sameLease(metadata)))
-          .returning({ sandboxId: sessionSandboxes.sandboxId });
+        const archived = await transitionSandbox('archiveProvisioning', row.sandboxId, {
+          at: now,
+          metadata: { strip: [...DELETED_SESSION_CLEARED_KEYS, ...LEASE_KEYS], merge: patch },
+          guard: sameLease(metadata),
+        });
         if (archived) {
           await attemptArchivedBoxRemoval({ ...row, externalId, metadata: patch }, now);
           out.archived += 1;
@@ -189,25 +188,13 @@ export async function convergeStuckProvisioningRuntimes(now = new Date()): Promi
         if (metadata.runtimeIdentityState === 'recovery_claimed') {
           patch.runtimeIdentityState = 'recovered';
         }
-        const [activated] = await db
-          .update(sessionSandboxes)
-          .set({
-            status: 'active',
-            metadata: sql`(${stripMetadataKeys(LEASE_KEYS)}) || ${JSON.stringify(patch)}::jsonb`,
-            updatedAt: now,
-          })
-          .where(and(eq(sessionSandboxes.sandboxId, row.sandboxId), sameLease(metadata)))
-          .returning({ sandboxId: sessionSandboxes.sandboxId });
+        const activated = await transitionSandbox('activateProvisioning', row.sandboxId, {
+          at: now,
+          metadata: { strip: LEASE_KEYS, merge: patch },
+          guard: sameLease(metadata),
+        });
         if (!activated) continue;
-        await db
-          .update(projectSessions)
-          .set({ status: 'running', updatedAt: now })
-          .where(
-            and(
-              eq(projectSessions.sessionId, row.sessionId),
-              sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
-            ),
-          );
+        await transitionSession('resume', row.sessionId, { at: now });
         out.activated += 1;
         continue;
       }
@@ -220,7 +207,13 @@ export async function convergeStuckProvisioningRuntimes(now = new Date()): Promi
           metadata: sql`(${stripMetadataKeys(LEASE_KEYS)}) || ${JSON.stringify({ provisioningConvergedAt: now.toISOString() })}::jsonb`,
           updatedAt: now,
         })
-        .where(and(eq(sessionSandboxes.sandboxId, row.sandboxId), sameLease(metadata)))
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, row.sandboxId),
+            eq(sessionSandboxes.status, 'provisioning'),
+            sameLease(metadata),
+          ),
+        )
         .returning({ sandboxId: sessionSandboxes.sandboxId });
       if (!claimed) continue;
       await applyStoppedState({

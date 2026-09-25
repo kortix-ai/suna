@@ -5,10 +5,10 @@ import type {
   UsageEvent,
 } from '@kortix/llm-gateway';
 import { BillingGateError, assertBillingActive } from '../billing/services/billing-gate';
-import { deductForLlmUsage, grantCredits } from '../billing/services/credits';
 import { accountMayUseManagedModels, getCachedAccountTier } from '../billing/services/entitlements';
 import { llmPriceMarkup } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
+import { wallet } from '../billing/wallet';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { emitOtelSpan, isOtelTraceExporterConfigured } from '../lib/otel';
@@ -22,7 +22,7 @@ import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
 import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
-import { checkBudget } from './budgets';
+import { checkBudget, releaseBudgetReservation } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
@@ -250,6 +250,9 @@ function extendDeadlineForLlmActivity(sessionId: string | null | undefined): voi
 }
 
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
+  // The request is over: its cost is in the logged spend (or it cost nothing),
+  // so its in-flight budget reservation must stop counting.
+  releaseBudgetReservation(event.projectId, event.actorUserId);
   const pureHoldRefund = isPureHoldRefund(event);
   // A pure hold refund observed nothing — no upstream call happened.
   if (!pureHoldRefund) extendDeadlineForLlmActivity(event.sessionId);
@@ -270,11 +273,17 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
         cacheWriteTokens: event.cacheWriteTokens,
         costUsd: event.finalCost,
         streaming: event.streaming,
+        // One row per gateway request: a retried settlement finds this row,
+        // and the debit keyed on its id (`llm:<event id>`) runs once.
+        requestId: event.requestId,
         metadata: {
           upstreamCostUsd: event.upstreamCost,
           markup: llmPriceMarkup(),
           requestId: event.requestId,
           billingMode: event.billingMode,
+          // The stream ended before the provider reported usage; the token
+          // counts are the gateway's estimate (see usage/estimate.ts).
+          ...(event.usageEstimated ? { usageEstimated: true } : {}),
           // Staff-only: the upstream behind a Kortix-managed model. Customer
           // surfaces read `provider`/`model`, which name Kortix.
           ...(event.upstream
@@ -289,43 +298,51 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
     const { toDeduct, toRefund } = reconcileBillingHold(event.finalCost, event.billingHoldUsd);
     if (toDeduct > 0) {
       // The real cost exceeded the (small, fixed) admission hold — collect
-      // the difference. Still a flat atomic deduct (deductForLlmUsage →
-      // atomic_use_credits), so it can never take the balance negative; if
-      // the account has since run dry, this is the same best-effort,
-      // logged-not-thrown gap the flat-deduct path always had — now bounded
-      // to (finalCost - holdUsd) instead of the full finalCost.
-      await deductForLlmUsage({
-        accountId: event.accountId,
-        costUsd: toDeduct,
-        model: event.model,
-        provider: event.provider,
-        actorUserId: event.actorUserId,
-        usageEventId,
-        upstreamCostUsd: event.upstreamCost,
-        markup: llmPriceMarkup(),
-      });
+      // the difference as a settlement of work already done.
+      await settleLlmUsage(event, toDeduct, usageEventId);
     } else if (toRefund > 0) {
-      await grantCredits(
-        event.accountId,
-        toRefund,
-        'llm_reservation_refund',
-        `LLM gateway admission-hold refund${event.model && event.model !== 'unknown' ? ` · ${event.model}` : ''}`,
-        false,
-      );
+      await wallet.grant({
+        accountId: event.accountId,
+        amount: toRefund,
+        kind: 'llm_reservation_refund',
+        description: `LLM gateway admission-hold refund${event.model && event.model !== 'unknown' ? ` · ${event.model}` : ''}`,
+        expiring: false,
+        // A retried settlement of the same request refunds once.
+        key: event.requestId ? { request: `llm-hold-refund:${event.requestId}` } : null,
+      });
     }
     return;
   }
 
   if (event.billingMode === 'none') return;
-  await deductForLlmUsage({
+  await settleLlmUsage(event, event.finalCost, usageEventId);
+}
+
+/**
+ * Record LLM spend. SETTLEMENT, not admission: the tokens are already generated
+ * and already paid for upstream. An admission debit would refuse this on a
+ * drained wallet and the spend would disappear from the ledger — which is
+ * exactly what happened for a full billing period.
+ */
+async function settleLlmUsage(event: UsageEvent, costUsd: number, usageEventId: string | null): Promise<void> {
+  if (costUsd <= 0) return;
+  const markup = llmPriceMarkup();
+  const hasAudit = Boolean(usageEventId) || event.upstreamCost != null;
+  await wallet.settle({
     accountId: event.accountId,
-    costUsd: event.finalCost,
-    model: event.model,
-    provider: event.provider,
-    actorUserId: event.actorUserId,
-    usageEventId,
-    upstreamCostUsd: event.upstreamCost,
-    markup: llmPriceMarkup(),
+    amount: costUsd,
+    description: `LLM · ${event.provider ? `${event.provider}/` : ''}${event.model}`,
+    kind: 'llm_debit',
+    key: usageEventId ? { request: `llm:${usageEventId}` } : null,
+    audit: hasAudit
+      ? {
+          ...(usageEventId ? { usageEventId } : {}),
+          ...(event.upstreamCost != null ? { upstreamCostUsd: event.upstreamCost } : {}),
+          ...(markup != null ? { markup } : {}),
+          ...(event.actorUserId ? { actorUserId: event.actorUserId } : {}),
+          route: '/v1/llm/chat/completions',
+        }
+      : undefined,
   });
 }
 

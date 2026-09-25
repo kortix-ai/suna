@@ -17,7 +17,10 @@ mock.module('../billing/services/billing-gate', () => ({
   ...actualBillingGate,
   assertBillingActive: async () => undefined,
 }));
-mock.module('./budgets', () => ({ checkBudget: async () => ({ exceeded: false }) }));
+mock.module('./budgets', () => ({
+  checkBudget: async () => ({ exceeded: false }),
+  releaseBudgetReservation: () => {},
+}));
 const actualHooks = await import('./hooks');
 mock.module('./hooks', () => ({
   ...actualHooks,

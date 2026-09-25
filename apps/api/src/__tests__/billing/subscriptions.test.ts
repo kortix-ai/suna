@@ -6,13 +6,14 @@ import {
   createMockStripeClient,
   mockRegistry,
   registerGlobalMocks,
-  registerCreditsMock,
+  registerWalletMock,
+  fakeWallet,
   resetMockRegistry,
 } from './mocks';
 
-// Register global mocks + credits service mock (stubs grantCredits/resetExpiringCredits)
+// Register global mocks + the fake wallet (records every grant and reset)
 registerGlobalMocks();
-registerCreditsMock();
+registerWalletMock();
 
 // Per-seat checkout reads the active member count for the Stripe quantity.
 // Stub it so the unit test doesn't reach for the DB.
@@ -25,16 +26,13 @@ mock.module('../../billing/services/seat-management', () => ({
 let upsertCreditAccountCalls: any[] = [];
 let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
-let resetExpiringCreditsCalls: any[] = [];
-let grantCreditsCalls: any[] = [];
+const walletGrants = fakeWallet.calls.grant;
 let stripeCancelSubCalls: any[] = [];
 
 beforeEach(() => {
   upsertCreditAccountCalls = [];
   updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
-  resetExpiringCreditsCalls = [];
-  grantCreditsCalls = [];
   stripeCancelSubCalls = [];
   resetMockRegistry();
 
@@ -78,12 +76,6 @@ beforeEach(() => {
   };
 
   // Credit service defaults
-  mockRegistry.grantCredits = async (...args: any[]) => {
-    grantCreditsCalls.push(args);
-  };
-  mockRegistry.resetExpiringCredits = async (...args: any[]) => {
-    resetExpiringCreditsCalls.push(args);
-  };
 });
 
 // Import AFTER mocking
@@ -746,8 +738,9 @@ describe('confirmCheckoutSession: payment gate (client-callable fraud path)', ()
       createMockStripeCheckoutSession({ status: 'complete', payment_status: 'unpaid' });
 
     let granted = false;
-    mockRegistry.grantCredits = async () => {
+    fakeWallet.wallet.grant = async () => {
       granted = true;
+      return { replayed: false, ledgerId: null };
     };
 
     const { confirmCheckoutSession } = await import('../../billing/services/subscriptions');
@@ -806,9 +799,8 @@ describe('confirmCheckoutSession: activation grant idempotency key', () => {
     });
 
     expect(result.success).toBe(true);
-    const tierGrant = grantCreditsCalls.find((args: any[]) => args[2] === 'tier_grant');
+    const tierGrant = walletGrants.find((grant) => grant.kind === 'tier_grant');
     expect(tierGrant).toBeDefined();
-    expect(tierGrant![5]).toBe('subscription_activation:sub_confirm_123');
-    expect(tierGrant![5]).not.toBe('cs_confirm_race');
+    expect(tierGrant!.key).toEqual({ event: 'subscription_activation:sub_confirm_123' });
   });
 });

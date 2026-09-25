@@ -30,25 +30,19 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 // An upstream can return a syntactically valid 200 with `choices: []` — a
-// genuinely EMPTY array, not merely an empty-content choice (see
-// usage/completion-guard.ts's `jsonHasContent`, which explicitly treats both
-// shapes the same way: "no real output, try the next candidate" — the
-// OpenRouter/z-ai pattern pipeline/handler.ts's `registerEmptyCompletion`
-// exists for, observed at a ~19% transient rate in production). Every
+// genuinely EMPTY array, not merely an empty-content choice (the OpenRouter/
+// z-ai pattern, observed at a ~19% transient rate in production). Every
 // chat-completions-family AI SDK provider package (openai, openai-compatible)
 // unconditionally indexes `responseBody.choices[0]` and crashes with a raw
-// TypeError if that index doesn't exist, turning this already-understood,
-// already-handled upstream failure mode into an opaque thrown error that
-// bypasses the gateway's own empty-completion retry/failover logic entirely
-// — instead of flowing through as the syntactically valid (if unhelpfully
-// empty) response it actually is. Patched at the fetch boundary EVERY
+// TypeError if that index doesn't exist, turning this upstream failure mode
+// into an opaque thrown error — instead of flowing through as the
+// syntactically valid (if unhelpfully empty) response it actually is. Patched at the fetch boundary EVERY
 // chat-completions family's provider package ends up calling, so the fix
 // applies regardless of which one `resolveAiModel` picked; a no-op for the
 // Responses API (`output`, not `choices`) and Anthropic/Bedrock (their own
 // wire shapes) — neither ever has a `choices` key to match — and for
 // streaming responses (`content-type: text/event-stream`, never touched
-// here; an empty stream is a separate problem streaming.ts's probe already
-// handles on its own terms).
+// here).
 function guardEmptyChoicesFetch(fetch: AiSdkFetch): AiSdkFetch {
   return async (input, init) => {
     const response = await fetch(input, init);
@@ -92,8 +86,8 @@ function sseResponse(stream: ReadableStream<Uint8Array>): Response {
   });
 }
 
-// Map an AI SDK error into the gateway's transport error taxonomy so failover,
-// retry, and the circuit breaker behave identically to the native path.
+// Map an AI SDK error into the gateway's transport error taxonomy so the
+// dispatch plan (pipeline/dispatch.ts) treats it like a direct-path failure.
 //
 // Defect (2026-07-17, live-confirmed): not every AI-SDK provider error carries
 // a numeric `.statusCode` — an AWS credential/SigV4 resolution failure
@@ -140,14 +134,14 @@ export function toTransportError(err: unknown, provider: string): Error {
     // the provider's error-schema parse. Prefer it whenever it is non-empty;
     // only fall back to the AI SDK's `.message` (which may itself be the real
     // `error.message` when the schema DID match) when no body was captured.
-    // The downstream `parseUpstreamBody` (failover.ts → parseUpstreamErrorBody)
-    // mines the real `error.message`/`error.code` out of this raw body.
+    // `parseUpstreamErrorBody` mines the real `error.message`/`error.code` out
+    // of this raw body.
     const body =
       typeof e.responseBody === 'string' && e.responseBody.trim().length > 0
         ? e.responseBody
         : (e.message ?? '');
     // `responseHeaders` carries the upstream's `Retry-After` on a 429/503. The
-    // pipeline relays it CLAMPED (failover.ts) — never verbatim, because
+    // pipeline relays it CLAMPED (`clampRetryAfterSeconds`) — never verbatim, because
     // OpenCode >= 1.18.17 sleeps for whatever it is told, up to 24.8 days.
     const headers = e.responseHeaders ?? e.cause?.responseHeaders;
     return new UpstreamHttpError(statusCode, body, provider, headers);
@@ -199,6 +193,76 @@ export function guardAgainstUnhandledResultRejections(result: {
   }
 }
 
+type StreamPart = { type: string; [k: string]: unknown };
+
+// Parts that only report liveness. They carry no model output, so a failure
+// after them still left the client with nothing.
+const LIVENESS_PARTS = new Set(['start', 'start-step']);
+
+/**
+ * How long a stream may stay without output before the transport answers the
+ * client anyway. Provider errors (429, 400, auth, overload) arrive in well
+ * under a second; a large prefill can hold Bedrock's response headers for
+ * minutes, and the synthetic headers must reach the client before
+ * Cloudflare's 100 s response deadline.
+ */
+export const STREAM_COMMIT_MS = Number(process.env.GATEWAY_STREAM_COMMIT_MS) || 30_000;
+
+/**
+ * Reads `fullStream` until the first output part, an error, or `commitAfterMs`.
+ *
+ * An error before any output throws, as the same transport error a
+ * non-streaming call throws, so the caller can retry it on another key or
+ * provider. Otherwise the returned iterable replays what was read and then
+ * continues the provider stream, and a later error stays in-band.
+ */
+export async function openStream(
+  fullStream: AsyncIterable<StreamPart>,
+  provider: string,
+  commitAfterMs: number,
+): Promise<AsyncIterable<StreamPart>> {
+  const iterator = fullStream[Symbol.asyncIterator]();
+  const read: StreamPart[] = [];
+  let inFlight: Promise<IteratorResult<StreamPart>> | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const commit = new Promise<'commit'>((resolve) => {
+    timer = setTimeout(() => resolve('commit'), commitAfterMs);
+  });
+  try {
+    for (;;) {
+      inFlight = iterator.next();
+      const next = await Promise.race([inFlight, commit]);
+      if (next === 'commit') {
+        // The replay hands this read to the SSE bridge, which handles its result.
+        inFlight.catch(() => {});
+        break;
+      }
+      inFlight = null;
+      if (next.done) break;
+      if (next.value.type === 'error') {
+        await iterator.return?.();
+        throw toTransportError(next.value.error, provider);
+      }
+      read.push(next.value);
+      if (!LIVENESS_PARTS.has(next.value.type)) break;
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+  return {
+    [Symbol.asyncIterator]: () => ({
+      next: () => {
+        const buffered = read.shift();
+        if (buffered) return Promise.resolve({ done: false, value: buffered });
+        const pending = inFlight;
+        inFlight = null;
+        return pending ?? iterator.next();
+      },
+      return: async (value?: unknown) => (await iterator.return?.(value)) ?? { done: true, value: undefined },
+    }),
+  };
+}
+
 // Both `generateText`'s and `streamText`'s settled results expose tool calls
 // as an array of `{toolCallId, toolName, input}` (plus provider-specific
 // fields we don't need) — normalize either into what openAiJsonFromResult
@@ -221,13 +285,14 @@ export function mapToolCalls(
 // return a Response in the SAME OpenAI-compatible shape (SSE for stream, JSON
 // otherwise) — so the pipeline, billing, and opencode see no difference.
 //
-// Streaming returns immediately (matching native): errors then surface as an
-// in-stream OpenAI error frame the pipeline probe already handles. Non-streaming
-// awaits the call so a 4xx/5xx throws here and drives the same failover.
+// Both modes throw a provider failure that happens before any output, so the
+// dispatch plan can retry it. Streaming waits for the first output part for at
+// most `commitAfterMs` (see openStream); a failure after that point surfaces as
+// an in-stream OpenAI error frame.
 export async function callUpstreamViaAiSdk(
   body: Record<string, unknown>,
   descriptor: UpstreamDescriptor,
-  opts: { signal?: AbortSignal; fetch?: AiSdkFetch; requestId?: string } = {},
+  opts: { signal?: AbortSignal; fetch?: AiSdkFetch; requestId?: string; commitAfterMs?: number } = {},
 ): Promise<Response> {
   const family = aiSdkFamilyFor(descriptor);
   const isCodex = isCodexDescriptor(descriptor);
@@ -339,7 +404,12 @@ export async function callUpstreamViaAiSdk(
     guardAgainstUnhandledResultRejections(result);
 
     if (clientWantsStream) {
-      return sseResponse(openAiSseFromFullStream(result.fullStream, ctx));
+      const opened = await openStream(
+        result.fullStream,
+        descriptor.provider,
+        opts.commitAfterMs ?? STREAM_COMMIT_MS,
+      );
+      return sseResponse(openAiSseFromFullStream(opened, ctx));
     }
 
     // Codex + a client that wants JSON: await the same settled-result promises

@@ -20,6 +20,7 @@ import {
 } from '@kortix/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { safeSetItem } from '../platform/storage/managed-storage';
+import { registerIdentityReset } from './identity-reset-registry';
 import type { FlatModel } from './model-flatten';
 import { createModelLookup } from './model-lookup';
 import { shouldSetSessionAgentName } from './session-agent-name-guard';
@@ -170,6 +171,18 @@ function setStore(next: ModelStore) {
   safeSetItem(STORE_KEY, JSON.stringify(capped));
   for (const fn of _listeners) fn();
 }
+
+// On an identity change the previous user's picks must not survive in memory:
+// the next `setStore` would write them back to storage under the new user.
+registerIdentityReset(() => {
+  _store = { user: [], recent: [], variant: {} };
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(STORE_KEY);
+  } catch {
+    // Storage-blocked context: the in-memory reset above is what matters.
+  }
+  for (const fn of _listeners) fn();
+});
 
 function subscribe(fn: () => void) {
   _listeners.add(fn);

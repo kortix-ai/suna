@@ -6,7 +6,7 @@
  * There are exactly two such moments, and therefore exactly one set of hooks:
  *   - create-with-prompt  → projects/lib/sessions.ts
  *   - first HTTP prompt   → sandbox-proxy/routes/preview.ts,
- *                           projects/session-lifecycle/engine.ts (server-side
+ *                           projects/session-lifecycle/continue-session.ts (server-side
  *                           delivery, transport-independent)
  *
  * These tests fail the build when a new create path, a new prompt transport, or
@@ -70,7 +70,7 @@ describe('session-title invariant', () => {
     expect(
       offenders(/from '[^']*session-title-generate'/, [
         'projects/lib/sessions.ts',
-        'projects/session-lifecycle/engine.ts',
+        'projects/session-lifecycle/continue-session.ts',
         'sandbox-proxy/routes/preview.ts',
         // Hook 3, extracted. `runPrePromptEnvSync` is the block that used to sit
         // inline in preview.ts; it calls the generator through an injected
@@ -81,7 +81,7 @@ describe('session-title invariant', () => {
         // in-guest (KORTIX_INITIAL_PROMPT) never crosses another titling hook.
         // The generator stays the single writer (needsTitle + CAS), so this is
         // a retry of Hook 1, not a new title author.
-        'projects/routes/r4.ts',
+        'projects/routes/turn-stream.ts',
       ]),
     ).toEqual([]);
   });
@@ -116,8 +116,8 @@ describe('session-title invariant', () => {
         'channels/slack/session.ts',
         'channels/teams/session.ts',
         'channels/telegram-webhook.ts',
-        'projects/routes/r2.ts',
-        'projects/routes/r10.ts',
+        'projects/routes/sandboxes.ts',
+        'projects/routes/marketplace-install-session.ts',
         'projects/lib/sessions.ts',
       ]),
     ).toEqual([]);

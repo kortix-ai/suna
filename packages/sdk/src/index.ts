@@ -57,6 +57,7 @@ export {
   createFile,
   deleteFile,
   files,
+  FileExistsError,
   findFiles,
   findText,
   getCurrentProject,

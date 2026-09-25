@@ -39,7 +39,7 @@ async function wakeRecoveredSession(sessionId: string): Promise<void> {
   const { promoteNextInboxRow } = await import('./store');
   const idempotencyKey = await promoteNextInboxRow(sessionId);
   if (!idempotencyKey) return;
-  const { drainSessionLifecycleQueue } = await import('./engine');
+  const { drainSessionLifecycleQueue } = await import('./drain');
   await drainSessionLifecycleQueue({ idempotencyKey, coalesce: false });
 }
 

@@ -45,7 +45,8 @@ import {
 } from '../sandbox-turn-lifecycle';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { wireIdTime } from '../wire-message-id';
-import { drainSessionLifecycleQueue, resolveSessionOpencodeEndpoint } from './engine';
+import { drainSessionLifecycleQueue } from './drain';
+import { resolveSessionOpencodeEndpoint } from './runtime-client';
 import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, parsePlacementTip, strandedPlacement, tipIsBusy } from './forwarded-placement';
 import { promoteNextInboxRow, withNextDeliveryAttempt } from './store';
 import { wireMessageIdMatches } from './wire-id-match';

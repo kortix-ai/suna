@@ -38,6 +38,35 @@ const MAX_REDIRECTS = 5;
  * returned by `dns.lookup` (a canonical IP), so encodings are normalized before
  * this runs. IPv4-mapped IPv6 (`::ffff:7f00:1`) is unwrapped and checked as v4.
  */
+/** Expand an IPv6 literal to 8 hex groups, or null when it is not one. */
+function ipv6Groups(ip: string): number[] | null {
+  let text = ip;
+  const dotted = text.match(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(1).map(Number);
+    text = `${text.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0;
+  if (fill < 0 || (halves.length === 1 && head.length !== 8)) return null;
+  const groups = [...head, ...Array(fill).fill('0'), ...tail].map((g) => Number.parseInt(g, 16));
+  return groups.length === 8 && groups.every((g) => Number.isInteger(g) && g >= 0 && g <= 0xffff)
+    ? groups
+    : null;
+}
+
+/** The IPv4 address embedded in an IPv4-mapped or IPv4-compatible IPv6 literal. */
+function embeddedIpv4(ip: string): string | null {
+  const g = ipv6Groups(ip);
+  if (!g || g.slice(0, 5).some((x) => x !== 0)) return null;
+  if (g[5] !== 0xffff && g[5] !== 0) return null;
+  if (g[5] === 0 && g[6] === 0) return null; // `::` and `::1`, handled by the caller
+  return `${g[6] >> 8}.${g[6] & 0xff}.${g[7] >> 8}.${g[7] & 0xff}`;
+}
+
 export function isPrivateIp(ip: string): boolean {
   if (!ip || typeof ip !== 'string') return true;
   const family = isIP(ip);
@@ -69,6 +98,11 @@ export function isPrivateIp(ip: string): boolean {
   // IPv6
   const v = ip.toLowerCase();
   if (v === '::1' || v === '::') return true; // loopback / unspecified
+  // An embedded IPv4 in hex form: IPv4-mapped (`::ffff:7f00:1`, which is how
+  // WHATWG URL serializes `[::ffff:127.0.0.1]`) and IPv4-compatible
+  // (`::7f00:1`). Check the embedded address as v4.
+  const embedded = embeddedIpv4(v);
+  if (embedded) return isPrivateIp(embedded);
   if (v.startsWith('fc') || v.startsWith('fd')) return true; // fc00::/7 ULA (incl. AWS fd00:ec2::254 metadata)
   if (v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb'))
     return true; // fe80::/10 link-local
@@ -77,6 +111,29 @@ export function isPrivateIp(ip: string): boolean {
   if (v.startsWith('100::')) return true; // discard prefix
   if (v.startsWith('2001:db8:')) return true; // documentation
   return false;
+}
+
+export interface SafeEgressUrlOptions {
+  /** Allow http: in addition to https:. Defaults to false. */
+  allowHttp?: boolean;
+  /**
+   * Hostnames (or IP literals) an operator has explicitly allowed to resolve
+   * to a private address — a self-hosted deployment that calls an internal
+   * API, or the local test stack's loopback upstream. Matched exactly,
+   * case-insensitive, trailing dot ignored. Every other host keeps the full
+   * private-address check, and so does every redirect hop to another host.
+   */
+  allowPrivateHosts?: readonly string[];
+}
+
+function normalizeHost(host: string): string {
+  return host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+}
+
+function isAllowlistedHost(host: string, allow: readonly string[] | undefined): boolean {
+  if (!allow || allow.length === 0) return false;
+  const h = normalizeHost(host);
+  return allow.some((entry) => normalizeHost(entry.trim()) === h && h.length > 0);
 }
 
 /**
@@ -92,7 +149,7 @@ export function isPrivateIp(ip: string): boolean {
  */
 export async function assertSafeEgressUrl(
   rawUrl: string,
-  opts: { allowHttp?: boolean } = {},
+  opts: SafeEgressUrlOptions = {},
 ): Promise<URL> {
   let parsed: URL;
   try {
@@ -108,9 +165,12 @@ export async function assertSafeEgressUrl(
     throw new UnsafeEgressError('url must not contain credentials', rawUrl);
   }
   const host = parsed.hostname;
-  // Literal IP host → check directly without DNS.
-  if (isIP(host) !== 0) {
-    if (isPrivateIp(host)) throw new UnsafeEgressError(`blocked private ip host: ${host}`, rawUrl);
+  if (isAllowlistedHost(host, opts.allowPrivateHosts)) return parsed;
+  // Literal IP host → check directly without DNS. `URL.hostname` keeps the
+  // brackets of an IPv6 literal (`[::1]`); strip them so `isIP` sees the address.
+  const literal = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  if (isIP(literal) !== 0) {
+    if (isPrivateIp(literal)) throw new UnsafeEgressError(`blocked private ip host: ${host}`, rawUrl);
     return parsed;
   }
   let resolved: Array<{ address: string; family: number }>;
@@ -136,28 +196,37 @@ export async function assertSafeEgressUrl(
   return parsed;
 }
 
-interface SafeFetchInit extends RequestInit {
-  /** Allow http: in addition to https:. Defaults to false. */
-  allowHttp?: boolean;
-}
+interface SafeFetchInit extends RequestInit, SafeEgressUrlOptions {}
+
+/** Request headers a redirect to another origin must not carry (Fetch standard). */
+const CROSS_ORIGIN_STRIPPED_HEADERS = ['authorization', 'cookie', 'proxy-authorization'];
 
 /**
  * Fetch a caller-influenced URL safely: validate the URL via
  * {@link assertSafeEgressUrl}, then fetch with `redirect: 'manual'` and
  * re-validate every redirect Location (cap {@link MAX_REDIRECTS}). Any
  * non-2xx/3xx final response is returned as-is for the caller to handle.
+ *
+ * Redirects follow the Fetch standard's method rules: a 303, or a 301/302
+ * answering a POST, continues as a body-less GET. A hop to another origin
+ * drops `Authorization`, `Cookie`, and `Proxy-Authorization`, so a credential
+ * sent to one host never reaches the host it redirects to.
  */
 export async function safeEgressFetch(
   rawUrl: string,
   init: SafeFetchInit = {},
 ): Promise<Response> {
-  const { allowHttp, ...fetchInit } = init;
-  let url = await assertSafeEgressUrl(rawUrl, { allowHttp });
+  const { allowHttp, allowPrivateHosts, ...fetchInit } = init;
+  const guard = { allowHttp, allowPrivateHosts };
+  let url = await assertSafeEgressUrl(rawUrl, guard);
   let hops = 0;
   // Caller-provided signal must propagate to every hop.
   const signal = fetchInit.signal;
+  let method = (fetchInit.method ?? 'GET').toUpperCase();
+  let body = fetchInit.body;
+  let headers = fetchInit.headers;
   for (;;) {
-    const res = await fetch(url, { ...fetchInit, redirect: 'manual', signal });
+    const res = await fetch(url, { ...fetchInit, method, body, headers, redirect: 'manual', signal });
     if (res.status < 300 || res.status >= 400) return res;
     // 3xx — follow manually with re-validation.
     if (++hops > MAX_REDIRECTS) {
@@ -165,7 +234,24 @@ export async function safeEgressFetch(
     }
     const location = res.headers.get('location');
     if (!location) return res; // malformed 3xx with no Location → let caller see it
-    const next = new URL(location, url);
-    url = await assertSafeEgressUrl(next.href, { allowHttp });
+    const next = await assertSafeEgressUrl(new URL(location, url).href, guard);
+    if (
+      (res.status === 303 && method !== 'HEAD') ||
+      ((res.status === 301 || res.status === 302) && method === 'POST')
+    ) {
+      method = 'GET';
+      body = undefined;
+      const rewritten = new Headers(headers);
+      for (const name of ['content-type', 'content-length', 'content-encoding', 'content-language', 'content-location']) {
+        rewritten.delete(name);
+      }
+      headers = rewritten;
+    }
+    if (next.origin !== url.origin) {
+      const stripped = new Headers(headers);
+      for (const name of CROSS_ORIGIN_STRIPPED_HEADERS) stripped.delete(name);
+      headers = stripped;
+    }
+    url = next;
   }
 }

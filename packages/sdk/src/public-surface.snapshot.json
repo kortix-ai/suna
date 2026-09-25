@@ -16,6 +16,7 @@
     "FEATURE_FLAG_KEYS",
     "FEATURE_NOT_SUPPORTED_CODE",
     "FILE_VERBS",
+    "FileExistsError",
     "HeadlessAuthError",
     "HostBoundaryError",
     "IMPERSONATION_HEADER",
@@ -1172,6 +1173,7 @@
     "replyToPermission",
     "replyToQuestion",
     "requestRuntimeReconnect",
+    "resetIdentityState",
     "resetPrefetchState",
     "resetSessionPermissions",
     "resolveCurrentAgentName",
@@ -2269,6 +2271,7 @@
     "openEventStream"
   ],
   "./files": [
+    "FileExistsError",
     "SANDBOX_FS_ROOTS",
     "copyFile",
     "createFile",

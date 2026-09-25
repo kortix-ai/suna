@@ -548,6 +548,7 @@
     "FileContent",
     "FileDiff",
     "FileEdited",
+    "FileExistsError",
     "FileListData",
     "FileListError",
     "FileListErrors",
@@ -3783,6 +3784,7 @@
     "replyToPermission",
     "replyToQuestion",
     "requestRuntimeReconnect",
+    "resetIdentityState",
     "resetPrefetchState",
     "resetSessionPermissions",
     "resolveCurrentAgentName",
@@ -7112,6 +7114,7 @@
   ],
   "./files": [
     "FileContent",
+    "FileExistsError",
     "FileNode",
     "FilePatch",
     "FilePatchHunk",

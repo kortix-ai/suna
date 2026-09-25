@@ -857,7 +857,7 @@ control or CLI command that clears it, for every caller who can hit it
 missing UI. *Incident:* a `user`-strategy connector had no connect flow
 anywhere — no shared account to offer, so the card rendered a button-less
 refusal and the composer spun on "Thinking" forever. *Enforcer:*
-`apps/api/src/projects/routes/r8-session-prompts.test.ts:377` ("queues the
+`apps/api/src/projects/routes/session-prompts.test.ts` ("queues the
 prompt even when the project has an unconnected connector"); the denial's
 `connect_url` remedy: `apps/api/src/connectors/principal-access.ts:110-114`.
 
@@ -2214,7 +2214,8 @@ one billing period on every drained per-seat account. Fixed in PR #7080.
 balance-to-number decisions outside the decision layer, no billing prose in
 components, the bypass stays deleted on both sides of the wire);
 `billing-state.test.ts` sweeps every Stripe status x plan class against the
-universal floor; `settle-credits.test.ts` pins the settlement contract.
+universal floor; `tests/migration/wallet-ledger.test.ts` pins the settlement
+contract (`wallet.settle`) against real PostgreSQL.
 
 ### Keep lazy optional dependencies type-lazy across shared-source imports (2026-08-28)
 
@@ -6486,7 +6487,7 @@ each delivery attempt. Inspect stored bindings when the resolved scope omits
 a disabled connector; a resolved scope is not a list of all stored bindings.
 
 **Enforcement.** `SESS-29` exercises refusal, Stop, fresh GET, and Resume through
-HTTP with PostgreSQL read-back. `r8-session-prompts.test.ts` covers admission
+HTTP with PostgreSQL read-back. `session-prompts.test.ts` covers admission
 refusals and reload. `queued-continue-inbox-delivery.test.ts` proves a connector
 refusal sends once and Stop prevents a second POST after a transient failure.
 Production recovery removed the stale binding through the session scope API.
