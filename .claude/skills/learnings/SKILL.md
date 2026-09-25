@@ -21,6 +21,31 @@ linked, not inlined.
 
 ## Register
 
+### A retired Enforcer names its keeper here, in the same PR (2026-09-25)
+
+**Rule:** When a PR deletes or renames a test file that an entry below names as
+its Enforcer, append the keeper that now proves the rule in that same PR, and
+prove the keeper with a mutation. A stale Enforcer line reads as a fact and
+sends the next reader to a file that does not exist. **Trigger surface:** a
+test-pruning PR; `git grep <retired-file>` across `.claude/skills/` must be empty
+or answered here.
+
+**Near-miss:** test-audit PR #7662 (api-billing-gateway) retired two named
+Enforcers without an append. Moved enforcers:
+- "A wrapper error hides its cause" (2026-09-10): `credit-duplicate-error.test.ts`
+  and its "naive check would have missed it" row are gone. The Enforcer is
+  `tests/migration/wallet-ledger.test.ts` "a replayed reset key is a silent
+  no-op": real PostgreSQL raises `kortix_unique_stripe_event` through a Drizzle
+  wrapper, because `reset_expiring_credits` has no event pre-check. It goes red
+  when `isDuplicateCreditGrantError` stops walking `cause`.
+  `apps/api/src/billing/wallet/duplicate-error.test.ts` keeps the constraint
+  and non-duplicate rows.
+- "Guest must fetch the managed set on every boot" (2026-08-19):
+  `managed-scope.test.ts` is gone. The Enforcers are
+  `apps/api/src/llm-gateway/internal-routes.test.ts` "POST /models managedOnly"
+  (exact managed lineup, payload `< 20_000` bytes, free tier empty) and
+  `packages/llm-gateway/src/create-gateway.test.ts` "gateway.listModels — scope
+  plumbing". They go red when the route ignores `managedOnly`.
 ### An endpoint's token type is part of its contract, and a mocked fetch cannot check it (2026-09-25)
 
 **Rule:** before calling a provider endpoint, check which CREDENTIAL TYPES it
@@ -7255,6 +7280,48 @@ refuses writes even when the URL's `options=` turns read-only off; the real CLI
 lists every migration on an empty database and creates no schema). It failed
 on the old status (3 of 5). `migration-status.test.ts` pins that `migrate.ts`
 has no `dryRun` and that the status path never calls `runner(`.
+
+### 2026-09-18 — The platform never writes a session's tracked working tree
+
+**Near miss.** `kortix sessions reload` exited 0 and printed a moved etag on dev
+session `6d8dfdae`, which nobody had touched. The live agent answered
+`NO_MARKER`. OpenCode read its agents, skills and tools from
+`/workspace/.kortix/opencode`, so the reload checked the base branch's copy out
+into the session's tracked tree. A scripted run on the #7403 preview then found
+the consequences one at a time, each behind green unit tests: the platform's own
+plugin pin, lockfile and skill overlay read as session edits; the previous
+sync's unstaged output read as an edit; and an agent's `git add -A` swept the
+synced bytes into a session commit. Measured with real git: the change request
+listed the agent prompt as modified by the session, and its merge conflicted on
+a file nobody in the session had touched. Auto-converging on every wake would
+have made that fleet-wide.
+
+**Rule.** Runtime state that the platform owns lives outside the repository.
+Never write platform output into a tracked working tree and then try to tell it
+apart from user work by reading `git status`. Verify a config reload by what
+OpenCode serves (`/agent`, `/skill`), never by the etag. A daemon-side result is
+evidence only when `health.runtime.components.agent` is `current`: a fresh
+sandbox boots the template-baked daemon.
+
+**Enforcement.** `boot-config.test.ts` and `config-dir-sync.test.ts` run against
+real git repositories, full and `--depth 1`. They assert that `git status` in
+the session stays empty after every convergence, that a session edit keeps the
+working tree, and that a tampered or extended copy is rebuilt before a spawn.
+
+### 2026-09-21 — Never pipe one Bun child process into another for binary output
+
+**Near miss.** Building a 4 MiB config archive as `git archive` piped into
+`gzip -n`, both spawned from Bun, produced 982,058 bytes. Both processes exited
+0. Nothing reported the truncation. Found in the config-releases API lane before
+it shipped. `materializeRepoContext` already avoids the same failure class.
+
+**Rule.** For binary output between two child processes, write the first to a
+file (`git archive -o <file>`), then read the file with the second. Never trust
+exit codes alone for a pipeline: check the byte count or a digest at the end.
+
+**Enforcement.** `apps/api/src/config-releases/builder.test.ts` builds an archive
+larger than the truncation point and asserts it is complete and byte-identical
+across two builds.
 
 ### 2026-09-25 — One Stop during a fresh runtime's first turn broke every later turn
 

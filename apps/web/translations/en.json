@@ -969,6 +969,10 @@
         "agent_principal": {
           "name": "Agents as Principals",
           "description": "Agents act as themselves: their Kortix permissions, capped by their role. Whoever runs an agent adds only their own accounts."
+        },
+        "config_releases": {
+          "name": "Config Releases",
+          "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."
         }
       }
     },
@@ -1639,11 +1643,6 @@
     "previousRepository": {
       "title": "This session is out of date",
       "message": "The project changed after this session started. Update it to keep working on the latest version.",
-      "unavailable": "The previous workspace is no longer available. Start a new session in the current repository.",
-      "resume": "Resume previous workspace",
-      "resuming": "Resuming…",
-      "newSession": "Start new session",
-      "delete": "Delete session",
       "update": "Update to latest",
       "updating": "Updating…",
       "dismiss": "Dismiss",
@@ -18600,6 +18599,17 @@
       "textea5d0ffa0962": "A project manager connects the shared account.",
       "text3d6627454174": "Set credential",
       "text929505ef815a": "No account is connected yet. Add your own below, or ask a project manager to connect a shared one.",
+      "text931cb67e2af7": "The new agent config failed to load. An earlier config still runs this session.",
+      "textd9ff3a72833d": "Config failed to load",
+      "textebfb07812fb4": "The new agent config failed to load",
+      "text4e62b29dd3b6": "An earlier config runs this session. The failed config is not retried until the base branch changes.",
+      "textf81ab834de5f": "Reason",
+      "text44cdf35701cd": "Now running",
+      "text591f9f0f3259": "Failed release",
+      "text00ed4c71dc2b": "Last working release",
+      "textbd7a1a3b4141": "The platform default config",
+      "text643df05476ab": "The platform default config runs this session. The failed config is not retried until the base branch changes.",
+      "text40652e008fc9": "The new agent config failed to load. The platform default config runs this session.",
       "text3312ddb06c1d": "Register a bot in Azure, connect it here, then upload the app package to Teams.",
       "text7f1b55a356b0": "Register the bot in Azure",
       "text91004edf8b30": "Connect it to this project",
@@ -19177,7 +19187,9 @@
       "text8cc0d84b66bb": "Previewed Slack identity link",
       "text508b43cc4545": "Previewed Teams identity link",
       "text467f597e95b0": "Verified SSO domain",
-      "text8295f9d4861b": "Set account SSO domain verification"
+      "text8295f9d4861b": "Set account SSO domain verification",
+      "text7beaff63a7d3": "Downloaded project config archive",
+      "text5176d59f25fd": "Resolved session config release"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

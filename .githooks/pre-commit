@@ -74,4 +74,13 @@ fi
 sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" staged
 
 # (4) Backstop: block any remaining unencrypted, committable .env.
-exec $DX ext precommit
+#
+# `dotenvx protect`, not the deprecated `ext precommit` (dotenvx 2.29.0 prints
+# "[DEPRECATED] dotenvx precommit. fix: run [dotenvx protect]" and points here).
+# The deprecated check also flags `apps/api/scripts/test.env`, which is
+# plaintext ON PURPOSE with fake values — read its header: the unit suite runs
+# off it with no decryption key, and encrypting it hands CI
+# `SUPABASE_URL=encrypted:…`. `protect` guards the `.env*` files that hold real
+# secrets and leaves that one alone, so the guard keeps its job and stops
+# refusing a file the repo is required to keep readable.
+exec $DX protect

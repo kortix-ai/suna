@@ -1,8 +1,8 @@
 /**
  * Presentation metadata for Review Center items — the single place that maps a
- * kind / risk / status / source to its icon, Kortix tone, and label. Mirrors the
- * tinted-icon-tile pattern from changes-view.tsx: a faint Kortix-token fill behind
- * a solid Kortix-token icon.
+ * kind / risk / status / source to its icon, Kortix tone, and label. Uses the
+ * tinted-icon-tile pattern: a faint Kortix-token fill behind a solid Kortix-token
+ * icon.
  */
 
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';

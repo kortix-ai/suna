@@ -59,4 +59,22 @@ describe('callUpstream OpenAI-compatible passthrough', () => {
     ).rejects.toThrow('client disconnected');
     expect(calls).toBe(0);
   });
+
+  // A resolution-time configuration defect: refused before any network call,
+  // naming the provider so the log says which descriptor is broken.
+  test.each([
+    ['', 'missing baseUrl'],
+    ['ftp://provider.example/v1', 'invalid baseUrl "ftp://provider.example/v1"'],
+  ])('a descriptor with baseUrl %p is refused without a fetch', async (baseUrl, reason) => {
+    let calls = 0;
+    await expect(
+      callUpstream({}, { ...descriptor, baseUrl }, {
+        fetchImpl: async () => {
+          calls += 1;
+          return new Response();
+        },
+      }),
+    ).rejects.toThrow(`upstream misconfigured for provider "openrouter": ${reason}`);
+    expect(calls).toBe(0);
+  });
 });
