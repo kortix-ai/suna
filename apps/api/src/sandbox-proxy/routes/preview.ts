@@ -82,6 +82,7 @@ import {
 } from '../prompt-wire-id-repair';
 import {
   PROXY_RETRY_BUDGET_MS,
+  PROXY_RETRY_DELAYS_MS,
   isFileImportRequest,
   isLongTurnCompletionRequest,
   isUploadRequest,
@@ -721,11 +722,10 @@ export function shouldAutoResumeStoppedSandbox(
 export function shouldWakeStoppedSandboxForWsAttach(
   status: string,
   remainingPath: string,
-  opts: { wakeRequested: boolean; accessKind?: string },
+  opts: { wakeRequested: boolean },
 ): boolean {
   if (status !== 'stopped') return false;
   if (!opts.wakeRequested) return false;
-  if (opts.accessKind && opts.accessKind !== 'principal') return false;
   return classifyPtyWebSocketPath(remainingPath) !== null;
 }
 /**
@@ -1143,14 +1143,8 @@ export async function forwardToSandbox(
   };
 
   // 2. Forward with auto-wake retry.
-  const MAX_RETRIES = 3;
-  // Short early delays so a transient post-restore RX stall (CH virtio-net misses
-  // the first RX interrupt → daemon briefly unreachable ~1s) clears on the next
-  // attempt instead of stretching to seconds. The old [2000,5000,8000] turned a
-  // ~1s stall into the multi-second session-list lag observed in-browser
-  // (opencode-listed +5578ms, 2026-06-14). Later delays stay progressive for a
-  // genuinely cold-booting port.
-  const RETRY_DELAYS_MS = [250, 1000, 3000];
+  const RETRY_DELAYS_MS = PROXY_RETRY_DELAYS_MS;
+  const MAX_RETRIES = RETRY_DELAYS_MS.length;
   let wakeTriggered = false;
   // Only a CONFIRMED-dead provider signal (box stopped/archived) errors the row.
   // A transient unreachable / RX stall must NEVER error a sandbox whose daemon
@@ -1940,7 +1934,6 @@ export async function resolvePreviewWsUpstream(opts: {
     if (
       shouldWakeStoppedSandboxForWsAttach(record.status, remainingPath, {
         wakeRequested: opts.wakeRequested === true,
-        accessKind: 'principal',
       })
     ) {
       const resumeExternalId = record.externalId;
@@ -2094,18 +2087,6 @@ preview.all('/:sandboxId/:port/*', async (c) => {
     undefined, // redirectPrefix → default `/v1/p/{sandbox}/{port}`
     publicOrigin,
   );
-});
-
-// Requests without a trailing path (e.g. /:sandboxId/:port) → normalize.
-preview.all('/:sandboxId/:port', async (c) => {
-  const sandboxId = c.req.param('sandboxId');
-  const port = c.req.param('port');
-  const url = new URL(c.req.url);
-  // The app is mounted at /v1/p (see apps/api/src/index.ts), so a Location
-  // built from the route-relative path drops the mount and sends the browser to
-  // `https://<api>/<sandbox>/<port>/` — a 404. Mirrors the sibling normalizer in
-  // routes/public-share.ts.
-  return c.redirect(`/v1/p/${sandboxId}/${port}/${url.search}`, 301);
 });
 
 export { preview };

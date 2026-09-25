@@ -1,17 +1,15 @@
 import { describe, expect, it } from 'bun:test';
 
-import {
-  PLACEHOLDER_TITLE_SQL_PATTERN,
-  isPlaceholderOpencodeTitle,
-} from '../projects/lib/opencode-title';
-import type { ProjectSessionRow } from '../projects/lib/serializers';
+import type { ProjectSessionRow } from './lib/serializers';
 import {
   type GenerateSessionTitleOptions,
   extractPromptInfo,
   generateSessionTitleFromFirstPrompt,
   sanitizeGeneratedTitle,
+  TITLE_SOURCE_MAX_CHARS,
+  titleCompletionBody,
   titleSourceForCreate,
-} from '../projects/session-title-generate';
+} from './session-title-generate';
 
 function row(metadata: Record<string, unknown>): ProjectSessionRow {
   return {
@@ -31,25 +29,56 @@ function bodyOf(value: unknown): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
+describe('titleCompletionBody', () => {
+  it('grants reasoning models enough completion budget to emit content', () => {
+    const body = JSON.parse(titleCompletionBody('glm-5.3-flash', 'Create a demo PDF about cats.'));
+    // Reasoning models (GLM, DeepSeek, o-series) spend tokens on `reasoning`
+    // BEFORE `content`. A tight cap (the old 24) returned finish_reason
+    // "length" with an empty content — and the session stayed untitled
+    // forever. The floor here is the regression guard.
+    expect(body.max_tokens).toBeGreaterThanOrEqual(128);
+    expect(body.model).toBe('glm-5.3-flash');
+    expect(body.stream).toBe(false);
+    // The message is quoted as DATA inside a titling instruction — passed
+    // bare, smaller models answer it (emit code) instead of titling it.
+    expect(body.messages[1].content).toContain('Create a demo PDF about cats.');
+    expect(body.messages[1].content).toMatch(/only the title/i);
+    expect(body.messages[1].content).toMatch(/Do NOT answer/i);
+  });
+
+  it('truncates oversized prompt text', () => {
+    const body = JSON.parse(titleCompletionBody('glm-5.3-flash', 'x'.repeat(TITLE_SOURCE_MAX_CHARS + 500)));
+    expect(body.messages[1].content).not.toContain('x'.repeat(TITLE_SOURCE_MAX_CHARS + 1));
+    expect(body.messages[1].content).toContain('x'.repeat(TITLE_SOURCE_MAX_CHARS));
+  });
+});
+
 describe('sanitizeGeneratedTitle', () => {
-  it('strips wrapping quotes and collapses whitespace', () => {
-    expect(sanitizeGeneratedTitle('  "Set Up  MS Graph"  ')).toBe('Set Up MS Graph');
-    expect(sanitizeGeneratedTitle('`Fix the login bug`')).toBe('Fix the login bug');
+  it.each([
+    { raw: '  "Set Up  MS Graph"  ', title: 'Set Up MS Graph' },
+    { raw: '"Cat  Demo\nPDF"', title: 'Cat Demo PDF' },
+    { raw: '`Fix the login bug`', title: 'Fix the login bug' },
+    { raw: 'line one\nline two', title: 'line one line two' },
+  ])('cleans to "$title"', ({ raw, title }) => {
+    expect(sanitizeGeneratedTitle(raw)).toBe(title);
   });
 
-  it('caps length and drops newlines', () => {
-    const long = 'a'.repeat(200);
-    const out = sanitizeGeneratedTitle('line one\nline two');
-    expect(out).toBe('line one line two');
-    expect((sanitizeGeneratedTitle(long) ?? '').length).toBeLessThanOrEqual(64);
+  it('caps a title at 64 characters', () => {
+    expect(sanitizeGeneratedTitle('a'.repeat(200))).toHaveLength(64);
   });
 
-  it('rejects empty and placeholder-shaped titles', () => {
-    expect(sanitizeGeneratedTitle('')).toBeNull();
-    expect(sanitizeGeneratedTitle('   ')).toBeNull();
-    expect(sanitizeGeneratedTitle(null)).toBeNull();
-    expect(sanitizeGeneratedTitle('New session - 2026-07-28')).toBeNull();
-    expect(sanitizeGeneratedTitle('New agent')).toBeNull();
+  // An empty completion is what a reasoning-only response leaves behind. A
+  // placeholder-shaped or code-fenced reply is a model answering the prompt
+  // instead of titling it. None of them may become the title.
+  it.each([
+    { raw: '' },
+    { raw: '   ' },
+    { raw: null },
+    { raw: 'New session - 2026-07-28' },
+    { raw: 'New agent' },
+    { raw: '```python\nimport subprocess\n```' },
+  ])('rejects $raw', ({ raw }) => {
+    expect(sanitizeGeneratedTitle(raw)).toBeNull();
   });
 });
 
@@ -118,40 +147,6 @@ describe('titleSourceForCreate', () => {
   });
 });
 
-describe('PLACEHOLDER_TITLE_SQL_PATTERN', () => {
-  // JS translation of the POSIX classes so the SQL predicate and the TS one
-  // cannot drift: `[:alnum:]` is `[0-9A-Za-z]`, and the pattern's `_` makes the
-  // class the exact complement of JavaScript's `\w`.
-  const asJs = new RegExp(PLACEHOLDER_TITLE_SQL_PATTERN.replace('[:alnum:]_', '0-9A-Za-z_'), 'i');
-
-  it('is a POSIX twin of isPlaceholderOpencodeTitle', () => {
-    const fixtures = [
-      'New session',
-      'New session - Jul 29',
-      'new SESSION x',
-      'New session_x',
-      'NEW SESSION',
-      '  New session - 2026-07-28  ',
-      'New sessions of work',
-      'Newsession',
-      'New session planning doc',
-      'New agent',
-      'NEW AGENT',
-      'New agent - Aug 3',
-      'New agents at work',
-      'New agent planning doc',
-      'Set Up MS Graph',
-      '',
-    ];
-    for (const fixture of fixtures) {
-      expect([fixture, asJs.test(fixture.trim())]).toEqual([
-        fixture,
-        isPlaceholderOpencodeTitle(fixture),
-      ]);
-    }
-  });
-});
-
 describe('generateSessionTitleFromFirstPrompt', () => {
   function harness(over: Partial<GenerateSessionTitleOptions> & { row?: ProjectSessionRow } = {}) {
     const persisted: string[] = [];
@@ -212,10 +207,14 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     );
     expect(h.models).toEqual(['codex/gpt-5.6-sol']);
     expect(h.persisted).toEqual(['Set Up MS Graph']);
+    expect(h.revoked).toEqual(['key-1']);
   });
 
-  it('falls back to opencode_model when the prompt carries no model', async () => {
-    const h = harness({ row: row({ opencode_model: 'kortix/glm-5.3-flash' }) });
+  it('falls back to opencode_model, ahead of the resolved fallback, when the prompt carries no model', async () => {
+    const h = harness({
+      row: row({ opencode_model: 'kortix/glm-5.3-flash' }),
+      fallbackModel: async () => 'never/used',
+    });
     await generateSessionTitleFromFirstPrompt(input, h.options);
     expect(h.models).toEqual(['glm-5.3-flash']);
   });
@@ -281,16 +280,6 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     200,
   );
 
-  it('generates, sanitizes, and persists a title; always revokes the key', async () => {
-    const h = harness();
-    await generateSessionTitleFromFirstPrompt(
-      { ...input, modelHint: 'codex/gpt-5.6-sol' },
-      h.options,
-    );
-    expect(h.persisted).toEqual(['Set Up MS Graph']);
-    expect(h.revoked).toEqual(['key-1']);
-  });
-
   it('is idempotent — skips a session that already has a real title', async () => {
     const h = harness({
       row: row({ name: 'Existing Title', opencode_model: 'codex/gpt-5.6-sol' }),
@@ -313,11 +302,11 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     await generateSessionTitleFromFirstPrompt(input, placeholder.options);
     expect(placeholder.persisted).toEqual(['Set Up MS Graph']);
 
-    const veyrisPlaceholder = harness({
+    const agentPlaceholder = harness({
       row: row({ name: 'New agent', opencode_model: 'codex/gpt-5.6-sol' }),
     });
-    await generateSessionTitleFromFirstPrompt(input, veyrisPlaceholder.options);
-    expect(veyrisPlaceholder.persisted).toEqual(['Set Up MS Graph']);
+    await generateSessionTitleFromFirstPrompt(input, agentPlaceholder.options);
+    expect(agentPlaceholder.persisted).toEqual(['Set Up MS Graph']);
   });
 
   it('falls back to a resolved SERVABLE model when neither the turn nor the row names one', async () => {
@@ -339,26 +328,6 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     expect(h.models).toEqual([]);
     expect(h.minted).toEqual([]);
     expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
-  });
-
-  it('precedence: modelHint beats opencode_model beats the resolved fallback', async () => {
-    const hint = harness({ row: row({ opencode_model: 'kortix/glm-5.3-flash' }) });
-    await generateSessionTitleFromFirstPrompt(
-      { ...input, modelHint: 'codex/gpt-5.6-sol' },
-      hint.options,
-    );
-    expect(hint.models).toEqual(['codex/gpt-5.6-sol']);
-
-    const stored = harness({
-      row: row({ opencode_model: 'kortix/glm-5.3-flash' }),
-      fallbackModel: async () => 'never/used',
-    });
-    await generateSessionTitleFromFirstPrompt(input, stored.options);
-    expect(stored.models).toEqual(['glm-5.3-flash']);
-
-    const fallback = harness({ row: row({}), fallbackModel: async () => 'anthropic/claude' });
-    await generateSessionTitleFromFirstPrompt(input, fallback.options);
-    expect(fallback.models).toEqual(['anthropic/claude']);
   });
 
   it('titles from the create-time title_source, never the rendered envelope it was handed', async () => {

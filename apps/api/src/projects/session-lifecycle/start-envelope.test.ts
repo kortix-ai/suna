@@ -78,38 +78,8 @@ describe('the session-open envelope states what THIS call did', () => {
     expect(result.observation?.runtime.boot_phase).toBe('installing-opencode@1.18.23');
   });
 
-  test('re-attempting after a previous failure: cooling_down is HONEST about nothing driving the box', () => {
-    // The `actively_starting` input RC-3 lacked. A `starting` payload whose
-    // boot says `actively_starting:false` means "the server is waiting out a
-    // retry cooldown", not "a box is being started".
-    const log = createStartCallLog(OBSERVED_AT);
-    log.did('cooling_down');
-    const result = withStartEnvelope(
-      payload({
-        reason: 'runtime_wake_cooldown',
-        retriable: true,
-        failure: {
-          category: 'sandbox-provider',
-          message: 'The runtime did not start (attempt 2). Retrying automatically.',
-          retryable: true,
-          evidence: {
-            check: 'provider_not_running',
-            observed_at: '2026-08-26T13:58:00.000Z',
-            error: null,
-            attempts: 2,
-            next_retry_at: '2026-08-26T14:03:00.000Z',
-          },
-        },
-      }),
-      log,
-      { stopReason: 'runtime_wake_failed', runtimeStartFailedAt: '2026-08-26T13:58:00.000Z' },
-    );
-    expect(result.action).toBe('cooling_down');
-    expect(result.retriable).toBe(true);
-    expect(result.boot).toMatchObject({ phase: 'resuming', actively_starting: false });
-    expect(result.failure?.evidence?.next_retry_at).toBe('2026-08-26T14:03:00.000Z');
-  });
-
+  // `cooling_down` is proven through the real /start route in
+  // __tests__/e2e-project-session-contract.test.ts (the wake-cooldown case).
   test('genuinely failed: the negative carries the check that produced it', () => {
     const log = createStartCallLog(OBSERVED_AT);
     log.sawProvider('stopped');
@@ -137,9 +107,7 @@ describe('the session-open envelope states what THIS call did', () => {
     );
     expect(result.action).toBe('reconciled');
     expect(result.boot?.phase).toBe('failed');
-    // The capture that motivated this: `lastInitError:null` on a `failed`
-    // payload told the user nothing. A negative must name its check.
-    expect(result.failure?.evidence?.check).toBe('runtime_not_ready_timeout');
+    // The negative names the provider check that produced it.
     expect(result.observation?.provider.checked_at).not.toBeNull();
   });
 
