@@ -19149,6 +19149,13 @@
       "chatAccount": "{service} налог",
       "chatWorkspace": "{service} радни простор",
       "checking": "Провера линка…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} nije povezan",
+      "mismatch": "Ova instalacija je pokrenuta sa drugog Kortix naloga ili za drugi projekat. Prijavite se tim nalogom ili ponovo pokrenite instalaciju iz projekta.",
+      "expired": "Ovaj link za instalaciju je nevažeći ili je istekao. Ponovo pokrenite instalaciju iz projekta.",
+      "failed": "Instalacija nije mogla da se završi. Ponovo je pokrenite iz projekta.",
+      "backToProject": "Nazad na projekat"
     }
   },
   "projectOnboarding": {

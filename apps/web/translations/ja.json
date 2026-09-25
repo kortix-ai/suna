@@ -19149,6 +19149,13 @@
       "chatAccount": "{service} アカウント",
       "chatWorkspace": "{service} ワークスペース",
       "checking": "リンクを確認中…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} は接続されませんでした",
+      "mismatch": "このインストールは別の Kortix アカウント、または別のプロジェクトから開始されました。そのアカウントでサインインするか、プロジェクトからインストールをやり直してください。",
+      "expired": "このインストールリンクは無効か期限切れです。プロジェクトからインストールをやり直してください。",
+      "failed": "インストールを完了できませんでした。プロジェクトからやり直してください。",
+      "backToProject": "プロジェクトに戻る"
     }
   },
   "projectOnboarding": {
