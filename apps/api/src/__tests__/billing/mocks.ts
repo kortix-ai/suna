@@ -180,8 +180,6 @@ export function registerGlobalMocks() {
     getProvider: (_name: string) => ({
       stop: async (_externalId: string) => undefined,
     }),
-    // Real contract: no args, always a number >= 60.
-    providerAutoStopBackstopMinutes: () => 60,
   }));
 
   // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
