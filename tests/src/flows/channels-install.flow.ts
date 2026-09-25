@@ -11,19 +11,8 @@
  * this flow proves the gate order and that a state that does not verify
  * writes no install.
  */
-import { Client as PgClient } from "pg";
-import type { FlowContext } from "../core/types";
 import { flow } from "../core/flow";
-
-async function withDb<T>(ctx: FlowContext, run: (db: PgClient) => Promise<T>): Promise<T> {
-  const db = new PgClient({ connectionString: ctx.env.databaseUrl! });
-  await db.connect();
-  try {
-    return await run(db);
-  } finally {
-    await db.end().catch(() => {});
-  }
-}
+import { withDb } from "../fixtures/chat";
 
 flow(
   "CHN-34",

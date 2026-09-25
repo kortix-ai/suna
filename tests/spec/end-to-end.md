@@ -1041,6 +1041,8 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `CHN-29` A project Slack app's signed events, commands, and interactions stay inside that project and the workspace its install proved. A request naming another workspace is refused, and an interaction naming another project changes nothing there.
 `CHN-30` An agent binds a Slack thread only to its own session. A sibling session in the same project is refused, and nothing is written.
 `CHN-31` The Slack and Teams identity previews name the chat account a login link would link only for a signed-in caller with a token that verifies; anonymous callers get `401`, a forged token never names an account, and a missing token is a validation error.
+`CHN-32` A chat channel's model, agent and session policy change only for a linked Kortix account with `project.connector.write` on the channel's project, the capability the web binding editor requires. A linked project member without it and an unlinked Slack user are refused and the binding is unchanged; the linked project manager's changes are stored.
+`CHN-33` `/kortix sessions` lists only the chat-started sessions the caller's linked Kortix account may open: a member sees their own session and project-visible sessions, never another user's private session. An unlinked Slack user is asked to connect and sees no session.
 `CHN-T1` A project member reads the Microsoft Teams installation state.
 `CHN-T2` A project member reads the Microsoft Teams channel mode.
 `CHN-T3` A project manager starts Microsoft Teams connection. Invalid input and unauthorized callers are rejected.
