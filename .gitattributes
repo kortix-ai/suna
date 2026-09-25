@@ -6,3 +6,8 @@ scripts/worktree/*.ts text
 # (apps/web/scripts/i18n-catalogs.mjs). `pnpm install` registers the driver
 # through scripts/register-merge-drivers.sh; until then git's text merge runs.
 apps/web/translations/*.json merge=i18n-catalog
+
+# The learnings ledger index is generated from entries/ (one file per entry).
+# Two branches that each add an entry both prepend a line; `union` keeps both.
+# `.agents/skills/learnings/scripts/index.sh` restores the order after a merge.
+.agents/skills/learnings/MEMORY.md merge=union
