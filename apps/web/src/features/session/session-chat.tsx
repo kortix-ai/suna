@@ -86,7 +86,10 @@ import {
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
-import { Composer as SessionChatInput } from '@/features/session/composer/composer';
+import {
+  COMPOSER_SHELL_CLASS,
+  Composer as SessionChatInput,
+} from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import {
   acknowledgeQuoteRequests,
@@ -2118,6 +2121,12 @@ interface SessionChatProps {
   hideHeader?: boolean;
   /** Read-only mode — hides the chat input bar (used for sub-session modal viewer) */
   readOnly?: boolean;
+  /**
+   * Drawn in the composer's slot, in flow, when `readOnly`: a terminal
+   * session state (stopped with no computer, lost computer, failed start)
+   * that says why nothing can be sent and offers the one action.
+   */
+  inputReplacement?: React.ReactNode;
   /** Start scrolled to the top instead of the bottom (e.g. sub-session modal viewer) */
   initialScrollTop?: boolean;
   /**
@@ -2171,6 +2180,7 @@ export function SessionChat({
   headerLeadingAction,
   hideHeader,
   readOnly,
+  inputReplacement,
   initialScrollTop,
   onContentReady,
   deferComposerFocus,
@@ -6195,6 +6205,10 @@ export function SessionChat({
               </div>
             </div>
           )}
+
+          {readOnly && inputReplacement ? (
+            <div className={cn(COMPOSER_SHELL_CLASS, 'pb-4')}>{inputReplacement}</div>
+          ) : null}
 
           {/* Input — hidden in read-only mode (sub-session modal) */}
           {!readOnly && (

@@ -52,7 +52,11 @@ import {
   SessionConnectingBanner,
   SessionStartingLoader,
 } from '@/features/session/session-starting-loader';
-import { SessionNoticeBanner } from '@/features/session/session-notice-banner';
+import {
+  SessionNotice,
+  SessionNoticeBanner,
+  type SessionNoticeProps,
+} from '@/features/session/session-notice-banner';
 import {
   hasOrExpectsTranscript,
   resolveBootPresentation,
@@ -867,10 +871,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
 
     // A readable conversation is never replaced by a card. With a transcript
     // on screen — and the saved copy paints one before the computer answers —
-    // each terminal state below becomes a banner ABOVE the thread instead, with
-    // the same words and the same action. The full-screen card is kept for a
-    // session with nothing to read.
-    let notice: ReactNode = null;
+    // each terminal state below becomes a notice in the COMPOSER'S SLOT, with
+    // the same words and the same action: nothing can be sent, and nothing
+    // covers the thread. The full-screen card is kept for a session with
+    // nothing to read.
+    let notice: SessionNoticeProps | null = null;
 
     // The wake ladder is still working: a session with rungs left is not a dead
     // end, and painting one is the exact defect this replaces — the card fired
@@ -920,14 +925,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           />
         );
       }
-      notice = (
-        <SessionNoticeBanner
-          tone="destructive"
-          title={recoverableFailure.title}
-          message={restart.errorMessage ?? failureMessage}
-          action={failureRecovery}
-        />
-      );
+      notice = {
+        tone: 'destructive',
+        title: recoverableFailure.title,
+        message: restart.errorMessage ?? failureMessage,
+        action: failureRecovery,
+      };
     }
 
     // Stopped, with no sandbox row to describe — the `fatal` branch below reads
@@ -957,13 +960,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             />
           );
         }
-        notice = (
-          <SessionNoticeBanner
-            title={tSessionPage('legacy.title')}
-            message={restart.errorMessage ?? tSessionPage('legacy.message')}
-            action={restoreAction}
-          />
-        );
+        notice = {
+          title: tSessionPage('legacy.title'),
+          message: restart.errorMessage ?? tSessionPage('legacy.message'),
+          action: restoreAction,
+        };
       } else if (!hasTranscript) {
         return (
           <InlineSessionError
@@ -974,13 +975,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           />
         );
       } else {
-        notice = (
-          <SessionNoticeBanner
-            title={tSessionPage('stopped.title')}
-            message={restart.errorMessage ?? tSessionPage('stopped.message')}
-            action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
-          />
-        );
+        notice = {
+          title: tSessionPage('stopped.title'),
+          message: restart.errorMessage ?? tSessionPage('stopped.message'),
+          action: <RestartSessionButton restart={restart} onRestart={handleRestart} />,
+        };
       }
     }
 
@@ -1013,14 +1012,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       }
       // The conversation stays readable: nothing can continue it, but nothing
       // about losing the computer made its history untrue.
-      notice = (
-        <SessionNoticeBanner
-          tone="destructive"
-          title={tSessionPage('lost.title')}
-          message={tSessionPage('lost.message')}
-          action={deleteAction}
-        />
-      );
+      notice = {
+        tone: 'destructive',
+        title: tSessionPage('lost.title'),
+        message: tSessionPage('lost.message'),
+        action: deleteAction,
+      };
     }
 
     // `showCachedTranscriptWhileDown` VETOES the terminal card below, exactly
@@ -1111,6 +1108,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                   // and the one action. A composer beside it would promise that
                   // the next message wakes a computer that cannot come back.
                   readOnly={!!notice}
+                  inputReplacement={notice ? <SessionNotice {...notice} /> : undefined}
                 />
               )}
             </ProjectSessionRuntimeConnection>
@@ -1171,7 +1169,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             chat paints while the box is still coming up. What SENDING will do
             during the wake is the composer's own notice; this says only which
             phase the boot is in. */}
-        {notice}
+        {notice && !canMountChat ? <SessionNoticeBanner {...notice} /> : null}
         {!notice && bootPresentation === 'banner' && (startStage !== 'ready' || !chatReady) && (
           <SessionConnectingBanner
             stage={authLoading || !user ? 'provisioning' : startStage}
@@ -1337,6 +1335,7 @@ function ActiveSessionChat({
   chatReady,
   onChatReady,
   readOnly,
+  inputReplacement,
 }: {
   projectId: string;
   sessionId: string;
@@ -1348,8 +1347,10 @@ function ActiveSessionChat({
    *  an opaque overlay and must not take focus — see `deferComposerFocus`. */
   chatReady?: boolean;
   onChatReady?: () => void;
-  /** Read the conversation only: no composer (a terminal state under a banner). */
+  /** Read the conversation only: no composer (a terminal state). */
   readOnly?: boolean;
+  /** Drawn in the composer's slot while `readOnly`: the terminal state's notice. */
+  inputReplacement?: ReactNode;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const runtimeReady = useRuntimeConnectionStore(
@@ -1561,6 +1562,7 @@ function ActiveSessionChat({
           deferComposerFocus={!chatReady}
           sessionState={chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined}
           readOnly={readOnly}
+          inputReplacement={inputReplacement}
         />
       </ClientErrorBoundary>
     </SessionLayout>
