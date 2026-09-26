@@ -698,6 +698,31 @@ describe('connection owner authorization over HTTP', () => {
     expect(publicStart.status).toBe(404);
   });
 
+  test('a connect link carries the name the agent suggests for the new account', async () => {
+    const manager = await mint(MANAGER);
+    const named = await request('POST', `/v1/projects/${PROJECT}/connect-requests`, manager, {
+      slug: 'google_sheets',
+      label: "  Dad's Gmail  ",
+    });
+    expect(named.status).toBe(200);
+    const link = (await named.json()) as { url: string; label: string | null };
+    expect(link.label).toBe("Dad's Gmail");
+    // The dialog reads it back from the link, with the project it belongs to.
+    const token = link.url.split('/connect/')[1]!;
+    const info = await request('GET', `/v1/setup-links/connectors/${token}`, manager);
+    expect(info.status).toBe(200);
+    expect(await info.json()).toMatchObject({ project_id: PROJECT, label: "Dad's Gmail" });
+
+    // Same rules as any account label: `me` is an --account keyword.
+    for (const label of ['me', 42]) {
+      const refused = await request('POST', `/v1/projects/${PROJECT}/connect-requests`, manager, {
+        slug: 'google_sheets',
+        label,
+      });
+      expect(refused.status).toBe(400);
+    }
+  });
+
   test('native OAuth routes enforce connection reachability and owner identity', async () => {
     const manager = await mint(MANAGER);
     const alice = await mint(ALICE);

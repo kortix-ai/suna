@@ -10,7 +10,7 @@
  */
 import { createHash } from 'node:crypto';
 import { requestClientKey } from '../shared/client-ip';
-import { connectors, projectSessions, projects } from '@kortix/db';
+import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type Context, Hono, type Next } from 'hono';
 import { credentialExists } from '../connectors/credentials';
@@ -175,7 +175,12 @@ setupLinksPublicApp.get('/connectors/:token', async (c) => {
   ]);
   return c.json({
     kind: 'connector',
+    // The in-app dialog creates the account through the project's own routes,
+    // as the signed-in member, so it needs the project the link belongs to.
+    project_id: resolved.projectId,
     project_name: name,
+    // The agent's suggested name for a new account, or null.
+    label: resolved.payload.label ?? null,
     slug: resolved.payload.slug,
     app: resolved.payload.app,
     name: identity.name,
@@ -370,6 +375,16 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
   const link = await resolveConnectorLink(c);
   if ('error' in link) return link.error;
 
+  // The in-app dialog creates a NEW named account through the project's own
+  // routes and then names it here, so the session is told about THAT account.
+  const body = (await c.req.json().catch(() => ({}))) as { connection_id?: unknown };
+  if (body.connection_id !== undefined) {
+    if (typeof body.connection_id !== 'string' || !body.connection_id) {
+      return c.json({ error: 'connection_id must be a string' }, 400);
+    }
+    return finalizeNamedAccount(c, link, body.connection_id);
+  }
+
   // A `project`-owned link's credential is scoped to the shared row (userId
   // null). A `me`-owned link's is scoped to the member's own row — reusing the
   // shared-row check here would make a private link report "connected" off a
@@ -411,6 +426,69 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
   }
   return c.json({ connected: true, connected_as: connectedAs });
 });
+
+/**
+ * Finalize ONE named account a link's dialog created, and tell the requesting
+ * session its name. The account must be on this link's project and connector;
+ * a private one must belong to the member the link was minted for, the only
+ * member whose session can run as it.
+ */
+async function finalizeNamedAccount(
+  c: Context,
+  link: Exclude<Awaited<ReturnType<typeof resolveConnectorLink>>, { error: Response }>,
+  connectionId: string,
+): Promise<Response> {
+  const [account] = await db
+    .select({
+      connectionId: connectorConnections.connectionId,
+      projectId: connectorConnections.projectId,
+      connectorId: connectorConnections.connectorId,
+      ownerType: connectorConnections.ownerType,
+      ownerId: connectorConnections.ownerId,
+      label: connectorConnections.label,
+    })
+    .from(connectorConnections)
+    .where(eq(connectorConnections.connectionId, connectionId))
+    .limit(1);
+  if (!account || account.projectId !== link.projectId || account.connectorId !== link.connectorId) {
+    return c.json({ error: 'Connection not found' }, 404);
+  }
+  if (account.ownerType !== 'project' && (account.ownerType !== 'member' || account.ownerId !== link.uid)) {
+    return c.json({ error: 'This account is not the requesting member\'s' }, 403);
+  }
+
+  let connected = false;
+  let connectedAs: string | null = null;
+  try {
+    const { dbConnectorRouterDeps } = await import('../connectors/db-deps');
+    const result = await dbConnectorRouterDeps.connectorFinalize?.(
+      link.projectId,
+      link.slug,
+      link.uid ?? '',
+      { connectionId: account.connectionId },
+      account.ownerType === 'project' ? 'project' : 'me',
+    );
+    if (!result) return c.json({ error: 'This connector has no hosted authorization' }, 404);
+    connected = result.connected;
+    connectedAs = result.connectedAs ?? null;
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : 'Failed to finalize connect' }, 502);
+  }
+  if (!connected) return c.json({ connected: false });
+
+  if (link.sid) {
+    void notifyConnectorSession(link.sid, link.projectId, link.uid, link.slug, link.app, {
+      connectionId: account.connectionId,
+      label: account.label,
+    });
+  }
+  return c.json({
+    connected: true,
+    connected_as: connectedAs,
+    connection_id: account.connectionId,
+    label: account.label,
+  });
+}
 
 /** Exported for tests. The text delivered to the requesting session's agent. */
 export function secretSubmittedPrompt(

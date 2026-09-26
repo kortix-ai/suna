@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
-import { connectors, projectSessions, projects } from '@kortix/db';
+import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
 
 mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 
@@ -15,6 +15,7 @@ mock.module('../projects/secrets', () => ({
 let sessionRows: Array<Record<string, unknown>> = [];
 let projectRows: Array<Record<string, unknown>> = [];
 let connectorRows: Array<Record<string, unknown>> = [];
+let connectionRows: Array<Record<string, unknown>> = [];
 mock.module('../shared/db', () => ({
   db: {
     select: () => ({
@@ -27,7 +28,9 @@ mock.module('../shared/db', () => ({
                 ? projectRows
                 : table === connectors
                   ? connectorRows
-                  : [],
+                  : table === connectorConnections
+                    ? connectionRows
+                    : [],
         }),
       }),
     }),
@@ -83,8 +86,14 @@ mock.module('../connectors/credentials', () => ({
 mock.module('../connectors/db-deps', () => ({
   dbConnectorRouterDeps: {
     connectorConnect: async () => connectResult,
-    connectorFinalize: async (projectId: string, slug: string) => {
-      finalizeCalls.push({ projectId, slug });
+    connectorFinalize: async (
+      projectId: string,
+      slug: string,
+      uid: string,
+      selector: unknown,
+      owner: unknown,
+    ) => {
+      finalizeCalls.push({ projectId, slug, uid, selector, owner });
       return { provider: 'pipedream', ...finalizeResult };
     },
   },
@@ -140,13 +149,20 @@ async function flushNotification() {
   await new Promise((resolve) => setTimeout(resolve, 25));
 }
 
-function mintConnectorToken(opts?: { sid?: string | null; app?: string | null }) {
+function mintConnectorToken(opts?: {
+  sid?: string | null;
+  app?: string | null;
+  label?: string | null;
+  owner?: 'me' | 'project';
+}) {
   return mintSetupLink(PROJECT_ID, {
     kind: 'connector',
     slug: 'smartlead',
     app: opts?.app === undefined ? 'smartlead' : opts.app,
     uid: 'user-1',
     sid: opts?.sid === undefined ? SESSION_ID : opts.sid,
+    label: opts?.label ?? null,
+    owner: opts?.owner,
   }).token;
 }
 
@@ -167,6 +183,7 @@ beforeEach(() => {
   connectorRows = [
     { connectorId: CONNECTOR_ID, providerType: 'pipedream', authorizationStrategy: 'project' },
   ];
+  connectionRows = [];
   pipedreamOn = false;
   credentialAlreadySet = false;
   finalizeResult = { connected: false };
@@ -216,6 +233,17 @@ describe('GET /connectors/:token', () => {
       name: 'Smartlead',
       icon_url: 'https://cdn.example.test/smartlead.svg',
     });
+  });
+
+  test('names the project and the account name the agent suggested, so the dialog can prefill it', async () => {
+    connectorRows = [{ name: 'Gmail', config: {} }];
+    const named = await (
+      await setupLinksPublicApp.request(`/connectors/${mintConnectorToken({ label: "Dad's Gmail" })}`)
+    ).json();
+    expect(named.project_id).toBe(PROJECT_ID);
+    expect(named.label).toBe("Dad's Gmail");
+    const unnamed = await (await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`)).json();
+    expect(unnamed.label).toBeNull();
   });
 
   test('a connector without a catalog icon reports icon_url null, not a guessed URL', async () => {
@@ -523,6 +551,95 @@ describe('POST /connectors/:token/finalize', () => {
     expect(await res.json()).toEqual({ connected: true, connected_as: null });
     await flushNotification();
     expect(enqueued).toHaveLength(0);
+  });
+});
+
+describe('POST /connectors/:token/finalize — one named account', () => {
+  const finalizeAccount = (token: string, connectionId: unknown) =>
+    setupLinksPublicApp.request(`/connectors/${token}/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ connection_id: connectionId }),
+    });
+  const account = (overrides: Record<string, unknown> = {}) => ({
+    connectionId: 'conn-2',
+    projectId: PROJECT_ID,
+    connectorId: CONNECTOR_ID,
+    ownerType: 'member',
+    ownerId: 'user-1',
+    label: "Dad's Gmail",
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    pipedreamOn = true;
+    sessionRows = [{ status: 'stopped', accountId: 'acct-1', metadata: {} }];
+  });
+
+  test('finalizes exactly that account and tells the session its name', async () => {
+    connectionRows = [account()];
+    // The connector-level shortcut would answer for a DIFFERENT account.
+    credentialAlreadySet = true;
+    finalizeResult = { connected: true, connectedAs: 'dad@example.test' };
+
+    const res = await finalizeAccount(mintConnectorToken(), 'conn-2');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      connected: true,
+      connected_as: 'dad@example.test',
+      connection_id: 'conn-2',
+      label: "Dad's Gmail",
+    });
+    expect(finalizeCalls.at(-1)).toMatchObject({
+      projectId: PROJECT_ID,
+      slug: 'smartlead',
+      uid: 'user-1',
+      selector: { connectionId: 'conn-2' },
+      owner: 'me',
+    });
+    await flushNotification();
+    expect(enqueued).toHaveLength(1);
+    expect(String(enqueued[0].text)).toContain('--account "Dad\'s Gmail"');
+    expect(enqueued[0].idempotencyKey).toBe(`connector-connected:${SESSION_ID}:smartlead:conn-2`);
+  });
+
+  test('a shared account finalizes in the project scope', async () => {
+    connectionRows = [account({ ownerType: 'project', ownerId: null, label: 'Team inbox' })];
+    finalizeResult = { connected: true, connectedAs: 'team@example.test' };
+    const res = await finalizeAccount(mintConnectorToken(), 'conn-2');
+    expect(res.status).toBe(200);
+    expect(finalizeCalls.at(-1)).toMatchObject({ selector: { connectionId: 'conn-2' }, owner: 'project' });
+  });
+
+  test('an account on another connector → 404, nothing finalized, nobody told', async () => {
+    connectionRows = [account({ connectorId: 'another-connector' })];
+    const res = await finalizeAccount(mintConnectorToken(), 'conn-2');
+    expect(res.status).toBe(404);
+    expect(finalizeCalls).toHaveLength(0);
+    await flushNotification();
+    expect(enqueued).toHaveLength(0);
+  });
+
+  test("another member's private account → 403: the requesting member cannot run as it", async () => {
+    connectionRows = [account({ ownerId: 'user-2' })];
+    const res = await finalizeAccount(mintConnectorToken(), 'conn-2');
+    expect(res.status).toBe(403);
+    expect(finalizeCalls).toHaveLength(0);
+  });
+
+  test('not connected yet → connected false, nobody told', async () => {
+    connectionRows = [account()];
+    finalizeResult = { connected: false };
+    const res = await finalizeAccount(mintConnectorToken(), 'conn-2');
+    expect(await res.json()).toEqual({ connected: false });
+    await flushNotification();
+    expect(enqueued).toHaveLength(0);
+  });
+
+  test('a connection_id that is not a string → 400', async () => {
+    const res = await finalizeAccount(mintConnectorToken(), 42);
+    expect(res.status).toBe(400);
+    expect(finalizeCalls).toHaveLength(0);
   });
 });
 
