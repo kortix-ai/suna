@@ -1555,6 +1555,17 @@ export async function createProjectSession(input: {
       },
     };
   }
+  // A name supplied at create is an EXPLICIT, user-chosen name — the same thing
+  // `PATCH /sessions/:id` writes when the user renames. It belongs in
+  // `metadata.custom_name`, NOT `metadata.name`: `name` is the auto-title slot
+  // the first prompt fills, and it is the WEAKEST link in the display chain
+  // (`custom_name ?? runtimeTitle ?? name`). Writing it there let the runtime's
+  // own auto-title (`runtimeTitle` from the OpenCode snapshot, and the client
+  // mirror that copies it) displace the name the user chose, seconds after the
+  // first prompt. `custom_name` is the single authoritative key every reader
+  // (`serializeSession`, `getSessionDisplayTitle`, `patchKortixSessionTitleMirrors`)
+  // and both title-writer gates (`needsTitle`, the `persistTitle` CAS) already
+  // respect, so a session born named is never auto-titled.
   const sessionName = normalizeString(body.name);
   // An explicit `title_source` means the baked prompt is a rendered envelope
   // (Slack/Teams/Telegram turn instructions + workspace/channel ids) and these
@@ -1587,7 +1598,7 @@ export async function createProjectSession(input: {
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
-    ...(sessionName ? { name: sessionName } : {}),
+    ...(sessionName ? { custom_name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
     // Picks only — the prompt itself is a durable inbox row (see below), and a
     // pre-deploy web bundle replays `pending_prompt.text` client-side, so
