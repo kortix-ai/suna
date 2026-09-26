@@ -11,7 +11,7 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { authorize } from '../iam/authorize';
+import { authorize, filterAccessibleObjects } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS, upsertResourceGrant } from '../iam';
 import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
@@ -105,6 +105,12 @@ describe('per-resource scoping (iam_resource_grants)', () => {
 
     expect(await canUse(dave, AGENT)).toBe(true);
     expect(await canUse(outsider, AGENT)).toBe(false);
+
+    // The pickers' list form answers the same: the Slack and Teams agent lists
+    // must not name the agent to an account member outside the project.
+    const listed = (userId: string) => filterAccessibleObjects(actorForUser(userId, ACCOUNT), PROJECT, 'agent', [AGENT]);
+    expect(await listed(dave)).toEqual([AGENT]);
+    expect(await listed(outsider)).toEqual([]);
   });
 
   test('account owner bypasses per-resource scoping (implicit Manager)', async () => {

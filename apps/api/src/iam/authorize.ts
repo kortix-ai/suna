@@ -446,6 +446,13 @@ export async function filterAccessibleObjects(
 
   const roles = await loadSystemRoles();
   const systemRole = effectiveProjectRole(roles, rec, projectId);
+  // Step 8 before step 9, as in `authorize`: the Slack and Teams pickers reach
+  // here with only an account member, and a `project` grant names everyone IN
+  // the project, not everyone in the account.
+  const inProject =
+    (systemRole !== null && systemRole.actions.has('project.read')) ||
+    customRoleAllows(rec, 'project', 'project.read', { type: 'project', id: projectId });
+  if (!inProject) return [];
   const managerTier = systemRole !== null && systemRole.actions.has('project.write');
   const grants = await loadObjectGrants(projectId, objectType);
   const unscopedOpen = (await unscopedDefaultFor(objectType)) === 'open';
