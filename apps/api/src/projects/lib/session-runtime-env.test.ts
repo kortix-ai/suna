@@ -45,6 +45,31 @@ describe('buildSessionRuntimeEnv — KORTIX_HARNESS', () => {
   });
 });
 
+describe('buildSessionRuntimeEnv — KORTIX_PI_PACKAGES', () => {
+  const packages = ['npm:pi-web-access@0.30.0', { source: './.kortix/pi/audit.ts' }];
+
+  test('a pi session carries the project packages as JSON', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages });
+    expect(JSON.parse(env.KORTIX_PI_PACKAGES!)).toEqual(packages);
+  });
+
+  test('a built bundle travels as its URL and digest, to a pi session only', () => {
+    const bundle = { digest: 'a'.repeat(64), url: 'https://bucket.example/pi-packages/x.tar.gz?sig=1', fallbackUrl: 'https://bucket.example/pi-packages/x.node_modules.tar.gz?sig=2' };
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages, piPackagesBundle: bundle });
+    expect(env.KORTIX_PI_PACKAGES_BUNDLE_URL).toBe(bundle.url);
+    expect(env.KORTIX_PI_PACKAGES_BUNDLE_DIGEST).toBe(bundle.digest);
+    expect(env.KORTIX_PI_PACKAGES_FALLBACK_URL).toBe(bundle.fallbackUrl);
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piPackagesBundle: bundle })).not.toHaveProperty('KORTIX_PI_PACKAGES_BUNDLE_URL');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages, piPackagesBundle: null })).not.toHaveProperty('KORTIX_PI_PACKAGES_BUNDLE_URL');
+  });
+
+  test('no key for an OpenCode session, or a pi session without packages', () => {
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piPackages: packages })).not.toHaveProperty('KORTIX_PI_PACKAGES');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: [] })).not.toHaveProperty('KORTIX_PI_PACKAGES');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi' })).not.toHaveProperty('KORTIX_PI_PACKAGES');
+  });
+});
+
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
   test('omits the key entirely for a v1 project (compiledAgentConfig absent) — byte-for-byte unaffected', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);

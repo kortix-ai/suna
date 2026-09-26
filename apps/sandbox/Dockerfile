@@ -238,6 +238,18 @@ RUN mkdir -p /opt/kortix/opencode-config-deps \
     && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \
     && rm -rf /tmp/opencode-deps-bundle-check
 
+# pi system packages (runtime-versions.json `piSystemPackages`), installed the
+# way `pi install` installs a global one. Same step as `piSystemPackageLines` in
+# packages/shared/src/sandbox/dockerfile-layer.ts; keep both in sync.
+RUN PI_PACKAGES="$(node -e "console.log((require('/tmp/kortix-runtime-versions.json').piSystemPackages || []).map((s) => s.slice(4)).join(' '))")" \
+    && if [ -n "$PI_PACKAGES" ]; then \
+         mkdir -p /opt/kortix/pi-agent/npm/pi-supplied \
+         && printf '%s' '{"name":"kortix-pi-supplied","version":"0.0.0","private":true}' > /opt/kortix/pi-agent/npm/pi-supplied/package.json \
+         && node -e "const s='file:./pi-supplied'; const deps={ '@earendil-works/pi-agent-core': s, '@earendil-works/pi-ai': s, '@earendil-works/pi-coding-agent': s, '@earendil-works/pi-tui': s }; for (const p of require('/tmp/kortix-runtime-versions.json').piSystemPackages) { const spec=p.slice(4); const at=spec.lastIndexOf('@'); deps[spec.slice(0, at)]=spec.slice(at + 1); } require('fs').writeFileSync('/opt/kortix/pi-agent/npm/package.json', JSON.stringify({ name: 'kortix-pi-system-packages', private: true, dependencies: deps }))" \
+         && npm install --prefix /opt/kortix/pi-agent/npm --omit=dev --ignore-scripts --no-audit --no-fund \
+         && node -e "require('fs').writeFileSync('/opt/kortix/pi-agent/settings.json', JSON.stringify({ packages: require('/tmp/kortix-runtime-versions.json').piSystemPackages }))"; \
+       fi
+
 USER root
 # Modes and ownership are set BY THE COPY, never by a later chmod/chown.
 # A RUN that changes a file's mode or owner copies that file into a NEW layer,
@@ -290,6 +302,9 @@ RUN printf '%s\n' '[ -r /dev/shm/kortix/agent-env.sh ] && . /dev/shm/kortix/agen
 
 ENV KORTIX_WORKSPACE=/workspace
 USER kortix
+# Warm jiti's cache for the pi system packages with the daemon itself; a package
+# that fails to load fails the build. Same step as `piSystemPackageWarmLines`.
+RUN if [ -f /opt/kortix/pi-agent/settings.json ]; then /usr/local/bin/kortix-agent warm-pi-packages; fi
 WORKDIR /workspace
 
 EXPOSE 8000

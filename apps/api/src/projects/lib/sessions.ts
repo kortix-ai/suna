@@ -68,7 +68,9 @@ import {
   secretKeyCollisionInAllowlist,
 } from '../secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
+import { piPackageBundleForSession } from '../../pi-packages/bundle';
 import {
+  manifestPiPackages,
   manifestRuntime,
   resolveCompiledAgentConfigForSession,
   resolveManifestRuntime,
@@ -551,6 +553,7 @@ export async function buildSessionSandboxEnvVars(input: {
   // the one exception: it routes `runtime: pi` to the split worker topology
   // BEFORE this builder runs (createSession), and never reaches it.
   let manifestHarness: 'opencode' | 'pi' | null = null;
+  let manifestPackages: unknown[] = [];
   let harness: 'opencode' | 'pi' = 'opencode';
   if (input.defaultBranch && !input.platformMetaAgent) {
     const gitProject = {
@@ -562,6 +565,7 @@ export async function buildSessionSandboxEnvVars(input: {
     };
     const onManifest = (raw: Record<string, unknown>) => {
       manifestHarness = manifestRuntime(raw);
+      manifestPackages = manifestPiPackages(raw, input.agentName);
     };
     compiledAgentConfig =
       !(input.repositoryAccess ?? true)
@@ -612,6 +616,11 @@ export async function buildSessionSandboxEnvVars(input: {
       runtime: manifestHarness,
     });
   }
+  // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
+  const piPackagesBundle =
+    harness === 'pi' && manifestPackages.length > 0
+      ? await piPackageBundleForSession(manifestPackages, { projectId: input.projectId, sessionId: input.sessionId })
+      : null;
 
   // Per-session secret policy, read by sessionId inside the builder so all three
   // call sites (create, restart, open/ensure) are covered — no caller can
@@ -762,6 +771,8 @@ export async function buildSessionSandboxEnvVars(input: {
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
       harness,
+      piPackages: manifestPackages,
+      piPackagesBundle,
       repositoryAccess: input.repositoryAccess,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,

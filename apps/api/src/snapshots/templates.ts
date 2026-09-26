@@ -23,6 +23,7 @@ import {
   NODE_VERSION,
   NPM_VERSION,
   OPENCODE_VERSION,
+  PI_SYSTEM_PACKAGES,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
@@ -944,9 +945,9 @@ const runtimeIntegrityKey = () =>
     BUN_SHA256_ARM64,
   ].join(':');
 const runtimeVersionKey = () =>
-  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${ANYDOC_VERSION}:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${ANYDOC_VERSION}:${PI_SYSTEM_PACKAGES.join(',')}:${runtimeIntegrityKey()}`;
 const sandboxVersionStr = () =>
-  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:anydoc:${ANYDOC_VERSION}:integrity:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:anydoc:${ANYDOC_VERSION}:pi:${PI_SYSTEM_PACKAGES.join(',')}:integrity:${runtimeIntegrityKey()}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;
