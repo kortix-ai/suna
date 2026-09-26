@@ -1353,9 +1353,10 @@ describe('opencode rollback', () => {
 
     expect(result.opencode).toBe('failed')
     expect(result.reasons?.opencode).toContain('rolled back')
-    // The box is SERVING again: `opencode.current` resolves to a real file.
-    // `stat` follows the link, so a dangling one fails here.
-    expect(await stat(oc.currentLink).then(() => true, () => false)).toBe(true)
+    // The box is SERVING again. `readFile` follows the link and throws ENOENT on
+    // a dangling one, so reading the bytes proves BOTH that the link resolves
+    // and that it resolves to the binary the box was serving. One read, no
+    // check-then-use.
     expect(await readFile(oc.currentLink, 'utf8')).toBe('#!/bin/sh\nexit 0\n')
     // And the latch was written, so the next pass does not repeat the install.
     expect(await stat(oc.pinnedPath).then(() => true, () => false)).toBe(true)
