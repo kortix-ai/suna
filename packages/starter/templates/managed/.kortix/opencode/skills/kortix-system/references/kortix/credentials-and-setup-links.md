@@ -105,10 +105,10 @@ BEFORE you mint the link:
   agent session's calls run as it. Use this for any shared company tool
   (company inbox, calendar, Linear, Docs…). **The identity that completes the
   OAuth is the identity the whole project then acts as** — so when you surface
-  a shared link, say explicitly: *"authorize this signed in as
-  `agent@kortix.ai` (the project identity), not your personal account."* A
-  personal login authorized into the shared slot makes every agent session
-  silently act AS that person.
+  a shared link, say explicitly: *"authorize this signed in as the project's
+  shared identity (a team or service account the project owns, not a
+  person's login)."* A personal login authorized into the shared slot makes
+  every agent session silently act AS that person.
 - **`owner: "me"`** (default) — the account is private to the human you're
   talking to; only their sessions can call as it. Use this for a person's own
   login.
@@ -136,7 +136,7 @@ exactly why the shared slot must hold the project identity.
 **Preferred — the `connect` tool on the `kortix-connectors` MCP:**
 
 ```
-connect({ slug: "gmail", owner: "project" })   # shared — authorize as agent@kortix.ai
+connect({ slug: "gmail", owner: "project" })   # shared — authorize as the project's own service account, not a personal login
 → { url: "https://<app>/connect/ksl_…", app: "gmail", expires_at }
 ```
 

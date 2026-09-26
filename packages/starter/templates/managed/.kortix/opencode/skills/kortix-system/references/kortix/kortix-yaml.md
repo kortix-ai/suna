@@ -259,10 +259,10 @@ the human authorizes it, and that account is either:
 
 **The identity that completes the OAuth is the identity the connector acts
 as.** A project-shared account must therefore be authorized under the
-project's shared agent identity (e.g. `agent@kortix.ai`) — **never a personal
-login**. A personal login in the shared slot means every agent session
-(support, sales, engineering) silently acts AS that person: their inbox,
-their calendar, their Linear identity, their files.
+project's own shared identity (a team or service account the project owns)
+— **never a personal login**. A personal login in the shared slot means every
+agent session (support, sales, engineering) silently acts AS that person:
+their inbox, their calendar, their Linear identity, their files.
 
 Rules:
 
