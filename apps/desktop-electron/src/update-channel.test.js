@@ -1,5 +1,5 @@
 const { describe, it, expect } = require('bun:test');
-const { resolveChannel, isUpdaterSupported } = require('./update-channel');
+const { resolveChannel, isDevChannel, isUpdaterSupported } = require('./update-channel');
 
 describe('resolveChannel', () => {
   it('defaults to stable when unset', () => {
@@ -11,6 +11,14 @@ describe('resolveChannel', () => {
   it('reads the baked channel', () => {
     expect(resolveChannel({ kortixUpdateChannel: 'dev' })).toBe('dev');
     expect(resolveChannel({ kortixUpdateChannel: 'stable' })).toBe('stable');
+  });
+});
+
+describe('isDevChannel', () => {
+  it('is true only for the dev feed', () => {
+    expect(isDevChannel('dev')).toBe(true);
+    expect(isDevChannel('stable')).toBe(false);
+    expect(isDevChannel(undefined)).toBe(false);
   });
 });
 
