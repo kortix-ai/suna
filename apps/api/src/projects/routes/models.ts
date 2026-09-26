@@ -5,10 +5,13 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { llmPriceMarkup } from '../../billing/services/tiers';
+import { config } from '../../config';
 import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
+import { cachedManagedPricingRoutes } from '../../llm-gateway/models/managed-pricing-routes';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
@@ -29,6 +32,11 @@ import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { requestPersonalOwner } from '../lib/personal-resources';
+
+const LLM_GATEWAY_DISABLED = {
+  error: 'LLM gateway is disabled for this project',
+  code: 'llm_gateway_disabled',
+} as const;
 
 // GET /v1/projects/:projectId/llm-catalog
 // Server-side source of truth for the gateway model catalog. The seed daemon
@@ -90,12 +98,7 @@ projectsApp.openapi(
       projectMetadata = loaded.row.metadata;
       ownerAccountId = loaded.row.accountId as string | undefined;
     }
-    if (!projectLlmGatewayEnabled(projectMetadata)) {
-      return c.json(
-        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
-        404,
-      );
-    }
+    if (!projectLlmGatewayEnabled(projectMetadata)) return c.json(LLM_GATEWAY_DISABLED, 404);
     // Free-tier accounts see only managed models explicitly marked free plus
     // their own BYOK/Codex-connected catalog entries. Paid managed models and
     // synthetic AUTO stay hidden from the picker.
@@ -128,12 +131,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
-      return c.json(
-        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
-        404,
-      );
-    }
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) return c.json(LLM_GATEWAY_DISABLED, 404);
 
     const accountId = loaded.row.accountId as string;
     // One composition, shared with the sandbox's boot fetch
@@ -147,7 +145,18 @@ projectsApp.openapi(
       principalUserId: loaded.userId,
       personalUserId: await requestPersonalOwner(c, loaded),
     });
-    return c.json(catalog);
+    const quotes = await cachedManagedPricingRoutes(
+      config.MORPH_MANAGED_MODELS,
+      llmPriceMarkup(),
+      Boolean(config.MORPH_API_KEY),
+      { baseUrl: config.OPENROUTER_API_URL, apiKey: config.OPENROUTER_API_KEY ?? '' },
+    );
+    return c.json({
+      ...catalog,
+      managedPricingRoutes: Object.fromEntries(
+        Object.entries(quotes).filter(([id]) => id in catalog.models),
+      ),
+    });
   },
 );
 
@@ -347,12 +356,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
-      return c.json(
-        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
-        404,
-      );
-    }
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) return c.json(LLM_GATEWAY_DISABLED, 404);
     const ownerAccountId = loaded.row.accountId as string;
     const userId = c.get('userId') as string;
     const defaults = await getAccountModelDefaults(ownerAccountId, projectId);
@@ -385,6 +389,29 @@ const ModelDefaultBody = z.object({
   model: z.string().min(1).max(128),
 });
 
+// PUT and DELETE /model-defaults share one guard, in one order:
+//   1. project visible to the caller      → else 404 'Not found'
+//   2. project.customize.write            → else 403 (thrown)
+//   3. the project's LLM gateway enabled  → else 404 llm_gateway_disabled
+// The permission check runs before the gateway check, so a caller who may not
+// write model defaults never learns the project's gateway setting.
+async function loadModelDefaultsWriter(
+  c: any,
+  projectId: string,
+): Promise<Response | { ownerAccountId: string; userId: string }> {
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(
+    c,
+    loaded.userId,
+    loaded.row.accountId,
+    projectId,
+    PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+  );
+  if (!projectLlmGatewayEnabled(loaded.row.metadata)) return c.json(LLM_GATEWAY_DISABLED, 404);
+  return { ownerAccountId: loaded.row.accountId, userId: loaded.userId };
+}
+
 // PUT /v1/projects/:projectId/model-defaults
 projectsApp.openapi(
   createRoute({
@@ -407,24 +434,9 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    // Floor 'read'; project.customize.write is the real gate.
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
-      return c.json(
-        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
-        404,
-      );
-    }
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-    const ownerAccountId = loaded.row.accountId as string;
-    const userId = c.get('userId') as string;
+    const writer = await loadModelDefaultsWriter(c, projectId);
+    if (writer instanceof Response) return writer;
+    const { ownerAccountId, userId } = writer;
 
     const parsed = ModelDefaultBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
@@ -501,23 +513,9 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    // Floor 'read'; project.customize.write is the real gate.
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
-      return c.json(
-        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
-        404,
-      );
-    }
-    const ownerAccountId = loaded.row.accountId as string;
+    const writer = await loadModelDefaultsWriter(c, projectId);
+    if (writer instanceof Response) return writer;
+    const { ownerAccountId } = writer;
     const scope = c.req.query('scope');
     const agentName = c.req.query('agentName');
     if (scope !== 'account' && scope !== 'agent' && scope !== 'project') {

@@ -90,6 +90,31 @@ test('recoverInPlace() refuses to create a replacement for an unbacked terminal 
   await expect(provider.recoverInPlace('sbx_unbacked')).resolves.toBe('unavailable');
 });
 
+// 2026-09-25: a Platinum reconciler race failed 17 prod starts mid-boot. Each
+// box had booted before and kept its disk; answering 'unavailable' reported
+// every one of those sessions lost.
+test('recoverInPlace() starts a failed-start box that has booted before, in place', async () => {
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    calls.push(`${method} ${new URL(String(input)).pathname}`);
+    const body =
+      method === 'POST'
+        ? { id: 'sbx_kept', state: 'starting' }
+        : { id: 'sbx_kept', state: 'failed-start', backupState: 'none', startedAt: '2026-09-22T21:59:02Z' };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  const { PlatinumProvider } = await import('./platinum');
+  const provider = new PlatinumProvider();
+
+  await expect(provider.recoverInPlace('sbx_kept')).resolves.toBe('recovering');
+  expect(calls).toEqual(['GET /v1/sandboxes/sbx_kept', 'POST /v1/sandboxes/sbx_kept/start']);
+});
+
 // Regression for incident 2026-08-12 (sbx_01KZP370WDB8DGYNAQM1B875VR).
 //
 // Platinum's reconciler deleted a sandbox that had a COMPLETED 4.87 GB backup
