@@ -6810,3 +6810,17 @@ and verifying the canonical source copy.
 **Enforcement.** The repair controller runs exact verification first. On a
 mismatch, it preserves the current folder under the durable sandbox archive,
 restores from the verified manifest and archive, and reruns exact verification.
+
+### 2026-09-26 — Keep status scans off the dashboard request loop
+
+**Incident.** The migration dashboard rescanned the complete proof ledger on its
+HTTP event loop. Each scan blocked status requests for up to 70 seconds and made
+an active migration appear unavailable or stale.
+
+**Rule.** A monitoring endpoint serves the last complete immutable sample. Full
+ledger scans run outside the request loop. A slow refresh must not make the last
+known status unavailable.
+
+**Enforcement.** The dashboard runs proof scans in a worker and atomically
+replaces its cached sample when the scan completes. HTTP requests continue to
+return the previous sample during refresh.
