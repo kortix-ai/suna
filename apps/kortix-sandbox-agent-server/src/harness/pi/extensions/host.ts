@@ -289,14 +289,14 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
   const system = installedPackages(systemEntries, join(input.agentDir, 'npm'))
   const settingsManager = SettingsManager.fromStorage(
     new ScopedSettingsStorage({
-      global: JSON.stringify({ ...globalSettings, packages: system.kept }),
+      // Kortix owns compaction and retry: the transcript has no compaction yet, and a failed
+      // turn is the product's to retry (a silent pi retry would double-bill and reorder the wire).
+      // They live in storage, not `applyOverrides`: `loader.reload()` re-reads storage and drops overrides.
+      global: JSON.stringify({ ...globalSettings, packages: system.kept, compaction: { enabled: false }, retry: { enabled: false } }),
       project: JSON.stringify({ packages: project.kept }),
     }),
     { projectTrusted: true },
   )
-  // Kortix owns these: the transcript has no compaction yet, and a failed turn
-  // is the product's to retry (a silent pi retry would double-bill and reorder the wire).
-  settingsManager.applyOverrides({ compaction: { enabled: false }, retry: { enabled: false } } as never)
   seedJitiCache(input.agentDir)
 
   const loader = new KortixResourceLoader(
