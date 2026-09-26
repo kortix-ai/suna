@@ -86,7 +86,7 @@ describe('buildEnv — what the install and pre-build processes inherit', () => 
         return JSON.parse(await new Response(proc.stdout).text()).packages[0];
       };
       const leaky = await prebuild({ ...buildEnv(process.env), NODE_PATH: join(root, 'foreign') });
-      expect(leaky.fallback).toContain('canvas.node');
+      expect(leaky.fallback).toContain('/foreign/canvas/index.js is outside the package install tree');
       expect(await prebuild(buildEnv({ ...process.env, NODE_PATH: join(root, 'foreign') }))).toMatchObject({ extensions: ['packages/ext/index.js.kortix.js'] });
     } finally {
       await rm(root, { recursive: true, force: true });

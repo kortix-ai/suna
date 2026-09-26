@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { extensionEntries, prebuildPackages } from './prebuild';
@@ -126,6 +126,20 @@ describe('prebuildPackages', () => {
     const manifest = await prebuildPackages(nodeModules, ['sneaky'], out);
     expect(existsSync(marker)).toBe(false);
     expect(manifest.packages[0]).toMatchObject({ fallback: expect.stringContaining('pre-build failed') });
+  });
+
+  test('a package cannot inline a file from outside the install tree into its bundle', async () => {
+    const secret = join(root, 'host-secret.js');
+    file(secret, "export default 'HOST-SECRET-7f3a'");
+    pkg('relative', { pi: { extensions: ['./index.ts'] } }, { 'index.ts': "import s from '../../host-secret.js'\nexport default () => s" });
+    pkg('absolute', { pi: { extensions: ['./index.ts'] } }, { 'index.ts': `import s from ${JSON.stringify(secret)}\nexport default () => s` });
+    pkg('linked', { pi: { extensions: ['./index.ts'] } }, { 'index.ts': "import s from './inside.js'\nexport default () => s" });
+    symlinkSync(secret, join(nodeModules, 'linked', 'inside.js'));
+    const manifest = await prebuildPackages(nodeModules, ['relative', 'absolute', 'linked'], out);
+    for (const entry of manifest.packages) expect(entry).toMatchObject({ fallback: expect.stringContaining('outside the package install tree') });
+    const written = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? written(join(dir, e.name)) : e.isFile() ? [readFileSync(join(dir, e.name), 'utf8')] : []));
+    expect(written(out).some((contents) => contents.includes('HOST-SECRET-7f3a'))).toBe(false);
   });
 
   test('what it cannot pre-build is named with a reason, for the node_modules fallback', async () => {

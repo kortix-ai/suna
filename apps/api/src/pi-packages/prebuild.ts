@@ -150,8 +150,11 @@ function copyOwnFiles(from: string, to: string): void {
  * Returns every file the bundler loaded. Minified without renaming: an
  * extension may read a class or function name, and the API image's Bun 1.2.23
  * ignores `keepNames` (measured) and has no `metafile`.
+ * Every loaded file must resolve (symlinks included) inside `installRoot`: a
+ * `../`, absolute or symlinked import of an API-host file would ship its
+ * contents in the bundle. Such a package fails here and takes the fallback.
  */
-async function buildEntry(entry: string, outFile: string): Promise<string[]> {
+async function buildEntry(entry: string, outFile: string, installRoot: string): Promise<string[]> {
   const exact = new Set<string>(PI_HOST_MODULES);
   const loaded: string[] = [];
   const result = await Bun.build({
@@ -174,6 +177,9 @@ async function buildEntry(entry: string, outFile: string): Promise<string[]> {
           }));
           // Records the file, then Bun's own loader handles it.
           build.onLoad({ filter: /.*/, namespace: 'file' }, (args) => {
+            if (relative(installRoot, realpathSync(args.path)).startsWith('..')) {
+              throw new Error(`${args.path} is outside the package install tree`);
+            }
             loaded.push(args.path);
             return undefined as never;
           });
@@ -198,6 +204,7 @@ function removeInlinedCode(source: string, target: string, loaded: Iterable<stri
 
 export async function prebuildPackages(nodeModules: string, names: readonly string[], outDir: string): Promise<PrebuiltManifest> {
   const packages: PrebuiltPackage[] = [];
+  const installRoot = realpathSync(nodeModules);
   for (const name of names) {
     const source = join(nodeModules, name);
     const version = (JSON.parse(readFileSync(join(source, 'package.json'), 'utf8')) as { version: string }).version;
@@ -216,7 +223,7 @@ export async function prebuildPackages(nodeModules: string, names: readonly stri
         const rel = relative(source, entry);
         const out = join(target, `${rel}.kortix.js`);
         mkdirSync(dirname(out), { recursive: true });
-        for (const path of await buildEntry(entry, out)) loaded.add(path);
+        for (const path of await buildEntry(entry, out, installRoot)) loaded.add(path);
         built.push(join(dir, `${rel}.kortix.js`));
       }
       removeInlinedCode(source, target, loaded);
