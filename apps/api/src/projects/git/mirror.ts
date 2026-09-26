@@ -317,6 +317,18 @@ export function isRemotePushPolicyRejection(err: unknown): err is GitOperationEr
   return REMOTE_PUSH_POLICY_REJECTION_PATTERN.test(text);
 }
 
+/** Build the policy warning without Git output, repository URLs, or refs. */
+export function pushPolicyWarning(method: string, err: GitOperationError) {
+  return {
+    message: `${method} -> 409 [GitOperationError:push-policy]`,
+    fields: {
+      method,
+      errorType: 'GitOperationError',
+      gitKind: err.kind,
+    },
+  };
+}
+
 /**
  * Cold bare clone with bounded retry for TRANSIENT failures. Exported with
  * injected side effects so the retry policy is unit-testable without a real git

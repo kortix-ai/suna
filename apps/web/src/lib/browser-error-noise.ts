@@ -87,6 +87,7 @@ export {
 } from './browser-noise/rules/pdf';
 export {
   isDocumentStateNotFoundNoise,
+  isExpectedNextRecoveryBailoutNoise,
   isFirefoxReactSchedulerReentryNoise,
   isLikelyDomMutationNoise,
   isThirdPartyReactUpdateDepthNoise,
@@ -132,11 +133,11 @@ export function shouldIgnoreBrowserRuntimeNoise(input: RuntimeNoiseInput): boole
   return RUNTIME_RULES.some((rule) => rule.match(evidence));
 }
 
-export function shouldIgnoreSentryBrowserNoise(event: SentryNoiseEvent): boolean {
-  const evidence = sentryNoiseEvidence(event);
+export function shouldIgnoreSentryBrowserNoise(event: SentryNoiseEvent, hint?: { originalException?: unknown }): boolean {
+  const evidence = sentryNoiseEvidence(event, hint);
   return SENTRY_RULES.some((rule) => rule.match(evidence));
 }
 
-export function shouldIgnoreSentryNoiseEvent(event: SentryNoiseEvent): boolean {
-  return shouldIgnoreSentryBrowserNoise(event);
+export function shouldIgnoreSentryNoiseEvent(event: SentryNoiseEvent, hint?: { originalException?: unknown }): boolean {
+  return shouldIgnoreSentryBrowserNoise(event, hint);
 }

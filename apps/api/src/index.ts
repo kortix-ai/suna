@@ -96,7 +96,7 @@ import {
   stopProjectTriggerScheduler,
 } from './projects';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
-import { isRemotePushPolicyRejection, isTransientGitMirrorError } from './projects/git/mirror';
+import { isRemotePushPolicyRejection, isTransientGitMirrorError, pushPolicyWarning } from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import {
   startProviderTransitionWorker,
@@ -1207,13 +1207,8 @@ app.onError((err, c) => {
   // single backstop for every commit path that lets the error propagate here;
   // the agent-config route additionally maps it to a typed 409 at the call site.
   if (isRemotePushPolicyRejection(err)) {
-    appLogger.warn(`${method} ${path} -> 409 [GitOperationError:push-policy] ${err.message}`, {
-      method,
-      path,
-      errorType: 'GitOperationError',
-      gitKind: err.kind,
-      gitArgs: err.gitArgs,
-    });
+    const warning = pushPolicyWarning(method, err);
+    appLogger.warn(warning.message, warning.fields);
     return c.json(
       {
         error: true,
