@@ -164,7 +164,7 @@ function fakeOpencode(opts: { startFails?: boolean; notStarted?: boolean; pid?: 
         return { outcome: 'kept-old', reason: proof.reason, candidateFailed: true }
       }
       state.pid = (state.pid ?? 0) + 1
-      return { outcome: 'swapped', port: 4097, pid: state.pid, turnEnded: false }
+      return { outcome: 'swapped', port: 4097, pid: state.pid, turnEnded: false, orphanedMessageId: null }
     },
   }
   return { opencode, state }
@@ -184,13 +184,22 @@ function client(): ConfigReleaseApi {
 }
 
 const prepared: string[] = []
-function converge(oc: FakeOpencode, over: { api?: ConfigReleaseApi | null } = {}) {
+function converge(
+  oc: FakeOpencode,
+  over: {
+    api?: ConfigReleaseApi | null
+    turnInFlight?: () => Promise<boolean | null>
+    delayBeforeSwapMs?: number
+  } = {},
+) {
   return convergeConfigRelease({
     cfg: cfg(),
     opencode: oc.opencode,
     root: store,
     managedSkillsDir: overlay,
     api: over.api === undefined ? client() : over.api,
+    turnInFlight: over.turnInFlight,
+    delayBeforeSwapMs: over.delayBeforeSwapMs,
     proofBudgetMs: 1_500,
     prepare: async (dir) => {
       prepared.push(dir)
@@ -245,6 +254,9 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  // One bun process runs every daemon test file and bun's file order is not stable,
+  // so a file that leaves `running.release_id` set poisons whichever file runs next.
+  resetConfigReleaseStateForTests()
   api.stop()
   spawnSync('chmod', ['-R', 'u+w', root])
   rmSync(root, { recursive: true, force: true })
@@ -271,7 +283,7 @@ describe('convergeConfigRelease — follow-base', () => {
         fallback_reason: null,
         failed_release_id: null,
       },
-      reload: { how: 'restarted', turn_ended: false },
+      reload: { how: 'restarted', turn_ended: false, orphaned_message_id: null },
       reason: null,
     })
     expect(await servingDir()).toBe(releaseDir(store, id))
@@ -913,5 +925,78 @@ describe('the session is told which commit it runs', () => {
     expect(lifecycle).toContain("import { configReleaseNoticePath } from '../../config-release/notice'")
     expect(noteFor({ source_commit: 'a'.repeat(40), config_dir: DIR })).toBe('written')
     expect(readNotice()).toContain('kortix sessions reload ses-1')
+  })
+})
+
+/**
+ * DEF-DEV-1 — the turn-in-flight gate used to be a TOCTOU.
+ *
+ * `requireRunning()` ran ONCE, before the archive download and the extract.
+ * Dev measured 2 413-4 041 ms for `config-release-fetched` and 3 530-6 071 ms
+ * for `config-release-extracted`, so a prompt that arrived inside that window
+ * found the gate already passed: OpenCode accepted the turn, the swap retired
+ * the process writing it, and the client got `HTTP 503` over an assistant row
+ * that stayed open with `completed = null`.
+ *
+ * The check is re-run immediately before the swap commits, so a turn that
+ * started during the build keeps its process and the release waits for the
+ * next trigger.
+ */
+describe('a turn that starts while the release is being built keeps its process', () => {
+  test('the late turn is caught before the swap, and reloadVerified is never called', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    let asked = 0
+    // False on the first call (the gate before the build), true afterwards:
+    // exactly the prompt that lands during the download/extract.
+    const turnInFlight = async () => {
+      asked += 1
+      return asked > 1
+    }
+
+    const response = await converge(oc, { turnInFlight })
+
+    expect(asked).toBeGreaterThan(1)
+    expect(response.outcome).not.toBe('applied')
+    expect(response.reason).toContain('turn')
+    expect(oc.state.reloads).toBe(0)
+  })
+})
+
+/**
+ * The fault-injection delay stands in for the seconds a real box spends
+ * downloading and extracting a release. It must widen the window and change no
+ * decision: the gate still runs before it, and the promotion check still runs
+ * after it.
+ */
+describe('delayBeforeSwapMs — the window, made observable', () => {
+  test('a delay holds the convergence and still applies the release', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    const started = Date.now()
+
+    const response = await converge(oc, { delayBeforeSwapMs: 400 })
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(380)
+    expect(response.outcome).toBe('applied')
+    expect(oc.state.reloads).toBe(1)
+  })
+
+  test('a turn that starts DURING the delay still stops the swap', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    let asked = 0
+    const turnInFlight = async () => {
+      asked += 1
+      return asked > 1
+    }
+
+    const response = await converge(oc, { delayBeforeSwapMs: 200, turnInFlight })
+
+    expect(response.outcome).not.toBe('applied')
+    expect(oc.state.reloads).toBe(0)
   })
 })
