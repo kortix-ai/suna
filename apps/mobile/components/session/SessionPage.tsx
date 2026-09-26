@@ -52,10 +52,12 @@ import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
 import { useProjectModelCatalog } from '@/lib/projects/hooks';
 import { catalogPickerModels, offeredSessionModels, type PickerCatalogModel, type PickerModel } from '@/lib/session/model-picker';
+import { isModelUnavailable } from '@/lib/session/composer-model';
 import type { SubAgentRelation } from '@/lib/session/sub-agents';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { playSound } from '@/lib/sounds';
+import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 
@@ -182,6 +184,12 @@ interface SessionPageProps {
    */
   onRenamePress?: () => void;
   /**
+   * Opens the same sheet, straight to its Share view (KRTX-248): the header's
+   * Share button. Omit to hide the button (row not resolved, or the viewer
+   * cannot manage sharing).
+   */
+  onSharePress?: () => void;
+  /**
    * The title to show in the header (COR-140): `sessionDisplayTitle` of the
    * project session, when the caller has resolved one. Falls back to the
    * OpenCode session's own `title` — the only signal available for a
@@ -258,7 +266,7 @@ function flatModelFromCatalog(model: PickerModel, entry: PickerCatalogModel): Fl
   };
 }
 
-function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, onSharePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -627,6 +635,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             clientSentAtMs: Date.now(),
           });
           log.log('[SessionPage] Prompt with files accepted');
+          void requestPushPermissionOnce();
         } catch (err: any) {
           log.error('[SessionPage] Prompt with files failed:', err?.message || err);
           userSentRef.current = false;
@@ -665,6 +674,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           markFailed();
         } else {
           log.log('[SessionPage] Prompt sent (async)');
+          // The first send asks for notification permission, once per install.
+          void requestPushPermissionOnce();
         }
       } catch (err: any) {
         log.error('[SessionPage] Prompt error:', err?.message || err);
@@ -828,6 +839,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     [modelCatalog, allModels],
   );
   const modelsLoading = catalogLoading || (!modelCatalog && !providers);
+  // A gateway project whose catalog offers no model: Send opens the connect
+  // sheet instead of posting (KRTX-251). No catalog (gateway off) never blocks.
+  const modelUnavailable = isModelUnavailable({
+    hasCatalog: modelCatalog !== undefined,
+    loading: catalogLoading,
+    modelCount: visibleModels.length,
+  });
   // `ConnectProviderSheet` refetches once the in-app browser closes, to toast
   // "Provider connected" only once the catalog actually turns up a model.
   const refetchModelCount = useCallback(async () => {
@@ -1903,7 +1921,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             whose project session has not loaded yet has no `···`, so the
             relation chip (or nothing) holds the edge there. */}
         {onOpenRightDrawer ? (
-          <ProjectHeaderActions onOpenMore={onOpenRightDrawer}>
+          <ProjectHeaderActions onOpenMore={onOpenRightDrawer} onShare={onSharePress}>
             <SubAgentHeaderChip relation={headerRelation} onPress={handleSubAgentRelationPress} />
           </ProjectHeaderActions>
         ) : (
@@ -2033,6 +2051,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             model={resolvedModel}
             models={visibleModels}
             modelsLoading={modelsLoading}
+            modelUnavailable={modelUnavailable}
             onConnectModel={handleConnectModel}
             modelKey={resolvedModelKey}
             variant={resolved.variant}

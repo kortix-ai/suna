@@ -7,11 +7,14 @@
  * `···`, which opens the project sheet) is the project screen's chrome, shared
  * with the thread, not part of this content.
  *
- * The chat input is one card: text on top, then add files · model · send.
+ * The chat input is one card: text on top, then add files · agent chip · send.
+ * The chip names the agent (KRTX-247) and opens the agent and model sheet.
  * Each file uploads when it is picked (`useComposerAttachments`, COR-185), so
  * the send waits for the uploads and hands their parts to ProjectScreen,
  * which creates the session with them. The model comes from the project
- * catalog and is sent as `opencode_model`.
+ * catalog and is sent as `opencode_model`. A project whose catalog offers no
+ * model never starts a session: Send opens the connect-provider sheet and
+ * keeps the draft (KRTX-251, `planComposerSend`).
  *
  * Layout:
  * - The symbol (`ProjectHero`) is absolutely centred in the keyboard-avoiding
@@ -53,11 +56,13 @@ import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import {
   composerModelLabel,
   effectiveComposerModel,
+  isModelUnavailable,
   selectComposerModel,
 } from '@/lib/session/composer-model';
+import { planComposerSend } from '@/lib/session/send-plan';
 import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
 import {
-  composerPillLabel,
+  composerChip,
   homeAgentName,
   pickableAgents,
   type PickerOption,
@@ -177,18 +182,13 @@ export function ProjectHome({
     }),
     [levels, variant, variantKey, setStoredVariant],
   );
-  // A gateway project that offers no model: the pill asks to connect one. A
-  // project without the gateway has no catalog, so the pill stays hidden.
-  const noModelConnected = !catalogLoading && catalog !== undefined && modelOptions.length === 0;
-  const modelLabel = noModelConnected
-    ? 'Connect model'
-    : composerModelLabel(
-        modelOptions.map((o) => ({ modelID: o.key, modelName: o.label })),
-        model,
-        defaultModel,
-      );
-  // The thread's pill text: "{model} · {level}".
-  const pillLabel = modelLabel && variant ? composerPillLabel(modelLabel, variant) : modelLabel;
+  // A gateway project that offers no model: the chip asks to connect one, and
+  // Send opens the connect sheet instead of starting a session (KRTX-251).
+  const modelUnavailable = isModelUnavailable({
+    hasCatalog: catalog !== undefined,
+    loading: catalogLoading,
+    modelCount: modelOptions.length,
+  });
 
   // Agent: home has no sandbox, so the choices are the project config's agents
   // (`/detail`). Web's order: the pick made here, else the project default,
@@ -235,6 +235,25 @@ export function ProjectHome({
     () => ({ agents: projectAgents, activeName: agentName, onSelect: handleAgentChange, onCreate: handleCreateAgent }),
     [projectAgents, agentName, handleAgentChange, handleCreateAgent],
   );
+  // The chip names the agent; the model name stands in when no agent
+  // resolves. While the catalog loads, and for a project without the gateway
+  // (no catalog), the chip stays hidden.
+  const chip =
+    catalogLoading || catalog === undefined
+      ? null
+      : composerChip({
+          connectModel: modelUnavailable,
+          agentName,
+          modelName: composerModelLabel(
+            modelOptions.map((o) => ({ modelID: o.key, modelName: o.label })),
+            model,
+            defaultModel,
+          ),
+        });
+  const openConnectSheet = React.useCallback(() => {
+    Keyboard.dismiss();
+    connectSheetRef.current?.open();
+  }, []);
 
   const restingGap = insets.bottom + COMPOSER_BOTTOM_GAP;
   const { progress } = useReanimatedKeyboardAnimation();
@@ -251,7 +270,21 @@ export function ProjectHome({
   const isSending = sending || preparing;
   const submitNow = React.useCallback(async () => {
     const text = draft.trim();
-    if ((!text && files.length === 0) || isSending) return;
+    const plan = planComposerSend({
+      text,
+      fileCount: files.length,
+      disabled: isSending,
+      isBusy: false,
+      canQueue: false,
+      canAttach: true,
+      modelUnavailable,
+    });
+    if (plan === 'noop') return;
+    // No model: connect one first. The draft and files stay.
+    if (plan === 'connect-model') {
+      openConnectSheet();
+      return;
+    }
     let sent: { files: AttachedFile[]; fileParts: SessionPromptPart[] } = { files: [], fileParts: [] };
     if (files.length > 0) {
       setPreparing(true);
@@ -284,6 +317,8 @@ export function ProjectHome({
     draft,
     files,
     isSending,
+    modelUnavailable,
+    openConnectSheet,
     attachments,
     toast,
     model,
@@ -347,8 +382,8 @@ export function ProjectHome({
                 attachSheetRef.current?.open();
               }}
               onRemoveAttachment={attachments.remove}
-              modelLabel={pillLabel}
-              onModelPress={() => {
+              chip={chip}
+              onChipPress={() => {
                 Keyboard.dismiss();
                 modelSheetRef.current?.open();
               }}
@@ -365,7 +400,7 @@ export function ProjectHome({
         activeKey={activeModel}
         thinking={thinking}
         onSelect={(modelID) => setModel(selectComposerModel(modelID, defaultModel))}
-        onConnect={() => connectSheetRef.current?.open()}
+        onConnect={openConnectSheet}
         agent={agentChoice}
       />
 

@@ -1,6 +1,6 @@
 /**
- * composer-config — the data behind the composer's model pill, the model
- * sheet, and the thread header's agent pill.
+ * composer-config — the data behind the composer's chip, the model sheet,
+ * and the thread header's agent pill.
  *
  * The project home and the thread share one model sheet. The home lists the
  * project gateway catalog (no provider, no thinking levels); the thread lists
@@ -65,10 +65,26 @@ export function variantDisplayName(variant: string | null): string {
   return variant ? capitalise(variant) : 'Default';
 }
 
-/** Pill text on the thread composer: the model, then the thinking level when one is set. */
-export function composerPillLabel(modelName: string | undefined, variant: string | null | undefined): string {
-  if (!modelName) return 'Model';
-  return variant ? `${modelName} · ${variantDisplayName(variant)}` : modelName;
+/** The composer chip: its text and its `Button` variant. */
+export interface ComposerChip {
+  label: string;
+  variant: 'ghost' | 'secondary';
+}
+
+/**
+ * The composer chip (KRTX-247): the agent the send runs on, not the model, as
+ * a low-key `ghost` chip. It opens the model sheet, which holds both. When the
+ * project offers no model it reads "Connect model" as a `secondary` chip, a
+ * clear prompt. With no agent resolved, the model name. Null hides the chip.
+ */
+export function composerChip(i: {
+  connectModel: boolean;
+  agentName: string | null | undefined;
+  modelName: string | null | undefined;
+}): ComposerChip | null {
+  if (i.connectModel) return { label: 'Connect model', variant: 'secondary' };
+  const label = i.agentName ? agentDisplayName(i.agentName) : i.modelName;
+  return label ? { label, variant: 'ghost' } : null;
 }
 
 /**

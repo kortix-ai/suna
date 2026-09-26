@@ -37,6 +37,7 @@ import { onboardingAccountId, startDestination } from '@/lib/onboarding/onboardi
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useLastProjectStore } from '@/stores/last-project-store';
 import { useOnboardingStore } from '@/stores/onboarding-store';
+import { useBootStore } from '@/stores/boot-store';
 
 /** Delays before the second and third resolve attempts. */
 const RETRY_DELAY_MS = [400, 1200];
@@ -68,6 +69,15 @@ export default function StartScreen() {
   const [signingOut, setSigningOut] = React.useState(false);
   // Bumped by Try again to re-run the resolve.
   const [attempt, setAttempt] = React.useState(0);
+  // At launch the native splash covers this screen until it redirects or
+  // shows a failure (KRTX-244): the loader draws only once the splash is
+  // gone (a later visit, or the splash safety timeout), so it never slides
+  // out under the destination as a second loader.
+  const splashHidden = useBootStore((s) => s.splashHidden);
+
+  React.useEffect(() => {
+    if (failure) useBootStore.getState().settleLanding();
+  }, [failure]);
 
   React.useEffect(() => {
     if (authLoading) return;
@@ -209,9 +219,9 @@ export default function StartScreen() {
               )}
             </View>
           </View>
-        ) : (
+        ) : splashHidden ? (
           <KortixLoader size="xlarge" />
-        )}
+        ) : null}
       </View>
     </>
   );
