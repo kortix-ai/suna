@@ -1276,6 +1276,36 @@ describe('opencode rollback', () => {
     expect(installed).toEqual([])
   })
 
+  // The latch is the promise that the next pass will not repeat this. It used
+  // to depend on the restore succeeding, which is how it was lost entirely.
+  test('the latch is written even when the restore itself cannot be applied', async () => {
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, CLI_BYTES)
+    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
+    await bakeDeps(ws, '1.17.11')
+    const oc = opencodeWorkspace(ws)
+
+    const result = await run(ws, stubFetch(), {
+      ...seamWith(['down', 'ok']),
+      opencodeDepsDir: ws.depsDir,
+      opencodeCurrentLinkPath: oc.currentLink,
+      opencodePrevPath: oc.prevPath,
+      opencodePinnedPath: oc.pinnedPath,
+      readOpencodeVersion: async () => '1.17.11',
+      turnProbe: async () => false,
+      installOpencode: async () => {
+        // The predecessor was retained and then lost anyway — a disk wiped, a
+        // reaper, an operator. The box is down; it must still stop trying.
+        await rm(oc.prevPath, { force: true })
+      },
+      installPluginDeps: async () => {},
+    })
+
+    expect(result.opencode).toBe('failed')
+    expect(result.reasons?.opencode).toContain('rollback could not be applied')
+    expect(await stat(oc.pinnedPath).then(() => true, () => false)).toBe(true)
+  })
+
   // THE CASE EVERY TEST ABOVE IS BLIND TO.
   //
   // They all stub `installOpencode`, so the binary the rollback target names is
