@@ -29,6 +29,9 @@ import { createManifestProject, fundAccount } from '../helpers/manifest-project'
 import { createAuthUser, installBrowserSessionDirect, signIn } from '../helpers/session-auth';
 import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 
+// Always recorded: the video of the held-network reload is the PR's demo.
+test.use({ video: 'on' });
+
 const api = createApiJsonClient(process.env.E2E_API_URL!);
 const authOptions = {
   supabaseUrl: process.env.E2E_SUPABASE_URL!,
