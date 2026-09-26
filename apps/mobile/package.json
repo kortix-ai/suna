@@ -143,7 +143,7 @@
     "@types/react": "~19.2.18",
     "babel-preset-expo": "~56.0.20",
     "canvaskit-wasm": "^0.42.0",
-    "mermaid": "11.15.0",
+    "mermaid": "11.16.1",
     "patch-package": "^8.0.0",
     "prettier": "^3.6.2",
     "prettier-plugin-tailwindcss": "^0.6.14",
