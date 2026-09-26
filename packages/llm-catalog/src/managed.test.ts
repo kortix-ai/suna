@@ -36,6 +36,19 @@ describe('managed catalog', () => {
     }
   });
 
+  test('direct Morph fallback prices match the current public rate card', () => {
+    expect(getManagedModel('deepseek-v4.1-flash')?.morphPricing).toEqual({
+      inputPerMillion: 0.15,
+      cachedInputPerMillion: 0.003,
+      outputPerMillion: 0.6,
+    });
+    expect(getManagedModel('glm-5.3-flash')?.morphPricing).toEqual({
+      inputPerMillion: 0.1,
+      cachedInputPerMillion: 0.02,
+      outputPerMillion: 0.35,
+    });
+  });
+
   test('every managed route excludes Morph and pins ZDR endpoints in US datacenters', () => {
     for (const model of MANAGED_MODELS) {
       expect(model.transport).toBe('openrouter');
@@ -50,6 +63,20 @@ describe('managed catalog', () => {
       expect(new Set(route.only).size, model.id).toBe(route.only.length);
       expect(route.max_price.prompt).toBeGreaterThanOrEqual(model.pricing!.inputPerMillion);
       expect(route.max_price.completion).toBeGreaterThanOrEqual(model.pricing!.outputPerMillion);
+    }
+  });
+
+  test('fallback billing covers every allowed OpenRouter endpoint price', () => {
+    for (const model of MANAGED_MODELS) {
+      const allowed = (model.openrouterProvider as { only: string[] }).only;
+      expect(Object.keys(model.openrouterEndpointPricing ?? {})).toEqual(allowed);
+      for (const tag of allowed) {
+        const endpoint = model.openrouterEndpointPricing?.[tag];
+        expect(endpoint, `${model.id} ${tag}`).toBeDefined();
+        expect(model.pricing!.inputPerMillion).toBeGreaterThanOrEqual(endpoint!.inputPerMillion);
+        expect(model.pricing!.cachedInputPerMillion!).toBeGreaterThanOrEqual(endpoint!.cachedInputPerMillion);
+        expect(model.pricing!.outputPerMillion).toBeGreaterThanOrEqual(endpoint!.outputPerMillion);
+      }
     }
   });
 

@@ -26,6 +26,8 @@ A failure after output has started is not retried. The client receives the strea
 
 Billing uses OpenRouter's reported `usage.cost` for the endpoint that served the request, within the configured `max_price`. A direct Morph request uses its separate Morph list prices.
 
+The project model picker lists each eligible managed route's estimated customer price for input, cached input, and output tokens. The API applies `KORTIX_LLM_MARKUP` (default `1.2`) to the public per-route rates before returning them. OpenRouter may select any allowed endpoint; its reported `usage.cost` determines the settled charge. The fallback tables were checked against [OpenRouter's model endpoint pages](https://openrouter.ai/docs/api/api-reference/endpoints/list-all-endpoints-for-a-model) and [Morph's current pricing](https://www.morphllm.com/pricing) on 2026-09-26. Refresh them when public rates change.
+
 For a quick route change, set `MORPH_MANAGED_MODELS` in the deployment environment and restart the API. For example, `MORPH_MANAGED_MODELS=deepseek-v4.1-flash,kimi-k3,glm-5.3-flash` enables all three. Set `MORPH_MANAGED_MODELS=` to disable Morph globally. Direct Morph does not inherit OpenRouter's ZDR and US location controls; verify its contract before selecting models with restricted data.
 
 Without `OPENROUTER_API_KEY`, GLM is unavailable by default. Other selected models require `MORPH_API_KEY` or `OPENROUTER_API_KEY`.

@@ -452,6 +452,9 @@ export interface ManagedModel {
   // Both fields are required when MORPH_MANAGED_MODELS selects this model.
   morphModelId?: string;
   morphPricing?: { inputPerMillion: number; cachedInputPerMillion?: number; outputPerMillion: number };
+  // Public per-endpoint OpenRouter rates checked 2026-09-26. Only entries in openrouterProvider.only
+  // are eligible. The gateway still settles from upstream usage.cost when sent.
+  openrouterEndpointPricing?: Record<string, { inputPerMillion: number; cachedInputPerMillion: number; outputPerMillion: number }>;
   // Omit this to keep the model grouped under Kortix in the picker.
   providerBrand?: string;
   // Catalog lookup hint. Managed pricing below is the routing authority.
@@ -523,9 +526,10 @@ export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', upstreamModelId: 'deepseek/deepseek-v4.1-flash',
     transport: 'openrouter', morphModelId: 'morph-dsv41flash',
-    morphPricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.0359375, outputPerMillion: 0.6 },
+    morphPricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.003, outputPerMillion: 0.6 },
     pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
     pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 },
+    openrouterEndpointPricing: { 'coreweave/fp8': { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 } },
     tier: 'balanced', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
       only: ['coreweave/fp8'],
@@ -539,6 +543,10 @@ export const MANAGED_MODELS: ManagedModel[] = [
     morphPricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
     pricingRef: 'openrouter/z-ai/glm-5.3-flash',
     pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
+    openrouterEndpointPricing: {
+      'decart/fp4': { inputPerMillion: 0.1275, cachedInputPerMillion: 0.0255, outputPerMillion: 0.425 },
+      'coreweave/nvfp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
+    },
     tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
       only: ['decart/fp4', 'coreweave/nvfp4'],
@@ -552,6 +560,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     morphPricing: { inputPerMillion: 2.5, cachedInputPerMillion: 0.29, outputPerMillion: 14 },
     pricingRef: 'openrouter/moonshotai/kimi-k3',
     pricing: { inputPerMillion: 3.3, cachedInputPerMillion: 0.33, outputPerMillion: 16.5 },
+    openrouterEndpointPricing: { 'fireworks/us': { inputPerMillion: 3.3, cachedInputPerMillion: 0.33, outputPerMillion: 16.5 } },
     tier: 'flagship', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
       only: ['fireworks/us'],
