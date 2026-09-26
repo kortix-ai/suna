@@ -51,13 +51,9 @@ export function adoptDeviceCaches(userId: string): void {
       userId,
       shouldPersist: shouldPersistQuery,
     });
+    // The SDK marks each restored entry invalidated: it refetches the first
+    // time something reads it, even when younger than its staleTime.
     queries.restore(client);
-    // A restored entry keeps its age, so one younger than its staleTime would
-    // never refetch. Each one refetches the first time something reads it.
-    void client.invalidateQueries({
-      predicate: (query) => shouldPersistQuery(query.queryKey),
-      refetchType: 'none',
-    });
     const stopPersisting = queries.persist(client);
     // Writes are coalesced over a second; a reload inside it would lose the
     // last change.
