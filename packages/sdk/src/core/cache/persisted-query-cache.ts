@@ -55,7 +55,7 @@ export interface PersistedQueryCacheOptions {
   maxAgeMs?: number;
   /** Upper bound of the stored payload, in UTF-16 code units. Default: 1,000,000. */
   maxBytes?: number;
-  /** Writes are coalesced over this window. Default: 1,000 ms. */
+  /** Writes are coalesced over this interval, in ms. Default: 1,000. */
   throttleMs?: number;
   /** Storage key prefix. Default: `kortix.query-cache`. */
   namespace?: string;
