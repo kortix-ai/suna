@@ -845,15 +845,26 @@ export async function reconcileRuntimeAssets(
         if (!res.ok) {
           logger.warn('[runtime-assets] CLI download non-ok', { status: res.status })
           cli = 'failed'
+          reasons.cli = `CLI download returned ${res.status}`
         } else {
+          // Captures the FIRST attempt's raw error (e.g. `EACCES: permission
+          // denied, open '/usr/local/bin/.kortix.download.…'`) so a caller that
+          // classifies causes (runtime-truth.ts's `blocked` escalation) can see
+          // the real reason instead of a bare 'failed'. `replaceCli` already
+          // logs it; this only threads the same string one level up.
+          let cliFailureCause: string | undefined
           const replaced = await replaceCli(cliPath, cliSha, await res.arrayBuffer(), {
             execProbe,
+            onUnlockAttempt: (raw) => {
+              cliFailureCause = raw
+            },
           })
           if (replaced === 'unrunnable') {
             cli = 'failed'
             reasons.cli = 'the downloaded CLI did not run on this box'
           } else {
             cli = replaced
+            if (cli === 'failed') reasons.cli = cliFailureCause ?? 'CLI replace failed'
           }
           if (cli === 'updated') {
             const stats = await stat(cliPath).catch(() => null)
@@ -870,6 +881,7 @@ export async function reconcileRuntimeAssets(
     } catch (err) {
       logger.warn('[runtime-assets] CLI reconcile failed', { err: String(err) })
       cli = 'failed'
+      reasons.cli = String(err)
     }
   }
 
