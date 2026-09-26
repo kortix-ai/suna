@@ -35,6 +35,7 @@ cannot bound memory retained by one worker across the full suite.
 - Run the suite in batches of at most 80 files. Each batch starts new Bun
   workers, so retained memory leaves when that batch exits. Later batches still
   run after a failed batch, and the whole script returns failure.
+- Let the package quality runner use the same memory-based worker selection.
 - At elevated memory use, sample the six largest processes through `/proc`.
   Record only allowlisted process names, PID and RSS. Include the largest
   non-runtime process in the guard reason.

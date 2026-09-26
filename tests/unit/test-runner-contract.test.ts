@@ -73,7 +73,7 @@ describe('local test runner contract', () => {
     expect(source).toContain("verifyPublishablePackage('agent-tunnel')");
     expect(source).toContain('packed agent-tunnel CLI cannot load its WebSocket fallback');
     expect(source).toContain("'--no-sort'");
-    expect(source).toContain("KORTIX_API_TEST_WORKERS: '3'");
+    expect(source).not.toContain('KORTIX_API_TEST_WORKERS:');
     expect(source).toContain("KORTIX_TEST_TIMEOUT_MS: '30000'");
     expect(source).toContain("KORTIX_ATTACHMENT_OFFLOAD: '0'");
     expect(source).toContain("await runWorkspaceTests(['@kortix/cli'], 1)");
