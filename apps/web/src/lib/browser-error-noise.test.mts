@@ -8230,6 +8230,131 @@ test('does NOT suppress the OperationError popErrorScope rejection when any reso
   }
 });
 
+// ---------------------------------------------------------------------------
+// SECOND production shape (KRTX-227 / KRTX-228): the SAME browser-internal
+// `OperationError: Instance dropped in popErrorScope` message arrives WITH a
+// stack. The only WebGPU code on the site is the three.js renderer behind the
+// public `/a1o` landing page's `<Canvas>` (`three@0.185.1`,
+// `apps/web/src/app/[locale]/a1o/die-scene.tsx`). The GPU device is dropped
+// (device loss / tab teardown / page navigation) between the error-scope push
+// and pop, so the browser rejects `popErrorScope()` and three.js surfaces the
+// rejection uncaught from its pipeline cache. The stack is entirely minified
+// three.js bundle frames in
+// `app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js` (pipeline helpers
+// `createRenderPipeline` / `_getRenderPipeline`), with NO resolved first-party
+// `apps/web/src/…` frame. Better Stack patterns `a44862f6…` (KRTX-228) and
+// `93f6cf89…` (KRTX-227), ~42-43 occurrences over ~11 h, 0 identified users,
+// release `52c2174f…`, request URL `https://kortix.com/`, Chrome, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT). The fix adds a positive three.js-WebGPU-pipeline anchor; the
+// first-party negative guard is unchanged.
+// ---------------------------------------------------------------------------
+
+// The exact minified three.js renderer frames from the production event.
+const THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES = [
+  { filename: 'app:///_next/static/immutable/chunks/1t2z4o9r-gb3e.js', function: 'n' },
+  { filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js', function: 'e' },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'dV._animationLoop',
+  },
+  { filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js', function: 'Te._renderScene' },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'Te._renderObjects',
+  },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'd4._getRenderPipeline',
+  },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'vz.createRenderPipeline',
+  },
+];
+
+test('suppresses the stack-bearing three.js WebGPU renderer popErrorScope noise (KRTX-228 prod shape)', () => {
+  // Gate #1: fails without the new positive anchor (the minified frames would
+  // fall through to negative guard #2 and keep reporting).
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES,
+    }),
+    true,
+  );
+});
+
+test('suppresses the WebGPU renderer popErrorScope Sentry event via the beforeSend gate', () => {
+  // The exact production shape: type `OperationError`, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught), the
+  // minified three.js renderer stack, no first-party frame.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: OPERATION_ERROR_POP_ERROR_SCOPE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+            stacktrace: { frames: THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress the WebGPU renderer popErrorScope shape when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame alongside the renderer frames means our
+  // own code is in the rejection path → actionable; guard #1 wins over the
+  // positive anchor.
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: [
+        ...THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES,
+        { filename: 'apps/web/src/app/[locale]/a1o/die-scene.tsx', function: 'DieScene' },
+      ],
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress a non-bundle createRenderPipeline stack (guard #2 unchanged)', () => {
+  // The anchor requires an `app:///_next/static/…` bundle frame; a
+  // `createRenderPipeline` function in an external URL is not the three.js
+  // anchor, so guard #2 keeps this attributable event reporting.
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: [{ filename: 'https://cdn.example.com/lib.js', function: 'lib.createRenderPipeline' }],
+    }),
+    false,
+  );
+});
+
+test('suppresses a single anchored WebGPU pipeline frame (minimal stack)', () => {
+  // One bundle frame whose method is a three.js pipeline helper is enough to
+  // classify the WebGPU error-scope shape.
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: [
+        {
+          filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+          function: 'vz.createRenderPipeline',
+        },
+      ],
+    }),
+    true,
+  );
+});
+
 test('does NOT suppress a non-matching message (suffix variant)', () => {
   // The matcher anchors on the EXACT message; a near-miss wording must not be
   // matched.
