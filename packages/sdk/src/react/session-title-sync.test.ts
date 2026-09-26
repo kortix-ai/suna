@@ -57,6 +57,12 @@ describe('reconcileHydratedSessionTitle', () => {
         type: 'active',
       },
       {
+        // The PAGED list family: what the sidebar and the Sessions page read.
+        // Without it the resolved title waited for the next list poll.
+        queryKey: [...qk.project.sessionsScope('project-1'), 'list-paged'],
+        type: 'active',
+      },
+      {
         // EXACT: `qk.project.session(...)` is the parent of `prompts` and
         // `turn`, so a prefix refetch here is the same accident again.
         queryKey: qk.project.session('project-1', 'session-1'),
@@ -79,7 +85,7 @@ describe('reconcileHydratedSessionTitle', () => {
     });
 
     expect(resolved).toBe(true);
-    expect(refetched).toHaveLength(2);
+    expect(refetched).toHaveLength(3);
   });
 
   test('does not poll an empty conversation or a session that already has a title', async () => {
@@ -143,6 +149,7 @@ describe('the sessions-list refetch defers to an in-flight /start', () => {
 
     expect(refetched).toEqual([
       { queryKey: [...qk.project.sessionsScope('project-1'), 'list'], type: 'active' },
+      { queryKey: [...qk.project.sessionsScope('project-1'), 'list-paged'], type: 'active' },
       { queryKey: qk.project.session('project-1', 'session-1'), exact: true, type: 'active' },
     ]);
   });
@@ -152,6 +159,27 @@ describe('the sessions-list refetch defers to an in-flight /start', () => {
 
     await reconcileHydratedSessionTitle(client, 'project-1', 'session-1', 1, { delaysMs: [0] });
 
-    expect(refetched).toHaveLength(2);
+    expect(refetched).toHaveLength(3);
+  });
+});
+
+describe('a title already in the paged list counts', () => {
+  test('does not poll a session whose paged-list row already has a real title', async () => {
+    const refetched: unknown[] = [];
+    const paged = {
+      pages: [{ items: [{ session_id: 'session-1', custom_name: null, name: 'Fix the audit 5xx' }], next_cursor: null }],
+      pageParams: [null],
+    };
+    const client = {
+      getQueryData: (key: readonly unknown[]) =>
+        JSON.stringify(key) === JSON.stringify(qk.project.sessionsPaged('project-1')) ? paged : undefined,
+      refetchQueries: async (input: unknown) => {
+        refetched.push(input);
+      },
+    } as unknown as Pick<QueryClient, 'getQueryData' | 'refetchQueries'>;
+
+    await reconcileHydratedSessionTitle(client, 'project-1', 'session-1', 1, { delaysMs: [0] });
+
+    expect(refetched).toEqual([]);
   });
 });

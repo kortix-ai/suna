@@ -32,8 +32,12 @@ interface SyncState {
   questions: Record<string, QuestionRequest[]>;
 
   // ── Actions ──
-  /** Hydrate a session's messages from REST response */
-  hydrate: (sessionId: string, messages: MessageWithParts[]) => void;
+  /**
+   * Hydrate a session's messages from a REST response. `source: 'cache'` marks
+   * a saved copy: its messages stay provisional until a runtime read settles
+   * them (see `settleCacheSourced`).
+   */
+  hydrate: (sessionId: string, messages: MessageWithParts[], options?: { source?: 'cache' }) => void;
   /** Upsert a single message (from SSE) */
   upsertMessage: (sessionId: string, msg: MessageWithParts) => void;
   /** Remove a message (from SSE) */
@@ -80,6 +84,62 @@ export function markOptimistic(id: string) {
 
 export function isOptimistic(id: string): boolean {
   return optimisticIds.has(id);
+}
+
+/**
+ * Message ids painted from a SAVED COPY (the server's capture from the last
+ * turn end) that no runtime read has confirmed yet, per session. The copy
+ * shows the thread while the computer wakes; the first runtime read then
+ * decides which of these still exist. Web has the same rule
+ * (`@kortix/sdk` sync store, `cacheSourcedIds`).
+ */
+const cacheSourcedIds = new Map<string, Set<string>>();
+
+/**
+ * Does this session hold messages, every one of them from a saved copy? Only
+ * then may a newer saved copy paint over it: once the runtime has answered, a
+ * snapshot is older than what the store holds.
+ */
+export function hasOnlyCacheSourcedMessages(sessionId: string): boolean {
+  const messages = useSyncStore.getState().messages[sessionId];
+  const cached = cacheSourcedIds.get(sessionId);
+  if (!messages || messages.length === 0 || !cached) return false;
+  return messages.every((message) => cached.has(message.info.id));
+}
+
+/**
+ * A runtime read settles the saved copy's provisional messages: the ones it
+ * contains are real; the ones it lacks but whose time it COVERS (at or after
+ * the oldest message it returned) no longer exist there — a rewind removed
+ * them — and are dropped. Older ones are history the bounded tail did not
+ * reach: kept, still provisional. An empty read covers everything.
+ */
+function settleCacheSourced(
+  sessionId: string,
+  existing: MessageWithParts[] | undefined,
+  incoming: MessageWithParts[],
+): MessageWithParts[] | undefined {
+  const cached = cacheSourcedIds.get(sessionId);
+  if (!cached || cached.size === 0 || !existing) return existing;
+  const incomingIds = new Set(incoming.map((message) => message.info.id));
+  let oldest = Number.POSITIVE_INFINITY;
+  for (const message of incoming) oldest = Math.min(oldest, message.info.time?.created ?? oldest);
+  const dropped = new Set<string>();
+  for (const message of existing) {
+    const id = message.info.id;
+    if (!cached.has(id)) continue;
+    if (incomingIds.has(id)) {
+      cached.delete(id);
+      continue;
+    }
+    const created = message.info.time?.created ?? Number.POSITIVE_INFINITY;
+    if (incoming.length === 0 || created >= oldest) {
+      cached.delete(id);
+      dropped.add(id);
+    }
+  }
+  if (cached.size === 0) cacheSourcedIds.delete(sessionId);
+  return dropped.size === 0 ? existing : existing.filter((message) => !dropped.has(message.info.id));
 }
 
 /**
@@ -261,9 +321,16 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   permissions: {},
   questions: {},
 
-  hydrate: (sessionId, messages) =>
+  hydrate: (sessionId, messages, options) =>
     set((state) => {
-      const existing = state.messages[sessionId];
+      let existing: MessageWithParts[] | undefined = state.messages[sessionId];
+      if (options?.source === 'cache') {
+        let cached = cacheSourcedIds.get(sessionId);
+        if (!cached) cacheSourcedIds.set(sessionId, (cached = new Set()));
+        for (const message of messages) cached.add(message.info.id);
+      } else {
+        existing = settleCacheSourced(sessionId, existing, messages);
+      }
       if (!existing || existing.length === 0) {
         // No existing data — accept the hydration as-is
         return { messages: { ...state.messages, [sessionId]: messages } };
@@ -627,6 +694,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     set((state) => {
       if (sessionIds.length === 0) return state;
       for (const sessionId of sessionIds) {
+        cacheSourcedIds.delete(sessionId);
         for (const message of state.messages[sessionId] ?? []) {
           bridgedPartIds.delete(message.info.id);
           forgetOptimistic(message.info.id);
@@ -650,6 +718,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   reset: () => {
     bridgedPartIds.clear();
+    cacheSourcedIds.clear();
     optimisticPartIds.clear();
     optimisticPartIdsByMessage.clear();
     set({ messages: {}, sessionStatus: {}, permissions: {}, questions: {} });

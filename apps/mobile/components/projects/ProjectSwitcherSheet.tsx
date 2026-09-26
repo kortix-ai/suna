@@ -337,10 +337,11 @@ export function ProjectSwitcherSheet({
                   />
                 </SettingsGroup>
               </View>
-            ) : chipAccountId === null || projectsQuery.isLoading ? (
+            ) : chipAccountId === null || projectsQuery.isPending ? (
               // No account picked yet (selectedAccountId still loading) or
-              // its projects are in flight — never the empty state here: a
-              // user with projects must not flash "No projects yet".
+              // its projects have not loaded — in flight, or paused offline
+              // (`isPending`, not `isLoading`) — never the empty state here:
+              // a user with projects must not flash "No projects yet".
               <View className="items-center py-10">
                 <KortixLoader size="small" />
               </View>

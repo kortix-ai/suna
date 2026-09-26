@@ -21,6 +21,7 @@ import {
   QueryClientProvider,
   focusManager,
   onlineManager,
+  useQueryClient,
 } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from 'expo-router/react-navigation';
@@ -56,6 +57,9 @@ import { useBootStore } from '@/stores/boot-store';
 import { SPLASH_SAFETY_TIMEOUT_MS, shouldHideSplash } from '@/lib/boot/splash-gate';
 import { OtaUpdateManager } from '@/components/updates/OtaUpdateManager';
 import { subscribeOnlineStatus } from '@/lib/network/use-online-status';
+import { applyPersistedQueryDefaults } from '@/lib/query/persisted-queries';
+import { queryCachePersistence } from '@/lib/query/query-cache';
+import { bindSavedCopies } from '@/lib/session/saved-copy-registry';
 import { installHapticsGate } from '@/lib/haptics';
 import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
@@ -130,18 +134,21 @@ export default function RootLayout() {
   const { colorScheme } = useColorScheme();
   const router = useRouter();
 
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            retry: 2,
-            staleTime: 5 * 60 * 1000,
-            refetchOnWindowFocus: false,
-          },
+  const [queryClient] = useState(() => {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: 2,
+          staleTime: 5 * 60 * 1000,
+          refetchOnWindowFocus: false,
         },
-      })
-  );
+      },
+    });
+    // Before any restore: a restored list takes its gc time from these
+    // defaults, and must live until its screen mounts (lib/query).
+    applyPersistedQueryDefaults(client);
+    return client;
+  });
 
   const queryClientRef = React.useRef(queryClient);
   React.useEffect(() => {
@@ -506,6 +513,7 @@ export default function RootLayout() {
                                   style={activeColorScheme === 'dark' ? 'light' : 'dark'}
                                 />
                                 <View className="flex-1">
+                                  <QueryCachePersistence />
                                   <SplashGate />
                                   <AuthProtection>
                                     {/* Every stack is the native Stack with the platform default
@@ -586,6 +594,35 @@ export default function RootLayout() {
       </GestureHandlerRootView>
     </QueryClientProvider>
   );
+}
+
+/**
+ * Keeps the persisted query cache on the signed-in user (lib/query/query-cache):
+ * a sign-in restores that user's lists, a sign-out or another user forgets the
+ * previous user's. The start screen awaits the same restore before it routes.
+ * Going to the background writes a pending change at once: the system may end
+ * the app before the write timer fires.
+ */
+function QueryCachePersistence() {
+  const queryClient = useQueryClient();
+  const { user, isLoading: authLoading } = useAuthContext();
+  const userId = user?.id ?? null;
+
+  useEffect(() => {
+    if (authLoading) return;
+    void queryCachePersistence.bind(queryClient, userId);
+    // The saved copies of transcripts follow the same user (lib/session).
+    bindSavedCopies(userId);
+  }, [queryClient, userId, authLoading]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background') void queryCachePersistence.flush();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  return null;
 }
 
 /**

@@ -11,7 +11,12 @@
  * cannot load native modules.
  */
 
-import { sessionParentId } from '@kortix/sdk';
+import {
+  SESSION_LIST_STATUS,
+  sessionListStatus,
+  sessionParentId,
+  type SessionListStatus,
+} from '@kortix/sdk';
 
 import type { ProjectSession } from '@/lib/projects/projects-client';
 
@@ -39,53 +44,25 @@ export function sessionDisplayTitle(session: ProjectSession): string {
 
 // ── Display status ───────────────────────────────────────────────────────
 
-export type SessionDisplayStatus = 'starting' | 'running' | 'stopped' | 'failed' | 'needs-you';
-
 /**
- * Resolve a session to its display status. A pending review wins outright
- * over every lifecycle status, mirroring web's `sessionDisplayStatus`
- * precedence. `reviewCount` defaults to 0 for callers with no review-request
- * data available yet.
- *
- * Web additionally distinguishes `done` (completed) from `stopped`, and a
- * `legacy` migrated-session state. This task's `SessionDisplayStatus` union
- * (set by the brief) has neither, so `completed` and `stopped` both collapse
- * to `stopped` here, and legacy-migration status is not tracked. See the
- * task report for this difference.
+ * What a list shows for a session. The resolution and the words are the SDK's
+ * (`sessionListStatus`, `SESSION_LIST_STATUS`), the ones web shows: a finished
+ * session reads "Done" on both, never "Stopped", and a migrated session that
+ * has not run reads "Legacy". A pending review wins outright.
  */
+export type SessionDisplayStatus = SessionListStatus;
+
+/** Resolve a session to its display status (`sessionListStatus`). */
 export function sessionDisplayStatus(
   session: ProjectSession,
   reviewCount = 0,
 ): SessionDisplayStatus {
-  if (reviewCount > 0) return 'needs-you';
-  switch (session.status) {
-    case 'queued':
-    case 'branching':
-    case 'provisioning':
-      return 'starting';
-    case 'running':
-      return 'running';
-    case 'completed':
-    case 'stopped':
-      return 'stopped';
-    case 'failed':
-      return 'failed';
-    default:
-      return 'stopped';
-  }
+  return sessionListStatus(session, reviewCount);
 }
 
-const SESSION_STATUS_LABELS: Record<SessionDisplayStatus, string> = {
-  starting: 'Starting',
-  running: 'Running',
-  stopped: 'Stopped',
-  failed: 'Failed',
-  'needs-you': 'Needs you',
-};
-
-/** Sentence-case name of a display status, for accessibility labels. */
+/** Sentence-case name of a display status, for accessibility labels and the filter sheet. */
 export function sessionStatusLabel(status: SessionDisplayStatus): string {
-  return SESSION_STATUS_LABELS[status];
+  return SESSION_LIST_STATUS[status].label;
 }
 
 // ── Last activity ────────────────────────────────────────────────────────
@@ -327,8 +304,10 @@ export type SessionStatusFilter = Exclude<SessionDisplayStatus, 'starting'>;
 export const SESSION_STATUS_FILTERS: SessionStatusFilter[] = [
   'needs-you',
   'running',
+  'done',
   'stopped',
   'failed',
+  'legacy',
 ];
 
 /**

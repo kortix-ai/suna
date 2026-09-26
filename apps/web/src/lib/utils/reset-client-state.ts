@@ -1,3 +1,4 @@
+import { clearDeviceCaches } from '@/lib/device-caches';
 import { getSharedQueryClient } from '@/lib/query-client-singleton';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { withTimeBudget } from '@/lib/utils/time-budget';
@@ -18,6 +19,8 @@ import { clearSessionIDBCache } from '@kortix/sdk/internal/idb-sync-cache'; // e
  *
  * Run on logout and whenever a *different* user signs in, so the next account
  * never inherits the previous one's data. Covers, in order:
+ *   0. The device caches (`device-caches.ts`) — the persisted query cache and
+ *      the session saved copies stop writing, then forget this user.
  *   1. React Query cache — every cached server response (accounts, projects,
  *      sessions, billing, …). This is the big one that was missing.
  *   2. The persisted "current account" selection (zustand + its localStorage).
@@ -38,7 +41,7 @@ import { clearSessionIDBCache } from '@kortix/sdk/internal/idb-sync-cache'; // e
  * read from the module-level singleton, so AuthProvider (mounted above the
  * React Query provider) can use it too.
  *
- * **Steps 1-4 are SYNCHRONOUS and always complete. Step 5 is bounded and may
+ * **Steps 0-4 are SYNCHRONOUS and always complete. Step 5 is bounded and may
  * be outrun.** That distinction is the contract, not an implementation detail:
  * callers await this before publishing a new identity, and `clearSessionIDBCache()`
  * can hang FOREVER — `openDB()` in `packages/sdk/src/browser/cache/idb-sync-cache.ts`
@@ -65,6 +68,16 @@ export async function resetClientState({
   // have to wait two real seconds. No caller passes it.
   idbTimeoutMs,
 }: { idbTimeoutMs?: number } = {}): Promise<void> {
+  // First, and synchronously: the device caches stop writing before anything
+  // below empties the query cache, so the next user's queries can never be
+  // persisted under this user's key. Their disk entries are `kortix.` keys, so
+  // the sweep below removes them too; the returned promise is not awaited.
+  try {
+    void clearDeviceCaches();
+  } catch (error) {
+    console.error('Failed to clear the device caches:', error);
+  }
+
   try {
     getSharedQueryClient()?.clear();
   } catch (error) {

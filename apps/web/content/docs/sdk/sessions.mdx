@@ -277,6 +277,22 @@ runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
 `s.ensureReady()` first, or they throw `SessionNotReadyError`. See
 [Session readiness errors](#session-readiness-errors).
 
+## Status words
+
+Every host reads one vocabulary, so one state has one word on every screen.
+
+| Export                                     | Use                                                                                          |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `sessionListStatus(session, reviewCount?)` | A session in a list: `needs-you`, `starting`, `running`, `done`, `stopped`, `failed`, `legacy` |
+| `SESSION_LIST_STATUS[status]`              | `{ label, tone, description }` for that status                                               |
+| `sessionConnectionLabel(connection)`       | A short label for the session's computer, or `null` for `unknown` and `live`                  |
+| `SESSION_NOTICE`                           | The composer's sentence while the computer is not ready                                      |
+| `turnRetryLabel(secondsLeft)`              | `Retrying in 5s`, `Retrying now`, or `Waiting to retry` when no countdown is known           |
+
+Tones are `actionable`, `live`, `progress`, `muted`, and `danger`. Green is for
+`live` and `actionable` only; a finished session is `muted`. A status that a newer
+API sends and this build does not know reads `stopped`, never `failed`.
+
 ## Streaming
 
 Use `s.stream()` to receive live events in a script or server. In a React

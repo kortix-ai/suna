@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   clearOptimistic,
+  hasOnlyCacheSourcedMessages,
   isOptimistic,
   isOptimisticPart,
   selectSessionsToEvict,
@@ -418,5 +419,57 @@ describe('optimistic part id pruning', () => {
     useSyncStore.getState().addOptimisticMessage('session-1', userMessage('opt-7', 5));
     useSyncStore.getState().evictSessions(['session-1']);
     expect(isOptimisticPart('opt-7-text')).toBe(false);
+  });
+});
+
+/**
+ * A saved copy (the server's capture from the last turn end) paints the thread
+ * while the computer wakes. Its messages are PROVISIONAL: the first runtime
+ * read confirms the ones it contains and drops the ones it lacks but whose time
+ * it covers — a message a rewind removed must not outlive that read. Older
+ * ones are history the runtime's bounded tail did not reach, and stay.
+ */
+describe('a saved copy is provisional until the runtime reads', () => {
+  beforeEach(() => useSyncStore.getState().reset());
+
+  test('a covered message the runtime lacks is dropped; the rest are confirmed', () => {
+    const store = useSyncStore.getState();
+    // `msg_rewound` sits inside the runtime tail's time range (30..40), so the
+    // runtime read covers it; `msg_old` is older than that tail.
+    store.hydrate('session-1', [message('msg_old', 10), message('msg_kept', 30), message('msg_rewound', 35)], {
+      source: 'cache',
+    });
+    expect(hasOnlyCacheSourcedMessages('session-1')).toBe(true);
+
+    store.hydrate('session-1', [message('msg_kept', 30), message('msg_new', 40)]);
+
+    expect(useSyncStore.getState().messages['session-1'].map((entry) => entry.info.id)).toEqual([
+      'msg_old',
+      'msg_kept',
+      'msg_new',
+    ]);
+    expect(hasOnlyCacheSourcedMessages('session-1')).toBe(false);
+  });
+
+  test('an empty runtime read drops every saved-copy message', () => {
+    const store = useSyncStore.getState();
+    store.hydrate('session-1', [message('msg_a', 10)], { source: 'cache' });
+    store.hydrate('session-1', []);
+    expect(useSyncStore.getState().messages['session-1']).toEqual([]);
+  });
+
+  test('a newer saved copy reconciles into an older one before the runtime reads', () => {
+    const store = useSyncStore.getState();
+    store.hydrate('session-1', [message('msg_a', 10)], { source: 'cache' });
+    store.hydrate('session-1', [message('msg_a', 10), message('msg_b', 20)], { source: 'cache' });
+    expect(useSyncStore.getState().messages['session-1'].map((entry) => entry.info.id)).toEqual(['msg_a', 'msg_b']);
+    expect(hasOnlyCacheSourcedMessages('session-1')).toBe(true);
+  });
+
+  test('reset forgets which messages were provisional', () => {
+    const store = useSyncStore.getState();
+    store.hydrate('session-1', [message('msg_a', 10)], { source: 'cache' });
+    store.reset();
+    expect(hasOnlyCacheSourcedMessages('session-1')).toBe(false);
   });
 });

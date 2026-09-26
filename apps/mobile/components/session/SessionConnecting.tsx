@@ -13,10 +13,18 @@
  * the centre shows the failure with the detail, Restart, and a way back to
  * project home — web parity with the dashboard's "OpenCode runtime is not
  * ready" screen (apps/web/.../sessions/[sessionId]/page.tsx InlineSessionError).
+ *
+ * With a SAVED COPY (`messages`: the copy this device kept, then the server's;
+ * `lib/session/saved-copy.ts`) the view is the thread itself: its turns,
+ * read-only, and a status bar above the composer saying what the computer is
+ * doing. The loader is gone — the conversation is the content. A failure then
+ * takes the composer's slot instead of replacing the thread, the rule the web
+ * follows: a readable conversation is never replaced by a card.
  */
 
 import React from 'react';
 import { ScrollView, View } from 'react-native';
+import { groupMessagesIntoTurns } from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
@@ -27,6 +35,8 @@ import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { FLOATING_MENU_CLEARANCE } from '@/components/session/FloatingMenuButton';
 import { AttachmentTile } from '@/components/session/attachment-tile';
 import { UserMessageBubble } from '@/components/session/turn/user-message';
+import { SessionTurn } from '@/components/session/SessionTurn';
+import type { MessageWithParts, Turn } from '@/lib/opencode/types';
 import { THEME } from '@/lib/utils/theme';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { isPreviewableImage } from '@/lib/session/attachment-tile';
@@ -51,6 +61,9 @@ export function SessionConnecting({
   onRestart,
   restarting,
   showLoader = true,
+  messages,
+  statusLabel,
+  sessionId,
 }: {
   /** The user's just-sent first message (a fresh send from project home), shown as the thread shows it. */
   firstMessage?: string;
@@ -67,12 +80,36 @@ export function SessionConnecting({
    * the drawer owns the one loader then (KRTX-244).
    */
   showLoader?: boolean;
+  /** The session's saved copy, shown as the thread while the computer wakes. */
+  messages?: MessageWithParts[];
+  /** What the computer is doing, for the status bar over the thread (`sessionConnectionLabel`). */
+  statusLabel?: string | null;
+  /** The OpenCode session the saved copy belongs to; tool rows read it. */
+  sessionId?: string;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const files = firstFiles ?? [];
   const hasFiles = files.length > 0;
+  const turns = React.useMemo(
+    () => (messages && messages.length > 0 ? (groupMessagesIntoTurns(messages) as unknown as Turn[]) : []),
+    [messages],
+  );
+
+  if (turns.length > 0) {
+    return (
+      <SavedThread
+        turns={turns}
+        sessionId={sessionId}
+        statusLabel={statusLabel ?? null}
+        error={error}
+        onCancel={onCancel}
+        onRestart={onRestart}
+        restarting={restarting}
+      />
+    );
+  }
 
   return (
     <View style={{ flex: 1 }} className="bg-background">
@@ -123,6 +160,80 @@ export function SessionConnecting({
         <View className="px-4 pb-3 pt-1">
           <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />
         </View>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The thread as its saved copy shows it: the turns, read-only, opened at the
+ * newest message like the live thread; then the status bar (the composer card,
+ * as `SandboxHealthPill` draws it) and the disabled composer. A failure takes
+ * the composer's slot and the thread stays readable.
+ */
+function SavedThread({
+  turns,
+  sessionId,
+  statusLabel,
+  error,
+  onCancel,
+  onRestart,
+  restarting,
+}: {
+  turns: Turn[];
+  sessionId?: string;
+  statusLabel: string | null;
+  error?: SessionConnectError | null;
+  onCancel: () => void;
+  onRestart?: () => void;
+  restarting?: boolean;
+}) {
+  const insets = useSafeAreaInsets();
+  const scrollRef = React.useRef<ScrollView>(null);
+  return (
+    <View style={{ flex: 1 }} className="bg-background">
+      <ScrollView
+        ref={scrollRef}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingTop: insets.top + FLOATING_MENU_CLEARANCE, paddingBottom: 12 }}
+        className="px-4"
+        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}>
+        {turns.map((turn) => (
+          <SessionTurn
+            key={turn.userMessage.info.id}
+            turn={turn}
+            isWorkingTurn={false}
+            isBusy={false}
+            sessionId={sessionId}
+            rewindDisabled
+          />
+        ))}
+      </ScrollView>
+
+      <View style={{ paddingBottom: insets.bottom }}>
+        {error ? (
+          <View className="items-center px-4 pb-3 pt-1">
+            <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} />
+          </View>
+        ) : (
+          <>
+            {statusLabel ? (
+              <View className="px-4 pb-2" accessibilityLiveRegion="polite">
+                <View className="flex-row items-center gap-2 rounded-3xl border border-border bg-background p-2">
+                  <View className="flex-1 flex-row items-center gap-2 px-2 py-2">
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.accent.yellow }} />
+                    <Text variant="muted" className="shrink" numberOfLines={1}>
+                      {statusLabel}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+            <View className="px-4 pb-3 pt-1">
+              <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />
+            </View>
+          </>
+        )}
       </View>
     </View>
   );

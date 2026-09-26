@@ -3,8 +3,9 @@
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { deleteProjectSession } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
+import { qk, removeCachedProjectSession } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useParams } from 'next/navigation';
 import { useTranslations } from '@/i18n/use-translations';
 
 interface SessionDeleteModalProps {
@@ -26,9 +27,16 @@ export function SessionDeleteModal({
 }: SessionDeleteModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
+  const openSessionId = useParams<{ sessionId?: string }>()?.sessionId;
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteProjectSession(projectId, id),
+    // The row leaves every cached list the moment the user confirms, not when
+    // the server does. Returns the restore for `onError`. Not for the session
+    // this route renders: removing its row entry makes the page's own readers
+    // (header, chat, the runtime pin) refetch a session that is being deleted.
+    onMutate: (id) =>
+      id === openSessionId ? undefined : removeCachedProjectSession(queryClient, projectId, id),
     onSuccess: () => {
       successToast(
         sessionLabel
@@ -39,7 +47,8 @@ export function SessionDeleteModal({
       onDeleted?.();
       onOpenChange(false);
     },
-    onError: (err) => {
+    onError: (err, _id, restore) => {
+      restore?.();
       errorToast(
         err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text5c9c6608b47d'),
       );

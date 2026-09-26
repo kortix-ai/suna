@@ -216,12 +216,13 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // has actually asked to see — see `@kortix/sdk/react/use-project-sessions`.
   const {
     sessions,
-    isLoading,
+    data,
     isError,
     error,
     refetch,
     hasNextPage,
     isFetchingNextPage,
+    isFetchNextPageError,
     fetchNextPage,
   } = useProjectSessions(projectId, {
     refetchInterval: (loaded) =>
@@ -305,7 +306,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   );
 
   const viewState = resolveSessionListViewState({
-    isLoading,
+    hasData: data !== undefined,
     isError,
     totalCount: sessions.length,
     visibleCount: visibleSessions.length,
@@ -533,7 +534,12 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               disabled={isFetchingNextPage}
               onClick={() => fetchNextPage()}
             >
-              {isFetchingNextPage ? t('loadingMore') : t('loadMore')}
+              {/* A failed page keeps the rows above it; the button is the retry. */}
+              {isFetchingNextPage
+                ? t('loadingMore')
+                : isFetchNextPageError
+                  ? t('retry')
+                  : t('loadMore')}
             </Button>
           </div>
         )}
