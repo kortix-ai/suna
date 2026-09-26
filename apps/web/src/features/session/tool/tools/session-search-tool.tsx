@@ -12,6 +12,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useTranslations } from '@/i18n/use-translations';
+import { parseSessionSearchHits } from '@kortix/shared/tool-output';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
@@ -22,31 +23,7 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
   const status = partStatus(part);
   const query = (input.query as string) || '';
 
-  const hits = useMemo(() => {
-    if (!output) return [];
-    const results: Array<{
-      id: string;
-      title: string;
-      updated: string;
-      score: string;
-      snippet: string;
-    }> = [];
-    const lines = output.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(/^(ses_\S+)\s*\|\s*"([^"]*)"\s*\|\s*(\S+.*?)\s*\|\s*score=(\d+)/);
-      if (m) {
-        const snippetLine = lines[i + 1]?.match(/^Snippet:\s*(.+)/);
-        results.push({
-          id: m[1],
-          title: m[2],
-          updated: m[3].trim(),
-          score: m[4],
-          snippet: snippetLine?.[1]?.trim() || '',
-        });
-      }
-    }
-    return results;
-  }, [output]);
+  const hits = useMemo(() => parseSessionSearchHits(output), [output]);
 
   // `isErrorOutput` trims the whole output and runs `JSON.parse` over it. It is
   // read from the body (not from a branch), so it re-scanned the payload on
