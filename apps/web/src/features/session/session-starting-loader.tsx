@@ -4,7 +4,12 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import { restartProjectSession, sessionStartKey, type SessionStartStage } from '@kortix/sdk';
+import {
+  restartProjectSession,
+  sessionStartKey,
+  type SessionStartResult,
+  type SessionStartStage,
+} from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -50,6 +55,29 @@ interface Step {
  * loader.
  */
 type BootStepVariant = 'stepper' | 'compact';
+type StartFailure = SessionStartResult['failure'];
+
+/** Keep a provider failure visible while `/start` waits for its retry clock. */
+export function sessionWakeStatusNote(input: {
+  reason?: string | null;
+  failure?: StartFailure;
+  note?: string | null;
+  now: number;
+}): string | null {
+  if (input.reason !== 'runtime_wake_cooldown' || !input.failure) return input.note ?? null;
+  const attempts = Math.max(1, input.failure.evidence?.attempts ?? 1);
+  const nextAttempt = attempts + 1;
+  const retryAt = Date.parse(input.failure.evidence?.next_retry_at ?? '');
+  if (!Number.isFinite(retryAt)) {
+    return `Computer did not start. Retrying automatically (attempt ${nextAttempt}).`;
+  }
+  const seconds = Math.max(0, Math.ceil((retryAt - input.now) / 1_000));
+  if (seconds === 0) return `Computer did not start. Retrying automatically now (attempt ${nextAttempt}).`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  const duration = minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
+  return `Computer did not start. Retrying automatically in ${duration} (attempt ${nextAttempt}).`;
+}
 
 /** Copy is deliberately parallel, so stage changes read as one continuous task. */
 export const STEPS: Step[] = [
@@ -218,6 +246,8 @@ export function SessionStartingLoader({
   sessionId,
   /** Honest one-liner from the SDK wake escalation ladder. */
   note,
+  reason,
+  failure,
 }: {
   stage?: SessionStartStage;
   delayMs?: number;
@@ -225,6 +255,8 @@ export function SessionStartingLoader({
   sessionId?: string;
   variant?: BootStepVariant;
   note?: string | null;
+  reason?: string | null;
+  failure?: StartFailure;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
@@ -237,6 +269,7 @@ export function SessionStartingLoader({
   }, [delayMs]);
 
   const { active, now } = useBootProgress(stage);
+  const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
   const [clockStart, setClockStart] = useState(now);
   const slow = now - clockStart >= SLOW_AFTER_MS;
   const stuck = now - clockStart >= STUCK_AFTER_MS;
@@ -260,7 +293,7 @@ export function SessionStartingLoader({
     <QuietProgressLoader
       active={active}
       canRestart={canRestart}
-      note={note}
+      note={statusNote}
       onRestart={() => restartMutation.mutate()}
       pending={restartMutation.isPending}
       show={show}
@@ -280,16 +313,21 @@ export function SessionConnectingBanner({
   sessionId,
   className,
   note,
+  reason,
+  failure,
 }: {
   stage?: SessionStartStage;
   projectId?: string;
   sessionId?: string;
   className?: string;
   note?: string | null;
+  reason?: string | null;
+  failure?: StartFailure;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const { active, now } = useBootProgress(stage);
+  const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
   const [clockStart, setClockStart] = useState(now);
   const stuck = now - clockStart >= STUCK_AFTER_MS;
   const canRestart = !!projectId && !!sessionId;
@@ -325,7 +363,7 @@ export function SessionConnectingBanner({
           variant="spokes"
           className="size-3.5 shrink-0 text-current motion-reduce:animate-none"
         />
-        <span className="truncate">{note ?? step.label}</span>
+        <span className="truncate">{statusNote ?? step.label}</span>
         {stuck && canRestart ? (
           <Button
             type="button"
