@@ -8,6 +8,7 @@ import {
   type AuditRow,
   statementBatches,
 } from './audit-queue';
+import { resetAuditSessionLocksForTest, withAuditSessionLock } from './audit-session-serial';
 
 function row(action: string): AuditRow {
   return { action, resourceType: 'account' } as AuditRow;
@@ -367,5 +368,92 @@ describe('AuditQueue statement isolation', () => {
 
     expect(errors).toEqual([1]);
     expect(queue.stats()).toMatchObject({ written: 2, failed: 1 });
+  });
+});
+
+/**
+ * The same-process convoy (prod 2026-09-26).
+ *
+ * `POST /v1/projects/:p/sessions/:s/audit/events` is written twice by the same
+ * process for the SAME session: the ingest route's chunk and the request's own
+ * inbound audit row the queue flushes. Both take the session's
+ * `audit_session_sequences` row lock. Without the in-process lock the queue's
+ * row lost that race at the pool's 2.5 s `lock_timeout` (55P03) and the batch
+ * was dropped (`[audit] Dropped a batch …`); the ingest rode its 10 s
+ * `statement_timeout` to 57014 and answered 503.
+ */
+describe('AuditQueue per-session serialization', () => {
+  test('a flush for a session waits for another in-process writer of the SAME session', async () => {
+    resetAuditSessionLocksForTest();
+    const fake = makeClient();
+    let releaseRoute!: () => void;
+    const routeHeld = withAuditSessionLock(
+      's1',
+      () =>
+        new Promise<void>((resolve) => {
+          releaseRoute = resolve;
+        }),
+    );
+
+    const queue = new AuditQueue(fake.client, { flushMs: 10_000, flushMax: 100 });
+    queue.enqueue({ action: 'a', resourceType: 'session', sessionId: 's1' } as unknown as AuditRow);
+    const flush = queue.flush();
+
+    // The route-like writer holds the session lock, so the queue must NOT have
+    // opened a competing Postgres insert yet.
+    await sleep(20);
+    expect(fake.batches).toHaveLength(0);
+
+    releaseRoute();
+    await routeHeld;
+    await flush;
+
+    expect(fake.batches).toHaveLength(1);
+    expect(queue.stats()).toMatchObject({ written: 1, failed: 0 });
+  });
+
+  test('a DIFFERENT session is not blocked by a held session lock', async () => {
+    resetAuditSessionLocksForTest();
+    const fake = makeClient();
+    let releaseHeld!: () => void;
+    const held = withAuditSessionLock(
+      'busy',
+      () =>
+        new Promise<void>((resolve) => {
+          releaseHeld = resolve;
+        }),
+    );
+
+    const queue = new AuditQueue(fake.client, { flushMs: 10_000, flushMax: 100 });
+    queue.enqueue({
+      action: 'a',
+      resourceType: 'session',
+      sessionId: 'other',
+    } as unknown as AuditRow);
+    await queue.flush();
+
+    expect(fake.batches).toHaveLength(1);
+    releaseHeld();
+    await held;
+  });
+
+  test('passes the batch session to the serializer; session-less rows bypass it', async () => {
+    const seen: string[] = [];
+    const fake = makeClient();
+    const queue = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      flushMax: 100,
+      serialize: async (sessionId, fn) => {
+        seen.push(sessionId);
+        await fn();
+      },
+    });
+
+    queue.enqueue({ action: 'a', resourceType: 'session', sessionId: 's1' } as unknown as AuditRow);
+    queue.enqueue(row('no-session'));
+    await queue.flush();
+
+    expect(seen).toEqual(['s1']);
+    expect(fake.batches).toHaveLength(2);
   });
 });
