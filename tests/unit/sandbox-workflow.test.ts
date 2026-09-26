@@ -327,36 +327,48 @@ describe('the preview status tells the truth about the suite', () => {
   );
   const deployScript = readFileSync(resolve(root, 'tests/bin/sandbox-preview.ts'), 'utf8');
 
-  test('the deploy reports whether it tested, from the value it decided with', () => {
+  test('the deploy reports whether this run tests, from the value it decided with', () => {
     // One authority. Re-deriving `PREVIEW_RUN_TESTS === '1'` in YAML would be a
     // second copy of a rule that is really `... || !branchEnv`.
     expect(deployScript).toContain("const runTests = process.env.PREVIEW_RUN_TESTS?.trim() === '1' || !branchEnv;");
-    expect(deployScript).toContain("await writeOutput('tests_ran', runTests ? '1' : '0');");
-  });
-
-  test('a skipped suite links no report — the persistent box still holds the last one', () => {
-    // Asserted on the CONDITION, not the whole call: the formatter wraps this
-    // line and a byte-exact expectation would fail on its wrapping rather than
-    // on the rule.
-    const report = deployScript.slice(deployScript.indexOf("await writeOutput(\n    'report_url'"));
-    expect(report.slice(0, 200)).toContain(
-      "runTests && result.previewUrl ? `${result.previewUrl}/_tests/` : ''",
-    );
-  });
-
-  test('both surfaces read it, and neither says "tested" without it', () => {
-    for (const surface of ['TESTS_RAN: ${{ steps.preview.outputs.tests_ran }}']) {
-      // Once for the deployment status, once for the sticky comment.
-      expect(previewWorkflow.split(surface).length - 1).toBe(2);
-    }
+    expect(deployScript).toContain("await writeOutput('suite', runTests ? '1' : '0');");
     expect(previewWorkflow).toContain(
-      'if [ "$PREVIEW_OUTCOME" = success ] && [ "$TESTS_RAN" = 1 ]; then',
+      "if: steps.preview.outcome == 'success' && steps.preview.outputs.suite == '1'",
     );
-    expect(previewWorkflow).toContain("title='## Preview environment - live; NOT tested'");
-    expect(previewWorkflow).toContain("description='Full self-host preview deployed; target-full did not run'");
-    // The old collapse: success alone meant tested.
-    expect(previewWorkflow).not.toContain(
-      "if [ \"$PREVIEW_OUTCOME\" = success ]; then\n            title='## Preview environment - live and tested'",
+  });
+
+  test('only the suite links a report — the persistent box still holds the last one', () => {
+    const suiteAction = deployScript.slice(deployScript.indexOf("} else if (action === 'suite') {"));
+    expect(suiteAction.slice(0, 1500)).toContain("await writeOutput('report_url'");
+    const deployAction = deployScript.slice(0, deployScript.indexOf("} else if (action === 'suite') {"));
+    expect(deployAction).not.toContain('report_url');
+  });
+
+  test('the origin is published before the suite starts, and "tested" comes only from the suite step', () => {
+    const at = (needle: string) => {
+      const index = previewWorkflow.indexOf(needle);
+      expect(index, needle).toBeGreaterThan(-1);
+      return index;
+    };
+    const deploy = at('- name: Deploy the preview stack');
+    const status = at('- name: Publish GitHub deployment result');
+    const early = at('- name: Publish the preview on the pull request');
+    const suite = at('- name: Run pnpm test -- --target-full against the preview');
+    const final = at('- name: Update the preview comment with the suite result');
+    expect(deploy).toBeLessThan(status);
+    expect(status).toBeLessThan(suite);
+    expect(early).toBeLessThan(suite);
+    expect(suite).toBeLessThan(final);
+    // The early comment never carries a suite outcome; the final one reads the
+    // suite step's own outcome.
+    expect(previewWorkflow.slice(early, suite)).toContain('SUITE_OUTCOME: ""');
+    expect(previewWorkflow.slice(final)).toContain("SUITE_OUTCOME: ${{ steps.suite.outcome || 'cancelled' }}");
+    expect(previewWorkflow.match(/bash scripts\/ci\/preview-sticky-comment\.sh/g)).toHaveLength(2);
+    // The deployment status describes the deploy, never the suite.
+    expect(previewWorkflow.slice(status, early)).not.toMatch(/target-full|tested/i);
+    // A failed suite still fails the job.
+    expect(previewWorkflow).toContain(
+      "if: steps.preview.outcome != 'success' || steps.suite.outcome == 'failure'",
     );
   });
 });
