@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { fetchCostExportCsv } from '@kortix/sdk';
 
 import { withKortixScope } from '../api/sdk.ts';
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   fail,
@@ -105,20 +106,10 @@ function query(params: Record<string, string | number | undefined>): string {
 }
 
 export async function runBilling(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   let f: Flags;
   try {
     f = {

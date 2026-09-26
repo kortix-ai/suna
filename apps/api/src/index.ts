@@ -1534,6 +1534,17 @@ async function startReplicaServices() {
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
   startSessionLifecycleWorker();
+  // Every api process must learn that a base branch moved, not just the one
+  // that handled the push — otherwise the turn-start gate answers `current`
+  // from a memo resolved before it (shared/pg-broadcast.ts). Awaited because it
+  // is one connection and it must be in place before the first turn; it never
+  // rejects, and a failure degrades to the memo's TTL.
+  await import('./shared/pg-broadcast').then(async (m) => {
+    const listening = await m.startConfigBaseMoveBroadcast();
+    if (!listening) return;
+    const { useDesiredInvalidationTransport } = await import('./projects/lib/turn-start-convergence');
+    useDesiredInvalidationTransport(m.configBaseMoveTransport());
+  });
 }
 
 // Singleton background WORKERS — must run on EXACTLY ONE replica at a time
@@ -1657,6 +1668,9 @@ async function shutdown(signal: string) {
   stopAccessControlCache();
   stopTmpReaper();
   stopSessionLifecycleWorker();
+  await import('./shared/pg-broadcast')
+    .then((m) => m.stopConfigBaseMoveBroadcast())
+    .catch(() => {});
   // Flush observability data before exit. The audit queue is drained here
   // because audit rows are buffered off the request path — without this, the
   // last ~250 ms of events would be lost on every SIGTERM (i.e. every rollout).
