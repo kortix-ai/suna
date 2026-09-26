@@ -191,10 +191,6 @@ export function inferAuditSource(c: AuditContext, actorType: AuditActorType | nu
   return auditSourceFor(c.get('authType'), actorType);
 }
 
-export function clientReportedAuditSource(c: AuditContext): string | null {
-  return normalizeAuditClientSource(c.req.header('x-kortix-client'));
-}
-
 function outcomeForStatus(status: number): AuditOutcome {
   if (status === 202) return 'pending';
   if (status === 401 || status === 403) return 'denied';

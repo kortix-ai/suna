@@ -802,6 +802,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             stage={switchingToSessionId === sessionId ? startStage : 'starting'}
             projectId={projectId}
             sessionId={switchingToSessionId ?? sessionId}
+            reason={switchingToSessionId === sessionId ? session.reason : null}
+            failure={switchingToSessionId === sessionId ? session.failure : null}
           />
         </HeaderlessSessionSurface>
       );
@@ -877,6 +879,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               projectId={projectId}
               sessionId={sessionId}
               note={wake.note}
+              reason={session.reason}
+              failure={session.failure}
             />
           </HeaderlessSessionSurface>
         );
@@ -986,6 +990,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               projectId={projectId}
               sessionId={sessionId}
               note={wake.note}
+              reason={session.reason}
+              failure={session.failure}
             />
           </HeaderlessSessionSurface>
         );
@@ -1097,6 +1103,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                   projectId={projectId}
                   sessionId={sessionId}
                   note={wake.note}
+                  reason={session.reason}
+                  failure={session.failure}
                 />
               </HeaderlessSessionSurface>
             )}
@@ -1116,6 +1124,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             projectId={projectId}
             sessionId={sessionId}
             note={wake.note}
+            reason={session.reason}
+            failure={session.failure}
           />
         )}
       </div>

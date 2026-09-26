@@ -701,6 +701,23 @@ describe('kortix session title mirroring', () => {
 // ============================================================================
 
 describe('session.status', () => {
+  test('idle status reconciles the transcript without a prior busy frame', () => {
+    const reconciled: string[] = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID) => {
+        reconciled.push(sessionID);
+      },
+    });
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.status',
+      properties: { sessionID: 'ses_1', status: { type: 'idle' } },
+    });
+
+    expect(reconciled).toEqual(['ses_1']);
+  });
+
   test('busy → idle fires notifyTaskComplete and invalidates git/file caches', () => {
     const { handleEvent, queryClient } = buildHandler();
     useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
@@ -952,6 +969,23 @@ describe('turn end refreshes open file viewers', () => {
 });
 
 describe('session.idle', () => {
+  test('reconciles the transcript when the busy frame was missed', () => {
+    const reconciled: string[] = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID) => {
+        reconciled.push(sessionID);
+      },
+    });
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.idle',
+      properties: { sessionID: 'ses_1' },
+    });
+
+    expect(reconciled).toEqual(['ses_1']);
+  });
+
   test('busy → idle fires notifyTaskComplete', () => {
     const { handleEvent } = buildHandler();
     useSyncStore.getState().setStatus('ses_1', {

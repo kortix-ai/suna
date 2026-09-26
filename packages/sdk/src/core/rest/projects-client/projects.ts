@@ -250,6 +250,14 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
+  /** Customer USD per million tokens for each eligible managed route. */
+  managedPricingRoutes?: Record<string, Array<{
+    route: string;
+    role: 'preferred' | 'eligible';
+    input: number;
+    cacheRead: number;
+    output: number;
+  }>>;
   /**
    * The project's stored EXCEPTIONS to the default model set
    * (`wireModelId -> enabled`). Served by `/model-picker` so a client toggling
