@@ -54,7 +54,6 @@ import { CreditCardIcon as CreditCardGlyph } from 'phosphor-react-native/src/ico
 import { CrownIcon as CrownGlyph } from 'phosphor-react-native/src/icons/Crown';
 import { CubeIcon as CubeGlyph } from 'phosphor-react-native/src/icons/Cube';
 import { DatabaseIcon as DatabaseGlyph } from 'phosphor-react-native/src/icons/Database';
-import { DeviceMobileIcon as DeviceMobileGlyph } from 'phosphor-react-native/src/icons/DeviceMobile';
 import { DotsThreeCircleIcon as DotsThreeCircleGlyph } from 'phosphor-react-native/src/icons/DotsThreeCircle';
 import { DotsThreeIcon as DotsThreeGlyph } from 'phosphor-react-native/src/icons/DotsThree';
 import { DotsThreeVerticalIcon as DotsThreeVerticalGlyph } from 'phosphor-react-native/src/icons/DotsThreeVertical';
@@ -253,7 +252,6 @@ export const CreditCardIcon = withAppWeight(CreditCardGlyph, 'CreditCardIcon');
 export const CrownIcon = withAppWeight(CrownGlyph, 'CrownIcon');
 export const CubeIcon = withAppWeight(CubeGlyph, 'CubeIcon');
 export const DatabaseIcon = withAppWeight(DatabaseGlyph, 'DatabaseIcon');
-export const DeviceMobileIcon = withAppWeight(DeviceMobileGlyph, 'DeviceMobileIcon');
 export const DotsThreeCircleIcon = withAppWeight(DotsThreeCircleGlyph, 'DotsThreeCircleIcon');
 export const DotsThreeIcon = withAppWeight(DotsThreeGlyph, 'DotsThreeIcon');
 export const DotsThreeVerticalIcon = withAppWeight(DotsThreeVerticalGlyph, 'DotsThreeVerticalIcon');
