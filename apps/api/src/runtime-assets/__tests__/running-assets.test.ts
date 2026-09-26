@@ -181,6 +181,21 @@ describe('manifestFingerprint', () => {
     _resetRuntimeAssetsCache();
     expect(await manifestFingerprint()).not.toBe(before);
   });
+
+  // The kill switch is env-only and READ LIVE by `runningAssetsVerdict`, which
+  // skips the agent comparison entirely while it is off. A verdict therefore
+  // means a different thing on each side of the flip, so the fingerprint has to
+  // cover it: without this, flipping self-update back ON leaves every `current`
+  // verdict taken while it was OFF valid for the whole RUNNING_ASSETS_TTL_MS,
+  // and a box genuinely behind on the daemon is not nudged for ten minutes.
+  test('RUNTIME_AGENT_SELF_UPDATE moves the fingerprint with no deploy', async () => {
+    process.env[SELF_UPDATE_ENV] = 'false';
+    _resetRuntimeAssetsCache();
+    const off = await manifestFingerprint();
+    process.env[SELF_UPDATE_ENV] = 'true';
+    _resetRuntimeAssetsCache();
+    expect(await manifestFingerprint()).not.toBe(off);
+  });
 });
 
 describe('the running-assets memo', () => {

@@ -416,10 +416,17 @@ export type RunningAssetsVerdict =
  * the rollout, a download the box will refuse. That is the same failure shape as
  * the 2026-07-22 mutual-rebuild loop the epoch guard exists to close.
  *
- * `RUNTIME_ASSETS_BUILD` is env-only and needs no deploy; `build` is in here, so
- * it is covered. `RUNTIME_AGENT_SELF_UPDATE` is env-only too and is NOT in here
- * — it is read live on every comparison instead, so the kill switch never waits
- * on a memo either.
+ * BOTH env-only switches are in here, because both change what a verdict MEANS
+ * and neither waits on a deploy. `RUNTIME_ASSETS_BUILD` moves `build`.
+ * `RUNTIME_AGENT_SELF_UPDATE` is subtler: `runningAssetsVerdict` reads it live
+ * and SKIPS the agent comparison entirely while it is off, so `current` taken
+ * with the switch off is a claim about the CLI, the overlay and OpenCode only.
+ * Reading the switch live is therefore necessary but not sufficient — a live
+ * read cannot revisit a verdict already in the memo. Without the switch in the
+ * key, turning self-update back ON leaves those narrower verdicts valid for the
+ * whole `RUNNING_ASSETS_TTL_MS`, and a box genuinely behind on the daemon is not
+ * nudged for ten minutes after an operator asked for exactly that. In the key,
+ * the flip invalidates every entry at once and the next send re-measures.
  */
 export async function manifestFingerprint(): Promise<string> {
   const digests = await runtimeAssetsDigests();
@@ -431,6 +438,8 @@ export async function manifestFingerprint(): Promise<string> {
     c['managed-skills'].hash,
     c.opencode.version,
     c.entrypoint?.sha256 ?? '',
+    // Not a digest — the comparison's SHAPE. See above.
+    agentSelfUpdateEnabled() ? 'agent-update:on' : 'agent-update:off',
   ].join('|');
 }
 
