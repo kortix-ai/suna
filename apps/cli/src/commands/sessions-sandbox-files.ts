@@ -15,7 +15,7 @@ import { toSandboxAbsolutePath } from '@kortix/sdk';
 
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import type { Auth } from '../api/auth.ts';
-import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { loadSessionForChat } from './sessions-chat.ts';
@@ -93,8 +93,7 @@ export async function runSessionsFiles(argv: string[]): Promise<number> {
     assumeYes = takeFlagBool(rest, ['-y', '--yes']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
 
   const positional = rest.filter((a) => !a.startsWith('-'));
@@ -113,15 +112,9 @@ export async function runSessionsFiles(argv: string[]): Promise<number> {
   const arg2 = positional[3];
   const needsOneArg = ['find', 'write', 'touch', 'mkdir', 'rm'];
   if (needsOneArg.includes(sub) && !arg1) {
-    process.stderr.write(
-      `${status.err(`\`files ${sub}\` needs ${sub === 'find' ? 'a query' : 'a path'}.`)}\n`,
-    );
-    return 2;
+    return fail(`\`files ${sub}\` needs ${sub === 'find' ? 'a query' : 'a path'}.`);
   }
-  if (sub === 'mv' && (!arg1 || !arg2)) {
-    process.stderr.write(`${status.err('`files mv` needs <from> and <to>.')}\n`);
-    return 2;
-  }
+  if (sub === 'mv' && (!arg1 || !arg2)) return fail('`files mv` needs <from> and <to>.');
 
   const opts: CtxOpts = { projectArg, hostArg };
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions files', {
@@ -207,10 +200,7 @@ export async function runSessionsFiles(argv: string[]): Promise<number> {
             return 0;
           }
           const limit = limitArg ? Number(limitArg) : undefined;
-          if (limitArg && (!Number.isInteger(limit) || limit! <= 0)) {
-            process.stderr.write(`${status.err(`Invalid --limit "${limitArg}".`)}\n`);
-            return 2;
-          }
+          if (limitArg && (!Number.isInteger(limit) || limit! <= 0)) return fail(`Invalid --limit "${limitArg}".`);
           const paths = await files.findFiles(arg1!, limit ? { limit } : undefined);
           if (json) {
             emitJson(paths);

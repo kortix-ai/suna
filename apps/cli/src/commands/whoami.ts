@@ -1,7 +1,8 @@
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
-import { emitJson } from '../command-helpers.ts';
+import { takeFlags } from '../command-argv.ts';
+import { emitJson, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import type { MeResponse } from '../api/types.ts';
 
@@ -20,46 +21,14 @@ Options:
   -h, --help        Show this help.
 `;
 
-interface WhoamiFlags {
-  host?: string;
-  json: boolean;
-  help: boolean;
-  tokenOnly: boolean;
-}
-
-function parseFlags(argv: string[]): WhoamiFlags {
-  const f: WhoamiFlags = { json: false, help: false, tokenOnly: false };
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i];
-    if (a === '-h' || a === '--help') f.help = true;
-    else if (a === '--json') f.json = true;
-    else if (a === '--token-only') f.tokenOnly = true;
-    else if (a === '--host') {
-      const next = argv[i + 1];
-      if (!next) throw new Error('--host requires a value');
-      f.host = next;
-      i += 1;
-    } else {
-      throw new Error(`unknown option "${a}"`);
-    }
-  }
-  return f;
-}
-
 export async function runWhoami(argv: string[]): Promise<number> {
-  let flags: WhoamiFlags;
-  try {
-    flags = parseFlags(argv);
-  } catch (err) {
-    process.stderr.write(`${(err as Error).message}\n\n${HELP}`);
-    return 2;
-  }
-  if (flags.help) {
-    process.stdout.write(HELP);
-    return 0;
-  }
-
-  return performWhoami({ host: flags.host, json: flags.json, tokenOnly: flags.tokenOnly });
+  const flags = takeFlags(argv, HELP, (rest) => ({
+    host: takeFlagValue(rest, ['--host']),
+    json: takeFlagBool(rest, ['--json']),
+    tokenOnly: takeFlagBool(rest, ['--token-only']),
+  }));
+  if (typeof flags === 'number') return flags;
+  return performWhoami(flags);
 }
 
 export interface PerformWhoamiOptions {

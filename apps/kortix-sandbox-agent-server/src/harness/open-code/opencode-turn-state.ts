@@ -43,6 +43,17 @@ import { readOpenCodeSessionPin } from './runtime-state'
 export const TURN_PROBE_WINDOW = 12
 /** Twenty newest messages can still be ~26 MB on an image-heavy root. */
 export const TURN_PROBE_TIMEOUT_MS = 20_000
+/**
+ * The budget for the orphan read a verified reload does before the kill.
+ *
+ * Much shorter than `TURN_PROBE_TIMEOUT_MS`, and deliberately: the reload has
+ * already promoted the replacement, so this read is the only thing standing
+ * between a wedged old process and its SIGTERM. Two OpenCode processes on a
+ * 4 GB box is how the September `/tmp`-tmpfs OOM started. A read that does not
+ * answer in three seconds costs one un-repaired row; twenty seconds of an extra
+ * process costs the box.
+ */
+export const ORPHAN_READ_TIMEOUT_MS = 3_000
 
 function recentMessagesUrl(baseUrl: string, workspace: string, sessionId: string): string {
   return (
@@ -101,6 +112,16 @@ export interface RootInspection {
   /** An incomplete assistant turn still owns runtime. */
   turnInFlight: boolean
   /**
+   * The id of the newest assistant message that has no completion time, or
+   * `null`.
+   *
+   * It is the row a client is streaming right now. A process that is killed
+   * emits neither `session.idle` nor `session.error`, so that row stays open
+   * for ever and the API has nothing to settle it by — unless the id is read
+   * from the OUTGOING process, before it dies, and reported.
+   */
+  openAssistantMessageId: string | null
+  /**
    * False when the read failed — opencode unreachable, non-2xx, unparseable.
    *
    * Without this the two "no turn here" answers are indistinguishable: a session
@@ -115,12 +136,14 @@ export async function inspectOpencodeRoot(
   baseUrl: string,
   workspace: string,
   sessionId: string,
+  timeoutMs: number = TURN_PROBE_TIMEOUT_MS,
 ): Promise<RootInspection> {
   const unknown = {
     hasMessages: false,
     lastTurnIncomplete: false,
     orphanedPrompt: false,
     turnInFlight: false,
+    openAssistantMessageId: null,
     known: false,
   }
   try {
@@ -130,7 +153,7 @@ export async function inspectOpencodeRoot(
     // has an answer — lives at the tail. A window with assistant messages and
     // no user message means the prompt is older than the window and answered.
     const res = await fetch(recentMessagesUrl(baseUrl, workspace, sessionId), {
-      signal: AbortSignal.timeout(TURN_PROBE_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     if (!res.ok) return unknown
     const msgs = (await res.json()) as Array<{
@@ -148,6 +171,7 @@ export async function inspectOpencodeRoot(
         lastTurnIncomplete: false,
         orphanedPrompt: false,
         turnInFlight: false,
+        openAssistantMessageId: null,
         known: true,
       }
 
@@ -190,11 +214,35 @@ export async function inspectOpencodeRoot(
       // `orphanedPrompt`. An open assistant message IS, even when a newer user
       // row sits after it.
       turnInFlight: lastTurnIncomplete,
+      openAssistantMessageId: lastTurnIncomplete && typeof newest?.id === 'string' ? newest.id : null,
       known: true,
     }
   } catch {
     return unknown
   }
+}
+
+/**
+ * The open assistant message on a root, read from the process that owns it.
+ *
+ * Called on the OUTGOING OpenCode immediately before a verified reload kills
+ * it: afterwards nothing can answer for that row. `null` means "no open turn,
+ * or could not tell" — both are "report nothing", because a repair must never
+ * be invented for a turn that finished normally.
+ */
+export async function openAssistantMessageIdOnRoot(
+  baseUrl: string,
+  workspace: string,
+  rootSessionId: string | null = readOpenCodeSessionPin(),
+): Promise<string | null> {
+  if (!rootSessionId) return null
+  const inspection = await inspectOpencodeRoot(
+    baseUrl,
+    workspace,
+    rootSessionId,
+    ORPHAN_READ_TIMEOUT_MS,
+  ).catch(() => null)
+  return inspection?.known ? inspection.openAssistantMessageId : null
 }
 
 /**
