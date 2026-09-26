@@ -25,8 +25,8 @@ One origin serves everything; the edge splits by path.
 | path | serves |
 | --- | --- |
 | `/` | the frontend |
-| `/v1`, `/health`, `/metrics`, `/scim/v2`, `/internal` | the API |
-| `/auth/v1`, `/rest/v1`, `/storage/v1`, `/realtime/v1` | Supabase |
+| `/v1`, `/health`, `/metrics`, `/scim/v2`, `/internal`, `/.well-known/oauth-authorization-server` | the API |
+| `/auth/v1`, `/rest/v1`, `/storage/v1`, `/realtime/v1`, `/functions/v1`, `/graphql/v1` | Supabase |
 | `/_gateway/` | the LLM gateway |
 | `/_mailpit/` | every email the environment sends |
 | `/_tests/` | the `--target-full` report for this commit |
