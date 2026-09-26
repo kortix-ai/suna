@@ -325,7 +325,7 @@ function SessionRowImpl({
               <time
                 className={cn(
                   SESSION_RELATIVE_TIME_CLASS,
-                  'pr-1.5 transition-opacity duration-150',
+                  'pr-1.5 transition-opacity duration-normal',
                   hasActions &&
                     cn(
                       'opacity-100 group-hover/row:opacity-0 group-has-data-[state=open]/row:opacity-0',
@@ -355,7 +355,7 @@ function SessionRowImpl({
                       size="icon-sm"
                       aria-label={tI18nComplete('text33da220b1a34', { value0: title })}
                       className={cn(
-                        'absolute top-1/2 right-0.5 -translate-y-1/2 transition-opacity duration-150',
+                        'absolute top-1/2 right-0.5 -translate-y-1/2 transition-opacity duration-normal',
                         'focus:ring-0 focus-visible:ring-0 active:scale-[0.96]',
                         relativeLabel
                           ? cn(
