@@ -104,9 +104,9 @@ export function publicPayload(payload: Record<string, unknown>, model: string): 
   return rest;
 }
 
-/** Rewrite every `data: {…}` line of an SSE text block through `publicPayload`. */
+/** Remove upstream comments and rewrite every `data: {…}` line for the public stream. */
 export function publicSseLines(text: string, model: string): string {
-  return text.replace(/^data: (\{.*\})\r?$/gm, (line, json: string) => {
+  return text.replace(/^:[^\r\n]*(?:\r?\n|$)/gm, '').replace(/^data: (\{.*\})\r?$/gm, (line, json: string) => {
     try {
       return `data: ${JSON.stringify(publicPayload(JSON.parse(json) as Record<string, unknown>, model))}`;
     } catch {

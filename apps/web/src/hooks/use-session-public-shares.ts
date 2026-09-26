@@ -52,6 +52,20 @@ export function isShareLive(share: SessionPublicShare, now: number = Date.now())
   return Number.isNaN(expiresAt) ? true : expiresAt > now;
 }
 
+/**
+ * The link a person opens: `{web origin}{share.public_path}`, the
+ * `/share/session/{token}` page — never the `/v1/p/...` proxy path, which
+ * leaks the sandbox id. The one place that joins them. `origin` defaults to
+ * this window's; outside a browser there is none, so the result is null.
+ */
+export function publicShareUrl(
+  publicPath: string | null | undefined,
+  origin: string | null = typeof window === 'undefined' ? null : window.location.origin,
+): string | null {
+  if (!publicPath || !origin) return null;
+  return `${origin}${publicPath}`;
+}
+
 export function useSessionPublicShares(projectId?: string, sessionId?: string) {
   const query = useQuery({
     queryKey: publicSharesQueryKey(projectId ?? '', sessionId ?? ''),

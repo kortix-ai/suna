@@ -616,8 +616,9 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors connect <slug>` | Start a one-click connect flow. |
 | `kortix connectors link <slug> [--expires <min>]` | Mint a shareable connect link for a human. |
 | `kortix connectors accounts <slug> [--default <label\|id>] [--json]` | List the accounts your calls may run as, with the identity each is connected as. `--default` pins one. |
-| `kortix connectors connections ls [--all] [--json]` | List connections with label, `CONNECTED AS`, owner, status, and default. |
+| `kortix connectors connections ls [--all] [--json]` | List connections with label, `CONNECTED AS`, owner, `WHO CAN USE` (`owner only`, `everyone`, or the grant labels, with `(not you)` when you list it only to manage it), status, and default. |
 | `kortix connectors connections rename <id> <label…>` | Rename a connection. Only the label changes; no re-authorization. |
+| `kortix connectors connections share <id> [--group <id>]… [--user <email\|id>]… [--everyone]` | Share your own private account: it becomes a shared account only they may use (`--everyone`: the whole project). Needs the right to manage the project's connections. |
 | `kortix connectors apps [<query>] [--category <c>] [--cursor <c>] [--limit <n>] [--json]` | Search the Composio toolkit catalog — the slugs `add --provider composio --app <slug>` accepts. Alias: `kortix connectors toolkits`. Add `--pipedream` for the legacy Pipedream catalog. |
 | `kortix connectors catalog [<query>] [--cursor <c>] [--json]` | Browse the direct-connector catalogue. Needs the `connectors_api_discover` flag. |
 | `kortix connectors catalog show <id> [--json]` | Show one catalogue record's surfaces. |
@@ -776,9 +777,14 @@ roles: `owner`, `admin`, `member`. Project roles: `manager`, `member`.
 
 Grant options: `--project <id>` (default: the linked project), `--account` (the
 whole account), `--agent <name>` (narrow the grant to one agent — an object
-assignment), and `--expires <iso>` (auto-revoke timestamp). `--principal` filters
-a list, and takes `user:<id>`, `group:<id>`, `service_account:<id>`, or
-`pending:<email>`; a bare id is read as a user. An agent's identity is a
+assignment), `--connection <id>` (narrow the use of one shared connector
+account; the first grant limits the account to its grantees, and revoking the
+last opens it to the whole project again), `--everyone` (grant to everyone with
+access to the project; it holds an `--agent` or a `--connection`, never a
+role), and `--expires <iso>` (auto-revoke timestamp). `--principal` filters
+a list, and takes `user:<id>`, `group:<id>`, `service_account:<id>`,
+`project:<id>`, or `pending:<email>`; a bare id is read as a user. A grant to
+everyone lists as `everyone`. An agent's identity is a
 `service_account`, so `--service-account <id>` is how you assign a role to an
 agent. `--user` accepts an email and resolves it against the account member
 directory.
@@ -788,6 +794,8 @@ kortix access grant --user alice@corp.com --role manager
 kortix access grant --user alice@corp.com --role admin --account
 kortix access grant --group 8f3c… --role member --project 1a2b…
 kortix access grant --user alice@corp.com --agent support-bot
+kortix access grant --everyone --agent support-bot
+kortix access grant --group 8f3c… --connection 2b7e…
 kortix access revoke 4d5e…
 ```
 

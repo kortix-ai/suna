@@ -48,11 +48,13 @@ beforeEach(() => {
   resetConfigReleaseStateForTests()
   envSnapshot = { ...process.env }
   delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
+  resetConfigReleaseStateForTests()
 })
 afterEach(() => {
   resetConfigReleaseStateForTests()
   for (const key of Object.keys(process.env)) if (!(key in envSnapshot)) delete process.env[key]
   Object.assign(process.env, envSnapshot)
+  resetConfigReleaseStateForTests()
 })
 
 function baseConfig(): Config {

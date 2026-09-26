@@ -8,7 +8,7 @@
  * code · request" — with the failure chain folded beneath.
  *
  * Web draws its `Loading variant="spokes"` spinner. Mobile's loading rule
- * (apps/mobile/CLAUDE.md → Loading) allows only `KortixLoader` or `Skeleton`,
+ * (apps/mobile/AGENTS.md → Loading) allows only `KortixLoader` or `Skeleton`,
  * so the spinner is `KortixLoader` at the same `size-4`.
  *
  * `useRetrySecondsLeft` ticks the countdown once a second (web

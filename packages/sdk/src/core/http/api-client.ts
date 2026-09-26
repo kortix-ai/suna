@@ -136,6 +136,45 @@ const isRequestDeadlineResponse = (
 };
 
 /**
+ * Stable error code the platform API returns (HTTP 503) when a project's git
+ * mirror cold-clone/fetch fails for a TRANSIENT, retryable upstream reason
+ * (GitHub edge blip, a momentarily unusable private-mirror credential, a
+ * mid-transfer timeout). The API already classifies the cause out of its OWN
+ * Sentry (`apps/api/src/projects/git/mirror.ts`'s `isTransientGitMirrorError`)
+ * and answers a clean 503 + `Retry-After`; this is the frontend mirror.
+ *
+ * The 503 RESPONSE crosses the boundary: `makeRequest` extracts the message
+ * and calls `onError` → the web host's `handleApiError`, which captures every
+ * 5xx to the FRONTEND Sentry (app 2346967 — a SEPARATE app from the API's
+ * 2346961). That is exactly how Better Stack frontend pattern `b4d05df2…`
+ * (`ApiError: git mirror is temporarily unavailable`, on a session start that
+ * cold-clones the project mirror) reached the frontend telemetry. Treat it as
+ * SILENT here — skip the global `onError` (Sentry) capture — but still return
+ * the `ApiError` so callers can branch on `.code`. A genuine 503 with another
+ * message/code still reports.
+ *
+ * Must stay in sync with `GIT_MIRROR_UNAVAILABLE_CODE` in
+ * `apps/api/src/projects/git/mirror.ts`. `LEGACY_GIT_MIRROR_UNAVAILABLE_MESSAGE`
+ * covers a response from an API deployed before the typed code (the same
+ * rollout shim as `LEGACY_REQUEST_DEADLINE_MESSAGE`).
+ */
+const GIT_MIRROR_UNAVAILABLE_CODE = 'git_mirror_unavailable';
+const LEGACY_GIT_MIRROR_UNAVAILABLE_MESSAGE = /^git mirror is temporarily unavailable$/;
+
+const isGitMirrorUnavailableResponse = (
+  status: number,
+  errorData: unknown,
+  message: string,
+): boolean => {
+  if (status !== 503) return false;
+  const code =
+    typeof errorData === 'object' && errorData !== null && 'code' in errorData
+      ? (errorData as { code?: unknown }).code
+      : undefined;
+  return code === GIT_MIRROR_UNAVAILABLE_CODE || LEGACY_GIT_MIRROR_UNAVAILABLE_MESSAGE.test(message);
+};
+
+/**
  * HTTP statuses that represent a transient gateway / overload condition rather
  * than a deterministic server-side failure: 502 (Bad Gateway), 503 (Service
  * Unavailable), 504 (Gateway Timeout). These are produced by the load balancer
@@ -345,6 +384,13 @@ async function makeRequest<T = any>(
 
       if (activeController.signal.aborted) throw createAbortError();
       const isRequestDeadline = isRequestDeadlineResponse(response.status, errorData, errorMessage);
+      // Expected, retryable transient git-mirror 503 — classified silent like
+      // the request deadline above (see `isGitMirrorUnavailableResponse`).
+      const isGitMirrorUnavailable = isGitMirrorUnavailableResponse(
+        response.status,
+        errorData,
+        errorMessage,
+      );
       let error: ApiError | Error = new ApiError(errorMessage, {
         status: response.status,
         response: response,
@@ -438,7 +484,8 @@ async function makeRequest<T = any>(
         !isFeatureNotSupported &&
         !isModelNotServable &&
         !isProvisionInFlight &&
-        !isRequestDeadline
+        !isRequestDeadline &&
+        !isGitMirrorUnavailable
       ) {
         platformConfig().onError?.(error, errorContext);
       }

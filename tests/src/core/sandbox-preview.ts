@@ -37,6 +37,74 @@ export function previewDeploymentStatusPath(runId: string, runAttempt: string): 
   return `/workspace/kortix-preview/run-${runId}-${runAttempt}.exit`;
 }
 
+/** Suite exit code when it refused to start: no report was written for this commit. */
+export const PREVIEW_SUITE_REFUSED = 3;
+
+/** Completion record for the suite a run launches after its deploy. */
+export function previewSuiteStatusPath(runId: string, runAttempt: string): string {
+  return previewDeploymentStatusPath(runId, runAttempt).replace(/\.exit$/, '-suite.exit');
+}
+
+/**
+ * `pnpm test -- --target-full` against a preview stack a deploy of THIS run
+ * already proved healthy on `sha`. A separate script, launched after the
+ * deploy returns, so the workflow publishes the preview origin ~40 min before
+ * the suite finishes instead of after it.
+ *
+ * It holds the same `deploy.lock` as the bootstrap, so a redeploy cannot
+ * replace the API while the suite runs, and it refuses to start when the local
+ * edge no longer serves `sha` (a redeploy won the lock in between).
+ */
+export function buildPreviewSuiteScript(input: {
+  prNumber: number;
+  sha: string;
+  statusPath: string;
+}): string {
+  if (!/^[a-f0-9]{40}$/i.test(input.sha)) throw new Error(`invalid Git SHA: ${input.sha}`);
+  previewSandboxName(input.prNumber);
+  const state = '/workspace/kortix-preview';
+  const instanceDir = `${state}/self-host/pr-${input.prNumber}`;
+  return `#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=/workspace/suna
+STATE=${state}
+LOG="$STATE/kortix-preview.log"
+STATUS=${shellQuote(input.statusPath)}
+PHASE="$STATE/kortix-preview.phase"
+export HOME=/root
+export CI=1
+export KORTIX_SELF_HOST_CONFIG_DIR="$STATE/self-host"
+
+exec 9>"$STATE/deploy.lock"
+flock -x 9
+rm -f "$STATUS"
+exec > >(tee -a "$LOG") 2>&1
+
+finish() {
+  local code="$1"
+  set +e
+  tar -czf /workspace/kortix-test-results.tar.gz -C "$ROOT" tests/test-results
+  printf '%s\n' "$code" > "$STATUS"
+}
+trap 'code=$?; finish "$code"' EXIT
+
+curl -fsS --max-time 10 http://127.0.0.1:8080/v1/health \
+  | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .commit == $sha' >/dev/null || {
+  echo "the preview no longer serves ${input.sha}; refusing to test another commit" >&2
+  exit ${PREVIEW_SUITE_REFUSED}
+}
+
+printf 'tests\n' > "$PHASE"
+cd "$ROOT"
+set -a
+source ${shellQuote(`${instanceDir}/.env.test`)}
+set +a
+pnpm test -- --target-full
+printf 'ready\n' > "$PHASE"
+`;
+}
+
 export interface PreviewSandboxRecord {
   id: string;
   /** Present on Platinum records; teardown matches on it as well as ownership. */
@@ -62,15 +130,6 @@ export function buildPreviewBootstrapScript(input: {
   sha: string;
   prNumber: number;
   origin: string;
-  /**
-   * Run the full suite inside the environment once it is up. Default true.
-   *
-   * A PR preview exists to be a gate, so it runs it. A branch environment
-   * exists to be WORKED IN, and the suite is ~10 of the ~14 minutes a deploy
-   * takes — a tax on every push that proves nothing the health check above
-   * has not already proved. Run it there on demand instead.
-   */
-  runTests?: boolean;
   statusPath?: string;
   /**
    * The host sandbox's name. The stack tags every session box with it
@@ -278,18 +337,9 @@ curl -fsS --max-time 10 "$HEALTH" | jq -e --arg sha ${shellQuote(input.sha)} '.s
 # This image set is proven; it is what restore_last_good falls back to.
 cp ${shellQuote(`${instanceDir}/.env`)} "$STATE/last-good.env"
 
-${
-    input.runTests === false
-      ? `printf 'tests-skipped\\n' > "$PHASE"
-printf 'suite skipped — this is a branch environment, not a gate. Run it with:\\n' >&2
-printf '  cd %s && set -a && . %s && set +a && pnpm test -- --target-full\\n' "$ROOT" ${shellQuote(`${instanceDir}/.env.test`)} >&2`
-      : `printf 'tests\\n' > "$PHASE"
-set -a
-source ${shellQuote(`${instanceDir}/.env.test`)}
-set +a
-pnpm test -- --target-full`
-  }
-
+# The deploy ends here, once the stack serves this commit, so the workflow
+# can publish the preview before the suite starts. The suite, when this deploy
+# runs it, is a separate script: buildPreviewSuiteScript.
 printf 'ready\n' > "$PHASE"
 `;
 }

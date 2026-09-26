@@ -3228,6 +3228,21 @@ export const auditEvents = kortixSchema.table(
       table.sessionId,
       table.sessionSequence,
     ),
+    // The per-session audit read (GET /v1/projects/:id/sessions/:id/audit)
+    // filters on `session_id` ALONE and orders by (session_sequence, event_id)
+    // — deliberately without an account predicate, because chain rows written
+    // before account resolution (auth.login.success) or from project-neutral
+    // endpoints would vanish from the middle of the integrity chain. Every
+    // other index on this table leads with account_id/actor/resource, so that
+    // query seq-scanned the whole ledger and died on the 25 s statement
+    // timeout (57014) on the request path (prod, 2026-09-25). This index leads
+    // with session_id and carries the ordering tuple in query order, so
+    // Postgres walks it and stops at LIMIT.
+    index('idx_audit_events_session_sequence').on(
+      table.sessionId,
+      table.sessionSequence,
+      table.eventId,
+    ),
     // `idx_audit_events_account_source_phase_time` was dropped 2026-09-09
     // (migration 20260909083000000): 8.6 GB, zero scans in 2.5 months, one
     // index write on every audit row. A filter on (authoritative_source, phase)
@@ -5003,7 +5018,7 @@ export const permissions = kortixSchema.table(
  * new scopable object type is data, not a branch.
  */
 export const objectPolicies = kortixSchema.table('object_policies', {
-  /** 'agent' | 'skill' | 'secret' | 'app' | 'trigger'. */
+  /** 'agent' | 'skill' | 'secret' | 'app' | 'trigger' | 'connection'. */
   objectType: varchar('object_type', { length: 16 }).primaryKey(),
   /** 'closed' | 'open' — what a member-tier caller gets when the object has NO
    *  grant rows at all. Manager tier always gets the open default. */
@@ -5039,7 +5054,10 @@ export const roleAssignments = kortixSchema.table(
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     /** 'user' (auth uid) | 'group' (account_groups.group_id) |
      *  'service_account' (service_accounts.service_account_id) |
-     *  'pending' (uuid5 of the lower-cased invitee email). */
+     *  'pending' (uuid5 of the lower-cased invitee email) |
+     *  'project' (everyone with access to the project: `principal_id` =
+     *  `scope_id`, object grants only — see
+     *  `role_assignments_project_principal_shape_check`). */
     principalType: varchar('principal_type', { length: 16 }).notNull(),
     /** Untyped uuid — polymorphic across the four principal kinds, same choice
      *  the legacy iam_policies.principal_id made. */
@@ -5054,10 +5072,11 @@ export const roleAssignments = kortixSchema.table(
      *  SQL-only: 20260819160100000) removes a deleted project's assignments. */
     scopeId: uuid('scope_id'),
     /** NULL = the whole scope. Otherwise the object TYPE this assignment is
-     *  narrowed to ('agent' | 'skill' | 'secret' | 'app' | 'trigger'). */
+     *  narrowed to ('agent' | 'skill' | 'secret' | 'app' | 'trigger' |
+     *  'connection'). */
     objectType: varchar('object_type', { length: 16 }),
-    /** TEXT, not uuid: an agent name / skill slug from the git manifest, or an
-     *  uppercased secret identifier. */
+    /** TEXT, not uuid: an agent name / skill slug from the git manifest, an
+     *  uppercased secret identifier, or a `connector_connections.connection_id`. */
     objectId: text('object_id'),
     /** Optional auto-revoke. Filtered in SQL on every read. */
     expiresAt: timestamp('expires_at', { withTimezone: true }),
@@ -6246,4 +6265,28 @@ export const sessionUserProviderConnections = kortixSchema.table('session_user_p
     name: 'session_user_provider_connections_owner_fk',
   }).onDelete('cascade'),
   index('session_user_provider_connections_connection').on(table.connectionId),
+]);
+
+/**
+ * A user's Expo push device token plus that device's per-event notification
+ * preferences. One row per physical device (`token` is the Expo push token
+ * and is the primary key, since a token uniquely identifies a device+app
+ * install). A user may hold several rows across several devices.
+ */
+export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
+  token: text('token').primaryKey(),
+  userId: uuid('user_id').notNull(),
+  platform: text('platform').notNull(),
+  provider: text('provider').default('expo').notNull(),
+  enabled: boolean('enabled').default(true).notNull(),
+  onCompletion: boolean('on_completion').default(true).notNull(),
+  onError: boolean('on_error').default(true).notNull(),
+  onQuestion: boolean('on_question').default(true).notNull(),
+  onPermission: boolean('on_permission').default(true).notNull(),
+  playSound: boolean('play_sound').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_push_device_tokens_user').on(table.userId),
+  check('push_device_tokens_platform', sql`${table.platform} in ('ios', 'android')`),
 ]);

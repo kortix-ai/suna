@@ -96,6 +96,7 @@ Three more read methods round out the handle:
 
 - `s.previews()` — candidate preview ports the runtime exposes.
 - `s.publicShares.list()` / `.create(input)` / `.revoke(shareId)` — public share links.
+  `.create({ transcript: true })` makes a read-only link to the conversation (one live link per session; a second call returns the same link). Read it anonymously with `getPublicSessionShareMessages(token)`; `findActiveTranscriptShare(shares)` picks the live one from `.list()`.
 - `s.audit(limit?)` — the session's audit trail of agent actions.
 - `s.attachments.upload(file, options?)` — save a private file before startup when `session_transcript_history` is enabled. Maximum 50 MiB. Returns a stable URL for a prompt file part.
 - `s.attachments.read(attachmentId, signal?)` — read saved bytes as a `Blob` without starting the sandbox.

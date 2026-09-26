@@ -109,7 +109,6 @@ describe('SessionSiteHeader session title', () => {
   test('uses the complete action list in the title menu', () => {
     expect(source.split('{sessionActionItems}').length - 1).toBe(1);
     expect(source).toContain('startRename();');
-    expect(source).toContain('setShareOpen(true)');
     expect(source).toContain('restartMutation.mutate()');
     expect(source).toContain('reloadConfig.reload()');
     expect(source).toContain('stopMutation.mutate()');
@@ -330,5 +329,46 @@ describe('SessionConfigIndicator wiring', () => {
     // config, Reload fetches a new one. Adjacent so the difference is legible.
     expect(source).toContain('Reload config');
     expect(source.indexOf('Restart')).toBeLessThan(source.indexOf('Reload config'));
+  });
+});
+
+describe('SessionSiteHeader Share', () => {
+  const menuStart = source.indexOf('const sessionActionItems = (');
+  const menu = source.slice(menuStart, source.indexOf('\n  );', menuStart));
+
+  test('Share is a visible header button, not a session-menu item', () => {
+    // Anti-vacuity guard: prove the slice is the menu.
+    expect(menu).toContain('startRename();');
+    expect(menu).not.toContain('setShareOpen(true)');
+    expect(source.split('setShareOpen(true)').length - 1).toBe(1);
+    const button = source.slice(
+      source.lastIndexOf('<Button', source.indexOf('setShareOpen(true)')),
+      source.indexOf('</Button>', source.indexOf('setShareOpen(true)')),
+    );
+    expect(button).toContain('<Share ');
+    // The visible label is "Share"; below `sm` the button is icon-only and
+    // keeps its accessible name.
+    expect(button).toContain("'i18nComplete.text29887a5ff984'");
+    expect(button).toContain('aria-label={shareLabel}');
+  });
+
+  test('the button needs a loaded project session, like the dialog it opens', () => {
+    const at = source.indexOf('setShareOpen(true)');
+    const guard = source.lastIndexOf('{isProjectSession && projectSession && (', at);
+    expect(guard).toBeGreaterThan(-1);
+    expect(at - guard).toBeLessThan(800);
+  });
+
+  test('matches the 28px row: xs, square when icon-only, and a Hint only then', () => {
+    const at = source.indexOf('setShareOpen(true)');
+    const hint = source.slice(source.lastIndexOf('<Hint', at), at);
+    expect(hint).toContain('open={isMobileViewport ? undefined : false}');
+    expect(hint).toContain('label={shareLabel}');
+    const button = source.slice(source.lastIndexOf('<Button', at), source.indexOf('</Button>', at));
+    expect(button).toContain('size="xs"');
+    expect(button).toContain('max-md:w-7 max-md:has-[>svg]:px-0');
+    // The label hides at the same breakpoint the Hint turns on.
+    expect(button).toContain('hidden md:inline');
+    expect(button).toContain('<Share />');
   });
 });

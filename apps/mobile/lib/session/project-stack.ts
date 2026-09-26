@@ -211,3 +211,51 @@ export function drawerSessionRowMove(
 ): 'close' | 'open' {
   return rowSessionId === shownSessionId ? 'close' : 'open';
 }
+
+/**
+ * A drawer row that targets one OpenCode session of a project session: a
+ * session row (its root pin) or a sub-session row under it (the child's id).
+ *
+ * - `open`: another project session — the connect path (`handleOpenProjectSession`).
+ * - `focus`: the shown thread, another OpenCode session of it — only the tab
+ *   store's active id changes (`navigateToSession`), the same sandbox stays,
+ *   no reconnect. The task tool's View uses the same call.
+ * - `queue`: the shown session is still connecting (no thread yet) — the
+ *   target is remembered and the thread opens on it once connected.
+ * - `close`: already on screen, or no target (no pin yet) — only the drawer
+ *   closes.
+ *
+ * A sub-session row of a session NOT on screen is `open`: the caller opens
+ * that session with the sub-session as its focus (`handleOpenProjectSession`).
+ */
+export function drawerThreadMove(state: {
+  rowSessionId: string;
+  targetOpenCodeId: string | null;
+  shownSessionId: string | null;
+  /** The thread's OpenCode id (tab store `activeSessionId`); null while connecting. */
+  activeOpenCodeId: string | null;
+}): 'open' | 'focus' | 'queue' | 'close' {
+  if (drawerSessionRowMove(state.rowSessionId, state.shownSessionId) === 'open') return 'open';
+  if (!state.targetOpenCodeId) return 'close';
+  if (!state.activeOpenCodeId) return 'queue';
+  return state.targetOpenCodeId !== state.activeOpenCodeId ? 'focus' : 'close';
+}
+
+/** An OpenCode session to show once a project session's thread connects. */
+export interface PendingThreadFocus {
+  sessionId: string;
+  openCodeId: string;
+}
+
+/**
+ * Which OpenCode session a just-connected thread shows: the pending focus
+ * when it belongs to this project session (a sub-session row tapped while
+ * its parent was not open, or while it was connecting), else the root.
+ */
+export function threadOpenTarget(
+  pending: PendingThreadFocus | null,
+  sessionId: string,
+  rootOpenCodeId: string
+): string {
+  return pending?.sessionId === sessionId ? pending.openCodeId : rootOpenCodeId;
+}
