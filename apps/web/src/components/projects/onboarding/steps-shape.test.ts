@@ -1,199 +1,114 @@
 /**
- * Shape rules for individual steps that the column refactor depends on.
+ * Shape rules for the three steps.
  *
- * These are source assertions for the same reason as `shell-layout.test.ts`:
- * "this step does not render a tile grid" and "this step never gates" are
- * properties of the markup, invisible to a rendering test that only ever
- * exercises the happy path.
+ * Source assertions, like `shell-layout.test.ts`: "this step opens no modal"
+ * and "this step signs in to nothing" are properties of the markup and the
+ * imports, invisible to a rendering test of the happy path.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const step = (name: string) => readFileSync(join(import.meta.dir, 'steps', name), 'utf8');
-const stepShell = readFileSync(join(import.meta.dir, 'step-shell.tsx'), 'utf8');
 
-const tools = step('tools-step.tsx');
+const work = step('work-step.tsx');
+const apps = step('apps-step.tsx');
 const plan = step('plan-step.tsx');
-const slack = step('slack-step.tsx');
-const company = step('company-step.tsx');
 
-describe('tools step', () => {
-  test('uses a vertical list, not a tile grid', () => {
-    expect(tools).not.toContain('grid-cols-2');
-    expect(tools).not.toContain('sm:grid-cols-3');
-    expect(tools).toContain('<ActionRow');
+describe('work step', () => {
+  test('is one pick from the shared option list', () => {
+    expect(work).toContain('WORK_OPTIONS.map(');
+    expect(work).toContain('RadioGroupPrimitive.Root');
   });
 
-  test('does not present connection actions as one radio answer', () => {
-    expect(tools).not.toContain('role="radiogroup"');
+  test('opens a capped field only for "Something else"', () => {
+    expect(work).toContain("const other = value === 'other'");
+    expect(work).toContain('{other && (');
+    expect(work).toContain('maxLength={USE_CASE_NOTE_MAX}');
   });
 
-  // The column sets the bound, not the viewport. A vh-relative height made this
-  // the tallest step in the flow on large screens.
-  test('does not pin its own viewport-relative height', () => {
-    expect(tools).not.toContain('vh]');
-  });
-
-  // The step asks exactly one thing: which apps. The custom-API escape hatch
-  // lives on the Connectors page, not inside onboarding.
-  test('asks one thing — no tabs, no custom-API branch', () => {
-    expect(tools).not.toContain('<Tabs');
-    expect(tools).not.toContain('TabsTrigger');
-    expect(tools).not.toContain('Connect a custom API');
-    expect(tools).not.toContain('CustomConnectorForm');
-  });
-
-  // The fade says "there is more" without putting a scrollbar on screen.
-  test('fades the scroll edges instead of showing a hard cut', () => {
-    expect(tools).toContain('FadedScrollArea');
-  });
-
-  test('keeps the accessible name that distinguishes adding another connection', () => {
-    expect(tools).toContain("aria-label={t('addConnection', { app: app.name })}");
-  });
-
-  test('shows connected state as status without exposing a toggle', () => {
-    expect(tools).not.toContain('active={existingSlugs.includes(app.slug)}');
-    expect(tools).toContain('<Badge');
-    expect(tools).toContain('variant="success"');
-    expect(tools).toContain("t('connected')");
-  });
-
-  test('exposes connected status as the add action description', () => {
-    expect(tools).toContain('aria-describedby={connected ? connectedStatusId : undefined}');
-    expect(tools).toContain('id={connectedStatusId}');
-    expect(stepShell).toContain("'aria-describedby': ariaDescribedBy");
-    expect(stepShell).toContain('aria-describedby={ariaDescribedBy}');
+  test('cannot continue without a pick', () => {
+    expect(work).toContain('primaryDisabled={value === null}');
   });
 });
 
-describe('slack step', () => {
-  // Was a bordered card, a button inside it, and a disclosure beneath — three
-  // unrelated shapes on a screen where every other step is a list of rows.
-  test('offers both install paths as the shared row primitive', () => {
-    expect(slack).toContain('<ActionRow');
-    expect(slack).toContain("t('add')");
-    expect(slack).toContain("t('custom')");
+describe('apps step', () => {
+  // One click connects. No modal and no name to type between the click and
+  // the sign-in popup.
+  test('a tile click connects, with no modal in between', () => {
+    expect(apps).toContain('onConnect({ slug: app.slug, name: app.name, provider })');
+    expect(apps).not.toContain('Modal');
   });
 
-  test('exposes the install-method label as a group name', () => {
-    expect(slack).toContain('role="group"');
-    expect(slack).toContain("aria-label={t('installMethod')}");
+  // A connected tile never signs in again; the click is a no-op.
+  test('a connected tile does not reconnect', () => {
+    expect(apps).toContain("if (state === 'idle') onConnect(");
   });
 
-  test('collapses to a single confirmed state once connected', () => {
-    expect(slack).toContain("t('connected')");
+  // Inside a <button> the spinner defaults to `text-background` and vanished
+  // on the tile in dark mode.
+  test('the spinner and the check use the foreground ink', () => {
+    expect(apps).toContain('<Loading variant="spokes" className="text-foreground! size-4" />');
+    expect(apps).toContain('<CheckCircleIcon weight="fill" className="text-foreground size-4" />');
+    expect(apps).not.toContain('text-kortix-green');
   });
 
-  // The custom-app setup sits under the chooser in the same decision lane. An
-  // earlier pass opened a side context panel, which pulled the lane off centre.
-  test('opens the custom app inline in the decision lane', () => {
-    expect(slack).not.toContain('StepContext');
-    expect(slack).not.toContain('xl:flex-row');
-    expect(slack).toContain("t('bringOwn')");
-    expect(slack).toContain('customOpen &&');
+  test('shows a live count and no per-tile status text', () => {
+    expect(apps).not.toContain("t('connect')");
+    expect(apps).not.toContain("t('connecting')");
+    expect(apps).toContain("t('connectedCount', { count: connectedCount })");
+    expect(apps).toContain('grid-cols-3');
   });
 
-  // The chunk downloaded and parsed during the open animation, dropping frames
-  // for reasons that had nothing to do with easing.
-  test('preloads the lazy form before the click', () => {
-    expect(slack).toContain('onPreload={preloadConnectorsView}');
-    expect(slack).toContain('const preloadConnectorsView');
+  // Connecting nothing is a valid answer.
+  test('Continue never waits for a connection', () => {
+    expect(apps).not.toContain('primaryDisabled');
   });
 
-  // The manifest block is tall. Sizing the panel to it grew the row far past
-  // the chooser, and the wizard centres its body vertically, so the whole step
-  // lurched upward as the panel appeared.
-  test('bounds the panel height so the row does not lurch', () => {
-    expect(slack).toContain('max-h-[380px]');
-    // The Suspense fallback matches the loaded height — otherwise skeleton to
-    // form is a second reflow mid-animation.
-    expect(slack).toContain('h-[380px]');
-  });
-});
-
-describe('company step', () => {
-  test('uses an input group with an icon for the domain', () => {
-    expect(company).toContain('InputGroup');
-    expect(company).toContain('GlobeIcon');
+  test('clears a typed search with one click and shows a spinner while searching', () => {
+    expect(apps).toContain('{q && (');
+    expect(apps).toContain('<InputGroupSearchClear');
+    expect(apps).toContain("q.trim() !== query || apps.isFetching");
+    expect(apps).toContain('<Loading variant="spokes" className="size-4" />');
   });
 
-  // Invalid non-empty domain shakes the whole InputGroup, not just the input.
-  test('wires domain validation into a group-level shake', () => {
-    expect(company).toContain('isValidCompanyHttpLink');
-    expect(company).toContain('aria-invalid={domainInvalid || undefined}');
-    expect(company).toContain("domainInvalid && 'motion-safe:animate-shake'");
-    expect(company).toContain('aria-invalid:animate-none');
+  test('searches the catalogue without a request per keystroke', () => {
+    expect(apps).toContain('useDebounce(');
+    expect(apps).toContain('placeholderData: (previous) => previous');
   });
 });
 
-describe('plan step', () => {
+describe('models step', () => {
   test('reuses the shared model-connection gate rather than new billing wiring', () => {
     expect(plan).toContain('useModelConnectionGate');
     expect(plan).not.toContain('useUpgradeDialogStore');
   });
 
-  /**
-   * THE `/new` dead-click fix. The gate falls back to the `[id]` route segment
-   * when nobody tells it which project to act on, and `/new` (`app/[locale]/(app)/new`)
-   * has no such segment — so an inferred project is `null`, `modal` is `null`,
-   * and "Add a key" opens nothing while never calling `onContinue()`. This step
-   * is 4 of 5 and passes no `onSkip` to `StepShell`, so its primary button is
-   * the only control: an inferred id strands the user mid-wizard.
-   */
-  test('tells the gate which project it is acting on instead of letting it infer the route', () => {
-    expect(plan).toContain('projectId');
-    expect(plan).toContain('useModelConnectionGate(flattenModels(providers), { projectId })');
+  // THE `/new` dead-click fix: the gate must be told the project, because
+  // `/new` (`app/[locale]/(app)/new`) has no `[id]` route segment to infer it from.
+  test('tells the gate which project it is acting on', () => {
+    expect(plan).toContain('{ projectId },');
+    expect(plan).toContain('projectId: string;');
   });
 
-  // The composer enforces model connection later. Blocking here would strand a
-  // user who wants to look around before paying.
-  test('never gates — Continue carries no disabled condition', () => {
+  // THE reported bug: after adding a key the button still said "Add a key".
+  test('derives the primary label from what is connected, not only the pick', () => {
+    expect(plan).toContain('const action = planAction(choice, access)');
+    expect(plan).not.toContain("choice === 'byok' ? t('addKey')");
+  });
+
+  test('never gates — the composer asks for a model when it needs one', () => {
     expect(plan).not.toContain('primaryDisabled');
+    expect(plan).toContain('onSkip={onContinue}');
   });
 
-  // With billing disabled there is no <GlobalUpgradeModal/> mounted to respond,
-  // so an Upgrade row would be a dead click.
-  test('hides the paid option when billing is unavailable', () => {
-    expect(plan).toContain('showUpgradeOption');
+  test('hides the Kortix option when there is neither billing nor a managed model', () => {
+    expect(plan).toContain('const offerKortix = showUpgradeOption || access.hasKortixModels');
+    expect(plan).toContain('{offerKortix && (');
   });
 
-  test('offers three ways forward, including deferring', () => {
-    expect(plan).toContain('<SelectionRow');
-    expect(plan).toContain("t('useKortix')");
-    expect(plan).toContain("t('bringKey')");
-    expect(plan).toContain("t('decideLater')");
-  });
-
-  // THE fix for this step. Clicking a row used to fire a modal instantly: the
-  // user taps to consider an option, gets a whole separate flow thrown at them,
-  // backs out, and loses the thread. Selection must only select.
-  test('opens nothing on selection — the action is deferred to Continue', () => {
-    expect(plan).not.toContain('openUpgrade();\n            }}');
+  test('opens nothing on selection — the action waits for Continue', () => {
     expect(plan).toContain('const handleContinue');
-    // The controlled group does exactly one thing on selection: record the choice.
-    expect(plan).toContain("value={choice ?? ''}");
-    expect(plan).toContain('onValueChange={(nextChoice) => setChoice(nextChoice as PlanChoice)}');
-  });
-
-  // The modal that opens should never be a surprise, so the button names it.
-  test('labels the primary with what it will actually do', () => {
-    expect(plan).toContain("t('seePlans')");
-    expect(plan).toContain("t('addKey')");
-  });
-
-  test('describes BYOK accurately with and without an existing model', () => {
-    expect(plan).toContain("label={hasSelectableModels ? t('connectAnother') : t('bringKey')}");
-    expect(plan).toContain("label={hasSelectableModels ? t('keepCurrent') : t('decideLater')}");
-  });
-
-  // An earlier version short-circuited to a confirm-only screen when a model
-  // was already connected, which stranded anyone who wanted to add a second
-  // provider or move onto a plan. A connected model is context, not an answer.
-  test('keeps every option available even when a model is already connected', () => {
-    expect(plan).not.toContain('if (hasSelectableModels)');
-    expect(plan).toContain("t('connectAnother')");
-    expect(plan).toContain("t('keepCurrent')");
+    expect(plan).toContain('onValueChange={(next) => setPicked(next as PlanChoice)}');
   });
 });

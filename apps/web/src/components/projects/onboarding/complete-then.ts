@@ -1,6 +1,11 @@
 /**
- * Finish onboarding, then tell the host — whether or not the finish actually
- * persisted.
+ * Finish onboarding and tell the host at once — whether or not the finish
+ * persists.
+ *
+ * The host is told BEFORE the stamp settles. `complete()` applies the stamp
+ * to the cache optimistically, so the navigation has nothing to wait for;
+ * awaiting the PATCH showed the "Creating …" loader for a full round trip
+ * after the last click.
  *
  * Extracted from `ProjectOnboardingWizard` rather than inlined so this rule is
  * testable at all: the wizard cannot be rendered in `apps/web`'s test harness
@@ -15,15 +20,16 @@
  * blip. The failure mode we accept instead is one extra wizard render the
  * next time they open the workspace.
  */
-export async function completeThenNotify(
+export function completeThenNotify(
   complete: () => Promise<unknown>,
   notify: (() => void) | undefined,
 ): Promise<void> {
-  try {
-    await complete();
-  } catch {
+  const settled = complete().then(
+    () => undefined,
     // Intentionally silent — see the module comment. The caller has no
     // recovery to offer and the user asked to move on, not to retry a flag.
-  }
+    () => undefined,
+  );
   notify?.();
+  return settled;
 }

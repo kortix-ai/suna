@@ -1,69 +1,58 @@
 'use client';
 
 /**
- * How to power the agent.
+ * Step 3 — which models Kortix uses. The last step: its primary opens the
+ * project.
  *
- * The earlier version fired a modal the instant a row was clicked. That is the
- * defect: the user taps to *consider* an option and gets a whole separate flow
- * thrown at them, so they back out and lose the thread. Here, selecting a row
- * only selects. `Continue` performs whatever was chosen.
+ * Selecting a row only selects. Continue performs the choice, and its label
+ * names what it will do:
+ * - Kortix models that are ready, or an own key that is connected: open the project.
+ * - Kortix models without access: see plans.
+ * - An own key with none connected: add a key. Once one is added the label
+ *   becomes "Open workspace" (`planAction`).
  *
- * "Decide later" exists so nobody is ever cornered. The chat composer already
- * gates on model connection at the moment it actually matters, which makes
- * deferring a legitimate answer rather than an escape hatch.
+ * "Decide later" opens the project too. The composer asks for a model the
+ * first time it needs one, so deferring is a real answer.
  */
 
-import { ClockIcon as Clock, KeyIcon as Key } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
+import { KeyIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { RadioGroup } from '@/components/ui/radio-group';
+import { Kortix } from '@/features/icon/icons/kortix';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
+import { useTranslations } from '@/i18n/use-translations';
 import { useRuntimeProviders } from '@kortix/sdk/react';
 
-import { Kortix } from '@/features/icon/icons/kortix';
+import { hasModelsFrom, planAction, type PlanChoice } from '../plan-action';
 import { SelectionRow, StepShell } from '../step-shell';
 
-type PlanChoice = 'kortix' | 'byok' | 'later';
-
 /**
- * `projectId` is passed explicitly, never inferred. `useModelConnectionGate`
- * falls back to the `[id]` route segment, and this step also renders on `/new`
- * (`app/(app)/new`), which has none — an inferred project is `null` there, so
- * `modal` is `null` and `openConnectProvider` opens nothing while
- * `handleContinue` never reaches `onContinue()`. This step passes no `onSkip`
- * to `StepShell`, so its primary button is the only control: an inferred id
- * strands the user on step 4 of 5.
+ * `projectId` is REQUIRED, never inferred. `useModelConnectionGate` falls back
+ * to the `[id]` route segment, and this step also renders on `/new`, which has
+ * none: an inferred project is `null` there, `modal` is `null`, and "Add a key"
+ * opens nothing. Do not relax this to `?:`.
  */
-export function PlanStep({
-  projectId,
-  onContinue,
-}: {
-  /**
-   * REQUIRED, deliberately — this is the guard on the defect above.
-   *
-   * `useModelConnectionGate` falls back to `useParams().id` when given no
-   * explicit id, and `/new` has no `[id]` segment, so an omitted prop here
-   * silently reproduces the dead-click bug in full. Optional, it was
-   * unguardable: dropping `projectId={projectId}` at the single call site
-   * passed the entire test suite AND `tsc`, because a missing optional prop is
-   * legal and no test can see one that was never there. Required, the same
-   * edit is a compile error. Do not relax this to `?:`.
-   */
-  projectId: string;
-  onContinue: () => void;
-}) {
+export function PlanStep({ projectId, onContinue }: { projectId: string; onContinue: () => void }) {
   const t = useTranslations('projectOnboarding.plan');
   const { data: providers } = useRuntimeProviders();
-  const { openConnectProvider, openUpgrade, modal, hasSelectableModels, showUpgradeOption } =
-    useModelConnectionGate(flattenModels(providers), { projectId });
-  const [choice, setChoice] = useState<PlanChoice | null>(null);
+  const models = flattenModels(providers);
+  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate(
+    models,
+    { projectId },
+  );
+  const access = hasModelsFrom(models);
+  const offerKortix = showUpgradeOption || access.hasKortixModels;
+  const [picked, setPicked] = useState<PlanChoice | null>(null);
+  const choice: PlanChoice = picked ?? (offerKortix ? 'kortix' : 'byok');
+  const action = planAction(choice, access);
 
-  // Nothing opens until Continue. This is the whole point of the step.
+  // Nothing opens until Continue.
   const handleContinue = () => {
-    if (choice === 'kortix') openUpgrade();
-    else if (choice === 'byok') openConnectProvider('providers');
+    if (action === 'seePlans') openUpgrade();
+    else if (action === 'addKey') openConnectProvider('providers');
     else onContinue();
   };
 
@@ -72,43 +61,38 @@ export function PlanStep({
       {modal}
       <StepShell
         title={t('title')}
-        description={hasSelectableModels ? t('descriptionConnected') : t('descriptionDisconnected')}
-        // The label names what the button will actually do, so the modal that
-        // opens is never a surprise.
+        description={t('description')}
         primaryLabel={
-          choice === 'kortix' ? t('seePlans') : choice === 'byok' ? t('addKey') : t('continue')
+          action === 'seePlans' ? t('seePlans') : action === 'addKey' ? t('addKey') : t('open')
         }
         onPrimary={handleContinue}
+        skipLabel={t('decideLater')}
+        onSkip={onContinue}
       >
-        {/* A connected model is context, not an answer. The options stay so the
-            user can add a provider or move onto a plan. */}
         <RadioGroup
-          value={choice ?? ''}
-          onValueChange={(nextChoice) => setChoice(nextChoice as PlanChoice)}
+          value={choice}
+          onValueChange={(next) => setPicked(next as PlanChoice)}
           aria-label={t('modelAccess')}
           className="gap-2"
         >
-          {showUpgradeOption && (
+          {offerKortix && (
             <SelectionRow
               value="kortix"
               label={t('useKortix')}
+              badge={
+                <Badge variant="outline" size="xs">
+                  {t('recommended')}
+                </Badge>
+              }
               description={t('useKortixDescription')}
               leading={<Kortix className="size-5 shrink-0" />}
             />
           )}
           <SelectionRow
             value="byok"
-            label={hasSelectableModels ? t('connectAnother') : t('bringKey')}
-            description={t('providerDescription')}
-            leading={<Key className="text-muted-foreground size-5 shrink-0" weight="duotone" />}
-          />
-          <SelectionRow
-            value="later"
-            label={hasSelectableModels ? t('keepCurrent') : t('decideLater')}
-            description={
-              hasSelectableModels ? t('keepCurrentDescription') : t('decideLaterDescription')
-            }
-            leading={<Clock className="text-muted-foreground size-5 shrink-0" weight="duotone" />}
+            label={t('bringKey')}
+            description={access.hasOwnKey ? t('keyConnected') : t('providerDescription')}
+            leading={<KeyIcon className="text-muted-foreground size-5 shrink-0" weight="duotone" />}
           />
         </RadioGroup>
       </StepShell>

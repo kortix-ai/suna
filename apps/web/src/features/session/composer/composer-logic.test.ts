@@ -15,6 +15,7 @@ import {
   restoreComposerQuotes,
   shouldApplyPrefill,
   shouldFocusEditorFromPadding,
+  shouldSubmitPrefill,
   textToDocument,
   textToParagraphs,
   withReplyQuotes,
@@ -23,6 +24,35 @@ import type { AttachedFile } from './types';
 
 /** A one-paragraph document holding exactly this text. */
 const docOf = (text: string): JSONContent => textToDocument(text);
+
+describe('shouldSubmitPrefill', () => {
+  test('submits a prefill that asks for it, once', () => {
+    expect(
+      shouldSubmitPrefill({ prefillId: 7, prefillSubmit: true, submittedPrefillId: null }),
+    ).toBe(true);
+  });
+
+  // The apply effect re-runs whenever any of its dependencies changes identity,
+  // and it re-applies the same prefill each time. Re-submitting it would send
+  // the same message twice.
+  test('never submits the same prefill twice', () => {
+    expect(shouldSubmitPrefill({ prefillId: 7, prefillSubmit: true, submittedPrefillId: 7 })).toBe(
+      false,
+    );
+  });
+
+  test('a later prefill submits again', () => {
+    expect(shouldSubmitPrefill({ prefillId: 8, prefillSubmit: true, submittedPrefillId: 7 })).toBe(
+      true,
+    );
+  });
+
+  test('an ordinary prefill only fills the box', () => {
+    expect(
+      shouldSubmitPrefill({ prefillId: 7, prefillSubmit: false, submittedPrefillId: null }),
+    ).toBe(false);
+  });
+});
 
 describe('shouldApplyPrefill', () => {
   // Fix round 1, Critical: this is where the "prefill delivered before the

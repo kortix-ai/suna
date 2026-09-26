@@ -3,15 +3,35 @@ import { describe, expect, test } from 'bun:test';
 import { completeThenNotify } from './complete-then';
 
 describe('completeThenNotify', () => {
-  test('awaits the completion, then notifies', async () => {
-    const order: string[] = [];
+  // The stamp is already applied to the cache optimistically, so the PATCH has
+  // nothing to tell the navigation. Waiting for it showed the "Creating …"
+  // loader for a full round trip after the last click.
+  test('notifies before the completion settles', async () => {
+    let settle!: () => void;
+    let notified = false;
+    const run = completeThenNotify(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+      () => {
+        notified = true;
+      },
+    );
+    expect(notified).toBe(true);
+    settle();
+    await run;
+  });
+
+  test('still starts the completion', async () => {
+    let completed = false;
     await completeThenNotify(
       async () => {
-        order.push('complete');
+        completed = true;
       },
-      () => order.push('notify'),
+      () => undefined,
     );
-    expect(order).toEqual(['complete', 'notify']);
+    expect(completed).toBe(true);
   });
 
   // THE load-bearing case. The stamp is a PATCH that can fail; the user asked

@@ -45,3 +45,28 @@ describe('ProjectHome access-requests bell', () => {
     expect(query).toContain('enabled: canManageMembers');
   });
 });
+
+describe('ProjectHome first chat starters', () => {
+  // A render test cannot observe the prefill state these set, so the wiring is
+  // pinned here and the submit itself in `composer-logic.test.ts`.
+  test('"Update memory" submits its prompt through the composer', () => {
+    expect(code).toContain(
+      "setPrefill({ text: tFirstChat('memoryPrompt'), id: Date.now(), submit: true })",
+    );
+  });
+
+  test('"Recommend tools" submits its prompt through the composer', () => {
+    expect(code).toContain(
+      "setPrefill({ text: tFirstChat('toolsPrompt'), id: Date.now(), submit: true })",
+    );
+  });
+
+  test('suggestions elsewhere still only fill the composer', () => {
+    const applySuggestion = code.slice(
+      code.indexOf('const applySuggestion'),
+      code.indexOf('const draftScope'),
+    );
+    expect(applySuggestion).toContain('setPrefill({ text: s, id: Date.now() })');
+    expect(applySuggestion).not.toContain('submit');
+  });
+});

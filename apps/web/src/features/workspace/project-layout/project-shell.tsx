@@ -263,6 +263,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 
         <ProjectOnboardingWizard projectId={projectId} />
 
+
         <PersonalOnboardingWelcome projectId={projectId} />
       </AppProviders>
     </BillingAccountProvider>
