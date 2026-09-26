@@ -1793,6 +1793,8 @@ flow(
 // fix is 50; a round costs one push plus one turn, so 50 needs the flow's own
 // timeout raised with it.
 const RACE_ROUNDS = Math.max(1, Number(process.env.KORTIX_CFG_RACE_ROUNDS ?? '5') || 5);
+/** Commit to `running_release_id === desired_release_id` on a box nobody is prompting. */
+const IDLE_CONVERGENCE_CEILING_MS = 65_000;
 
 flow(
   'CFG-12',
@@ -1914,9 +1916,21 @@ flow(
           intervalMs: 3_000,
           description: 'an idle box converges on the new release',
         });
-        console.log(`[CFG-12] idle convergence took ${Date.now() - started} ms`);
+        const took = Date.now() - started;
+        console.log(`[CFG-12] idle convergence took ${took} ms`);
         if (converged.fallback_reason !== null) {
           throw new Error(`the idle convergence reported a fallback: ${converged.fallback_reason}`);
+        }
+        // A deferral that never resolves would time out above. This catches the
+        // softer regression: a convergence that still lands, but only after the
+        // gate has deferred it several times over. Dev measured 8.5-15.4 s end
+        // to end; the ceiling is 4x that plus one poll interval, which is wide
+        // enough for a shared preview host and far below a deferral loop.
+        if (took > IDLE_CONVERGENCE_CEILING_MS) {
+          throw new Error(
+            `an idle convergence took ${took} ms, over the ${IDLE_CONVERGENCE_CEILING_MS} ms ceiling ` +
+              '(dev measures 8.5-15.4 s); the fix must not turn a convergence into a deferral',
+          );
         }
       });
 
