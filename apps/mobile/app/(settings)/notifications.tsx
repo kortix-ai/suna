@@ -63,7 +63,7 @@ export default function NotificationsScreen() {
         {preferences.enabled && (
           <SettingsRow
             icon={Volume2}
-            label="Sound"
+            label="Play sound"
             right={
               <Switch
                 checked={preferences.playSound}
