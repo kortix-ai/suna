@@ -479,3 +479,79 @@ export function flattenSessionGroups(sessions: ProjectSession[]): SessionListRow
   }
   return rows;
 }
+
+// ── OpenCode sub-sessions ──────────────────────────────────────────────────
+
+/** One entry of a project session's OpenCode snapshot (`opencode_sessions[]`). */
+export type ProjectRuntimeSession = ProjectSession['opencode_sessions'][number];
+
+/** What a sub-session row shows when OpenCode has not titled it (web: 'Sub-session'). */
+export const SUB_SESSION_FALLBACK_TITLE = 'Sub-session';
+
+/**
+ * The root OpenCode session a project session is pinned to: the entry whose
+ * id is `opencode_session_id`, else (no pin yet) the first parentless entry.
+ * A pin that is not in the snapshot yields null. Port of web's
+ * `rootOpenCodeSession` (`apps/web/src/components/projects/session-label.ts`).
+ */
+export function rootOpenCodeSession(session: ProjectSession): ProjectRuntimeSession | null {
+  const openCodeSessions = session.opencode_sessions ?? [];
+  const rootId = session.opencode_session_id;
+  if (rootId) return openCodeSessions.find((item) => item.id === rootId) ?? null;
+  return openCodeSessions.find((item) => !item.parent_id) ?? null;
+}
+
+/**
+ * Direct, non-archived children of the root OpenCode session (the agent's
+ * sub-agents), newest `updated_at` first; a missing time counts as 0 and ties
+ * break on id, so the order never churns between refetches. A child of a
+ * child is not included. Port of web's `directSubsessions`. Never mutates
+ * `opencode_sessions`.
+ */
+export function directSubsessions(session: ProjectSession): ProjectRuntimeSession[] {
+  const root = rootOpenCodeSession(session);
+  if (!root) return [];
+  return (session.opencode_sessions ?? [])
+    .filter((item) => item.parent_id === root.id && !item.archived_at)
+    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0) || a.id.localeCompare(b.id));
+}
+
+/** A sub-session row's title: OpenCode's title, trimmed, else `SUB_SESSION_FALLBACK_TITLE`. */
+export function subsessionTitle(child: ProjectRuntimeSession): string {
+  return child.title?.trim() || SUB_SESSION_FALLBACK_TITLE;
+}
+
+/**
+ * The project session that owns an id the thread shows. The tab store's
+ * active id is an OpenCode id: the root (a thread opened from a list), or a
+ * sub-session (a drawer sub-session row, or a task tool's View). Match order:
+ * a project session id or root pin first, then any entry of a row's
+ * `opencode_sessions` snapshot — every sub-session runs in its parent's
+ * sandbox, so the parent row owns it. Null for null or an unknown id.
+ */
+export function projectSessionForOpenCodeId(
+  sessions: readonly ProjectSession[],
+  openCodeId: string | null,
+): ProjectSession | null {
+  if (!openCodeId) return null;
+  const direct = sessions.find(
+    (session) => session.opencode_session_id === openCodeId || session.session_id === openCodeId,
+  );
+  if (direct) return direct;
+  return (
+    sessions.find((session) => (session.opencode_sessions ?? []).some((item) => item.id === openCodeId)) ??
+    null
+  );
+}
+
+/**
+ * The count badge after a session title shows only above this many direct
+ * sub-sessions (owner, 2026-09-26): a short list under the row already reads
+ * its own length, a long one does not.
+ */
+export const SUBSESSION_COUNT_BADGE_THRESHOLD = 4;
+
+/** True when a row shows its sub-session count badge: more than `SUBSESSION_COUNT_BADGE_THRESHOLD`. */
+export function showSubsessionCountBadge(count: number): boolean {
+  return Number.isFinite(count) && count > SUBSESSION_COUNT_BADGE_THRESHOLD;
+}

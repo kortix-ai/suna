@@ -16,7 +16,7 @@
  * no project is only selected. `pending` is true for the whole round trip.
  */
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -37,27 +37,29 @@ export function useWebCreateHandoff() {
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
 
+  // Every account's projects, fetched now, never from cache (`staleTime: 0`).
+  const fetchSnapshot = useCallback(async () => {
+    const accounts = await queryClient.fetchQuery({
+      queryKey: projectKeys.accounts,
+      queryFn: listAccounts,
+      staleTime: 0,
+    });
+    const lists = await Promise.all(
+      accounts.map((account) =>
+        queryClient.fetchQuery({
+          queryKey: projectKeys.projects(account.account_id),
+          queryFn: () => listProjectsForAccount(account.account_id),
+          staleTime: 0,
+        })
+      )
+    );
+    return { accounts, projects: lists.flat() };
+  }, [queryClient]);
+
   const runner = useMemo(
     () =>
       createWebCreateRunner<KortixAccount, KortixProject>({
-        // Fetched now, never from cache (`staleTime: 0`).
-        fetchSnapshot: async () => {
-          const accounts = await queryClient.fetchQuery({
-            queryKey: projectKeys.accounts,
-            queryFn: listAccounts,
-            staleTime: 0,
-          });
-          const lists = await Promise.all(
-            accounts.map((account) =>
-              queryClient.fetchQuery({
-                queryKey: projectKeys.projects(account.account_id),
-                queryFn: () => listProjectsForAccount(account.account_id),
-                staleTime: 0,
-              })
-            )
-          );
-          return { accounts, projects: lists.flat() };
-        },
+        fetchSnapshot,
         openBrowser: (url) => WebBrowser.openAuthSessionAsync(url, WEB_CREATE_RETURN_URL),
         invalidate: () => {
           void queryClient.invalidateQueries({ queryKey: projectKeys.accounts });
@@ -65,8 +67,9 @@ export function useWebCreateHandoff() {
         },
         onPendingChange: setPending,
       }),
-    [queryClient]
+    [queryClient, fetchSnapshot]
   );
 
-  return { open: runner.run, pending };
+  // `refresh`: the same snapshot without the browser ("I already created one").
+  return { open: runner.run, pending, refresh: fetchSnapshot };
 }

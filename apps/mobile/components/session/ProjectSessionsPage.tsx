@@ -20,7 +20,12 @@
  *   list     Today / Yesterday / This week / Older, one `SettingsGroup` of
  *            `SettingsRow`s each (the settings screens' layout); a group's title
  *            shows only when more than one group has sessions.
- *            Row: status mark · title · time
+ *            Row: status mark · title (· sub-session count, inline after the
+ *            title, only above 4) · time at the far right. Its sub-session
+ *            rows always follow inside the same tile, joined by a connector
+ *            under the status mark, titles on the parent title's edge, time
+ *            at the far right (`SubsessionTree`); a tap opens the parent
+ *            session on that sub-session.
  *   button   New session, pinned at the bottom right over a fade of the page:
  *            the project drawer's bottom bar (`PinnedBar`). The list scrolls
  *            under it. It returns to project home, whose composer starts the
@@ -59,6 +64,11 @@ import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { useCoveringRoute, useProjectRoute } from '@/components/session/ProjectRoutes';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
+import {
+  SubsessionCountBadge,
+  SubsessionTree,
+  subsessionCountLabel,
+} from '@/components/session/SessionSubsessionTree';
 import { haptics } from '@/lib/haptics';
 import { useProjectSessionsPaged } from '@/lib/projects/hooks';
 import {
@@ -71,6 +81,8 @@ import { useReviewItems } from '@/lib/review/use-review';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
   SESSION_STATUS_FILTERS,
+  directSubsessions,
+  showSubsessionCountBadge,
   filterSessionsBySearch,
   filterSessionsByStatus,
   groupSessionsByActivity,
@@ -109,11 +121,27 @@ interface SessionRowProps {
   nested?: boolean;
   /** Pending review-inbox items from this session (`needsYouBySession`): > 0 marks it `needs-you`. */
   needsYouCount: number;
-  onOpen: (session: ProjectSession) => void;
+  /** A row tap opens the session on its root; a sub-session row passes that sub-session's id. */
+  onOpen: (session: ProjectSession, focusOpenCodeId?: string) => void;
   onActions: (session: ProjectSession) => void;
 }
 
-/** One `SettingsRow`: status mark · title · time. No chevron: the time holds the right edge. */
+/**
+ * Sub-session tree geometry, from the tile's left edge. The trunk runs down
+ * the centre of the row's status mark: `SettingsRow` `px-4` (16) + half the
+ * 20pt slot (10). Each sub-session title starts on the row's label edge:
+ * `px-4` + the 20pt leading slot + its `mr-3` (12). A nested row's leading
+ * adds the 12pt branch mark and its `gap-1.5` (6) before the mark to both.
+ */
+const NESTED_LEAD = 12 + 6;
+const TRUNK_X_TOP_LEVEL = 16 + 10;
+const TEXT_X_TOP_LEVEL = 16 + 20 + 12;
+
+/**
+ * One `SettingsRow`: status mark · title · time (· sub-session count). No
+ * chevron: the time holds the right edge. The session's sub-sessions follow
+ * under it in the same tile (`SubsessionTree`), always.
+ */
 const SessionRow = React.memo(function SessionRow({
   session,
   now,
@@ -125,11 +153,23 @@ const SessionRow = React.memo(function SessionRow({
   const title = sessionDisplayTitle(session);
   const status = sessionDisplayStatus(session, needsYouCount);
   const lastActivity = sessionLastActivityAt(session);
-  const accessibilityLabel = nested
-    ? `${title}, sub-agent session, ${sessionStatusLabel(status)}, ${spokenRelative(lastActivity, now)}`
-    : `${title}, ${sessionStatusLabel(status)}, ${spokenRelative(lastActivity, now)}`;
+  const subsessions = React.useMemo(() => directSubsessions(session), [session]);
+  const subsessionCount = subsessions.length;
+  const openSubsession = React.useCallback(
+    (childId: string) => onOpen(session, childId),
+    [onOpen, session]
+  );
+  const accessibilityLabel = [
+    title,
+    nested ? 'sub-agent session' : null,
+    sessionStatusLabel(status),
+    spokenRelative(lastActivity, now),
+    subsessionCount > 0 ? subsessionCountLabel(subsessionCount) : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
-  return (
+  const row = (
     <SettingsRow
       leading={
         nested ? (
@@ -143,6 +183,9 @@ const SessionRow = React.memo(function SessionRow({
       }
       label={title}
       value={shortRelative(lastActivity, now)}
+      labelAccessory={
+        showSubsessionCountBadge(subsessionCount) ? <SubsessionCountBadge count={subsessionCount} /> : undefined
+      }
       right={null}
       onPress={() => onOpen(session)}
       onLongPress={() => onActions(session)}
@@ -150,6 +193,25 @@ const SessionRow = React.memo(function SessionRow({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint="Opens the session"
     />
+  );
+  if (subsessionCount === 0) return row;
+  return (
+    <View>
+      {row}
+      {/* No thread is open while this page shows (useCoveringRoute), so no
+          sub-session row is highlighted. */}
+      <View className="pb-2">
+        <SubsessionTree
+          subsessions={subsessions}
+          parentTitle={title}
+          activeOpenCodeId={null}
+          trunkX={TRUNK_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
+          textX={TEXT_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
+          showTime
+          onPressSubsession={openSubsession}
+        />
+      </View>
+    </View>
   );
 });
 

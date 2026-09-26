@@ -20,6 +20,11 @@
  *   list, COR-162) nests directly under its coordinator, indented 16pt, with
  *   a 12pt branch mark (`ArrowElbowDownRightIcon`) BEFORE its status mark —
  *   both render (`flattenSessionGroups`, `lib/session/session-list.ts`).
+ *   A row whose root OpenCode session has sub-sessions (`directSubsessions`)
+ *   shows their count after its title and ALWAYS lists them under its row,
+ *   joined by a connector (`SubsessionTree`) — every such row, not only the
+ *   session on screen. A sub-session row shows that sub-session: in place
+ *   when its parent is the open thread, else it opens the parent first.
  *   Then Previous
  *   chats. Pages of 50 load as the list nears its end; a pull refreshes it.
  *   Long press opens `SessionActionsSheet` (Rename, Share, Restart sandbox,
@@ -75,6 +80,11 @@ import { PixelDeadFlower } from '@/components/kortix/PixelDeadFlower';
 import { Avatar } from '@/components/kortix/avatar';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
+import {
+  SubsessionCountBadge,
+  SubsessionTree,
+  subsessionCountLabel,
+} from '@/components/session/SessionSubsessionTree';
 import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
 import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
@@ -89,6 +99,7 @@ import {
   type ProjectDrawerRoute,
 } from '@/lib/session/project-stack';
 import {
+  directSubsessions,
   flattenSessionGroups,
   recentSessions,
   sessionDisplayStatus,
@@ -146,6 +157,7 @@ function ProjectSessionListItem({
   item,
   active,
   nested = false,
+  subsessionCount = 0,
   needsYou,
   onPress,
   onLongPress,
@@ -159,13 +171,21 @@ function ProjectSessionListItem({
   /** A sub-agent session, rendered indented under its coordinator with a
    *  12pt branch mark before its status mark (both render). */
   nested?: boolean;
+  /** Direct OpenCode sub-sessions: a count badge after the title when > 0. */
+  subsessionCount?: number;
   onPress: (s: ProjectSession) => void;
   /** Opens the session actions sheet (Rename, Share, Restart, Stop, Delete). */
   onLongPress: (s: ProjectSession) => void;
 }) {
   const title = sessionDisplayTitle(item);
   const status = sessionDisplayStatus(item, needsYou?.count ?? 0);
-  const statusLabel = needsYou ? `${sessionStatusLabel(status)}, ${needsYou.reason}` : sessionStatusLabel(status);
+  const statusLabel = [
+    sessionStatusLabel(status),
+    needsYou?.reason,
+    subsessionCount > 0 ? subsessionCountLabel(subsessionCount) : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <Pressable
@@ -199,7 +219,79 @@ function ProjectSessionListItem({
           {title}
         </Text>
       )}
+      <SubsessionCountBadge count={subsessionCount} />
     </Pressable>
+  );
+}
+
+/**
+ * Sub-session tree geometry, from the row's column edge. The trunk runs down
+ * the centre of the row's status mark: `px-4` (16) + half the 20pt mark slot
+ * (10). Each sub-session title starts on the row's title edge: `px-4` + the
+ * 20pt slot + `gap-3` (12). A nested row adds its indent (16), the 12pt
+ * branch mark and a `gap-3` (12) before the mark to both.
+ */
+const NESTED_LEAD = NESTED_SESSION_INDENT + 12 + 12;
+const TRUNK_X_TOP_LEVEL = 16 + 10;
+const TEXT_X_TOP_LEVEL = 16 + 20 + 12;
+
+/**
+ * A session row plus its direct OpenCode sub-sessions under it, always
+ * (web's `renderSessionNode` shows them for the open session only; the
+ * owner wants them on every row, 2026-09-26). The row keeps its `bg-accent`
+ * only while the thread shows its root; while a sub-session shows, that
+ * sub-session's row carries it instead.
+ */
+function DrawerSessionNode({
+  session,
+  shown,
+  activeOpenCodeId,
+  nested = false,
+  needsYou,
+  onPress,
+  onLongPress,
+  onPressSubsession,
+}: {
+  session: ProjectSession;
+  /** This is the project session on screen (thread or connecting). */
+  shown: boolean;
+  /** The OpenCode id the thread shows; null while no thread is on screen. */
+  activeOpenCodeId: string | null;
+  nested?: boolean;
+  needsYou?: SessionNeedsYou;
+  onPress: (s: ProjectSession) => void;
+  onLongPress: (s: ProjectSession) => void;
+  onPressSubsession: (parent: ProjectSession, childId: string) => void;
+}) {
+  const subsessions = useMemo(() => directSubsessions(session), [session]);
+  const subsessionActive = shown && subsessions.some((child) => child.id === activeOpenCodeId);
+  const handlePressSubsession = useCallback(
+    (childId: string) => onPressSubsession(session, childId),
+    [onPressSubsession, session]
+  );
+  return (
+    <View>
+      <ProjectSessionListItem
+        item={session}
+        active={shown && !subsessionActive}
+        nested={nested}
+        subsessionCount={subsessions.length}
+        needsYou={needsYou}
+        onPress={onPress}
+        onLongPress={onLongPress}
+      />
+      {subsessions.length > 0 ? (
+        <SubsessionTree
+          subsessions={subsessions}
+          parentTitle={sessionDisplayTitle(session)}
+          activeOpenCodeId={shown ? activeOpenCodeId : null}
+          trunkX={TRUNK_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
+          textX={TEXT_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
+          showTime={false}
+          onPressSubsession={handlePressSubsession}
+        />
+      ) : null}
+    </View>
   );
 }
 
@@ -338,6 +430,12 @@ export interface ProjectLeftDrawerProps {
    * Its row is highlighted; tapping it only closes the drawer (ProjectScreen).
    */
   activeProjectSessionId?: string | null;
+  /**
+   * The OpenCode id the open thread shows (tab store `activeSessionId`): the
+   * root of `activeProjectSessionId`, or one of its sub-sessions. Null while
+   * no thread is on screen. Picks which sub-session row is highlighted.
+   */
+  activeOpenCodeSessionId?: string | null;
   /** Items that wait for the user — the Review row's trailing count pill. */
   reviewNeedsYouCount?: number;
   /**
@@ -348,6 +446,12 @@ export interface ProjectLeftDrawerProps {
   /** New session: open project home, whose composer starts the session. */
   onNewSession: () => void;
   onOpenProjectSession: (session: ProjectSession) => void;
+  /**
+   * A sub-session row: show that OpenCode session — in place when its parent
+   * is the open thread, else after opening the parent (ProjectScreen,
+   * `drawerThreadMove`).
+   */
+  onOpenSubsession: (parent: ProjectSession, childId: string) => void;
   /** Sessions, Files, or Account: push over home, or replace the covering screen. */
   onNavigateRoute: (route: ProjectDrawerRoute, routeParams?: Record<string, string>) => void;
   /**
@@ -378,10 +482,12 @@ const EMPTY_NEEDS_YOU: ReadonlyMap<string, SessionNeedsYou> = new Map();
 export function ProjectLeftDrawer({
   projectId,
   activeProjectSessionId = null,
+  activeOpenCodeSessionId = null,
   reviewNeedsYouCount = 0,
   needsYouBySession = EMPTY_NEEDS_YOU,
   onNewSession,
   onOpenProjectSession,
+  onOpenSubsession,
   onNavigateRoute,
   onSessionActions,
   onOpenSwitcher,
@@ -553,19 +659,29 @@ export function ProjectLeftDrawer({
     [onClose, onOpenProjectSession]
   );
 
+  const handleOpenSubsession = useCallback(
+    (parent: ProjectSession, childId: string) => {
+      onClose();
+      onOpenSubsession(parent, childId);
+    },
+    [onClose, onOpenSubsession]
+  );
+
   const renderSession = useCallback(
     ({ item }: { item: SessionListRow }) => (
       <View className="px-2 -mx-1">
-        <ProjectSessionListItem
-          item={item.session}
-          active={item.session.session_id === activeProjectSessionId}
+        <DrawerSessionNode
+          session={item.session}
+          shown={item.session.session_id === activeProjectSessionId}
+          activeOpenCodeId={activeOpenCodeSessionId}
           nested={item.nested}
           onPress={handleOpenProjectSession}
           onLongPress={onSessionActions}
+          onPressSubsession={handleOpenSubsession}
         />
       </View>
     ),
-    [activeProjectSessionId, handleOpenProjectSession, onSessionActions]
+    [activeProjectSessionId, activeOpenCodeSessionId, handleOpenProjectSession, handleOpenSubsession, onSessionActions]
   );
 
   const handleNewSession = useCallback(() => {
@@ -624,13 +740,15 @@ export function ProjectLeftDrawer({
             {`Needs you · ${needsYouSessions.length}`}
           </Text>
           {needsYouSessions.map((session) => (
-            <ProjectSessionListItem
+            <DrawerSessionNode
               key={session.session_id}
-              item={session}
-              active={session.session_id === activeProjectSessionId}
+              session={session}
+              shown={session.session_id === activeProjectSessionId}
+              activeOpenCodeId={activeOpenCodeSessionId}
               needsYou={needsYouBySession.get(session.session_id)}
               onPress={handleOpenProjectSession}
               onLongPress={onSessionActions}
+              onPressSubsession={handleOpenSubsession}
             />
           ))}
         </View>
