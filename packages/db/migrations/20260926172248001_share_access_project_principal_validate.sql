@@ -1,6 +1,6 @@
 -- Migration: share_access_project_principal_validate
 --
--- Step 2/2 for 20260925150856534_share_access_project_principal.sql, which
+-- Step 2/2 for 20260926172248000_share_access_project_principal.sql, which
 -- added both CHECKs NOT VALID. They already govern every INSERT and UPDATE;
 -- this marks the pre-existing rows as checked. No existing row has
 -- principal_type 'project', and every existing principal_type is in the new

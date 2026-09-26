@@ -15,7 +15,7 @@
 --    more grants narrow it to the named groups and members.
 --
 -- Both CHECKs are added NOT VALID (a catalog update, no scan);
--- 20260925150857091_share_access_project_principal_validate.sql validates them.
+-- 20260926172248001_share_access_project_principal_validate.sql validates them.
 --
 -- mixed-version-safe: the principal-type CHECK is replaced by a strict
 -- superset — every value the old one accepted ('user', 'group',
