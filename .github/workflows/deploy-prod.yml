@@ -1038,7 +1038,17 @@ jobs:
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
       # docs/specs/config-releases.md#store
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
+      #
+      # CONFIG_RELEASES_ENABLED=true makes the `config_releases` flag
+      # AVAILABLE platform-wide (apps/api/src/feature-flags/registry.ts). It
+      # does not turn the feature on for any project: every project's flag
+      # still defaults to `enabled: false` (`platformDefault: () => false`),
+      # so no prod session changes behavior from this alone — an operator
+      # must still opt a project in through
+      # `PATCH /v1/projects/:projectId/features {feature:"config_releases",
+      # enabled:true}`. Prerequisites verified before adding this (bucket,
+      # IAM grant, retention, migrations): docs/runbooks/config-releases-rollout.md.
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","CONFIG_RELEASES_ENABLED":"true","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

@@ -68,12 +68,19 @@ Four flags read it from configuration; every other flag is always available:
 | `agent_tunnel` | `TUNNEL_ENABLED` is on |
 | `llm_gateway` | `LLM_GATEWAY_ENABLED` is on |
 | `monitors` | `PLATINUM_API_KEY` is set |
-| `config_releases` | `CONFIG_RELEASES_ENABLED` is on (default: on) |
+| `config_releases` | `CONFIG_RELEASES_ENABLED` is on (default: off) |
 
-`CONFIG_RELEASES_ENABLED=false` is a kill switch: it turns config releases off
-for every project at once, whatever each project chose, and the row disappears
-from Settings. Every session then reads its workspace config directory at its
-next boot or start.
+`CONFIG_RELEASES_ENABLED` defaults to `false`. It is an operator switch, off
+until an environment's prerequisites are met
+(`docs/runbooks/config-releases-rollout.md`). While it is off, the flag is
+unavailable platform-wide: the Settings row disappears, whatever a project
+chose. Once an operator sets it to `true`, the flag becomes *available* — each
+project still defaults to `enabled: false` (`platformDefault: () => false`),
+so turning the switch on changes no session's behavior by itself. Setting it
+back to `false` is a kill switch: it turns config releases off for every
+project at once, whatever each project chose, and the row disappears from
+Settings. Every session then reads its workspace config directory at its next
+boot or start.
 
 ## Stability badges
 
