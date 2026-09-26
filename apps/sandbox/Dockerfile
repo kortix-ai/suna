@@ -270,7 +270,7 @@ COPY --chown=kortix:kortix --chmod=755 apps/sandbox/slack-cli/ /opt/kortix/apps/
 RUN bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
     && kortix --version \
     && chown kortix:kortix /usr/local/bin /usr/local/bin/kortix \
-    && install -d -o kortix -g kortix -m 0755 /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \
+    && mkdir -p /home/kortix/.config/opencode && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \
     && chown -R kortix:kortix /workspace /ephemeral
 
 # Platform-owned secret delivery. The daemon writes live project secrets to

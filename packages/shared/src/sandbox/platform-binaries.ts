@@ -63,7 +63,12 @@ export const SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH =
  * create the directory as `kortix`), single line, no heredoc.
  */
 export const SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND =
-  'install -d -o kortix -g kortix -m 0755 /home/kortix/.config /home/kortix/.config/opencode' +
+  // `mkdir -p`, not `install -d -m 0755`: /home/kortix/.config already exists
+  // at 0700 on a built image, and `install -d` would chmod it to 0755. Nothing
+  // in a single-user sandbox depends on that being private, but loosening a
+  // mode is not this command's job.
+  'mkdir -p /home/kortix/.config/opencode' +
+  ' && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode' +
   ` && echo '{"autoupdate":false}' > ${SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH}` +
   ` && chown kortix:kortix ${SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH}` +
   ` && chmod 0644 ${SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH}`;
