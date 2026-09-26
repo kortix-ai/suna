@@ -15,6 +15,7 @@ this file is the longer operator's guide.
 ```bash
 kortix login            # writes ~/.config/kortix/config.json
 kortix tui              # first run: "Install now? [Y/n]" — experimental
+kortix t                # same thing, short
 ```
 
 `kortix tui` is a **launcher**, not the app. The `kortix` binary does not carry
@@ -22,6 +23,11 @@ the TUI: `@opentui/core` dlopen's an ~19 MB native library per platform and
 pulls React in with it, which is 14–21 MB of every `kortix` download for a
 command most people never run. So the TUI ships as its own release asset,
 `kortix-tui`, built by the same job.
+
+After a CLI update the launcher updates the TUI on its own: no prompt, one
+line on stderr, and the old version directories are removed. When the release
+did not change the binary (the published `.sha256` matches an installed copy)
+nothing is downloaded — the copy is reused in place.
 
 On the first run the launcher asks, downloads the `kortix-tui` matching this
 CLI's version from the same GitHub release, verifies it against the release's

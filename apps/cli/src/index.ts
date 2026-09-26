@@ -197,7 +197,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'tui',
             args: '[options]',
-            blurb: 'Experimental: the whole Kortix product as a terminal app',
+            blurb: 'Experimental: the whole Kortix product as a terminal app (alias: kortix t)',
           },
         ],
       },
@@ -589,7 +589,8 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'connect' || argv[0] === 'attach') {
     return runSessionsConnect(argv.slice(1));
   }
-  if (argv[0] === 'tui') {
+  // `kortix t` is the everyday spelling; `tui` stays the documented name.
+  if (argv[0] === 'tui' || argv[0] === 't') {
     return runTui(argv.slice(1));
   }
   if (argv[0] === 'files') {
@@ -689,6 +690,7 @@ const KNOWN_COMMANDS = [
   'connect',
   'attach',
   'tui',
+  't',
   'files',
   'cr',
   'review',

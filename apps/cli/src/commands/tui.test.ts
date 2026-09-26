@@ -40,6 +40,7 @@ function harness(
       return '/home/ada/.kortix/tui';
     },
     version: () => '1.2.3',
+    installedVersions: overrides.installedVersions ?? (() => []),
     isInteractive: () => true,
     ask: async (question) => {
       asked.push(question);
@@ -213,6 +214,31 @@ describe('kortix tui — first run installs the binary', () => {
     expect(h.asked[0]).toContain('1.2.3');
     expect(h.downloads).toEqual(['1.2.3']);
     expect(h.ran[0]?.bin).toBe('/home/ada/.kortix/tui/1.2.3/kortix-tui');
+  });
+
+  test('an upgrade never asks: an older version on disk means the user already said yes', async () => {
+    const h = harness({ findBin: () => null, installedVersions: () => ['1.2.2', 'dev'] });
+    expect(await runTui([], h.deps)).toBe(0);
+    expect(h.asked).toEqual([]);
+    expect(h.downloads).toEqual(['1.2.3']);
+    expect(stripAnsi(h.err.join(''))).toContain('Updating kortix-tui v1.2.2 → v1.2.3');
+    expect(h.ran[0]?.bin).toBe('/home/ada/.kortix/tui/1.2.3/kortix-tui');
+  });
+
+  test('only a local dev build on disk is still a first install, so it asks', async () => {
+    const h = harness({ findBin: () => null, installedVersions: () => ['dev'] });
+    expect(await runTui([], h.deps)).toBe(0);
+    expect(h.asked).toHaveLength(1);
+  });
+
+  test('an upgrade off a terminal proceeds too — nothing to ask', async () => {
+    const h = harness({
+      findBin: () => null,
+      installedVersions: () => ['1.2.2'],
+      isInteractive: () => false,
+    });
+    expect(await runTui([], h.deps)).toBe(0);
+    expect(h.downloads).toEqual(['1.2.3']);
   });
 
   test('answering no installs nothing, runs nothing, and exits 0', async () => {

@@ -4,17 +4,18 @@ import { loadAuthForHost } from '../api/auth.ts';
 import { takeFlagValue } from '../command-helpers.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, status } from '../style.ts';
+import { SUPERVISED_NOTICE, isSupervised } from '../supervised.ts';
 import {
   type TuiBinResolution,
   cliVersion,
   downloadTuiBin,
   findTuiBin,
+  installedTuiBins,
   isValidTuiVersion,
   managedTuiPath,
   removeTuiCache,
   tuiCacheRoot,
 } from '../tui-bin.ts';
-import { isSupervised, SUPERVISED_NOTICE } from '../supervised.ts';
 
 const DOCS_URL = 'https://kortix.com/docs/tui';
 
@@ -34,9 +35,13 @@ Experimental. Open the Kortix terminal client: the sidebar of sessions, the
 transcript and composer, a real shell inside the session sandbox, and the
 Files, Review, Apps, Customize and Account screens — all in your terminal.
 
+\`kortix t\` is the short spelling.
+
 The TUI is a SEPARATE binary (\`kortix-tui\`, ~80 MB). \`kortix\` does not carry
 it. The first \`kortix tui\` asks to install the copy that matches this CLI's
-version into ~/.kortix/tui/<version>/, then runs it. Every later run execs the
+version into ~/.kortix/tui/<version>/, then runs it. After a CLI update it
+updates the TUI by itself, reuses the installed copy when the release did not
+change it, and removes the old versions. Every later run execs the
 cached one.
 
 Authentication is this CLI's. It runs against the active host, or the one
@@ -158,6 +163,8 @@ export interface TuiDeps {
   uninstall: () => string;
   /** This CLI's version — the TUI is matched to it exactly. */
   version: () => string;
+  /** Managed versions already on disk. Non-empty means an upgrade, not a first install. */
+  installedVersions: () => string[];
   /** True only on a real terminal, where a question can be answered. */
   isInteractive: () => boolean;
   ask: (question: string, defaultValue: boolean) => Promise<boolean>;
@@ -173,6 +180,7 @@ const DEFAULT_DEPS: TuiDeps = {
   download: (version) => downloadTuiBin({ version }),
   uninstall: () => removeTuiCache(),
   version: () => cliVersion(),
+  installedVersions: () => installedTuiBins().map((installed) => installed.version),
   isInteractive: () => process.stdin.isTTY === true && process.stdout.isTTY === true,
   ask: (question, defaultValue) => confirm(question, defaultValue, { onEndOfInput: false }),
   run: spawnTui,
@@ -321,7 +329,19 @@ async function install(
     return 1;
   }
 
-  if (!skipPrompt) {
+  // An upgrade is not a first install. The user already said yes once; a
+  // question on every CLI release trains them to stop reading it, and the
+  // release may not even change the binary (then nothing is downloaded — see
+  // `downloadTuiBin`). One line says what is happening; old copies are pruned.
+  const previous = deps.installedVersions().filter((v) => v !== version && v !== 'dev');
+  const upgrade = previous.length > 0;
+  if (upgrade && !skipPrompt) {
+    deps.stderr(
+      `${C.dim}Updating kortix-tui ${previous.map(label).join(', ')} → ${label(version)}…${C.reset}\n`,
+    );
+  }
+
+  if (!skipPrompt && !upgrade) {
     if (!deps.isInteractive()) {
       deps.stderr(
         `${status.err('kortix tui needs the kortix-tui binary, which is not installed.')}\n` +

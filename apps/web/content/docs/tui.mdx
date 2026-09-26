@@ -22,6 +22,7 @@ Files, Review, Apps, Customize and Account screens.
 ```sh
 kortix login          # writes ~/.config/kortix/config.json
 kortix tui            # first run: "Install now? [Y/n]"
+kortix t              # the short spelling
 ```
 
 `kortix tui` signs in with the host you are already on, so there is nothing to
@@ -32,7 +33,9 @@ configure. It is a **launcher**: the TUI itself is a second binary,
 The first `kortix tui` asks before downloading. It fetches the `kortix-tui`
 build that matches this CLI's version from the same GitHub release the `kortix`
 binary came from, checks it against the release's `.sha256`, and stores it in
-`~/.kortix/tui/<version>/`. That takes a few seconds once per CLI version; every
+`~/.kortix/tui/<version>/`. After a CLI update the TUI updates itself with no
+prompt, reuses the installed copy when the release did not change it, and
+removes the old versions. That takes a few seconds once per CLI version; every
 later run execs the cached copy. A `kortix` that cannot reach GitHub, or a
 platform with no published build, is the one case where you build your own —
 see `KORTIX_TUI_BIN` below.
