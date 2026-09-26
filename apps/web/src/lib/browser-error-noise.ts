@@ -3563,6 +3563,30 @@ export function isNonErrorObjectNotFoundRejectionNoise(input: {
 // but NO code matcher existed for it (the note was a manual decision, not code)
 // — this matcher codifies that decision into a real, tested gate.
 //
+// --- 2026-09-26 sibling (KRTX-240): React's minified prod form of the SAME
+// message (`Minified React error #412; …`) ---
+// React's error-code map assigns 412 to the literal `Connection closed.`; React
+// formats its production errors as `Minified React error #<code>; visit
+// https://react.dev/errors/<code> for the full message or use the non-minified
+// dev environment for full errors and additional helpful warnings.`. React's
+// Flight (RSC) client emits it from `close()` via
+// `reportGlobalError(weakResponse, new Error('Connection closed.'))` when an RSC
+// stream ends with chunks still pending — an aborted navigation/prefetch, a
+// network blip, or the server ending the stream. In a Next.js App Router client
+// this is the transient RSC response-stream close, the SAME expected transport
+// condition as the library wording, just surfaced as React's formatted prod
+// error. Better Stack pattern
+// 3d9e3dd115f302ff96fa4bee9b54beed839db71851ea5b0ad7660778023ec6a7
+// (Kortix Frontend prod, application_id 2346967): 6 occurrences over 6 days
+// (first 2026-09-17, last 2026-09-23), 0 identified users (anonymous), all
+// Firefox, across the marketing/`/auth`/`/projects/start` routes, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT). The single
+// stack frame is the minified React chunk
+// `app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js` function `n` — NO
+// resolved first-party `apps/web/src/…` frame. The `Minified React error #412`
+// prefix is React's canonical formatted prod message (only the deep-link URL
+// varies), so it is specific; the same NEGATIVE guard applies.
+//
 // `Connection closed.` is generic enough that a real first-party
 // `throw new Error('Connection closed.')` regression in our own websocket/SSE
 // handling would surface with the SAME wording — so, mirroring
@@ -3585,18 +3609,38 @@ export function isNonErrorObjectNotFoundRejectionNoise(input: {
 // `Connection closed.` regression the negative guard exists to preserve; the
 // frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
 // is the only safe gate.
-const CONNECTION_CLOSED_NOISE_PATTERN = /^Connection closed\.$/;
+const CONNECTION_CLOSED_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // The library's own canonical close string (trailing period included).
+  /^Connection closed\.$/,
+  // React's minified PRODUCTION form of the SAME close: React's error-code map
+  // assigns 412 to the literal message `Connection closed.`, and React formats
+  // its prod errors as `Minified React error #<code>; visit
+  // https://react.dev/errors/<code> for the full message or use the
+  // non-minified dev environment for full errors and additional helpful
+  // warnings.`. React's Flight (RSC) client emits it from `close()` via
+  // `reportGlobalError(weakResponse, new Error('Connection closed.'))` when an
+  // RSC stream ends with chunks still pending — an aborted navigation/prefetch,
+  // a network blip, or the server ending the stream. It is the SAME transient
+  // transport-close condition as the library wording above, just surfaced as
+  // React's formatted prod error (Better Stack pattern `3d9e3dd1…`, KRTX-240).
+  // The `\b` keeps a near-worded number (`#4120`, `#41`) reporting.
+  /^Minified React error #412\b/,
+];
 
 /**
  * Whether a Sentry / window.onerror event is the transient WebSocket /
- * Server-Sent-Events (SSE) transport-close noise class: a client-side
- * WebSocket/SSE library threw the canonical `Connection closed.` message when
- * the server closed a background realtime connection (deploy / restart / idle-
- * timeout recycle / session end / load-balancer upstream recycle). The
- * connection closing during a deploy/idle-recycle is EXPECTED, not a product
- * bug. Requires the EXACT message (case-sensitive, WITH the trailing period —
- * the library's canonical close string; `Connection closed` without the period,
- * or `Connection closed by server`, keeps reporting) AND a NEGATIVE guard: if
+ * Server-Sent-Events (SSE) / React-Flight transport-close noise class: a
+ * client-side WebSocket/SSE library threw the canonical `Connection closed.`
+ * message when the server closed a background realtime connection, OR React's
+ * Flight (RSC) client emitted the SAME close as React's formatted production
+ * error `Minified React error #412; …` when an RSC stream ended with chunks
+ * still pending. Both are EXPECTED transient transport closes (deploy /
+ * restart / idle-timeout recycle / session end / load-balancer upstream
+ * recycle / aborted navigation / network blip), not a product bug. Requires one
+ * of the canonical close messages (case-sensitive, WITH the trailing period —
+ * `Connection closed` without the period, or `Connection closed by server`,
+ * keeps reporting; React's `#412` number uses a word boundary so `#4120` keeps
+ * reporting) AND a NEGATIVE guard: if
  * any frame (or the window.onerror `filename`) resolves to a de-minified
  * first-party `apps/web/src/…` source path, the event keeps reporting (a real
  * first-party `throw new Error('Connection closed.')` regression de-minifies to
@@ -3702,7 +3746,7 @@ export function isConnectionClosedNoise(input: {
   // `Error` instance serializes to, so strip that leading `Error: ` too before
   // anchoring on the library's exact canonical close string.
   const stripped = stripErrorWrappers(normalizeString(input.message)).replace(/^Error: /, '');
-  if (!CONNECTION_CLOSED_NOISE_PATTERN.test(stripped)) {
+  if (!CONNECTION_CLOSED_NOISE_PATTERNS.some((re) => re.test(stripped))) {
     return false;
   }
   // Collect every source location — the window.onerror `filename` (runtime
@@ -4390,11 +4434,13 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
-  // Transient WebSocket / SSE transport-close noise — a client-side
-  // websocket/SSE library threw the canonical `Connection closed.` message when
-  // the server closed a background realtime connection during a deploy / idle-
-  // timeout recycle / session end. The connection closing is EXPECTED, not a
-  // product bug. Requires the EXACT message (with trailing `.`) and a NEGATIVE
+  // Transient WebSocket / SSE / React-Flight transport-close noise — a
+  // client-side websocket/SSE library threw the canonical `Connection closed.`
+  // message when the server closed a background realtime connection, or React's
+  // Flight client emitted the SAME close as its formatted prod error
+  // `Minified React error #412; …` during a deploy / idle-timeout recycle /
+  // session end / aborted navigation. The connection closing is EXPECTED, not a
+  // product bug. Requires one of the canonical close messages and a NEGATIVE
   // guard so a real first-party `throw new Error('Connection closed.')`
   // regression keeps reporting. See `isConnectionClosedNoise`.
   if (isConnectionClosedNoise({ message, filename: input.filename })) {
@@ -5412,19 +5458,20 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
-  // Transient WebSocket / SSE transport-close noise — a client-side
-  // websocket/SSE library threw the canonical `Connection closed.` message when
-  // the server closed a background realtime connection on `/dashboard` during a
-  // deploy / idle-timeout recycle / session end / load-balancer upstream
-  // recycle. The connection closing is EXPECTED, not a product bug; sibling of
-  // the transient-transport class (#4609 gateway retry). Requires the EXACT
-  // message (case-sensitive, WITH the trailing period — the library's canonical
-  // close string) and a NEGATIVE guard: any resolved first-party
-  // `apps/web/src/…` frame → keep reporting (a real first-party
-  // `throw new Error('Connection closed.')` regression de-minifies to
-  // `apps/web/src/…` and must not be hidden). The prod event carries only a
-  // minified `66499` chunk frame, so the negative guard does not fire for it.
-  // A frameless capture with this exact message still classifies as noise.
+  // Transient WebSocket / SSE / React-Flight transport-close noise — a
+  // client-side websocket/SSE library threw the canonical `Connection closed.`
+  // message when the server closed a background realtime connection on
+  // `/dashboard` during a deploy / idle-timeout recycle / session end /
+  // load-balancer upstream recycle, OR React's Flight client emitted the SAME
+  // close as its formatted prod error `Minified React error #412; …` when an RSC
+  // stream ended with chunks pending. The connection closing is EXPECTED, not a
+  // product bug; sibling of the transient-transport class (#4609 gateway retry).
+  // Requires one of the canonical close messages (case-sensitive) and a NEGATIVE
+  // guard: any resolved first-party `apps/web/src/…` frame → keep reporting (a
+  // real first-party `throw new Error('Connection closed.')` regression
+  // de-minifies to `apps/web/src/…` and must not be hidden). The prod events
+  // carry only minified chunk frames, so the negative guard does not fire. A
+  // frameless capture with one of these messages still classifies as noise.
   // This codifies the historical skip-list decision for `6c28b5b4…`-class
   // patterns into a real, tested matcher. NOT in `ignoreErrors` (no frame
   // context there). See `isConnectionClosedNoise`.
