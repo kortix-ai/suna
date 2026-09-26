@@ -6,6 +6,15 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- The wire message-id clock is public: `mintWireMessageIdAbove` (mint above a
+  known floor clock, with an optional `backdateMs`), `newestWireIdClock`,
+  `wireIdClock`, `wireIdClockAt`, `isWireIdAheadOf`, `WIRE_MESSAGE_ID`, and the
+  clock constants. `wireIdClockDelta(clock, reference)` is the signed distance
+  between two clocks on the 48-bit ring and `maxWireIdClock(clocks)` the newest
+  of several; compare clocks with these, never with `>`, so ids on both sides
+  of a wrap keep their order. Exported from the root and from
+  `@kortix/sdk/wire-message-id`, which loads this one import-free module.
+  `mintWireMessageId` is unchanged.
 - Typed unified session-cost reads through
   `billing.sessionCosts.{list,get}` and `session(pid,sid).cost()`. The response
   combines finalized LLM and compute costs, model usage, and ledger entries.
