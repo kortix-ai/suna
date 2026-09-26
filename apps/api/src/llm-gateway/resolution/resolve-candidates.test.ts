@@ -734,6 +734,15 @@ describe('resolveCandidates — codex, unconfigured session, project-shared Chat
     expect((await resolveCandidates(actor, 'codex/gpt-6')).map((c) => c.apiKey)).toEqual(['legacy-token']);
   });
 
+  test('an agent without the grant gets the grant refusal, not a cooldown, when every shared account cools down', async () => {
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: true, retryAfterSeconds: 9, secrets: [] };
+    const actor = principal({ sessionId: 's', personalUserId: null, agentGrant: { env: ['OTHER'] } });
+    await expect(resolveCandidates(actor, 'codex/gpt-6')).rejects.toMatchObject({
+      code: 'provider_not_connected', message: 'The running agent cannot use ChatGPT connections.',
+    });
+  });
+
   test('a project gateway API key (keyId) keeps the legacy-only behavior', async () => {
     pooledEnabled = true;
     codexCredential = { access: 'legacy-token' };

@@ -192,7 +192,7 @@ export async function resolveCandidates(
         accountId: principal.accountId, projectId: principal.projectId,
         userId: principal.userId, grantUserId: personalUserId, providerId: 'codex', name: 'CODEX_AUTH_JSON',
       });
-      if (shared.secrets.length && !agentMayUseChatGptAccounts) {
+      if ((shared.secrets.length || shared.coolingDown) && !agentMayUseChatGptAccounts) {
         // Before this fallback existed such an agent reached only the legacy
         // connection; it still may, but never a shared account.
         sharedFailure = agentGrantRefusal();
