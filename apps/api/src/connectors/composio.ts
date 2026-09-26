@@ -131,6 +131,9 @@ export function setComposioRuntimeForTest(next: ComposioRuntime | null): void {
   runtime = next;
 }
 
+/** The exact phrase Composio's Tool Router uses when a requested toolkit slug is unknown. */
+const INVALID_TOOLKIT_SLUGS_MARKER = 'Invalid toolkit slugs';
+
 function directSessionConfig(toolkit: string, connectedAccountId?: string | null): ToolRouterCreateSessionConfig {
   return {
     sessionPreset: 'direct_tools',
@@ -141,6 +144,58 @@ function directSessionConfig(toolkit: string, connectedAccountId?: string | null
   };
 }
 
+/**
+ * The slugs Composio named in a `ToolRouterV2_InvalidToolkitSlugs` rejection
+ * (HTTP 400, code 4305). `anthropic` is a Kortix model provider, not a Composio
+ * toolkit — a connector can hold such a slug because it was typed by hand
+ * (`kortix connectors add --provider composio --app <slug>`) or because the
+ * catalogue dropped an app after the connector was added. The connector sync
+ * already rejects those slugs; this names them for the connect path.
+ *
+ * Returns `null` for any other error, so callers re-throw it untouched.
+ */
+export function invalidToolkitSlugsFromError(error: unknown): string[] | null {
+  const message = error instanceof Error ? error.message : String(error);
+  const marker = message.indexOf(INVALID_TOOLKIT_SLUGS_MARKER);
+  if (marker === -1) return null;
+  const [named = ''] = message
+    .slice(marker + INVALID_TOOLKIT_SLUGS_MARKER.length)
+    .replace(/^\s*:?\s*/, '')
+    .split(/[.\n"]/);
+  return named
+    .split(',')
+    .map((slug) => slug.trim())
+    .filter(Boolean);
+}
+
+/**
+ * An unusable connector configuration, not a platform fault. A 4xx is logged
+ * at `warn` and never captured to Sentry (index.ts), which is the whole point:
+ * the raw Composio rejection used to reach Better Stack as a handled 500.
+ */
+function toolkitUnsupportedError(toolkit: string, slugs: readonly string[]): HTTPException {
+  const named = slugs.length > 0 ? slugs.join(', ') : toolkit;
+  return new HTTPException(422, {
+    message: `Composio does not recognise toolkit slug "${named}". The connector's configured app is not a valid Composio toolkit — re-add it from the catalogue.`,
+  });
+}
+
+/** Create the toolkit-scoped session, mapping Composio's slug rejection to a 422. */
+async function createToolkitSession(
+  runtime: ComposioRuntime,
+  userId: string,
+  toolkit: string,
+  config: ToolRouterCreateSessionConfig,
+): Promise<ComposioSessionLike> {
+  try {
+    return await runtime.sessions.create(userId, config);
+  } catch (error) {
+    const slugs = invalidToolkitSlugsFromError(error);
+    if (slugs) throw toolkitUnsupportedError(toolkit, slugs);
+    throw error;
+  }
+}
+
 async function useOrCreateSession(input: {
   runtime: ComposioRuntime;
   connectionId: string;
@@ -149,8 +204,10 @@ async function useOrCreateSession(input: {
   connectedAccountId?: string | null;
 }): Promise<ComposioSessionLike> {
   if (input.sessionId) return input.runtime.sessions.use(input.sessionId);
-  return input.runtime.sessions.create(
+  return createToolkitSession(
+    input.runtime,
     composioUserId(input.connectionId),
+    input.toolkit,
     directSessionConfig(input.toolkit, input.connectedAccountId),
   );
 }
@@ -162,7 +219,10 @@ function toolkitState(page: ToolkitConnectionsDetails, toolkit: string) {
 async function loadToolkitState(session: ComposioSessionLike, toolkit: string) {
   const page = await session.toolkits({ toolkits: [toolkit], limit: 1 });
   const state = toolkitState(page, toolkit);
-  if (!state) throw new Error(`composio toolkit not found: ${toolkit}`);
+  // Same user-configuration class as an invalid slug at session create: the
+  // connector names an app Composio no longer lists. A controlled 422, not an
+  // unhandled 500.
+  if (!state) throw toolkitUnsupportedError(toolkit, []);
   return state;
 }
 
@@ -338,8 +398,10 @@ export async function composioCatalogTools(input: {
   toolkit: string;
   runtime?: ComposioRuntime;
 }): Promise<ComposioToolLike[]> {
-  const session = await (input.runtime ?? getComposioRuntime()).sessions.create(
+  const session = await createToolkitSession(
+    input.runtime ?? getComposioRuntime(),
     `kortix-catalog:${input.projectId}:${input.connectorSlug}`,
+    input.toolkit,
     directSessionConfig(input.toolkit),
   );
   return session.tools();
@@ -463,11 +525,13 @@ export async function composioConnectUrl(input: {
 }): Promise<ComposioConnectResult> {
   assertStableUserId(input.connectionId, input.stableUserId);
   const runtime = input.runtime ?? getComposioRuntime();
-  const session = await runtime.sessions.create(
+  // Leave authConfigs unset. Composio's managed app is the supported
+  // zero-setup path. Custom OAuth scopes require a verified app owned by the
+  // customer and must not be smuggled into the managed client.
+  const session = await createToolkitSession(
+    runtime,
     input.stableUserId,
-    // Leave authConfigs unset. Composio's managed app is the supported
-    // zero-setup path. Custom OAuth scopes require a verified app owned by the
-    // customer and must not be smuggled into the managed client.
+    input.app,
     directSessionConfig(input.app),
   );
   const state = await loadToolkitState(session, input.app);
