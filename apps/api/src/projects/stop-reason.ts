@@ -45,6 +45,11 @@ export const STOP_REASONS = [
   /** The sandbox row reached a state /start cannot use while the session row
    *  still claimed to be live. A control-plane desync, not a provider event. */
   'unusable_runtime_state',
+  /** Rule 4 admission control (docs/specs/runtime-convergence.md): the box
+   *  came up but failed to PROVE its runtime identity — missing
+   *  `config.release.v1`, below the daemon-build floor, or a stale catalog
+   *  fingerprint. Replaced rather than handed to the session. */
+  'runtime_admission_refused',
   /** A human stopped or deleted it. */
   'manual',
   /** An ops sweep parked a wedged box outside the normal reaper. Not a user

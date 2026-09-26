@@ -16,6 +16,9 @@ import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
 import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
+import { configReleasesEnabled } from '../../config-releases/enabled';
+import { admitRunningSandbox } from '../../runtime-convergence/admit-running-sandbox';
+import { runtimeAdmissionEnforced } from '../../runtime-convergence/admission';
 import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
@@ -1516,6 +1519,59 @@ async function runOpenSession(args: {
   } else {
     await clearRuntimeReadinessClocks(row);
   }
+
+  // ── Rule 4 admission control (docs/specs/runtime-convergence.md) ─────────
+  // "Before a box is handed to a session, it must prove its runtime identity…
+  // A box that fails admission is replaced, not used." This is the ONE
+  // chokepoint every session-open path shares — `runOpenSession` is what
+  // `/start`, warm-session adoption, restart, and resume-from-stopped all
+  // funnel through (see the flows into `openSession` above) — so gating here
+  // covers all of them without touching each caller.
+  //
+  // Scoped to `configReleasesEnabled`: the whole contract this spec describes
+  // is conditioned on that flag ("With config_releases on, a session runs…
+  // the platform's current runtime" — spec §1). A project with the flag off
+  // never resolves a desired release anywhere else in this file either (see
+  // the CHOKEPOINT comment on `GET /config`), and admission's release-id
+  // resolution would otherwise pay a git-mirror round trip for a promise this
+  // deployment never made.
+  //
+  // Only checked once the box is CONFIRMED provider-running and OpenCode has
+  // answered (`!booting`) — never while still booting, where a health 503 is
+  // completely normal and must not read as an admission failure.
+  if (!booting && configReleasesEnabled(loaded.row.metadata)) {
+    const admission = await admitRunningSandbox({
+      externalId: runningExternalId,
+      userId: loaded.userId,
+      project: {
+        projectId,
+        repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      },
+      baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
+      sessionAgent: visible.row.agentName ?? null,
+      repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
+      sessionId,
+    }).catch(() => ({ admitted: true as const }));
+    // `admitRunningSandbox` already logged the refusal (observable from the
+    // moment this ships). ENFORCEMENT — actually replacing the box — is a
+    // separate, deliberate opt-in: see `runtimeAdmissionEnforced`.
+    if (!admission.admitted && runtimeAdmissionEnforced()) {
+      log.did('reconciled');
+      return preserveEstablishedRuntimeOnOpen(
+        loaded,
+        visible,
+        projectId,
+        sessionId,
+        row,
+        `runtime_admission_refused:${admission.failedCheck}`,
+        'runtime_admission_refused',
+      );
+    }
+  }
+
   return {
     stage: booting ? 'starting' : 'ready',
     agent_name: visible.row.agentName ?? 'default',
