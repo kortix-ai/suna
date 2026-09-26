@@ -256,8 +256,9 @@ export function useNewProjectSession(projectId: string | undefined) {
         const sessionId = crypto.randomUUID();
         markSessionFresh(sessionId);
         router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
+        let created: ProjectSession | undefined;
         try {
-          await createProjectSession(projectId, {
+          created = await createProjectSession(projectId, {
             session_id: sessionId,
             ...opts?.create,
           });
@@ -272,6 +273,13 @@ export function useNewProjectSession(projectId: string | undefined) {
               Boolean(await getProjectSession(projectId, sessionId, { showErrors: false })),
             ));
           if (!committed) throw error;
+        }
+        // Into every cached list the moment the server has the row, so the
+        // sidebar shows it before the navigation and the reconciling refetch.
+        // A 202 ("accepted, poll the session") carries no row and inserts
+        // nothing; neither does the timeout path above.
+        if (created?.project_id === projectId) {
+          upsertCachedProjectSession(queryClient, projectId, created);
         }
         return sessionId;
       };

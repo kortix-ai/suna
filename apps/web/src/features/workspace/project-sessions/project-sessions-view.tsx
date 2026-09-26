@@ -44,7 +44,7 @@ import {
   stopProjectSession,
   type ProjectSession,
 } from '@kortix/sdk';
-import { qk, useProjectSessions } from '@kortix/sdk/react';
+import { qk, removeCachedProjectSession, useProjectSessions } from '@kortix/sdk/react';
 import { CaretRightIcon, ChatIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
@@ -434,7 +434,24 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       );
       return summarizeBulkDelete(results, tI18nComplete);
     },
-    onSuccess: (summary) => {
+    // Every selected row leaves the lists before the first DELETE is sent.
+    // Only the FIRST removal's restore is kept: it returns the lists to their
+    // state before the batch, and each later one would miss the rows the
+    // earlier removals had already taken out.
+    onMutate: (sessionIds) => {
+      const [restore] = sessionIds.map((sessionId) =>
+        removeCachedProjectSession(queryClient, projectId, sessionId),
+      );
+      return restore;
+    },
+    onSuccess: (summary, _sessionIds, restore) => {
+      // The rows the server kept come back; the deleted ones stay gone.
+      if (summary.failed.length > 0) {
+        restore?.();
+        for (const sessionId of summary.succeeded) {
+          removeCachedProjectSession(queryClient, projectId, sessionId);
+        }
+      }
       // Partial failure is a real outcome, not an error. Reporting "Deleted 7"
       // while two rows survive is worse than reporting nothing.
       if (summary.failed.length === 0) successToast(summary.message);
@@ -445,7 +462,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       exitSelectMode();
       invalidateSessions();
     },
-    onError: (error) => {
+    onError: (error, _sessionIds, restore) => {
+      restore?.();
       errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text928228f0f221'));
       setBulkConfirmOpen(false);
     },
@@ -479,10 +497,15 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
 
   const allSelected =
     selectableSessions.length > 0 && visibleSelection.size === selectableSessions.length;
+  // The batch in flight, not the live selection: its rows leave the list, and
+  // with them the selection, the moment the delete starts.
+  const selectedCount = bulkDeleteMutation.isPending
+    ? bulkDeleteMutation.variables.length
+    : visibleSelection.size;
 
   const header = selectMode ? (
     <SessionsSelectionBar
-      selectedCount={visibleSelection.size}
+      selectedCount={selectedCount}
       selectableCount={selectableSessions.length}
       allSelected={allSelected}
       onSelectAll={() =>
@@ -691,11 +714,11 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         open={bulkConfirmOpen}
         onOpenChange={(open) => !bulkDeleteMutation.isPending && setBulkConfirmOpen(open)}
         title={tI18nComplete('text7ed6733a3900', {
-          value0: visibleSelection.size,
-          value1: visibleSelection.size === 1 ? 'session' : 'sessions',
+          value0: selectedCount,
+          value1: selectedCount === 1 ? 'session' : 'sessions',
         })}
         description={tI18nComplete.raw('textac371f652a2d')}
-        confirmLabel={`Delete ${visibleSelection.size}`}
+        confirmLabel={`Delete ${selectedCount}`}
         confirmVariant="destructive"
         isPending={bulkDeleteMutation.isPending}
         onConfirm={() => bulkDeleteMutation.mutate([...visibleSelection])}
