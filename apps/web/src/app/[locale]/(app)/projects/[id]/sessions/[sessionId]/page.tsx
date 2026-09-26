@@ -52,6 +52,7 @@ import {
   SessionConnectingBanner,
   SessionStartingLoader,
 } from '@/features/session/session-starting-loader';
+import { SessionNoticeBanner } from '@/features/session/session-notice-banner';
 import {
   hasOrExpectsTranscript,
   resolveBootPresentation,
@@ -554,9 +555,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
 
   // Transcript evidence — the veto that keeps a stale hint from stranding a real
   // session on the empty new-session surface. It comes from `useSession`'s own
-  // sync, which paints from the local IndexedDB cache WITHOUT waiting for the
-  // sandbox, so it lands while a hibernated box is still waking and without the
-  // chat having mounted. Latched: the store only ever grows for a live session,
+  // sync, which paints the saved copy (the one this device kept, then the
+  // server's) WITHOUT waiting for the sandbox, so it lands while a hibernated
+  // box is still waking and without the chat having mounted. Latched: the store only ever grows for a live session,
   // but a transient empty read must never resurrect the shell.
   const [sawTranscript, setSawTranscript] = useState(false);
   useEffect(() => {
@@ -720,12 +721,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // switch completes; `useSessionSync` then fills the transcript from the live
   // runtime once useSession finishes the switch.
   //
-  // There is NO local paint any more. An IndexedDB mirror used to render the
-  // transcript without waiting for the sandbox, and it was removed because its
-  // freshness test could not see a turn ENDING — see `use-session-sync.ts`. So
-  // opening a hibernated session shows the loading state for the length of the
-  // wake again, which is honest but slower. Re-solving it needs a mirror that
-  // compares the message, not the transcript's shape.
+  // The transcript paints before the sandbox answers from the SAVED COPY: the
+  // one this device kept from its last open, then the server's, which the API
+  // writes because a turn ended (`use-session-sync.ts`). The old IndexedDB
+  // mirror of the live store was removed because it could not see a turn
+  // ending; a server capture cannot get that wrong.
   const canMountChat = sessionContentAvailable;
   // For a genuinely new session, hold the real chat until the user actually sends
   // their first message — the instant shell is the typing surface until then, and
@@ -865,6 +865,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       );
     }
 
+    // A readable conversation is never replaced by a card. With a transcript
+    // on screen — and the saved copy paints one before the computer answers —
+    // each terminal state below becomes a banner ABOVE the thread instead, with
+    // the same words and the same action. The full-screen card is kept for a
+    // session with nothing to read.
+    let notice: ReactNode = null;
+
     // The wake ladder is still working: a session with rungs left is not a dead
     // end, and painting one is the exact defect this replaces — the card fired
     // while the box was seconds from ready. The transcript mirror keeps
@@ -886,29 +893,39 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         );
       }
     } else if (recoverableFailure) {
-      return (
-        <InlineSessionError
+      // A dead end that cannot say what was already attempted invites the
+      // user to repeat it by hand. `wake.summary` names every rung the ladder
+      // used before giving up. It rides in the MESSAGE, not in `detail`: that
+      // slot is monospace, for provider ids and raw errors, and a sentence in
+      // it wraps mid-word.
+      const failureMessage = wake.summary
+        ? `${recoverableFailure.message} ${wake.summary}`
+        : recoverableFailure.message;
+      const failureRecovery = (
+        <ProviderFailureRecovery
+          pendingPrompt={pendingPrompt}
+          isRetrying={restart.isPending}
+          onRetry={handleProvisioningRetry}
+          onCopy={() => void copyPendingPrompt()}
+          onDelete={() => setDeleteOpen(true)}
+        />
+      );
+      if (!hasTranscript) {
+        return (
+          <InlineSessionError
+            title={recoverableFailure.title}
+            message={failureMessage}
+            detail={restart.errorMessage ?? undefined}
+            action={failureRecovery}
+          />
+        );
+      }
+      notice = (
+        <SessionNoticeBanner
+          tone="destructive"
           title={recoverableFailure.title}
-          // A dead end that cannot say what was already attempted invites the
-          // user to repeat it by hand. `wake.summary` names every rung the
-          // ladder used before giving up. It rides in the MESSAGE, not in
-          // `detail`: that slot is monospace, for provider ids and raw errors,
-          // and a sentence in it wraps mid-word.
-          message={
-            wake.summary
-              ? `${recoverableFailure.message} ${wake.summary}`
-              : recoverableFailure.message
-          }
-          detail={restart.errorMessage ?? undefined}
-          action={
-            <ProviderFailureRecovery
-              pendingPrompt={pendingPrompt}
-              isRetrying={restart.isPending}
-              onRetry={handleProvisioningRetry}
-              onCopy={() => void copyPendingPrompt()}
-              onDelete={() => setDeleteOpen(true)}
-            />
-          }
+          message={restart.errorMessage ?? failureMessage}
+          action={failureRecovery}
         />
       );
     }
@@ -917,35 +934,54 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // `sandbox.status`, which does not exist here, so this state used to fall
     // into the FAILURE card above and claim a session that merely stopped had
     // failed before it ever got a computer.
-    if (dormantWithoutRuntime) {
+    if (!notice && dormantWithoutRuntime) {
       // A migrated session's first open lands here by design: it has never had
       // a computer. "Stopped" would be a lie — nothing ever ran. Say what it is
       // and make the CTA the restore it actually performs.
       if (currentProjectSession && isLegacyMigratedSession(currentProjectSession)) {
+        const restoreAction = (
+          <RestartSessionButton
+            restart={restart}
+            onRestart={handleRestart}
+            label={tSessionPage('legacy.restore')}
+            pendingLabel={tSessionPage('legacy.restoring')}
+          />
+        );
+        if (!hasTranscript) {
+          return (
+            <InlineSessionError
+              title={tSessionPage('legacy.title')}
+              message={tSessionPage('legacy.message')}
+              detail={restart.errorMessage ?? undefined}
+              action={restoreAction}
+            />
+          );
+        }
+        notice = (
+          <SessionNoticeBanner
+            title={tSessionPage('legacy.title')}
+            message={restart.errorMessage ?? tSessionPage('legacy.message')}
+            action={restoreAction}
+          />
+        );
+      } else if (!hasTranscript) {
         return (
           <InlineSessionError
-            title={tSessionPage('legacy.title')}
-            message={tSessionPage('legacy.message')}
+            title={tSessionPage('stopped.title')}
+            message={tSessionPage('stopped.message')}
             detail={restart.errorMessage ?? undefined}
-            action={
-              <RestartSessionButton
-                restart={restart}
-                onRestart={handleRestart}
-                label={tSessionPage('legacy.restore')}
-                pendingLabel={tSessionPage('legacy.restoring')}
-              />
-            }
+            action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
+          />
+        );
+      } else {
+        notice = (
+          <SessionNoticeBanner
+            title={tSessionPage('stopped.title')}
+            message={restart.errorMessage ?? tSessionPage('stopped.message')}
+            action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
           />
         );
       }
-      return (
-        <InlineSessionError
-          title={tSessionPage('stopped.title')}
-          message={tSessionPage('stopped.message')}
-          detail={restart.errorMessage ?? undefined}
-          action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
-        />
-      );
     }
 
     // The provider lost this session's computer. THIS MUST NEVER HAPPEN, and
@@ -959,17 +995,30 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // into a fresh session: the server deliberately preserved this identity
     // instead of attaching a replacement box, and the UI must not undo that.
     // Say what happened, name the id, and stop.
-    if (runtimeIdentityUnavailable && !previousRepositoryHistoryAvailable) {
-      return (
-        <InlineSessionError
+    if (!notice && runtimeIdentityUnavailable && !previousRepositoryHistoryAvailable) {
+      const deleteAction = (
+        <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)}>
+          {tSessionPage('delete')}
+        </Button>
+      );
+      if (!hasTranscript) {
+        return (
+          <InlineSessionError
+            title={tSessionPage('lost.title')}
+            message={tSessionPage('lost.message')}
+            detail={sandbox?.external_id ? `${sandbox.provider} · ${sandbox.external_id}` : undefined}
+            action={deleteAction}
+          />
+        );
+      }
+      // The conversation stays readable: nothing can continue it, but nothing
+      // about losing the computer made its history untrue.
+      notice = (
+        <SessionNoticeBanner
+          tone="destructive"
           title={tSessionPage('lost.title')}
           message={tSessionPage('lost.message')}
-          detail={sandbox?.external_id ? `${sandbox.provider} · ${sandbox.external_id}` : undefined}
-          action={
-            <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)}>
-              {tSessionPage('delete')}
-            </Button>
-          }
+          action={deleteAction}
         />
       );
     }
@@ -1118,7 +1167,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             chat paints while the box is still coming up. What SENDING will do
             during the wake is the composer's own notice; this says only which
             phase the boot is in. */}
-        {bootPresentation === 'banner' && (startStage !== 'ready' || !chatReady) && (
+        {notice}
+        {!notice && bootPresentation === 'banner' && (startStage !== 'ready' || !chatReady) && (
           <SessionConnectingBanner
             stage={authLoading || !user ? 'provisioning' : startStage}
             projectId={projectId}
