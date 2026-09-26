@@ -127,6 +127,7 @@
       [
         "expo-notifications",
         {
+          "icon": "./assets/images/notification-icon.png",
           "sounds": [
             "./assets/sounds/kortix/kortix_complete.wav",
             "./assets/sounds/kortix/kortix_attention.wav",
