@@ -59,7 +59,9 @@ export {
 } from './browser-noise/rules/graphics';
 export {
   isOneTrustJsonParseNoise,
+  isRedefineInjectedWalletNoise,
   isRedefineWebdriverNoise,
+  isVercelLiveFeedbackNoise,
 } from './browser-noise/rules/injected-scripts';
 export {
   isKnownBrowserNoiseMessage,

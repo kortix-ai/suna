@@ -1,5 +1,10 @@
 import type { NoiseRule } from '../evidence';
-import { isFirstPartyResolvedSource, isResolvableFrameSource, normalizeString } from '../evidence';
+import {
+  isBrowserBundleSource,
+  isFirstPartyResolvedSource,
+  isResolvableFrameSource,
+  normalizeString,
+} from '../evidence';
 
 // Sentry 10.x's GlobalHandlers `onunhandledrejection` integration synthesizes a
 // placeholder message when a promise rejects with a value that is NOT an Error
@@ -88,9 +93,8 @@ export function isNonErrorUndefinedRejectionNoise(input: {
   if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
     return false;
   }
-  // Negative guard #2: any resolvable source location (real chunk/URL/named
-  // file) → an attributable error with a real stack; keep reporting. Only the
-  // frameless capture (the production noise pattern) remains → drop it.
+  // Other resolved stacks remain attributable errors. The frameless capture
+  // and the anchored WebGPU renderer stack are the two noise shapes.
   if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
     return false;
   }
@@ -163,7 +167,7 @@ const OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN = /^Instance dropped in popErrorSc
  */
 export function isOperationErrorPopErrorScopeNoise(input: {
   message?: unknown;
-  frames?: Array<{ filename?: unknown } | undefined>;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
 }): boolean {
   const message = normalizeString(input.message);
   if (!OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN.test(message)) {
@@ -176,6 +180,11 @@ export function isOperationErrorPopErrorScopeNoise(input: {
   if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
     return false;
   }
+  // A minified browser bundle frame with a WebGPU renderer pipeline method
+  // identifies the stack-bearing form of the device-loss rejection.
+  if (frames.some(isWebGpuRendererPipelineFrame)) {
+    return true;
+  }
   // Negative guard #2: any resolvable source location (real chunk/URL/named
   // file) → an attributable error with a real stack; keep reporting. Only the
   // frameless capture (the production noise pattern) remains → drop it.
@@ -183,6 +192,21 @@ export function isOperationErrorPopErrorScopeNoise(input: {
     return false;
   }
   return true;
+}
+
+const WEBGPU_RENDERER_PIPELINE_FRAME_FUNCTIONS = new Set([
+  'createRenderPipeline',
+  '_getRenderPipeline',
+  'getForRender',
+  'updateForRender',
+]);
+
+function isWebGpuRendererPipelineFrame(
+  frame: { filename?: unknown; function?: unknown } | undefined,
+): boolean {
+  const name = normalizeString(frame?.function);
+  const method = name.slice(name.lastIndexOf('.') + 1);
+  return isBrowserBundleSource(frame?.filename) && WEBGPU_RENDERER_PIPELINE_FRAME_FUNCTIONS.has(method);
 }
 
 // Supabase gotrue `TOKEN_EXPIRED` auth-session rejection noise — a Supabase

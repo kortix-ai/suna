@@ -9,6 +9,7 @@ import {
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
+  'safari-extension://',
   'safari-web-extension://',
   'extension://',
 ] as const;

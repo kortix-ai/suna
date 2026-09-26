@@ -170,6 +170,8 @@ export function isOneTrustJsonParseNoise(input: {
 // frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
 // is the only safe gate.
 const REDEFINE_WEBDRIVER_NOISE_MESSAGE = /^Cannot redefine property: webdriver$/;
+const REDEFINE_WALLET_PROVIDER_NOISE_MESSAGE =
+  /^Cannot redefine property: (?:ethereum|solana|web3|tronWeb)$/;
 
 /**
  * Whether a Sentry / window.onerror event is the bot / automation-framework /
@@ -211,7 +213,34 @@ export function isRedefineWebdriverNoise(input: {
   return true;
 }
 
+/** Keep first-party defineProperty failures visible, including wallet globals. */
+export function isRedefineInjectedWalletNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  return (
+    REDEFINE_WALLET_PROVIDER_NOISE_MESSAGE.test(stripped) &&
+    !sourcesOf(input).some(isFirstPartyResolvedSource)
+  );
+}
+
+/** Vercel toolbar frames have a reserved source path outside app bundles. */
+export function isVercelLiveFeedbackNoise(input: {
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const sources = sourcesOf(input);
+  const isFeedbackFrame = (source: unknown): boolean =>
+    /^app:\/\/\/_next-live\/feedback\//.test(normalizeString(source)) ||
+    /^https?:\/\/[^/]+\/_next-live\/feedback\//.test(normalizeString(source));
+  return sources.some(isFeedbackFrame) && !sources.some(isFirstPartyResolvedSource);
+}
+
 export const INJECTED_SCRIPT_RULES: readonly NoiseRule[] = [
   { id: 'onetrust-json-parse', appliesTo: 'both', match: isOneTrustJsonParseNoise },
   { id: 'redefine-webdriver', appliesTo: 'both', match: isRedefineWebdriverNoise },
+  { id: 'redefine-wallet-provider', appliesTo: 'both', match: isRedefineInjectedWalletNoise },
+  { id: 'vercel-live-feedback', appliesTo: 'both', match: isVercelLiveFeedbackNoise },
 ];

@@ -213,7 +213,13 @@ export async function preserveEstablishedRuntime(
 
   if (!preserved) return null;
 
-  reportLostRuntime(preserved, reason, stopReason, now);
+  // Once per identity. Every open of a lost session runs the removed path and
+  // lands here again (the client polls /start every second), and each pass
+  // used to report the same loss as a new one.
+  const before = (row.metadata as Record<string, unknown> | null) ?? {};
+  const alreadyReported =
+    before.runtimeIdentityState === 'unavailable' && before.preservedExternalId === externalId;
+  if (!alreadyReported) reportLostRuntime(preserved, reason, stopReason, now);
   return preserved;
 }
 
