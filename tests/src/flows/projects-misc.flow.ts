@@ -610,6 +610,81 @@ flow(
   },
 );
 
+// PROJ-37 — PUT and DELETE /model-defaults run one guard in one order:
+// project visible (404) → project.customize.write (403) → project LLM gateway
+// enabled (404 llm_gateway_disabled). Same caller + same project state → same
+// status on both verbs. Every denial fires before model servability is
+// checked. PROJ-27 covers the funded set/read/clear lifecycle; this local
+// flow proves an authorized writer reaches model validation and deletion.
+flow(
+  'PROJ-37',
+  {
+    domain: 'projects',
+    routes: [
+      'PATCH /v1/projects/:projectId/experimental',
+      'GET /v1/projects/:projectId/model-defaults',
+      'PUT /v1/projects/:projectId/model-defaults',
+      'DELETE /v1/projects/:projectId/model-defaults',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const gatewayOff = await team.project();
+    const gatewayOn = await team.project();
+    const user = await team.addMember('member');
+    const manager = await team.addMember('member');
+    for (const project of [gatewayOff, gatewayOn]) {
+      await team.grantProjectRole(project.id, user.userId!, 'user');
+      await team.grantProjectRole(project.id, manager.userId!, 'manager');
+    }
+    const path = '/v1/projects/:projectId/model-defaults';
+    const put = (actor: typeof user, projectId: string, model = 'guard-probe-model') =>
+      ctx.client.as(actor).put(path, { scope: 'project', model }, { params: { projectId } });
+    const del = (actor: typeof user, projectId: string) =>
+      ctx.client.as(actor).del(path, { params: { projectId }, query: { scope: 'project' } });
+
+    await ctx.step('OWNER turns the LLM gateway off on one project and on for the other', async () => {
+      for (const [project, enabled] of [[gatewayOff, false], [gatewayOn, true]] as const) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch(
+            '/v1/projects/:projectId/experimental',
+            { feature: 'llm_gateway', enabled },
+            { params: { projectId: project.id } },
+          );
+        r.status(200);
+      }
+    });
+    await ctx.step('project user without customize.write → PUT and DELETE both 403 while the gateway is off', async () => {
+      (await put(user, gatewayOff.id)).status(403);
+      (await del(user, gatewayOff.id)).status(403);
+    });
+    await ctx.step('project user without customize.write → PUT and DELETE both 403 while the gateway is on', async () => {
+      (await put(user, gatewayOn.id)).status(403);
+      (await del(user, gatewayOn.id)).status(403);
+    });
+    await ctx.step('project manager → PUT and DELETE both 404 llm_gateway_disabled while the gateway is off', async () => {
+      (await put(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
+      (await del(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
+    });
+    await ctx.step('NONMEMBER → PUT and DELETE both 403 on either project', async () => {
+      for (const project of [gatewayOff, gatewayOn]) {
+        (await put(ctx.P.NONMEMBER, project.id)).status(403);
+        (await del(ctx.P.NONMEMBER, project.id)).status(403);
+      }
+    });
+    await ctx.step('project manager reaches model validation and deletion while the gateway is on', async () => {
+      (await put(manager, gatewayOn.id)).status(409)
+        .body().has('$.code', 'model_not_servable');
+      const read = () =>
+        ctx.client.as(manager).get(path, { params: { projectId: gatewayOn.id } });
+      (await read()).status(200).body().has('$.projectDefault', null);
+      (await del(manager, gatewayOn.id)).status(200).body().has('$.ok', true).has('$.scope', 'project');
+      (await read()).status(200).body().has('$.projectDefault', null);
+    });
+  },
+);
+
 // PROJ-35 — PUT /v1/projects/:projectId/model-enablement
 // (apps/api/src/projects/routes/models.ts). Replace the project's
 // model-override exceptions (which models are enabled/disabled). The full

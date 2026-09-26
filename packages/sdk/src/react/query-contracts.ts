@@ -86,7 +86,14 @@ export const FRESHNESS = {
   session: 'inventory',
   sessions: 'inventory',
   messages: 'live',
-  connectors: 'config',
+  /**
+   * The Connectors page list. Connectors change from outside that page: an
+   * agent adds one in chat, a setup link or an OAuth return completes in
+   * another tab, a teammate edits the manifest. `config` refetched only on
+   * mount, and the page's top-level query never remounts, so the Connected tab
+   * showed the new state only after a browser reload (prod, 2026-09-26).
+   */
+  connectors: 'directory',
   connectorConfig: 'config',
   /** A provider metadata probe; it changes on the provider's schedule, not ours. */
   connectorOAuth2Discovery: 'config',

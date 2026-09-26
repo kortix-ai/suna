@@ -104,6 +104,7 @@ function fakeDaemon(opts: {
       recorded.push(input.report);
     },
     configReleasesEnabled: async () => opts.releasesEnabled !== false,
+    repairOrphanedTurn: async () => {},
   };
   return { deps, requests, pushes, recorded };
 }
@@ -252,7 +253,7 @@ describe('convergeToReloadResult', () => {
   const etags = { previousEtag: 'eeee', etagAfter: 'ffff' };
 
   test('maps every outcome', () => {
-    expect(convergeToReloadResult(converge('applied', { reload: { how: 'restarted', turn_ended: true } }), etags)).toMatchObject({
+    expect(convergeToReloadResult(converge('applied', { reload: { how: 'restarted', turn_ended: true, orphaned_message_id: null } }), etags)).toMatchObject({
       applied: true,
       agent_files: 'updated',
       opencode_reload: 'restarted',
