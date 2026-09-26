@@ -207,7 +207,8 @@ test('30 — saved session history paints while sandbox start and the open bundl
     await expect(page.getByTestId('session-busy-indicator')).toBeVisible();
     await expect(page.getByTestId('session-busy-indicator')).toContainText('Thinking');
     await expect(
-      page.getByText('Starting your computer… your message will send automatically.', {
+      // The SDK's `SESSION_NOTICE.starting`: one wording on web and mobile.
+      page.getByText("Starting this session's computer. Your message sends automatically.", {
         exact: true,
       }),
     ).toBeVisible();
