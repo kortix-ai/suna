@@ -4356,14 +4356,13 @@ const REACT_SERVER_SUSPENSE_BAILOUT_MESSAGES = [
 
 // The `data-dgst` Next.js writes onto a Suspense fallback it handed to the
 // client, for the two reasons that are ordinary user states rather than defects:
-//   `NEXT_HTTP_ERROR_FALLBACK;<status>` — `notFound()` / an HTTP error boundary
-//     (the server rendered its 404); and
+//   `NEXT_HTTP_ERROR_FALLBACK;404` — `notFound()` rendered its 404; and
 //   `NEXT_REDIRECT;<type>;<url>` — `redirect()` that deferred to the client.
 // React surfaces that reason as `error.digest` when it hydrates the boundary and
 // synthesises error #419. Next.js's own `onRecoverableError` filters ONLY
 // `BAILOUT_TO_CLIENT_SIDE_RENDERING`, so these two reach `window.onerror` and
 // page Sentry with no actionable stack.
-const EXPECTED_NEXT_RECOVERY_DIGEST = /^(?:NEXT_HTTP_ERROR_FALLBACK|NEXT_REDIRECT);/;
+const EXPECTED_NEXT_RECOVERY_DIGEST = /^(?:NEXT_HTTP_ERROR_FALLBACK;404$|NEXT_REDIRECT;)/;
 
 // Read the `digest` Next.js/React attaches to a recovered Suspense error. It is a
 // plain property on the Error object, so it survives the `window.onerror` and
@@ -4381,7 +4380,7 @@ function extractDigest(value: unknown): string {
  * boundary and client-rendered it instead. The message alone is NOT safe to
  * drop: a genuine server-render failure produces the same message. The
  * discriminator is the error's `digest` — Next.js sets it to the reason the
- * boundary was abandoned. A `NEXT_HTTP_ERROR_FALLBACK;…` (404 / HTTP error) or
+ * boundary was abandoned. A `NEXT_HTTP_ERROR_FALLBACK;404` or
  * `NEXT_REDIRECT;…` digest is an expected user state: the not-found or redirect
  * boundary rendered correctly and React recovered. A real server-render error
  * carries a hash digest (or none), never these prefixes, so it keeps reporting.

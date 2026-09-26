@@ -10939,13 +10939,28 @@ const REACT_419_MESSAGE =
   'Minified React error #419; visit https://react.dev/errors/419 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.';
 
 test('classifies React #419 with a Next.js 404 digest as expected recovery noise', () => {
-  for (const digest of ['NEXT_HTTP_ERROR_FALLBACK;404', 'NEXT_HTTP_ERROR_FALLBACK;500']) {
-    assert.equal(
-      isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest }),
-      true,
-      `expected digest ${digest} to classify as noise`,
-    );
-  }
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest: 'NEXT_HTTP_ERROR_FALLBACK;404' }),
+    true,
+  );
+});
+
+test('reports React #419 for a server error boundary', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest: 'NEXT_HTTP_ERROR_FALLBACK;500' }),
+    false,
+  );
+  const error = Object.assign(new Error(REACT_419_MESSAGE), {
+    digest: 'NEXT_HTTP_ERROR_FALLBACK;500',
+  });
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ error }), false);
+  assert.equal(
+    shouldIgnoreSentryNoiseEvent(
+      { exception: { values: [{ value: REACT_419_MESSAGE }] } },
+      { originalException: error },
+    ),
+    false,
+  );
 });
 
 test('classifies React #419 with an unminified server-render message as expected recovery noise', () => {
