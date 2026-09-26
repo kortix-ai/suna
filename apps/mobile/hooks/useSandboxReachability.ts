@@ -1,52 +1,50 @@
 /**
- * useSandboxReachability — lightweight poller that tracks whether the
- * sandbox's /kortix/health endpoint is currently reachable.
+ * useSandboxReachability — lightweight poller that tracks what the session's
+ * computer is doing, from its /kortix/health endpoint.
  *
- * Mirrors the web's sandbox-connection-store reachability tracking, but
- * scoped to a single hook call: the caller passes the sandboxUrl and we
- * ping every 10s, returning `{ reachable, downSince }` so the consumer can
- * render an "Unreachable · {elapsed}" pill identical to the web's
- * ReconnectPill (apps/web/src/components/dashboard/connecting-screen.tsx).
+ * The caller passes the sandboxUrl and we probe every 10s, returning
+ * `{ reachable, downSince, connection }`: `connection` is the SDK's vocabulary
+ * (`connectionFromHealth`), so the pill says "Waking computer" for a parked or
+ * booting computer and "Can't reach computer" only when a dial failed.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { getAuthToken } from '@/api/config';
+import { connectionFromHealth, getSessionHealth, type SessionConnection } from '@kortix/sdk';
 
 const POLL_INTERVAL_MS = 10_000;
 const INITIAL_GRACE_MS = 3_000;
 
 /**
- * Reachability probe for a session sandbox. Unlike the generic
- * `checkInstanceHealth` (which is keyed off a `version` field the per-session
- * sandbox runtime doesn't return, and sends no auth), this hits the proxied
- * `/kortix/health` WITH the bearer token — the session sandbox proxy 403s
- * without it — and treats any 200 as reachable. Mirrors the authenticated
- * probe the connect loop uses. Returns false only on a non-200 / network error.
+ * One probe of the session's computer, read in the SDK's connection vocabulary
+ * (`getSessionHealth` + `connectionFromHealth`). It used to count anything but
+ * a 200 as down, so a parked computer (the control plane answers for it) and a
+ * booting one (the runtime answers `starting`) both read "Unreachable". Only a
+ * failed dial, or no answer at all, is unreachable now. The SDK's fetch carries
+ * the bearer token the session proxy requires.
  */
-async function probeSandboxReachable(sandboxUrl: string): Promise<boolean> {
+async function probeSandboxConnection(sandboxUrl: string): Promise<SessionConnection> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
   try {
-    const token = await getAuthToken();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-    const res = await fetch(`${sandboxUrl.replace(/\/$/, '')}/kortix/health`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    return res.ok;
+    const result = await getSessionHealth(sandboxUrl.replace(/\/$/, ''), { signal: controller.signal });
+    return connectionFromHealth(result);
   } catch {
-    return false;
+    return 'unreachable';
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
 export interface SandboxReachability {
   /** True once we've completed at least one probe. */
   checked: boolean;
-  /** Last known reachability. `true` = /kortix/health returned 200. */
+  /** Last known reachability: the runtime answered ready (or nothing is known yet). */
   reachable: boolean;
-  /** ms timestamp when the sandbox first became unreachable. `null` when up. */
+  /** ms timestamp when the computer stopped being ready. `null` when up. */
   downSince: number | null;
+  /** What the last probe said, in the SDK's connection vocabulary. */
+  connection: SessionConnection;
 }
 
 export function useSandboxReachability(sandboxUrl: string | undefined): SandboxReachability {
@@ -54,6 +52,7 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
     checked: false,
     reachable: true,
     downSince: null,
+    connection: 'unknown',
   });
   const mountedRef = useRef(true);
   const downSinceRef = useRef<number | null>(null);
@@ -72,7 +71,8 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const probe = async () => {
-      const isReachable = await probeSandboxReachable(sandboxUrl);
+      const connection = await probeSandboxConnection(sandboxUrl);
+      const isReachable = connection === 'live' || connection === 'unknown';
       if (cancelled || !mountedRef.current) return;
       setState((prev) => {
         let downSince = prev.downSince;
@@ -85,10 +85,15 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
         downSinceRef.current = downSince;
         // Keep the same object when nothing changed so consumers skip the
         // re-render on every 10 s probe.
-        if (prev.checked && prev.reachable === isReachable && prev.downSince === downSince) {
+        if (
+          prev.checked &&
+          prev.reachable === isReachable &&
+          prev.downSince === downSince &&
+          prev.connection === connection
+        ) {
           return prev;
         }
-        return { checked: true, reachable: isReachable, downSince };
+        return { checked: true, reachable: isReachable, downSince, connection };
       });
     };
 
