@@ -24,6 +24,8 @@
  *
  * Pure, so each rule below is a test rather than a habit.
  */
+import { isRuntimeReady, type SessionHealthResult } from './health';
+
 export type SessionConnection =
   /** Nothing has answered yet. Say nothing; this is a cold load, not a fault. */
   | 'unknown'
@@ -98,4 +100,26 @@ export function projectSessionConnection(input: SessionConnectionInputs): Sessio
  *  state. `unknown` and `connecting` are waits, not faults. */
 export function connectionIsFaulted(connection: SessionConnection): boolean {
   return connection === 'unreachable';
+}
+
+/**
+ * What ONE health probe (`getSessionHealth`) says about the session's
+ * computer, in this vocabulary. A host that probes on its own — mobile's
+ * thread does — reads it here instead of counting every non-200 as a fault:
+ * a parked box answers through the control plane, and a booting runtime
+ * answers `starting`. Neither is unreachable.
+ *
+ * A network error never reaches this: the caller that caught it knows the
+ * probe got no answer, which is `unreachable`.
+ */
+export function connectionFromHealth(result: SessionHealthResult | null): SessionConnection {
+  // No runtime to probe, or no probe yet: nothing is known, and nothing is said.
+  if (!result || result.status === 0) return 'unknown';
+  if (result.ok && isRuntimeReady(result.health)) return 'live';
+  // The platform answered from its own row: the box is not up, and it was
+  // never dialled. That is a sleeping or starting computer, not a lost one.
+  if (result.hop === 'control_plane') return 'waking';
+  // The runtime itself answered, and said it is still booting.
+  if (result.ok || result.health?.status === 'starting') return 'connecting';
+  return 'unreachable';
 }
