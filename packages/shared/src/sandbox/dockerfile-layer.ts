@@ -44,6 +44,10 @@ import {
   SANDBOX_SHELL_TOOL_APT_LIST,
   SANDBOX_SHELL_TOOL_LINK_COMMAND,
 } from './shell-tools';
+import {
+  SANDBOX_CLI_OWNERSHIP_COMMAND,
+  SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
+} from './platform-binaries';
 
 /**
  * Default pinned `agent-browser` (Vercel agent-browser) CLI version baked into
@@ -728,6 +732,11 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     '    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\',
     // Fail the build loudly if the CLI didn't land — every sandbox must ship it.
     '    && kortix --version \\',
+    // The daemon converges this file in place and runs as `kortix`, so it needs
+    // the DIRECTORY; and opencode must not autoupdate itself for ANY caller in
+    // the box. See platform-binaries.ts — both are asserted on every image.
+    `    && ${SANDBOX_CLI_OWNERSHIP_COMMAND} \\`,
+    `    && ${SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND} \\`,
     '    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral',
     '',
     // Web-terminal login shells: keep the Kortix tool dirs on PATH on Debian
