@@ -9477,7 +9477,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": ". Ces modifications n’existent qu’ici ; elles ne sont pas encore dans votre",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "version. Proposez les modifications pour qu’elles soient relues et appliquées.",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Renommer…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Partager…",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "La session Kortix démarre",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "Nouvelle borne",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "Vue Fichiers",
@@ -19181,6 +19180,18 @@
       "title": "Créer un lien public ?",
       "description": "Toute personne disposant du lien peut le consulter sans se connecter. Le lien reste actif jusqu'à ce que vous le révoquiez.",
       "confirm": "Créer le lien"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "Lien public",
+      "sectionDescription": "Toute personne disposant du lien peut lire cette conversation sans se connecter.",
+      "create": "Créer un lien public",
+      "revokeDescription": "La conversation ne se charge plus pour les personnes disposant du lien. Vous pourrez créer un nouveau lien ensuite.",
+      "rowMeta": "Conversation en lecture seule",
+      "unavailable": "Cette conversation est temporairement indisponible.",
+      "unavailableDescription": "La conversation ne peut pas être lue pour le moment. Réessayez dans un instant.",
+      "loadFailedDescription": "La conversation n'a pas pu être chargée.",
+      "empty": "Aucun message pour l'instant",
+      "savedCopy": "Copie enregistrée le {date}"
     },
     "chatIdentityConnect": {
       "chatAccount": "Compte {service}",

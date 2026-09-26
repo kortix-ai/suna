@@ -9477,7 +9477,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": ". Queste modifiche esistono solo qui; non sono ancora nella tua",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "versione. Proponi le modifiche per farle revisionare e applicare.",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Rinomina…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Condividi…",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "La sessione Kortix è in fase di avvio",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "Nuovo terminale",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "Visualizzazione dei file",
@@ -19181,6 +19180,18 @@
       "title": "Creare un link pubblico?",
       "description": "Chiunque abbia il link può vederlo senza accedere. Il link resta attivo finché non lo revochi.",
       "confirm": "Crea link"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "Link pubblico",
+      "sectionDescription": "Chiunque abbia il link può leggere questa conversazione senza accedere.",
+      "create": "Crea link pubblico",
+      "revokeDescription": "La conversazione smette di caricarsi per chiunque abbia il link. Potrai creare un nuovo link in seguito.",
+      "rowMeta": "Conversazione di sola lettura",
+      "unavailable": "Questa conversazione non è temporaneamente disponibile.",
+      "unavailableDescription": "Al momento non è possibile leggere la conversazione. Riprova tra poco.",
+      "loadFailedDescription": "Impossibile caricare la conversazione.",
+      "empty": "Ancora nessun messaggio",
+      "savedCopy": "Copia salvata il {date}"
     },
     "chatIdentityConnect": {
       "chatAccount": "Account {service}",
