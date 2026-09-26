@@ -163,6 +163,55 @@ describe('host boundary transport', () => {
     expect(requests[0]?.init?.method).toBe('POST');
   });
 
+  test('connector setup-link info names its project and the suggested account name', async () => {
+    responseFactory = () =>
+      Response.json({
+        kind: 'connector',
+        project_id: 'P1',
+        project_name: 'Acme',
+        label: "Dad's Gmail",
+        slug: 'gmail',
+        app: 'gmail',
+        expires_at: '2026-01-01',
+      });
+
+    const info = await boundary.getConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    const projectId: string | undefined = info.project_id;
+    const label: string | null | undefined = info.label;
+    expect({ projectId, label }).toEqual({ projectId: 'P1', label: "Dad's Gmail" });
+  });
+
+  test('connector setup-link finalize names ONE account when given its connection id', async () => {
+    responseFactory = () =>
+      Response.json({
+        connected: true,
+        connected_as: 'dad@example.test',
+        connection_id: 'conn-2',
+        label: "Dad's Gmail",
+      });
+
+    const result = await boundary.finalizeConnectorSetupLink(
+      'connect-token',
+      { backendUrl: 'https://api.example.test/v1' },
+      { connectionId: 'conn-2' },
+    );
+
+    expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({ connection_id: 'conn-2' });
+    const named: { id: string | undefined; label: string | null | undefined } = {
+      id: result.connection_id,
+      label: result.label,
+    };
+    expect(named).toEqual({ id: 'conn-2', label: "Dad's Gmail" });
+
+    await boundary.finalizeConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+    expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({});
+  });
+
   test('connector setup-link finalize reports a still-pending connect as connected:false', async () => {
     responseFactory = () => Response.json({ connected: false });
 
