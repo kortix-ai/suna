@@ -5,6 +5,7 @@ import {
   PERSISTED_QUERY_GC_TIME_MS,
   applyPersistedQueryDefaults,
   isPersistedQueryKey,
+  keepFirstSessionPage,
 } from './persisted-queries';
 
 describe('isPersistedQueryKey: what a user navigates by, nothing large or sensitive', () => {
@@ -73,6 +74,50 @@ describe('applyPersistedQueryDefaults', () => {
 
     expect(gcTimeOf(client, ['project-detail', 'p-1'])).toBe(DEVICE_GC_TIME_MS);
     expect(gcTimeOf(client, ['project-secrets', 'p-1'])).toBe(DEVICE_GC_TIME_MS);
+    client.clear();
+  });
+});
+
+describe('keepFirstSessionPage: a restored list refetches one page, not every page', () => {
+  const PAGED = ['project-sessions', 'p-1', 'paged'] as const;
+  const page = (id: string, next: string | null) => ({
+    items: [{ session_id: id }],
+    next_cursor: next,
+  });
+
+  test('a restored paged list keeps page one, at its original age', () => {
+    const client = new QueryClient();
+    client.setQueryData(
+      PAGED,
+      {
+        pages: [page('a', 'c1'), page('b', 'c2'), page('c', null)],
+        pageParams: [null, 'c1', 'c2'],
+      },
+      { updatedAt: 1_000 }
+    );
+
+    keepFirstSessionPage(client);
+
+    expect(client.getQueryData(PAGED) as unknown).toEqual({
+      pages: [page('a', 'c1')],
+      pageParams: [null],
+    });
+    // Still stale: its screen refetches it on mount.
+    expect(client.getQueryState(PAGED)?.dataUpdatedAt).toBe(1_000);
+    client.clear();
+  });
+
+  test('a one-page list and every other query are left as they are', () => {
+    const client = new QueryClient();
+    const onePage = { pages: [page('a', null)], pageParams: [null] };
+    const flat = [{ session_id: 'a' }, { session_id: 'b' }];
+    client.setQueryData(PAGED, onePage, { updatedAt: 1_000 });
+    client.setQueryData(['project-sessions', 'p-1'], flat, { updatedAt: 1_000 });
+
+    keepFirstSessionPage(client);
+
+    expect(client.getQueryData(PAGED) as unknown).toBe(onePage);
+    expect(client.getQueryData(['project-sessions', 'p-1']) as unknown).toBe(flat);
     client.clear();
   });
 });

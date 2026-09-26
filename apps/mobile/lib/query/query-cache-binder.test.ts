@@ -4,7 +4,11 @@ import type { KeyValueStorage } from '@kortix/sdk';
 
 import { sessionsNextCursor, type SessionPage } from '@/lib/session/session-pages';
 
-import { applyPersistedQueryDefaults, isPersistedQueryKey } from './persisted-queries';
+import {
+  QUERY_CACHE_OPTIONS,
+  applyPersistedQueryDefaults,
+  isPersistedQueryKey,
+} from './persisted-queries';
 import { createQueryCacheBinder } from './query-cache-binder';
 
 /**
@@ -50,6 +54,11 @@ function binderOver(storage: KeyValueStorage) {
   });
 }
 
+/** The app's binder (lib/query/query-cache.ts), over a test store. */
+function appBinderOver(storage: KeyValueStorage) {
+  return createQueryCacheBinder({ ...QUERY_CACHE_OPTIONS, storage, throttleMs: 0, now: () => T0 });
+}
+
 const clients: QueryClient[] = [];
 function newClient() {
   const client = new QueryClient();
@@ -68,9 +77,10 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 async function previousRun(
   storage: KeyValueStorage,
   userId: string,
-  write: (client: QueryClient) => void
+  write: (client: QueryClient) => void,
+  makeBinder = binderOver
 ) {
-  const binder = binderOver(storage);
+  const binder = makeBinder(storage);
   const client = newClient();
   await binder.bind(client, userId);
   write(client);
@@ -93,8 +103,7 @@ describe('a cold start renders the last known lists', () => {
     expect(client.getQueryState(SESSIONS)?.dataUpdatedAt).toBe(T0 - 60_000);
   });
 
-  test('the drawer’s paged list renders the restored pages, then refetches each with its cursor', async () => {
-    const { storage } = asyncStorage();
+  describe('the drawer’s paged list after a restore', () => {
     const twoPages = {
       pages: [
         { items: [{ session_id: 's-1' }], next_cursor: 'c1' },
@@ -102,41 +111,72 @@ describe('a cold start renders the last known lists', () => {
       ],
       pageParams: [null, 'c1'],
     };
-    await previousRun(storage, 'user-a', (client) =>
-      client.setQueryData(SESSIONS, twoPages, { updatedAt: T0 - 60_000 })
-    );
 
-    const client = newClient();
-    await binderOver(storage).bind(client, 'user-a');
-    const cursors: (string | null)[] = [];
-    // The options `useProjectSessionsPaged` passes (lib/projects/hooks.ts).
-    const observer = new InfiniteQueryObserver(client, {
-      queryKey: SESSIONS,
-      initialPageParam: null as string | null,
-      queryFn: async ({ pageParam }): Promise<SessionPage<{ session_id: string }>> => {
-        cursors.push(pageParam);
-        return {
-          items: [{ session_id: `fresh-${pageParam ?? 'first'}` }],
-          next_cursor: pageParam === null ? 'c1' : null,
-        };
-      },
-      getNextPageParam: sessionsNextCursor,
-      staleTime: 10_000,
+    /** Mounts the list with the options `useProjectSessionsPaged` passes (lib/projects/hooks.ts). */
+    function mountSessionList(client: QueryClient) {
+      const cursors: (string | null)[] = [];
+      const observer = new InfiniteQueryObserver(client, {
+        queryKey: SESSIONS,
+        initialPageParam: null as string | null,
+        queryFn: async ({ pageParam }): Promise<SessionPage<{ session_id: string }>> => {
+          cursors.push(pageParam);
+          return {
+            items: [{ session_id: `fresh-${pageParam ?? 'first'}` }],
+            next_cursor: pageParam === null ? 'c1' : null,
+          };
+        },
+        getNextPageParam: sessionsNextCursor,
+        staleTime: 10_000,
+      });
+      const unsubscribe = observer.subscribe(() => {});
+      const refetched = async () => {
+        await client.getQueryCache().find({ queryKey: SESSIONS })?.promise;
+        return observer.getCurrentResult().data?.pages.map((page) => page.items[0].session_id);
+      };
+      return { observer, cursors, unsubscribe, refetched };
+    }
+
+    test('renders the restored pages at once, then refetches each with its own cursor', async () => {
+      const { storage } = asyncStorage();
+      await previousRun(storage, 'user-a', (client) =>
+        client.setQueryData(SESSIONS, twoPages, { updatedAt: T0 - 60_000 })
+      );
+      const client = newClient();
+      await binderOver(storage).bind(client, 'user-a');
+
+      const list = mountSessionList(client);
+      // The first frame: the restored rows, already refetching.
+      const onMount = list.observer.getCurrentResult();
+      expect(onMount.isPending).toBe(false);
+      expect(onMount.data).toEqual(twoPages);
+      expect(onMount.isFetching).toBe(true);
+
+      expect(await list.refetched()).toEqual(['fresh-first', 'fresh-c1']);
+      expect(list.cursors).toEqual([null, 'c1']);
+      list.unsubscribe();
     });
 
-    // The first frame: the restored rows, already refetching.
-    const unsubscribe = observer.subscribe(() => {});
-    const onMount = observer.getCurrentResult();
-    expect(onMount.isPending).toBe(false);
-    expect(onMount.data).toEqual(twoPages);
-    expect(onMount.isFetching).toBe(true);
+    test('with the app’s settings, page one is restored and refetched: one request', async () => {
+      const { storage } = asyncStorage();
+      await previousRun(
+        storage,
+        'user-a',
+        (client) => client.setQueryData(SESSIONS, twoPages, { updatedAt: T0 - 60_000 }),
+        appBinderOver
+      );
+      const client = newClient();
+      await appBinderOver(storage).bind(client, 'user-a');
 
-    await client.getQueryCache().find({ queryKey: SESSIONS })?.promise;
-    expect(cursors).toEqual([null, 'c1']);
-    expect(observer.getCurrentResult().data?.pages.map((page) => page.items[0].session_id)).toEqual(
-      ['fresh-first', 'fresh-c1']
-    );
-    unsubscribe();
+      const list = mountSessionList(client);
+      expect(list.observer.getCurrentResult().data).toEqual({
+        pages: [twoPages.pages[0]],
+        pageParams: [null],
+      });
+
+      expect(await list.refetched()).toEqual(['fresh-first']);
+      expect(list.cursors).toEqual([null]);
+      list.unsubscribe();
+    });
   });
 
   test('the start screen and the layout share one restore per user', async () => {

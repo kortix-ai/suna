@@ -34,6 +34,8 @@ export interface BindableQueryClient extends PersistableQueryClient {
 export interface QueryCacheBinderOptions {
   storage: KeyValueStorage;
   shouldPersist: (queryKey: readonly unknown[]) => boolean;
+  /** Runs once the stored queries are in the client, before the writes start. */
+  afterRestore?: (client: BindableQueryClient) => void;
   version?: string;
   maxBytes?: number;
   throttleMs?: number;
@@ -61,7 +63,7 @@ interface Binding {
 }
 
 export function createQueryCacheBinder(options: QueryCacheBinderOptions): QueryCacheBinder {
-  const { storage, shouldPersist, version, maxBytes, throttleMs, now } = options;
+  const { storage, shouldPersist, afterRestore, version, maxBytes, throttleMs, now } = options;
   let bound: Binding | null = null;
   // The user whose queries the client holds in memory. Not reset by
   // `release()`: every sign-out clears the client itself.
@@ -116,6 +118,7 @@ export function createQueryCacheBinder(options: QueryCacheBinderOptions): QueryC
         .then(() => {
           // Released or replaced while the store was read: never attach.
           if (bound !== binding) return;
+          afterRestore?.(client);
           // Attached after the restore, so the first write holds the restored
           // queries instead of replacing the store with an empty cache.
           binding.stop = cache.persist(client);

@@ -10,18 +10,10 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import {
-  QUERY_CACHE_MAX_BYTES,
-  QUERY_CACHE_VERSION,
-  isPersistedQueryKey,
-} from './persisted-queries';
+import { QUERY_CACHE_OPTIONS } from './persisted-queries';
 import { createQueryCacheBinder } from './query-cache-binder';
 
 export const queryCachePersistence = createQueryCacheBinder({
   storage: AsyncStorage,
-  shouldPersist: isPersistedQueryKey,
-  version: QUERY_CACHE_VERSION,
-  maxBytes: QUERY_CACHE_MAX_BYTES,
-  // A write serializes every kept query: coalesce a poll burst into one.
-  throttleMs: 2_000,
+  ...QUERY_CACHE_OPTIONS,
 });
