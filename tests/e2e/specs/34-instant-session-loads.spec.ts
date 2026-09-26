@@ -64,12 +64,29 @@ async function installFirstShown(page: Page, sessionId: string) {
         const hit = document.elementFromPoint(x, y);
         return !!hit && (hit === el || el.contains(hit));
       };
+      // A PLACEHOLDER counts once any trace of it is painted: a dismissed
+      // overlay fading out is `aria-hidden`, `inert` and click-through, yet the
+      // user watches its skeleton rows dissolve over the conversation.
+      const painted = (el: Element) => {
+        const box = el.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) return false;
+        if (box.bottom < 0 || box.right < 0 || box.top > window.innerHeight || box.left > window.innerWidth) {
+          return false;
+        }
+        let opacity = 1;
+        for (let node: Element | null = el; node; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          if (style.display === 'none' || style.visibility === 'hidden') return false;
+          opacity *= Number.parseFloat(style.opacity || '1');
+        }
+        return opacity > 0.05;
+      };
       const scan = () => {
         for (const el of Array.from(document.querySelectorAll('[data-testid="saved-session-skeleton"]'))) {
-          if (shown(el)) mark('skeleton');
+          if (painted(el)) mark('skeleton');
         }
         for (const h2 of Array.from(document.querySelectorAll('h2'))) {
-          if (h2.textContent?.trim() === heading && shown(h2)) mark('bootScreen');
+          if (h2.textContent?.trim() === heading && painted(h2)) mark('bootScreen');
         }
         for (const link of Array.from(document.querySelectorAll(`a[href$="${sessionHref}"]`))) {
           if (shown(link)) mark('sidebarRow');

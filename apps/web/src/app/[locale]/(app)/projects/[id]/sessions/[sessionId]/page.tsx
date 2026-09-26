@@ -6,7 +6,7 @@ import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { AppErrorCard, ClientErrorBoundary } from '@/components/common/error-boundary';
 import { isLegacyMigratedSession, sessionDisplayLabel } from '@/components/projects/session-label';
@@ -118,6 +118,9 @@ import {
   useSessionPrompts,
   useWakeEscalation,
 } from '@kortix/sdk/react';
+
+// `useLayoutEffect` warns in a server render, where it cannot run anyway.
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -614,6 +617,29 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     const t = setTimeout(() => setLoaderMounted(false), 350);
     return () => clearTimeout(t);
   }, [bootPresentation, loaderMounted]);
+
+  // An overlay dismissed before it was ever painted leaves at once, with no
+  // fade. A reopened session paints the saved copy this device kept in a
+  // layout effect, so its overlay is dismissed inside the first commit — and
+  // the 300ms fade then showed skeleton rows dissolving over a conversation
+  // that was already there (journey 34's recording). A fade is for something
+  // the user saw. The second frame callback runs after the first paint.
+  const overlayPaintedRef = useRef(false);
+  useEffect(() => {
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        overlayPaintedRef.current = true;
+      });
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, []);
+  useIsomorphicLayoutEffect(() => {
+    if (overlayDismissed && loaderMounted && !overlayPaintedRef.current) setLoaderMounted(false);
+  }, [overlayDismissed, loaderMounted]);
 
   // Drop the local hint as soon as it has done its job OR been proven wrong.
   // This used to wait on `chatReady`, which the hint itself could withhold — so
