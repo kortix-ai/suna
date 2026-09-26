@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { planComposerSend } from './send-plan';
 
-const base = { text: '', fileCount: 0, disabled: false, isBusy: false, canQueue: true, canAttach: true };
+const base = {
+  text: '',
+  fileCount: 0,
+  disabled: false,
+  isBusy: false,
+  canQueue: true,
+  canAttach: true,
+  modelUnavailable: false,
+};
 
 describe('planComposerSend', () => {
   test('image only while idle sends', () => {
@@ -35,5 +43,22 @@ describe('planComposerSend', () => {
 
   test('text while idle sends', () => {
     expect(planComposerSend({ ...base, text: 'hello' })).toBe('send');
+  });
+
+  test('no model available: text or files open the connect flow instead of sending (KRTX-251)', () => {
+    expect(planComposerSend({ ...base, text: 'hello', modelUnavailable: true })).toBe('connect-model');
+    expect(planComposerSend({ ...base, fileCount: 1, modelUnavailable: true })).toBe('connect-model');
+    expect(planComposerSend({ ...base, text: 'next', isBusy: true, modelUnavailable: true })).toBe('connect-model');
+    expect(planComposerSend({ ...base, fileCount: 1, canAttach: false, modelUnavailable: true })).toBe('connect-model');
+  });
+
+  test('no model available: an empty or locked composer stays a noop', () => {
+    expect(planComposerSend({ ...base, text: '  ', modelUnavailable: true })).toBe('noop');
+    expect(planComposerSend({ ...base, text: 'hi', disabled: true, modelUnavailable: true })).toBe('noop');
+  });
+
+  test('a staged command sends with an empty draft, and is gated like a message', () => {
+    expect(planComposerSend({ ...base, allowEmpty: true })).toBe('send');
+    expect(planComposerSend({ ...base, allowEmpty: true, modelUnavailable: true })).toBe('connect-model');
   });
 });

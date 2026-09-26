@@ -42,11 +42,17 @@ import { ensureInjectedManagedSkills } from '../../managed-skills'
 // milliseconds to the readiness the API and the frontend poll for.
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
-import { flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './events'
+import {
+  flattenOpencodeError,
+  type PermissionRequest,
+  type QuestionRequest,
+  type OpencodeTurnError,
+} from './events'
 import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from '../../kortix-event-bus'
 import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, createAuditRelay } from './opencode-audit-relay'
+import { relayPermissionToApi } from './permission-relay'
 import { relayQuestionToApi } from './question-relay'
 import { readControlPlaneEnv, sandboxRelayContext } from '../../relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
@@ -775,6 +781,13 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
+  // Report only: apps/api pushes "needs your approval". The permission itself
+  // stays open for the user (permission-relay.ts).
+  const onPermissionAsked = (req: PermissionRequest) => {
+    void relayPermissionToApi(req).catch((err) =>
+      logger.warn('[opencode-events] permission relay failed', { err: (err as Error).message }),
+    )
+  }
   const onSessionIdle = (opencodeSessionId: string) => {
     void (async () => {
       // An aborted turn is checked first: it may have been healed and resumed,
@@ -900,6 +913,7 @@ async function startSessionRuntime(
   const eventHandlers = {
     onEvent,
     onQuestionAsked,
+    onPermissionAsked,
     onSessionIdle,
     onSessionError,
     onSessionStatus,

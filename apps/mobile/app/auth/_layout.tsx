@@ -1,8 +1,6 @@
-import { useRouter, Redirect, Stack } from 'expo-router';
+import { Redirect, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext } from '@/contexts';
-import { View } from 'react-native';
-import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { log } from '@/lib/logger';
 import { THEME } from '@/lib/utils/theme';
 
@@ -11,27 +9,17 @@ import { THEME } from '@/lib/utils/theme';
  *
  * Stack navigation for authentication screens.
  * CRITICAL: Authenticated users should NEVER see auth screens.
- * This layout immediately redirects authenticated users to /projects.
+ * This layout immediately redirects authenticated users to the start screen.
+ *
+ * No loader of its own (KRTX-244): at launch the native splash covers the
+ * auth check, and later `isLoading` only flips during a sign-in or sign-up,
+ * where the screen's own disabled button shows progress. A full-screen loader
+ * here unmounted the form mid-sign-in and stacked a second loader on the
+ * start screen's.
  */
 export default function AuthLayout() {
   const { colorScheme } = useColorScheme();
-  const { isAuthenticated, isLoading } = useAuthContext();
-
-  // While auth is loading, show nothing to prevent flash
-  if (isLoading) {
-    return (
-      <View 
-        style={{ 
-          flex: 1, 
-          backgroundColor: colorScheme === 'dark' ? THEME.dark.background : THEME.light.background,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <KortixLoader size="xlarge" />
-      </View>
-    );
-  }
+  const { isAuthenticated } = useAuthContext();
 
   // CRITICAL: Authenticated users should NEVER be on auth screens
   // Redirect them immediately to home
