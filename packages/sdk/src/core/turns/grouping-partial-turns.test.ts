@@ -24,7 +24,7 @@ function user(ms: number, tag: string): MessageWithPartsLike {
   return {
     info: { id: wireId(ms, tag), role: 'user', time: { created: ms } },
     parts: [{ id: `prt_${tag}`, type: 'text', text: tag }],
-  } as MessageWithPartsLike;
+  } as unknown as MessageWithPartsLike;
 }
 
 function assistant(ms: number, tag: string, parentID?: string): MessageWithPartsLike {
@@ -37,7 +37,7 @@ function assistant(ms: number, tag: string, parentID?: string): MessageWithParts
       ...(parentID ? { parentID } : {}),
     },
     parts: [{ id: `prt_${tag}`, type: 'text', text: tag }],
-  } as MessageWithPartsLike;
+  } as unknown as MessageWithPartsLike;
 }
 
 const texts = (messages: MessageWithPartsLike[]) =>
@@ -132,7 +132,7 @@ describe('a run whose prompt is not loaded', () => {
     const prompt = {
       info: { id: RUN_PROMPT, role: 'user', time: { created: T0 } },
       parts: [{ id: 'prt_prompt', type: 'text', text: 'fix the audit 5xx' }],
-    } as MessageWithPartsLike;
+    } as unknown as MessageWithPartsLike;
     const after = groupMessagesIntoTurns([prompt, ...runTail()]);
 
     expect(before[0].userMessage.info.id).toBe(RUN_PROMPT);
