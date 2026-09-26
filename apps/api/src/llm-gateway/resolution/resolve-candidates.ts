@@ -185,12 +185,15 @@ export async function resolveCandidates(
     // agent-started workers) never have a pool row, and a member who did not
     // create a shared account never has a personal one; without this step both
     // fell straight to the legacy project connection. A project gateway API
-    // key (`keyId`) keeps the legacy-only behavior.
+    // key (`keyId`) carries no member, so it gets only the accounts shared
+    // with the whole project (`grantUserId: null`): never its creator's
+    // personal connection or a member-restricted account.
     let sharedFailure: GatewayResolutionError | null = null;
-    if (pooledEnabled && !principal.keyId) {
+    if (pooledEnabled) {
       const shared = await resolveProjectSharedProviderSecrets({
         accountId: principal.accountId, projectId: principal.projectId,
-        userId: principal.userId, grantUserId: personalUserId, providerId: 'codex', name: 'CODEX_AUTH_JSON',
+        userId: principal.userId, grantUserId: principal.keyId ? null : personalUserId,
+        providerId: 'codex', name: 'CODEX_AUTH_JSON',
       });
       if ((shared.secrets.length || shared.coolingDown) && !agentMayUseChatGptAccounts) {
         // Before this fallback existed such an agent reached only the legacy

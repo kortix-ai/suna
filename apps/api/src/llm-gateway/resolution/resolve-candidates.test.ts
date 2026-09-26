@@ -743,13 +743,30 @@ describe('resolveCandidates — codex, unconfigured session, project-shared Chat
     });
   });
 
-  test('a project gateway API key (keyId) keeps the legacy-only behavior', async () => {
+  // Claude Code and other external clients reach the gateway with a project
+  // key. Only accounts shared with the whole project count: the key carries no
+  // member, so no personal grant applies (`grantUserId: null`).
+  test('a project gateway API key (keyId) uses the accounts shared with the whole project', async () => {
     pooledEnabled = true;
     codexCredential = { access: 'legacy-token' };
     sharedSecrets = { coolingDown: false, secrets: [account('team', 'team-token')] };
+    const actor = principal({ keyId: 'kgw' });
+    const candidates = await resolveCandidates(actor, 'codex/gpt-6');
+    expect(candidates.map((c) => [c.credentialRef, c.poolSecretId, c.apiKey])).toEqual([['team', 'team', 'team-token']]);
+    expect(resolveProjectSharedProviderSecrets).toHaveBeenCalledWith({
+      accountId: actor.accountId, projectId: 'p1', userId: 'u1', grantUserId: null,
+      providerId: 'codex', name: 'CODEX_AUTH_JSON',
+    });
+    expect(resolveDefaultCodexAccountSecret).not.toHaveBeenCalled();
+    expect(resolveCodexCredential).not.toHaveBeenCalled();
+  });
+
+  test('a project gateway API key with no project-wide account falls back to the legacy connection', async () => {
+    pooledEnabled = true;
+    codexCredential = { access: 'legacy-token' };
+    sharedSecrets = { coolingDown: false, secrets: [] };
     const candidates = await resolveCandidates(principal({ keyId: 'kgw' }), 'codex/gpt-6');
     expect(candidates.map((c) => c.apiKey)).toEqual(['legacy-token']);
-    expect(resolveProjectSharedProviderSecrets).not.toHaveBeenCalled();
   });
 
   test('flag off: shared accounts are never read', async () => {

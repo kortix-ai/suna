@@ -2,7 +2,7 @@
 
 A pull request with the `preview` label gets a **complete Kortix**, running on
 its own: PostgreSQL, Supabase, the API, the LLM gateway, the frontend, and
-Mailpit. It stays up until you take the label off or the pull request closes.
+Mailpit. It stays up until you take the label off or delete the branch.
 
 ## Getting one
 
@@ -14,9 +14,11 @@ fork cannot get one, because the deploy runs with real secrets.
 ## Where the URL is
 
 The workflow posts a **sticky comment on the pull request** with the origin, the
-test report, the sandbox id, and the commit. It rewrites that same comment on
-every deploy, so it is never stale. The URL is also on the pull request's
-**Deployments** panel, as environment `preview/pr-<number>`.
+test report, the sandbox id, and the commit, as soon as the stack serves the
+commit ("live; tests running"). When the suite finishes, it rewrites that same
+comment with the result ("live and tested" or "live; tests failed"), so it is
+never stale. The URL is also on the pull request's **Deployments** panel, as
+environment `preview/pr-<number>`; that status describes the deploy only.
 
 ## What lives where
 
@@ -38,16 +40,16 @@ be listed in the edge matcher — see `buildPreviewCaddyfile`.
 
 | event | what happens |
 | --- | --- |
-| label added | deploys, then runs `pnpm test -- --target-full` |
+| label added | deploys, posts the URL, then runs `pnpm test -- --target-full` as a separate step |
 | you push | redeploys **in place** — same URL, no suite |
 | label removed | deleted |
-| pull request closed | deleted |
-| branch deleted | closes the pull request, so: deleted |
+| pull request closed | kept — the environment belongs to the branch |
+| branch deleted | deleted (`teardown-branch`) |
 
 The sandbox is named after the **branch** and reused, which is what holds the
 URL still across pushes. Being persistent, it carries no provider expiry — the
-pull request leaving the active set is the only thing that retires it, and the
-nightly sweep is the second net behind that.
+label coming off or the branch being deleted retires it, and the nightly sweep
+deletes environments whose branch no longer exists.
 
 ## A stable hostname, optionally
 

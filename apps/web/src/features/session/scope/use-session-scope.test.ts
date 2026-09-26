@@ -80,6 +80,23 @@ describe('session scope query keys', () => {
   });
 });
 
+describe('createSessionScopeCatalogSources — connections', () => {
+  test('offers only accounts the creator may use, never a manage-only shared one', async () => {
+    const usable = connection('conn-usable');
+    const manageOnly: Connection = { ...connection('conn-manage-only'), usable: false };
+    const legacy = connection('conn-legacy-server');
+    const sources = createSessionScopeCatalogSources(
+      new QueryClient(),
+      undefined,
+      async () => ({ connections: [{ ...usable, usable: true }, manageOnly, legacy] }),
+    );
+    expect((await sources.listConnections('project-1')).map((c) => c.connection_id)).toEqual([
+      'conn-usable',
+      'conn-legacy-server',
+    ]);
+  });
+});
+
 describe('loadSessionScopeCatalog', () => {
   test('reuses the canonical project-secrets cache', async () => {
     const queryClient = new QueryClient();

@@ -21,9 +21,38 @@ import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 
+/** The one account a connect created, when the human named it in the dialog. */
+export interface ConnectedAccount {
+  connectionId: string;
+  label: string;
+}
+
+/**
+ * `value` as one POSIX double-quoted shell word. A member chooses the account
+ * name and the agent may run the command as written, so every character a
+ * shell still expands inside double quotes (\, ", $, backtick) is escaped.
+ */
+function shellDoubleQuote(value: string): string {
+  return `"${value.replace(/[\\"$`]/g, (char) => `\\${char}`)}"`;
+}
+
 /** Exported for tests. The text delivered to the requesting session's agent. */
-export function connectorConnectedPrompt(slug: string, app: string): string {
+export function connectorConnectedPrompt(
+  slug: string,
+  app: string,
+  account?: ConnectedAccount | null,
+): string {
   const appLabel = app && app !== slug ? `${app} (connector \`${slug}\`)` : `\`${slug}\``;
+  if (account) {
+    // A named account sits beside any others on the connector, so an unnamed
+    // call may now be refused with account_required. Name it on every call.
+    return (
+      `A new account "${account.label}" was just connected on the ${appLabel} connector. ` +
+      `Run calls as it with \`kortix connectors call ${slug} <action> --account ${shellDoubleQuote(account.label)}\` ` +
+      `(check with \`kortix connectors accounts ${slug}\`), then continue the task that was ` +
+      'blocked on it. Do not mint a new connect link for this connector.'
+    );
+  }
   return (
     `The ${appLabel} connector was just connected and its credential is saved on ` +
     'this project. Verify it with `kortix connectors ls`, then continue the task ' +
@@ -56,6 +85,7 @@ export async function notifyConnectorSession(
   actorUserId: string | null,
   slug: string,
   app: string,
+  account?: ConnectedAccount | null,
 ): Promise<void> {
   try {
     const [session] = await db
@@ -85,8 +115,12 @@ export async function notifyConnectorSession(
       accountId: session.accountId,
       sessionId,
       actorUserId,
-      text: connectorConnectedPrompt(slug, app),
-      idempotencyKey: `connector-connected:${sessionId}:${slug}`,
+      text: connectorConnectedPrompt(slug, app, account),
+      // Per account when one is named: a second account on the same connector
+      // is a new event, not a duplicate of the first.
+      idempotencyKey: account
+        ? `connector-connected:${sessionId}:${slug}:${account.connectionId}`
+        : `connector-connected:${sessionId}:${slug}`,
     });
     drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
     console.info('[connectors] connector connected, session notified', { sessionId, slug });

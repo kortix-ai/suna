@@ -13,6 +13,7 @@ import {
   listAssignments,
   listPermissions,
   revokeAssignment,
+  type AssignmentPrincipalType,
   type Permission,
   type RoleAssignment,
 } from './assignments';
@@ -65,6 +66,30 @@ const row: RoleAssignment = {
   created_at: '2026-08-19T00:00:00.000Z',
   updated_at: '2026-08-19T00:00:00.000Z',
 };
+
+// ── everyone in the project, and shared connector accounts ─────────────────
+
+test('createAssignment grants an object to everyone in the project', async () => {
+  nextResponse = { status: 201, body: { ...row, principal_type: 'project', principal_id: 'proj-1' } };
+  const out = await createAssignment('acc-1', {
+    principal: { type: 'project', id: 'proj-1' },
+    roleKey: 'agent-user',
+    scope: { type: 'project', id: 'proj-1' },
+    object: { type: 'connection', id: 'conn-1' },
+  });
+  expect(last().method).toBe('POST');
+  expect(last().body).toMatchObject({
+    principal_type: 'project',
+    principal_id: 'proj-1',
+    role_key: 'agent-user',
+    scope_type: 'project',
+    scope_id: 'proj-1',
+    object_type: 'connection',
+    object_id: 'conn-1',
+  });
+  const principalType: AssignmentPrincipalType = out.principal_type;
+  expect(principalType).toBe('project');
+});
 
 // ── list ────────────────────────────────────────────────────────────────────
 
