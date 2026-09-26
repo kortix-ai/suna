@@ -42,6 +42,7 @@ import type {
 } from '@/lib/utils/auth-types';
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { log, setLoggerUserId } from '@/lib/logger';
+import { queryCachePersistence } from '@/lib/query/query-cache';
 import { warmSessionPool } from '@/lib/session/warm-session-pool';
 
 /**
@@ -1045,6 +1046,9 @@ export function useAuth() {
       setIsSigningOut(true);
       // The SIGNED_OUT this causes is expected: no "session ended" dialog.
       sessionExpiry.disarm();
+      // Stop the persisted query cache and forget this user's copy first: the
+      // query client clear below would otherwise schedule one more write.
+      await queryCachePersistence.release();
 
       if (shouldUseRevenueCat()) {
         try {

@@ -34,6 +34,7 @@ import {
 } from '@/lib/projects/start-failure';
 import { listAccounts, listProjectsForAccount } from '@/lib/projects/projects-client';
 import { onboardingAccountId, startDestination } from '@/lib/onboarding/onboarding';
+import { queryCachePersistence } from '@/lib/query/query-cache';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useLastProjectStore } from '@/stores/last-project-store';
 import { useOnboardingStore } from '@/stores/onboarding-store';
@@ -98,6 +99,9 @@ export default function StartScreen() {
           whenHydrated(useLastProjectStore),
           whenHydrated(useCurrentAccountStore),
           whenHydrated(useOnboardingStore),
+          // This user's last lists (accounts, projects, sessions) are in the
+          // query cache before the first screen renders (lib/query/query-cache).
+          queryCachePersistence.bind(queryClient, userId),
         ]);
         const accounts = await queryClient.fetchQuery({
           queryKey: projectKeys.accounts,
