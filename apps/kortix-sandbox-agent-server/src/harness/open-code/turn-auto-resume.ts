@@ -79,8 +79,21 @@ const PERMANENT_ERROR_NAMES = new Set(['MessageAbortedError', 'ProviderAuthError
 // OpenRouter's mid-stream "Upstream idle timeout exceeded" (the exact prod
 // failure this feature exists for), which arrives as an UnknownError whose
 // message is sometimes JSON-quoted.
+//
+// `stream ended (without|before)` covers an upstream stream cut before its
+// terminal frame. A factory worker turn ended with "Stream ended without
+// finish_reason" and was never resumed, so its sandbox idled and stopped.
+// Verbatim variants in shipped bundles: "Stream ended without finish_reason",
+// "<Provider> stream ended without a finish reason / a stop reason",
+// "... stream ended before message_stop / a terminal response event"
+// (@earendil-works/pi-ai 0.85.1, whose own utils/retry.js retries "ended
+// without"); "OpenAI Chat stream ended without finish_reason" (OpenCode
+// 2.0.15, classification `incomplete-stream`); "SSE stream ended without a
+// data event"; "The model stream ended without a finish chunk" (ai 7.x
+// NoOutputGeneratedError). `other side closed` is undici's SocketError text
+// for a peer that closed the socket mid-response.
 const TRANSIENT_MESSAGE =
-  /upstream idle timeout|connection (reset|closed|error)|econnreset|econnrefused|etimedout|socket hang ?up|fetch failed|premature close|network error|overloaded|empty completion|upstream_stream_error|internal server error|bad gateway|service unavailable|gateway.?time.?out|stream (closed|error|disconnected)|terminated/i;
+  /upstream idle timeout|connection (reset|closed|error)|econnreset|econnrefused|etimedout|socket hang ?up|fetch failed|premature close|network error|overloaded|empty completion|upstream_stream_error|internal server error|bad gateway|service unavailable|gateway.?time.?out|stream (closed|error|disconnected)|stream ended (without|before)|other side closed|terminated/i;
 
 /** Is this turn failure a transient provider/stream error worth one more try? */
 export function isTransientTurnError(error?: OpencodeTurnError): boolean {
