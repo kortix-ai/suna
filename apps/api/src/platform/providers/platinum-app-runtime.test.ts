@@ -26,29 +26,35 @@ let lifecycleExecResult: Record<string, unknown> = {
 };
 let lifecycleExecError: Error | null = null;
 
+const platinumJson = async (path: string, init: RequestInit = {}) => {
+  const body = init.body
+    ? (JSON.parse(String(init.body)) as Record<string, unknown>)
+    : undefined;
+  calls.push({ path, method: String(init.method ?? "GET"), body });
+  if (path.endsWith("/start") && startError) {
+    const error = startError;
+    startError = null;
+    throw error;
+  }
+  if (path.endsWith("/exec")) {
+    if (lifecycleExecError) throw lifecycleExecError;
+    return { result: lifecycleExecResult };
+  }
+  if (path === "/v1/sandboxes/sbx_app")
+    return { id: "sbx_app", state: sandboxStateSequence.shift() ?? sandboxState };
+  return {};
+};
+
 mock.module("../../shared/platinum", () => ({
   isPlatinumConfigured: () => true,
-  platinumJsonResponse: async () => {
-    throw new Error("unexpected Platinum materialization request");
-  },
-  platinumJson: async (path: string, init: RequestInit = {}) => {
-    const body = init.body
-      ? (JSON.parse(String(init.body)) as Record<string, unknown>)
-      : undefined;
-    calls.push({ path, method: String(init.method ?? "GET"), body });
-    if (path.endsWith("/start") && startError) {
-      const error = startError;
-      startError = null;
-      throw error;
+  // start() reads the /start status (a 202 means a restore is still running).
+  platinumJsonResponse: async (path: string, init: RequestInit = {}) => {
+    if (!path.endsWith("/start")) {
+      throw new Error("unexpected Platinum materialization request");
     }
-    if (path.endsWith("/exec")) {
-      if (lifecycleExecError) throw lifecycleExecError;
-      return { result: lifecycleExecResult };
-    }
-    if (path === "/v1/sandboxes/sbx_app")
-      return { id: "sbx_app", state: sandboxStateSequence.shift() ?? sandboxState };
-    return {};
+    return { status: 200, body: await platinumJson(path, init) };
   },
+  platinumJson,
 }));
 mock.module("../service-key", () => ({
   serviceKeyForExternalId: () => "svc_key",

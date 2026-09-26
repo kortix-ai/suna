@@ -14,9 +14,11 @@ import {
   hostFromRepoUrl,
   invalidateProjectMirror,
   isGitOperationError,
+  isRemotePushPolicyRejection,
   makeSessionBranchRepo,
   normalizeTreePath,
   refreshMirror,
+  retryTransientGitMirror,
   runGit,
   runGitCapture,
 } from './mirror';
@@ -598,18 +600,36 @@ export async function commitMultipleFilesToBranch(
         pushArgs.push(`--force-with-lease=refs/heads/${branch}:${parentSha ?? ''}`);
       }
       pushArgs.push('origin', `${commitSha}:refs/heads/${branch}`);
-      await runGit(
-        pushArgs,
-        repoPath,
-        true,
-        project.gitAuthToken,
-        undefined,
-        authHost,
-        undefined,
-        project.gitAuthHeaders,
-      );
+      // The push is the last network step of every API write to a branch. Like
+      // the cold clone and the warm fetch, it can fail for a TRANSIENT upstream
+      // reason — a socket blip, or GitHub's ambiguous `RPC failed; HTTP 404`
+      // for a private repo whose App-installation credential is momentarily not
+      // (yet) usable. Without a retry that one blip surfaced as a 502 to the
+      // client and paged Sentry from the web app on a connector/manifest write
+      // during onboarding (Better Stack FE pattern `0cb9ab43…`). Reuse the
+      // clone/fetch retry: a transient failure retries; a permanent one (bad
+      // ref, real auth denial, a lost `--force-with-lease` race) rethrows on the
+      // first attempt and is classified by the catch below.
+      await retryTransientGitMirror({
+        run: () =>
+          runGit(
+            pushArgs,
+            repoPath,
+            true,
+            project.gitAuthToken,
+            undefined,
+            authHost,
+            undefined,
+            project.gitAuthHeaders,
+          ),
+      });
     } catch (error) {
       invalidateProjectMirror(project.projectId);
+      // A remote-policy rejection is permanent and NOT a stale tip: the remote
+      // refused the ref by rule, so refreshing and retrying cannot help. Check
+      // it before the revision-race path below, which would otherwise mistake
+      // it for a concurrent edit and hide the real cause behind a conflict.
+      if (isRemotePushPolicyRejection(error)) throw error;
       if (expectedFileRevision) {
         const remoteTip = await readRemoteBranchTip(project, repoPath, branch, authHost);
         if (remoteTip === commitSha) {

@@ -98,9 +98,9 @@ import {
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
 import {
   GIT_MIRROR_UNAVAILABLE_CODE,
-  GitOperationError,
-  isGitOperationError,
+  isRemotePushPolicyRejection,
   isTransientGitMirrorError,
+  pushPolicyWarning,
 } from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import {
@@ -1211,6 +1211,27 @@ app.onError((err, c) => {
     );
   }
 
+  // A push the REMOTE rejected by policy — branch protection, repository rules,
+  // a server-side hook — is a PERMANENT, user-actionable outcome: retrying the
+  // same commit is rejected again and the mirror retry cannot help. It must NOT
+  // page Sentry as an opaque server error (prod Better Stack pattern
+  // `5e505349…`: `push declined due to repository rule violations`). This is the
+  // single backstop for every commit path that lets the error propagate here;
+  // the agent-config route additionally maps it to a typed 409 at the call site.
+  if (isRemotePushPolicyRejection(err)) {
+    const warning = pushPolicyWarning(method, err);
+    appLogger.warn(warning.message, warning.fields);
+    return c.json(
+      {
+        error: true,
+        message: 'the repository rejected the push because of its branch protection or repository rules',
+        status: 409,
+        code: 'repository_push_rejected',
+      },
+      409,
+    );
+  }
+
   // A transient Daytona provider gateway / connection / timeout failure is
   // EXPECTED — the upstream Daytona API (or its nginx / Cloudflare-style
   // gateway) momentarily 502/503/504-ing, a socket reset mid-call, or the
@@ -1546,6 +1567,17 @@ async function startReplicaServices() {
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
   startSessionLifecycleWorker();
+  // Every api process must learn that a base branch moved, not just the one
+  // that handled the push — otherwise the turn-start gate answers `current`
+  // from a memo resolved before it (shared/pg-broadcast.ts). Awaited because it
+  // is one connection and it must be in place before the first turn; it never
+  // rejects, and a failure degrades to the memo's TTL.
+  await import('./shared/pg-broadcast').then(async (m) => {
+    const listening = await m.startConfigBaseMoveBroadcast();
+    if (!listening) return;
+    const { useDesiredInvalidationTransport } = await import('./projects/lib/turn-start-convergence');
+    useDesiredInvalidationTransport(m.configBaseMoveTransport());
+  });
 }
 
 // Singleton background WORKERS — must run on EXACTLY ONE replica at a time
@@ -1669,6 +1701,9 @@ async function shutdown(signal: string) {
   stopAccessControlCache();
   stopTmpReaper();
   stopSessionLifecycleWorker();
+  await import('./shared/pg-broadcast')
+    .then((m) => m.stopConfigBaseMoveBroadcast())
+    .catch(() => {});
   // Flush observability data before exit. The audit queue is drained here
   // because audit rows are buffered off the request path — without this, the
   // last ~250 ms of events would be lost on every SIGTERM (i.e. every rollout).
