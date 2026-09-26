@@ -1,22 +1,7 @@
-import { useQuery, useMutation, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
+import { useQuery, type UseQueryOptions } from '@tanstack/react-query';
 import { backendApi } from '../core/http/api-client';
-
-const ADMIN_REVOKED_RE = /admin access required|forbidden|403/i;
-
-function stopOnAdminRevoked(
-  queryClient: ReturnType<typeof useQueryClient>,
-  error: unknown,
-  intervalMs: number,
-): false | number {
-  const message = error instanceof Error ? error.message : '';
-  if (!ADMIN_REVOKED_RE.test(message)) return intervalMs;
-  queryClient.invalidateQueries({ queryKey: ['admin-role'] });
-  return false;
-}
-
-function isAdminRevokedError(error: unknown): boolean {
-  return ADMIN_REVOKED_RE.test(error instanceof Error ? error.message : '');
-}
+import { retiredEndpointError } from '../core/http/api/errors';
+import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
 
 export interface AdminSandbox {
   sandboxId: string;
@@ -150,49 +135,19 @@ export interface ProviderMachineDetail {
   ssh_key?: { setup_command?: string | null; key_path?: string | null } | null;
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminSandboxDetail(sandboxId: string | null) {
-  const qc = useQueryClient();
-  return useQuery<AdminSandboxDetail>({
-    queryKey: ['admin', 'sandbox-detail', sandboxId],
-    enabled: !!sandboxId,
-    queryFn: async () => {
-      const response = await backendApi.get<AdminSandboxDetail>(`/admin/api/sandboxes/${sandboxId}`);
-      if (response.error) throw new Error(response.error.message);
-      return response.data!;
-    },
-    refetchInterval: (q) => stopOnAdminRevoked(qc, q.state.error, 10_000),
-    retry: (_n, err) => !isAdminRevokedError(err),
-  });
+  return useRetiredQuery<AdminSandboxDetail>('useAdminSandboxDetail', ['admin', 'sandbox-detail', sandboxId], !!sandboxId);
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminSandboxHealth(sandboxId: string | null, enabled = true) {
-  const qc = useQueryClient();
-  return useQuery<AdminSandboxHealth>({
-    queryKey: ['admin', 'sandbox-health', sandboxId],
-    enabled: !!sandboxId && enabled,
-    queryFn: async () => {
-      const response = await backendApi.get<AdminSandboxHealth>(`/admin/api/sandboxes/${sandboxId}/health`);
-      if (response.error) throw new Error(response.error.message);
-      return response.data!;
-    },
-    refetchInterval: (q) => stopOnAdminRevoked(qc, q.state.error, 10_000),
-    retry: (_n, err) => !isAdminRevokedError(err),
-  });
+  return useRetiredQuery<AdminSandboxHealth>('useAdminSandboxHealth', ['admin', 'sandbox-health', sandboxId], !!sandboxId && enabled);
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminSandboxHealthBatch(sandboxIds: string[], enabled = true) {
-  const ids = sandboxIds.filter(Boolean);
-  return useQuery<AdminSandboxHealthBatchResponse>({
-    queryKey: ['admin', 'sandbox-health-batch', ids],
-    enabled: enabled && ids.length > 0,
-    queryFn: async () => {
-      const response = await backendApi.post<AdminSandboxHealthBatchResponse>('/admin/api/sandboxes/health-batch', { sandboxIds: ids }, { showErrors: false, timeout: 60000 });
-      if (response.error) throw new Error(response.error.message);
-      return response.data ?? { items: [] };
-    },
-    staleTime: 10_000,
-    refetchInterval: 15_000,
-  });
+  return useRetiredQuery<AdminSandboxHealthBatchResponse>('useAdminSandboxHealthBatch', ['admin', 'sandbox-health-batch', sandboxIds], enabled && sandboxIds.length > 0);
 }
 
 export interface ExecResult {
@@ -203,17 +158,9 @@ export interface ExecResult {
   error?: string;
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminSandboxExec() {
-  return useMutation<ExecResult, Error, { sandboxId: string; command: string; timeout?: number }>({
-    mutationFn: async ({ sandboxId, command, timeout }) => {
-      const response = await backendApi.post<ExecResult>(
-        `/admin/api/sandboxes/${sandboxId}/exec`,
-        { command, timeout: timeout ?? 60 },
-      );
-      if (response.error) throw new Error(response.error.message);
-      return response.data!;
-    },
-  });
+  return useRetiredMutation<ExecResult, { sandboxId: string; command: string; timeout?: number }>('useAdminSandboxExec');
 }
 
 export interface ProxyTokenResult {
@@ -224,57 +171,22 @@ export interface ProxyTokenResult {
   proxy_url: string | null;
 }
 
-export async function fetchAdminSandboxProxyToken(sandboxId: string): Promise<ProxyTokenResult> {
-  const response = await backendApi.post<ProxyTokenResult>(`/admin/api/sandboxes/${sandboxId}/proxy-token`);
-  if (response.error) throw new Error(response.error.message);
-  return response.data!;
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+export async function fetchAdminSandboxProxyToken(_sandboxId: string): Promise<ProxyTokenResult> {
+  throw retiredEndpointError('fetchAdminSandboxProxyToken');
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminSandboxAction() {
-  const queryClient = useQueryClient();
-  return useMutation<unknown, Error, { sandboxId: string; action: 'reboot' | 'stop' | 'start' }>({
-    mutationFn: async ({ sandboxId, action }) => {
-      const response = await backendApi.post(`/admin/api/sandboxes/${sandboxId}/action`, { action });
-      if (response.error) throw new Error(response.error.message);
-      return response.data;
-    },
-    onSuccess: (_data, { sandboxId }) => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'sandboxes'] });
-      queryClient.invalidateQueries({ queryKey: ['admin', 'sandbox-detail', sandboxId] });
-    },
-  });
+  return useRetiredMutation<unknown, { sandboxId: string; action: 'reboot' | 'stop' | 'start' }>('useAdminSandboxAction');
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminSandboxRepair() {
-  const queryClient = useQueryClient();
-  return useMutation<unknown, Error, { sandboxId: string; action: AdminInstanceLayerAction['action']; serviceId?: string }>({
-    mutationFn: async ({ sandboxId, action, serviceId }) => {
-      const response = await backendApi.post(`/admin/api/sandboxes/${sandboxId}/repair`, { action, serviceId });
-      if (response.error) throw new Error(response.error.message);
-      return response.data;
-    },
-    onSuccess: (_data, { sandboxId }) => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'sandboxes'] });
-      queryClient.invalidateQueries({ queryKey: ['admin', 'sandbox-detail', sandboxId] });
-      queryClient.invalidateQueries({ queryKey: ['admin', 'sandbox-health', sandboxId] });
-      queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] });
-    },
-  });
+  return useRetiredMutation<unknown, { sandboxId: string; action: AdminInstanceLayerAction['action']; serviceId?: string }>('useAdminSandboxRepair');
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useDeleteAdminSandbox() {
-  const queryClient = useQueryClient();
-
-  return useMutation<{ success: boolean; sandboxId: string }, Error, string>({
-    mutationFn: async (sandboxId: string) => {
-      const response = await backendApi.delete<{ success: boolean; sandboxId: string }>(
-        `/admin/api/sandboxes/${sandboxId}`
-      );
-      if (response.error) throw new Error(response.error.message);
-      return response.data!;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'sandboxes'] });
-    },
-  });
+  return useRetiredMutation<{ success: boolean; sandboxId: string }, string>('useDeleteAdminSandbox');
 }

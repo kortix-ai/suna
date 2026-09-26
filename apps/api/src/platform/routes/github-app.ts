@@ -66,6 +66,7 @@ import {
   envManagedConflictBody,
   resolveInstanceGitMutability,
 } from '../services/instance-git-mutability';
+import { readJsonObject } from '../../shared/http-body';
 
 export const githubAppSetupRouter = makeOpenApiApp<AppEnv>();
 
@@ -507,8 +508,8 @@ githubAppSetupRouter.openapi(
     if (gate) return gate;
     try {
       const accountId = c.get('userId') as string;
-      const body = await c.req.json().catch(() => ({}));
-      const org = typeof body?.org === 'string' && body.org.trim() ? body.org.trim() : undefined;
+      const body = await readJsonObject(c);
+      const org = typeof body.org === 'string' && body.org.trim() ? body.org.trim() : undefined;
 
       const manifest = buildGithubAppManifest({
         apiBaseUrl: apiBaseUrl(c),
@@ -1130,16 +1131,16 @@ githubAppSetupRouter.openapi(
     const gate = envManagedGate(c);
     if (gate) return gate;
 
-    const body = await c.req.json().catch(() => ({}));
-    const appId = typeof body?.app_id === 'string' ? body.app_id.trim() : '';
-    const privateKey = typeof body?.private_key === 'string' ? body.private_key.trim() : '';
+    const body = await readJsonObject(c);
+    const appId = typeof body.app_id === 'string' ? body.app_id.trim() : '';
+    const privateKey = typeof body.private_key === 'string' ? body.private_key.trim() : '';
     const installationId =
-      typeof body?.installation_id === 'string' ? body.installation_id.trim() : '';
-    const slug = typeof body?.slug === 'string' && body.slug.trim() ? body.slug.trim() : undefined;
+      typeof body.installation_id === 'string' ? body.installation_id.trim() : '';
+    const slug = typeof body.slug === 'string' && body.slug.trim() ? body.slug.trim() : undefined;
     const clientId =
-      typeof body?.client_id === 'string' && body.client_id.trim() ? body.client_id.trim() : undefined;
+      typeof body.client_id === 'string' && body.client_id.trim() ? body.client_id.trim() : undefined;
     const clientSecret =
-      typeof body?.client_secret === 'string' && body.client_secret.trim()
+      typeof body.client_secret === 'string' && body.client_secret.trim()
         ? body.client_secret.trim()
         : undefined;
 
@@ -1308,9 +1309,9 @@ githubAppSetupRouter.openapi(
     const gate = envManagedGate(c);
     if (gate) return gate;
 
-    const body = await c.req.json().catch(() => ({}));
-    const token = typeof body?.token === 'string' ? body.token.trim() : '';
-    const owner = typeof body?.owner === 'string' ? body.owner.trim() : '';
+    const body = await readJsonObject(c);
+    const token = typeof body.token === 'string' ? body.token.trim() : '';
+    const owner = typeof body.owner === 'string' ? body.owner.trim() : '';
     if (!token || !owner) {
       return c.json({ error: true, message: 'token and owner are required', status: 400 }, 400);
     }

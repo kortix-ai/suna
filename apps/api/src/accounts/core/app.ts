@@ -1,7 +1,6 @@
 import { z } from '@hono/zod-openapi';
 import { accountInvitations, accountMembers, accountMemberships, iamRoles, roleAssignments, type accounts } from '@kortix/db';
 import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
 import {
@@ -10,6 +9,7 @@ import {
 } from '../../shared/impersonation';
 import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { trustedEmailForUser } from '../../iam/email-trust';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { lookupEmailsByUserIds } from './owner-emails';
 import type { AppEnv } from '../../types';
@@ -164,14 +164,6 @@ export const AccountIdParam = z.object({ accountId: z.string() });
 
 export type AccountRole = 'owner' | 'admin' | 'member';
 
-export async function readBodyTokens(c: Context): Promise<Record<string, unknown>> {
-  try {
-    return (await c.req.json()) ?? {};
-  } catch {
-    return {};
-  }
-}
-
 export async function resolveAccountForUser(
   userId: string,
   override: string | undefined,
@@ -188,14 +180,6 @@ export async function resolveAccountForUser(
     return membership.accountId;
   }
   return resolveAccountId(userId);
-}
-
-export async function readBody(c: Context): Promise<Record<string, unknown>> {
-  try {
-    return (await c.req.json()) ?? {};
-  } catch {
-    return {};
-  }
 }
 
 export function normalizeString(value: unknown): string | null {
@@ -340,14 +324,21 @@ export function serializeAccount(row: typeof accounts.$inferSelect) {
  * Claim the caller's pending, grant-free account invites. Best effort: never
  * throws. Returns how many invites it claimed, so a caller can skip re-reading
  * memberships when nothing changed.
+ *
+ * The address matched is the caller's TRUSTED email (iam/email-trust.ts), not
+ * the token's claim: an SSO identity whose IdP account has not verified the
+ * email's domain claims nothing. `email` is the address the caller expects;
+ * a mismatch with the trusted one also claims nothing.
  */
 export async function autoClaimPendingInvites(userId: string, email: string): Promise<number> {
   if (!email) return 0;
-  const normalized = email.trim().toLowerCase();
-  if (!normalized) return 0;
+  const expected = email.trim().toLowerCase();
+  if (!expected) return 0;
   let claimed = 0;
 
   try {
+    const normalized = await trustedEmailForUser(userId);
+    if (!normalized || normalized !== expected) return 0;
     const pending = await db
       .select()
       .from(accountInvitations)
@@ -368,6 +359,7 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
       // the account, can't see the project, and is never shown the accept/decline
       // dialog. Leave grant-carrying invites pending for the recipient to act on.
       if ((invite.bootstrapGrants ?? []).length > 0) continue;
+      if (invite.email.trim().toLowerCase() !== normalized) continue;
       try {
         // IDENTITY, then the ROLE. `accountMemberships` is the table;
         // `accountMembers` is a view over it plus role_assignments, and a

@@ -12,7 +12,18 @@ import {
   STAMPED_RUNTIME_FAILURE_STOP_REASONS,
   runtimeStartFailurePatch,
 } from './session-lifecycle/runtime-wake-fence';
-import { transitionRuntime } from './session-lifecycle/status-transitions';
+import {
+  STOPPED_SANDBOX_CLEARED_KEYS,
+  patchedSandboxMetadata,
+  transitionRuntime,
+} from './session-lifecycle/status-transitions';
+import {
+  STOP_CLAIM_KEY,
+  holdsStopClaim,
+  noLiveStopClaim,
+  stopClaimMetadata,
+} from './session-lifecycle/stop-claim';
+import { isAlreadyNotRunning } from './reaping/policy';
 
 export const RUNTIME_IDENTITY_UNAVAILABLE = 'runtime_identity_unavailable';
 /** Stable alert key. Better Stack / Sentry rules match on this, not on prose. */
@@ -202,7 +213,13 @@ export async function preserveEstablishedRuntime(
 
   if (!preserved) return null;
 
-  reportLostRuntime(preserved, reason, stopReason, now);
+  // Once per identity. Every open of a lost session runs the removed path and
+  // lands here again (the client polls /start every second), and each pass
+  // used to report the same loss as a new one.
+  const before = (row.metadata as Record<string, unknown> | null) ?? {};
+  const alreadyReported =
+    before.runtimeIdentityState === 'unavailable' && before.preservedExternalId === externalId;
+  if (!alreadyReported) reportLostRuntime(preserved, reason, stopReason, now);
   return preserved;
 }
 
@@ -261,13 +278,25 @@ type ParkableRuntimeRow = Pick<
 >;
 
 /**
- * Park an established runtime that FAILED without being lost: close its
- * compute window, stop the provider box, and record an ordinary stopped row.
+ * Park an established runtime that FAILED without being lost: stop the
+ * provider box, record an ordinary stopped row, and close its compute window.
  * Unlike {@link preserveEstablishedRuntime} it writes no loss flags, so the
  * session stays wakeable and the UI shows the honest "restart it" card. The
  * provider stop is load-bearing, not defensive: the incident's boot-failed
  * boxes stayed RUNNING on both providers after their rows were marked stopped
  * and their metering closed — unmetered compute until a backstop fired.
+ *
+ * Three steps, and no transaction is open across the provider call:
+ *   1. Claim: one UPDATE installs a stop claim on the exact row the caller
+ *      read (CAS on `updated_at`). The row stays `active`. A new prompt and an
+ *      in-place restart refuse the row while the claim is live.
+ *   2. `provider.stop()`.
+ *   3. On success, park both rows in one transaction under the same claim,
+ *      then close the compute window. On failure, release the claim: the row
+ *      is `active` again, exactly as the caller found it, and its metering
+ *      stays open because the box may still run.
+ *
+ * Returns the parked row, or null when the claim was lost or the stop failed.
  */
 export async function parkEstablishedRuntime(
   row: ParkableRuntimeRow,
@@ -279,8 +308,43 @@ export async function parkEstablishedRuntime(
     throw new Error(`Cannot park sandbox ${row.sandboxId} as established without an external_id`);
   }
   const externalId = row.externalId;
+  const token = crypto.randomUUID();
 
-  return transitionRuntime({
+  // A readiness request can outlive the wake it inspected. The wake rewrites
+  // this row before starting the provider. No provider or billing side effect
+  // is allowed unless this exact snapshot wins.
+  const [claimed] = await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: patchedSandboxMetadata({ merge: stopClaimMetadata(token, now) }),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, row.sandboxId),
+        eq(sessionSandboxes.status, 'active'),
+        eq(sessionSandboxes.externalId, externalId),
+        eq(sessionSandboxes.updatedAt, row.updatedAt),
+        noLiveStopClaim(now),
+      ),
+    )
+    .returning({ sandboxId: sessionSandboxes.sandboxId });
+  if (!claimed) return null;
+
+  try {
+    await getProvider(row.provider as ProviderName).stop(externalId);
+  } catch (err) {
+    if (!isAlreadyNotRunning(err)) {
+      console.warn(
+        `[runtime-identity] provider stop failed while parking ${externalId}; the row stays active:`,
+        err instanceof Error ? err.message : err,
+      );
+      await releaseParkClaim(row.sandboxId, token);
+      return null;
+    }
+  }
+
+  const parked = await transitionRuntime({
     sessionId: row.sessionId,
     sandboxId: row.sandboxId,
     session: 'park',
@@ -288,7 +352,8 @@ export async function parkEstablishedRuntime(
     at: now,
     error: null,
     metadata: {
-      strip: ['needsReprovision', ...RECOVERY_LEASE_KEYS],
+      // A stopped row keeps no wake fence, turn authority or stop claim.
+      strip: ['needsReprovision', ...RECOVERY_LEASE_KEYS, ...STOPPED_SANDBOX_CLEARED_KEYS],
       merge: parkMetadataPatch(
         reason,
         stopReason,
@@ -296,41 +361,36 @@ export async function parkEstablishedRuntime(
         (row.metadata as Record<string, unknown>) ?? null,
       ),
     },
-    guard: and(
-      eq(sessionSandboxes.externalId, externalId),
-      // A readiness request can outlive the wake it inspected. The wake
-      // rewrites this row before starting the provider. No provider or
-      // billing side effect is allowed unless this exact snapshot wins.
-      eq(sessionSandboxes.updatedAt, row.updatedAt),
-    ),
+    guard: and(eq(sessionSandboxes.externalId, externalId), holdsStopClaim(token)),
     then: async (tx) => {
       // A turn that was open ended with this runtime. The settle remains
       // savepoint-bounded so an observation-table failure cannot abort the
-      // lifecycle claim this transaction now owns.
+      // park this transaction commits.
       await settleOpenSandboxTurns(tx, row.sandboxId, 'runtime_gone');
-
-      // Keep the row lock through the provider pause. A concurrent restart
-      // cannot start the same runtime between our CAS and this stop.
-      let providerStopped = false;
-      try {
-        await getProvider(row.provider as ProviderName).stop(externalId);
-        providerStopped = true;
-      } catch (err) {
-        console.warn(
-          `[runtime-identity] provider stop failed while parking ${externalId}:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-      if (providerStopped) {
-        await endComputeSession(row.sandboxId).catch((err) =>
-          console.warn(
-            `[runtime-identity] failed to close compute for ${row.sandboxId} while parking ${externalId}:`,
-            err,
-          ),
-        );
-      }
     },
   });
+  if (!parked) {
+    // A deleted session refuses the park. Leave its row to the delete.
+    await releaseParkClaim(row.sandboxId, token);
+    return null;
+  }
+  await endComputeSession(row.sandboxId).catch((err) =>
+    console.warn(
+      `[runtime-identity] failed to close compute for ${row.sandboxId} while parking ${externalId}:`,
+      err,
+    ),
+  );
+  return parked;
+}
+
+async function releaseParkClaim(sandboxId: string, token: string): Promise<void> {
+  await db
+    .update(sessionSandboxes)
+    .set({ metadata: patchedSandboxMetadata({ strip: [STOP_CLAIM_KEY] }) })
+    .where(and(eq(sessionSandboxes.sandboxId, sandboxId), holdsStopClaim(token)))
+    .catch((err) =>
+      console.warn(`[runtime-identity] failed to release the park claim on ${sandboxId}:`, err),
+    );
 }
 
 /**

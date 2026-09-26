@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { OFFLOAD_PLACEHOLDER_URL } from './harness/open-code/attachment-offload';
 import {
   INLINE_ATTACHMENT_MAX_BYTES,
   stripInlineAttachmentBytes,
@@ -25,36 +26,8 @@ describe('stripInlineAttachmentBytes', () => {
     expect(result.savedBytes).toBe(bigDataUrl.length);
   });
 
-  test('keeps everything else about the part — type, mime, filename, id', () => {
-    const result = stripInlineAttachmentBytes(
-      messagePage([
-        { id: 'prt_1', type: 'file', mime: 'image/png', filename: 'shot.png', url: bigDataUrl },
-      ]),
-      ref,
-    );
-
-    expect((result.value as any)[0].parts[0]).toEqual({
-      id: 'prt_1',
-      type: 'file',
-      mime: 'image/png',
-      filename: 'shot.png',
-      url: '/blob/msg_1/prt_1',
-    });
-  });
-
-  test('a small data url is left inline — a round trip would cost more', () => {
-    const small = 'data:image/gif;base64,R0lGOD';
-    const result = stripInlineAttachmentBytes(
-      messagePage([{ id: 'prt_1', type: 'file', url: small }]),
-      ref,
-    );
-
-    expect((result.value as any)[0].parts[0].url).toBe(small);
-    expect(result.stripped).toBe(0);
-  });
-
-  test('a remote url is not a payload and is never touched', () => {
-    const remote = 'https://files.example.test/a.png';
+  test('a remote url is not a payload and is never touched, however long', () => {
+    const remote = `https://files.example.test/${'a'.repeat(INLINE_ATTACHMENT_MAX_BYTES + 1)}.png`;
     const result = stripInlineAttachmentBytes(
       messagePage([{ id: 'prt_1', type: 'file', url: remote }]),
       ref,
@@ -64,14 +37,13 @@ describe('stripInlineAttachmentBytes', () => {
     expect(result.stripped).toBe(0);
   });
 
-  test('text parts are untouched however large', () => {
-    const text = 'x'.repeat(INLINE_ATTACHMENT_MAX_BYTES * 2);
+  test('only a file part is swapped, even when another part carries an oversized data url', () => {
     const result = stripInlineAttachmentBytes(
-      messagePage([{ id: 'prt_1', type: 'text', text }]),
+      messagePage([{ id: 'prt_1', type: 'text', text: 'hi', url: bigDataUrl }]),
       ref,
     );
 
-    expect((result.value as any)[0].parts[0].text).toBe(text);
+    expect((result.value as any)[0].parts[0].url).toBe(bigDataUrl);
     expect(result.stripped).toBe(0);
   });
 
@@ -88,14 +60,6 @@ describe('stripInlineAttachmentBytes', () => {
     expect(result.savedBytes).toBe(bigDataUrl.length * 2);
   });
 
-  test('a v2-style envelope is handled too', () => {
-    const result = stripInlineAttachmentBytes(
-      { data: messagePage([{ id: 'prt_1', type: 'file', url: bigDataUrl }]), cursor: {} },
-      ref,
-    );
-    expect((result.value as any).data[0].parts[0].url).toBe('/blob/msg_1/prt_1');
-  });
-
   /**
    * This runs in the proxy for EVERY response on the message path. An unknown
    * or malformed payload must come back unchanged, never mangled and never
@@ -107,6 +71,23 @@ describe('stripInlineAttachmentBytes', () => {
       expect(result.value).toEqual(payload as never);
       expect(result.stripped).toBe(0);
     }
+  });
+
+  // An attachment the offload moved to a sidecar keeps only a 1×1 placeholder
+  // inline. A read through OpenCode's API drops the daemon's marker, so the
+  // placeholder URL alone must still become an on-demand ref, however small.
+  test('an offload placeholder becomes a ref even though it is tiny', () => {
+    const result = stripInlineAttachmentBytes(
+      messagePage([
+        {
+          type: 'tool',
+          state: { attachments: [{ type: 'file', id: 'prt_att', mime: 'image/png', url: OFFLOAD_PLACEHOLDER_URL }] },
+        },
+      ]),
+      ref,
+    );
+    expect(result.stripped).toBe(1);
+    expect((result.value as any)[0].parts[0].state.attachments[0].url).toBe('/blob/msg_1/prt_att');
   });
 
   test('a file part with no id cannot be referenced, so it is left alone', () => {

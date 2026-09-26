@@ -323,6 +323,81 @@ export function buildSelectCard(opts: {
   return card(body);
 }
 
+export interface ModelPickerOption {
+  id: string;
+  label: string;
+  /** How the model is reached: `chatgpt`, `key` (an API key), `kortix`. */
+  via: 'chatgpt' | 'key' | 'kortix';
+  /** The provider's display name (`Anthropic`, `OpenRouter`). */
+  providerLabel: string;
+}
+
+/** Past this many choices, buttons stop being scannable and a searchable dropdown wins. */
+const MAX_MODEL_BUTTONS = 8;
+
+function viaHint(o: ModelPickerOption): string {
+  if (o.via === 'chatgpt') return 'ChatGPT subscription';
+  if (o.via === 'key') return `${o.providerLabel} key`;
+  return 'Kortix';
+}
+
+/**
+ * The `/models` card: every model this conversation may run, as the web picker
+ * lists them — the person's ChatGPT subscriptions and API keys (their own in a
+ * personal chat, the project's everywhere) before Kortix models.
+ *
+ * Up to MAX_MODEL_BUTTONS choices are one-tap buttons; more become a
+ * searchable dropdown with one Use button. Both post `teams_set_model` with
+ * `model` (the dropdown's input id is `model` too), so one handler serves both.
+ */
+export function buildModelPickerCard(opts: {
+  models: ModelPickerOption[];
+  /** The conversation's pick as a wire id, or null for the project default. */
+  current: string | null;
+  currentLabel: string | null;
+  defaultLabel: string | null;
+  /** "Rotates across 2 ChatGPT connections: …" for the current pick. */
+  keysNote?: string | null;
+  /** Which keys count in this conversation. */
+  scopeNote: string;
+}): Record<string, unknown> {
+  const subtitle = [
+    opts.current ? `Currently ${opts.currentLabel ?? opts.current}` : `Currently the project default${opts.defaultLabel ? ` (${opts.defaultLabel})` : ''}`,
+    opts.keysNote ?? null,
+  ].filter(Boolean).join(' · ');
+  const body: CardElement[] = [...headerBlock('🧠', 'Model', subtitle)];
+  const defaultChoice = { label: 'Project default', hint: opts.defaultLabel ?? undefined, value: '' };
+
+  if (opts.models.length + 1 <= MAX_MODEL_BUTTONS) {
+    const options: SelectOption[] = [
+      { label: defaultChoice.label, hint: defaultChoice.hint, current: !opts.current, data: { model: '' } },
+      ...opts.models.map((m) => ({
+        label: m.label,
+        hint: viaHint(m),
+        current: opts.current === m.id,
+        data: { model: m.id },
+      })),
+    ];
+    body.push(emphasisContainer(options.map((o, i) => selectRow(o, 'teams_set_model', i > 0))));
+    body.push(text(opts.scopeNote, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
+    return card(body);
+  }
+
+  body.push({
+    type: 'Input.ChoiceSet',
+    id: 'model',
+    style: 'filtered',
+    value: opts.current ?? '',
+    choices: [
+      { title: `Project default${opts.defaultLabel ? ` — ${opts.defaultLabel}` : ''}`, value: '' },
+      ...opts.models.map((m) => ({ title: `${m.label} · ${viaHint(m)}`, value: m.id })),
+    ],
+    spacing: 'medium',
+  });
+  body.push(text(opts.scopeNote, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
+  return card(body, [executeAction('Use model', 'teams_set_model')]);
+}
+
 /**
  * The agent picker, in both of its moods.
  *

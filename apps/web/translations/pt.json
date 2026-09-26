@@ -43,7 +43,26 @@
     "connectAccount": "Conectar conta",
     "oauthWaiting": "Aguardando autorização…",
     "oauthExpired": "A autorização expirou. Tente novamente.",
-    "oauthPrivateDescription": "As novas contas ChatGPT ficam disponíveis para este projeto por padrão. Você pode restringir cada conta a membros selecionados.",
+    "oauthPrivateDescription": "Use seu plano ChatGPT Plus ou Pro neste projeto. Novas contas ficam privadas até você compartilhá-las.",
+    "chatGptSubscription": "Assinatura do ChatGPT",
+    "useYourChatGpt": "Use sua assinatura do ChatGPT",
+    "manageChatGptAccounts": "Gerenciar contas ChatGPT",
+    "connect": "Conectar",
+    "connectChatGpt": "Conectar ChatGPT",
+    "noChatGptAccounts": "Nenhuma conta ChatGPT ainda",
+    "oauthCreationDescription": "Entre com sua conta ChatGPT Plus ou Pro. O Kortix armazena o login criptografado e nunca o exibe.",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "Somente você",
+    "onlyYouDescription": "Somente você pode selecioná-la em uma sessão.",
+    "onlyOwner": "Somente {name}",
+    "shareRequiresPermission": "Para compartilhar com outras pessoas, é preciso permissão para gerenciar os segredos do projeto.",
+    "accountConnected": "Conta ChatGPT conectada",
+    "accountReconnected": "Conta ChatGPT reconectada",
+    "connectFailed": "A autorização do ChatGPT falhou. Tente novamente.",
+    "reconnectAccount": "Reconectar",
+    "reconnectTitle": "Reconectar {label}",
+    "reconnectDescription": "Entre no ChatGPT novamente. A conta mantém o nome, o acesso e as seleções de sessão.",
+    "needsReconnection": "Precisa reconectar",
     "accountLabelPlaceholder": "ex.: Minha conta ChatGPT",
     "chooseProvider": "Escolha um fornecedor.",
     "saved": "Segredo guardado",
@@ -52,7 +71,7 @@
     "deleteError": "Não foi possível eliminar o segredo",
     "accessError": "Não foi possível alterar o acesso",
     "sharedTitle": "Conexões de provedores",
-    "sharedDescription": "Adicione várias chaves de API e contas ChatGPT. Por padrão, todos neste projeto podem usá-las. Restrinja o acesso por conexão e escolha as chaves por sessão.",
+    "sharedDescription": "Adicione chaves de API e contas ChatGPT. As novas ficam privadas até você compartilhá-las. Escolha quais cada sessão usa.",
     "legacyProjectKey": "Chave existente do projeto · Usada quando esta sessão não tem uma seleção de chaves",
     "keyCount": "{count, plural, one {# chave} other {# chaves}}",
     "providerKeysFor": "Chaves API de {provider}",
@@ -102,6 +121,7 @@
     "providerKeys": "Chaves de fornecedor",
     "chooseSharedKeys": "Escolha as chaves partilhadas que esta sessão pode usar.",
     "sessionKeyPool": "Conjunto de chaves da sessão",
+    "sharedSessionKeys": "Esta sessão está partilhada com o projeto, por isso aqui só funcionam as chaves partilhadas com todo o projeto. As chaves atribuídas a si funcionam nas suas sessões privadas.",
     "projectDefaultShort": "Padrão do projeto",
     "rateLimitDescription": "O gateway alterna entre as chaves selecionadas quando um fornecedor indica um limite de pedidos.",
     "enableGateway": "Ative o gateway LLM nas definições do projeto para usar conjuntos de chaves.",
@@ -1109,7 +1129,7 @@
         },
         "pooled_provider_secrets": {
           "name": "Segredos de provedor compartilhados",
-          "description": "Compartilhe várias chaves de provedor com membros e selecione um grupo de chaves por sessão."
+          "description": "Os membros conectam as próprias assinaturas do ChatGPT e chaves de provedor, compartilham quando necessário e escolhem quais cada sessão usa."
         },
         "pi_worker": {
           "name": "Ambiente do worker Pi (compilado)",
@@ -1122,6 +1142,10 @@
         "agent_principal": {
           "name": "Agentes como principais",
           "description": "Os agentes agem como eles mesmos: com suas permissões do Kortix, limitadas pela sua função. Quem executa um agente adiciona apenas as próprias contas."
+        },
+        "config_releases": {
+          "name": "Versões de configuração",
+          "description": "Executa as sessões com a configuração de agente atual do branch base, servida apenas para leitura, para que um agente, skill ou ferramenta integrado chegue a todas as sessões em curso. Desativado, cada sessão lê a sua própria pasta de configuração no workspace."
         }
       }
     },
@@ -1594,6 +1618,7 @@
     "backToProject": "Voltar ao projeto",
     "delete": "Excluir sessão",
     "failedLabel": "Sessão com falha",
+    "loadingConversation": "Carregando a conversa",
     "prompt": {
       "queueFailed": "Não foi possível adicionar o prompt salvo à fila",
       "unavailable": "Nenhum prompt salvo está disponível.",
@@ -1617,11 +1642,6 @@
     "previousRepository": {
       "title": "Esta sessão está desatualizada",
       "message": "O projeto mudou depois que esta sessão começou. Atualize-a para continuar trabalhando na versão mais recente.",
-      "unavailable": "O espaço de trabalho anterior não está mais disponível. Inicie uma nova sessão no repositório atual.",
-      "resume": "Retomar espaço anterior",
-      "resuming": "Retomando…",
-      "newSession": "Iniciar nova sessão",
-      "delete": "Excluir sessão",
       "update": "Atualizar para o mais recente",
       "updating": "Atualizando…",
       "dismiss": "Dispensar",
@@ -6226,7 +6246,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Todas as execuções do Worker estão pausadas no momento."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Sem conteúdo"
+      "line1115JsxTextNoContent": "Sem conteúdo",
+      "loadRemoteImage": "Carregar imagem de {host}"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Pressione Enter para iniciar..."
@@ -18564,6 +18585,17 @@
       "textea5d0ffa0962": "Um gestor do projeto conecta a conta compartilhada.",
       "text3d6627454174": "Definir credencial",
       "text929505ef815a": "Ainda não há nenhuma conta conectada. Adicione a sua abaixo, ou peça a um gestor do projeto para conectar uma conta compartilhada.",
+      "text931cb67e2af7": "Não foi possível carregar a nova configuração do agente. Esta sessão continua usando uma configuração anterior.",
+      "textd9ff3a72833d": "Falha ao carregar a configuração",
+      "textebfb07812fb4": "Não foi possível carregar a nova configuração do agente",
+      "text4e62b29dd3b6": "Uma configuração anterior está em uso nesta sessão. A configuração com falha só será tentada novamente quando o branch base mudar.",
+      "textf81ab834de5f": "Motivo",
+      "text44cdf35701cd": "Em uso agora",
+      "text591f9f0f3259": "Release com falha",
+      "text00ed4c71dc2b": "Última release funcional",
+      "textbd7a1a3b4141": "A configuração padrão da plataforma",
+      "text643df05476ab": "A configuração padrão da plataforma está em uso nesta sessão. A configuração com falha só será tentada novamente quando o branch base mudar.",
+      "text40652e008fc9": "Não foi possível carregar a nova configuração do agente. Esta sessão usa a configuração padrão da plataforma.",
       "text3312ddb06c1d": "Registe um bot no Azure, ligue-o aqui e depois carregue o pacote da aplicação no Teams.",
       "text7f1b55a356b0": "Registar o bot no Azure",
       "text91004edf8b30": "Ligá-lo a este projeto",
@@ -18672,7 +18704,9 @@
       "texta0bcee97cbb3": "Checkout integrado confirmado",
       "text0b751a917c97": "Instalação do GitHub conectada",
       "text8b7a8797d532": "Tenant do Microsoft Teams conectado",
+      "text83c0e255d4bb": "Instalação do Microsoft Teams concluída",
       "text17a8cf884e2a": "Workspace do Slack conectado",
+      "textf887cb0e6800": "Instalação do app do Slack concluída",
       "textc7f9ec5ed69c": "Agente do túnel do computador conectado",
       "textafd58fcedeee": "Caixa de entrada de e-mail conectada",
       "text2eda12b4ed38": "GitHub App existente conectado",
@@ -19135,7 +19169,35 @@
       "text2afef4702cc0": "Banner de status do sistema visualizado",
       "textbda3fcd4343c": "Configurações de nível visualizadas",
       "text30cef615e8e3": "Resumo de transações visualizado",
-      "textd2c6127fc332": "Diff de versões visualizado"
+      "textd2c6127fc332": "Diff de versões visualizado",
+      "text8cc0d84b66bb": "Link de identidade do Slack pré-visualizado",
+      "text508b43cc4545": "Link de identidade do Teams pré-visualizado",
+      "text467f597e95b0": "Domínio SSO verificado",
+      "text8295f9d4861b": "Verificação do domínio SSO da conta definida",
+      "text7beaff63a7d3": "Arquivo de configuração do projeto baixado",
+      "text5176d59f25fd": "Versão de configuração da sessão resolvida"
+    },
+    "publicShareConfirm": {
+      "title": "Criar um link público?",
+      "description": "Qualquer pessoa com o link pode ver isto sem iniciar sessão. O link fica ativo até você revogá-lo.",
+      "confirm": "Criar link"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "Conta do {service}",
+      "chatWorkspace": "Workspace do {service}",
+      "checking": "Verificando o link…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} não foi conectado",
+      "mismatch": "Esta instalação foi iniciada a partir de outra conta Kortix ou para outro projeto. Entre com essa conta ou inicie a instalação novamente a partir do projeto.",
+      "expired": "Este link de instalação é inválido ou expirou. Inicie a instalação novamente a partir do projeto.",
+      "failed": "Não foi possível concluir a instalação. Inicie-a novamente a partir do projeto.",
+      "backToProject": "Voltar ao projeto"
+    },
+    "secretIntakeWithheld": {
+      "title": "Salvo, mas {agent} ainda não consegue lê-lo",
+      "grant": "{names} não {count, plural, one {está} other {estão}} nos segredos do agente {agent}. Abra Personalizar → Agentes → {agent} → Segredos e {count, plural, one {ative-o} other {ative-os}}.",
+      "allowlist": "{names} {count, plural, one {está} other {estão}} fora dos segredos desta sessão. Inicie uma nova sessão para {count, plural, one {usá-lo} other {usá-los}}."
     }
   },
   "projectOnboarding": {
@@ -19250,7 +19312,17 @@
   },
   "commandPalette": {
     "title": "Paleta de comandos",
-    "description": "Pesquise um comando para executar..."
+    "description": "Pesquise um comando para executar...",
+    "copyTitle": "Copiar",
+    "copyEmail": "e-mail",
+    "copyUserId": "ID do usuário",
+    "copyAccountId": "ID da conta",
+    "copyProjectId": "ID do projeto",
+    "copySessionId": "ID da sessão",
+    "copySessionLink": "link da sessão",
+    "copyAction": "Copiar {label}",
+    "copied": "Copiado: {label}",
+    "copyFailed": "Não foi possível copiar para a área de transferência"
   },
   "personalWelcome": {
     "dismiss": "Fechar",
@@ -20017,6 +20089,9 @@
     "providerError": "Não foi possível atualizar o acesso ao provedor.",
     "managedTitle": "Modelos gerenciados pela Kortix",
     "managedDescription": "Modelos gerenciados cobrados em créditos Kortix. Não é necessária uma chave API.",
+    "pricingEstimate": "Preço estimado para o cliente. A rota utilizada determina o custo.",
+    "pricingRoute": "{route}: {input} entrada / {cacheRead} cache / {output} saída por 1 milhão de tokens",
+    "pricingPreferred": "Preferida",
     "textImage": "Texto + imagem",
     "textOnly": "Apenas texto",
     "zdrTitle": "Retenção zero de dados",
@@ -20147,5 +20222,18 @@
   },
   "connectorsAppReturn": {
     "done": "Pronto. Voltar ao app Kortix"
+  },
+  "ssoDomainVerification": {
+    "title": "Verificação do domínio",
+    "verified": "Verificado",
+    "unverified": "Não verificado",
+    "verifiedDescription": "Seu provedor de identidade é confiável para {domain}. Exigir SSO se aplica a este domínio.",
+    "unverifiedDescription": "Adicione este registro DNS TXT para provar que você controla {domain}. Até lá, o login com SSO funciona apenas nesta conta, e exigir SSO não tem efeito.",
+    "recordName": "Nome",
+    "recordValue": "Valor",
+    "verify": "Verificar domínio",
+    "verifiedToast": "Domínio verificado",
+    "failedToast": "Domínio ainda não verificado",
+    "enforceNeedsVerification": "Verifique o domínio primeiro. Exigir SSO se aplica apenas a um domínio verificado."
   }
 }

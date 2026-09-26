@@ -6,7 +6,8 @@ import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
 import { openModal, updateMessage } from '../slack-api';
 import { backfillChannelName, dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
-import { createSlackAccessRequest, notifyAdminsOfAccessRequest, resolveSlackActor } from './identity';
+import { notifyAdminsOfAccessRequest } from './identity';
+import { chatUser, createChatAccessRequest, resolveChatActor } from '../core/identity';
 import { parseReviewActionId, reviewVerbToVerdict, type ReviewVerb } from './review-cards';
 import {
   REVIEW_FEEDBACK_CALLBACK,
@@ -21,9 +22,12 @@ import { decideSlackThreadJoin } from './participants';
 import { attachPendingSlackAuthResponseUrl } from './auth-resume';
 import { verifyLoginState } from './login';
 import { escapeMrkdwn, respondViaUrl, sessionWebUrl } from './util';
-import { setChannelAgent, setChannelModel } from './selection';
-import { channelModelContext } from './model-gate';
-import { type SlashCtx, currentChannelProjectId, handleSlashCommand } from './commands';
+import { handleSlashCommand } from './commands';
+import { agentChangeText, currentChannelProjectId } from './settings-commands';
+import { settingsRefusalText, slackSettingsChannel, slackUserOf } from './settings-text';
+import { applySlackModelChoice } from './model-choice';
+import { changeChannelAgent, switchChannelProject } from '../core/settings';
+import type { SlashCtx } from './types';
 import {
   CANONICAL_SLACK_INBOUND,
   findSlackThread,
@@ -32,10 +36,6 @@ import {
   inboundProjectId,
   type SlackInbound,
 } from './inbound';
-import { labelForModelRef } from '../../llm-gateway/models/picker';
-import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
-import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
-import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
 
 const OTHER_PROJECT_NOTICE = 'This Slack app is tied to a different Kortix project.';
@@ -259,7 +259,7 @@ async function handleReviewAction(
   // The actor must be a linked Kortix user with write access to this project.
   // Self-approve is allowed (launcher or any manager) — there's no separation-of-
   // duties gate. No live mapping → nudge to connect / request access.
-  const actor = await resolveSlackActor(teamId, slackUserId, item.accountId, thread.projectId);
+  const actor = await resolveChatActor(chatUser('slack', teamId, slackUserId), { projectId: thread.projectId, accountId: item.accountId });
   if ('reason' in actor) {
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
@@ -333,31 +333,21 @@ async function handleSwitchProject(
     return;
   }
 
-  const [install] = await db
-    .select({ id: chatInstalls.installId })
-    .from(chatInstalls)
-    .where(and(
-      eq(chatInstalls.platform, 'slack'),
-      eq(chatInstalls.workspaceId, teamId),
-      eq(chatInstalls.projectId, projectId),
-    ))
-    .limit(1);
-  if (!install) {
+  const result = await switchChannelProject(
+    slackUserOf({ teamId, slackUserId: payload.user?.id ?? '' }),
+    slackSettingsChannel({ teamId, channelId }),
+    projectId,
+  );
+  if (!result.ok) {
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
       replace_original: true,
-      text: 'That project is no longer connected to this workspace.',
+      text: result.reason === 'not_installed'
+        ? 'That project is no longer connected to this workspace.'
+        : settingsRefusalText(result.reason, '/kortix', ''),
     });
     return;
   }
-
-  await db
-    .insert(chatChannelBindings)
-    .values({ platform: 'slack', workspaceId: teamId, channelId, projectId, pickerTs: null })
-    .onConflictDoUpdate({
-      target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
-      set: { projectId, pickerTs: null },
-    });
   await backfillChannelName(teamId, channelId, projectId);
 
   const [p] = await db
@@ -391,97 +381,24 @@ async function handleSetSelection(
   const channelId = value.c ?? payload.channel?.id ?? '';
   if (!teamId || !channelId) return;
   const ctx = { teamId, channelId };
+  const reply = (text: string) =>
+    respondViaUrl(payload.response_url, { response_type: 'ephemeral', replace_original: true, text });
   // A per-project app configures only channels bound to its own project.
   if (inbound.kind === 'project' && (await currentChannelProjectId(ctx)) !== inbound.projectId) {
-    await respondViaUrl(payload.response_url, {
-      response_type: 'ephemeral',
-      replace_original: true,
-      text: OTHER_PROJECT_NOTICE,
-    });
+    await reply(OTHER_PROJECT_NOTICE);
     return;
   }
-
-  if (kind === 'agent') {
-    const agentName = value.a && value.a.length > 0 ? value.a : null;
-    const result = await setChannelAgent(ctx, agentName);
-    await respondViaUrl(payload.response_url, {
-      response_type: 'ephemeral',
-      replace_original: true,
-      text: !result.ok
-        ? result.reason === 'unknown_agent'
-          ? `"${escapeMrkdwn(agentName ?? '')}" is not a declared agent in this project's manifest.`
-          : 'That channel is no longer bound to a project — run `/kortix switch` first.'
-        : agentName
-          ? `✓ Agent for this channel set to *${escapeMrkdwn(agentName)}*. New sessions will use it.`
-          : '✓ Agent reset to the project default.',
-    });
+  const slackUserId = payload.user?.id ?? '';
+  if (kind === 'model') {
+    // One path for `/kortix model <id>` and the picker: checked as the person
+    // who clicked, with this conversation's keys (channels/slack/model-choice.ts).
+    await reply(await applySlackModelChoice({ teamId, channelId, slackUserId, command: '/kortix' }, value.m ?? ''));
     return;
   }
-
-  const requested = value.m && value.m.length > 0 ? value.m : null;
-  if (!requested) {
-    const ok = await setChannelModel(ctx, null);
-    await respondViaUrl(payload.response_url, {
-      response_type: 'ephemeral',
-      replace_original: true,
-      text: ok
-        ? '✓ Model reset to the project default.'
-        : 'That channel is no longer connected to a project — run `/kortix` first.',
-    });
-    return;
-  }
-  // Picker options are already servable, but re-validate before persisting so a
-  // stored model can NEVER 404 at request time ("model isn't available").
-  const gate = await channelModelContext(ctx);
-  // Native mode (gateway off): the picker that produced this action no longer
-  // renders, but a stale panel can still post — accept only a native
-  // `provider/model` ref and store it verbatim.
-  if (gate && !gate.llmGatewayEnabled) {
-    const nativeShapeError = validateNativeOpencodeModelRef(requested);
-    if (nativeShapeError) {
-      await respondViaUrl(payload.response_url, {
-        response_type: 'ephemeral',
-        replace_original: true,
-        text: `⚠️ \`${escapeMrkdwn(requested)}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`.`,
-      });
-      return;
-    }
-    const okNative = await setChannelModel(ctx, requested);
-    await respondViaUrl(payload.response_url, {
-      response_type: 'ephemeral',
-      replace_original: true,
-      text: okNative
-        ? `✓ Model for this channel set to \`${escapeMrkdwn(requested)}\`. New sessions will use it.`
-        : 'That channel is no longer connected to a project — run `/kortix` first.',
-    });
-    return;
-  }
-  if (gate) {
-    const servable = await isModelServableForAccount({
-      userId: gate.ownerUserId,
-      accountId: gate.accountId,
-      projectId: gate.projectId,
-      freeModelsOnly: gate.freeManagedOnly,
-      model: requested,
-    });
-    if (!servable) {
-      await respondViaUrl(payload.response_url, {
-        response_type: 'ephemeral',
-        replace_original: true,
-        text: `⚠️ \`${escapeMrkdwn(requested)}\` isn't available for this workspace. Pick another, or connect that provider's API key in Kortix.`,
-      });
-      return;
-    }
-  }
-  const stored = toOpencodeModelRef(requested);
-  const ok = await setChannelModel(ctx, stored);
-  await respondViaUrl(payload.response_url, {
-    response_type: 'ephemeral',
-    replace_original: true,
-    text: ok
-      ? `✓ Model for this channel set to *${escapeMrkdwn(labelForModelRef(stored))}* (\`${escapeMrkdwn(stored)}\`). New sessions will use it.`
-      : 'That channel is no longer connected to a project — run `/kortix` first.',
-  });
+  const requested = value.a || null;
+  const result = await changeChannelAgent(slackUserOf({ teamId, slackUserId }), slackSettingsChannel(ctx), requested);
+  const text = agentChangeText(result, requested ?? '', '/kortix', 'That channel is no longer bound to a project — run `/kortix switch` first.');
+  await reply(`${result.ok ? '✓' : '⚠️'} ${text}`);
 }
 
 // A `/kortix` panel "Change model/agent/project" button. Re-runs the matching
@@ -583,7 +500,7 @@ async function handleRequestAccess(
     return;
   }
 
-  const result = await createSlackAccessRequest({ teamId, slackUserId, projectId });
+  const result = await createChatAccessRequest(chatUser('slack', teamId, slackUserId), projectId);
   const message =
     result.status === 'created'
       ? "Access requested ✓ — an admin will review it. Once you're approved, send your message again and I'll get on it."
@@ -812,7 +729,7 @@ export async function handleViewSubmission(
     return;
   }
 
-  const actor = await resolveSlackActor(meta.teamId, slackUserId, item.accountId, meta.projectId);
+  const actor = await resolveChatActor(chatUser('slack', meta.teamId, slackUserId), { projectId: meta.projectId, accountId: item.accountId });
   if ('reason' in actor) {
     await notify(
       actor.reason === 'unlinked'
@@ -885,7 +802,8 @@ export async function handleBlockAction(
   }
 
   if (action.action_id.startsWith('set_model')) {
-    await handleSetSelection(payload, action.value ?? '', 'model', inbound);
+    // A button carries its pick in `value`; the long list's select in `selected_option`.
+    await handleSetSelection(payload, action.selected_option?.value ?? action.value ?? '', 'model', inbound);
     return;
   }
 

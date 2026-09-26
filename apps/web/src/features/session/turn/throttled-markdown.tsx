@@ -68,7 +68,7 @@ function ThrottledMarkdownImpl({
       isStreaming ? closeUnterminatedCodeFence(pacedContent) : trimIncompleteTableRow(pacedContent),
     [pacedContent, isStreaming],
   );
-  return <UnifiedMarkdown content={displayContent} isStreaming={isStreaming} />;
+  return <UnifiedMarkdown content={displayContent} trust="agent" isStreaming={isStreaming} />;
 }
 
 /**

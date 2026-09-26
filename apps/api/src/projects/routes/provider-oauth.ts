@@ -31,8 +31,8 @@ import {
   CODEX_AUTH_JSON_SECRET_NAME,
   loadSecretViewsForUser,
   normalizeString,
-  readBody,
 } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────
 //
@@ -179,6 +179,43 @@ async function writeCodexAuthSecret(input: {
     ?? { identifier: CODEX_AUTH_JSON_SECRET_NAME, name: CODEX_AUTH_JSON_SECRET_NAME };
 }
 
+/** A named connection only its owner can use: private, or restricted to the owner
+ * alone. Anything wider shares a credential, which is a project secret write. */
+function sharingIsOwnerOnly(sharing: ReturnType<typeof parseSharingIntent> | undefined, ownerId: string): boolean {
+  if (sharing?.mode === 'private') return true;
+  return sharing?.mode === 'members' && !sharing.groupIds?.length &&
+    (sharing.memberIds ?? []).every((memberId) => memberId === ownerId);
+}
+
+/** Reconnect writes a fresh login into the caller's own ChatGPT account resource.
+ * Its id, label, access, and session selections stay. A deleted account, or one
+ * the caller did not create, matches no row, so a stale flow never recreates it. */
+async function reconnectCodexAccountResource(input: {
+  secretId: string; accountId: string; userId: string; projectId: string; value: string;
+}): Promise<{ secretId: string; label: string } | null> {
+  const { secretId, accountId, userId, projectId, value } = input;
+  const [row] = await db.update(accountSecretResources).set({
+    valueEnc: encryptAccountSecret(accountId, value),
+    active: true,
+    cooldownUntil: null,
+    updatedAt: new Date(),
+  }).where(and(
+    eq(accountSecretResources.accountId, accountId),
+    eq(accountSecretResources.secretId, secretId),
+    eq(accountSecretResources.projectId, projectId),
+    eq(accountSecretResources.providerId, 'codex'),
+    eq(accountSecretResources.name, CODEX_AUTH_JSON_SECRET_NAME),
+    eq(accountSecretResources.createdBy, userId),
+  )).returning({ secretId: accountSecretResources.secretId, label: accountSecretResources.label });
+  if (!row) return null;
+  await recordAuditEvent({
+    accountId, projectId, actorUserId: userId, actorType: 'human', source: 'api',
+    action: 'secret.oauth.connected', resourceType: 'account_secret_resource', resourceId: row.secretId,
+    metadata: { provider_id: 'codex', consumer: 'llm_gateway', reconnected: true },
+  });
+  return row;
+}
+
 /** One OAuth completion creates one project-scoped account resource. The flow's UUID
  * makes concurrent or repeated polls idempotent without replacing another login. */
 async function writeCodexAccountResource(input: {
@@ -243,7 +280,7 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const provider = c.req.param('provider');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -256,14 +293,44 @@ projectsApp.openapi(
   if (resourceLabel !== null && (resourceLabel.length < 1 || resourceLabel.length > 100)) {
     return c.json({ error: 'A named OAuth resource requires a 1–100 character label' }, 400);
   }
-  if (resourceLabel !== null && (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
+  // Reconnect refreshes the login of an existing ChatGPT account resource in
+  // place. It never renames or re-shares it, so a label or sharing is refused.
+  const resourceId = body.resource_id === undefined ? null :
+    typeof body.resource_id === 'string' ? body.resource_id.trim() : '';
+  if (resourceId !== null && !z.string().uuid().safeParse(resourceId).success) {
+    return c.json({ error: 'resource_id must be the id of a ChatGPT account' }, 400);
+  }
+  if (resourceId !== null && (resourceLabel !== null || body.sharing != null)) {
+    return c.json({ error: 'Reconnecting keeps the account label and access; send only resource_id' }, 400);
+  }
+  const named = resourceLabel !== null || resourceId !== null;
+  if (named && (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
     !projectLlmGatewayEnabled(loaded.row.metadata))) {
     return c.json({ error: 'Pooled OAuth connections require pooled provider secrets and the LLM gateway' }, 403);
   }
-  if (resourceLabel !== null) {
+  if (named) {
     const [member] = await db.select({ userId: accountMembers.userId }).from(accountMembers)
       .where(and(eq(accountMembers.accountId, loaded.row.accountId), eq(accountMembers.userId, loaded.userId))).limit(1);
     if (!member) return c.json({ error: 'An account member must own a ChatGPT connection' }, 403);
+  }
+  if (resourceId !== null) {
+    const [resource] = await db.select({
+      projectId: accountSecretResources.projectId,
+      providerId: accountSecretResources.providerId,
+      name: accountSecretResources.name,
+      createdBy: accountSecretResources.createdBy,
+    }).from(accountSecretResources)
+      .where(and(eq(accountSecretResources.accountId, loaded.row.accountId), eq(accountSecretResources.secretId, resourceId)))
+      .limit(1);
+    if (!resource || resource.projectId !== projectId || resource.providerId !== 'codex' ||
+      resource.name !== CODEX_AUTH_JSON_SECRET_NAME) {
+      return c.json({ error: 'ChatGPT account not found' }, 404);
+    }
+    // The login is the owner's own subscription; only they re-authorize it.
+    // Account admins can still delete the account.
+    if (resource.createdBy !== loaded.userId) {
+      return c.json({ error: 'Only the person who connected this ChatGPT account can reconnect it' }, 403);
+    }
   }
 
   let sharing: ReturnType<typeof parseSharingIntent> | undefined;
@@ -289,11 +356,14 @@ projectsApp.openapi(
   // withhold it and the agent-grant fold applies — closing the gap where the
   // flow wrote a shared credential behind only loadProjectForUser('read'). A
   // private (owner-only) credential is the member's own, so read still suffices.
+  // A named account restricted to its owner alone is owner-only too, however
+  // the client spells it; so is reconnecting your own account. The legacy
+  // unnamed login treats `members` as shared, so this applies to named ones only.
   // The poll step is reachable only with the project-key-encrypted flow handle
   // minted here, so gating start transitively protects the write on poll.
-  const namedOwnerOnly = resourceLabel !== null && (sharing?.mode === 'private' ||
-    (sharing?.mode === 'members' && (sharing.memberIds?.length ?? 0) === 0));
-  if (sharing?.mode !== 'private' && !namedOwnerOnly) {
+  const ownerOnly = resourceId !== null ||
+    (resourceLabel !== null && sharingIsOwnerOnly(sharing, loaded.userId));
+  if (sharing?.mode !== 'private' && !ownerOnly) {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
   }
 
@@ -319,6 +389,7 @@ projectsApp.openapi(
       s: sharing ?? null,
       uid: loaded.userId,
       ...(resourceLabel === null ? {} : { l: resourceLabel, rid: randomUUID() }),
+      ...(resourceId === null ? {} : { rid: resourceId, rc: 1 }),
       e: expiresAt,
     }),
   );
@@ -354,7 +425,7 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const provider = c.req.param('provider');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -363,7 +434,7 @@ projectsApp.openapi(
 
   // Decrypt the opaque flow handle. The key is project-scoped, so a handle from
   // another project — or a tampered one — simply won't decrypt → expired.
-  let state: { d?: string; u?: string; s?: unknown; uid?: string; e?: number; l?: string; rid?: string };
+  let state: { d?: string; u?: string; s?: unknown; uid?: string; e?: number; l?: string; rid?: string; rc?: number };
   try {
     state = JSON.parse(decryptProjectSecret(projectId, flowId));
   } catch {
@@ -377,7 +448,7 @@ projectsApp.openapi(
   ) {
     return c.json({ status: 'expired' });
   }
-  if (state.l && state.rid) {
+  if ((state.l || state.rc) && state.rid) {
     const [member] = await db.select({ userId: accountMembers.userId }).from(accountMembers)
       .where(and(eq(accountMembers.accountId, loaded.row.accountId), eq(accountMembers.userId, loaded.userId))).limit(1);
     if (!member) return c.json({ status: 'failed', error: 'Account membership is required' });
@@ -389,6 +460,24 @@ projectsApp.openapi(
   }
   if (result.status === 'failed') {
     return c.json({ status: 'failed', error: result.error });
+  }
+
+  if (state.rc && state.rid) {
+    if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
+      !projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
+    }
+    const reconnected = await reconnectCodexAccountResource({
+      secretId: state.rid, accountId: loaded.row.accountId, userId: loaded.userId,
+      projectId, value: result.authJson,
+    });
+    if (!reconnected) {
+      return c.json({ status: 'failed', error: 'This ChatGPT account is no longer available. Add it again.' });
+    }
+    return c.json({ status: 'success', credential: {
+      provider_id: 'codex', secret_id: reconnected.secretId, label: reconnected.label,
+      expires_in_ms: authExpiresInMs(result.authJson), updated_at: new Date().toISOString(),
+    } });
   }
 
   // The sealed resource id makes a completed device flow idempotent. A new

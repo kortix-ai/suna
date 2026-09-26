@@ -17,6 +17,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { Context, MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { auditSessionFirstSight } from '../shared/auth-audit';
+import { requestClientIp } from '../shared/client-ip';
 import { db } from '../shared/db';
 
 /** Skip the update query if last_seen_at was touched more recently than
@@ -220,8 +221,7 @@ export function accountSessionGate(): MiddlewareHandler {
     });
 
     if (verdict !== 'allow') {
-      const ip =
-        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? c.req.header('x-real-ip') ?? null;
+      const ip = requestClientIp(c);
       const userAgent = c.req.header('user-agent') ?? null;
       // Persist the revocation reason so the next request through
       // this session short-circuits without re-evaluating gates.
@@ -247,8 +247,7 @@ export function accountSessionGate(): MiddlewareHandler {
     // account), emit an `auth.session.first_sight` audit event so the
     // log captures "new device / new browser tab signed in" without
     // needing a separate signal from the OAuth callback.
-    const ip =
-      c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? c.req.header('x-real-ip') ?? null;
+    const ip = requestClientIp(c);
     const userAgent = c.req.header('user-agent') ?? null;
     // Fire-and-forget: the request must never wait on activity/audit writes. The
     // trailing .catch covers touchActivity's rejection. auditSessionFirstSight

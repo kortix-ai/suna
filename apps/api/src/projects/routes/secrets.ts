@@ -14,7 +14,8 @@ import {
   isValidIdentifier,
   isValidSecretName,
 } from '../secrets';
-import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { propagateProjectSecretsToActiveSandboxes, syncSessionSecretsToSandbox } from '../lib/sandbox-env-sync';
+import { reconcileStoredSessionAgentGrant } from '../lib/session-token-grant';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -37,9 +38,9 @@ import {
   isSystemProjectSecretName,
   loadSecretViewsForUser,
   normalizeString,
-  readBody,
   type SecretAgentGrantConfig,
 } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import {
   SecretWriteResultSchema,
   type SecretDeliverySync,
@@ -85,6 +86,12 @@ projectsApp.openapi(
             manifest_status: z.enum(['loaded', 'missing', 'error']),
             manifest_path: z.string(),
             manifest_error: z.string().optional(),
+            agent_scope: z
+              .object({
+                agent: z.string(),
+                secrets: z.union([z.literal('all'), z.array(z.string())]),
+              })
+              .nullable(),
           }),
           'Secret configuration metadata',
         ),
@@ -160,6 +167,12 @@ projectsApp.openapi(
     manifest_status: manifestStatus,
     manifest_path: loaded.row.manifestPath,
     ...(manifestError ? { manifest_error: manifestError } : {}),
+    // The caller's OWN secrets grant (null for a non-agent caller). `items` is
+    // filtered by it, and without saying so a client could only report a
+    // declared-but-filtered name as "missing" — the agent then tells the human
+    // a saved secret is unset. This is the caller's own policy, not a list of
+    // what exists, so it widens nothing an agent can enumerate.
+    agent_scope: agentGrant ? { agent: agentGrant.agent, secrets: agentGrant.env ?? 'all' } : null,
   });
 },
 );
@@ -185,7 +198,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
@@ -641,7 +654,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Spec 2026-09-22 §2.3: an agent-principal session writes a personal
@@ -828,13 +841,36 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
-    // Sync force-re-pushes (re-mints) every secret handle into active sandboxes.
-    // That is the re-mint half of the policy-widening exfil chain, so an agent
-    // session must not trigger it. Mirror the PUT /strategy guard.
+    // An agent session pulls ITS OWN session: re-push this sandbox's env from
+    // the store and its current grant. Every prompt already does exactly this
+    // (pre-prompt env sync), so it grants nothing new — it lets the agent pick
+    // up a secret or grant a person just saved without waiting for the next
+    // message. It never reaches another session's box: the project-wide
+    // re-push below stays a person's action, because re-minting every handle
+    // in every sandbox is the re-mint half of the policy-widening chain
+    // (d649d08932, finding F6).
     if (isProjectSessionPrincipal(c)) {
-      return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
+      const sessionId = c.get('sessionId') as string | undefined;
+      if (!sessionId) {
+        return c.json(
+          { error: 'Only a session can sync its own secrets', code: 'agent_human_only_action' },
+          403,
+        );
+      }
+      // Pulling into its own box writes nothing: read is the gate.
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
+      // Refresh the token's stored grant too, as a prompt does, so
+      // `kortix secrets ls` in this same turn reflects a just-widened grant.
+      // Best-effort: env delivery resolves the grant on its own.
+      await reconcileStoredSessionAgentGrant({ projectId, sessionId }).catch((err: unknown) => {
+        console.warn('[secrets] sync: could not refresh the session grant', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      return c.json(await syncSessionSecretsToSandbox(projectId, sessionId));
     }
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
     const result = await propagateProjectSecretsToActiveSandboxes(projectId);
     return c.json(result);
   },

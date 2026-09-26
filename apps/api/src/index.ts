@@ -162,6 +162,8 @@ import {
   tunnelApp,
   wsHandlers as tunnelWsHandlers,
 } from './tunnel';
+import { isUuid } from './shared/validate';
+import { readJsonObject } from './shared/http-body';
 
 /**
  * The streaming secret relay routes, matched on the raw pathname in
@@ -226,7 +228,6 @@ process.on('uncaughtException', (err: Error) => {
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
 const app = new OpenAPIHono();
-const UUID_PATH_SEGMENT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
@@ -291,12 +292,12 @@ app.use('*', async (c, next) => {
     // Auto-extract common resource IDs from URL patterns for logs/traces.
     const path = c.req.path;
     const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
-    if (projectSessionMatch && UUID_PATH_SEGMENT_RE.test(projectSessionMatch[1])) {
+    if (projectSessionMatch && isUuid(projectSessionMatch[1])) {
       setContextField('projectId', projectSessionMatch[1]);
       setContextField('sessionId', projectSessionMatch[2]);
     } else {
       const projectMatch = path.match(/\/projects\/([^/]+)/);
-      if (projectMatch && UUID_PATH_SEGMENT_RE.test(projectMatch[1])) {
+      if (projectMatch && isUuid(projectMatch[1])) {
         setContextField('projectId', projectMatch[1]);
       }
     }
@@ -765,7 +766,7 @@ app.openapi(
       return c.json({ error: 'Admin access required' }, 403);
     }
     if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const maintenanceConfig = {
       ...DEFAULT_MAINTENANCE,
       ...body,
@@ -1049,9 +1050,10 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 
 // Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
 // session title + sanitized transcript for a valid session public-share
-// (any resource type SESS-13's CRUD creates); backs the logged-out
-// `/share/[shareId]` viewer (apps/web). No auth, no client-side sandbox
-// access — the API reads the sandbox's OpenCode daemon server-side.
+// (any resource type SESS-13's CRUD creates); exposed through the SDK's
+// `getPublicSessionShare` / `getPublicSessionShareMessages`. The web app has
+// no page for it. No auth, no client-side sandbox access — the API reads the
+// sandbox's OpenCode daemon server-side.
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
@@ -1532,6 +1534,17 @@ async function startReplicaServices() {
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
   startSessionLifecycleWorker();
+  // Every api process must learn that a base branch moved, not just the one
+  // that handled the push — otherwise the turn-start gate answers `current`
+  // from a memo resolved before it (shared/pg-broadcast.ts). Awaited because it
+  // is one connection and it must be in place before the first turn; it never
+  // rejects, and a failure degrades to the memo's TTL.
+  await import('./shared/pg-broadcast').then(async (m) => {
+    const listening = await m.startConfigBaseMoveBroadcast();
+    if (!listening) return;
+    const { useDesiredInvalidationTransport } = await import('./projects/lib/turn-start-convergence');
+    useDesiredInvalidationTransport(m.configBaseMoveTransport());
+  });
 }
 
 // Singleton background WORKERS — must run on EXACTLY ONE replica at a time
@@ -1655,6 +1668,9 @@ async function shutdown(signal: string) {
   stopAccessControlCache();
   stopTmpReaper();
   stopSessionLifecycleWorker();
+  await import('./shared/pg-broadcast')
+    .then((m) => m.stopConfigBaseMoveBroadcast())
+    .catch(() => {});
   // Flush observability data before exit. The audit queue is drained here
   // because audit rows are buffered off the request path — without this, the
   // last ~250 ms of events would be lost on every SIGTERM (i.e. every rollout).
@@ -1810,10 +1826,7 @@ async function dispatchInbound(
 
     const tunnelId = url.searchParams.get('tunnelId');
 
-    if (
-      !tunnelId ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tunnelId)
-    ) {
+    if (!isUuid(tunnelId)) {
       return new Response(JSON.stringify({ error: 'A valid tunnelId is required' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
@@ -1838,8 +1851,8 @@ async function dispatchInbound(
     // Include the source address so an unauthenticated attacker who learns a
     // tunnelId cannot consume the real machine's reconnect budget.
     const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-    const { clientIpFromHeaders } = await import('./shared/client-ip');
-    const clientIp = clientIpFromHeaders((name) => req.headers.get(name)) ?? 'unknown';
+    const { clientKeyFromHeaders } = await import('./shared/client-ip');
+    const clientIp = clientKeyFromHeaders((name) => req.headers.get(name));
     const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
     if (!wsIpRateCheck.allowed) {
       return new Response(

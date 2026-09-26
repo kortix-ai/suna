@@ -55,6 +55,34 @@ export function isInternalUrl(href: string | undefined): boolean {
   return href.startsWith('/') || href.startsWith('#');
 }
 
+/** Base for resolving a relative image URL when there is no window (server render, tests). */
+const NO_WINDOW_PAGE_URL = 'https://page.invalid/';
+
+/**
+ * The host a markdown image would be fetched from, when that host is not this
+ * app. `null` for a same-origin or relative source, for `data:` and `blob:`,
+ * and for a source the sandbox proxy rewrote (`proxiedSrc !== src`): that is
+ * the session's own file served through the API, not a third party.
+ *
+ * The URL is resolved against the page exactly as the browser will fetch it,
+ * so protocol-relative (`//host`), backslash (`\\host`), padded and
+ * mixed-case forms are classified by where they actually point. Anything that
+ * resolves off this origin is remote; a source that does not parse is too.
+ */
+export function remoteImageHost(src: string, proxiedSrc: string = src): string | null {
+  if (proxiedSrc !== src) return null;
+  const page = typeof window !== 'undefined' ? window.location.href : NO_WINDOW_PAGE_URL;
+  let url: URL;
+  try {
+    url = new URL(src, page);
+  } catch {
+    return src.trim().slice(0, 64) || null;
+  }
+  if (url.protocol === 'data:' || url.protocol === 'blob:') return null;
+  if (url.origin === new URL(page).origin) return null;
+  return url.host || url.protocol;
+}
+
 /**
  * Can this href be handed to `next/link` without crashing the prefetch path?
  *

@@ -43,7 +43,26 @@
     "connectAccount": "Konto verbinden",
     "oauthWaiting": "Warte auf Autorisierung…",
     "oauthExpired": "Autorisierung abgelaufen. Versuchen Sie es erneut.",
-    "oauthPrivateDescription": "Neue ChatGPT-Konten sind standardmäßig für dieses Projekt verfügbar. Sie können jedes Konto auf ausgewählte Mitglieder beschränken.",
+    "oauthPrivateDescription": "Nutzen Sie Ihr ChatGPT-Plus- oder Pro-Abo in diesem Projekt. Neue Konten sind privat, bis Sie sie teilen.",
+    "chatGptSubscription": "ChatGPT-Abo",
+    "useYourChatGpt": "Eigenes ChatGPT-Abo nutzen",
+    "manageChatGptAccounts": "ChatGPT-Konten verwalten",
+    "connect": "Verbinden",
+    "connectChatGpt": "ChatGPT verbinden",
+    "noChatGptAccounts": "Noch keine ChatGPT-Konten",
+    "oauthCreationDescription": "Melden Sie sich mit Ihrem ChatGPT-Plus- oder Pro-Konto an. Kortix speichert die Anmeldung verschlüsselt und zeigt sie nie an.",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "Nur Sie",
+    "onlyYouDescription": "Nur Sie können sie in einer Sitzung auswählen.",
+    "onlyOwner": "Nur {name}",
+    "shareRequiresPermission": "Zum Teilen mit anderen brauchen Sie die Berechtigung, Projektgeheimnisse zu verwalten.",
+    "accountConnected": "ChatGPT-Konto verbunden",
+    "accountReconnected": "ChatGPT-Konto neu verbunden",
+    "connectFailed": "ChatGPT-Autorisierung fehlgeschlagen. Versuchen Sie es erneut.",
+    "reconnectAccount": "Neu verbinden",
+    "reconnectTitle": "{label} neu verbinden",
+    "reconnectDescription": "Melden Sie sich erneut bei ChatGPT an. Name, Zugriff und Sitzungsauswahl des Kontos bleiben erhalten.",
+    "needsReconnection": "Neu verbinden erforderlich",
     "accountLabelPlaceholder": "z. B. Mein ChatGPT-Konto",
     "chooseProvider": "Anbieter auswählen.",
     "saved": "Geheimnis gespeichert",
@@ -52,7 +71,7 @@
     "deleteError": "Geheimnis konnte nicht gelöscht werden",
     "accessError": "Zugriff konnte nicht geändert werden",
     "sharedTitle": "Anbieter-Verbindungen",
-    "sharedDescription": "Fügen Sie mehrere API-Schlüssel und ChatGPT-Konten hinzu. Standardmäßig kann jeder in diesem Projekt sie nutzen. Beschränken Sie den Zugriff pro Verbindung und wählen Sie Schlüssel pro Sitzung.",
+    "sharedDescription": "Fügen Sie API-Schlüssel und ChatGPT-Konten hinzu. Neue Verbindungen sind privat, bis Sie sie teilen. Wählen Sie pro Sitzung, welche genutzt werden.",
     "legacyProjectKey": "Bestehender Projektschlüssel · Wird verwendet, wenn für diese Sitzung keine Schlüssel ausgewählt sind",
     "keyCount": "{count, plural, one {# Schlüssel} other {# Schlüssel}}",
     "providerKeysFor": "API-Schlüssel für {provider}",
@@ -102,6 +121,7 @@
     "providerKeys": "Anbieterschlüssel",
     "chooseSharedKeys": "Wählen Sie die freigegebenen Schlüssel aus, die diese Sitzung verwenden darf.",
     "sessionKeyPool": "Sitzungsschlüsselpool",
+    "sharedSessionKeys": "Diese Sitzung ist für das Projekt freigegeben, daher funktionieren hier nur Schlüssel, die für das ganze Projekt freigegeben sind. Ihnen zugewiesene Schlüssel funktionieren in Ihren privaten Sitzungen.",
     "projectDefaultShort": "Projektstandard",
     "rateLimitDescription": "Das Gateway wechselt zwischen ausgewählten Schlüsseln, wenn ein Anbieter ein Ratenlimit meldet.",
     "enableGateway": "Aktivieren Sie das LLM-Gateway in den Projekteinstellungen, um Schlüssel-Pools zu verwenden.",
@@ -1109,7 +1129,7 @@
         },
         "pooled_provider_secrets": {
           "name": "Gemeinsam genutzte Anbieter-Schlüssel",
-          "description": "Teilen Sie mehrere Anbieter-Schlüssel mit Mitgliedern und wählen Sie einen Schlüsselpool pro Sitzung."
+          "description": "Mitglieder verbinden ihre eigenen ChatGPT-Abos und Anbieter-Schlüssel, teilen sie bei Bedarf und wählen pro Sitzung, welche genutzt werden."
         },
         "pi_worker": {
           "name": "Pi-Worker-Laufzeit (kompiliert)",
@@ -1122,6 +1142,10 @@
         "agent_principal": {
           "name": "Agenten als Prinzipale",
           "description": "Agenten handeln als sie selbst: mit ihren Kortix-Berechtigungen, begrenzt durch ihre Rolle. Wer einen Agenten ausführt, bringt nur die eigenen Konten ein."
+        },
+        "config_releases": {
+          "name": "Config-Releases",
+          "description": "Sitzungen mit der aktuellen Agent-Konfiguration des Basis-Branch ausführen, schreibgeschützt bereitgestellt, damit ein gemergter Agent, Skill oder Tool jede laufende Sitzung erreicht. Bei Aus liest eine Sitzung ihren eigenen Workspace-Konfigurationsordner."
         }
       }
     },
@@ -1594,6 +1618,7 @@
     "backToProject": "Zurück zum Projekt",
     "delete": "Sitzung löschen",
     "failedLabel": "Fehlgeschlagene Sitzung",
+    "loadingConversation": "Gespräch wird geladen",
     "prompt": {
       "queueFailed": "Die gespeicherte Eingabe konnte nicht in die Warteschlange gestellt werden",
       "unavailable": "Keine gespeicherte Eingabe verfügbar.",
@@ -1617,11 +1642,6 @@
     "previousRepository": {
       "title": "Diese Sitzung ist veraltet",
       "message": "Das Projekt hat sich seit dem Start dieser Sitzung geändert. Aktualisiere sie, um mit der neuesten Version weiterzuarbeiten.",
-      "unavailable": "Der vorherige Arbeitsbereich ist nicht mehr verfügbar. Starte eine neue Sitzung im aktuellen Repository.",
-      "resume": "Vorherigen Arbeitsbereich fortsetzen",
-      "resuming": "Wird fortgesetzt…",
-      "newSession": "Neue Sitzung starten",
-      "delete": "Sitzung löschen",
       "update": "Auf neuesten Stand bringen",
       "updating": "Wird aktualisiert…",
       "dismiss": "Schließen",
@@ -6226,7 +6246,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Alle Worker-Ausführungen sind derzeit pausiert."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Kein Inhalt"
+      "line1115JsxTextNoContent": "Kein Inhalt",
+      "loadRemoteImage": "Bild von {host} laden"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Drücke Enter zum Starten..."
@@ -18564,6 +18585,17 @@
       "textea5d0ffa0962": "Ein Projektmanager verbindet das gemeinsame Konto.",
       "text3d6627454174": "Anmeldedaten festlegen",
       "text929505ef815a": "Es ist noch kein Konto verbunden. Fügen Sie unten Ihr eigenes hinzu, oder bitten Sie einen Projektmanager, ein gemeinsames Konto zu verbinden.",
+      "text931cb67e2af7": "Die neue Agent-Konfiguration konnte nicht geladen werden. Diese Sitzung läuft weiter mit einer früheren Konfiguration.",
+      "textd9ff3a72833d": "Konfiguration nicht geladen",
+      "textebfb07812fb4": "Die neue Agent-Konfiguration konnte nicht geladen werden",
+      "text4e62b29dd3b6": "Eine frühere Konfiguration läuft in dieser Sitzung. Die fehlerhafte Konfiguration wird erst nach einer Änderung am Basis-Branch erneut versucht.",
+      "textf81ab834de5f": "Grund",
+      "text44cdf35701cd": "Läuft jetzt",
+      "text591f9f0f3259": "Fehlgeschlagenes Release",
+      "text00ed4c71dc2b": "Letztes funktionierendes Release",
+      "textbd7a1a3b4141": "Die Standardkonfiguration der Plattform",
+      "text643df05476ab": "Die Standardkonfiguration der Plattform läuft in dieser Sitzung. Die fehlerhafte Konfiguration wird erst nach einer Änderung am Basis-Branch erneut versucht.",
+      "text40652e008fc9": "Die neue Agent-Konfiguration konnte nicht geladen werden. Diese Sitzung läuft mit der Standardkonfiguration der Plattform.",
       "text3312ddb06c1d": "Registriere einen Bot in Azure, verbinde ihn hier und lade dann das App-Paket in Teams hoch.",
       "text7f1b55a356b0": "Bot in Azure registrieren",
       "text91004edf8b30": "Mit diesem Projekt verbinden",
@@ -18672,7 +18704,9 @@
       "texta0bcee97cbb3": "Inline-Checkout bestätigt",
       "text0b751a917c97": "GitHub-Installation verbunden",
       "text8b7a8797d532": "Mandant für Microsoft Teams verbunden",
+      "text83c0e255d4bb": "Microsoft Teams-Installation abgeschlossen",
       "text17a8cf884e2a": "Slack-Workspace verbunden",
+      "textf887cb0e6800": "Slack-App-Installation abgeschlossen",
       "textc7f9ec5ed69c": "Computer-Tunnel-Agent verbunden",
       "textafd58fcedeee": "E-Mail-Postfach verbunden",
       "text2eda12b4ed38": "Vorhandene GitHub App verbunden",
@@ -19135,7 +19169,35 @@
       "text2afef4702cc0": "Systemstatus-Banner angezeigt",
       "textbda3fcd4343c": "Stufenkonfigurationen angezeigt",
       "text30cef615e8e3": "Transaktionsübersicht angezeigt",
-      "textd2c6127fc332": "Versions-Diff angezeigt"
+      "textd2c6127fc332": "Versions-Diff angezeigt",
+      "text8cc0d84b66bb": "Slack-Identitätslink angesehen",
+      "text508b43cc4545": "Teams-Identitätslink angesehen",
+      "text467f597e95b0": "SSO-Domain verifiziert",
+      "text8295f9d4861b": "SSO-Domain-Verifizierung des Kontos gesetzt",
+      "text7beaff63a7d3": "Projekt-Konfigurationsarchiv heruntergeladen",
+      "text5176d59f25fd": "Config-Release der Sitzung aufgelöst"
+    },
+    "publicShareConfirm": {
+      "title": "Öffentlichen Link erstellen?",
+      "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",
+      "confirm": "Link erstellen"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service}-Konto",
+      "chatWorkspace": "{service}-Workspace",
+      "checking": "Link wird geprüft…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} wurde nicht verbunden",
+      "mismatch": "Diese Installation wurde von einem anderen Kortix-Konto oder für ein anderes Projekt gestartet. Melde dich mit diesem Konto an oder starte die Installation im Projekt erneut.",
+      "expired": "Dieser Installationslink ist ungültig oder abgelaufen. Starte die Installation im Projekt erneut.",
+      "failed": "Die Installation konnte nicht abgeschlossen werden. Starte sie im Projekt erneut.",
+      "backToProject": "Zurück zum Projekt"
+    },
+    "secretIntakeWithheld": {
+      "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
+      "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
+      "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
     }
   },
   "projectOnboarding": {
@@ -19250,7 +19312,17 @@
   },
   "commandPalette": {
     "title": "Befehlspalette",
-    "description": "Nach einem auszuführenden Befehl suchen..."
+    "description": "Nach einem auszuführenden Befehl suchen...",
+    "copyTitle": "Kopieren",
+    "copyEmail": "E-Mail",
+    "copyUserId": "Benutzer-ID",
+    "copyAccountId": "Konto-ID",
+    "copyProjectId": "Projekt-ID",
+    "copySessionId": "Sitzungs-ID",
+    "copySessionLink": "Sitzungslink",
+    "copyAction": "{label} kopieren",
+    "copied": "{label} kopiert",
+    "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
   },
   "personalWelcome": {
     "dismiss": "Schließen",
@@ -20017,6 +20089,9 @@
     "providerError": "Der Anbieterzugriff konnte nicht aktualisiert werden.",
     "managedTitle": "Von Kortix verwaltete Modelle",
     "managedDescription": "Verwaltete Modelle, abgerechnet über Kortix-Guthaben. Kein API-Schlüssel erforderlich.",
+    "pricingEstimate": "Geschätzter Kundenpreis. Die genutzte Route bestimmt die Kosten.",
+    "pricingRoute": "{route}: {input} Eingabe / {cacheRead} Cache / {output} Ausgabe pro 1 Mio. Token",
+    "pricingPreferred": "Bevorzugt",
     "textImage": "Text + Bild",
     "textOnly": "Nur Text",
     "zdrTitle": "Keine Datenspeicherung",
@@ -20147,5 +20222,18 @@
   },
   "connectorsAppReturn": {
     "done": "Fertig. Zurück zur Kortix-App"
+  },
+  "ssoDomainVerification": {
+    "title": "Domain-Verifizierung",
+    "verified": "Verifiziert",
+    "unverified": "Nicht verifiziert",
+    "verifiedDescription": "Ihrem Identitätsanbieter wird für {domain} vertraut. Die SSO-Pflicht gilt für diese Domain.",
+    "unverifiedDescription": "Fügen Sie diesen DNS-TXT-Eintrag hinzu, um nachzuweisen, dass Sie {domain} kontrollieren. Bis dahin funktioniert die SSO-Anmeldung nur innerhalb dieses Kontos, und die SSO-Pflicht hat keine Wirkung.",
+    "recordName": "Name",
+    "recordValue": "Wert",
+    "verify": "Domain verifizieren",
+    "verifiedToast": "Domain verifiziert",
+    "failedToast": "Domain noch nicht verifiziert",
+    "enforceNeedsVerification": "Verifizieren Sie zuerst die Domain. Die SSO-Pflicht gilt nur für eine verifizierte Domain."
   }
 }

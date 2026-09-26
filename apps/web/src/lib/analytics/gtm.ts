@@ -10,6 +10,7 @@
 // null (reading 'getItem')`. This module runs on every route (the root-layout
 // RouteChangeTracker), so an unguarded access would crash analytics on the
 // marketing site for those browsers.
+import { locales } from '@/i18n/catalog.mjs';
 import {
   safeSessionGetItem,
   safeSessionRemoveItem,
@@ -22,6 +23,72 @@ interface GTMWindow extends Window {
 }
 
 declare const window: GTMWindow;
+
+/**
+ * Query parameters that may reach GTM. Everything else is dropped from
+ * `page_location` and `page_referrer`: auth pages carry the user's email,
+ * return URLs and handoff state in the query, and none of it is analytics.
+ */
+const ANALYTICS_QUERY_ALLOWLIST = new Set([
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
+  'gclid',
+  'gbraid',
+  'wbraid',
+  'fbclid',
+  'msclkid',
+]);
+
+/** `origin + pathname`, plus only the allowlisted query parameters. Never a hash. */
+export function analyticsLocation(origin: string, pathname: string, search?: string): string {
+  const params = new URLSearchParams(search ?? '');
+  const kept = new URLSearchParams();
+  for (const [key, value] of params) {
+    if (ANALYTICS_QUERY_ALLOWLIST.has(key)) kept.append(key, value);
+  }
+  const query = kept.toString();
+  return `${origin}${pathname}${query ? `?${query}` : ''}`;
+}
+
+/**
+ * Pages where no third-party analytics script may load: signed-in app
+ * surfaces and pages whose URL carries a capability token. Checked on the
+ * path without its locale prefix.
+ */
+const ANALYTICS_EXCLUDED_PREFIXES = [
+  '/projects',
+  '/admin',
+  '/settings',
+  '/connections',
+  '/invites',
+  '/setup',
+  '/new',
+  '/secret-intake',
+  '/connect',
+  '/approve',
+  '/share',
+  '/slack',
+  '/teams',
+  '/tunnel',
+  '/cli',
+  '/oauth',
+  '/preview',
+  '/github',
+];
+
+export function isAnalyticsExcludedPath(pathname: string): boolean {
+  const segments = pathname.split('/');
+  const withoutLocale =
+    segments.length > 1 && (locales as readonly string[]).includes(segments[1]!)
+      ? `/${segments.slice(2).join('/')}`
+      : pathname;
+  return ANALYTICS_EXCLUDED_PREFIXES.some(
+    (prefix) => withoutLocale === prefix || withoutLocale.startsWith(`${prefix}/`),
+  );
+}
 
 /**
  * Initialize the dataLayer if it doesn't exist
@@ -172,8 +239,21 @@ function getPageReferrer(): string {
   // Check if we have a stored previous page in sessionStorage
   const previousPage = safeSessionGetItem('gtm_previous_page');
 
-  // If no previous page, use document.referrer (initial load)
-  return previousPage || document.referrer || '';
+  if (previousPage) return previousPage;
+
+  // Initial load: document.referrer. An own-origin referrer (a full-page
+  // redirect such as the auth callback) gets the same query allowlist.
+  const referrer = document.referrer || '';
+  try {
+    const url = new URL(referrer);
+    if (url.origin === window.location.origin) {
+      return analyticsLocation(url.origin, url.pathname, url.search);
+    }
+  } catch {
+    // Not a URL: pass nothing rather than an unparsed string.
+    return '';
+  }
+  return referrer;
 }
 
 /**
@@ -181,7 +261,14 @@ function getPageReferrer(): string {
  */
 function storePreviousPage() {
   if (typeof window === 'undefined') return;
-  safeSessionSetItem('gtm_previous_page', window.location.href);
+  safeSessionSetItem(
+    'gtm_previous_page',
+    analyticsLocation(
+      window.location.origin,
+      window.location.pathname,
+      window.location.href.split('?')[1]?.split('#')[0],
+    ),
+  );
 }
 
 /**
@@ -243,9 +330,8 @@ export function trackRouteChange(pathname: string, searchParams?: string) {
   // Initialize dataLayer if needed
   initDataLayer();
 
-  // Construct the full URL with search params for page_location only
-  const fullPath = searchParams ? `${pathname}?${searchParams}` : pathname;
-  const pageLocation = `${window.location.origin}${fullPath}`;
+  // page_location keeps only campaign parameters; see ANALYTICS_QUERY_ALLOWLIST.
+  const pageLocation = analyticsLocation(window.location.origin, pathname, searchParams);
 
   // Get page title (or use pathname as fallback)
   const pageTitle = document.title || pathname;
@@ -304,8 +390,12 @@ export function trackRouteChangeForModal(pageType: 'plans' | 'order_confirm') {
 
   initDataLayer();
 
-  const pageLocation = window.location.href;
   const pathname = window.location.pathname;
+  const pageLocation = analyticsLocation(
+    window.location.origin,
+    pathname,
+    window.location.href.split('?')[1]?.split('#')[0],
+  );
   const pageTitle = document.title || pathname;
   const pageReferrer = getPageReferrer();
   const initialLoad = isInitialLoad();

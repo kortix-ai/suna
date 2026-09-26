@@ -18,7 +18,11 @@ import { preserveEstablishedRuntime } from '../runtime-identity';
 import { settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-lifecycle';
 import { requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
-import { transitionSandbox, transitionSession } from '../session-lifecycle/status-transitions';
+import {
+  STOPPED_SANDBOX_CLEARED_KEYS,
+  transitionSandbox,
+  transitionSession,
+} from '../session-lifecycle/status-transitions';
 import type { StopReason } from '../stop-reason';
 
 /** Merge keys into a jsonb metadata column without clobbering siblings. */
@@ -35,7 +39,7 @@ export function mergeMetadata(patch: Record<string, unknown>) {
  * but a Platinum lifecycle transition outlasts that, so both reads landed
  * inside it and the guard expired mid-transition instead of covering it.
  *
- * Incident 2026-08-21T23:58Z (session 541ea985, Platinum sbx_01M0JE5DDBE9JCZ):
+ * Incident 2026-08-21T23:58Z (a prod session on a Platinum sandbox):
  * parked at 23:58:37 with `provider_reconcile`, and the SAME box reported
  * running again at 23:58:47 — ten seconds later. The guest never rebooted
  * (uptime spanned the whole window) and OpenCode never restarted, so nothing
@@ -53,7 +57,7 @@ export type StoppedObservationDecision = 'park' | 'await_confirmation';
 /**
  * May a single provider-`stopped` read park this box?
  *
- * Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): it did,
+ * Incident 2026-08-17T20:40:03Z (a prod session on a Daytona sandbox): it did,
  * mid-turn, `stopReason: provider_reconcile` — while Daytona's own
  * `autoStopInterval` was 720 minutes and nothing had asked for a stop.
  * `stopping` and `pending_stop` both map to `stopped`
@@ -182,22 +186,6 @@ export async function clearPendingStopObservation(sandboxId: string): Promise<vo
     );
 }
 
-/**
- * What a stopped row may not keep: wake fences, turn authority, the pending
- * stop marker, and the idle-stop claim.
- */
-const STOPPED_CLEARED_KEYS = [
-  'runtimeWakeStartedAt',
-  'runtimeWakeId',
-  'runtimeWakeLeaseExpiresAt',
-  'runtimeWakeProviderStatus',
-  'runtimeWakeCleanupId',
-  'runtimeWakeCleanupLeaseExpiresAt',
-  'activeTurn',
-  'activeTurns',
-  'pendingStopObservedAtMs',
-  'lifecycleStopClaim',
-] as const;
 
 export interface StoppedStateWrite {
   sandboxId: string;
@@ -289,7 +277,7 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
     await transitionSandbox(
       'stop',
       write.sandboxId,
-      { at: now, metadata: { strip: STOPPED_CLEARED_KEYS, merge: patch } },
+      { at: now, metadata: { strip: STOPPED_SANDBOX_CLEARED_KEYS, merge: patch } },
       tx,
     );
     // A `failed` session keeps its park (see SESSION_TRANSITIONS.stop).

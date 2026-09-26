@@ -18,7 +18,10 @@ name: DB Migrations
 #                      checksum guarantee, enforced at PR time)
 #   4. sequence      — new migrations must sort after every merged migration
 #   5. shadow-db     — every migration applies cleanly to a FRESH database
-#                      (prevents "the files don't reproduce reality")
+#                      (prevents "the files don't reproduce reality"), and
+#                      kortix.ts declares exactly what that database holds:
+#                      relations, columns, indexes, unique constraints
+#                      (packages/db/scripts/schema-contract.ts)
 #   6. schema-sync   — kortix.ts and the committed migrations agree
 # See packages/db/MIGRATIONS.md.
 
@@ -158,6 +161,8 @@ jobs:
         run: pnpm --filter @kortix/db migrate
       - name: Assert no pending migrations
         run: pnpm --filter @kortix/db migrate:status
+      - name: kortix.ts describes the migrated schema
+        run: cd packages/db && bun scripts/schema-contract.ts
       - name: Sanity-check the schema was built
         run: |
           set -euo pipefail

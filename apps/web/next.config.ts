@@ -8,6 +8,10 @@ import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 import { buildBlumeDocs, getBlumeDocsOutputPaths } from './scripts/blume-docs.mjs';
 import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
+import {
+  enforcedContentSecurityPolicy,
+  reportOnlyContentSecurityPolicy,
+} from './src/lib/security/content-security-policy';
 import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs';
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
@@ -679,13 +683,28 @@ const nextConfig = (): NextConfig => ({
       {
         source: '/:path*',
         headers: [
+          // Enforced: framing, plugins and <base>. The script allowlist is
+          // report-only until its reports are clean; see
+          // src/lib/security/content-security-policy.ts.
           {
             key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self';",
+            value: enforcedContentSecurityPolicy(),
+          },
+          {
+            key: 'Content-Security-Policy-Report-Only',
+            value: reportOnlyContentSecurityPolicy(),
           },
           {
             key: 'X-Frame-Options',
             value: 'SAMEORIGIN',
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
           },
           // The Supabase session cookie (see lib/supabase/client.ts /
           // server.ts / middleware.ts) is now Secure-only on HTTPS, but

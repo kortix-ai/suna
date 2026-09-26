@@ -6,7 +6,13 @@ import {
 } from '@composio/core';
 import { HTTPException } from 'hono/http-exception';
 import type { ExecResult } from './call';
-import { searchComposioCatalog, type ComposioCatalogClient } from './composio-catalog-search';
+import {
+  composioHiddenToolkits,
+  composioRestClient,
+  customAuthConfigIds,
+  searchComposioCatalog,
+  type ComposioCatalogClient,
+} from './composio-catalog-search';
 import type { ComposioToolLike } from './types';
 
 // Re-exported so `db-deps` reaches it through the lazily imported adapter module.
@@ -131,29 +137,8 @@ export function setComposioRuntimeForTest(next: ComposioRuntime | null): void {
   runtime = next;
 }
 
-/** The exact phrase Composio's Tool Router uses when a requested toolkit slug is unknown. */
 const INVALID_TOOLKIT_SLUGS_MARKER = 'Invalid toolkit slugs';
 
-function directSessionConfig(toolkit: string, connectedAccountId?: string | null): ToolRouterCreateSessionConfig {
-  return {
-    sessionPreset: 'direct_tools',
-    toolkits: [toolkit],
-    manageConnections: false,
-    sandbox: { enable: false },
-    ...(connectedAccountId ? { connectedAccounts: { [toolkit]: connectedAccountId } } : {}),
-  };
-}
-
-/**
- * The slugs Composio named in a `ToolRouterV2_InvalidToolkitSlugs` rejection
- * (HTTP 400, code 4305). `anthropic` is a Kortix model provider, not a Composio
- * toolkit — a connector can hold such a slug because it was typed by hand
- * (`kortix connectors add --provider composio --app <slug>`) or because the
- * catalogue dropped an app after the connector was added. The connector sync
- * already rejects those slugs; this names them for the connect path.
- *
- * Returns `null` for any other error, so callers re-throw it untouched.
- */
 export function invalidToolkitSlugsFromError(error: unknown): string[] | null {
   const message = error instanceof Error ? error.message : String(error);
   const marker = message.indexOf(INVALID_TOOLKIT_SLUGS_MARKER);
@@ -162,17 +147,9 @@ export function invalidToolkitSlugsFromError(error: unknown): string[] | null {
     .slice(marker + INVALID_TOOLKIT_SLUGS_MARKER.length)
     .replace(/^\s*:?\s*/, '')
     .split(/[.\n"]/);
-  return named
-    .split(',')
-    .map((slug) => slug.trim())
-    .filter(Boolean);
+  return named.split(',').map((slug) => slug.trim()).filter(Boolean);
 }
 
-/**
- * An unusable connector configuration, not a platform fault. A 4xx is logged
- * at `warn` and never captured to Sentry (index.ts), which is the whole point:
- * the raw Composio rejection used to reach Better Stack as a handled 500.
- */
 function toolkitUnsupportedError(toolkit: string, slugs: readonly string[]): HTTPException {
   const named = slugs.length > 0 ? slugs.join(', ') : toolkit;
   return new HTTPException(422, {
@@ -180,7 +157,6 @@ function toolkitUnsupportedError(toolkit: string, slugs: readonly string[]): HTT
   });
 }
 
-/** Create the toolkit-scoped session, mapping Composio's slug rejection to a 422. */
 async function createToolkitSession(
   runtime: ComposioRuntime,
   userId: string,
@@ -196,20 +172,82 @@ async function createToolkitSession(
   }
 }
 
+function directSessionConfig(toolkit: string, connectedAccountId?: string | null): ToolRouterCreateSessionConfig {
+  return {
+    sessionPreset: 'direct_tools',
+    toolkits: [toolkit],
+    manageConnections: false,
+    sandbox: { enable: false },
+    ...(connectedAccountId ? { connectedAccounts: { [toolkit]: connectedAccountId } } : {}),
+  };
+}
+
+/** Composio's 4300 refusal for a toolkit it holds no OAuth app for. */
+function isAuthConfigRequired(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /require auth configs but none exist/i.test(message);
+}
+
+function authConfigRequired(toolkit: string): HTTPException {
+  const message =
+    `Composio has no managed sign-in for "${toolkit}", and this deployment's Composio ` +
+    `project has no enabled "${toolkit}" auth config. Create one with your own OAuth app ` +
+    '(Composio dashboard → Auth Configs), then sync again.';
+  return new HTTPException(422, {
+    message,
+    res: Response.json(
+      { error: true, message, status: 422, code: 'composio_auth_config_required', toolkit },
+      { status: 422 },
+    ),
+  });
+}
+
+/**
+ * A direct-tools session for one toolkit, on Composio's managed app by default.
+ *
+ * Only when Tool Router refuses with 4300 (the toolkit has no managed app, see
+ * `requiresOwnAuthConfig`) does this pass the operator's custom auth config.
+ * Tool Router never picks that config up on its own (verified live on
+ * 2026-09-26), so without this an X connector could not sync even after an
+ * operator configured X. Every toolkit Composio accepts keeps its managed
+ * defaults, exactly as before: no auth config is listed or selected for it.
+ * The lookup is not cached, so a config created a moment ago applies.
+ */
+async function createDirectSession(input: {
+  runtime: ComposioRuntime;
+  userId: string;
+  toolkit: string;
+  connectedAccountId?: string | null;
+  catalogClient?: ComposioCatalogClient;
+}): Promise<ComposioSessionLike> {
+  const config = directSessionConfig(input.toolkit, input.connectedAccountId);
+  try {
+    return await createToolkitSession(input.runtime, input.userId, input.toolkit, config);
+  } catch (error) {
+    if (!isAuthConfigRequired(error)) throw error;
+    const configured = await customAuthConfigIds({
+      catalogClient: input.catalogClient ?? composioRestClient(),
+      toolkit: input.toolkit,
+    });
+    const authConfigId = configured.get(input.toolkit.toLowerCase());
+    if (!authConfigId) throw authConfigRequired(input.toolkit);
+    return createToolkitSession(input.runtime, input.userId, input.toolkit, {
+      ...config,
+      authConfigs: { [input.toolkit]: authConfigId },
+    });
+  }
+}
+
 async function useOrCreateSession(input: {
   runtime: ComposioRuntime;
   connectionId: string;
   sessionId?: string | null;
   toolkit: string;
   connectedAccountId?: string | null;
+  catalogClient?: ComposioCatalogClient;
 }): Promise<ComposioSessionLike> {
   if (input.sessionId) return input.runtime.sessions.use(input.sessionId);
-  return createToolkitSession(
-    input.runtime,
-    composioUserId(input.connectionId),
-    input.toolkit,
-    directSessionConfig(input.toolkit, input.connectedAccountId),
-  );
+  return createDirectSession({ ...input, userId: composioUserId(input.connectionId) });
 }
 
 function toolkitState(page: ToolkitConnectionsDetails, toolkit: string) {
@@ -219,10 +257,7 @@ function toolkitState(page: ToolkitConnectionsDetails, toolkit: string) {
 async function loadToolkitState(session: ComposioSessionLike, toolkit: string) {
   const page = await session.toolkits({ toolkits: [toolkit], limit: 1 });
   const state = toolkitState(page, toolkit);
-  // Same user-configuration class as an invalid slug at session create: the
-  // connector names an app Composio no longer lists. A controlled 422, not an
-  // unhandled 500.
-  if (!state) throw toolkitUnsupportedError(toolkit, []);
+  if (!state) throw toolkitUnsupportedError(toolkit, [toolkit]);
   return state;
 }
 
@@ -256,6 +291,11 @@ interface ToolkitMeta {
   categories: string[];
 }
 
+/** What the cache holds per toolkit: the enrichment, plus the catalogue logo. */
+interface CachedToolkit extends ToolkitMeta {
+  logo: string | null;
+}
+
 /**
  * The paged browse response, plus the two fields the provider's paged endpoint
  * omits. Declared rather than inferred so a caller that groups by `categories`
@@ -269,19 +309,20 @@ const TOOLKIT_META_TTL_MS = 6 * 60 * 60_000;
 
 const toolkitMetaCache = new WeakMap<
   ComposioRuntime,
-  { at: number; bySlug: Promise<Map<string, ToolkitMeta>> }
+  { at: number; bySlug: Promise<Map<string, CachedToolkit>> }
 >();
 
-async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, ToolkitMeta>> {
+async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, CachedToolkit>> {
   const cached = toolkitMetaCache.get(runtime);
   if (cached && Date.now() - cached.at < TOOLKIT_META_TTL_MS) return cached.bySlug;
   if (!runtime.toolkits) return new Map();
 
   const bySlug = (async () => {
     const page = await runtime.toolkits!.get({ limit: 1000 });
-    const map = new Map<string, ToolkitMeta>();
+    const map = new Map<string, CachedToolkit>();
     for (const toolkit of page) {
       map.set(toolkit.slug.toLowerCase(), {
+        logo: toolkit.meta?.logo ?? null,
         description: toolkit.meta?.description ?? null,
         categories: (toolkit.meta?.categories ?? []).map((category) => category.slug),
       });
@@ -297,6 +338,28 @@ async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, 
     toolkitMetaCache.delete(runtime);
     console.warn('[composio] toolkit metadata unavailable, serving catalogue unenriched:', err);
     return new Map();
+  }
+}
+
+/**
+ * The logo the connectors catalogue shows for a Composio toolkit, by slug.
+ *
+ * A connector an agent adds stores no `icon_url` in its config, so without this
+ * its connect card fell back to a monogram while the catalogue showed the real
+ * logo. Served from the same 6-hour toolkit cache as the catalogue enrichment:
+ * one provider request per process, not one per card.
+ *
+ * `null` when Composio is not configured, the toolkit is past the 1000-item
+ * cache cap, or the provider fails. Never throws: a missing logo is a monogram,
+ * not an error.
+ */
+export async function composioToolkitLogo(toolkit: string): Promise<string | null> {
+  if (!composioConfigured()) return null;
+  try {
+    const bySlug = await toolkitMetaBySlug(getComposioRuntime());
+    return bySlug.get(toolkit.trim().toLowerCase())?.logo ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -327,23 +390,33 @@ export async function composioCatalogPage(input: {
     }
 > {
   const runtime = input.runtime ?? getComposioRuntime();
+  // The hidden set is read from the REST catalogue snapshot. A caller that
+  // injects a runtime without a REST client has no snapshot, so hides nothing.
+  const hiddenToolkits =
+    input.catalogClient || !input.runtime
+      ? composioHiddenToolkits(input.catalogClient ?? composioRestClient())
+      : Promise.resolve(new Set<string>());
   const category = input.category?.trim();
   if (category) {
     if (!runtime.toolkits) throw new Error('Composio toolkit catalogue is unavailable');
-    const page = await runtime.toolkits.get({
-      category,
-      // The core SDK intentionally drops the provider cursor from this endpoint.
-      // Fetch the complete category so "View all" never becomes a first-page slice.
-      limit: 1000,
-    });
+    const [page, hidden] = await Promise.all([
+      runtime.toolkits.get({
+        category,
+        // The core SDK intentionally drops the provider cursor from this endpoint.
+        // Fetch the complete category so "View all" never becomes a first-page slice.
+        limit: 1000,
+      }),
+      hiddenToolkits,
+    ]);
     const search = input.q?.trim().toLowerCase();
-    const toolkits = search
-      ? page.filter((toolkit) =>
+    const toolkits = page.filter(
+      (toolkit) =>
+        !hidden.has(toolkit.slug.toLowerCase()) &&
+        (!search ||
           `${toolkit.name} ${toolkit.slug} ${toolkit.meta.description ?? ''}`
             .toLowerCase()
-            .includes(search),
-        )
-      : page;
+            .includes(search)),
+    );
     return {
       provider: 'composio',
       toolkits: toolkits.map((toolkit) => ({
@@ -367,20 +440,21 @@ export async function composioCatalogPage(input: {
     manageConnections: false,
     sandbox: { enable: false },
   });
-  const [page, meta] = await Promise.all([
+  const [page, meta, hidden] = await Promise.all([
     session.toolkits({
       ...(input.q?.trim() ? { search: input.q.trim() } : {}),
       ...(input.cursor ? { cursor: input.cursor } : {}),
       ...(input.limit != null ? { limit: input.limit } : {}),
     }),
     toolkitMetaBySlug(runtime),
+    hiddenToolkits,
   ]);
   // Enriched in place so the paged shape (`items` + `cursor`) is unchanged and
   // the SDK's existing normalization still applies. A toolkit past the 1000-item
   // metadata cap keeps the empty values it already had.
   return {
     ...page,
-    items: page.items.map((item) => {
+    items: page.items.filter((item) => !hidden.has(item.slug.toLowerCase())).map((item) => {
       const enrichment = meta.get(item.slug.toLowerCase());
       return {
         ...item,
@@ -397,13 +471,14 @@ export async function composioCatalogTools(input: {
   connectorSlug: string;
   toolkit: string;
   runtime?: ComposioRuntime;
+  catalogClient?: ComposioCatalogClient;
 }): Promise<ComposioToolLike[]> {
-  const session = await createToolkitSession(
-    input.runtime ?? getComposioRuntime(),
-    `kortix-catalog:${input.projectId}:${input.connectorSlug}`,
-    input.toolkit,
-    directSessionConfig(input.toolkit),
-  );
+  const session = await createDirectSession({
+    runtime: input.runtime ?? getComposioRuntime(),
+    userId: `kortix-catalog:${input.projectId}:${input.connectorSlug}`,
+    toolkit: input.toolkit,
+    catalogClient: input.catalogClient,
+  });
   return session.tools();
 }
 
@@ -413,6 +488,7 @@ export async function composioSessionTools(input: {
   sessionId?: string | null;
   connectedAccountId?: string | null;
   runtime?: ComposioRuntime;
+  catalogClient?: ComposioCatalogClient;
 }): Promise<ComposioToolLike[]> {
   const session = await useOrCreateSession({
     runtime: input.runtime ?? getComposioRuntime(),
@@ -420,12 +496,13 @@ export async function composioSessionTools(input: {
     sessionId: input.sessionId,
     toolkit: input.toolkit,
     connectedAccountId: input.connectedAccountId,
+    catalogClient: input.catalogClient,
   });
   return session.tools();
 }
 
 export async function executeComposio(
-  input: ComposioExecuteInput & { runtime?: ComposioRuntime },
+  input: ComposioExecuteInput & { runtime?: ComposioRuntime; catalogClient?: ComposioCatalogClient },
 ): Promise<ExecResult> {
   const session = await useOrCreateSession({
     runtime: input.runtime ?? getComposioRuntime(),
@@ -433,6 +510,7 @@ export async function executeComposio(
     sessionId: input.sessionId,
     toolkit: input.toolkit,
     connectedAccountId: input.connectedAccountId,
+    catalogClient: input.catalogClient,
   });
   const state = await loadToolkitState(session, input.toolkit);
   const activeAccountId = activeConnectedAccountId(state);
@@ -522,18 +600,19 @@ export async function composioConnectUrl(input: {
   stableUserId: string;
   redirects?: { success?: string; error?: string };
   runtime?: ComposioRuntime;
+  catalogClient?: ComposioCatalogClient;
 }): Promise<ComposioConnectResult> {
   assertStableUserId(input.connectionId, input.stableUserId);
-  const runtime = input.runtime ?? getComposioRuntime();
-  // Leave authConfigs unset. Composio's managed app is the supported
-  // zero-setup path. Custom OAuth scopes require a verified app owned by the
-  // customer and must not be smuggled into the managed client.
-  const session = await createToolkitSession(
-    runtime,
-    input.stableUserId,
-    input.app,
-    directSessionConfig(input.app),
-  );
+  // Composio's managed app is the supported zero-setup path. Custom OAuth
+  // scopes require a verified app owned by the customer and must not be
+  // smuggled into the managed client. An operator's own auth config is used
+  // only for a toolkit Composio holds no app for (see createDirectSession).
+  const session = await createDirectSession({
+    runtime: input.runtime ?? getComposioRuntime(),
+    userId: input.stableUserId,
+    toolkit: input.app,
+    catalogClient: input.catalogClient,
+  });
   const state = await loadToolkitState(session, input.app);
   if (state.isNoAuth) {
     return {

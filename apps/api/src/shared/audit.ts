@@ -27,8 +27,7 @@ import { auditDb } from './audit-db';
 import { resolveProjectAccountId } from './project-account-lookup';
 import type { Actor } from '../iam/actor';
 import { type AgentAuditAttribution, resolveAgentAuditAttribution } from './agent-audit-attribution';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isUuid } from './validate';
 
 /** `anonymous`: nothing authenticated the request (a 401, a public route). */
 export type AuditActorType = 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
@@ -90,7 +89,7 @@ type AuditContext = Context<AppEnv>;
 function pathIds(path: string): { projectId: string | null; sessionId: string | null } {
   const projectMatch = path.match(/\/projects\/([^/]+)/);
   const sessionMatch = path.match(/\/projects\/[^/]+\/sessions\/([^/]+)/);
-  const projectId = projectMatch?.[1] && UUID_RE.test(projectMatch[1]) ? projectMatch[1] : null;
+  const projectId = projectMatch?.[1] && isUuid(projectMatch[1]) ? projectMatch[1] : null;
   return {
     projectId,
     sessionId: sessionMatch?.[1] ?? null,
@@ -110,22 +109,21 @@ function inferResource(path: string): { resourceType: string; resourceId: string
   if (!root) return { resourceType: 'unknown', resourceId: null };
   if (root === 'p') return { resourceType: 'sandbox_proxy', resourceId: id ?? null };
   if (root === 'account-invites') {
-    return { resourceType: 'account_invite', resourceId: id && UUID_RE.test(id) ? id : null };
+    return { resourceType: 'account_invite', resourceId: isUuid(id) ? id : null };
   }
   return {
     resourceType: root.replace(/-/g, '_').replace(/s$/, ''),
     // Arbitrary path values can be bearer capabilities (approval links,
     // setup links, public shares, device codes). Preserve UUID identifiers;
     // the matched route template in `action` still identifies every endpoint.
-    resourceId: id && UUID_RE.test(id) ? id : null,
+    resourceId: isUuid(id) ? id : null,
   };
 }
 
 function inferAccountId(c: AuditContext): string | null {
   const parts = c.req.path.split('/').filter(Boolean);
   const accountPathCandidate = parts[0] === 'v1' && parts[1] === 'accounts' ? parts[2] : null;
-  const accountPathId =
-    accountPathCandidate && UUID_RE.test(accountPathCandidate) ? accountPathCandidate : null;
+  const accountPathId = isUuid(accountPathCandidate) ? accountPathCandidate : null;
   return (
     c.get('accountId') ||
     getRequestContext()?.accountId ||
@@ -193,10 +191,6 @@ export function inferAuditSource(c: AuditContext, actorType: AuditActorType | nu
   return auditSourceFor(c.get('authType'), actorType);
 }
 
-export function clientReportedAuditSource(c: AuditContext): string | null {
-  return normalizeAuditClientSource(c.req.header('x-kortix-client'));
-}
-
 function outcomeForStatus(status: number): AuditOutcome {
   if (status === 202) return 'pending';
   if (status === 401 || status === 403) return 'denied';
@@ -217,7 +211,7 @@ function errorStatus(error: unknown): number {
 }
 
 function uuidOrNull(value: string | null | undefined): string | null {
-  return value && UUID_RE.test(value) ? value : null;
+  return isUuid(value) ? value : null;
 }
 
 const SECRET_VALUE_RE =
@@ -696,9 +690,7 @@ async function inboundAuditInput(
     (bound.accountId !== undefined
       ? bound.accountId
       : (hono?.accountId ?? request?.accountId ?? scope.queryAccountId ?? null)) ??
-    (projectId && UUID_RE.test(projectId)
-      ? await resolveProjectAccountId(projectId).catch(() => null)
-      : null);
+    (isUuid(projectId) ? await resolveProjectAccountId(projectId).catch(() => null) : null);
   // `system` means an account-level credential with no user — an account API
   // key the auth middleware resolved. An account a route merely bound (the
   // project an invalid token was aimed at) proves no caller: `anonymous`.

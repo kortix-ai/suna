@@ -4,7 +4,8 @@ import { ApiError } from '../api/client.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
 import type { MeResponse, ProjectSummary } from '../api/types.ts';
-import { resolveProjectContext, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { takeFlags } from '../command-argv.ts';
+import { resolveProjectContext, shortId, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { loadLink } from '../project-link.ts';
 import { C, help, status } from '../style.ts';
 
@@ -30,28 +31,16 @@ Exit codes:
   1  At least one check failed.
 `;
 
-interface DoctorFlags {
-  noSession: boolean;
-  keepSession: boolean;
-  prompt: string;
-  timeoutSec: number;
-  project?: string;
-  host?: string;
-  help: boolean;
-}
-
 export async function runDoctor(argv: string[]): Promise<number> {
-  let flags: DoctorFlags;
-  try {
-    flags = parseFlags(argv);
-  } catch (err) {
-    process.stderr.write(`${(err as Error).message}\n\n${HELP}`);
-    return 2;
-  }
-  if (flags.help) {
-    process.stdout.write(HELP);
-    return 0;
-  }
+  const flags = takeFlags(argv, HELP, (rest) => ({
+    noSession: takeFlagBool(rest, ['--no-session']),
+    keepSession: takeFlagBool(rest, ['--keep-session']),
+    project: takeFlagValue(rest, ['--project']),
+    host: takeFlagValue(rest, ['--host']),
+    prompt: takeFlagValue(rest, ['--prompt']) || 'ping',
+    timeoutSec: timeoutSeconds(takeFlagValue(rest, ['--timeout'])),
+  }));
+  if (typeof flags === 'number') return flags;
 
   process.stdout.write(`\n  ${C.bold}kortix doctor${C.reset}\n\n`);
 
@@ -184,35 +173,12 @@ export async function runDoctor(argv: string[]): Promise<number> {
   return 0;
 }
 
-function parseFlags(argv: string[]): DoctorFlags {
-  const rest = [...argv];
-  const flags: DoctorFlags = {
-    noSession: false,
-    keepSession: false,
-    prompt: 'ping',
-    timeoutSec: 180,
-    help: false,
-  };
-  flags.help = takeFlagBool(rest, ['-h', '--help']);
-  flags.noSession = takeFlagBool(rest, ['--no-session']);
-  flags.keepSession = takeFlagBool(rest, ['--keep-session']);
-  flags.project = takeFlagValue(rest, ['--project']);
-  flags.host = takeFlagValue(rest, ['--host']);
-  const p = takeFlagValue(rest, ['--prompt']);
-  if (p) flags.prompt = p;
-  const t = takeFlagValue(rest, ['--timeout']);
-  if (t) {
-    const n = Number(t);
-    if (!Number.isFinite(n) || n <= 0)
-      throw new Error('--timeout must be a positive number of seconds');
-    flags.timeoutSec = n;
-  }
-  if (rest.length > 0) throw new Error(`unknown option "${rest[0]}"`);
-  return flags;
-}
-
-function shortId(id: string): string {
-  return id.split('-')[0] ?? id;
+/** `--timeout <seconds>`; absent or empty keeps the 180 s default. */
+function timeoutSeconds(raw: string | undefined): number {
+  if (!raw) return 180;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) throw new Error('--timeout must be a positive number of seconds');
+  return n;
 }
 
 function describe(err: unknown): string {

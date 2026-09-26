@@ -72,3 +72,9 @@ d9db615d7f26fc4a1aef21b8f0085e3ad37f0258:.gitleaksignore:generic-api-key:62
 # `pod install`. Every line in that block has the same shape. Reviewed
 # 2026-09-22.
 5a9c15717fc4a5e3c98695eef52195eee5dbfd37:apps/mobile/ios/Podfile.lock:generic-api-key:3190
+
+# tests/src/flows/channels.flow.ts CHN-29 posts a deliberately forged login
+# token ("e30" = base64url "{}" plus a fake signature) to assert the identity
+# preview refuses it. Not a credential. The line now builds the value at run
+# time; this entry covers the commit that first added it. Reviewed 2026-09-24.
+49cbc8df790318063cbbe8222d86dce45f630c55:tests/src/flows/channels.flow.ts:generic-api-key:1153

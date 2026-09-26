@@ -77,7 +77,7 @@ describe('local test runner contract', () => {
     expect(source).toContain("await runWorkspaceTests(['@kortix/cli'], 1)");
     expect(source).toContain("await runWorkspaceTests(['kortixd'], 1)");
     expect(source).not.toContain("['@kortix/cli', 'kortixd']");
-    expect(source).toContain("await runWorkspaceTests(['@kortix/db'], 1)");
+    expect(source).toContain("runWorkspaceTests(['@kortix/db'], 1)");
     expect(source).toContain('Promise.allSettled(tasks)');
     expect(source.match(/await runAll\(\[/g)).toHaveLength(5);
     expect(source).toContain("'!kortix-api'");
@@ -112,7 +112,11 @@ describe('local test runner contract', () => {
     // test. That killed the packages lane on run 35331083850, both attempts at
     // the same SHA. 28 files: 11s parallel vs 34s serial, measured in a Linux
     // container against the real disposable-PostgreSQL containers.
-    expect(dbPackage.scripts.test).toBe('bun test --max-concurrency 2');
+    // The PostgreSQL contracts (`*.integration.test.ts`) run one file per
+    // process in the `db-suites` lane of the core run, not here.
+    expect(dbPackage.scripts.test).toBe(
+      "bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'",
+    );
   });
 
   it('keeps bun test isolation opt-in, with a stated reason per package', () => {

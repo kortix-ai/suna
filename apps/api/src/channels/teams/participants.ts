@@ -6,7 +6,7 @@ import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { sessionWebUrl } from '../slack/util';
 import { sendCard } from '../teams-api';
 import { buildJoinRequestCard, buildNoticeCard } from './cards';
-import { lookupTeamsIdentity } from './identity';
+import { chatUser, lookupChatIdentity } from '../core/identity';
 import type { TeamsConversationRef } from './types';
 
 /**
@@ -251,7 +251,7 @@ export async function decideTeamsThreadJoin(input: {
   decision: 'approved' | 'denied';
   ref: TeamsConversationRef;
 }): Promise<{ ok: boolean; text: string }> {
-  const decider = await lookupTeamsIdentity(input.tenantId, input.deciderTeamsUserId);
+  const decider = await lookupChatIdentity(chatUser('teams', input.tenantId, input.deciderTeamsUserId));
   if (!decider) return { ok: false, text: 'Connect your Kortix account (`/login`) before approving session access.' };
 
   const [session] = await db

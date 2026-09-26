@@ -74,19 +74,6 @@ export function inPlaceRestartWakePatch(now = new Date()): RuntimeReadinessMetad
   };
 }
 
-export function prepareInPlaceRestartMetadata(
-  metadata: RuntimeReadinessMetadata | null | undefined,
-  now = new Date(),
-): RuntimeReadinessMetadata {
-  const next = { ...(metadata ?? {}) };
-  // A human pressing Restart is an explicit "start this episode over": the
-  // consecutive-failure accounting that escalates the automatic retry cooldown
-  // (runtime-wake-fence.ts) resets with it, and no stale stop reason survives
-  // to be replayed as a verdict about the new attempt.
-  for (const key of IN_PLACE_RESTART_CLEARED_KEYS) delete next[key];
-  return { ...next, ...inPlaceRestartWakePatch(now) };
-}
-
 /**
  * When the CURRENT boot attempt began, or null when the row carries no mark.
  *

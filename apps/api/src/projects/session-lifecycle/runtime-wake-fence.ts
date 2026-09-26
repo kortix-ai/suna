@@ -53,11 +53,8 @@ export function runtimeWakePollDelayMs(attempt: number, steadyMs: number = RUNTI
 export async function waitForRuntimeWakeRunning(
   getStatus: () => Promise<string>,
   opts: {
-    /** Budget WITHOUT a provider-state change. Restarts on every change. */
-    graceMs?: number;
     /** Absolute ceiling on this wait, progress or not. */
     hardCapMs?: number;
-    pollMs?: number;
     sleep?: (ms: number) => Promise<void>;
     /**
      * Called once per DISTINCT provider status this loop observes, in order.
@@ -67,26 +64,23 @@ export async function waitForRuntimeWakeRunning(
     onProgress?: (status: string) => void | Promise<void>;
   } = {},
 ): Promise<boolean> {
-  const graceMs = Math.max(0, opts.graceMs ?? RUNTIME_WAKE_GRACE_MS);
+  // `graceMs` bounds time WITHOUT a provider-state change and restarts on
+  // every change.
+  const graceMs = RUNTIME_WAKE_GRACE_MS;
   const hardCapMs = Math.max(graceMs, opts.hardCapMs ?? RUNTIME_WAKE_HARD_MS);
-  // An explicit pollMs pins the cadence flat (tests, and any caller that wants
-  // the old behaviour); otherwise the ramp above runs.
-  const steadyMs = Math.max(1, opts.pollMs ?? RUNTIME_WAKE_POLL_MS);
-  const ramped = opts.pollMs === undefined;
   const sleep = opts.sleep ?? Bun.sleep;
 
   // The budget counts the delays this loop ITSELF schedules, not wall-clock.
   // With a variable delay an attempt count is no longer a stand-in for the
   // grace, but reading a clock instead would make the loop spin under an
   // injected no-op sleep. Accumulating the scheduled delay is deterministic
-  // under a fake sleep and reduces to the old `ceil(grace / poll)` attempt
-  // count exactly when the cadence is flat.
+  // under a fake sleep.
   //
   // TWO budgets, per the boot-budget learning: `graceMs` bounds time WITHOUT
   // progress and restarts whenever the provider answers something new;
   // `hardCapMs` bounds the whole wait and never restarts. A wake that keeps
-  // advancing is no longer killed at 90s for being slow — 2026-08-26, session
-  // e06ad0c4: the box reached ready 10s after the fixed budget gave up on it.
+  // advancing is no longer killed at 90s for being slow — 2026-08-26, a prod
+  // session: the box reached ready 10s after the fixed budget gave up on it.
   let scheduledMs = 0;
   let scheduledAtLastProgress = 0;
   let lastStatus: string | null = null;
@@ -104,9 +98,8 @@ export async function waitForRuntimeWakeRunning(
         // never the wake itself.
       }
     }
-    const rampedDelay =
-      scheduledMs >= graceMs ? Math.max(steadyMs, RUNTIME_WAKE_SLOW_POLL_MS) : steadyMs;
-    const delay = ramped ? runtimeWakePollDelayMs(attempt, rampedDelay) : steadyMs;
+    const steadyMs = scheduledMs >= graceMs ? RUNTIME_WAKE_SLOW_POLL_MS : RUNTIME_WAKE_POLL_MS;
+    const delay = runtimeWakePollDelayMs(attempt, steadyMs);
     if (scheduledMs + delay - scheduledAtLastProgress >= graceMs) return false;
     if (scheduledMs + delay >= hardCapMs) return false;
     scheduledMs += delay;
@@ -143,6 +136,23 @@ export function runtimeWakeProgressPatch(
   };
 }
 
+/**
+ * The patch that keeps a claimed wake alive while the provider restores the
+ * box from cold storage INSIDE start(). The status loop never sees that
+ * restore (it runs before the loop, and the box reads `stopped` throughout),
+ * and under load it outlasts the lease: past it, maintenance stamps
+ * `wake_lease_expired` and its late-start guard stops the box the moment it
+ * boots. The provider bounds how long it reports this; RUNTIME_WAKE_HARD_MS
+ * still ends the wake as a whole.
+ */
+export function runtimeWakeRestoreProgressPatch(now: Date = new Date()): Record<string, unknown> {
+  return {
+    runtimeWakeProviderStatus: 'restoring',
+    runtimeWakeProgressAt: now.toISOString(),
+    runtimeWakeLeaseExpiresAt: new Date(now.getTime() + RUNTIME_WAKE_LEASE_MS).toISOString(),
+  };
+}
+
 export function runtimeWakeInProgress(
   metadata: Record<string, unknown> | null | undefined,
   now: Date = new Date(),
@@ -172,10 +182,10 @@ export function runtimeWakeInProgress(
  * Stamped runtime-start failures: a COOLDOWN, never a gravestone.
  * ───────────────────────────────────────────────────────────────────────────
  *
- * Incident 2026-08-26 (SampleCo): session e06ad0c4 answered `/start` with
+ * Incident 2026-08-26 (two prod sessions): the first answered `/start` with
  * `stage:'failed'` in 47ms — no provider call — because a wake that ran out of
  * its FIXED 240s budget had stamped `stopReason:'runtime_wake_failed'` on the
- * row. Session 9c8749ac replayed the same dead end for 10+ hours from a
+ * row. The second replayed the same dead end for 10+ hours from a
  * `runtime_boot_failed` stamp written at 03:37Z. Both boxes were startable; the
  * human's one click on Restart always worked, because `POST /restart` is the
  * only thing that ever cleared the stamp.

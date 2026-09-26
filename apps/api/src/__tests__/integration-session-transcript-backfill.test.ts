@@ -12,13 +12,14 @@ import {
   backfillSessionTranscriptMirrorOnWake,
   resetTranscriptBackfillMemoForTests,
 } from '../projects/lib/session-transcript-capture';
-import { createAuthUser, deleteAuthUser } from '../../../../tests/e2e/helpers/session-auth';
 import {
-  createDatabaseProject,
-  createDatabaseSession,
-  deleteDatabaseProject,
-} from '../../../../tests/src/fixtures/database-project';
-import { loadEnv } from '../../../../tests/src/core/env';
+  localTestDatabaseUrl,
+  removeSeeded,
+  seedAccount,
+  seedProject,
+  seedSession as seedSessionRow,
+  type SeededProject,
+} from './helpers/integration-fixtures';
 
 beforeEach(() => resetTranscriptBackfillMemoForTests());
 
@@ -35,37 +36,25 @@ const messages = (count: number) =>
   }));
 
 test('a wake backfills an unmirrored session, repairs a headless one, and skips the rest', async () => {
-  const env = loadEnv();
-  if (!env.databaseUrl || env.target !== 'local')
-    throw new Error('Run against the local test database');
-  const user = await createAuthUser(`backfill-${randomUUID()}@example.test`, {
-    supabaseUrl: env.supabaseUrl,
-    password: 'TranscriptBackfill123!',
-  });
-  const db = new Client({ connectionString: env.databaseUrl });
+  const db = new Client({ connectionString: localTestDatabaseUrl() });
   await db.connect();
-  const accountId = randomUUID();
-  const projects: string[] = [];
+  const userId = randomUUID();
+  const seeded: SeededProject[] = [];
+  let accountId = '';
   try {
-    await db.query('INSERT INTO kortix.accounts (account_id, name) VALUES ($1,$2)', [
-      accountId,
-      'Transcript backfill test',
-    ]);
+    accountId = await seedAccount('transcript-backfill-test');
 
     /** A session on a project with the flag as given, pinned to ROOT. */
     const seedSession = async (flagEnabled: boolean) => {
-      const project = await createDatabaseProject(env, {
-        accountId,
-        userId: user.id,
-        name: `Backfill ${flagEnabled ? 'on' : 'off'} ${randomUUID().slice(0, 8)}`,
-        metadata: flagEnabled ? { experimental: { session_transcript_history: true } } : {},
-      });
-      projects.push(project.id);
-      const sessionId = await createDatabaseSession(env, {
-        projectId: project.id,
-        accountId,
-        userId: user.id,
-      });
+      const project = await seedProject(
+        `backfill-${flagEnabled ? 'on' : 'off'}-${randomUUID().slice(0, 8)}`,
+        {
+          accountId,
+          metadata: flagEnabled ? { experimental: { session_transcript_history: true } } : {},
+        },
+      );
+      seeded.push(project);
+      const sessionId = await seedSessionRow(project, userId);
       await db.query(
         'UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1',
         [sessionId, ROOT],
@@ -214,9 +203,10 @@ test('a wake backfills an unmirrored session, repairs a headless one, and skips 
     // new ones — 120, not 240.
     expect(await stored(fresh)).toBe(120);
   } finally {
-    for (const projectId of projects) await deleteDatabaseProject(env, projectId).catch(() => {});
-    await db.query('DELETE FROM kortix.accounts WHERE account_id = $1', [accountId]).catch(() => {});
+    await removeSeeded(seeded).catch(() => {});
+    if (accountId) {
+      await db.query('DELETE FROM kortix.accounts WHERE account_id = $1', [accountId]).catch(() => {});
+    }
     await db.end();
-    await deleteAuthUser(user.id, { supabaseUrl: env.supabaseUrl }).catch(() => {});
   }
 });

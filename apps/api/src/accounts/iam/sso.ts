@@ -8,12 +8,18 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
+import { Resolver } from 'node:dns/promises';
 import {
   createSsoGroupMapping,
   deleteSsoGroupMapping,
   deleteSsoProvider,
+  domainVerifiedByOtherAccount,
   getSsoProvider,
+  isSsoDomainVerified,
   listSsoGroupMappings,
+  setSsoDomainVerified,
+  ssoDomainVerificationRecordName,
+  ssoDomainVerificationRecordValue,
   upsertSsoProvider,
 } from '../../repositories/sso';
 import {
@@ -22,7 +28,8 @@ import {
   SsoProviderSchema,
   SsoMappingSchema,
 } from './app';
-import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
+import { auditIam, isUniqueViolation, requireEntitlement } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 import {
   deleteSupabaseSamlProvider,
   registerSupabaseSamlProvider,
@@ -39,9 +46,34 @@ function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProv
     auto_create_members: p.autoCreateMembers,
     auto_provision_groups: p.autoProvisionGroups,
     enforce_sso: p.enforceSso,
+    domain_verified: isSsoDomainVerified(p),
+    domain_verified_at: p.domainVerifiedAt?.toISOString() ?? null,
+    domain_verification: p.domainVerificationToken
+      ? {
+          record_type: 'TXT' as const,
+          record_name: ssoDomainVerificationRecordName(p.primaryDomain),
+          record_value: ssoDomainVerificationRecordValue(p.domainVerificationToken),
+        }
+      : null,
     created_at: p.createdAt.toISOString(),
     updated_at: p.updatedAt.toISOString(),
   };
+}
+
+/**
+ * The TXT strings published at `name`, or [] when the name has none. A TXT
+ * record can be split into several strings; they are joined, as RFC 7208 does.
+ */
+async function lookupTxt(name: string): Promise<string[]> {
+  const resolver = new Resolver({ timeout: 5_000, tries: 2 });
+  try {
+    const records = await resolver.resolveTxt(name);
+    return records.map((chunks) => chunks.join('').trim());
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === 'ENOTFOUND' || code === 'ENODATA') return [];
+    throw err;
+  }
 }
 
 iamRouter.openapi(
@@ -87,7 +119,7 @@ iamRouter.openapi(
   const denied = await requireEntitlement(c, accountId, 'sso');
   if (denied) return denied;
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const supabaseSsoProviderId = (body.supabase_sso_provider_id ?? body.supabaseSsoProviderId) as unknown;
   const name = body.name as unknown;
   const primaryDomain = (body.primary_domain ?? body.primaryDomain) as unknown;
@@ -156,6 +188,7 @@ iamRouter.openapi(
           auto_create_members: before.autoCreateMembers,
           auto_provision_groups: before.autoProvisionGroups,
           enforce_sso: before.enforceSso,
+          domain_verified: isSsoDomainVerified(before),
         }
       : null,
     after: {
@@ -166,6 +199,7 @@ iamRouter.openapi(
       auto_create_members: provider.autoCreateMembers,
       auto_provision_groups: provider.autoProvisionGroups,
       enforce_sso: provider.enforceSso,
+      domain_verified: isSsoDomainVerified(provider),
     },
   });
 
@@ -216,7 +250,7 @@ iamRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'sso');
     if (denied) return denied;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const name = body.name as unknown;
     const primaryDomain = (body.primary_domain ?? body.primaryDomain) as unknown;
     const metadataXml = (body.metadata_xml ?? body.metadataXml) as unknown;
@@ -297,6 +331,85 @@ iamRouter.openapi(
     });
 
     return c.json({ provider: ssoProviderResponse(provider) });
+  },
+);
+
+// Prove control of the provider's primary domain. Until this succeeds, an
+// email the IdP asserts is trusted only inside this account (no invite match,
+// no identity merge, no add-by-email match elsewhere), and `enforce_sso` has no
+// effect. The admin publishes the TXT record from `domain_verification`, then
+// calls this route; it reads DNS once and records the result.
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/sso/provider/verify-domain',
+    tags: ['iam'],
+    summary: "Verify the SSO provider's primary domain via DNS",
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ provider: SsoProviderSchema }), 'The provider, with its domain verified'),
+      ...errors(401, 402, 403, 404, 409, 422, 502),
+    },
+  }),
+  async (c: any) => {
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const denied = await requireEntitlement(c, accountId, 'sso');
+    if (denied) return denied;
+
+    const provider = await getSsoProvider(accountId);
+    if (!provider) return c.json({ error: 'no SSO provider configured' }, 404);
+    if (isSsoDomainVerified(provider)) return c.json({ provider: ssoProviderResponse(provider) });
+
+    if (await domainVerifiedByOtherAccount(accountId, provider.primaryDomain)) {
+      return c.json(
+        {
+          error: `${provider.primaryDomain} is already verified by another account.`,
+          code: 'sso_domain_claimed',
+        },
+        409,
+      );
+    }
+    if (!provider.domainVerificationToken) {
+      return c.json({ error: 'no verification record is issued for this provider; save it again' }, 409);
+    }
+
+    const recordName = ssoDomainVerificationRecordName(provider.primaryDomain);
+    const expected = ssoDomainVerificationRecordValue(provider.domainVerificationToken);
+    let found: string[];
+    try {
+      found = await lookupTxt(recordName);
+    } catch (err) {
+      return c.json(
+        { error: `DNS lookup for ${recordName} failed: ${(err as { code?: string }).code ?? 'error'}`, code: 'dns_lookup_failed' },
+        502,
+      );
+    }
+    if (!found.includes(expected)) {
+      return c.json(
+        {
+          error: `No TXT record ${recordName} with value ${expected} was found. DNS changes can take a few minutes to appear.`,
+          code: 'sso_domain_unverified',
+          record_type: 'TXT',
+          record_name: recordName,
+          record_value: expected,
+        },
+        422,
+      );
+    }
+
+    const verified = await setSsoDomainVerified(accountId, true);
+    if (!verified) return c.json({ error: 'no SSO provider configured' }, 404);
+    await auditIam(c, {
+      accountId,
+      action: 'iam.sso.provider.domain_verify',
+      resourceType: 'sso_provider',
+      resourceId: verified.ssoProviderId,
+      before: { primary_domain: provider.primaryDomain, domain_verified: false },
+      after: { primary_domain: verified.primaryDomain, domain_verified: true, method: 'dns_txt' },
+    });
+    return c.json({ provider: ssoProviderResponse(verified) });
   },
 );
 
@@ -407,7 +520,7 @@ iamRouter.openapi(
   const denied = await requireEntitlement(c, accountId, 'sso');
   if (denied) return denied;
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const claimValue = (body.claim_value ?? body.claimValue) as unknown;
   const groupId = (body.group_id ?? body.groupId) as unknown;
   if (typeof claimValue !== 'string' || claimValue.trim().length === 0) {

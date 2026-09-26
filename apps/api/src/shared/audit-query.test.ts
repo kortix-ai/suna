@@ -32,4 +32,11 @@ describe('strict audit query validation', () => {
       expect(() => parseAuditCursor(value)).toThrow();
     }
   });
+
+  test('accepts every id a uuid column stores, not only RFC 4122 versions', () => {
+    // shared/audit.ts writes any uuid-shaped id; the cursor must read it back.
+    const id = 'a7100000-0000-0000-0000-000000000001';
+    expect(parseAuditCursor(`2026-08-07T12:00:00Z|${id}`)?.eventId).toBe(id);
+    expect(parseAuditSessionCursor(`42|${id}`)?.eventId).toBe(id);
+  });
 });

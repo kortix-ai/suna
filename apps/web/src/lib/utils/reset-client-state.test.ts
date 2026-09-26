@@ -127,7 +127,31 @@ function restoreLocalStorage(): void {
   });
 }
 
+/**
+ * The SDK keeps per-user session state at module scope (transcripts, pending
+ * permission and question asks, turn receipts, model picks). A cross-tab
+ * sign-in swaps the identity without a page load, so `resetClientState` must
+ * run the SDK's own identity reset. Counted through a spread of the real
+ * module, like the IndexedDB mock above.
+ */
+let sdkIdentityResets = 0;
+const sdkReact = await import('@kortix/sdk/react');
+mock.module('@kortix/sdk/react', () => ({
+  ...sdkReact,
+  resetIdentityState: () => {
+    sdkIdentityResets += 1;
+  },
+}));
+
 const { resetClientState } = await import('./reset-client-state');
+
+describe('resetClientState resets the SDK identity state', () => {
+  test('runs resetIdentityState once per reset', async () => {
+    const before = sdkIdentityResets;
+    await resetClientState({ idbTimeoutMs: 20 });
+    expect(sdkIdentityResets).toBe(before + 1);
+  });
+});
 
 describe('resetClientState with an IndexedDB purge that never settles', () => {
   test('still resolves, on the clock', async () => {

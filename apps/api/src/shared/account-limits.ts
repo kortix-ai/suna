@@ -1,11 +1,7 @@
 import { config } from '../config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
 import { invalidateAccountBilling, resolveAccountBilling } from '../billing/services/billing-cache';
-import {
-  activeTrialSeatLimit,
-  coercePerSeatTier,
-  type SubscriptionFields,
-} from '../billing/services/effective-tier';
+import { activeTrialSeatLimit } from '../billing/services/resolve-billing';
 import { getPlanRecord } from '../billing/services/plan-catalog';
 import { getTier, isPaidTier, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
@@ -172,22 +168,6 @@ export async function maxProjectsForAccount(accountId: string): Promise<number> 
  */
 export function clearAccountLimitCache() {
   invalidateAccountBilling();
-}
-
-/**
- * The tier the LIMIT layer will actually use, given possibly-stale tier data.
- *
- * `resolveAccountSessionLimit` coerces a paying per-seat account whose stored
- * `tier` is not a paid one to `per_seat`, so stale tier data cannot gate a
- * paying team as free. Anything that DISPLAYS a tier-derived limit has to apply
- * the same rule or it shows a different number than the server enforces —
- * exported here so there is one derivation instead of two.
- */
-export function effectiveTierForLimits(
-  tier: string | null | undefined,
-  subscription: SubscriptionFields | null | undefined,
-): string {
-  return coercePerSeatTier(tier ?? 'free', subscription);
 }
 
 /**

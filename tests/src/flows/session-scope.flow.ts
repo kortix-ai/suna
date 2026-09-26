@@ -367,7 +367,26 @@ flow(
     const params = { projectId: project.id, sessionId: session.id };
     const otherProjectId = randomUUID();
 
-    for (const key of ['legacy_migration', 'slack', 'email', 'telegram', 'teams', 'warm', 'trigger_session_key']) {
+    for (const key of [
+      'legacy_migration',
+      'slack',
+      'email',
+      'telegram',
+      'teams',
+      'warm',
+      'trigger_session_key',
+      'deletedAt',
+      'deletedBy',
+      // Owned by the title generator. A rename writes `name` → `custom_name`.
+      'name',
+      'title_source',
+      'source',
+      'trigger_kind',
+      'trigger_slug',
+      'workspace_mode',
+      'repository_access',
+      'sandbox_slug',
+    ]) {
       await ctx.step(`PATCH metadata.${key} → 400 (server-managed)`, async () => {
         (
           await owner.patch(
@@ -391,6 +410,42 @@ flow(
         )
       ).status(400);
     });
+
+    for (const field of ['status', 'sandbox_url', 'sandboxUrl', 'error']) {
+      await ctx.step(`PATCH ${field} → 400 (server-managed field)`, async () => {
+        (await owner.patch('/v1/projects/:projectId/sessions/:sessionId', { [field]: 'client-value' }, { params }))
+          .status(400)
+          .body()
+          .has('$.error', `field is server-managed: ${field}`);
+      });
+    }
+
+    await ctx.step('PATCH an unknown field → 400 (not user-editable)', async () => {
+      (await owner.patch('/v1/projects/:projectId/sessions/:sessionId', { random: 'field' }, { params }))
+        .status(400)
+        .body()
+        .has('$.error', 'field is not user-editable: random');
+    });
+
+    // A forged trigger identity would authorize the session as that trigger.
+    for (const [key, value] of [
+      ['source', 'trigger:scheduler'],
+      ['trigger_kind', 'git'],
+      ['trigger_slug', 'forged-trigger'],
+    ] as const) {
+      await ctx.step(`POST /sessions with metadata.${key} → 400 (server-managed)`, async () => {
+        (
+          await owner.post(
+            '/v1/projects/:projectId/sessions',
+            { metadata: { [key]: value } },
+            { params: { projectId: project.id } },
+          )
+        )
+          .status(400)
+          .body()
+          .has('$.error', `metadata key is server-managed: ${key}`);
+      });
+    }
 
     await ctx.step('POST /sessions with metadata.legacy_migration → 400 before any session is created', async () => {
       (
@@ -560,9 +615,9 @@ flow(
   },
 );
 
-async function git(args: string[], cwd?: string): Promise<string> {
+async function git(args: string[], cwd?: string, env: Record<string, string> = {}): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('git', args, { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
     child.stdout.on('data', (chunk) => (out += chunk));
@@ -583,6 +638,8 @@ flow(
       'POST /v1/projects/:projectId/triggers',
       'GET /v1/projects/:projectId/triggers',
       'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'POST /v1/accounts/tokens',
+      'DELETE /v1/accounts/tokens/:tokenId',
     ],
   },
   async (ctx) => {
@@ -609,6 +666,7 @@ flow(
       session_id: sessionId,
     });
     const workDir = await mkdtemp(join(tmpdir(), 'ke2e-scope-'));
+    let mintedTokenId: string | null = null;
     try {
       await ctx.step("a project manager cannot pin a trigger to another member's private session → 400", async () => {
         (
@@ -634,8 +692,26 @@ flow(
             project.id,
           ])
         ).rows;
-        if (!row?.repo_url) throw new Error('project has no local repository');
-        await git(['clone', '--quiet', row.repo_url, workDir]);
+        if (!row?.repo_url) throw new Error('project has no repository');
+        // Local target: the bare repository on disk. Deployed target: the
+        // Kortix Git proxy with an OWNER token (the managed GitHub repository
+        // is private). The token travels in the environment, never in argv, so
+        // a failing git command cannot print it.
+        let remote = row.repo_url;
+        let gitEnv: Record<string, string> = {};
+        if (/^https?:\/\//.test(remote)) {
+          const minted = await owner.post('/v1/accounts/tokens', { name: ctx.fixtures.name('scope6-manifest-writer') });
+          minted.status(201);
+          const { token_id: tokenId, secret_key: secret } = minted.json<{ token_id: string; secret_key: string }>();
+          mintedTokenId = tokenId;
+          remote = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;
+          gitEnv = {
+            GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: 'http.extraHeader',
+            GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}`,
+          };
+        }
+        await git(['clone', '--quiet', remote, workDir], undefined, gitEnv);
         await git(['config', 'user.name', 'Kortix Local E2E'], workDir);
         await git(['config', 'user.email', 'local-e2e@kortix.test'], workDir);
         const manifestPath = join(workDir, 'kortix.yaml');
@@ -643,7 +719,7 @@ flow(
         if (!manifest.includes(ownerSession.id)) throw new Error('the trigger commit did not pin the owner session');
         await writeFile(manifestPath, manifest.split(ownerSession.id).join(foreignSessionId));
         await git(['commit', '--quiet', '-am', 'repin trigger'], workDir);
-        await git(['push', '--quiet', 'origin', 'HEAD:main'], workDir);
+        await git(['push', '--quiet', 'origin', 'HEAD:main'], workDir, gitEnv);
       });
 
       await ctx.step('reading the triggers records no pinned session for the foreign id', async () => {
@@ -701,6 +777,9 @@ flow(
         ])
         .catch(() => {});
       await rm(workDir, { recursive: true, force: true }).catch(() => {});
+      if (mintedTokenId) {
+        await owner.del('/v1/accounts/tokens/:tokenId', { params: { tokenId: mintedTokenId } }).catch(() => {});
+      }
       await db.end();
     }
   },

@@ -42,6 +42,7 @@ import {
   publicShareTokenHash,
   resolvePublicShare,
 } from '../shared/session-public-shares';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -119,12 +120,12 @@ beforeAll(async () => {
     repoUrl: repository,
     manifestPath: 'kortix.yaml',
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { accountId: ACCOUNT, userId: MANAGER, accountRole: 'member' },
     { accountId: ACCOUNT, userId: ALICE, accountRole: 'member' },
     { accountId: ACCOUNT, userId: BOB, accountRole: 'member' },
   ]);
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: ALICE, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: BOB, projectRole: 'member' },
@@ -152,7 +153,7 @@ beforeAll(async () => {
       PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
     ].map((action) => ({ roleId: serviceAccountRoleId, action })),
   );
-  await db.insert(iamPolicies).values({
+  await insertIntoView(db, iamPolicies, {
     accountId: ACCOUNT,
     principalType: 'token',
     principalId: serviceAccountId,

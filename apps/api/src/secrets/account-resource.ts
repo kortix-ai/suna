@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { accountMembers, accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -57,18 +57,115 @@ export async function memberMayReadProject(accountId: string, projectId: string,
   return (await authorize(actorForUser(userId, accountId), PROJECT_ACTIONS.PROJECT_READ, { type: 'project', id: projectId })).allowed;
 }
 
-export async function listGrantedGatewaySecretNames(accountId: string, projectId: string, userId: string): Promise<string[]> {
-  if (!(await memberMayReadProject(accountId, projectId, userId))) return [];
-  const rows = await db.select({ name: accountSecretResources.name, projectId: accountSecretResources.projectId,
-    accessMode: accountSecretResources.accessMode, grantUserId: accountSecretGrants.userId }).from(accountSecretResources)
-    .leftJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.userId, userId)))
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+export async function listGrantedGatewaySecretNames(
+  accountId: string,
+  projectId: string,
+  userId: string,
+  /**
+   * Whose personal grants count. Absent = `userId`. `null` = none: only keys
+   * shared with the whole project, which is all a shared session reaches
+   * (spec 2026-09-22 §2.3).
+   */
+  grantUserId: string | null = userId,
+): Promise<string[]> {
+  return [...new Set((await listUsableGatewaySecrets({ accountId, projectId, userId, grantUserId })).map((row) => row.name))];
+}
+
+export interface UsableGatewaySecret {
+  secretId: string;
+  providerId: string | null;
+  name: string;
+  label: string;
+  accessMode: string;
+}
+
+/** Which active gateway keys to read, and whose member grants count. */
+export interface GatewaySecretQuery {
+  accountId: string;
+  projectId: string;
+  /**
+   * The only user whose member grants count: a key shared with members is
+   * usable only when granted to this user. Null counts no grant: only keys
+   * shared with the whole project (spec 2026-09-22 §2.3).
+   */
+  grantUserId: string | null;
+  providerId?: string;
+  /** Only keys stored under this key name. */
+  name?: string;
+  /** Only these keys. */
+  ids?: string[];
+}
+
+/** The active gateway keys `q` names, oldest first, each with `q.grantUserId`'s grant when one exists. */
+function gatewaySecretRows(q: GatewaySecretQuery) {
+  return db.select({
+    secretId: accountSecretResources.secretId,
+    providerId: accountSecretResources.providerId,
+    name: accountSecretResources.name,
+    label: accountSecretResources.label,
+    projectId: accountSecretResources.projectId,
+    accessMode: accountSecretResources.accessMode,
+    grantUserId: accountSecretGrants.userId,
+  }).from(accountSecretResources)
+    .leftJoin(accountSecretGrants, and(
+      eq(accountSecretGrants.secretId, accountSecretResources.secretId),
+      q.grantUserId ? eq(accountSecretGrants.userId, q.grantUserId) : sql`false`,
+    ))
     .where(and(
-      eq(accountSecretResources.accountId, accountId),
+      eq(accountSecretResources.accountId, q.accountId),
       eq(accountSecretResources.consumer, 'llm_gateway'),
       eq(accountSecretResources.active, true),
-    ));
-  return [...new Set(rows.filter((row) => secretUsableInProject(row, projectId, row.grantUserId === userId)).map((row) => row.name))];
+      ...(q.providerId ? [eq(accountSecretResources.providerId, q.providerId)] : []),
+      ...(q.name ? [eq(accountSecretResources.name, q.name)] : []),
+      ...(q.ids ? [inArray(accountSecretResources.secretId, q.ids)] : []),
+    ))
+    .orderBy(asc(accountSecretResources.createdAt), asc(accountSecretResources.secretId))
+    .$dynamic();
+}
+
+/** The rows usable in `q.projectId` with `q.grantUserId`'s grants, each key once. */
+function usableRows(
+  q: GatewaySecretQuery,
+  rows: Array<UsableGatewaySecret & { projectId: string | null; grantUserId: string | null }>,
+): UsableGatewaySecret[] {
+  const seen = new Set<string>();
+  const usable: UsableGatewaySecret[] = [];
+  for (const row of rows) {
+    if (seen.has(row.secretId)) continue;
+    if (!secretUsableInProject(row, q.projectId, personalKeyGranted(row.grantUserId, q.grantUserId))) continue;
+    seen.add(row.secretId);
+    usable.push({ secretId: row.secretId, providerId: row.providerId, name: row.name, label: row.label, accessMode: row.accessMode });
+  }
+  return usable;
+}
+
+/**
+ * The gateway keys usable in the project with `grantUserId`'s member grants,
+ * oldest first. Never reads a value.
+ *
+ * Checks the keys, not a principal: the caller has already authorized whoever
+ * acts. A principal that must read the project uses `listUsableGatewaySecrets`.
+ */
+export async function queryUsableGatewaySecrets(q: GatewaySecretQuery): Promise<UsableGatewaySecret[]> {
+  return usableRows(q, await gatewaySecretRows(q));
+}
+
+/**
+ * The gateway keys an account member may select in this project, oldest
+ * first: `userId` must read the project and have an `account_members` row.
+ * Never reads a value. `grantUserId` as in `listGrantedGatewaySecretNames`.
+ *
+ * A key cooling down after a rate limit is still listed: it belongs to the
+ * pool, and the gateway skips it only until its cooldown ends.
+ */
+export async function listUsableGatewaySecrets(input: Omit<GatewaySecretQuery, 'grantUserId'> & {
+  userId: string;
+  grantUserId?: string | null;
+}): Promise<UsableGatewaySecret[]> {
+  const q = { ...input, grantUserId: input.grantUserId === undefined ? input.userId : input.grantUserId };
+  if (!(await memberMayReadProject(input.accountId, input.projectId, input.userId))) return [];
+  return usableRows(q, await gatewaySecretRows(q)
+    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId))));
 }
 
 /** An unconfigured session uses the caller's newest personal ChatGPT connection. */

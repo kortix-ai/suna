@@ -10,11 +10,10 @@
  * `kortix` scope. Without that scope the token stays an identity credential
  * and reaches only the two identity probes.
  */
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { oauthAccessTokens, oauthClients } from '@kortix/db';
 import { db } from '../shared/db';
-import { oauthTokenHashCandidatesAsync } from './token-hash';
-import { markTokenValidated } from '../shared/token-hash';
+import { hashSecretKeyAsync, markTokenValidated } from '../shared/token-hash';
 
 export const OAUTH_ACCESS_TOKEN_PREFIX = 'kortix_oat_';
 export const OAUTH_REFRESH_TOKEN_PREFIX = 'kortix_ort_';
@@ -61,7 +60,7 @@ export interface OAuthAccessTokenValidation {
 
 export async function validateOAuthAccessToken(token: string): Promise<OAuthAccessTokenValidation> {
   if (!isOAuthAccessToken(token)) return { isValid: false, error: 'Invalid OAuth access token' };
-  const candidates = await oauthTokenHashCandidatesAsync(token);
+  const tokenHash = await hashSecretKeyAsync(token);
   const [row] = await db
     .select({
       id: oauthAccessTokens.id,
@@ -74,12 +73,7 @@ export async function validateOAuthAccessToken(token: string): Promise<OAuthAcce
     })
     .from(oauthAccessTokens)
     .innerJoin(oauthClients, eq(oauthClients.clientId, oauthAccessTokens.clientId))
-    .where(
-      and(
-        inArray(oauthAccessTokens.tokenHash, candidates),
-        isNull(oauthAccessTokens.revokedAt),
-      ),
-    )
+    .where(and(eq(oauthAccessTokens.tokenHash, tokenHash), isNull(oauthAccessTokens.revokedAt)))
     .limit(1);
   if (!row) return { isValid: false, error: 'Invalid OAuth access token' };
   if (row.expiresAt < new Date()) return { isValid: false, error: 'OAuth access token expired' };

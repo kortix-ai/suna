@@ -42,6 +42,7 @@ import {
   serviceAccounts,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { retryTransientDatabaseRead } from '../shared/database-errors';
 import { isImpersonatingAccount, isImpersonationBlockedAccount } from '../shared/impersonation';
 import { ttlMemo } from '../shared/ttl-memo';
@@ -821,6 +822,16 @@ interface ObjectGrantPrincipal {
  * grant taking effect on every replica at once — the same rule the legacy
  * `loadProjectResourceGrants` memo already applies (#6535).
  */
+/**
+ * `role_assignments.account_id` equals the account that owns `projectId`. A
+ * project-scoped row written in another account grants nothing here; new ones
+ * are refused at write time (`assertProjectInAccount`, and the
+ * `role_assignments_project_account_guard` trigger).
+ */
+function projectAccountMatches(projectId: string) {
+  return sql`${qualifiedColumn(roleAssignments.accountId)} = (select p.account_id from kortix.projects p where p.project_id = ${projectId}::uuid)`;
+}
+
 const loadObjectGrants = ttlMemo({
   ttlMs: TTL_MS,
   keyFn: (projectId: string, objectType: string) => `${projectId}|${objectType}`,
@@ -836,6 +847,8 @@ const loadObjectGrants = ttlMemo({
         and(
           eq(roleAssignments.scopeType, 'project'),
           eq(roleAssignments.scopeId, projectId),
+          // Only rows written in the project's own account count.
+          projectAccountMatches(projectId),
           eq(roleAssignments.objectType, objectType),
           or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, sql`now()`)),
         ),

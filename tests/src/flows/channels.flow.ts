@@ -20,10 +20,9 @@
  *   bogus API key so live suites do not create real inboxes unless a specific
  *   positive flow opts in.
  */
-import { createHmac, randomUUID } from "node:crypto";
-import { Client as PgClient } from "pg";
-import type { FlowContext } from "../core/types";
+import { randomUUID } from "node:crypto";
 import { flow } from "../core/flow";
+import { slackSigned, withDb } from "../fixtures/chat";
 import { waitFor } from "../core/poll";
 import { CliSandbox } from "../fixtures/cli";
 
@@ -1128,26 +1127,6 @@ flow(
   },
 );
 
-async function withDb<T>(ctx: FlowContext, run: (db: PgClient) => Promise<T>): Promise<T> {
-  const db = new PgClient({ connectionString: ctx.env.databaseUrl! });
-  await db.connect();
-  try {
-    return await run(db);
-  } finally {
-    await db.end().catch(() => {});
-  }
-}
-
-/** Slack's v0 request signature over a raw body, with the given signing secret. */
-function slackSigned(secret: string, body: string, contentType: string) {
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const signature = `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${body}`).digest("hex")}`;
-  return {
-    raw: true as const,
-    headers: { "content-type": contentType, "x-slack-request-timestamp": timestamp, "x-slack-signature": signature },
-  };
-}
-
 // CHN-29 — A per-project (BYO) Slack app is signed with a secret its project
 // admin chose, so a valid signature proves only who sent the request, not what
 // the body names. Every signed callback must stay inside the project in the
@@ -1515,3 +1494,54 @@ flow(
   },
 );
 
+
+// CHN-31 — The chat identity consent screen reads which Slack or Teams account
+// a login link would link BEFORE the user presses Connect. The preview is
+// authenticated and read-only, and it applies the same token check as /bind:
+// a token that does not verify never names an account. A correctly signed
+// token needs the deployment's signing secret, so the local profile covers the
+// authentication and refusal paths only.
+flow(
+  "CHN-31",
+  {
+    domain: "channels",
+    routes: [
+      "POST /v1/channels/slack/identity/preview",
+      "POST /v1/channels/teams/identity/preview",
+    ],
+  },
+  async (ctx) => {
+    for (const service of ["slack", "teams"] as const) {
+      const path = `/v1/channels/${service}/identity/preview` as const;
+
+      await ctx.step(`Anonymous callers cannot preview a ${service} login link`, async () => {
+        const r = await ctx.client.as(ctx.P.ANON).post(path, { token: "x.y" });
+        r.status(401);
+      });
+
+      await ctx.step(`A signed-in user with a forged ${service} token is refused and sees no account`, async () => {
+        // An empty JSON payload with a signature that cannot verify.
+        const forgedToken = ["e30", "not-a-signature"].join(".");
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, { token: forgedToken });
+        // 410: the token does not verify. 404/503: the feature is off or
+        // unconfigured on this deployment. Never 200.
+        r.status([404, 410, 503]);
+        if (r.text().includes("chatUserId")) {
+          throw new Error(`CHN-31: ${service} preview named an account for a forged token`);
+        }
+      });
+
+      await ctx.step(`A ${service} preview without a token is a validation error`, async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, {});
+        r.status([400, 404, 503]);
+      });
+
+      await ctx.step(`A ${service} preview whose token is not a string is a validation error`, async () => {
+        // No JSON content-type, so the route schema does not run and the
+        // handler must check the field type itself.
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, '{"token":1}', { raw: true });
+        r.status([400, 404, 503]);
+      });
+    }
+  },
+);

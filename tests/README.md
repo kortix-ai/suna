@@ -2,13 +2,14 @@
 
 `pnpm test` is the only repository-level test command.
 
-The default run executes five lanes concurrently:
+The default run executes six lanes concurrently:
 
 1. Black-box REST and CLI flows against local Supabase, API, and gateway.
 2. `@kortix/sdk` tests in `packages/sdk`.
-3. Test-runner unit tests.
-4. API route coverage.
-5. Worktree-tool unit and contract tests.
+3. Every PostgreSQL-backed test file (`db-suites`, see [DB suites](#db-suites)).
+4. Test-runner unit tests.
+5. API route coverage.
+6. Worktree-tool unit and contract tests.
 
 The REST runner is language-agnostic at the product boundary. It sends HTTP
 requests and starts the compiled CLI as a process. It never imports API route
@@ -21,6 +22,8 @@ pnpm test                       # Fast local core
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only
+pnpm test -- --db-only         # PostgreSQL-backed suites only
+pnpm test -- --db-only prompt-inbox tests/migration # Suites whose path contains a filter
 pnpm test -- --browser-only    # Browser journeys with the deterministic local stack
 pnpm test -- --browser-only --browser-shard=1/4 # One deterministic browser shard
 pnpm test -- --packages-only   # Every app/package test and publish contract
@@ -56,8 +59,7 @@ code.
 
 Desktop UI parity is part of the browser lane in `27-desktop-parity.spec.ts`.
 Run the same journey in native Electron with `E2E_DESKTOP_NATIVE=1` and
-`E2E_GREP='27 — desktop parity'`. See
-[`desktop-verification.md`](../docs/runbooks/desktop-verification.md).
+`E2E_GREP='27 — desktop parity'`.
 
 GitHub Actions uses `.github/workflows/tests.yml` for every local-profile run.
 It runs on every push to `main`, on a pull request into `staging`, on a pull
@@ -72,7 +74,7 @@ run means a newer commit superseded it. Deployed-target runs are separate:
 `full suite + quality gates` job is the only required check in the repository).
 
 The run is six lanes in parallel, each natively on one Blacksmith runner
-(`CI_RUNNER_L`, 8 vCPU / 32 GB — see `docs/runbooks/ci-runners.md`). Core and
+(`CI_RUNNER_L`, 8 vCPU / 32 GB). Core and
 package lanes run `pnpm test` and `pnpm test -- --packages-only`. Four browser
 lanes run shards `1/4` through `4/4` via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`, which maps straight
@@ -573,6 +575,67 @@ Prefer waiting on the visible outcome over `page.waitForResponse(url === …)`.
 The latter pins a client cache and hydration detail, not a product contract, and
 its default budget is 30s.
 
+## DB suites
+
+A DB suite is a Bun test file that needs a real PostgreSQL. The `db-suites`
+lane (`bin/db-suites.ts`, rules in `src/core/db-suites.ts`) runs all of them in
+the core run and in the `core` CI lane. It discovers them by name:
+
+| Package | File name | Database |
+| --- | --- | --- |
+| `apps/api` | `src/**/integration-*.test.ts`, `src/**/*.integration.test.ts` | Lane-provided |
+| `packages/db` | `scripts/*.integration.test.ts` | Lane-provided, or its own Docker container |
+| `tests` | `migration/*.test.ts` | Its own Docker container |
+
+The unit discovery of each package excludes these names, so a file runs in
+exactly one lane: `apps/api/scripts/test.sh` excludes both `apps/api`
+patterns, `packages/db` ignores `*.integration.test.ts`, and package quality no
+longer runs `tests/migration`. `pnpm --filter kortix-api test:integration`
+delegates to the same lane.
+
+How the lane runs a file:
+
+1. It reads the local Supabase database URL. `pnpm test` (with or without
+   `--db-only`) starts Supabase before the first stage and stops it at the end
+   when it started it. `test:integration` and `bun tests/bin/db-suites.ts`
+   need a running Supabase.
+2. It builds one template database per content hash of the migrations, the
+   `packages/db` scripts, and the platform `auth` schema. It copies `auth` from
+   the Supabase database with `pg_dump` inside the Supabase container, applies
+   `test-prereqs.sql`, and runs `migrate.ts local-up`. A second run with the
+   same hash reuses the template (0.1 s instead of ~1 s).
+3. For every file it clones a fresh database from the template
+   (`CREATE DATABASE … TEMPLATE`, ~150 ms), runs `bun test <file>` in its own
+   process, and drops the database. No file sees another file's rows
+   or the developer's data, and `mock.module()` cannot leak between files.
+4. Six files run at a time (`KORTIX_DB_SUITE_WORKERS`). A file that runs longer
+   than 240 s is killed (`KORTIX_DB_SUITE_TIMEOUT_MS`).
+
+Each file receives:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL`, `TEST_DATABASE_URL` | The file's database, role `postgres` (the API's role; not a superuser) |
+| `TEST_DATABASE_SUPERUSER_URL` | The same database as `supabase_admin`, for fixture setup only |
+| `TEST_DATABASE_ADMIN_URL` | The cluster's `postgres` database, for suites that create their own database |
+| `KORTIX_TEST_DB_CONFIRM` | `I_UNDERSTAND_THIS_DELETES_TEST_DATA` |
+
+`apps/api` files also load the placeholders in `apps/api/scripts/test.env`.
+They never read the encrypted `apps/api/.env`.
+
+A file FAILS the lane when a test fails, when it skips any test, or when it runs
+no test. The lane always supplies a database and Docker, so a skip means the
+suite ignored them. `unit/db-suites.test.ts` fails when a test file reads
+`process.env.TEST_DATABASE_URL` (or the other lane variables) but is not named
+as a DB suite, so a new suite cannot sit skipped inside a unit lane.
+
+To park a broken suite, add it to `DB_SUITE_QUARANTINE` with the reason. The
+lane prints every quarantined file on every run. Remove the entry when the
+cause is fixed.
+
+A test that needs a live cloud sandbox, a model, or another external service is
+not a DB suite. Name it `*.live.test.ts`; no lane runs it.
+
 ## SDK tests
 
 SDK tests stay in `packages/sdk`. They protect the published package contract
@@ -608,7 +671,7 @@ contracts moved into the canonical lanes before deletion.
 | --- | --- |
 | `tests/accessibility` | Axe checks moved to `tests/e2e/specs/00-accessibility.spec.ts`. |
 | `tests/pentest` | Unique transport checks moved to REST flow `SEC-J`. Existing auth and webhook checks stay in `SEC-A` through `SEC-I`. |
-| `tests/migration` shell runner | Four unique disposable-Postgres contracts run from `pnpm test -- --packages-only`. |
+| `tests/migration` shell runner | The disposable-Postgres contracts run in the `db-suites` lane of `pnpm test`. |
 | `tests/e2e/specs/10-production-*` | API behavior moved to REST access, project, session, trigger, and security flows. Browser-visible behavior stays in focused Playwright journeys. |
 | `tests/self-host-e2e/fast` | Co-located `apps/cli/src/self-host/__tests__` contracts run from the package lane. |
 | `tests/self-host-e2e/live` | Removed as opt-in image-orchestration scripts. They never gated changes and duplicated the CLI and API contracts without deterministic fixtures. |

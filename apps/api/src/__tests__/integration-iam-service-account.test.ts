@@ -15,6 +15,7 @@ import { db } from '../shared/db';
 import { authorize } from '../iam/authorize';
 import { actorForServiceAccount } from '../iam/actor';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -35,7 +36,7 @@ async function bindRole(principalId: string, scopeType: 'account' | 'project', s
   const roleId = uid();
   await db.insert(iamRoles).values({ roleId, accountId: ACCOUNT, key: `r-${roleId.slice(0, 6)}`, name: 'r', scopeType });
   await db.insert(iamRoleActions).values(actions.map((action) => ({ roleId, action })));
-  await db.insert(iamPolicies).values({ accountId: ACCOUNT, principalType: 'token', principalId, roleId, scopeType, scopeId });
+  await insertIntoView(db, iamPolicies, { accountId: ACCOUNT, principalType: 'token', principalId, roleId, scopeType, scopeId });
 }
 const can = async (saId: string, action: string, target: { type: 'project'; id: string } | undefined) =>
   (await authorize(actorForServiceAccount(saId, ACCOUNT), action, target ?? { type: 'account' })).allowed;

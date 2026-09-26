@@ -88,6 +88,7 @@
     "expo-notifications": "~56.0.25",
     "expo-router": "~56.2.20",
     "expo-sharing": "~56.0.26",
+    "expo-speech-recognition": "56.0.4",
     "expo-splash-screen": "~56.0.15",
     "expo-status-bar": "~56.0.4",
     "expo-system-ui": "~56.0.5",

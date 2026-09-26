@@ -16,8 +16,8 @@ import {
 } from '@/features/session/tool/shared/question-helpers';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import { useMemo } from 'react';
 
 // One shared identity for "this question has no answer yet", so the row prop
@@ -66,7 +66,7 @@ function QuestionAnswerBlock({
   return (
     <div className="space-y-1.5">
       <div className={cn('text-foreground/80 text-xs text-pretty', MD_FLUSH_CLASSES)}>
-        <UnifiedMarkdown content={question.question || question.header || fallback} />
+        <UnifiedMarkdown content={question.question || question.header || fallback} trust="agent" />
       </div>
       <AnswerText answers={answers} options={question.options} />
     </div>

@@ -1,13 +1,17 @@
+import { formatRelative } from '@kortix/shared';
+
 import type { ApiClient } from '../api/client.ts';
 import type { ProjectSession } from '../api/types.ts';
 import {
   emitJson,
   resolveProjectContext,
+  shortId,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad } from '../style.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -111,30 +115,21 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
     json = takeFlagBool(rest, ['--json']);
     all = takeFlagBool(rest, ['--all']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
-  if (positional.length > 0) {
-    process.stderr.write(`${status.err('sessions digest does not take positional arguments.')}\n`);
-    return 2;
-  }
+  if (positional.length > 0) return fail('sessions digest does not take positional arguments.');
 
   const messageLimit = messageLimitRaw === undefined ? 40 : Number(messageLimitRaw);
   if (!Number.isInteger(messageLimit) || messageLimit <= 0 || messageLimit > 500) {
-    process.stderr.write(`${status.err(`Invalid --messages "${messageLimitRaw}" (use 1-500).`)}\n`);
-    return 2;
+    return fail(`Invalid --messages "${messageLimitRaw}" (use 1-500).`);
   }
   const maxChars = charsRaw === undefined ? 700 : Number(charsRaw);
   if (!Number.isInteger(maxChars) || maxChars < 80 || maxChars > 5000) {
-    process.stderr.write(`${status.err(`Invalid --chars "${charsRaw}" (use 80-5000).`)}\n`);
-    return 2;
+    return fail(`Invalid --chars "${charsRaw}" (use 80-5000).`);
   }
   const since = all ? null : parseSince(sinceRaw ?? '7d');
-  if (!all && !since) {
-    process.stderr.write(`${status.err(`Could not parse --since "${sinceRaw}".`)}\n`);
-    return 2;
-  }
+  if (!all && !since) return fail(`Could not parse --since "${sinceRaw}".`);
 
   const opts: CtxOpts = { projectArg, hostArg };
   const ctx = await resolveProjectContext(opts);
@@ -326,7 +321,7 @@ function printHumanDigest(
   for (const d of digests) {
     const s = d.session;
     const label = s.name ?? shortId(s.session_id);
-    process.stdout.write(`\n${C.bold}${pad(label, labelW)}${C.reset} ${statusLabel(s.status)} ${C.faded}${shortId(s.session_id)} · agent ${s.agent} · updated ${relAge(s.updated_at)}${C.reset}\n`);
+    process.stdout.write(`\n${C.bold}${pad(label, labelW)}${C.reset} ${statusLabel(s.status)} ${C.faded}${shortId(s.session_id)} · agent ${s.agent} · updated ${formatRelative(s.updated_at, { maxRelativeDays: null })}${C.reset}\n`);
     process.stdout.write(`  ${C.dim}branch${C.reset} ${s.branch}  ${C.dim}base${C.reset} ${s.base_ref}  ${C.dim}provider${C.reset} ${s.provider}\n`);
     process.stdout.write(`  ${C.dim}created${C.reset} ${s.created_at}  ${C.dim}updated${C.reset} ${s.updated_at}\n`);
     if (s.error) process.stdout.write(`  ${C.red}error${C.reset} ${s.error}\n`);
@@ -420,19 +415,6 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
 
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, Math.max(0, max - 1))}…`;
-}
-
-function shortId(id: string): string {
-  return id.split('-')[0] ?? id;
-}
-
-function relAge(iso: string): string {
-  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
 
 function statusLabel(s: string): string {

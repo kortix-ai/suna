@@ -15,6 +15,7 @@
 import { isModelNativeAttachmentMime, parseSessionAttachmentRef, MAX_PROMPT_ATTACHMENT_FILES } from '@kortix/shared';
 import { parseStagedPromptDataUrl } from './prompt-attachment-materializer';
 import type { PromptPartWire } from './store';
+import { isUuid } from '../../shared/validate';
 
 export const PROMPT_MAX_PARTS = 64;
 export const PROMPT_TEXT_PREVIEW_CHARS = 2000;
@@ -79,7 +80,7 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
 function validateFilePart(part: PromptPartWire): string | null {
   if (part.type !== 'file') return null;
   if (part.attachment_id !== undefined) {
-    if (typeof part.attachment_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(part.attachment_id)) {
+    if (!isUuid(part.attachment_id)) {
       return 'attachment_id must be a UUID';
     }
     if (part.url !== undefined) return 'attachment_id cannot be combined with URL data';

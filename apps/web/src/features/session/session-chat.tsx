@@ -15,6 +15,7 @@ import {
   type SandboxLifecycle,
   type SessionPrompt,
   type SessionPromptPart,
+  groupShowSegments,
   hasRetryingAssistantTurn,
   listSessionPrompts,
   projectSessionConnection,
@@ -66,6 +67,7 @@ import {
   QueuedPromptFailure,
   type QueuedPromptStatusState,
 } from './turn/queued-prompt-bubbles';
+import { ShowGroupRenderer } from './tool/show-group-renderer';
 import { segmentTurn } from './turn/segment-turn';
 import { stabilizeTurns } from './turn/stable-turns';
 import { statusElapsedFrame } from './turn/status-elapsed';
@@ -168,6 +170,7 @@ import { useModelPricingLookup } from '@/lib/model-pricing';
 import {
   type AgentRefLike,
   type FileRefLike,
+  appendSessionRefs,
   buildAgentRefsBlock,
   buildFileRefsBlock,
 } from '@/lib/project-preamble';
@@ -220,6 +223,7 @@ import {
   getTurnCost,
   getTurnError,
   getTurnErrorDetails,
+  getTurnErrorRawText,
   getTurnStatus,
   getWorkingState,
   groupMessagesIntoTurns,
@@ -499,7 +503,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
             return (
               <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
-                  <UnifiedMarkdown content={q.question} />
+                  <UnifiedMarkdown content={q.question} trust="agent" />
                 </div>
                 <p className="text-foreground text-sm font-medium text-pretty">{answerText}</p>
               </div>
@@ -1069,6 +1073,13 @@ function SessionTurnImpl({
   // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
   // provider failed and WHAT to do about it instead of only the raw message.
   const turnErrorDetails = useMemo(() => getTurnErrorDetails(turn), [turn]);
+  // The provider's own text behind the sentence, folded under it. Only for the
+  // transcript error itself: a named end cause replaced that text, so the raw
+  // text no longer describes what the row says.
+  const turnErrorRaw = useMemo(
+    () => (turnErrorRow.text === turnError ? getTurnErrorRawText(turn) : undefined),
+    [turn, turnError, turnErrorRow.text],
+  );
   // A named end cause brings its own next step; the gateway's details describe
   // the transcript error it replaced, so they do not apply to it.
   const turnErrorRowDetails = useMemo(
@@ -1526,7 +1537,8 @@ function SessionTurnImpl({
       }
       parts.push(part);
     }
-    return segmentTurn(parts, { standaloneCallIds });
+    // Consecutive `show` calls render as one carousel card (`show-group`).
+    return groupShowSegments(segmentTurn(parts, { standaloneCallIds }), { standaloneCallIds });
   }, [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds]);
 
   // ============================================================================
@@ -1549,6 +1561,7 @@ function SessionTurnImpl({
             <TurnErrorDisplay
               errorText={turnErrorRow.text}
               errorDetails={turnErrorRowDetails}
+              errorRaw={turnErrorRaw}
               isAbort={turnErrorRow.isAbort}
               className="mt-2"
             />
@@ -1751,6 +1764,31 @@ function SessionTurnImpl({
                 );
               }
 
+              if (segment.kind === 'show-group') {
+                const visible = segment.parts.filter(shouldShowToolPart);
+                if (visible.length === 0) return null;
+                // Same key as the lone `show` this group grew from, so the
+                // card is not re-mounted when the next call joins it.
+                if (visible.length === 1) {
+                  return (
+                    <ToolPartRenderer
+                      key={visible[0].id}
+                      part={visible[0]}
+                      sessionId={sessionId}
+                      disableNavigation={disableToolNavigation}
+                    />
+                  );
+                }
+                return (
+                  <ShowGroupRenderer
+                    key={visible[0].id}
+                    parts={visible}
+                    sessionId={sessionId}
+                    disableNavigation={disableToolNavigation}
+                  />
+                );
+              }
+
               if (segment.kind === 'standalone') {
                 if (!shouldShowToolPart(segment.part)) return null;
                 return (
@@ -1920,6 +1958,7 @@ function SessionTurnImpl({
         <TurnErrorDisplay
           errorText={turnErrorRow.text}
           errorDetails={turnErrorRowDetails}
+          errorRaw={turnErrorRaw}
           isAbort={turnErrorRow.isAbort}
         />
       )}
@@ -4138,12 +4177,10 @@ export function SessionChat({
       ];
       let optimisticText = text;
       optimisticText = buildOptimisticPromptTextWithUploads(optimisticText, attachedFiles);
-      if (allOptimisticSessionMentions.length > 0) {
-        const refs = allOptimisticSessionMentions
-          .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
-          .join('\n');
-        optimisticText = `${optimisticText}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
-      }
+      optimisticText = appendSessionRefs(
+        optimisticText,
+        allOptimisticSessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })),
+      );
       if (fileMentionRefs.length > 0) {
         const block = buildFileRefsBlock(fileMentionRefs);
         if (block) optimisticText = `${optimisticText}\n\n${block}`;
@@ -4332,12 +4369,10 @@ export function SessionChat({
         }
 
         const allSessionMentions = [...trackedSessionMentions, ...rawSessionIdMentions];
-        if (allSessionMentions.length > 0) {
-          const refs = allSessionMentions
-            .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
-            .join('\n');
-          textPrompt.text = `${textPrompt.text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
-        }
+        textPrompt.text = appendSessionRefs(
+          textPrompt.text,
+          allSessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })),
+        );
         if (fileMentionRefs.length > 0) {
           const block = buildFileRefsBlock(fileMentionRefs);
           if (block) textPrompt.text = `${textPrompt.text}\n\n${block}`;
@@ -5439,9 +5474,10 @@ export function SessionChat({
   // failure counter every tick, so `unreachable` never fires no matter how
   // long it stays wedged. See `useRuntimeBootStalled`.
   const runtimeStalled = useRuntimeBootStalled();
-  // Label an involuntary page load (discarded tab, or a chunk 404 after a
+  // Classify an involuntary page load (discarded tab, or a chunk 404 after a
   // deploy) so the next "my session randomly disconnected" report arrives with
-  // its cause attached instead of a shrug.
+  // its cause attached instead of a shrug. An actionable cause reports to
+  // Sentry; a routine browser tab discard only leaves a breadcrumb.
   useReloadForensics(projectSessionId);
   // Nothing has answered yet and the mount is young: the difference between
   // "this session is asleep" and "we have not looked yet". Without it, every

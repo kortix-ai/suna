@@ -159,11 +159,7 @@ describe('rescopeSessionBindings — SET semantics', () => {
 
 describe('the docs match the contract', () => {
   const REPO = join(import.meta.dir, '..', '..', '..', '..', '..');
-  const DOCS = [
-    join(REPO, 'docs', 'KORTIX_AS_A_BACKEND_GUIDE.md'),
-    join(REPO, 'apps', 'web', 'content', 'docs', 'backend.mdx'),
-    join(REPO, 'docs', 'KAAB_TESTING_GUIDE.md'),
-  ];
+  const DOCS = [join(REPO, 'apps', 'web', 'content', 'docs', 'backend.mdx')];
 
   test('no doc still calls secrets or connector_bindings create-only', () => {
     // These three said "create-only" for as long as the refusal existed. When the

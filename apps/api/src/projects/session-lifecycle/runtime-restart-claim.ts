@@ -3,6 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { IN_PLACE_RESTART_CLEARED_KEYS, inPlaceRestartWakePatch } from './readiness-clocks';
 import { runtimeRestartClaimMetadata, type RuntimeRestartClaim } from './runtime-restart-fence';
 import { transitionSandbox } from './status-transitions';
+import { noLiveStopClaim } from './stop-claim';
 
 /**
  * Install an in-place restart claim on a session sandbox row.
@@ -27,12 +28,15 @@ export async function claimInPlaceRestart(input: {
   const { sandboxId, externalId, claim } = input;
   const patch = runtimeRestartClaimMetadata(inPlaceRestartWakePatch(claim.startedAt), claim);
   // A deleted session's archived row is never restarted: `provision` never
-  // leaves `archived`.
+  // leaves `archived`. A row under a live stop claim is not restarted either:
+  // the stop's provider call is in flight, and it would land on the box this
+  // restart starts.
   const claimed = await transitionSandbox('provision', sandboxId, {
     at: claim.startedAt,
     metadata: { strip: IN_PLACE_RESTART_CLEARED_KEYS, merge: patch },
     guard: and(
       eq(sessionSandboxes.externalId, externalId),
+      noLiveStopClaim(claim.startedAt),
       sql`(
         ${sessionSandboxes.metadata}->>'runtimeRestartId' IS NULL
         OR ${sessionSandboxes.metadata}->>'runtimeRestartLeaseExpiresAt' IS NULL
