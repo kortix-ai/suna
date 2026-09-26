@@ -1,6 +1,7 @@
 import { createHmac, createSign, timingSafeEqual } from 'node:crypto';
 import { getTraceHeaders } from '../lib/request-context';
 import { resolveAppIdentity } from '../platform/services/github-app-identity';
+import { createInstallationTokenCache } from './github-installation-token-cache';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -825,14 +826,30 @@ export async function createInstallationToken(
   const id = installationId.trim();
   if (!id) throw new Error('installation_id is required');
   const scoped = (repositories ?? []).map((r) => r.trim()).filter(Boolean);
-  return ghFetch<GitHubInstallationToken>(
-    `/app/installations/${encodeURIComponent(id)}/access_tokens`,
-    {
-      method: 'POST',
-      ...(scoped.length ? { body: JSON.stringify({ repositories: scoped }) } : {}),
-    },
-    { token: createGitHubAppJwt() },
+  // Keyed by App id too: a stored installation minted under a previous App
+  // identity must not be answered from the new identity's cache.
+  return installationTokens.get(githubAppId()?.trim() ?? '', id, scoped, (installId, repos) =>
+    ghFetch<GitHubInstallationToken>(
+      `/app/installations/${encodeURIComponent(installId)}/access_tokens`,
+      {
+        method: 'POST',
+        ...(repos.length ? { body: JSON.stringify({ repositories: repos }) } : {}),
+      },
+      { token: createGitHubAppJwt() },
+    ),
   );
+}
+
+const installationTokens = createInstallationTokenCache();
+
+/** Drop cached tokens of one installation (after an uninstall or a 401). */
+export function invalidateInstallationTokens(installationId: string) {
+  installationTokens.invalidate(installationId.trim());
+}
+
+/** Test seam: forget every cached installation token. */
+export function clearInstallationTokenCacheForTests() {
+  installationTokens.clear();
 }
 
 export async function listInstallationRepositories(

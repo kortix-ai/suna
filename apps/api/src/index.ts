@@ -1569,6 +1569,15 @@ async function startReplicaServices() {
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
   startSessionLifecycleWorker();
+  // Fill the Composio catalogue snapshot + hidden-toolkit list in the
+  // background, so the first Customize → Connectors view on a fresh replica
+  // reads memory instead of waiting ~2 s on three Composio round trips. Not
+  // awaited: boot never waits on a third party.
+  void Promise.all([import('./connectors/composio'), import('./connectors/composio-catalog-search')])
+    .then(([composio, catalog]) =>
+      composio.composioConfigured() ? catalog.composioHiddenToolkits() : undefined,
+    )
+    .catch(() => {});
   // Every api process must learn that a base branch moved, not just the one
   // that handled the push — otherwise the turn-start gate answers `current`
   // from a memo resolved before it (shared/pg-broadcast.ts). Awaited because it
@@ -1579,6 +1588,10 @@ async function startReplicaServices() {
     if (!listening) return;
     const { useDesiredInvalidationTransport } = await import('./projects/lib/turn-start-convergence');
     useDesiredInvalidationTransport(m.configBaseMoveTransport());
+    // A base move announced by another process also ends this process's
+    // stale-while-revalidate window for page views (projects/git/mirror.ts).
+    const { invalidateProjectMirror } = await import('./projects/git/mirror');
+    m.configBaseMoveTransport().subscribe(invalidateProjectMirror);
   });
 }
 

@@ -20,6 +20,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SnapshotSchema, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
+import { allowStaleMirrorReads } from '../git/mirror';
 import {
   normalizeString,
   requestAuditContext,
@@ -134,6 +135,9 @@ projectsApp.openapi(
 // GET /v1/projects/:projectId/snapshots
 // Templates + recent build log. Used by the Sandbox panel.
 
+/** Templates budget for `/snapshots`, under the web client's 30 s abort. */
+const SNAPSHOTS_TEMPLATES_BUDGET_MS = 12_000;
+
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -154,19 +158,31 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const project = await loadGitProject(loaded);
+  // A page view: serve the warm git mirror, refresh it behind the response.
+  allowStaleMirrorReads();
   const observation = templateProviderObservation(loaded.row.metadata);
+  // Templates (git auth + repo reads + provider coverage) and the build log
+  // (DB) are independent, so they run in parallel. Templates are bounded: a
+  // cold git mirror clone can take minutes, and the Sandbox panel must answer
+  // with the build log and a named error rather than spin to the client's 30 s
+  // abort. The losing work settles in the background and warms the mirror.
+  const templatesWork = loadGitProject(loaded).then((project) =>
+    listSandboxTemplates(project, observation.listOptions),
+  );
+  // Heal any build rows orphaned at "building" by a process restart/crash
+  // before reading them, so the dashboard never shows a permanent "Building".
+  const buildsWork = reconcileStaleBuilds({ projectId })
+    .catch(() => {})
+    .then(() => listSnapshotBuilds(projectId, { limit: 25 }))
+    .catch(() => []);
   let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
   let templatesError: string | null = null;
   try {
-    templates = await listSandboxTemplates(project, observation.listOptions);
+    templates = await withTimeout(templatesWork, SNAPSHOTS_TEMPLATES_BUDGET_MS, 'sandbox templates');
   } catch (err) {
     templatesError = err instanceof Error ? err.message : String(err);
   }
-  // Heal any build rows orphaned at "building" by a process restart/crash
-  // before reading them, so the dashboard never shows a permanent "Building".
-  await reconcileStaleBuilds({ projectId }).catch(() => {});
-  const builds = await listSnapshotBuilds(projectId, { limit: 25 }).catch(() => []);
+  const builds = await buildsWork;
   const resolved = projectSandboxStatus({
     templates,
     builds,

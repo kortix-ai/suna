@@ -15,7 +15,11 @@
     "selectInstallation": "Installation auswählen",
     "manifestRequirement": "Das neue Repository benötigt {manifest} auf seinem Standard-Branch. Beenden Sie zuerst aktive Sitzungen und schließen Sie offene Änderungsanfragen.",
     "cancel": "Abbrechen",
-    "changing": "Wird geändert…"
+    "changing": "Wird geändert…",
+    "searchBranches": "Branches durchsuchen…",
+    "loadingBranches": "Branches werden geladen…",
+    "noBranches": "Kein passender Branch.",
+    "moreBranches": "{count} weitere. Zum Filtern tippen."
   },
   "pooledSecrets": {
     "saveChanges": "Änderungen speichern",

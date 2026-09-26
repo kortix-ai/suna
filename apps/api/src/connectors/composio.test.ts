@@ -1265,3 +1265,57 @@ test('composioCatalogPage hides a toolkit Composio cannot connect in browse and 
   expect(category.toolkits.map((item) => item.slug)).toEqual(['gmail']);
   expect(category.total).toBe(1);
 });
+
+test('composioCatalogPage answers a repeated search from the deployment-wide cache', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const created = session();
+  created.toolkits = async (options) => {
+    calls.push({ type: 'toolkits', options });
+    return { items: [{ slug: 'slack', name: 'Slack', isNoAuth: false }], cursor: undefined, totalPages: 1 };
+  };
+  const runtime = fakeRuntime({ created, calls });
+
+  const first = await composioCatalogPage({ projectId: 'project-1', q: 'Slack', runtime });
+  // Another project, other casing and whitespace: the catalogue is the same.
+  const second = await composioCatalogPage({ projectId: 'project-2', q: ' slack ', runtime });
+  await composioCatalogPage({ projectId: 'project-1', q: 'slack', cursor: 'page-2', runtime });
+
+  expect(second).toEqual(first);
+  expect(calls.filter((call) => call.type === 'toolkits')).toHaveLength(2);
+  expect(calls.filter((call) => call.type === 'create')).toHaveLength(2);
+});
+
+test('composioCatalogPage answers a repeated category from the cache and never caches a failure', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  let fail = true;
+  const runtime: ComposioRuntime = {
+    sessions: fakeRuntime().sessions,
+    toolkits: {
+      async get(query) {
+        calls.push({ type: 'catalog', query });
+        if (fail) {
+          fail = false;
+          throw new Error('Composio 503');
+        }
+        return [
+          {
+            slug: 'gmail',
+            name: 'Gmail',
+            meta: { categories: [{ slug: 'productivity', name: 'Productivity' }] },
+          },
+        ];
+      },
+    },
+  };
+
+  await expect(
+    composioCatalogPage({ projectId: 'project-1', category: 'productivity', runtime }),
+  ).rejects.toThrow('Composio 503');
+  const first = await composioCatalogPage({ projectId: 'project-1', category: 'productivity', runtime });
+  const second = await composioCatalogPage({ projectId: 'project-2', category: 'productivity', q: 'gm', runtime });
+
+  const slugs = (page: typeof first) => ('toolkits' in page ? page.toolkits.map((toolkit) => toolkit.slug) : []);
+  expect(calls).toHaveLength(2);
+  expect(slugs(first)).toEqual(['gmail']);
+  expect(slugs(second)).toEqual(['gmail']);
+});
