@@ -720,6 +720,20 @@ for (const runtime of runtimes) {
               enabled: true,
               accelerator: "CommandOrControl+W",
             });
+          // KRTX-48: a production build (the shipped channel) shows one
+          // "Change Kortix Instance…" entry and hides the developer presets.
+          const frontendMenu = await desktopApp.evaluate(({ Menu }) => {
+            const menu = Menu.getApplicationMenu();
+            return {
+              changeLabel:
+                menu?.getMenuItemById("kx-change-instance")?.label ?? null,
+              hasDevPresets: Boolean(menu?.getMenuItemById("kx-frontend-url")),
+            };
+          });
+          expect(frontendMenu).toEqual({
+            changeLabel: "Change Kortix Instance…",
+            hasDevPresets: false,
+          });
           await clickNativeMenu("kx-app-settings");
           await expect(page.getByRole("dialog")).toBeVisible();
           await page
