@@ -4,7 +4,8 @@ incident_date: 2026-09-25
 ---
 # Budget parallel agent-run tests from available memory and attribute the whole box before blaming the runtime
 
-**Rule:** Budget a parallel test suite from available host and cgroup memory.
+**Rule:** Budget a parallel test suite from available host and cgroup memory,
+and restart test worker processes in bounded file batches.
 When a guard fires, record the largest non-runtime processes before naming a
 cause. Match runtime processes by executable and argument position, never by
 words anywhere in a command line. Do not assume aborting a turn stops `setsid` work.
@@ -15,8 +16,10 @@ guard reasons, and the stopped-turn UI.
 **Incident:** On 2026-09-25, a four-worker API suite exhausted a 12 GiB prod
 session box. OpenCode held 674 MB while the box reached 96% used. The guard
 stopped the turn; the detached suite continued and exited with test failures.
+A one-worker replay then retained 8.9 GiB before the last files.
 See `docs/incidents/2026-09-26-sandbox-api-test-memory.md`.
 
-**Enforcement:** `test-runner-contract.test.ts` executes worker selection;
+**Enforcement:** `test-runner-contract.test.ts` executes worker selection and
+all file batches, including a failing middle batch;
 `resources.test.ts` checks process matching, attribution and guard text;
 `interrupted-label.test.ts` checks the recovery advice.

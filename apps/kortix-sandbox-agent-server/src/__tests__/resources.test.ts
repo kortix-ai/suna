@@ -61,6 +61,8 @@ describe('parsers', () => {
 
   test('only the OpenCode executable with serve as its subcommand is counted', () => {
     expect(isOpenCodeServeCommand(['/opt/kortix/bin/opencode', 'serve', '--port', '4096'].join('\0'))).toBe(true)
+    expect(isOpenCodeServeCommand(['/opt/kortix/opencode.current', 'serve'].join('\0'))).toBe(true)
+    expect(isOpenCodeServeCommand(['/usr/local/bin/opencode-kortix', 'serve'].join('\0'))).toBe(true)
     expect(isOpenCodeServeCommand('/home/kortix/.bun/bin/bun\0test\0/tmp/opencode/log\0serve\0')).toBe(false)
     expect(isOpenCodeServeCommand('/bin/bash\0-c\0opencode serve\0')).toBe(false)
   })
@@ -268,8 +270,9 @@ describe('memory guard', () => {
     stop = null
   })
 
-  test('aborts the in-flight turn once at the guard line, relays why, re-arms only after memory drops', async () => {
+  test('aborts each active turn while pressure remains high', async () => {
     let usedPct = 50
+    let running = true
     const aborts: string[] = []
     const relays: Array<{ aborted: boolean }> = []
     const monitor = startResourceMonitor({
@@ -286,9 +289,10 @@ describe('memory guard', () => {
         guardPct: 92,
         elevatedPct: 80,
         fastIntervalMs: 60_000,
-        turnInFlight: async () => true,
+        turnInFlight: async () => running,
         abortTurn: async (reason) => {
           aborts.push(reason)
+          running = false
           return true
         },
         onGuard: ({ aborted }) => {
@@ -314,16 +318,22 @@ describe('memory guard', () => {
 
     usedPct = 95
     await monitor.tick('t')
-    expect(aborts).toHaveLength(1) // fired once per crossing
+    expect(aborts).toHaveLength(1) // the first turn is already over
+
+    running = true // a new turn starts before memory recovers
+    await monitor.tick('t')
+    expect(aborts).toHaveLength(2)
+    expect(relays).toEqual([{ aborted: true }, { aborted: true }])
 
     usedPct = 60
     await monitor.tick('t')
     usedPct = 94
+    running = true
     await monitor.tick('t')
-    expect(aborts).toHaveLength(2) // re-armed after dropping under the elevated line
+    expect(aborts).toHaveLength(3)
   })
 
-  test('with no turn in flight the guard relays but does not abort', async () => {
+  test('with no turn in flight the guard does not report a failed turn', async () => {
     const aborts: string[] = []
     const relays: Array<{ aborted: boolean }> = []
     const monitor = startResourceMonitor({
@@ -345,6 +355,6 @@ describe('memory guard', () => {
     stop = monitor.stop
     await monitor.tick('t')
     expect(aborts).toHaveLength(0)
-    expect(relays).toEqual([{ aborted: false }])
+    expect(relays).toEqual([])
   })
 })

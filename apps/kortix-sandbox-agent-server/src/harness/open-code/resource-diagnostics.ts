@@ -9,7 +9,8 @@ import {
 export function isOpenCodeServeCommand(cmdline: string): boolean {
   const args = cmdline.split('\0').filter(Boolean)
   const executable = args[0]?.split('/').pop()
-  return (executable === 'opencode' || executable === 'opencode.exe') && args[1] === 'serve'
+  return (executable === 'opencode' || executable === 'opencode.exe' ||
+    executable === 'opencode-kortix' || executable === 'opencode.current') && args[1] === 'serve'
 }
 
 /** Pids running `opencode serve`. Linux only; [] elsewhere. */

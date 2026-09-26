@@ -61,8 +61,25 @@ case "$mode" in
     # Four workers are safe on a 32 GiB CI runner. A 12 GiB agent sandbox needs
     # two: four workers exhausted it during a detached 924-file suite. Explicit
     # KORTIX_API_TEST_WORKERS remains available for known dedicated runners.
-    echo "API unit suite: $count files, $api_test_workers Bun workers" >&2
-    exec bun test --isolate --parallel="$api_test_workers" --env-file=scripts/test.env --timeout="$test_timeout" $cov $files
+    # Bun retains memory across isolated files inside each worker process. A
+    # single-worker run reached 8.9 GiB RSS before the final files. Restart
+    # workers after each bounded batch, and run every batch even if one fails.
+    test_files=()
+    while IFS= read -r file; do test_files+=("$file"); done <<< "$files"
+    batch_size=80
+    batch_count=$(( (count + batch_size - 1) / batch_size ))
+    echo "API unit suite: $count files in $batch_count batches; Bun workers: $api_test_workers" >&2
+    failed=0
+    for ((offset=0; offset<count; offset+=batch_size)); do
+      batch=("${test_files[@]:offset:batch_size}")
+      echo "API unit batch $((offset / batch_size + 1))/$batch_count: ${#batch[@]} files" >&2
+      if bun test --isolate --parallel="$api_test_workers" --env-file=scripts/test.env --timeout="$test_timeout" $cov "${batch[@]}"; then
+        :
+      else
+        failed=1
+      fi
+    done
+    exit "$failed"
     ;;
   *)
     echo "usage: test.sh [default|integration|live]" >&2
