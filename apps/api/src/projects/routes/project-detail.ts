@@ -25,6 +25,7 @@ import {
   serializeProjectGitConnection,
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { allowStaleMirrorReads } from '../git/mirror';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
 
@@ -55,6 +56,8 @@ projectsApp.openapi(
     loaded.row.accountId,
     projectId,
   );
+  // A page view: serve the warm git mirror, refresh it behind the response.
+  allowStaleMirrorReads();
 
   await db
     .update(projects)

@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { validateRef } from '../git-ref';
 import type { GitBackedProject } from './types';
+import { getRequestContext } from '../../lib/request-context';
 import { timeStage } from '../../lib/server-timing';
 
 export const execFileAsync = promisify(execFile);
@@ -663,6 +664,54 @@ async function doRefreshMirror(
   return repoPath;
 }
 
+/**
+ * Page views read the warm mirror and refresh it behind the response.
+ *
+ * Why (2026-09-26): Customize pages (`/detail`, `/agents/:name/config`) paid a
+ * `git fetch` of 120–865 ms whenever a request landed after the 60 s refresh
+ * interval (dev-api `Server-Timing`), so a tab that had been open a minute
+ * felt slow on every click. A request that calls {@link allowStaleMirrorReads}
+ * is answered from the existing mirror when it is safe to:
+ *
+ *  - no base-branch move reached this process since the last fetch. Every move
+ *    Kortix makes or proxies (manifest write, API write, git-proxy push,
+ *    change-request merge) calls `notifyBaseBranchMoved`, which drops the
+ *    marker here in EVERY api process (`invalidateProjectMirror`, wired at
+ *    boot), so the next view read fetches first;
+ *  - the last fetch is younger than {@link viewMaxStaleMs} (default 5 min).
+ *    This bounds a push that bypassed Kortix (straight to GitHub).
+ *
+ * Otherwise the read blocks on the fetch exactly as before. Session boot,
+ * triggers, sweeps and every read-modify-write never opt in.
+ */
+const STALE_MIRROR_READS = Symbol.for('kortix.git-mirror-stale-reads');
+
+export function allowStaleMirrorReads(): void {
+  const ctx = getRequestContext() as ({ [STALE_MIRROR_READS]?: boolean } & object) | undefined;
+  if (ctx) ctx[STALE_MIRROR_READS] = true;
+}
+
+function staleMirrorReadsAllowed(): boolean {
+  const ctx = getRequestContext() as ({ [STALE_MIRROR_READS]?: boolean } & object) | undefined;
+  return ctx?.[STALE_MIRROR_READS] === true;
+}
+
+function viewMaxStaleMs(): number {
+  const value = Number(process.env.KORTIX_GIT_VIEW_MAX_STALE_MS || 5 * 60_000);
+  return Number.isFinite(value) && value >= 0 ? value : 5 * 60_000;
+}
+
+/** The warm mirror path when a view may read it without fetching, else null. */
+function viewableWarmMirror(project: GitBackedProject): string | null {
+  const lastRefresh = lastRefreshAt.get(project.projectId);
+  if (lastRefresh === undefined) return null;
+  if (Date.now() - lastRefresh >= viewMaxStaleMs()) return null;
+  const repoPath = repoCachePath(project);
+  if (!existsSync(repoPath) || existsSync(join(repoPath, 'shallow'))) return null;
+  if (!looksLikeBareMirror(repoPath)) return null;
+  return repoPath;
+}
+
 export async function refreshMirror(
   project: GitBackedProject,
   force = false,
@@ -673,6 +722,28 @@ export async function refreshMirror(
     freshRef?: string;
   },
 ) {
+  if (!force && staleMirrorReadsAllowed()) {
+    const warm = viewableWarmMirror(project);
+    if (warm) {
+      const lastRefresh = lastRefreshAt.get(project.projectId) ?? 0;
+      if (Date.now() - lastRefresh >= refreshIntervalMs()) {
+        // Behind the response. The lock makes concurrent views share one fetch.
+        void lockedRefreshMirror(project, false).catch(() => {});
+      } else {
+        const now = new Date();
+        void utimes(warm, now, now).catch(() => {});
+      }
+      return warm;
+    }
+  }
+  return lockedRefreshMirror(project, force, opts);
+}
+
+async function lockedRefreshMirror(
+  project: GitBackedProject,
+  force: boolean,
+  opts?: { freshRef?: string },
+): Promise<string> {
   // A ref-scoped refresh may skip the fetch, so it must not satisfy a caller
   // that forced a full one: it registers as unforced, and such a caller waits
   // for it and then runs its own real fetch.

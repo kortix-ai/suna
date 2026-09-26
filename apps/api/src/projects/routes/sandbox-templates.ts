@@ -18,6 +18,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
+import { allowStaleMirrorReads } from '../git/mirror';
 import { serializeTemplate } from '../lib/serializers';
 import { templateProviderObservation } from '../lib/template-provider-observation';
 import { readJsonObject } from '../../shared/http-body';
@@ -48,6 +49,8 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // A page view: serve the warm git mirror, refresh it behind the response.
+  allowStaleMirrorReads();
   const project = await loadGitProject(loaded);
   const observation = templateProviderObservation(loaded.row.metadata);
   try {
