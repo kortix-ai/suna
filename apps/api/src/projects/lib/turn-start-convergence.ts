@@ -35,16 +35,21 @@
  * idle`. That is the hard invariant of session-config-convergence.ts, and this
  * path does not widen it.
  *
- * WHY NO LOST-PROMPT RECOVERY IS WIRED HERE.
- * `settleTurnsLostToRuntimeRestart` (`session-lifecycle/runtime-restart-recovery.ts`)
- * repairs turns lost when a PROVIDER restart empties a box. It is reachable
- * from `sandbox-proxy/backend.ts` and `projects/routes/shared.ts` only, and it
- * is not needed here by construction: this gate runs BEFORE
+ * WHERE LOST-PROMPT RECOVERY IS WIRED, AND WHY NOT HERE.
+ * This gate needs none for ITS OWN request: it runs BEFORE
  * `claimPromptDelivery` and before the first upstream fetch, so at the moment
  * OpenCode is swapped no prompt of this request has been claimed and none has
- * been delivered. A turn that WAS running blocks the convergence instead of
- * being ended by it. There is therefore no window in which a queued or
- * in-flight prompt is lost to a convergence restart.
+ * been delivered.
+ *
+ * That argument covers this request and NOTHING ELSE, and it was once written
+ * here as though it covered every convergence. It does not. A convergence
+ * started by the base-move trigger (`config-convergence-triggers.ts`) runs
+ * while another request's prompt is in flight, and the swap retires the process
+ * writing it. DEF-DEV-1: the client got `HTTP 503` and the assistant row stayed
+ * `completed = null`. The repair for that lives where the swap is observed —
+ * `session-reload.ts`, on the daemon's `reload.orphaned_message_id` — and it
+ * reuses `recoverTurnsAfterRuntimeRestart`. Do not re-derive an invariant here
+ * from "the gate holds the prompt": the gate holds ITS prompt.
  *
  * ONE ATTEMPT, NOT A LADDER. `schedule: 'turn-start'` takes exactly one
  * attempt and sleeps zero times. A prompt must not sit behind a 60-second
@@ -97,15 +102,18 @@ const MAX_TRACKED_SESSIONS = 20_000;
  * `base_ref` may be stored as `main` or `refs/heads/main`, and the entry for a
  * project is small. Dropping too much costs one resolve; dropping too little
  * would serve a stale desired release to a turn.
+ *
+ * It drops the entry in EVERY api process, not only this one. See
+ * `createDesiredReleaseInvalidation`.
  */
 export function invalidateDesiredRelease(projectId: string): void {
-  desiredMemo.invalidateByPrefix(`${projectId}\0`);
+  invalidateEverywhere(projectId);
 }
 
 export function __resetTurnStartConvergenceForTests(): void {
   __clearRunningReleasesForTests();
   __clearRunningAssetsForTests();
-  desiredMemo.clear();
+  desiredReleases.clear();
   sessionMemo.clear();
 }
 
@@ -150,47 +158,128 @@ const sessionMemo = ttlMemo({
   maxEntries: MAX_TRACKED_SESSIONS,
 });
 
-const desiredMemo = ttlMemo({
-  ttlMs: DESIRED_TTL_MS,
-  // Deliberately NOT keyed by session: every session of a project on the same
-  // base ref, agent and access shares one resolve. `createdBy` is in the key
-  // because the re-point decision is authorized against the session's owner.
-  keyFn: (target: SessionTarget, _sessionId: string) =>
-    [
-      target.projectId,
-      target.baseRef,
-      target.agentName ?? '',
-      repositoryAccessFromSessionMetadata(target.sessionMetadata) ? '1' : '0',
-      target.createdBy ?? '',
-    ].join('\0'),
-  loader: async (target: SessionTarget, sessionId: string): Promise<string | null> => {
-    const subject = {
+async function resolveDesiredReleaseFor(target: SessionTarget, sessionId: string): Promise<string | null> {
+  const subject = {
+    projectId: target.projectId,
+    accountId: target.accountId,
+    sessionId,
+    ownerUserId: target.createdBy,
+  };
+  const desired = await resolveDesiredRelease({
+    project: {
       projectId: target.projectId,
-      accountId: target.accountId,
-      sessionId,
-      ownerUserId: target.createdBy,
-    };
-    const desired = await resolveDesiredRelease({
-      project: {
-        projectId: target.projectId,
-        repoUrl: target.repoUrl,
-        defaultBranch: target.defaultBranch,
-        manifestPath: target.manifestPath ?? 'kortix.yaml',
-        gitAuthToken: null,
-      },
-      baseRef: target.baseRef,
-      sessionAgent: target.agentName,
-      repositoryAccess: repositoryAccessFromSessionMetadata(target.sessionMetadata),
-      // A turn start is not an assignment. The daemon's own descriptor request
-      // records it, and only that request persists a re-point.
-      ownerMayUseAgent: (agent) => ownerMayUseAgent(subject, agent),
-    });
-    return desired.descriptor.release_id;
-  },
-  // Never cache "the base ref did not resolve": the next prompt must retry.
-  shouldCache: (value) => value !== null,
-  maxEntries: 5_000,
-});
+      repoUrl: target.repoUrl,
+      defaultBranch: target.defaultBranch,
+      manifestPath: target.manifestPath ?? 'kortix.yaml',
+      gitAuthToken: null,
+    },
+    baseRef: target.baseRef,
+    sessionAgent: target.agentName,
+    repositoryAccess: repositoryAccessFromSessionMetadata(target.sessionMetadata),
+    // A turn start is not an assignment. The daemon's own descriptor request
+    // records it, and only that request persists a re-point.
+    ownerMayUseAgent: (agent) => ownerMayUseAgent(subject, agent),
+  });
+  return desired.descriptor.release_id;
+}
+
+/** One api process's memo of the desired release per `(project, base ref, agent, access, owner)`. */
+export interface DesiredReleaseCache {
+  get: (target: SessionTarget, sessionId: string) => Promise<string | null>;
+  /** Drop every entry of a project. LOCAL to this cache — see `createDesiredReleaseInvalidation`. */
+  invalidate: (projectId: string) => void;
+  clear: () => void;
+}
+
+/**
+ * A cache, not a singleton, so a test can hold two and prove they are dropped
+ * independently — which is the whole shape of the bug this closes.
+ */
+export function createDesiredReleaseCache(
+  loader: (target: SessionTarget, sessionId: string) => Promise<string | null> = resolveDesiredReleaseFor,
+  opts: { enableInTests?: boolean } = {},
+): DesiredReleaseCache {
+  const memo = ttlMemo({
+    ttlMs: DESIRED_TTL_MS,
+    // Deliberately NOT keyed by session: every session of a project on the same
+    // base ref, agent and access shares one resolve. `createdBy` is in the key
+    // because the re-point decision is authorized against the session's owner.
+    keyFn: (target: SessionTarget, _sessionId: string) =>
+      [
+        target.projectId,
+        target.baseRef,
+        target.agentName ?? '',
+        repositoryAccessFromSessionMetadata(target.sessionMetadata) ? '1' : '0',
+        target.createdBy ?? '',
+      ].join('\0'),
+    loader,
+    // Never cache "the base ref did not resolve": the next prompt must retry.
+    shouldCache: (value) => value !== null,
+    maxEntries: 5_000,
+    enableInTests: opts.enableInTests,
+  });
+  return {
+    get: (target, sessionId) => memo(target, sessionId),
+    invalidate: (projectId) => memo.invalidateByPrefix(`${projectId}\0`),
+    clear: () => memo.clear(),
+  };
+}
+
+/**
+ * How one api process tells the others that a base branch moved.
+ *
+ * `publish` must never throw and must never block the caller: it runs inside
+ * the write that moved the branch. `subscribe` is called once, at wiring time.
+ */
+export interface DesiredInvalidationTransport {
+  publish: (projectId: string) => void;
+  subscribe: (handler: (projectId: string) => void) => void;
+}
+
+/**
+ * Drop a project's desired release HERE and everywhere else.
+ *
+ * Dev runs two API pods. A push arrives at one of them, and only that one used
+ * to drop its memo — so the other served a release resolved before the push for
+ * up to `DESIRED_TTL_MS`, and the turn-start gate answered `current` on a box
+ * that was behind (DEF-DEV-1, R1). Shortening the TTL narrows that window and
+ * never closes it; a broadcast closes it.
+ *
+ * Degrades to exactly the old behaviour: with no transport, or with one whose
+ * connection is down, the local drop still happens and the TTL is the backstop.
+ */
+export function createDesiredReleaseInvalidation(
+  cache: DesiredReleaseCache,
+  transport: DesiredInvalidationTransport | null,
+): (projectId: string) => void {
+  transport?.subscribe((projectId) => {
+    try {
+      cache.invalidate(projectId);
+    } catch {
+      // A notification must never take a process down.
+    }
+  });
+  return (projectId: string) => {
+    cache.invalidate(projectId);
+    try {
+      transport?.publish(projectId);
+    } catch {
+      // The write that moved the branch must not fail because the fan-out did.
+    }
+  };
+}
+
+const desiredReleases = createDesiredReleaseCache();
+let invalidateEverywhere = createDesiredReleaseInvalidation(desiredReleases, null);
+
+/**
+ * Wire the process-to-process fan-out. Called once at boot
+ * (`startReplicaServices`). Before it runs — and in every test — the local drop
+ * plus the TTL is the behaviour.
+ */
+export function useDesiredInvalidationTransport(transport: DesiredInvalidationTransport): void {
+  invalidateEverywhere = createDesiredReleaseInvalidation(desiredReleases, transport);
+}
 
 export interface TurnStartConvergenceDeps {
   loadTarget: (sessionId: string) => Promise<SessionTarget | null>;
@@ -263,7 +352,7 @@ async function noteAssetsFromHealth(
 
 const defaultDeps: TurnStartConvergenceDeps = {
   loadTarget: (sessionId) => sessionMemo(sessionId),
-  desiredReleaseId: (target, sessionId) => desiredMemo(target, sessionId),
+  desiredReleaseId: (target, sessionId) => desiredReleases.get(target, sessionId),
   runningReleaseId: lastKnownRunningRelease,
   probeRunningRelease,
   // DYNAMIC import on purpose. `sandbox-proxy/routes/preview.ts` calls this

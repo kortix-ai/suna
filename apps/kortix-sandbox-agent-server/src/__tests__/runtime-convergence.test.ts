@@ -74,6 +74,9 @@ async function workspace() {
 }
 
 afterEach(async () => {
+  // Module-level state: clear it on the way OUT too, or the next file in this
+  // bun process inherits it (see test-state-reset-tripwire.test.ts).
+  resetRuntimeConvergenceReportForTests()
   resetAgentSwapBlockersForTests()
   resetRuntimeConvergenceForTests()
   while (dirs.length > 0) await rm(dirs.pop() as string, { recursive: true, force: true })

@@ -37,6 +37,18 @@ export type VerifiedReloadResult =
        * "nothing was interrupted" produce different things said to the user.
        */
       turnEnded: boolean | null
+      /**
+       * The assistant message the RETIRED process left open, read from it
+       * before it was killed. `null` when there was none, or when it could not
+       * be read.
+       *
+       * The retired process emits neither `session.idle` nor `session.error`,
+       * so nothing downstream can settle that row by itself. This id is the
+       * only handle on it, and it exists for exactly as long as the outgoing
+       * process does — which is why it is read here and not by a caller after
+       * the fact.
+       */
+      orphanedMessageId: string | null
     }
   | {
       outcome: 'kept-old'
@@ -48,6 +60,13 @@ export type VerifiedReloadResult =
        * candidate failure says anything about the config.
        */
       candidateFailed?: boolean
+      /**
+       * True when `mayPromote` called the promotion off. Nothing is wrong with
+       * the release and nothing is wrong with the box: a turn simply started
+       * while the release was being built. The caller must NOT quarantine the
+       * release or record a config failure for it — the next trigger applies it.
+       */
+      promotionCalledOff?: boolean
     }
 
 /**
@@ -64,6 +83,23 @@ export interface VerifiedReloadOptions {
   forceFail?: boolean
   /** Runs on the candidate before promotion; a failure keeps the running process. */
   prove?: CandidateProof
+  /**
+   * The LAST moment a swap can be called off, asked after the candidate is
+   * proven and before the live port moves.
+   *
+   * `prove` answers "can the new config run"; this answers "may we retire the
+   * process that is running right now". They are different questions and they
+   * are asked seconds apart: a caller's turn check runs before the release is
+   * downloaded and extracted (2.4-6.1 s on dev), and the candidate boot adds
+   * ~3.3 s more. A prompt that lands inside that window starts a turn on the
+   * incumbent, and promoting anyway kills the process writing it — the client
+   * sees `HTTP 503` and the assistant row stays open with `completed = null`.
+   *
+   * `false` retires the CANDIDATE instead. The incumbent keeps its pid, its
+   * port and its turn, and the caller reports `kept-old`. Omitted ⇒ promote,
+   * so the boot path and every caller with nothing to lose is unchanged.
+   */
+  mayPromote?: () => Promise<boolean>
 }
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -1698,6 +1734,14 @@ export interface OpencodeLifecycleOptions {
    * and would say it to people whose work completed normally.
    */
   onUnplannedRespawn?: () => void | Promise<boolean | void>
+  /**
+   * Read the assistant message a process has left open, by its base URL.
+   *
+   * Called on the OUTGOING opencode immediately before a verified reload kills
+   * it. Best-effort and short-budget: a reload is never delayed or failed
+   * because this could not answer.
+   */
+  readOpenTurn?: (baseUrl: string) => Promise<string | null>
 }
 
 export function createOpencodeLifecycle(
@@ -2636,6 +2680,23 @@ export function createOpencodeLifecycle(
       const proven = await verifyCandidateBoots(opts)
       if (!proven.ok) return { outcome: 'kept-old', reason: proven.reason, candidateFailed: proven.candidateFailed }
 
+      // The promotion is the only irreversible step, so the last check belongs
+      // HERE — not before the build, where the caller's turn check already ran
+      // seconds ago. See `mayPromote`.
+      if (opts.mayPromote && !(await opts.mayPromote().catch(() => false))) {
+        await killProcessGroup(proven.candidate, 'SIGTERM').catch(() => {})
+        logger.info('[opencode] promotion called off; the candidate is retired and the running instance keeps its turn', {
+          candidatePort: proven.port,
+          pid: child?.pid ?? null,
+        })
+        return {
+          outcome: 'kept-old',
+          reason: 'a turn started while the release was being built; the swap waits for the next trigger',
+          candidateFailed: false,
+          promotionCalledOff: true,
+        }
+      }
+
       const previous = child
       const previousPort = livePort()
       activePort = proven.port
@@ -2651,6 +2712,15 @@ export function createOpencodeLifecycle(
       }
       reportReadyResponse(proven.candidate)
       markReady()
+      // BEFORE the kill, and only then. The process about to die is the only
+      // one that can answer for the turn it was writing: the replacement was
+      // built from the same on-disk root but never held that turn's stream, so
+      // asking it afterwards returns nothing. See `orphanedMessageId`.
+      const orphanedMessageId = previous
+        ? await options
+            .readOpenTurn?.(`http://127.0.0.1:${previousPort}`)
+            .catch(() => null) ?? null
+        : null
       if (previous) await killProcessGroup(previous, 'SIGTERM').catch(() => {})
       logger.info('[opencode] candidate promoted', {
         port: activePort,
@@ -2674,6 +2744,7 @@ export function createOpencodeLifecycle(
         port: activePort,
         pid: this.getPid(),
         turnEnded,
+        orphanedMessageId,
       }
     },
 

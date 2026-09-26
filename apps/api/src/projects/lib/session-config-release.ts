@@ -43,7 +43,16 @@ export interface DaemonConvergeResponse {
   ok: boolean;
   outcome: ConvergeOutcome;
   config: DaemonConfigReport;
-  reload: { how: 'restarted'; turn_ended: boolean | null } | null;
+  reload: {
+    how: 'restarted';
+    turn_ended: boolean | null;
+    /**
+     * The assistant message the RETIRED OpenCode left open, read off it by the
+     * daemon before it was killed. Null when the swap orphaned nothing, or
+     * when the daemon predates the field.
+     */
+    orphaned_message_id: string | null;
+  } | null;
   /** Why the release did not apply. Not in the spec's example; the daemon sends it. */
   reason: string | null;
 }
@@ -110,7 +119,11 @@ export function parseConvergeResponse(value: unknown): DaemonConvergeResponse | 
     config,
     reload:
       reload && typeof reload === 'object' && reload.how === 'restarted'
-        ? { how: 'restarted', turn_ended: typeof reload.turn_ended === 'boolean' ? reload.turn_ended : null }
+        ? {
+            how: 'restarted',
+            turn_ended: typeof reload.turn_ended === 'boolean' ? reload.turn_ended : null,
+            orphaned_message_id: textOrNull((reload as { orphaned_message_id?: unknown }).orphaned_message_id),
+          }
         : null,
     reason: textOrNull(raw.reason),
   };
