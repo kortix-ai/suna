@@ -50,7 +50,7 @@ export function managedPricingRoutes(
   return result;
 }
 
-type PricingFetch = typeof fetch;
+type PricingFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 interface PricingFeedOptions {
   baseUrl: string;
