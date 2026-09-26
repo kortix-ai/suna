@@ -143,6 +143,56 @@ export function sendSessionCreateError(c: Context, error: SessionCreateError) {
   return c.json(error.body, error.status as any);
 }
 
+/** The fields postgres.js attaches to a `Failed query:` error (pg error codes). */
+type PostgresErrorFields = {
+  code?: string;
+  constraint?: string;
+  detail?: string;
+  table?: string;
+  column?: string;
+  message?: string;
+};
+
+/**
+ * Map a failure of the session-insert transaction to an HTTP error body.
+ *
+ * A postgres.js error's `message` embeds the FULL SQL statement and EVERY bound
+ * parameter value (attachment filenames, model config, opaque ids). Returning
+ * that message to the client leaked customer data into the caller's error
+ * tracker as an opaque `ApiError` (Better Stack pattern `9aecd4f8…`) and hid the
+ * cause, which the old `catch` never logged. Log the real cause server-side
+ * here, and return a stable, non-leaking body the caller can branch on.
+ *
+ * A `23505` unique violation on the session PK means the caller retried a
+ * create with a `session_id` that already exists; that is an idempotent race,
+ * not a defect, so it maps to a typed 409.
+ */
+export function resolveSessionInsertFailure(error: unknown): SessionCreateError {
+  const pg = (error ?? {}) as PostgresErrorFields;
+  // postgres.js appends the bound parameter values after "\nparams:" in the
+  // message. Keep the statement (column names only) and drop the values, so the
+  // server log identifies the failing insert without duplicating customer data.
+  const message = (pg.message ?? String(error)).split('\nparams:')[0];
+  console.error('[projects] session insert failed', {
+    pgCode: pg.code ?? null,
+    constraint: pg.constraint ?? null,
+    table: pg.table ?? null,
+    column: pg.column ?? null,
+    detail: pg.detail ?? null,
+    message,
+  });
+  if (pg.code === '23505') {
+    return {
+      status: 409,
+      body: { error: 'A session with this id already exists', code: 'session_already_exists' },
+    };
+  }
+  return {
+    status: 500,
+    body: { error: 'Failed to create session', code: 'SESSION_CREATE_FAILED', retry: true },
+  };
+}
+
 /**
  * Resolve the concrete agent stored on a new session.
  *
@@ -1746,8 +1796,9 @@ export async function createProjectSession(input: {
     if (error instanceof HTTPException && error.status < 500) {
       return { error: { status: error.status, body: await error.getResponse().json() } };
     }
-    const message = (error as Error).message || 'Insert failed';
-    return { error: { status: 500, body: { error: message, retry: true } } };
+    // Never return `(error as Error).message`: postgres.js embeds the whole
+    // statement and its parameters in it (see `resolveSessionInsertFailure`).
+    return { error: resolveSessionInsertFailure(error) };
   }
 
   if (sessionRow === null) {
