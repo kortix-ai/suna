@@ -193,6 +193,7 @@
     "createSandbox",
     "createSandboxShare",
     "createSandboxTemplate",
+    "createSavedCopyStore",
     "createScimToken",
     "createServiceAccountApi",
     "createSessionPrompt",
@@ -202,6 +203,7 @@
     "createTask",
     "createTicket",
     "createTunnelEventStream",
+    "currentSavedCopyStore",
     "declineAccountInvite",
     "declineInvite",
     "deleteAccountImmediately",
@@ -534,6 +536,7 @@
     "isManagedGithubProject",
     "isNoGroupActivityTool",
     "isOpenCodeConfigInvalidError",
+    "isPaintableSavedCopy",
     "isPatchPart",
     "isPersistableQueryKey",
     "isPreviewUrl",
@@ -882,6 +885,7 @@
     "setProjectSessionScope",
     "setProjectSessionSharing",
     "setProjectTriggersActivation",
+    "setSavedCopyStore",
     "setSessionOversight",
     "setSessionProviderSecretPool",
     "setupSSH",
@@ -1535,6 +1539,7 @@
   "./internal/sync-store": [
     "Binary",
     "ascendingId",
+    "hasOnlyCacheSourcedMessages",
     "sameSessionStatus",
     "useSyncStore"
   ],
@@ -2585,6 +2590,7 @@
   "./sync-store": [
     "Binary",
     "ascendingId",
+    "hasOnlyCacheSourcedMessages",
     "sameSessionStatus",
     "useSyncStore"
   ],

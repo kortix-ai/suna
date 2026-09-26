@@ -492,6 +492,7 @@ export {
   loadHttpSessionHistory,
   type SessionSyncMessage,
 } from './core/session-sync/session-sync-controller';
+export * from './core/session-sync/saved-copy-store';
 export * from './core/session/url';
 export * from './core/stream/event-stream';
 export * from './core/stream/fetch-sse';

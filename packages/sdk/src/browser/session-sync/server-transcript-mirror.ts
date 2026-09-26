@@ -41,6 +41,7 @@ import {
 	takeOpenBundleTranscript,
 	takeOpenBundleTranscriptAbsence,
 } from "../../core/session/open-bundle";
+import type { SavedCopyStore } from "../../core/session-sync/saved-copy-store";
 
 /** How many mirrored messages a first paint asks for. Matches the sync
  *  controller's own initial tail, so the mirror and the read that replaces it
@@ -193,5 +194,31 @@ export async function loadOlderSessionTranscriptMirror(input: {
 		});
 	} catch {
 		return null;
+	}
+}
+
+/**
+ * How long after a turn ends the device's copy is re-read. The server writes
+ * its saved copy on the turn-end relay, a moment after the runtime goes idle;
+ * reading at once would return the copy from the turn before.
+ */
+export const SAVED_COPY_REFRESH_DELAY_MS = 3_000;
+
+/**
+ * Replace the device's copy of one session with the server's current one.
+ * Never throws: a failed read leaves the kept copy as it was.
+ */
+export async function refreshSavedCopy(
+	store: SavedCopyStore,
+	projectId: string,
+	sessionId: string,
+): Promise<void> {
+	try {
+		const envelope = await getSessionTranscriptSync(projectId, sessionId, {
+			limit: MIRROR_HYDRATE_LIMIT,
+		});
+		if (envelope) await store.write(projectId, sessionId, envelope);
+	} catch {
+		// The kept copy stays; the next open reconciles anyway.
 	}
 }
