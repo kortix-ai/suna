@@ -15,7 +15,11 @@
     "selectInstallation": "Изабери инсталацију",
     "manifestRequirement": "Нови репозиторијум мора да садржи {manifest} на подразумеваној грани. Прво зауставите активне сесије и затворите отворене захтеве за измену.",
     "cancel": "Откажи",
-    "changing": "Мења се…"
+    "changing": "Мења се…",
+    "searchBranches": "Pretraži grane…",
+    "loadingBranches": "Učitavanje grana…",
+    "noBranches": "Nema odgovarajuće grane.",
+    "moreBranches": "Još {count}. Kucajte za filtriranje."
   },
   "pooledSecrets": {
     "saveChanges": "Sačuvaj izmene",

@@ -211,6 +211,8 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+
+import { snapshotsQueryRetry } from './snapshots-query';
 import {
   type SandboxProvider,
   SandboxProviderBadge,
@@ -1028,6 +1030,7 @@ export function SandboxTab({ projectId }: { projectId: string }) {
     queryKey: qk.project.snapshots(projectId),
     queryFn: () => listProjectSnapshots(projectId),
     ...contract('config'),
+    retry: snapshotsQueryRetry,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;

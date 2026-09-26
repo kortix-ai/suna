@@ -15,7 +15,11 @@
     "selectInstallation": "Select installation",
     "manifestRequirement": "The new repository needs {manifest} on its default branch. Stop active sessions and close open change requests first.",
     "cancel": "Cancel",
-    "changing": "Changing…"
+    "changing": "Changing…",
+    "searchBranches": "Search branches…",
+    "loadingBranches": "Loading branches…",
+    "noBranches": "No matching branch.",
+    "moreBranches": "{count} more. Type to filter."
   },
   "pooledSecrets": {
     "saveChanges": "Save changes",
