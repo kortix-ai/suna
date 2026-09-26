@@ -122,8 +122,10 @@ describe('public session preview shares', () => {
     });
   });
 
-  test('rejects ports outside the share allow-list', async () => {
-    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/8000/`);
+  // 5173 is not a blocked port, so the share's own port is the only reason
+  // this is refused. The blocked set is its own row below.
+  test('a preview share is pinned to its own port', async () => {
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/5173/`);
     expect(res.status).toBe(403);
   });
 

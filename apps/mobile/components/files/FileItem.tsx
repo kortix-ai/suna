@@ -1,7 +1,6 @@
 /**
  * File Item Component
  * Reusable file/folder item with beautiful animations
- * Matches SelectableListItem design pattern from AgentDrawer
  */
 
 import React from 'react';

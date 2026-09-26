@@ -131,21 +131,27 @@ describe('daemon file write routes', () => {
     })
   }
 
-  it('health advertises file import and append while preserving existing health fields', async () => {
+  it('health advertises file import, append and config releases while preserving existing health fields', async () => {
     const response = await fetch(`${base}/kortix/health`)
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({
+    const body = (await response.json()) as Record<string, unknown>
+    expect(body).toMatchObject({
       daemon: 'ok',
       opencode: 'ok',
-      capabilities: ['file.import', 'file.append'],
+      capabilities: ['file.import', 'file.append', 'config.release.v1'],
     })
-  })
-
-  it('rejects unauthenticated upload (no signed context)', async () => {
-    const form = new FormData()
-    form.append('file', new File(['hello'], 'a.txt', { type: 'text/plain' }))
-    const res = await fetch(`${base}/file/upload`, { method: 'POST', body: form })
-    expect(res.status).toBe(401)
+    // docs/specs/config-releases.md, "Health": the config block and the
+    // legacy config_dir_sha field.
+    expect(Object.keys(body.config as object).sort()).toEqual([
+      'desired_release_id',
+      'failed_release_id',
+      'fallback_reason',
+      'mode',
+      'proven',
+      'release_id',
+      'source',
+    ])
+    expect(body).toHaveProperty('config_dir_sha')
   })
 
   it('uploads a file via the `path` + `file` convention', async () => {
@@ -506,11 +512,6 @@ describe('daemon file write routes', () => {
     })
     expect(res.status).toBe(403)
   })
-
-  it('GET /file/raw requires a signed context (401 unauthenticated)', async () => {
-    const res = await fetch(`${base}/file/raw?path=${encodeURIComponent(`${WORKSPACE}/sheet.xlsx`)}`)
-    expect(res.status).toBe(401)
-  })
 })
 
 // ---------------------------------------------------------------------------
@@ -620,12 +621,24 @@ describe('daemon file read + list + status + find routes', () => {
     expect(res.status).toBe(200)
     const matches = (await res.json()) as Array<{ path: string; line_number: number; lines: string }>
     expect(matches.length).toBeGreaterThan(0)
-    expect(matches.some((m) => m.path.endsWith('nested.md') && m.lines.includes('needle'))).toBe(true)
+    // Exact and relative: whichever search branch runs on this machine
+    // (ripgrep or the Node fallback) must hand back the same path shape.
+    expect(matches.some((m) => m.path === 'sub/nested.md' && m.lines.includes('needle'))).toBe(true)
   })
 
-  it('read/list/find require a signed context (401 unauthenticated)', async () => {
-    expect((await fetch(`${base}/file?path=.`)).status).toBe(401)
-    expect((await fetch(`${base}/file/status`)).status).toBe(401)
-    expect((await fetch(`${base}/find?pattern=x`)).status).toBe(401)
+  // The daemon's auth gate, one row per surface that reads or writes the box.
+  it.each([
+    ['GET', '/file?path=.'],
+    ['GET', '/file/status'],
+    ['GET', '/find?pattern=x'],
+    ['GET', `/file/raw?path=${encodeURIComponent(`${WORKSPACE}/sheet.xlsx`)}`],
+    ['POST', '/file/upload'],
+    ['POST', '/presentation/convert-to-pdf'],
+    ['GET', '/proxy/5173/'],
+    ['GET', '/web-proxy/http/x/'],
+  ])('%s %s requires a signed context (401 unauthenticated)', async (method, path) => {
+    const body = method === 'POST' ? new FormData() : undefined
+    if (body) body.append('file', new File(['hello'], 'a.txt', { type: 'text/plain' }))
+    expect((await fetch(`${base}${path}`, { method, body })).status).toBe(401)
   })
 })

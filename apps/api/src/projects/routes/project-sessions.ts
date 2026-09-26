@@ -649,7 +649,6 @@ projectsApp.openapi(
     sessionId,
     accountId: loaded.row.accountId,
     userId: loaded.userId,
-    metadata: visible.row.metadata,
   });
   if ('error' in result) return c.json({ error: result.error }, result.status as any);
   return c.json(result);

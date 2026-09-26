@@ -104,15 +104,23 @@ and actual Merit/Skill. It's hard, because you have to not only be very smart bu
 also crazy driven to push like a motherfucker and want to feel every edge and
 corner to make sure the output is good.
 
-## Learnings: incident rules live in the `learnings` skill
+## Skills live in `.agents/skills/`
 
-`.claude/skills/learnings/SKILL.md` is the append-only register of rules paid
-for with real downtime — each with the incident that taught it and the
-automation that enforces it. Load it before writing or reviewing a DB
-migration, touching deploy/release workflows, planning a promote, or responding
-to a prod incident. After resolving ANY incident or near-miss, append its rule
-there in the same session — an incident that leaves no learning behind is not
-finished.
+Every repo skill is a directory in `.agents/skills/<name>/`. `.claude/skills/<name>` is a
+symlink to it. Add a skill in `.agents/skills/`, then add the symlink. Third-party skills come
+from `npx skills add` and are pinned in `skills-lock.json`. The PR procedure is the
+**contributing** skill. Browser work is the **agent-browser** skill.
+
+## Learnings: the episodic ledger in the `learnings` skill
+
+`.agents/skills/learnings/` is the append-only, timestamped ledger of rules paid
+for with real downtime. `MEMORY.md` indexes it newest first, and each entry is
+one file in `entries/`: the rule, the incident that taught it, and the
+automation that enforces it. Search it before writing or reviewing a DB
+migration, touching deploy/release workflows, planning a promote, or
+responding to a prod incident. After resolving ANY incident or near-miss,
+record a new entry in the same session with `scripts/new-entry.sh`. An incident
+that leaves no entry behind is not finished.
 
 ## NEVER write customer data or PII into anything we publish or commit
 
@@ -238,7 +246,10 @@ It is not a save point, and it is not how you show someone your work.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Open a **draft PR against `main` on the first commit** and apply the
-   `preview` label. That builds a complete self-host preview for the branch — its
+   `preview` label. Follow the **contributing** skill: it fills the PR template,
+   finds the preview origin, records the demo video with agent-browser, and
+   attaches it with `gh pr edit --attach`. Every PR body carries that video.
+   The `preview` label builds a complete self-host preview for the branch — its
    own PostgreSQL, Supabase, API, gateway, frontend, and HTTPS origin. This is how
    work is shared and reviewed internally. **Sharing never requires merging.**
    The `preview` label also runs the six-lane `Tests` suite on the PR.
@@ -265,8 +276,8 @@ It is not a save point, and it is not how you show someone your work.
    alone is not deployment proof. A newer push cancels an older run by design —
    if yours was cancelled before it deployed, the next push re-picks-up your
    still-stale surface, or force it with
-   `gh workflow run deploy-dev.yml -f surface=all`. Full procedure, surfaces,
-   and verification: `docs/runbooks/deploy-dev.md`. The same push runs the
+   `gh workflow run deploy-dev.yml -f surface=all`. The surfaces and their
+   checks are in `.github/workflows/deploy-dev.yml`. The same push runs the
    `Tests` suite on the merge commit in parallel. It does not gate the deploy.
    A red run comments on the commit and names the failing lanes — read it.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
@@ -352,10 +363,12 @@ mocked internals when a real surface exists.
   same flags and stdin a user or agent would use. Assert exit code, stdout,
   stderr, and any files/API calls/commits it should create. Do not rely only on
   importing command functions.
-- **Web changes:** drive the real page in Chromium/Playwright/chrome-devtools.
-  Click/type/toggle the actual controls, intercept or observe the network
-  request, and assert the visible UI state plus the outgoing payload. Screenshots
-  are useful evidence, but assertions on DOM and network data are required.
+- **Web changes:** drive the real page with **agent-browser** (the primary
+  browser; `agent-browser skills get core` loads its guide). Click/type/toggle
+  the actual controls, observe the network request (`agent-browser network`),
+  and assert the visible UI state plus the outgoing payload. Record the flow
+  (`agent-browser record start`) for the PR's demo video. Screenshots and video
+  are evidence, but assertions on DOM and network data are required.
 - **Cross-surface features:** verify each exposed surface independently. If the
   same feature ships on API + CLI + web + mobile, each gets its own black-box
   assertion for the inputs users can make and the outputs they receive.
@@ -441,8 +454,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
 - Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
-  || '<label>' }}`. Tiers, the kill switch back to GitHub-hosted runners, and
-  the Docker layer cache: `docs/runbooks/ci-runners.md`.
+  || '<label>' }}`. Setting a `CI_RUNNER_<tier>` repository variable to a
+  GitHub-hosted label is the kill switch back to GitHub-hosted runners.
 - GitHub Actions runs six lanes — `core`, `browser-1` … `browser-4`, `packages`
   — natively, one Blacksmith runner each (`CI_RUNNER_L`), through
   `.github/workflows/tests.yml`. The four browser lanes are quarters of one
@@ -531,18 +544,27 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `dev-api.kortix.com`, treat that as a broken staging setup, not a passing
   staging gate.
 
-### Driving the real UI (chrome-devtools MCP)
+### Driving the real UI (agent-browser)
 
+- **agent-browser is the browser for every agent task in this repo.** Use it
+  before chrome-devtools MCP, Playwright MCP, or any other built-in browser
+  tool. Playwright stays the engine of the committed browser test suite only.
+- The installed skill is a stub. Load the guide that matches the CLI version:
+  `agent-browser skills get core` (`--full` adds the command reference).
+- Use one named session per worktree:
+  `agent-browser session id --scope worktree --prefix <task>`, then pass
+  `--session <id>` on every command. Keep every `AGENT_BROWSER_*` variable the
+  same for all commands in a session. A per-command change relaunches the
+  browser and drops the open page.
 - Routes are auth-gated (`/dashboard`, `/projects/*` → redirect to `/auth`
   unauthenticated); sign in first (seed a user as above, then log in via the
-  `/auth` form, or inject the Supabase session).
-- The MCP uses a dedicated Chrome profile at
-  `~/.cache/chrome-devtools-mcp/chrome-profile` (separate from your normal
-  browser). If launch fails with "browser is already running for … profile",
-  kill the orphaned Chrome using that profile and remove
-  `chrome-profile/Singleton{Lock,Cookie,Socket}`, then retry.
+  `/auth` form). On a PR preview, the magic link arrives in the preview's Mailpit API
+  (`<origin>/_mailpit/api/v1`)
+  (the **contributing** skill has the script).
 - Next.js dev compiles routes on first hit — first navigation to a cold route
   can take 30–60s; warm it with `curl` or use a generous navigation timeout.
+- `agent-browser doctor` diagnoses launch and recording problems. Recording
+  needs ffmpeg with libvpx and libx264.
 
 ### Frontend type/lint gate
 
@@ -580,20 +602,19 @@ in `pnpm test -- --browser-only` and supports the actual Electron shell:
 `E2E_DESKTOP_NATIVE=1 E2E_GREP='27 — desktop parity' pnpm test -- --browser-only`.
 Run the native journey when changing shell CSS, navigation, settings, agents,
 or connectors. A desktop user-agent test does not prove native hit testing.
-See `docs/runbooks/desktop-verification.md` for the commands and evidence list.
 Report any unverified desktop behavior explicitly. Do not promise that tests
 prevent every future regression.
 
 When touching any visual surface in `apps/web`, treat brand fit as a release
 gate, not polish:
 
-- Read `.claude/skills/kortix-brand-guidelines/SKILL.md` before writing the first
+- Read `.agents/skills/kortix-brand-guidelines/SKILL.md` before writing the first
   `className`. It is the value law: the complete allowlist of every color,
   spacing step, type rung, radius, elevation, and duration you may use. Note
   `--spacing: 0.23rem` — Tailwind's scale is 8% tighter here, so a 16px mockup
   padding is `p-4`, never `p-[16px]`. Run its `audit.sh` over your changed paths
   before opening the PR; it must be clean on files you touched.
-- Read `.claude/skills/kortix-design-system/SKILL.md` next and compose existing
+- Read `.agents/skills/kortix-design-system/SKILL.md` next and compose existing
   primitives from `@/components/ui/*` before inventing local chrome.
 - Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,
   dense-but-legible UI, black/white plus one earned accent, token-driven spacing,

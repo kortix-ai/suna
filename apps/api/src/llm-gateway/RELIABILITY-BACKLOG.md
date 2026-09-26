@@ -25,12 +25,14 @@ managed fallback with tier gating), real unit tests on the core pipeline.
 4. **Total-request deadline** — `resilience/retry.ts`
    `withRetry` now enforces a wall-clock `deadlineMs` (default **240s**) across
    all attempts + backoff, capping the old `3 × 120s ≈ 6min` worst case. Slow
-   single attempts are unaffected. *(test: retry.test.ts)*
+   single attempts are unaffected. *(The cap is now `DEADLINE_MS` in
+   `retry.ts`, 120 min. Retry behaviour is proven through its one caller in
+   `apps/llm-gateway/src/clients/api-client.test.ts`; no test drives the cap.)*
 
 5. **Sliding-window circuit breaker** — `resilience/circuit-breaker.ts`
    Failures now age out of a rolling `windowMs` (default **60s**), so only a
    genuine burst (`failureThreshold` within the window) trips it — a slow drip
-   over hours never does. *(test: retry.test.ts)*
+   over hours never does. *(The breaker module has since been removed.)*
 
 6. **Codex refresh grace period** — `credentials/codex.ts` + `codex-core.ts`
    A refresh blip (OpenAI auth briefly unreachable) no longer fails every Codex
@@ -92,11 +94,11 @@ managed fallback with tier gating), real unit tests on the core pipeline.
     change, independently, because each read a different cache with its own
     expiry clock. Unified to the ONE cache in `entitlements.ts`
     (`getCachedAccountTier` now carries the injectable `now` itself;
-    `resolve-candidates.ts`'s `resolveCachedAccountTier` is a thin re-export,
-    not a second implementation), plus `invalidateCachedAccountTier` for the
-    tier-change-during-window test and any future tier-change webhook.
-    *(tests: resolution/resolve-candidates.test.ts's TTL-boundary suite +
-    unit-account-tier-cache-unified.test.ts's tier-change-during-window case)*
+    `resolve-candidates.ts` calls it directly), plus
+    `invalidateCachedAccountTier` for the tier-change-during-window test and
+    any future tier-change webhook.
+    *(tests: unit-account-tier-cache-unified.test.ts — the 30 000 ms TTL
+    boundary and the tier-change-during-window case, on the real cache)*
 
 13. **Genuine-OpenAI streaming $0-billing gap + zero-usage safeguard** —
     `transports/openai-compat/index.ts` + `pipeline/handler.ts`
