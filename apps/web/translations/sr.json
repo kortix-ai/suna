@@ -9472,7 +9472,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "Предложи измене",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "Прикажи промене",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Преименуј…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Подели…",
     "autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00": "Нова сесија",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix Сесија почиње",
     "autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70": "Повезивање…",
@@ -19181,6 +19180,18 @@
       "title": "Направити јавни линк?",
       "description": "Свако ко има линк може ово да види без пријаве. Линк остаје активан док га не опозовеш.",
       "confirm": "Направи линк"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "Јавни линк",
+      "sectionDescription": "Свако ко има линк може да чита овај разговор без пријаве.",
+      "create": "Направи јавни линк",
+      "revokeDescription": "Разговор престаје да се учитава за свакога ко има линк. Након тога можеш да направиш нови линк.",
+      "rowMeta": "Разговор само за читање",
+      "unavailable": "Овај разговор је привремено недоступан.",
+      "unavailableDescription": "Разговор тренутно не може да се прочита. Покушај поново за тренутак.",
+      "loadFailedDescription": "Разговор није могао да се учита.",
+      "empty": "Још нема порука",
+      "savedCopy": "Сачувана копија од {date}"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} налог",

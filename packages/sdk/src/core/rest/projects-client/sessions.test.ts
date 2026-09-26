@@ -7,6 +7,7 @@ import type {
   RemovedSessionPrompt,
   SessionConfigRelease,
   SessionPrompt,
+  SessionPublicShare,
   SessionReloadResult,
   SessionTurn,
   SessionTurnStatus,
@@ -16,6 +17,7 @@ import {
   sessionParentId,
   createSessionPrompt,
   createSessionPublicShare,
+  findActiveTranscriptShare,
   claimWarmProjectSession,
   deleteProjectSession,
   deleteSessionPrompt,
@@ -199,6 +201,62 @@ test('createSessionPublicShare POSTs the share input', async () => {
   expect(last().method).toBe('POST');
   expect(last().body).toEqual(input);
   expect(result.share.share_id).toBe('SH1');
+});
+
+test('createSessionPublicShare mints a transcript share with { transcript: true }', async () => {
+  nextResponse = { status: 201, body: { share: { share_id: 'SH2', resource_type: 'transcript' } } };
+  const result = await createSessionPublicShare('P1', 'S1', { transcript: true });
+  expect(last().url).toContain('/projects/P1/sessions/S1/public-shares');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ transcript: true });
+  expect(result.share.resource_type).toBe('transcript');
+});
+
+function share(overrides: Partial<SessionPublicShare>): SessionPublicShare {
+  return {
+    share_id: 'SH',
+    session_id: 'S1',
+    project_id: 'P1',
+    resource_type: 'transcript',
+    label: 'Conversation',
+    port: null,
+    path: '/',
+    file_path: null,
+    mode: 'view',
+    allow_websocket: false,
+    expires_at: null,
+    revoked_at: null,
+    created_at: '2026-09-01T00:00:00.000Z',
+    updated_at: '2026-09-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+test('findActiveTranscriptShare returns the newest live transcript share', () => {
+  const now = new Date('2026-09-26T00:00:00.000Z');
+  const shares = [
+    share({ share_id: 'preview', resource_type: 'preview', port: 3000 }),
+    share({ share_id: 'old', created_at: '2026-09-01T00:00:00.000Z' }),
+    share({ share_id: 'new', created_at: '2026-09-20T00:00:00.000Z', expires_at: '2026-10-01T00:00:00.000Z' }),
+    share({ share_id: 'revoked', created_at: '2026-09-25T00:00:00.000Z', revoked_at: '2026-09-25T01:00:00.000Z' }),
+    share({ share_id: 'expired', created_at: '2026-09-24T00:00:00.000Z', expires_at: '2026-09-25T00:00:00.000Z' }),
+  ];
+  expect(findActiveTranscriptShare(shares, now)?.share_id).toBe('new');
+});
+
+test('findActiveTranscriptShare is null when no transcript share is live', () => {
+  const now = new Date('2026-09-26T00:00:00.000Z');
+  expect(findActiveTranscriptShare([], now)).toBeNull();
+  expect(
+    findActiveTranscriptShare(
+      [
+        share({ resource_type: 'file', file_path: '/workspace/a.md' }),
+        share({ revoked_at: '2026-09-02T00:00:00.000Z' }),
+        share({ expires_at: '2026-09-26T00:00:00.000Z' }),
+      ],
+      now,
+    ),
+  ).toBeNull();
 });
 
 test('revokeSessionPublicShare DELETEs the specific share', async () => {

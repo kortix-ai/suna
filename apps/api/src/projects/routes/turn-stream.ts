@@ -21,6 +21,7 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { childIdleGraceMs } from '../sandbox-deadline';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './turn-stream-kind';
+import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
 import { buildFormCard, type TeamsFormSpec } from '../../channels/teams/cards';
 import {
   abandonSandboxTurn,
@@ -427,6 +428,23 @@ projectsApp.openapi(
           queuePromoted: promotedPromptId !== null,
           promotedPromptId,
         });
+      }
+      // Push the session creator's devices. Only an end that closed a turn in
+      // THIS call notifies (see turnEndPushType); replays and aborts do not,
+      // and a promoted queued prompt means the session is still running, so
+      // it gets no completion push. Fire-and-forget: a push must never delay
+      // or fail the relay.
+      const pushType = turnEndPushType({
+        outcome: turnCompletion.outcome,
+        status,
+        errorName: errorInfo?.name,
+        childSession,
+        promoted: promotedPromptId !== null,
+      });
+      if (pushType) {
+        void notifySessionEvent({ type: pushType, sessionId, projectId }).catch((err) =>
+          console.warn('[push] turn-end notification failed', err instanceof Error ? err.message : err),
+        );
       }
       // Second-chance auto-title: create-time generation is a single in-memory
       // best-effort call, and a session whose only prompt was baked in-guest

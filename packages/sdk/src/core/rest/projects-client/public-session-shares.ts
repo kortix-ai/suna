@@ -1,6 +1,8 @@
-// Anonymous, read-only session-share viewing — `/v1/public/session-shares/:shareId`
-// and `.../messages` (apps/api/src/public-session-shares/index.ts). Backs the
-// logged-out `(public)/share/[shareId]` page (`ShareViewer.tsx`).
+// Anonymous, read-only session-share viewing — `/v1/public/session-shares/:ref`
+// and `.../messages` (apps/api/src/public-session-shares/index.ts). `:ref` is a
+// share's `share_id` or its `kps_` `public_token`. Only a `transcript` share
+// (`createSessionPublicShare(..., { transcript: true })`) reads `/messages`;
+// a `preview` or `file` share gets 404 there.
 //
 // Deliberately NOT built on `backendApi` (platform/api-client.ts): that client
 // wraps every call in the authenticated fetch path, which for a visitor with
@@ -61,6 +63,12 @@ export interface PublicSessionTranscriptMessage {
 export interface PublicSessionTranscript {
   available: boolean;
   reason: string | null;
+  /** Which source answered: the running sandbox (`live`), the saved
+   *  transcript (`mirror`), or nothing (`none`, only with `available: false`).
+   *  Absent from servers that predate the saved-transcript fallback. */
+  source?: 'live' | 'mirror' | 'none';
+  /** When the saved transcript was last written. Null for a live read. */
+  captured_at?: string | null;
   opencode_session_id: string | null;
   message_count: number;
   messages: PublicSessionTranscriptMessage[];
@@ -89,14 +97,17 @@ async function getJson<T>(url: string): Promise<T> {
   return body as T;
 }
 
-/** Anonymous session metadata (title/status/timestamps) for a share id — the
- *  route's own `:shareId` param, NOT the `kps_...` public token. */
+/** Anonymous session metadata (title/status/timestamps) for a share. Takes
+ *  the `share_id` or the `kps_` public token. */
 export async function getPublicSessionShare(shareId: string): Promise<PublicSessionShareMeta> {
   return getJson<PublicSessionShareMeta>(publicSessionShareUrl(shareId));
 }
 
 /** Anonymous, sanitized (text-only, no tool args/output, no file contents)
- *  transcript digest for a share id. */
+ *  transcript digest for a `transcript` share. Takes the `share_id` or the
+ *  `kps_` public token. Throws `PublicSessionShareError` with status 404 for a
+ *  share that does not name the conversation, 410 when revoked or expired, and
+ *  503 when no sandbox runs and no transcript was saved. */
 export async function getPublicSessionShareMessages(shareId: string): Promise<PublicSessionTranscript> {
   return getJson<PublicSessionTranscript>(publicSessionShareUrl(shareId, '/messages'));
 }

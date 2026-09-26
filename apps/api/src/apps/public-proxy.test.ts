@@ -629,7 +629,7 @@ describe('Apps public edge', () => {
   // Guarding it is what turns an endless "starting" spinner into a page that
   // names the problem.
   //
-  // Essentia, 2026-09-08: their E2B stack was hibernated (ASGs to 0, its DNS
+  // A customer deployment, 2026-09-08: its E2B stack was hibernated (ASGs to 0, its DNS
   // pointing at a deleted load balancer) while all four live App deployments
   // were still pinned to e2b and ALLOWED_SANDBOX_PROVIDERS had been narrowed to
   // platinum. Every App rendered "Starting … This page will continue

@@ -1,6 +1,5 @@
 import * as React from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   RefreshControl,
@@ -19,6 +18,7 @@ import {
   HardDrivesIcon as Server,
 } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
@@ -123,7 +123,7 @@ export default function InstancesScreen() {
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="small" />
+        <KortixLoader />
       </View>
     );
   }
@@ -203,7 +203,6 @@ export default function InstancesScreen() {
                             </Text>
                           </View>
                           <View className="flex-row items-center" style={{ gap: 8 }}>
-                            {isProvisioning && <ActivityIndicator size="small" />}
                             {isActive && !isProvisioning && (
                               <Icon as={Check} size={16} className="text-primary" />
                             )}
@@ -435,14 +434,14 @@ const AddInstanceSheet = React.forwardRef<
               }}
             >
               {isCreating ? (
-                // Spinner sits on the filled (foreground-colored) button — invert vs.
+                // The loader sits on the filled (foreground-colored) button — invert vs.
                 // the usual isDark mapping so it reads dark-on-light / light-on-dark.
-                <ActivityIndicator size="small" color={isDark ? THEME.light.foreground : THEME.dark.foreground} />
+                <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />
               ) : (
                 <Text
                   className="font-roobert-semibold text-[15px]"
                   style={{
-                    // Same inversion as the spinner above when the button is filled.
+                    // Same inversion as the loader above when the button is filled.
                     color: customUrl.trim()
                       ? (isDark ? THEME.light.foreground : THEME.dark.foreground)
                       : (isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.3)),
