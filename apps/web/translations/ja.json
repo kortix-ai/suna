@@ -20275,6 +20275,8 @@
     "visibilityEveryone": "プロジェクト全員",
     "visibilityNamedMore": "{names} +{count}",
     "savedAs": "{label} として保存しました",
-    "connectFailed": "アカウントを接続できませんでした。もう一度お試しください。"
+    "connectFailed": "アカウントを接続できませんでした。もう一度お試しください。",
+    "sharePrivateDescription": "自分のアカウントを使用できるユーザーを追加で選択します。共有アカウントになり、プロジェクトの接続管理者も管理できるようになります。",
+    "ownerMeta": "自分のアカウント"
   }
 }

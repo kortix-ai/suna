@@ -24,7 +24,10 @@ export function accountVisibility(
   if (shares.length === 1 && only?.principal_type === 'member' && only.principal_id === viewerId) {
     return { kind: 'you' };
   }
-  const labels = shares.map((share) => share.label);
+  // Groups first and the viewer last, so the card names who ELSE can use it.
+  const rank = (share: (typeof shares)[number]) =>
+    share.principal_type === 'group' ? 0 : share.principal_id === viewerId ? 2 : 1;
+  const labels = [...shares].sort((a, b) => rank(a) - rank(b)).map((share) => share.label);
   return { kind: 'named', names: labels.slice(0, limit), more: Math.max(0, labels.length - limit) };
 }
 

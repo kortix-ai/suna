@@ -20275,6 +20275,8 @@
     "visibilityEveryone": "Tout le projet",
     "visibilityNamedMore": "{names} +{count}",
     "savedAs": "Enregistré sous {label}",
-    "connectFailed": "Impossible de connecter le compte. Réessayez."
+    "connectFailed": "Impossible de connecter le compte. Réessayez.",
+    "sharePrivateDescription": "Choisissez qui d’autre peut utiliser votre compte. Il devient un compte partagé, que les gestionnaires des connexions du projet peuvent aussi gérer.",
+    "ownerMeta": "Votre compte"
   }
 }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ConnectionShare } from '@kortix/sdk';
 
-import { planShare, sharedWithEveryoneAfter } from './access-dialog-share';
+import { planPrivateShare, planShare, sharedWithEveryoneAfter } from './access-dialog-share';
 import { EMPTY_PRINCIPAL_SELECTION, type PrincipalSelection } from './principal-picker';
 
 const PROJECT = 'p-1';
@@ -86,5 +86,35 @@ describe('sharedWithEveryoneAfter', () => {
 
   test('only yourself is narrowed to you', () => {
     expect(sharedWithEveryoneAfter([], none, pick({ memberIds: ['me'] }))).toBe(false);
+  });
+});
+
+describe('planPrivateShare', () => {
+  const OWNER = 'u-owner';
+
+  test('nothing picked is nothing to do: the account stays yours', () => {
+    expect(planPrivateShare(pick({}), true, OWNER)).toBeNull();
+    expect(planPrivateShare(pick({}), false, OWNER)).toBeNull();
+  });
+
+  test('picked people and groups, and you unless you removed yourself', () => {
+    expect(planPrivateShare(pick({ memberIds: ['u-1'], groupIds: ['g-1'] }), true, OWNER)).toEqual([
+      { principal_type: 'user', principal_id: OWNER },
+      { principal_type: 'user', principal_id: 'u-1' },
+      { principal_type: 'group', principal_id: 'g-1' },
+    ]);
+    expect(planPrivateShare(pick({ groupIds: ['g-1'] }), false, OWNER)).toEqual([
+      { principal_type: 'group', principal_id: 'g-1' },
+    ]);
+  });
+
+  test('you are never listed twice', () => {
+    expect(planPrivateShare(pick({ memberIds: [OWNER] }), true, OWNER)).toEqual([
+      { principal_type: 'user', principal_id: OWNER },
+    ]);
+  });
+
+  test('everyone in the project is the empty audience', () => {
+    expect(planPrivateShare(pick({ everyone: true, groupIds: ['g-1'] }), true, OWNER)).toEqual([]);
   });
 });

@@ -148,6 +148,11 @@ describe('accountVisibility', () => {
     });
   });
 
+  test('groups lead, and the viewer comes last: "Sales +1", not their own address', () => {
+    const shared = account('project', [share('member', 'u-1', 'me@x.test'), share('group', 'sales', 'Sales')]);
+    expect(accountVisibility(shared, 'u-1')).toEqual({ kind: 'named', names: ['Sales'], more: 1 });
+  });
+
   test('a narrowed account names its first grant and counts the rest', () => {
     const shared = account('project', [
       share('group', 'sales', 'Sales'),

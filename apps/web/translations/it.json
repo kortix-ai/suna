@@ -20275,6 +20275,8 @@
     "visibilityEveryone": "Tutto il progetto",
     "visibilityNamedMore": "{names} +{count}",
     "savedAs": "Salvato come {label}",
-    "connectFailed": "Impossibile collegare l’account. Riprova."
+    "connectFailed": "Impossibile collegare l’account. Riprova.",
+    "sharePrivateDescription": "Scegli chi altro può usare il tuo account. Diventa un account condiviso, che possono gestire anche i gestori delle connessioni del progetto.",
+    "ownerMeta": "Il tuo account"
   }
 }

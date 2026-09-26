@@ -32,7 +32,13 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { createAssignment, revokeAssignment, type ConnectionShare } from '@kortix/sdk';
+import {
+  createAssignment,
+  revokeAssignment,
+  shareConnection,
+  type ConnectionShare,
+  type ConnectionSharePrincipal,
+} from '@kortix/sdk';
 import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import { LockIcon, UsersIcon, UsersThreeIcon, XIcon } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -50,6 +56,12 @@ export interface ShareableObject {
   type: 'connection';
   id: string;
   label: string;
+  /**
+   * Set for the caller's OWN private account. Save then makes it a shared
+   * account for the picked audience in one call (`shareConnection`), with the
+   * owner kept on it unless they removed themselves.
+   */
+  privateOwner?: { userId: string; label: string };
 }
 
 export interface SharePlan {
@@ -87,6 +99,29 @@ export function planShare(
     .filter((grant) => removed.has(grant.grant_id) && !repicked(grant, picked))
     .map((grant) => grant.grant_id);
   return { add, revoke };
+}
+
+/**
+ * Who a private account is shared with on Save, or `null` when nothing is
+ * picked (it stays private). Everyone in the project is the empty audience.
+ */
+export function planPrivateShare(
+  picked: PrincipalSelection,
+  keepOwner: boolean,
+  ownerId: string,
+): ConnectionSharePrincipal[] | null {
+  if (picked.everyone) return [];
+  const others = [
+    ...picked.memberIds
+      .filter((id) => id !== ownerId)
+      .map((id) => ({ principal_type: 'user' as const, principal_id: id })),
+    ...picked.groupIds.map((id) => ({ principal_type: 'group' as const, principal_id: id })),
+  ];
+  const ownerPicked = picked.memberIds.includes(ownerId);
+  if (others.length === 0 && !ownerPicked) return null;
+  return keepOwner || ownerPicked
+    ? [{ principal_type: 'user', principal_id: ownerId }, ...others]
+    : others;
 }
 
 /** Grant each principal the use of one shared connector account, in parallel.
@@ -147,6 +182,9 @@ export function ShareAccessBody({
 
   const [picked, setPicked] = useState<PrincipalSelection>(EMPTY_PRINCIPAL_SELECTION);
   const [removed, setRemoved] = useState<ReadonlySet<string>>(() => new Set());
+  // A private account: the owner stays on it unless they remove themselves.
+  const [keepOwner, setKeepOwner] = useState(true);
+  const privateOwner = object.privateOwner;
   // Re-seed on every closed → open transition, the same pattern as the grant
   // body: no draft from a previous opening survives a reopen.
   const [wasOpen, setWasOpen] = useState(open);
@@ -155,12 +193,16 @@ export function ShareAccessBody({
     if (open) {
       setPicked(EMPTY_PRINCIPAL_SELECTION);
       setRemoved(new Set());
+      setKeepOwner(true);
     }
   }
 
   const plan = planShare(current, removed, picked, projectId);
-  const dirty = plan.add.length + plan.revoke.length > 0;
-  const everyoneAfter = sharedWithEveryoneAfter(current, removed, picked);
+  const privatePlan = privateOwner ? planPrivateShare(picked, keepOwner, privateOwner.userId) : null;
+  const dirty = privateOwner ? privatePlan !== null : plan.add.length + plan.revoke.length > 0;
+  const everyoneAfter = privateOwner
+    ? picked.everyone === true
+    : sharedWithEveryoneAfter(current, removed, picked);
   const everyoneLabel = t('everyone', { project: projectName });
 
   function invalidate() {
@@ -171,6 +213,12 @@ export function ShareAccessBody({
 
   const save = useMutation({
     mutationFn: async () => {
+      if (privateOwner) {
+        // Grants and the switch to shared in one server call, so the account
+        // is never open to the whole project in between.
+        if (privatePlan) await shareConnection(projectId, object.id, privatePlan);
+        return;
+      }
       await grantConnectionAccess(accountId, projectId, object.id, plan.add);
       await Promise.all(plan.revoke.map((assignmentId) => revokeAssignment(accountId, assignmentId)));
     },
@@ -195,9 +243,11 @@ export function ShareAccessBody({
       return next;
     });
 
-  const grantedMemberIds = current
-    .filter((grant) => grant.principal_type === 'member' && !removed.has(grant.grant_id))
-    .map((grant) => grant.principal_id);
+  const grantedMemberIds = privateOwner
+    ? [privateOwner.userId]
+    : current
+        .filter((grant) => grant.principal_type === 'member' && !removed.has(grant.grant_id))
+        .map((grant) => grant.principal_id);
 
   return (
     <Modal
@@ -210,14 +260,48 @@ export function ShareAccessBody({
       <ModalContent className="sm:max-w-md">
         <ModalHeader>
           <ModalTitle>{t('shareTitle', { label: object.label })}</ModalTitle>
-          <ModalDescription>{t('shareDescription')}</ModalDescription>
+          <ModalDescription>
+            {privateOwner ? t('sharePrivateDescription') : t('shareDescription')}
+          </ModalDescription>
         </ModalHeader>
 
         <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
           <Field className="gap-1.5">
             <FieldLabel>{t('whoCanUse')}</FieldLabel>
             <ul className="space-y-2" data-testid="share-audience">
-              {current.length === 0 ? (
+              {privateOwner ? (
+                <AudienceRow
+                  avatar={<UserAvatar email={privateOwner.label} size="sm" />}
+                  label={privateOwner.label}
+                  meta={keepOwner ? t('ownerMeta') : t('removedMeta')}
+                  removed={!keepOwner}
+                  action={
+                    keepOwner ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 shrink-0"
+                        aria-label={t('remove', { name: privateOwner.label })}
+                        disabled={save.isPending}
+                        onClick={() => setKeepOwner(false)}
+                      >
+                        <XIcon className="size-3.5" />
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={save.isPending}
+                        onClick={() => setKeepOwner(true)}
+                      >
+                        {t('keep')}
+                      </Button>
+                    )
+                  }
+                />
+              ) : current.length === 0 ? (
                 <AudienceRow
                   avatar={<EntityAvatar icon={UsersThreeIcon} label={everyoneLabel} size="sm" />}
                   label={everyoneLabel}
@@ -304,7 +388,11 @@ export function ShareAccessBody({
 
           <InfoBanner tone="neutral" icon={everyoneAfter ? UsersThreeIcon : LockIcon}>
             <span data-testid="share-result">
-              {everyoneAfter ? t('resultEveryone', { project: projectName }) : t('resultNarrowed')}
+              {everyoneAfter
+                ? t('resultEveryone', { project: projectName })
+                : privateOwner && !privatePlan
+                  ? t('onlyYouDescription')
+                  : t('resultNarrowed')}
             </span>
           </InfoBanner>
         </ModalBody>

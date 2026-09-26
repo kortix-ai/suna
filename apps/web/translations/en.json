@@ -20275,6 +20275,8 @@
     "visibilityEveryone": "Everyone in project",
     "visibilityNamedMore": "{names} +{count}",
     "savedAs": "Saved as {label}",
-    "connectFailed": "Could not connect the account. Try again."
+    "connectFailed": "Could not connect the account. Try again.",
+    "sharePrivateDescription": "Choose who else can use your account. It becomes a shared account, which the project's connection managers can also manage.",
+    "ownerMeta": "Your account"
   }
 }

@@ -772,6 +772,40 @@ test.describe("23 — Composio managed connector", () => {
       expect.objectContaining({ principal_type: "group", principal_id: group.group_id }),
     ]);
 
+    // ── Your own private account, shared later: it becomes a shared account ──
+    await mineRow.getByRole("button", { name: "Share Mine", exact: true }).click();
+    const shareMine = page.getByRole("dialog", { name: "Share Mine", exact: true });
+    await expect(shareMine).toBeVisible();
+    await expect(shareMine).toContainText("It becomes a shared account");
+    await expect(shareMine.getByTestId("share-audience")).toContainText("Your account");
+    await shareMine.getByRole("button", { name: groupName }).click();
+    await expect(shareMine.getByTestId("share-result")).toContainText("Only the people you chose");
+    const shareRequest = page.waitForRequest(
+      (request) => /\/connections\/[^/]+\/share$/.test(request.url()) && request.method() === "POST",
+    );
+    await shareMine.getByRole("button", { name: "Save", exact: true }).click();
+    expect((await shareRequest).postDataJSON()).toEqual({
+      principals: [
+        { principal_type: "user", principal_id: user.id },
+        { principal_type: "group", principal_id: group.group_id },
+      ],
+    });
+    await expect(shareMine).toHaveCount(0);
+    await expect(mineRow.getByTestId("account-visibility")).toHaveText(`${groupName} +1`);
+    const sharedMine = (
+      await api<{
+        connections: Array<{
+          label: string;
+          owner_type: string;
+          shared_with?: Array<{ principal_type: string; principal_id: string }>;
+        }>;
+      }>(session.access_token, "GET", `/projects/${project.id}/connections`)
+    ).connections.find((c) => c.label === "Mine");
+    expect(sharedMine?.owner_type).toBe("project");
+    expect(sharedMine?.shared_with?.map((s) => s.principal_id).sort()).toEqual(
+      [user.id, group.group_id].sort(),
+    );
+
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
 

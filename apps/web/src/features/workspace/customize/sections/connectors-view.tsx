@@ -352,18 +352,38 @@ function ConnectionRow({
           </Hint>
         </InlineMeta>
       </div>
-      {isProjectAuthorization && mayMutate && onShare ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="shrink-0 gap-1.5"
-          onClick={onShare}
-          disabled={pending || disabled}
-          aria-label={tSharing('shareTitle', { label: connection.label })}
-        >
-          <ShareNetworkIcon className="size-3.5 shrink-0" />
-          {tI18nComplete.raw('text29887a5ff984')}
-        </Button>
+      {onShare && mayMutate ? (
+        // Your own private account is shared by turning it into a shared one,
+        // which needs the same right as creating a shared account.
+        isProjectAuthorization || canManage ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 gap-1.5"
+            onClick={onShare}
+            disabled={pending || disabled}
+            aria-label={tSharing('shareTitle', { label: connection.label })}
+          >
+            <ShareNetworkIcon className="size-3.5 shrink-0" />
+            {tI18nComplete.raw('text29887a5ff984')}
+          </Button>
+        ) : (
+          <Hint label={tSharing('shareRequiresManage')}>
+            {/* A span, so the hint still opens over a disabled button. */}
+            <span className="inline-flex shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                disabled
+                aria-label={tSharing('shareTitle', { label: connection.label })}
+              >
+                <ShareNetworkIcon className="size-3.5 shrink-0" />
+                {tI18nComplete.raw('text29887a5ff984')}
+              </Button>
+            </span>
+          </Hint>
+        )
       ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -694,7 +714,15 @@ export function ConnectionsList({
           scope={{ kind: 'project', projectId, projectName }}
           mode={{
             kind: 'share',
-            object: { type: 'connection', id: shareTarget.connection_id, label: shareTarget.label },
+            object: {
+              type: 'connection',
+              id: shareTarget.connection_id,
+              label: shareTarget.label,
+              // Your own private account: sharing makes it a shared one.
+              ...(shareTarget.owner_type === 'member' && viewerId
+                ? { privateOwner: { userId: viewerId, label: user?.email ?? tSharing('onlyYou') } }
+                : {}),
+            },
             current:
               connectionsQuery.data?.connections.find(
                 (connection) => connection.connection_id === shareTarget.connection_id,

@@ -20275,6 +20275,8 @@
     "visibilityEveryone": "整个项目",
     "visibilityNamedMore": "{names} +{count}",
     "savedAs": "已保存为 {label}",
-    "connectFailed": "无法连接账户，请重试。"
+    "connectFailed": "无法连接账户，请重试。",
+    "sharePrivateDescription": "选择还有谁可以使用你的账户。它会变为共享账户，项目的连接管理员也可以管理它。",
+    "ownerMeta": "你的账户"
   }
 }

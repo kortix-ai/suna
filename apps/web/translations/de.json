@@ -20275,6 +20275,8 @@
     "visibilityEveryone": "Alle im Projekt",
     "visibilityNamedMore": "{names} +{count}",
     "savedAs": "Gespeichert als {label}",
-    "connectFailed": "Das Konto konnte nicht verbunden werden. Versuchen Sie es erneut."
+    "connectFailed": "Das Konto konnte nicht verbunden werden. Versuchen Sie es erneut.",
+    "sharePrivateDescription": "Wählen Sie, wer Ihr Konto außerdem verwenden darf. Es wird zu einem geteilten Konto, das auch die Verbindungsverwalter des Projekts verwalten können.",
+    "ownerMeta": "Ihr Konto"
   }
 }
