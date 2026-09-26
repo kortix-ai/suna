@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { isExpectedFileRevisionRace } from './branches';
-import { GitOperationError, isRemotePushPolicyRejection } from './mirror';
+import { GitOperationError, isRemotePushPolicyRejection, pushPolicyWarning } from './mirror';
 
 function gitFailure(gitArgs: string[], stderr: string) {
   return new GitOperationError({
@@ -148,4 +148,18 @@ describe('remote push policy rejection classification', () => {
       ),
     ).toBe(false);
   });
+});
+
+test('push policy warning omits Git stderr, remote URL, and ref', () => {
+  const error = gitFailure(
+    ['push', 'origin', 'abc:refs/heads/synthetic-private-ref'],
+    'To https://example.invalid/synthetic-private-repo.git\n' +
+      '! [remote rejected] abc -> synthetic-private-ref (repository rule violations)',
+  );
+  const warning = pushPolicyWarning('POST', error);
+  const published = JSON.stringify(warning);
+  expect(warning.message).toContain('409');
+  expect(published).not.toContain('synthetic-private-repo');
+  expect(published).not.toContain('synthetic-private-ref');
+  expect(published).not.toContain('example.invalid');
 });
