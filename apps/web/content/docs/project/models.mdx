@@ -240,8 +240,9 @@ never uses a member's own connection: select a connection shared with the whole
 project for it. Scheduled sessions cannot use an **Only you** account either.
 Another member's shared connection requires an explicit selection. The legacy
 project login remains available when the member has no usable connection of
-their own. A shared gateway key cannot borrow its creator's private ChatGPT
-connection.
+their own. A project gateway key uses the connections shared with
+**Everyone in this project**. It never uses its creator's private connection or
+a connection restricted to specific members.
 
 A project manager can turn off **ChatGPT subscription** for the whole project
 in **Models → Providers**. The picker then hides the connect entry.
@@ -295,7 +296,7 @@ Limits:
 - `/v1/messages/count_tokens` returns `404`. Claude Code then estimates
   counts from characters.
 - Reasoning text is not returned as `thinking` blocks.
-- ChatGPT models need a ChatGPT account that the whole project can use. A
-  gateway key cannot use its creator's private connection.
+- ChatGPT models (`codex/*`) need a ChatGPT connection shared with
+  **Everyone in this project**. A gateway key cannot use a private connection.
 - Claude Code cannot set a context window per model. Set
   `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the smallest window you use.
