@@ -14,6 +14,7 @@ import {
   hostFromRepoUrl,
   invalidateProjectMirror,
   isGitOperationError,
+  isRemotePushPolicyRejection,
   makeSessionBranchRepo,
   normalizeTreePath,
   refreshMirror,
@@ -610,6 +611,11 @@ export async function commitMultipleFilesToBranch(
       );
     } catch (error) {
       invalidateProjectMirror(project.projectId);
+      // A remote-policy rejection is permanent and NOT a stale tip: the remote
+      // refused the ref by rule, so refreshing and retrying cannot help. Check
+      // it before the revision-race path below, which would otherwise mistake
+      // it for a concurrent edit and hide the real cause behind a conflict.
+      if (isRemotePushPolicyRejection(error)) throw error;
       if (expectedFileRevision) {
         const remoteTip = await readRemoteBranchTip(project, repoPath, branch, authHost);
         if (remoteTip === commitSha) {

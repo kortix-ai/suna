@@ -96,7 +96,7 @@ import {
   stopProjectTriggerScheduler,
 } from './projects';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
-import { GitOperationError, isGitOperationError, isTransientGitMirrorError } from './projects/git/mirror';
+import { GitOperationError, isGitOperationError, isRemotePushPolicyRejection, isTransientGitMirrorError } from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import {
   startProviderTransitionWorker,
@@ -1196,6 +1196,32 @@ app.onError((err, c) => {
         status: 503,
       },
       503,
+    );
+  }
+
+  // A push the REMOTE rejected by policy — branch protection, repository rules,
+  // a server-side hook — is a PERMANENT, user-actionable outcome: retrying the
+  // same commit is rejected again and the mirror retry cannot help. It must NOT
+  // page Sentry as an opaque server error (prod Better Stack pattern
+  // `5e505349…`: `push declined due to repository rule violations`). This is the
+  // single backstop for every commit path that lets the error propagate here;
+  // the agent-config route additionally maps it to a typed 409 at the call site.
+  if (isRemotePushPolicyRejection(err)) {
+    appLogger.warn(`${method} ${path} -> 409 [GitOperationError:push-policy] ${err.message}`, {
+      method,
+      path,
+      errorType: 'GitOperationError',
+      gitKind: err.kind,
+      gitArgs: err.gitArgs,
+    });
+    return c.json(
+      {
+        error: true,
+        message: 'the repository rejected the push because of its branch protection or repository rules',
+        status: 409,
+        code: 'repository_push_rejected',
+      },
+      409,
     );
   }
 
