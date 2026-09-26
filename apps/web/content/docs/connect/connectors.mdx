@@ -61,6 +61,12 @@ the account, so the account never holds a credential while it is open to the
 whole project. An account name must be new: a name that an account of the same
 owner already uses is refused.
 
+When an agent needs an account, it posts a **Connect** card in the chat. The
+card opens the same dialog, with the name the agent suggests already filled in
+and the audience it asked for preselected. Kortix creates a new account, never
+re-authorizes an existing one, and tells the agent the new account's name so it
+can run calls as that account.
+
 ### Choose who can use a shared account
 
 A shared account is usable by everyone in the project until you narrow it.

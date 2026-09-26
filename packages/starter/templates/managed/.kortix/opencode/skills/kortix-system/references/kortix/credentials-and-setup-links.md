@@ -98,32 +98,37 @@ cannot satisfy the request, stop and ask the human before any explicit
 **Preferred — the `connect` tool on the `kortix-connectors` MCP:**
 
 ```
-connect({ slug: "smartlead" })
-→ { url: "https://<app>/connect/ksl_…", app: "smartlead", expires_at }
+connect({ slug: "gmail", label: "Dad's Gmail" })
+→ { url: "https://<app>/connect/ksl_…", app: "gmail", expires_at }
 ```
 
-**Or from a shell:**
-
-```sh
-kortix connectors connect smartlead  # matches the MCP `connect` tool
-```
+From a shell, `kortix connectors connect <slug>` is NOT the same: it returns the
+provider's raw authorization URL for the connector's default account, and it
+cannot name a new one. Use the MCP `connect` tool to add an account.
 
 Then **surface the `url`**. The human clicks and authorizes the app on Composio's
 hosted flow. Finalize the connection when the human returns so the account
 binding is persisted server-side. Mint a fresh link when a previous request has
 expired or was abandoned.
 
-`kortix connectors connect` returns the durable, modal-friendly connection URL.
 Use `kortix connectors connect-finalize <slug>` when the flow requires an
 explicit completion check.
 
-**A connector can hold more than one account.** `connect` doesn't replace an
-existing account, it adds one — `owner: "me"` (default) authorizes the human
-you're talking to as a NEW private account beside any that already exist;
-`owner: "project"` shares it with everyone. If the connector already has
-accounts and the human just wants to USE one of them (not add another), do
-not mint a new `connect` link — list them with `accounts` instead and pass
-`account` on the call.
+**A connector can hold more than one account. `connect` adds one.** In the
+Kortix web app the link opens a dialog where the human:
+
+- names the new account — prefilled from your `label`, so pass one that tells
+  it apart from the others ("Dad's Gmail", "Support inbox"), never `me`,
+  `project`, or an id;
+- chooses who can use it: only them, everyone in the project, or chosen people
+  or groups. `owner: "project"` only preselects "everyone"; the human decides;
+- signs in with the provider in a new window.
+
+When it lands you are told the account's name. Pass it as `account` on every
+call (`kortix connectors call <slug> <action> --account "<name>"`): a connector
+with several accounts refuses an unnamed call with `account_required`. If the
+human just wants to USE an account the connector already has, do not mint a
+link — list them with `accounts` and pass `account` on the call.
 
 ---
 
