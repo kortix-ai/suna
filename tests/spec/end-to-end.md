@@ -64,6 +64,9 @@ The `kortix` CLI binary and the managed-skill overlay THIS deploy was built with
 `RTA-1` `GET /v1/runtime-assets/manifest` → auth → 200 `{cli_version,cli_sha256,cli_size,managed_skills_hash,managed_skills_count}`. Digests only — a sandbox decides from this alone whether to download anything. The CLI fields are all-null together when the image carries no binary (a checkout that never built `apps/cli/dist/kortix`); the manifest must still serve the skill half. Stable within a deploy. `ANON` → 401.
 `RTA-2` `GET /v1/runtime-assets/managed-skills` → auth → 200 `{hash,files:[{path,content}]}`, `ETag` = the manifest's `managed_skills_hash`, every path inside the `kortix-*` family. `If-None-Match` with the current hash → 304 with no body; a stale hash → 200. `ANON` → 401.
 `RTA-3` `GET|HEAD /v1/runtime-assets/cli` → auth → 200 the Linux binary, `ETag` = the manifest's `cli_sha256`, `Content-Length` = `cli_size`, `X-Kortix-Cli-Sha256` naming the digest the caller must verify. `If-None-Match` with the current digest → 304 with no body — a converged sandbox transfers nothing. No binary in the image → 404. `ANON` → 401.
+`RTA-4` `GET|HEAD /v1/runtime-assets/entrypoint` → auth → 200 the supervisor script, `ETag` and `X-Kortix-Entrypoint-Sha256` = the manifest's `components.entrypoint.sha256`, `If-None-Match` with that digest → 304 with no body, no script in the image → 404, `ANON` → 401 — the same content-addressed shape as `RTA-3`. It is OUT-OF-BAND REPAIR ONLY and no box converges it: the supervisor IS the entrypoint, so replacing the file under the running shell corrupts it instead of updating it. That is why `runningAssetsVerdict` excludes `entrypoint` from the comparison — a component no box converges must never make a box read as behind — and why the route description and `components.entrypoint` both say so rather than leaving it advertised and unconsumed.
+`RTA-5` A real box STATES WHICH BYTES IT RUNS, and a freshly booted one is current (`requires: daytona`; a local-target project's `repo_url` is unreachable from a cloud box, so the local profile excludes this). A session boots. Its `GET /kortix/health` carries a `runtime` block whose `running` states `cli_sha256`, `managed_skills_hash`, `agent_sha256`, `staged_agent_sha256` and `opencode_version`, read from the box's own `/opt/kortix/runtime-assets-state.json` — so the answer survives a daemon restart that empties the in-memory pass, and `build`/`at` may be null while `running` is not. Every digest the box states equals the one `GET /v1/runtime-assets/manifest` advertises for the same component, sha-to-sha for the CLI, the agent and the overlay and version-to-version for OpenCode — the one component the manifest carries no digest for. `pinned` is `false` and `agentSwapPending` is `false`: nothing is staged and no rollback has latched. Reading the box twice does not change it.
+`RTA-6` …and DETECTING that costs the send nothing (`requires: funded, daytona` — it runs real model turns, so it is operator-run). On the same shape of box, two prompts through the proxy both answer `200` with a real message and the second is not slower than the first by more than the first's own duration: the lane answers from two in-process maps and never awaits anything. A third prompt addressed straight at the OpenCode port (`/p/<ext>/4096/...`) also answers `200` with a real message — one predicate now prepares that turn exactly as it prepares an `:8000` one, where the two proxy call sites used to read different port variables for the same request. The box's digests are unchanged after all three: the lane detected and scheduled, and applied nothing. The BEHIND half cannot be staged from a test, because it needs the deploy's binaries to differ from the box's image; `apps/kortix-sandbox-agent-server/src/__tests__/runtime-convergence.test.ts` proves the swap decision table, the exec probe and the OpenCode rollback, and `apps/api/src/runtime-assets/__tests__/running-assets.test.ts` proves the comparison and the memo.
 
 ### Config releases (`/v1/projects/:projectId/sessions/:sessionId/config-release`, `/v1/projects/:projectId/config-archives/:configTreeId`)
 
@@ -243,6 +246,8 @@ The human-in-the-loop surface an agent's write/destructive tool calls gate on, p
 `IAM-40` **Account session oversight** — `GET/PATCH …/iam/session-oversight`. One account policy (`accounts.admins_see_all_sessions`, default off) that lets account owners and admins open EVERY session in the account, members' private and restricted sessions included. `GET` (`ACCOUNT_READ`, any member) → `{enabled, can_change}`; `can_change` is true only for an account owner. `PATCH {enabled}` needs `ACCOUNT_WRITE` AND the owner role: an admin → 403 `code:account_owner_required`, a member → 403, a body without a boolean → 400, and none of them change the read-back. While off, an admin opening a member's private session → 404 and `scope=project` omits it. While on, the admin → 200 on `GET /projects/:id/sessions/:sid`, the `scope=project` inventory lists it, the default `visible` list still omits it (the sidebar is not flooded), and a plain member still → 404. The audit log records `iam.session_oversight.enable` and one `project.admin_oversight_session_read` for the opened session (deduped to one per admin+session per hour). Turning it off restores the 404 within the 15 s IAM cache window. Session-bound agent/sandbox credentials never inherit oversight (unit-pinned in `unit-connector-share.test.ts`).
 
 `IAM-41` **Project-scoped assignments stay in the project's account** — `POST /accounts/:id/iam/assignments` with a `scope_id` whose project belongs to another account → 404 `project not found in this account`, for a project role and for an object grant alike, even when the caller owns (and is super-admin of) the account in the URL. No row is stored in either account, and the caller gains no access to the project. The project's own account still grants roles on it → 201. The same rule holds at the storage layer (`role_assignments_project_account_guard` trigger), and the engine's object-grant and project-role readers only count rows written in the project's own account.
+
+`IAM-43` **Everyone in the project** — `POST /accounts/:id/iam/assignments {principal_type:'project', principal_id:<project>, role_key:'agent-user', scope_type:'project', scope_id:<project>, object_type:'agent', object_id:<agent>}` → 201 grants ONE agent to everyone with access to the project. Before the grant a project member's `GET /projects/:id` lists no agents (agents are closed at the member tier); after it, the same read lists that agent. An account member with no project role still reaches nothing. `GET /projects/:id/resource-grants` lists the grant with `principal_type:'project'` and the project's name as `principal_label`; `GET /projects/:id/access` gives every member a `resource_grants` entry with `source:'project'` and creates no group entry. A `project` principal is refused as a role (`role_key:'member'`), on another project (`principal_id ≠ scope_id`), or without an object → 400; a plain member writing it → 403. Deleting the grant (`DELETE /projects/:id/resource-grants/:grantId`) closes the agent to the member again.
 
 `IAM-42` **Demoting an owner ends the super-admin bypass** — an owner makes a co-founder owner and super-admin; demoting that owner to `member` (`PATCH /accounts/:id/members/:userId`) clears `is_super_admin` in the same call and records `iam.member.super_admin.revoke`. The demoted member cannot grant themselves `owner` again (`POST …/iam/assignments` → 403). A super-admin flag granted while the principal is not an owner survives a role change that removes no owner role.
 
@@ -878,6 +883,55 @@ connector's sole active project-owned account. Only `PUT
 connector's accounts (`user` = member-owned accounts only); the `PUT
 …/authorization-strategy` route is a deprecation no-op (CONN-13) and no client
 sends the key on create.
+
+`CONN-28` **A shared account narrowed to an audience.** A project-owned
+connection with no `connection` grant is usable by every project member, as
+before; `GET /projects/:id/connections` returns it with `shared_with:[]` and
+`usable:true`. A connections manager narrows it with `POST
+/accounts/:id/iam/assignments {principal_type:'group'|'user'|'project',
+role_key:'agent-user', scope_type:'project', object_type:'connection',
+object_id:<connection_id>}` → 201. A plain member writing that grant → 403
+(the writer needs `project.connector.connections.manage`); naming a private
+(member-owned) connection or an unknown id → 404. After a group grant, a member
+of the group still lists the account (`usable:true`, `shared_with` naming the
+group by label); a member outside the group no longer lists it; the account
+owner, outside the group but managing connections, lists it with
+`usable:false`. A grant to the project (`principal_type:'project'`) opens it to
+everyone again beside the group grant. `DELETE
+/projects/:id/resource-grants/:grantId` (the agent/skill route) cannot delete a
+connection grant → 404; `DELETE /accounts/:id/iam/assignments/:assignmentId`
+does. With every grant revoked the account is everyone's again. A narrowed
+account follows the personal-account rules — humans in the audience, private
+sessions only, never an unattended service account — which
+`integration-connection-audience.test.ts` pins against real PostgreSQL through
+the gateway's own resolution functions.
+
+`CONN-29` **A narrowed shared account at the gateway.** Three session tokens
+call `POST /connectors/projects/:id/call` naming one shared account: a group
+member in a private session, a member outside the group in a private session,
+and the group member in a shared (`visibility:'project'`) session. With no
+`connection` grant all three resolve it: the call passes account resolution and
+stops at `404 action_not_found`. After a group grant only the group member's
+private session resolves it; the outsider and the shared session get `403
+connector_not_connected` whose `available_accounts` omits the account. A grant
+to the project opens it to all three again.
+
+`CONN-30` **The real `kortix` CLI shares a connector account.** Three CLI
+processes log in with personal access tokens: the owner, a member in a Sales
+group, and a member outside it. `kortix access grant --group <id> --connection
+<id>` exits 0 and prints the assignment. `kortix connectors connections ls`
+shows the account's WHO CAN USE as the group label plus `(not you)` for the
+owner. `kortix connectors accounts <slug> --json` lists the account for the
+Sales member and omits it for the outsider. `kortix access assignments` names
+the grant. `kortix access grant --everyone --connection <id>` opens it: the
+outsider lists it, WHO CAN USE reads `everyone`, and the listing names the
+principal `everyone`. `kortix access grant --everyone --agent kortix` writes a
+`project` principal agent grant. `--everyone` with only a role exits 2 before
+any request. `kortix connectors connections share <id> --group <id>` shares the
+owner's OWN private account: it becomes a project account narrowed to Sales
+(`connections ls` shows `project` and `Sales (not you)`), the Sales member
+lists it and the outsider does not. A plain member sharing their own private
+account exits non-zero with the manage-connections reason (the API's `403`).
 
 ---
 

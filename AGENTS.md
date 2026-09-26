@@ -281,11 +281,13 @@ It is not a save point, and it is not how you show someone your work.
    surface, session/thread transport, the streaming protocol — merges only after
    the whole objective ran on its own preview origin through a real session.
    Green tests are not the bar. Someone used it.
-7. After the merge, follow the **Deploy Dev** run to completion. Confirm the
-   deployed artifact contains the merged SHA; a successful `/health` response
-   alone is not deployment proof. A newer push cancels an older run by design —
-   if yours was cancelled before it deployed, the next push re-picks-up your
-   still-stale surface, or force it with
+7. After the merge, wait for the **Live on dev** comment on your pull request.
+   Deploy Dev posts it when `/health` on every surface it changed serves the
+   deployed commit, with the time since merge; "Not live on dev yet" names the
+   surface that failed. A successful `/health` response alone is not
+   deployment proof — the comment checks the commit. Deploys queue, they never
+   cancel: a run in flight finishes, then the newest waiting push deploys, so
+   a merge is live within about two deploy lengths. Force a full redeploy with
    `gh workflow run deploy-dev.yml -f surface=all`. The surfaces and their
    checks are in `.github/workflows/deploy-dev.yml`. The same push runs the
    `Tests` suite on the merge commit in parallel. It does not gate the deploy.
@@ -498,8 +500,10 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   fallback. Daytona code remains only to delete previews created before
   2026-09-22. The preview has its own PostgreSQL, Supabase, API, gateway,
   frontend, Mailpit, and HTTPS origin.
-- Preview CI runs `pnpm test -- --target-full` against that origin. The sticky
-  pull request comment links the origin and its `/_tests/` HTML report.
+- The sticky pull request comment links the origin as soon as the stack serves
+  the commit ("live; tests running"). Preview CI then runs
+  `pnpm test -- --target-full` against that origin as a separate step and
+  updates the comment with the result and its `/_tests/` HTML report.
 - A push to a `preview`-labelled branch redeploys its environment in place; the
   label stays. Removing the label or deleting the branch tears it down. Closing
   the pull request does not. A daily reconciler deletes environments whose

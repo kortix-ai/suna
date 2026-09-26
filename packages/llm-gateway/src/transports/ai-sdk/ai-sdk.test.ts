@@ -1264,6 +1264,42 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
     });
   });
 
+  // Every Codex model reasons. @ai-sdk/openai 4.0.16 decides by id prefix
+  // (o1/o3/o4-mini/gpt-5), so `gpt-6-*` counted as a non-reasoning model: the
+  // SDK dropped reasoningEffort with a warning and sent system prompts in the
+  // wrong role. `forceReasoning` overrides that detection.
+  describe('buildAiSdkArgs — Codex models are reasoning models', () => {
+    it('sets forceReasoning for openai-codex', () => {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai', {
+        providerName: 'openai-codex',
+      });
+      expect(args.providerOptions?.openai).toMatchObject({ forceReasoning: true, reasoningEffort: 'high' });
+    });
+
+    it('leaves plain OpenAI to the SDK detection', () => {
+      const args = buildAiSdkArgs({ messages: [] }, 'openai', { providerName: 'openai' });
+      expect(args.providerOptions?.openai ?? {}).not.toHaveProperty('forceReasoning');
+    });
+  });
+
+  // The ChatGPT backend rejects a Responses body that carries `metadata`
+  // (bare 400). Claude Code always sends Anthropic `metadata.user_id`.
+  describe('buildAiSdkArgs — Codex never receives metadata', () => {
+    it('drops client metadata for openai-codex', () => {
+      const args = buildAiSdkArgs({ messages: [], metadata: { user_id: 'u' } }, 'openai', {
+        providerName: 'openai-codex',
+      });
+      expect(args.providerOptions?.openai ?? {}).not.toHaveProperty('metadata');
+    });
+
+    it('still forwards metadata to plain OpenAI', () => {
+      const args = buildAiSdkArgs({ messages: [], metadata: { user_id: 'u' } }, 'openai', {
+        providerName: 'openai',
+      });
+      expect(args.providerOptions?.openai).toMatchObject({ metadata: { user_id: 'u' } });
+    });
+  });
+
   // REGRESSION (prod, 2026-07-20): every REAL Codex turn 400'd with
   // `{"detail":"Unsupported parameter: max_output_tokens"}` (captured via the
   // error-detail path). @ai-sdk/openai serializes maxOutputTokens →

@@ -991,6 +991,15 @@ const openAiAdapter: ProviderAdapter = {
     // requests to this backend.
     if (providerName === 'openai-codex') options.store = false;
     Object.assign(options, extraOpenAiFields(req.raw));
+    if (providerName === 'openai-codex') {
+      // Every Codex model reasons, but @ai-sdk/openai detects reasoning models
+      // by id prefix (o1/o3/o4-mini/gpt-5). `gpt-6-*` missed it, so the SDK
+      // dropped reasoningEffort and sent system prompts as `system` instead of
+      // `developer`.
+      options.forceReasoning = true;
+      // The ChatGPT backend 400s a Responses body that carries `metadata`.
+      delete options.metadata;
+    }
     const strict = strictJsonSchemaField(req.raw);
     if (strict !== undefined) options.strictJsonSchema = strict;
     return options;

@@ -184,12 +184,6 @@ interface SessionPageProps {
    */
   onRenamePress?: () => void;
   /**
-   * Opens the same sheet, straight to its Share view (KRTX-248): the header's
-   * Share button. Omit to hide the button (row not resolved, or the viewer
-   * cannot manage sharing).
-   */
-  onSharePress?: () => void;
-  /**
    * The title to show in the header (COR-140): `sessionDisplayTitle` of the
    * project session, when the caller has resolved one. Falls back to the
    * OpenCode session's own `title` — the only signal available for a
@@ -266,7 +260,7 @@ function flatModelFromCatalog(model: PickerModel, entry: PickerCatalogModel): Fl
   };
 }
 
-function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, onSharePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -1921,7 +1915,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             whose project session has not loaded yet has no `···`, so the
             relation chip (or nothing) holds the edge there. */}
         {onOpenRightDrawer ? (
-          <ProjectHeaderActions onOpenMore={onOpenRightDrawer} onShare={onSharePress}>
+          <ProjectHeaderActions onOpenMore={onOpenRightDrawer}>
             <SubAgentHeaderChip relation={headerRelation} onPress={handleSubAgentRelationPress} />
           </ProjectHeaderActions>
         ) : (

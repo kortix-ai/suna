@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 680,
+  "count": 681,
   "routes": [
     {
       "method": "GET",
@@ -1785,6 +1785,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connections/:connectionId/revoke"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connections/:connectionId/share"
     },
     {
       "method": "GET",

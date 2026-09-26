@@ -58,6 +58,14 @@ export interface AssignRoleInput {
   scope: AssignmentScope;
   /** Narrow the assignment to ONE object inside the scope. */
   object?: { type: ObjectType; id: string };
+  /**
+   * Internal, never read from a request body: the share route
+   * (connection-actions.ts) grants on the caller's OWN private account just
+   * before it turns that account into a shared one, so the account is never
+   * open to the whole project in between. A private account ignores its grants
+   * until then (connectionIsReachable reads only the owner for a member row).
+   */
+  privateConnectionOwnerId?: string;
   expiresAt?: Date | null;
   source?: AssignmentSource;
   /**
@@ -215,10 +223,14 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
     });
   }
   if (scopeId) await assertProjectInAccount(accountId, scopeId);
+  assertProjectPrincipalShape(input, role, scopeId);
+  if (input.object && scopeId) {
+    await assertObjectAssignable(scopeId, input.object, input.privateConnectionOwnerId);
+  }
 
   await assertPrincipalExists(accountId, input.principal);
   assertAccountRoleHolder(writer, role, scopeType, input.principal);
-  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, input.object != null);
+  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, input.object?.type ?? null);
   await assertDelegable(role);
 
   // Raw SQL, not the query builder: the identity index is on EXPRESSIONS
@@ -398,9 +410,9 @@ export async function updateAssignment(
     },
     existing.scopeType as ScopeType,
     existing.scopeId,
-    existing.objectType != null,
+    existing.objectType,
   );
-  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, false);
+  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, null);
   await assertDelegable(role);
 
   const expiresAt = input.expiresAt ? input.expiresAt.toISOString() : null;
@@ -482,7 +494,7 @@ export async function revokeAssignment(
       role,
       existing.scopeType as ScopeType,
       existing.scopeId,
-      existing.objectType != null,
+      existing.objectType,
     );
   }
   await assertNotLastOwner(accountId, existing);
@@ -616,6 +628,9 @@ function canonicalRoleKey(scopeType: ScopeType, key: string): string {
  */
 async function assertPrincipalExists(accountId: string, principal: PrincipalRef): Promise<void> {
   if (principal.type === 'pending') return;
+  // `project` names the assignment's own scope, which `assertProjectInAccount`
+  // already proved; `assertProjectPrincipalShape` proved the ids are equal.
+  if (principal.type === 'project') return;
 
   if (principal.type === 'group') {
     const [row] = await db
@@ -667,11 +682,66 @@ async function assertPrincipalExists(accountId: string, principal: PrincipalRef)
 }
 
 /**
+ * A `project` principal ("everyone with access to this project") exists only as
+ * an OBJECT grant on its own project, carrying the permission-less
+ * `agent-user` role. Anything else would hand a role to every member at once.
+ * `role_assignments_project_principal_shape_check` is the same rule in storage.
+ */
+function assertProjectPrincipalShape(
+  input: AssignRoleInput,
+  role: ResolvedRole,
+  scopeId: string | null,
+): void {
+  if (input.principal.type !== 'project') return;
+  if (!input.object || !scopeId || input.principal.id !== scopeId || role.key !== 'agent-user') {
+    throw new HTTPException(400, {
+      message:
+        "a 'project' principal is valid only as an object grant on its own project: object required, principal_id = scope_id, role agent-user",
+    });
+  }
+}
+
+/**
+ * The object must exist before a grant can name it. A `connection` grant names
+ * one SHARED (`owner_type = 'project'`) account in this project: a private
+ * account belongs to its owner and is never shared, and an id that names no row
+ * would be a dead grant that comes alive if the id were ever reused.
+ */
+async function assertObjectAssignable(
+  projectId: string,
+  object: { type: ObjectType; id: string },
+  privateConnectionOwnerId?: string,
+): Promise<void> {
+  if (object.type !== 'connection') return;
+  // Raw SQL, not the `connectorConnections` table object: this module sits
+  // under suites that stub `@kortix/db` with an explicit export list, and a new
+  // named import there fails every one of them at link time.
+  const result = await db.execute<{ found: number }>(sql`
+    select 1 as found from kortix.connector_connections
+    where connection_id::text = ${object.id}
+      and project_id = ${projectId}::uuid
+      and (owner_type = 'project'
+           or (${privateConnectionOwnerId ?? null}::text is not null
+               and owner_type = 'member'
+               and owner_id = ${privateConnectionOwnerId ?? null}::text))
+    limit 1`);
+  const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
+  if ((rows as Array<{ found: number }>).length === 0) {
+    throw new HTTPException(404, {
+      message: 'object_id is not a shared connection in this project',
+    });
+  }
+}
+
+/**
  * May this writer hand out this role, here?
  *
  * The action is chosen by WHAT is being granted, so the ceiling cannot be
  * side-stepped by picking a different route:
- *   object assignment          -> project.members.manage on that project
+ *   connection assignment      -> project.connector.connections.manage on that
+ *                                 project (the same leaf that creates, revokes
+ *                                 and re-credentials a shared account)
+ *   other object assignment    -> project.members.manage on that project
  *   system role, project scope -> project.members.manage on that project
  *   system role, account scope -> member.update  (it re-parents who is admin)
  *   custom role, any scope     -> policy.create
@@ -682,11 +752,15 @@ async function assertWriterMayAssign(
   role: ResolvedRole,
   scopeType: ScopeType,
   scopeId: string | null,
-  isObjectAssignment: boolean,
+  objectType: string | null,
 ): Promise<void> {
   if (writer === SYSTEM_ACTOR) return;
   const projectObj: Obj = scopeId ? { type: 'project', id: scopeId } : { type: 'account' };
-  if (isObjectAssignment || (role.isSystem && scopeType === 'project')) {
+  if (objectType === 'connection') {
+    await assertAuthorized(writer, 'project.connector.connections.manage', projectObj);
+    return;
+  }
+  if (objectType !== null || (role.isSystem && scopeType === 'project')) {
     await assertAuthorized(writer, 'project.members.manage', projectObj);
     return;
   }
@@ -982,7 +1056,8 @@ export async function listAssignmentsByIds(assignmentIds: string[]): Promise<Ass
  */
 async function bustCachesFor(principal: PrincipalRef, scopeId: string | null): Promise<void> {
   if (principal.type === 'group') await invalidateIamCacheForGroup(principal.id);
-  else invalidateIamCacheForUser(principal.id);
+  // A `project` grant names no user; the project-resource bust below is its whole effect.
+  else if (principal.type !== 'project') invalidateIamCacheForUser(principal.id);
   if (scopeId) invalidateIamCacheForProjectResources(scopeId);
 }
 
