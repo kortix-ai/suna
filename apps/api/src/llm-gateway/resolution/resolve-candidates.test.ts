@@ -429,6 +429,131 @@ describe('resolveCandidates — BYOK billing', () => {
   });
 });
 
+// The model picker (`servableProjectCatalog` → `listGrantedGatewaySecretNames`)
+// lists a BYOK provider whose key is stored as a project-shared account
+// secret. Before this change a session with NO explicit pool read only the
+// legacy project secret (`resolveProjectSecretsForConsumer`), so the model
+// appeared in the picker and then failed on the first turn with
+// `provider_not_connected` — the same flakiness the codex shared-account
+// fallback fixed. The session now resolves the same shared account keys.
+describe('resolveCandidates — BYOK, unconfigured session, project-shared account keys', () => {
+  const anthropic = () => {
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+  };
+
+  test('an unconfigured session uses a project-shared account key, with a pool cooldown handle', async () => {
+    anthropic();
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: false, secrets: [{ secretId: 'team-key', label: 'Shared team key', value: 'sk-team' }] };
+    const p = principal({ sessionId: 'slack-session' });
+    const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((c) => [c.credentialRef, c.poolSecretId, c.apiKey])).toEqual([['team-key', 'team-key', 'sk-team']]);
+    expect(resolveProjectSharedProviderSecrets).toHaveBeenCalledWith({
+      accountId: p.accountId, projectId: 'p1', userId: 'u1', grantUserId: 'u1',
+      providerId: 'anthropic', name: 'ANTHROPIC_API_KEY',
+    });
+    expect(resolveProjectSecretsForConsumer).not.toHaveBeenCalled();
+  });
+
+  test('an agent-principal session reaches only the project-wide account key', async () => {
+    anthropic();
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: false, secrets: [{ secretId: 'team-key', label: 'Shared team key', value: 'sk-team' }] };
+    const p = principal({ sessionId: 'trigger-session', personalUserId: null });
+    const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((c) => c.apiKey)).toEqual(['sk-team']);
+    expect(resolveProjectSharedProviderSecrets).toHaveBeenCalledWith(expect.objectContaining({ grantUserId: null }));
+  });
+
+  test('an explicit session pool still wins over the shared account keys', async () => {
+    anthropic();
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [{ secretId: 'picked', label: 'Picked', value: 'sk-picked' }] };
+    sharedSecrets = { coolingDown: false, secrets: [{ secretId: 'team-key', label: 'Shared', value: 'sk-team' }] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((c) => c.apiKey)).toEqual(['sk-picked']);
+    expect(resolveProjectSharedProviderSecrets).not.toHaveBeenCalled();
+  });
+
+  test('the shared account keys are preferred over the legacy project secret', async () => {
+    anthropic();
+    pooledEnabled = true;
+    resolvedSecrets = [{ identifier: 'legacy', value: 'sk-legacy' }];
+    sharedSecrets = { coolingDown: false, secrets: [{ secretId: 'team-key', label: 'Shared', value: 'sk-team' }] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((c) => c.apiKey)).toEqual(['sk-team']);
+    expect(resolveProjectSecretsForConsumer).not.toHaveBeenCalled();
+  });
+
+  test('no project-shared account key falls back to the legacy project secret', async () => {
+    anthropic();
+    pooledEnabled = true;
+    resolvedSecrets = [{ identifier: 'legacy', value: 'sk-legacy' }];
+    sharedSecrets = { coolingDown: false, secrets: [] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((c) => [c.credentialRef, c.poolSecretId, c.apiKey])).toEqual([['legacy', undefined, 'sk-legacy']]);
+  });
+
+  test('a project gateway API key (keyId) uses the accounts shared with the whole project', async () => {
+    anthropic();
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: false, secrets: [{ secretId: 'team-key', label: 'Shared', value: 'sk-team' }] };
+    const candidates = await resolveCandidates(principal({ keyId: 'kgw' }), 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((c) => c.apiKey)).toEqual(['sk-team']);
+    expect(resolveProjectSharedProviderSecrets).toHaveBeenCalledWith(expect.objectContaining({ grantUserId: null }));
+  });
+
+  test('every shared account cooling down and no legacy key: provider_pool_rate_limited with retry-after', async () => {
+    anthropic();
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: true, retryAfterSeconds: 11, secrets: [] };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6'))
+      .rejects.toMatchObject({ code: 'provider_pool_rate_limited', retryAfterSeconds: 11 });
+  });
+
+  test('every shared account cooling down but a legacy project secret exists: the legacy key serves', async () => {
+    anthropic();
+    pooledEnabled = true;
+    resolvedSecrets = [{ identifier: 'legacy', value: 'sk-legacy' }];
+    sharedSecrets = { coolingDown: true, retryAfterSeconds: 11, secrets: [] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((c) => c.apiKey)).toEqual(['sk-legacy']);
+  });
+
+  test('an agent whose secret grant omits the key name never uses a shared account key', async () => {
+    anthropic();
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: false, secrets: [{ secretId: 'team-key', label: 'Shared', value: 'sk-team' }] };
+    const actor = principal({ sessionId: 'session-1', agentGrant: { env: ['OTHER_KEY'] } });
+    await expect(resolveCandidates(actor, 'anthropic/claude-sonnet-4.6')).rejects.toMatchObject({
+      code: 'provider_not_connected', message: 'The running agent cannot use anthropic keys.',
+    });
+    // The legacy project key it could use before this change still serves it.
+    resolvedSecrets = [{ identifier: 'legacy', value: 'sk-legacy' }];
+    expect((await resolveCandidates(actor, 'anthropic/claude-sonnet-4.6')).map((c) => c.apiKey)).toEqual(['sk-legacy']);
+  });
+
+  test('an agent without the grant gets the grant refusal, not a cooldown, when every shared key cools down', async () => {
+    anthropic();
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: true, retryAfterSeconds: 9, secrets: [] };
+    const actor = principal({ sessionId: 'session-1', agentGrant: { env: ['OTHER_KEY'] } });
+    await expect(resolveCandidates(actor, 'anthropic/claude-sonnet-4.6')).rejects.toMatchObject({
+      code: 'provider_not_connected', message: 'The running agent cannot use anthropic keys.',
+    });
+  });
+
+  test('flag off: shared account keys are never read', async () => {
+    anthropic();
+    pooledEnabled = false;
+    resolvedSecrets = [{ identifier: 'legacy', value: 'sk-legacy' }];
+    sharedSecrets = { coolingDown: false, secrets: [{ secretId: 'team-key', label: 'Shared', value: 'sk-team' }] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((c) => c.apiKey)).toEqual(['sk-legacy']);
+    expect(resolveProjectSharedProviderSecrets).not.toHaveBeenCalled();
+  });
+});
+
 describe('resolveCandidates — managed model tier gating', () => {
   test('freeModelsOnly principal throws plan_upgrade_required before any tier lookup', async () => {
     runtimeManagedModel = { id: 'glm-5.3-flash' };
