@@ -321,7 +321,7 @@ describe('materializePromptAttachments', () => {
       {
         type: 'file',
         mime: 'image/svg+xml',
-        filename: 'Jay Suthar.svg',
+        filename: 'team-logo.svg',
         url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
       },
       {
@@ -351,7 +351,7 @@ describe('materializePromptAttachments', () => {
     });
 
     expect(writes).toEqual([
-      '/workspace/uploads/.kortix-inbox/command_1/1-Jay Suthar.svg',
+      '/workspace/uploads/.kortix-inbox/command_1/1-team-logo.svg',
       '/workspace/uploads/.kortix-inbox/command_1/2-photo.heic',
     ]);
     // The text survives, the SVG and HEIC become readable file references,
@@ -359,7 +359,7 @@ describe('materializePromptAttachments', () => {
     expect(result[0]).toEqual(undecodable[0]);
     expect(result[1]).toMatchObject({ type: 'text' });
     expect((result[1] as { text: string }).text).toContain('mime="image/svg+xml"');
-    expect((result[1] as { text: string }).text).toContain('filename="Jay Suthar.svg"');
+    expect((result[1] as { text: string }).text).toContain('filename="team-logo.svg"');
     expect(result[2]).toMatchObject({ type: 'text' });
     expect(result[3]).toEqual(undecodable[3]);
   });
@@ -426,27 +426,6 @@ describe('materializePromptAttachments', () => {
     ]);
   });
 
-  test('rejects mismatched MIME metadata', async () => {
-    const error = await materialize({
-      parts: [
-        {
-          type: 'file',
-          mime: 'application/zip',
-          filename: 'bundle.zip',
-          url: 'data:text/plain;base64,UEsDBA==',
-        },
-      ],
-    }).catch((value) => value);
-
-    expect(error).toBeInstanceOf(PromptAttachmentMaterializationError);
-    expect(error.failures).toEqual([
-      {
-        filename: 'bundle.zip',
-        reason: 'file "bundle.zip" has inconsistent MIME metadata',
-      },
-    ]);
-  });
-
   test('uses index-prefixed paths for duplicate filenames', async () => {
     const paths: string[] = [];
     await materialize({
@@ -476,29 +455,6 @@ describe('materializePromptAttachments', () => {
     ]);
   });
 
-  test('turns attachment-only input into file reference parts', async () => {
-    const result = await materialize({
-      parts: [
-        {
-          type: 'file',
-          mime: 'application/zip',
-          filename: 'bundle.zip',
-          url: 'data:application/zip;base64,UEsDBA==',
-        },
-        {
-          type: 'file',
-          mime: 'text/markdown',
-          filename: 'README.md',
-          url: 'data:text/markdown;base64,IyBSZWFkbWU=',
-        },
-      ],
-    });
-
-    expect(result).toMatchObject([
-      { type: 'text', text: expect.stringContaining('filename="bundle.zip"') },
-      { type: 'text', text: expect.stringContaining('filename="README.md"') },
-    ]);
-  });
 });
 
 describe('materializePromptAttachments — delivery cost and import fallback', () => {

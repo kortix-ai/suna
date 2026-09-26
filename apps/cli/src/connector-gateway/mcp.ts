@@ -30,6 +30,7 @@ import {
   removeConnector,
   type BrokerMethod,
   type ConnectorClient,
+  type SecretLinkResult,
 } from './gateway.ts';
 import {
   attachmentRef,
@@ -788,17 +789,7 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
           descriptions: asRecord(args.descriptions) as Record<string, string>,
         });
         return {
-          content: content({
-            ok: true,
-            names: link.names,
-            scope: link.scope,
-            url: link.url,
-            expires_at: link.expires_at,
-            instructions:
-              link.scope === 'runtime'
-                ? 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. The runtime value appears in KORTIX_PROJECT_SECRET_NAMES after submission.'
-                : 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. The connector value remains server-side and never appears in KORTIX_PROJECT_SECRET_NAMES.',
-          }),
+          content: content(secretLinkToolPayload(link)),
           isError: false,
         };
       } catch (err) {
@@ -1010,6 +1001,34 @@ function writeResponse(
 }
 
 /** Run the stdio JSON-RPC loop until stdin closes. */
+/**
+ * The `request_secret` result. When the server reports names this session's
+ * agent will not receive, the instructions lead with that and the fix: the
+ * human fills the form in the same visit, so it is the moment to widen the
+ * grant — not after the agent finds no env var and reports a saved value unset.
+ */
+export function secretLinkToolPayload(link: SecretLinkResult): Record<string, unknown> {
+  const base =
+    link.scope === 'runtime'
+      ? 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. After submission the runtime value is live in new shells (check the variable itself, or kortix secrets ls — KORTIX_PROJECT_SECRET_NAMES is the session-start list and does not update).'
+      : 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. The connector value remains server-side and never appears in KORTIX_PROJECT_SECRET_NAMES.';
+  const withheld = link.withheld ?? [];
+  const instructions =
+    withheld.length === 0
+      ? base
+      : `${base} This session will NOT receive ${withheld.map((w) => w.name).join(', ')} even after ` +
+        `the value is saved. ${link.withheld_fix ?? ''} Tell the human this fix together with the url.`.replace(/\s+/g, ' ');
+  return {
+    ok: true,
+    names: link.names,
+    scope: link.scope,
+    url: link.url,
+    expires_at: link.expires_at,
+    ...(withheld.length > 0 ? { agent: link.agent, withheld } : {}),
+    instructions,
+  };
+}
+
 export async function runConnectorMcpServer(): Promise<number> {
   const client = connectorClient();
   const decoder = new TextDecoder();

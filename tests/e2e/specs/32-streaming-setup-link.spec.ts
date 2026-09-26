@@ -132,7 +132,14 @@ test.describe('32 — A setup link while its turn streams', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const pendingBox = await pending.boundingBox();
 
-    // The link closed: the same card, live, in the same footprint.
+    // Nothing above ever asked the API about a partial token.
+    expect(setupRequests).toEqual([]);
+
+    // The link closed: the same card, live, in the same footprint. The live
+    // card looks up the app it connects (name and logo), with the whole token.
+    const lookup = page.waitForRequest((request) =>
+      request.url().includes('/setup-links/connectors/'),
+    );
     replay = await openReplay(page, until(')'));
     const live = cardIn(replay);
     await expect(live).not.toHaveAttribute('aria-busy', 'true');
@@ -143,8 +150,14 @@ test.describe('32 — A setup link while its turn streams', () => {
     expect(Math.round(liveBox.width)).toBe(Math.round(pendingBox.width));
     expect(Math.round(liveBox.height)).toBe(Math.round(pendingBox.height));
 
-    // Nothing above ever asked the API about a partial token.
-    expect(setupRequests).toEqual([]);
+    const outcomeId = (await live.getAttribute('data-outcome-id')) ?? '';
+    expect(outcomeId).toMatch(/^setup:ksl_/);
+    const wholeTokenPath = `/setup-links/connectors/${encodeURIComponent(outcomeId.slice('setup:'.length))}`;
+    await lookup;
+    expect(setupRequests.length).toBeGreaterThan(0);
+    for (const url of setupRequests) {
+      expect(new URL(url).pathname.endsWith(wholeTokenPath), url).toBe(true);
+    }
   });
 
   test('an open connect modal survives the end of the turn and asks for the whole token', async ({

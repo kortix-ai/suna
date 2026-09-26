@@ -26,11 +26,25 @@ describe('readAdmittedBody', () => {
     expect(budget.inflightBytes).toBe(0);
   });
 
-  test('rejects a declared oversized request without reading it', async () => {
+  // Refusing must also stop the upload: an unread body keeps arriving into
+  // socket buffers (2026-08-24: ~1.3 GB of refused bodies OOM-killed the host).
+  test('rejects a declared oversized request without reading it, and cancels its body', async () => {
+    let pulls = 0;
+    let cancelled = false;
     const request = new Request('https://gateway.test', {
       method: 'POST',
       headers: { 'content-length': '20' },
-      body: new ReadableStream({ pull() {} }),
+      body: new ReadableStream(
+        {
+          pull() {
+            pulls += 1;
+          },
+          cancel() {
+            cancelled = true;
+          },
+        },
+        { highWaterMark: 0 },
+      ),
       duplex: 'half',
     } as RequestInit & { duplex: 'half' });
     const result = await readAdmittedBody(
@@ -39,6 +53,9 @@ describe('readAdmittedBody', () => {
       new InflightBudget({ maxBytes: 100, perRequestMaxBytes: 10 }),
     );
     expect(result).toMatchObject({ ok: false, reason: 'too_large' });
+    await Bun.sleep(0);
+    expect(pulls).toBe(0);
+    expect(cancelled).toBe(true);
   });
 
   test('rejects a concurrent request before allocating it', async () => {
@@ -125,7 +142,7 @@ describe('client aborts mid-upload', () => {
     expect(budget.inflightBytes).toBe(0);
   });
 
-  test('an already-aborted request never reserves anything', async () => {
+  test('an already-aborted request returns its reservation', async () => {
     const budget = new InflightBudget({
       maxBytes: 1_000_000,
       perRequestMaxBytes: 100_000,

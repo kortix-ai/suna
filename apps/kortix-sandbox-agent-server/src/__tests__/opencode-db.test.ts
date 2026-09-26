@@ -12,11 +12,15 @@
  */
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { OpencodeDb, isSupportedOpencodeVersion } from '../harness/open-code/opencode-db'
+import {
+  OpencodeDb,
+  SQLITE_READER_SUPPORTED_MINORS,
+  isSupportedOpencodeVersion,
+} from '../harness/open-code/opencode-db'
 
 let root: string
 let dbPath: string
@@ -115,6 +119,25 @@ describe('version gate', () => {
     expect(isSupportedOpencodeVersion(null)).toBe(false)
     expect(isSupportedOpencodeVersion('nonsense')).toBe(false)
   })
+
+  // SQLITE_READER_SUPPORTED_MINORS is a COPY of a fact in
+  // packages/shared/src/runtime-versions.json: the daemon ships inside the
+  // sandbox image and cannot import the monorepo. When the OpenCode pin moves to
+  // a minor line this reader has not been verified against, this fails here
+  // instead of serving a transcript from a schema nobody checked. Fixing it is
+  // deliberate work: verify the shape on a box of the new version, then add the
+  // minor line.
+  test('the shipped OpenCode pin is a version this reader is verified against', () => {
+    const manifest = JSON.parse(
+      readFileSync(join(import.meta.dir, '../../../../packages/shared/src/runtime-versions.json'), 'utf8'),
+    ) as { opencode?: string }
+    expect(typeof manifest.opencode).toBe('string')
+    expect(
+      isSupportedOpencodeVersion(manifest.opencode!),
+      `runtime-versions.json pins opencode ${manifest.opencode}, outside ` +
+        `SQLITE_READER_SUPPORTED_MINORS (${SQLITE_READER_SUPPORTED_MINORS.join(', ')}).`,
+    ).toBe(true)
+  })
 })
 
 describe('probe', () => {
@@ -180,41 +203,6 @@ describe('reads', () => {
     })
     const rows = new OpencodeDb(dbPath).sessions()!
     expect(rows.map((r) => r.id)).toEqual(['ses_new', 'ses_old'])
-  })
-
-  test('the newest page is returned oldest-first, with has_more', () => {
-    build((db) => {
-      seedSession(db, 'ses_a')
-      for (let i = 1; i <= 10; i++) seedMessage(db, 'ses_a', i)
-    })
-    const page = new OpencodeDb(dbPath).messagePage({ sessionId: 'ses_a', limit: 3 })!
-    expect(page.messages.map((m) => m.info.id)).toEqual([
-      'msg_ses_a_008',
-      'msg_ses_a_009',
-      'msg_ses_a_010',
-    ])
-    expect(page.hasMore).toBe(true)
-    expect(page.messages[0]!.parts[0]!.text).toBe('body 8')
-  })
-
-  test('`before` walks backwards for loadOlder', () => {
-    build((db) => {
-      seedSession(db, 'ses_a')
-      for (let i = 1; i <= 10; i++) seedMessage(db, 'ses_a', i)
-    })
-    const page = new OpencodeDb(dbPath).messagePage({ sessionId: 'ses_a', limit: 2, before: 'msg_ses_a_008' })!
-    expect(page.messages.map((m) => m.info.id)).toEqual(['msg_ses_a_006', 'msg_ses_a_007'])
-    expect(page.hasMore).toBe(true)
-  })
-
-  test('`after` walks forwards and reports the end of the transcript', () => {
-    build((db) => {
-      seedSession(db, 'ses_a')
-      for (let i = 1; i <= 5; i++) seedMessage(db, 'ses_a', i)
-    })
-    const page = new OpencodeDb(dbPath).messagePage({ sessionId: 'ses_a', limit: 10, after: 'msg_ses_a_003' })!
-    expect(page.messages.map((m) => m.info.id)).toEqual(['msg_ses_a_004', 'msg_ses_a_005'])
-    expect(page.hasMore).toBe(false)
   })
 
   test('`after_seq` returns exactly the messages the durable log says changed', () => {

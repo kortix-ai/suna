@@ -6,9 +6,7 @@
  * the barrel index.ts, so the public surface stays unchanged.
  */
 
-import { authenticatedFetch } from '../../http/auth';
 import { platformConfig } from '../../http/config';
-import { ApiError, parseBillingError } from '../../http/api/errors';
 import { safeEnv } from '../../http/env';
 import {
   listProjectSessions,
@@ -61,13 +59,6 @@ export function normalizeSandboxId(value: unknown): string | undefined {
     return normalizeSandboxId(record.sandboxId ?? record.id ?? record.slug ?? Object.values(record)[0]);
   }
   return undefined;
-}
-
-export interface PlatformResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  created?: boolean;
 }
 
 export interface LocalBridgeSandboxResponse {
@@ -175,60 +166,4 @@ export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
     row.session.session_id === sandboxId ||
     row.runtime?.external_id === sandboxId
   ) ?? null;
-}
-
-// ─── Fetch helper ────────────────────────────────────────────────────────────
-
-export async function platformFetch<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<PlatformResponse<T>> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...options.headers as Record<string, string>,
-  };
-
-  // Default 30s timeout for this (non-streaming, request/response JSON) call —
-  // callers that need a different budget (or none) pass their own `signal`.
-  const signal = options.signal ?? AbortSignal.timeout(30_000);
-
-  const res = await authenticatedFetch(`${getPlatformUrl()}${path}`, {
-    ...options,
-    headers,
-    signal,
-  });
-
-  // Defensively parse the body: a non-JSON error body (proxy/gateway HTML, an
-  // empty response, a truncated stream) used to throw an opaque SyntaxError
-  // out of `res.json()` here, masking the real HTTP failure. Read the body
-  // ONCE as text, then attempt to JSON-parse that string — reading text
-  // first (rather than trying `res.json()` and falling back to `res.text()`
-  // on failure) avoids a "body already used" error on the fallback read,
-  // since a `Response` body can only be consumed once.
-  const rawText = await res.text().catch(() => undefined);
-  let body: any;
-  if (rawText) {
-    try {
-      body = JSON.parse(rawText);
-    } catch {
-      /* not JSON — leave body undefined, rawText still available below */
-    }
-  }
-
-  if (!res.ok) {
-    const message = body?.error || body?.message || body?.detail || rawText || `Platform API error ${res.status}`;
-    let error: Error = new ApiError(message, {
-      status: res.status,
-      code: body?.code || body?.error_code || String(res.status),
-      details: body ?? (rawText ? { rawText } : undefined),
-      response: res,
-      endpoint: path,
-    });
-    if (res.status === 402) {
-      error = parseBillingError(Object.assign(error, { response: res, status: res.status, data: body }));
-    }
-    throw error;
-  }
-
-  return body as PlatformResponse<T>;
 }

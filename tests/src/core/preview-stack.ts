@@ -397,6 +397,10 @@ export function applyPreviewEnvironment(
     // be first (the default for an unpinned session) from 2026-08-10. On
     // 2026-09-21 the shared Daytona org hit its snapshot quota and every
     // preview session failed with "Snapshot quota exceeded".
+    // The preview runs the full suite, and the CFG flows enable the
+    // per-project flag themselves. The operator switch must be on for the
+    // surface to exist at all (it defaults off while the rollout runs).
+    CONFIG_RELEASES_ENABLED: 'true',
     ALLOWED_SANDBOX_PROVIDERS: 'platinum',
     PLATINUM_API_URL: input.platinumApiUrl?.trim() || 'https://api.platinum.dev',
     PLATINUM_API_KEY: platinumApiKey,

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -10,8 +11,9 @@ import type {
   HarnessAssetsResult,
   HarnessAssetsService,
 } from '../assets'
-import { requireOpenCodeConfig, resolveOpencodeConfigDir } from './config'
+import { requireOpenCodeConfig } from './config'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
+import { isInReleaseStore, readBootLinkTarget } from '../../boot-config'
 import {
   captureProcessOutput,
   OPENCODE_CURRENT_LINK,
@@ -192,7 +194,7 @@ async function readPluginPin(depsDir: string): Promise<string | null> {
   }
 }
 
-export async function refreshOpencodePluginPin(
+async function refreshOpencodePluginPin(
   depsDir: string,
   version: string,
 ): Promise<'updated' | 'current' | 'absent' | 'failed'> {
@@ -356,8 +358,18 @@ export function createOpenCodeAssetsService(
 ): HarnessAssetsService {
   return {
     componentNames: ['opencode'],
-    resolveConfigDir: (cfg) => resolveOpencodeConfigDir(requireOpenCodeConfig(cfg)),
-    injectSkills: (configDir, bakedDir) => ensureInjectedManagedSkills(configDir, { bakedDir }),
+    // The overlay goes where opencode READS, and that is the boot link's
+    // target — the one place the boot path wrote the answer. Re-deriving it
+    // from the running report and the working tree is how an overlay once
+    // rewrote tracked managed skills in `/workspace` (verification DEF-6).
+    resolveConfigDir: async (cfg) => {
+      const target = await readBootLinkTarget()
+      if (target && existsSync(target)) return target
+      return requireOpenCodeConfig(cfg).defaultOpencodeConfigDir
+    },
+    // A release is the platform's own sealed copy; a working tree is not.
+    injectSkills: (configDir, bakedDir) =>
+      ensureInjectedManagedSkills(configDir, { bakedDir, unsealManaged: isInReleaseStore(configDir) }),
     reconcile: (input) => reconcileOpenCodeAssets(input, runtime, options),
   }
 }
