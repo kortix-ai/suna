@@ -42,8 +42,10 @@ export interface DaemonRuntimeReport {
   /** A verified daemon binary is staged; the box is not running it yet. */
   agentSwapPending: boolean;
   /**
-   * Updates are latched off after a rollback. This box needs a human — see
-   * `runtimeRollbackAlarm`.
+   * Updates are latched off after a rollback. This box needs a human. The API
+   * shouts once per box per `PINNED_ALARM_INTERVAL_MS` — see
+   * `shouldReportPinned` (`runtime-assets/running-assets.ts`) and its caller
+   * `noteAssetsFromHealth` (`projects/lib/turn-start-convergence.ts`).
    */
   pinned: boolean;
   running: DaemonRunningAssets | null;
