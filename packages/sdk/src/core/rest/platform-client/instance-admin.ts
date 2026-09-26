@@ -1,7 +1,6 @@
 /** Generic instance administration and provisioning status surfaces. */
 
-import { backendApi } from '../../http/api-client';
-import { getPlatformUrl } from './shared';
+import { retiredEndpointError } from '../../http/api/errors';
 
 /** @deprecated The standalone VPS catalog was retired. */
 export interface ServerType {
@@ -52,27 +51,20 @@ export async function createInstance(_request: CreateInstanceRequest): Promise<n
   );
 }
 
-export async function deleteInstance(sandboxId: string): Promise<{ success: boolean }> {
-  const response = await backendApi.delete<{ success: boolean }>(
-    `/platform/sandbox?sandbox_id=${sandboxId}`,
-  );
-  if (response.error) throw response.error;
-  return response.data!;
+/** @deprecated The account-level sandbox was removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
+export async function deleteInstance(_sandboxId: string): Promise<{ success: boolean }> {
+  throw retiredEndpointError('deleteInstance');
 }
 
-export async function markInstanceError(sandboxId: string, errorMessage: string): Promise<void> {
-  await backendApi.post(
-    '/platform/sandbox/mark-error',
-    { sandbox_id: sandboxId, error_message: errorMessage },
-    { showErrors: false, timeout: 10000 },
-  );
-}
+/**
+ * @deprecated The account-level sandbox was removed from the API. A no-op: it
+ * was best-effort and never threw, so it still resolves without a request.
+ */
+export async function markInstanceError(_sandboxId: string, _errorMessage: string): Promise<void> {}
 
-/** Claim a free default computer for legacy paid users. */
+/** @deprecated The legacy free computer was removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
 export async function claimComputer(): Promise<any> {
-  const response = await backendApi.post<any>('/platform/sandbox/claim-computer', {}, { timeout: 60000 });
-  if (response.error) throw response.error;
-  return response.data!;
+  throw retiredEndpointError('claimComputer');
 }
 
 // ── Provisioning status/stream (polled by useSandboxPoller) ─────────────────
@@ -95,23 +87,20 @@ export interface SandboxProvisionStatus {
   startedAt: string | null;
 }
 
+/**
+ * @deprecated The account-level sandbox was removed from the API. Resolves
+ * `null` without a request: it returned `null` on any failure and never threw.
+ */
 export async function getSandboxProvisionStatus(
-  sandboxId: string,
+  _sandboxId: string,
 ): Promise<SandboxProvisionStatus | null> {
-  const res = await backendApi.get<SandboxProvisionStatus>(
-    `/platform/sandbox/${sandboxId}/status`,
-    { showErrors: false, timeout: 10_000 },
-  );
-  return res.success ? (res.data ?? null) : null;
+  return null;
 }
 
 /**
- * Build the SSE URL for the live provisioning stream. The EventSource
- * transport itself stays in the host app (the SDK has no EventSource-based
- * streaming primitive yet) — this only centralizes the URL + query-string
- * construction so callers don't hardcode `/platform/sandbox/*` paths.
+ * @deprecated The account-level sandbox was removed from the API. Throws
+ * `ENDPOINT_RETIRED`: the stream this URL named no longer exists.
  */
-export function getSandboxProvisionStreamUrl(sandboxId: string, token: string): string {
-  const base = getPlatformUrl();
-  return `${base}/platform/sandbox/${sandboxId}/provision-stream?token=${encodeURIComponent(token)}`;
+export function getSandboxProvisionStreamUrl(_sandboxId: string, _token: string): string {
+  throw retiredEndpointError('getSandboxProvisionStreamUrl');
 }

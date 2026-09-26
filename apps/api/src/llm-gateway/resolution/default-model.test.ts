@@ -97,21 +97,8 @@ describe('isModelServableForAccount — whose personal keys the probe may use', 
 });
 
 describe('isModelServableForAccount — never 500s a passive servability check', () => {
-  test('resolveCandidates throwing a typed GatewayResolutionError → false, not a throw', async () => {
-    resolveCandidatesImpl = async () => {
-      throw new GatewayResolutionError(
-        'provider_not_connected',
-        'No openrouter API key is connected for this project.',
-        'Add an openrouter API key in project settings, then retry.',
-      );
-    };
-    await expect(
-      isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'openrouter/some-model' }),
-    ).resolves.toBe(false);
-  });
-
   test('every GatewayResolutionError reason collapses to false (model_not_found, plan_upgrade_required, ...)', async () => {
-    for (const reason of ['model_not_found', 'plan_upgrade_required', 'model_disabled_on_deployment'] as const) {
+    for (const reason of ['provider_not_connected', 'model_not_found', 'plan_upgrade_required', 'model_disabled_on_deployment'] as const) {
       resolveCandidatesImpl = async () => {
         throw new GatewayResolutionError(reason, 'nope', 'do something');
       };
@@ -244,14 +231,6 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
 // `auto` on an account would poison the cache for every OTHER project on
 // that same account for up to 30s.
 describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account, project)', () => {
-  test('the principal\'s projectId is threaded through to getAccountModelDefaults', async () => {
-    await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
-    expect(modelPreferencesModule.getAccountModelDefaults).toHaveBeenCalledWith(
-      PRINCIPAL_BASE.accountId,
-      'proj-a',
-    );
-  });
-
   test('two projects on the SAME account never share a cached agent default', async () => {
     const byProject: Record<string, string> = { 'proj-a': 'anthropic/claude-opus-4.8', 'proj-b': 'openai/gpt-5.5' };
     spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async (_accountId, projectId) => {

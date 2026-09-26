@@ -264,6 +264,7 @@ flow(
       (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
         opencode_model: 'anthropic/claude-sonnet-4.6',
       }, { params })).status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
+      (await owner.get(poolPath, { params })).status(200).body().has('$.configured', false);
     });
     await ctx.step('a private session selects keys granted to its owner', async () => {
       const privateSession = await createDatabaseSession(ctx.env, {

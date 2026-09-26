@@ -12,8 +12,8 @@
  *     only looks at rows carrying a live wake fence.
  *
  * So a session that was parked and then left alone was never asked about again.
- * When Platinum lost one (incident 2026-08-12: the reconciler deleted
- * `sbx_01KZP370WDB8DGYNAQM1B875VR` while it held a completed 4.87 GB backup),
+ * When Platinum lost one (incident 2026-08-12: the reconciler deleted a
+ * parked sandbox while it held a completed 4.87 GB backup),
  * Kortix kept advertising it as resumable, and the truth only surfaced when a
  * human opened the session 30 hours later. Measured the same day: 16,243 parked
  * prod rows had never been re-verified and 16 were already dead.

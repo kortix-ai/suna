@@ -563,6 +563,56 @@ export const projectSnapshotArchives = kortixSchema.table(
   ],
 );
 
+/**
+ * Config releases the API assigned to a session, and whether any session
+ * proved one (docs/specs/config-releases.md, "Quarantine across the
+ * project"). One row per `(project, release, variant)`. Written when the
+ * descriptor route assigns a release; `proven_at` is set once, when a daemon
+ * first reports that release as proven. The project fallback for a
+ * quarantined release is the newest proven row of the same variant.
+ */
+export const configReleases = kortixSchema.table(
+  'config_releases',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** 64 hex. */
+    releaseId: varchar('release_id', { length: 64 }).notNull(),
+    /** `project` or `agent:<name>`. */
+    variant: varchar('variant', { length: 255 }).notNull(),
+    /** The base commit the release was built from. Rebuilds the fallback descriptor. */
+    sourceCommit: varchar('source_commit', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    provenAt: timestamp('proven_at', { withTimezone: true }),
+    provenSessionId: uuid('proven_session_id'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.releaseId, table.variant] }),
+    index('idx_config_releases_project_variant_created').on(table.projectId, table.variant, table.createdAt),
+  ],
+);
+
+/**
+ * A daemon reported this release as failed (`failed_release_id`). After
+ * failures from 2 distinct sessions the project stops assigning the release.
+ * One row per `(project, release, session)`: repeated reports of one failure
+ * are idempotent.
+ */
+export const configReleaseFailures = kortixSchema.table(
+  'config_release_failures',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    releaseId: varchar('release_id', { length: 64 }).notNull(),
+    sessionId: uuid('session_id').notNull(),
+    reason: text('reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.releaseId, table.sessionId] })],
+);
+
 export const projectGitCredentials = kortixSchema.table(
   'project_git_credentials',
   {

@@ -82,8 +82,7 @@ Config it reads (all set by apps/api for every session, harness-neutral values):
 `KORTIX_OPENCODE_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`
 (agent prompt, model, permission policy), `KORTIX_AGENT_NAME`, `KORTIX_LLM_BASE_URL`
 + `KORTIX_TOKEN`, the image-baked catalog at `/opt/kortix/llm-catalog.json`.
-pi-only: `KORTIX_PI_STATE_DIR`, `KORTIX_PI_MODEL_MODE=faux` +
-`KORTIX_PI_FAUX_SCRIPT` (tests and benches: a scripted provider, no network).
+pi-only: `KORTIX_PI_STATE_DIR`.
 
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`,
 `pi-ready`, `initial-prompt-delivered`, `initial-turn-accepted`, `runtime-ready`.

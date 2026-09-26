@@ -130,12 +130,6 @@ describe('admitSessionModelChange — checked as the gateway runs the session', 
     expect(stored).toEqual([{ sessionId: 'sess', providerId: 'codex', secretIds: [PROJECT_KEY] }]);
   });
 
-  test('a shared session with no key shared with the project is refused, not accepted and then failed', async () => {
-    projectKeys = [];
-    expect(await change()).toBe(false);
-    expect(stored).toEqual([]);
-  });
-
   test('the owner`s private session keeps using their own connection, and selects nothing', async () => {
     gatewayPersonal = OWNER;
     expect(await change()).toBe(true);

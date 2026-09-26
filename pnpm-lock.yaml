@@ -1599,9 +1599,6 @@ importers:
       '@ai-sdk/openai':
         specifier: 4.0.16
         version: 4.0.16(zod@3.25.76)
-      '@ai-sdk/openai-compatible':
-        specifier: 3.0.12
-        version: 3.0.12(zod@3.25.76)
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../llm-catalog
@@ -1813,17 +1810,6 @@ packages:
       '@ai-sdk/provider-utils': 5.0.41(zod@4.6.5)
       '@vercel/oidc': 3.2.0
       zod: 4.6.5
-    dev: false
-
-  /@ai-sdk/openai-compatible@3.0.12(zod@3.25.76):
-    resolution: {integrity: sha512-tN9BUb4jUGjqtbRPUsziLxASfogLNICcq/Qrwr55vpnzKvprV6Ukl8ynED2lZaNrAHU5U4zlGnyU/iuYrjQK6g==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-    dependencies:
-      '@ai-sdk/provider': 4.0.3
-      '@ai-sdk/provider-utils': 5.0.11(zod@3.25.76)
-      zod: 3.25.76
     dev: false
 
   /@ai-sdk/openai@4.0.16(zod@3.25.76):

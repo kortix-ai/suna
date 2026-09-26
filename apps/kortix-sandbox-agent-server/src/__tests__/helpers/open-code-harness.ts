@@ -1,39 +1,17 @@
-import { requireOpenCodeConfig } from '../../harness/open-code/config'
+import { createHmac } from 'node:crypto'
+
 import type { Config } from '../../config'
+import type { OpenCodeConfig } from '../../harness/open-code/config'
 import type { ProjectEnvStore } from '../../project-env'
-import type { HarnessService } from '../../harness/harness'
 import type { OpenCodeBootState } from '../../harness/open-code/boot-state'
+import { requireOpenCodeConfig } from '../../harness/open-code/config'
 import type { Opencode } from '../../harness/open-code/lifecycle'
-import { OPENCODE_HOME } from '../../harness/open-code/paths'
-import { createOpenCodeProxyService } from '../../harness/open-code/proxy'
-import { createOpenCodeControlService } from '../../harness/open-code/control'
-import { createOpenCodeDiagnosticsService } from '../../harness/open-code/diagnostics'
-import { createOpenCodeQueryService } from '../../harness/open-code/queries'
-import { createOpenCodeAssetsService } from '../../harness/open-code/assets'
-import { createOpenCodeQuickQueueInterrupt, startOpenCodeBackground } from '../../harness/open-code/background'
+import { composeOpenCodeHarnessService } from '../../harness/open-code/service'
 import { buildDaemonApp } from '../../proxy'
 import type { PtyRegistry } from '../../routes/pty'
 
-/** Exercise the real service boundary while substituting only native execution. */
-export function createOpenCodeHarnessFixture(cfg: Config, lifecycle: Opencode): HarnessService {
-  const quickQueue = createOpenCodeQuickQueueInterrupt(lifecycle, cfg)
-  return {
-    id: 'opencode',
-    environment: { home: OPENCODE_HOME },
-    lifecycle,
-    proxy: createOpenCodeProxyService(lifecycle),
-    control: createOpenCodeControlService(lifecycle, quickQueue),
-    diagnostics: createOpenCodeDiagnosticsService(lifecycle),
-    queries: createOpenCodeQueryService(lifecycle),
-    background: { start: (currentCfg) => startOpenCodeBackground(lifecycle, requireOpenCodeConfig(currentCfg), quickQueue) },
-    assets: createOpenCodeAssetsService({
-      getInternalUrl: () => lifecycle.getInternalUrl(),
-      restart: () => lifecycle.restart(),
-      workspace: () => cfg.workspace,
-    }),
-  }
-}
-
+/** The production daemon app over the production service composition; only
+ *  the native OpenCode lifecycle is substituted. */
 export function buildOpenCodeTestApp(
   cfg: Config,
   lifecycle: Opencode,
@@ -46,7 +24,7 @@ export function buildOpenCodeTestApp(
 ) {
   return buildDaemonApp(
     cfg,
-    createOpenCodeHarnessFixture(cfg, lifecycle),
+    composeOpenCodeHarnessService(requireOpenCodeConfig(cfg), lifecycle),
     bootTime,
     bootState,
     projectEnv,
@@ -54,4 +32,66 @@ export function buildOpenCodeTestApp(
     ptyRegistry,
     agentEnvFile,
   )
+}
+
+/** The sandbox token the daemon HTTP tests sign user contexts with. */
+export const TEST_SANDBOX_TOKEN = 'test-kortix-token-32-chars-1234567890'
+
+/** A complete OpenCode daemon config for tests: no clone, fixed ports. */
+export function testOpenCodeConfig(over: Partial<OpenCodeConfig> = {}): OpenCodeConfig {
+  return {
+    servicePort: 8000,
+    opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
+    staticPort: 3211,
+    workspace: '/workspace',
+    projectTarget: '/workspace',
+    defaultBranch: 'main',
+    branchFetchAttempts: 60,
+    branchFetchDelaySec: 0.25,
+    defaultOpencodeConfigDir: '/ephemeral/opencode',
+    autoClone: false,
+    projectId: undefined,
+    apiUrl: undefined,
+    repoUrl: undefined,
+    branchName: undefined,
+    sessionFresh: false,
+    baseSha: undefined,
+    gitDeltaBundleBase64: undefined,
+    gitDeltaParentSha: undefined,
+    gitDeltaParentCommitBase64: undefined,
+    sandboxToken: TEST_SANDBOX_TOKEN,
+    gitUserName: 'Kortix Agent',
+    gitUserEmail: 'agent@kortix.ai',
+    cloneFilter: '',
+    compiledBootMode: 'off',
+    cloneDepth: 1,
+    workload: '',
+    monitorsJson: '',
+    monitorBoxEpoch: '',
+    ...over,
+  }
+}
+
+function base64url(buf: Buffer): string {
+  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+/** An `X-Kortix-User-Context` value signed the way the API signs it. */
+export function signTestUserContext(
+  payload: { userId: string; sandboxId: string; sandboxRole: string; scopes?: string[]; ttl?: number },
+  secret: string,
+): string {
+  const now = Math.floor(Date.now() / 1000)
+  const body = {
+    userId: payload.userId,
+    sandboxId: payload.sandboxId,
+    sandboxRole: payload.sandboxRole,
+    scopes: payload.scopes ?? [],
+    iat: now,
+    exp: now + (payload.ttl ?? 60),
+  }
+  const payloadB64 = base64url(Buffer.from(JSON.stringify(body), 'utf8'))
+  const sig = base64url(createHmac('sha256', secret).update(payloadB64).digest())
+  return `${payloadB64}.${sig}`
 }

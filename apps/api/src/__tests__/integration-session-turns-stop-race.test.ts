@@ -55,8 +55,13 @@ const db = new Proxy(realDbModule.db, {
 
 mock.module('../shared/db', () => ({ ...realDbModule, db }));
 
-const { acceptSandboxTurn, beginSandboxTurn, settleOpenSandboxTurns, settleOrphanedSandboxTurns } =
-  await import('../projects/sandbox-turn-lifecycle');
+const {
+  acceptSandboxTurn,
+  beginSandboxTurn,
+  settleOpenSandboxTurns,
+  settleOrphanedSandboxTurns,
+  settleOrphanedSandboxTurnsQuery,
+} = await import('../projects/sandbox-turn-lifecycle');
 const { applyStoppedState } = await import('../projects/reaping/sandbox-state-sync');
 
 const rows = (result: unknown) =>
@@ -176,12 +181,22 @@ describe("a stop committed between a turn writer's two round trips", () => {
       ),
     ).toBe('granted');
     expect(await readTurn(t('race-settled'))).toMatchObject({ state: 'delivering' });
+    // A row that already ended keeps the reason it ended with.
+    await realDbModule.db.execute(sql`
+      INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id, state, end_reason, ended_at)
+      VALUES (${t('race-done')}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
+              ${ACCOUNT_ID}::uuid, 'ended', 'completed', now())`);
 
     await stopTheBox();
 
     expect(await readTurn(t('race-settled'))).toMatchObject({
       state: 'ended',
       end_reason: 'runtime_gone',
+    });
+    expect(await readTurn(t('race-done'))).toMatchObject({
+      state: 'ended',
+      end_reason: 'completed',
     });
     expect(await openRows()).toBe(0);
   });
@@ -231,14 +246,16 @@ describe('the reaper backstop', () => {
     await seedOpenRow(t('orphan-live'), 'delivering');
 
     // The box is still running: its turns are none of this pass's business.
-    expect(await settleOrphanedSandboxTurns()).toBeGreaterThanOrEqual(0);
+    // The database is this file's own, so no other row can be counted.
+    expect(await settleOrphanedSandboxTurns()).toBe(0);
+    expect(await readTurn(t('orphan-parked'))).toMatchObject({ state: 'active' });
     expect(await readTurn(t('orphan-live'))).toMatchObject({ state: 'delivering' });
 
     await realDbModule.db.execute(sql`
       UPDATE kortix.session_sandboxes SET status = 'stopped'
        WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
 
-    expect(await settleOrphanedSandboxTurns()).toBeGreaterThanOrEqual(2);
+    expect(await settleOrphanedSandboxTurns()).toBe(2);
     expect(await readTurn(t('orphan-parked'))).toMatchObject({
       state: 'ended',
       end_reason: 'runtime_gone',
@@ -284,21 +301,11 @@ describe('the reaper backstop', () => {
     // Terminal rows are retained for ever, so a pass that runs on every reaper
     // tick must scan what is still OPEN, not the whole history. On a near-empty
     // table a seq scan is the correct plan, so this asserts the partial index is
-    // USABLE for this predicate — a predicate it cannot serve stays a seq scan
-    // even here.
+    // USABLE for the SHIPPED statement — a predicate it cannot serve stays a
+    // seq scan even here.
     const plan = await realDbModule.db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL enable_seqscan = off`);
-      return rows(
-        await tx.execute(sql`
-          EXPLAIN UPDATE kortix.session_turns t
-                     SET state = 'ended'
-                   WHERE t.state <> 'ended'
-                     AND NOT EXISTS (
-                       SELECT 1
-                         FROM kortix.session_sandboxes s
-                        WHERE s.sandbox_id = t.sandbox_id
-                          AND s.status IN ('active', 'provisioning'))`),
-      )
+      return rows(await tx.execute(sql`EXPLAIN ${settleOrphanedSandboxTurnsQuery()}`))
         .map((row) => String(Object.values(row)[0]))
         .join('\n');
     });

@@ -1,3 +1,4 @@
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   missing,
@@ -5,6 +6,7 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
 } from '../command-helpers.ts';
 import {
   appendArrayBlock,
@@ -163,21 +165,11 @@ Pinning a provider needs the \`project.customize.write\` permission.
 `;
 
 export async function runSandboxes(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   let local = false;
@@ -196,8 +188,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
     f.memory = takeFlagValue(rest, ['--memory']);
     f.disk = takeFlagValue(rest, ['--disk']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
@@ -215,14 +206,11 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   // `positional` above was computed before --platform/--tag were stripped, so it
   // would mistake a flag VALUE for a slug.)
   if (sub === 'build' && local) return runSandboxBuildLocal(rest, { json });
-  if (local) {
-    // `--local` was consumed above, so an unhandled one would otherwise vanish
-    // and the command would quietly do the CLOUD thing instead — `sandboxes
-    // rebuild --local` silently rebuilding a live snapshot is not a mistake
-    // anyone should be able to make by typo.
-    process.stderr.write(`${status.err(`--local only applies to \`sandboxes build\`, not "${sub}".`)}\n`);
-    return 2;
-  }
+  // `--local` was consumed above, so an unhandled one would otherwise vanish
+  // and the command would quietly do the CLOUD thing instead — `sandboxes
+  // rebuild --local` silently rebuilding a live snapshot is not a mistake
+  // anyone should be able to make by typo.
+  if (local) return fail(`--local only applies to \`sandboxes build\`, not "${sub}".`);
 
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
@@ -366,10 +354,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
 function sandboxAddLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
   if (!slug) return missing('a template slug');
   if (!f.image && !f.dockerfile) return missing('--image or --dockerfile');
-  if (f.image && f.dockerfile) {
-    process.stderr.write(`${status.err('Pass only one of --image / --dockerfile.')}\n`);
-    return 2;
-  }
+  if (f.image && f.dockerfile) return fail('Pass only one of --image / --dockerfile.');
   try {
     if (arrayEntryExists('sandbox.templates', 'slug', slug)) {
       process.stderr.write(`${status.err(`A [[sandbox.templates]] "${slug}" already exists in kortix.yaml.`)}\n`);

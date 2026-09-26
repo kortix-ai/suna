@@ -108,6 +108,18 @@ describe('managed-skill overlay', () => {
     expect(managedSkillOverlayHash(renamed)).not.toBe(base);
   });
 
+  test('hash is the one the sandbox daemon computes for the same input (golden vector)', () => {
+    // The same hex is pinned in apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts
+    // for its overlayHash. The daemon compares the two, so either side drifting
+    // re-downloads the overlay on every boot.
+    expect(
+      managedSkillOverlayHash([
+        { path: 'kortix-system/SKILL.md', content: '---\ndescription: how kortix works\n---\nbody v2\n' },
+        { path: 'kortix-cli/SKILL.md', content: 'cli skill v2\n' },
+      ]),
+    ).toBe('453944bd7d750bb9b878fee50df662da07552c962238bc37a95f96853a75bcf9');
+  });
+
   test('hash is not confusable across a path/content boundary shift', () => {
     // Length-prefixed framing: `ab` + `c` must not hash like `a` + `bc`.
     const left = managedSkillOverlayHash([{ path: 'ab', content: 'c' }]);

@@ -14,6 +14,12 @@ export type HarnessState = 'starting' | 'ok' | 'down'
 export interface HarnessLifecycleService {
   start(): Promise<void>
   stop(signal?: NodeJS.Signals): Promise<void>
-  restart(): Promise<void>
+  /**
+   * Stop and start the runtime. By default it then waits for readiness to
+   * finalize the turn the old process took with it. `finalizeTurn: false`
+   * skips that wait: for a restart before any turn exists (the boot fallback
+   * chain), where a config that never becomes ready would hold it 60 s.
+   */
+  restart(opts?: { finalizeTurn?: boolean }): Promise<void>
   getState(): HarnessState
 }
