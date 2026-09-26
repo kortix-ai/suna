@@ -16,9 +16,15 @@ import { ensureInjectedManagedSkills } from '../../managed-skills'
 import { isInReleaseStore, readBootLinkTarget } from '../../boot-config'
 import {
   captureProcessOutput,
+  latchOpencodePinned,
   OPENCODE_CURRENT_LINK,
+  OPENCODE_PINNED_LATCH,
+  OPENCODE_PREV_BINARY,
+  opencodeUpdatesPinned,
   publishOpencodeNativeLink,
+  recordOpencodePrevious,
   resolveInstalledOpencodeNative,
+  restoreOpencodePrevious,
   type CaptureCommand,
 } from './opencode-binary'
 import { OPENCODE_CONFIG_DEPS_DIR } from './opencode-config-deps'
@@ -34,6 +40,12 @@ export interface OpenCodeAssetsRuntime {
   getInternalUrl(): string
   workspace(): string
   restart(): Promise<void>
+  /**
+   * Did the runtime come back? Optional so a seam that predates the rollback
+   * path still type-checks; absent is read as 'ok', i.e. the behaviour before
+   * this existed — a restart that is assumed to have worked.
+   */
+  getState?(): 'starting' | 'ok' | 'down'
 }
 
 /** Native installer seams stay with the implementation that understands them. */
@@ -44,6 +56,10 @@ export interface OpenCodeAssetsOptions {
   turnProbe?: (baseUrl: string, workspace: string) => Promise<boolean | null>
   opencodeDepsDir?: string
   installPluginDeps?: (dir: string) => Promise<void>
+  /** Rollback bookkeeping. Injected by tests; the defaults are the real paths. */
+  opencodeCurrentLinkPath?: string
+  opencodePrevPath?: string
+  opencodePinnedPath?: string
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -254,6 +270,9 @@ async function reconcileOpenCodeAssets(
       const expected = optionalString(component?.version)
       const seam = runtime
       const depsDir = options.opencodeDepsDir ?? OPENCODE_CONFIG_DEPS_DIR
+      const currentLink = options.opencodeCurrentLinkPath ?? OPENCODE_CURRENT_LINK
+      const prevPath = options.opencodePrevPath ?? OPENCODE_PREV_BINARY
+      const pinnedPath = options.opencodePinnedPath ?? OPENCODE_PINNED_LATCH
       if (!expected) {
         reasons.opencode = 'manifest states no opencode version'
       } else if (!OPENCODE_VERSION.test(expected)) {
@@ -272,7 +291,12 @@ async function reconcileOpenCodeAssets(
           installed !== null ||
           (await (options.opencodeBinaryExists ?? (async () => {
             try {
-              await stat(OPENCODE_CURRENT_LINK)
+              // The INJECTED link, not the constant: `opencode.current` is the
+              // path lifecycle.ts actually launches through, and the rollback
+              // path below reads and rewrites the same one. Two spellings of
+              // "where is opencode" is how a box ends up protecting a file it is
+              // not running.
+              await stat(currentLink)
               return true
             } catch {
               return false
@@ -306,34 +330,115 @@ async function reconcileOpenCodeAssets(
               expected,
               turnInFlight,
             })
+          } else if (await opencodeUpdatesPinned(pinnedPath)) {
+            // A previous update failed to serve and was rolled back. Installing
+            // the same version again would take the box down a second time, and
+            // the box cannot fix itself: it needs a human, exactly like the
+            // agent half's `agent.pinned` latch.
+            reasons.opencode = 'updates pinned after a rollback'
+            logger.warn('[runtime-assets] opencode updates are pinned after a rollback', {
+              installed,
+              expected,
+            })
           } else {
-            const install = options.installOpencode ?? installOpencodeVersion
-            if (binaryStale || binaryMissing) {
-              setActivity(`installing-opencode@${expected}`)
-              try {
-                await install(expected)
-              } finally {
-                setActivity(null)
+            // RECORD THE PREDECESSOR FIRST. `publishOpencodeNativeLink` renames
+            // over `opencode.current` and keeps nothing, and `pnpm add -g`
+            // replaces the global install, so after the install there is no way
+            // back unless the target was captured before it.
+            const needsBinary = binaryStale || binaryMissing
+            const previous = needsBinary ? await recordOpencodePrevious(currentLink, prevPath) : null
+            if (needsBinary && !binaryMissing && !previous) {
+              // A box that IS serving a version we cannot name is a box we
+              // cannot put back. Leave it working and say why.
+              reasons.opencode = 'no rollback target for the running opencode'
+              logger.warn('[runtime-assets] refusing an opencode install with no rollback target', {
+                installed,
+                expected,
+                currentLink,
+              })
+            } else {
+              const install = options.installOpencode ?? installOpencodeVersion
+              if (needsBinary) {
+                setActivity(`installing-opencode@${expected}`)
+                try {
+                  await install(expected)
+                } finally {
+                  setActivity(null)
+                }
+              }
+              // SAME STEP as the binary, always. A binary and a plugin that
+              // disagree is the state this whole block exists to avoid.
+              const pinResult = await refreshOpencodePluginPin(depsDir, expected)
+              if (pinResult === 'updated') {
+                await (options.installPluginDeps ?? installPluginDeps)(depsDir)
+              }
+              // Only a NEW BINARY needs the process replaced: the plugin is read
+              // when opencode boots, so a refreshed pin takes effect on its own at
+              // the next start and buys nothing by cutting this one short.
+              let served = true
+              if (needsBinary) {
+                try {
+                  await seam.restart()
+                } catch (err) {
+                  served = false
+                  logger.warn('[runtime-assets] opencode restart threw after an install', {
+                    err: String(err),
+                  })
+                }
+                // `restart()` waits for readiness, so a runtime that is not `ok`
+                // here did not come back. A seam with no `getState` predates this
+                // and is read as before: the restart is assumed to have worked.
+                if (served && seam.getState && seam.getState() !== 'ok') served = false
+              }
+              if (!served && previous) {
+                // PUT THE BOX BACK, then latch — and LATCH EITHER WAY.
+                //
+                // The latch used to be written only after a successful restore,
+                // on the reasoning that it should describe a box that works on
+                // an older version rather than one that is simply down. That
+                // reasoning cost the latch entirely: `restoreOpencodePrevious`
+                // threw, the throw left this block, and the next pass
+                // reinstalled the same version that had just taken the box
+                // down. A box that is down and latched gets a human and a
+                // `pinned` health report; a box that is down and unlatched gets
+                // the same failure again every start.
+                const restored = await restoreOpencodePrevious(currentLink, prevPath)
+                await seam.restart().catch((err) =>
+                  logger.error('[runtime-assets] opencode rollback restart failed', {
+                    err: String(err),
+                  }),
+                )
+                await latchOpencodePinned(
+                  restored
+                    ? `opencode ${expected} did not serve after install; rolled back to ${installed ?? 'the retained binary'}`
+                    : `opencode ${expected} did not serve after install and the retained binary at ${previous} could not be restored`,
+                  pinnedPath,
+                )
+                opencode = 'failed'
+                reasons.opencode = restored
+                  ? `opencode ${expected} did not serve; rolled back to the previous version`
+                  : `opencode ${expected} did not serve and the rollback could not be applied`
+                logger.error('[runtime-assets] opencode update rolled back', {
+                  from: installed,
+                  to: expected,
+                  restored,
+                })
+              } else if (!served) {
+                // Nothing to restore — the box had no managed binary to begin
+                // with. Say so; the next pass may still repair it.
+                opencode = 'failed'
+                reasons.opencode = `opencode ${expected} did not serve and there was no rollback target`
+              } else {
+                opencode = 'updated'
+                nextState.opencode_version = expected
+                logger.info('[runtime-assets] opencode converged', {
+                  from: installed,
+                  to: expected,
+                  pin: pinResult,
+                  restarted: needsBinary,
+                })
               }
             }
-            // SAME STEP as the binary, always. A binary and a plugin that
-            // disagree is the state this whole block exists to avoid.
-            const pinResult = await refreshOpencodePluginPin(depsDir, expected)
-            if (pinResult === 'updated') {
-              await (options.installPluginDeps ?? installPluginDeps)(depsDir)
-            }
-            // Only a NEW BINARY needs the process replaced: the plugin is read
-            // when opencode boots, so a refreshed pin takes effect on its own at
-            // the next start and buys nothing by cutting this one short.
-            if (binaryStale || binaryMissing) await seam.restart()
-            opencode = 'updated'
-            nextState.opencode_version = expected
-            logger.info('[runtime-assets] opencode converged', {
-              from: installed,
-              to: expected,
-              pin: pinResult,
-              restarted: binaryStale || binaryMissing,
-            })
           }
         }
       }
@@ -371,6 +476,9 @@ export function createOpenCodeAssetsService(
     injectSkills: (configDir, bakedDir) =>
       ensureInjectedManagedSkills(configDir, { bakedDir, unsealManaged: isInReleaseStore(configDir) }),
     reconcile: (input) => reconcileOpenCodeAssets(input, runtime, options),
+    // The SAME latch path the reconcile refuses on, so health and behaviour can
+    // never disagree about whether this box will update itself again.
+    updatesPinned: () => opencodeUpdatesPinned(options.opencodePinnedPath ?? OPENCODE_PINNED_LATCH),
   }
 }
 

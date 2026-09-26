@@ -68,6 +68,9 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // This suite is about delivery dedupe and wire-id placement, so the gate is
   // stubbed to its no-op answer.
   convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+  // The runtime-asset lane beside the config gate. Void, never awaited — a
+  // stub is enough here, and its absence is a module LINK error, not a skip.
+  scheduleAssetConvergence: () => {},
 }));
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
