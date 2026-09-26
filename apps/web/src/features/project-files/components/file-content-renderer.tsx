@@ -19,7 +19,12 @@ export function FileContentRenderer(props: FileContentRendererProps) {
   const source = useFileExplorerSource().useFileViewerSource();
   return (
     <FileSourceProvider value={source}>
-      <BaseFileContentRenderer {...props} />
+      {/* `key={source.id}`: the explorer source can swap implementations
+          between renders (the sandbox explorer swaps to the parked mirror
+          source and back). The two have different hook sequences, so the
+          viewer must remount rather than reuse the other source's hook state.
+          See `FileSource.id`. */}
+      <BaseFileContentRenderer key={source.id} {...props} />
     </FileSourceProvider>
   );
 }
