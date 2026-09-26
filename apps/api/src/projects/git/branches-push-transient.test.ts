@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -84,6 +84,22 @@ async function makeFixture(): Promise<{
   return { root, remote, project };
 }
 
+/**
+ * Install a `pre-push` hook for `repoPath`. Git resolves hooks from
+ * `core.hooksPath`, so point that at a dedicated `mkdtemp` directory rather than
+ * writing into the mirror's own `hooks/` dir. The dedicated mkdtemp root is the
+ * documented-safe location for a temp file (CodeQL js/insecure-temporary-file),
+ * and it keeps the mirror a pure clone.
+ */
+async function installPrePushHook(repoPath: string, script: string): Promise<void> {
+  const hooksDir = await mkdtemp(join(tmpdir(), 'kortix-push-hooks-'));
+  cleanupPaths.push(hooksDir);
+  const hookPath = join(hooksDir, 'pre-push');
+  await writeFile(hookPath, script);
+  await chmod(hookPath, 0o755);
+  await git(['--git-dir', repoPath, 'config', 'core.hooksPath', hooksDir]);
+}
+
 describe('commit push — transient retry', () => {
   test('retries a transient RPC 404 push failure once and lands the commit', async () => {
     const { root, remote, project } = await makeFixture();
@@ -94,13 +110,10 @@ describe('commit push — transient retry', () => {
       // actually pushes.
       const repoPath = await refreshMirror(project, true);
       const marker = join(root, 'first-push-attempted');
-      const hooksDir = join(repoPath, 'hooks');
-      await mkdir(hooksDir, { recursive: true });
-      await writeFile(
-        join(hooksDir, 'pre-push'),
+      await installPrePushHook(
+        repoPath,
         `#!/bin/sh\nif [ ! -f "${marker}" ]; then\n  touch "${marker}"\n  echo "error: RPC failed; HTTP 404 curl 22 The requested URL returned error: 404" >&2\n  echo "fatal: the remote end hung up unexpectedly" >&2\n  exit 1\nfi\nexit 0\n`,
       );
-      await chmod(join(hooksDir, 'pre-push'), 0o755);
 
       const revision = await git(['--git-dir', remote, 'rev-parse', 'refs/heads/main:kortix.yaml']);
 
@@ -136,13 +149,10 @@ describe('commit push — transient retry', () => {
     try {
       const repoPath = await refreshMirror(project, true);
       const counter = join(root, 'push-attempts');
-      const hooksDir = join(repoPath, 'hooks');
-      await mkdir(hooksDir, { recursive: true });
-      await writeFile(
-        join(hooksDir, 'pre-push'),
+      await installPrePushHook(
+        repoPath,
         `#!/bin/sh\necho x >> "${counter}"\necho "fatal: Authentication failed for 'https://github.com/x/y.git/'" >&2\nexit 1\n`,
       );
-      await chmod(join(hooksDir, 'pre-push'), 0o755);
 
       const revision = await git(['--git-dir', remote, 'rev-parse', 'refs/heads/main:kortix.yaml']);
 
