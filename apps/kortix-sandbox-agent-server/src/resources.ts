@@ -17,7 +17,7 @@
  * Everything that parses text is a pure function on a string so it is
  * testable on macOS, where /proc does not exist.
  */
-import { readFile, statfs } from 'node:fs/promises'
+import { readFile, readdir, statfs } from 'node:fs/promises'
 import { logger } from './logger'
 
 export interface MemorySnapshot {
@@ -66,6 +66,13 @@ export interface ProcessSnapshot {
   state: string | null
 }
 
+/** Bounded, command-free attribution. Names outside this list become `other`. */
+export interface MemoryConsumer {
+  pid: number
+  name: string
+  rssMb: number
+}
+
 export interface ResourceSnapshot {
   at: string
   uptimeS: number | null
@@ -78,6 +85,8 @@ export interface ResourceSnapshot {
   runtime: ProcessSnapshot | null
   /** Runtime-owned process ids discovered by the selected harness. */
   runtimePids: number[]
+  /** Largest processes when memory is elevated; RSS can count shared pages twice. */
+  topProcesses?: MemoryConsumer[]
 }
 
 const MB = 1024 * 1024
@@ -206,11 +215,40 @@ async function processSnapshot(pid: number | null): Promise<ProcessSnapshot | nu
   return parseProcStatus(pid, text)
 }
 
+const KNOWN_PROCESS_NAMES = new Set(['bun', 'node', 'python', 'python3', 'tsc', 'chrome', 'chromium', 'postgres', 'opencode', 'kortixd'])
+
+export function parseMemoryConsumer(pid: number, status: string): MemoryConsumer | null {
+  const rss = status.match(/^VmRSS:\s+(\d+)\s*kB/m)
+  if (!rss) return null
+  const rawName = status.match(/^Name:\s+(\S+)/m)?.[1] ?? ''
+  const rssMb = Math.round(Number(rss[1]) / 1024)
+  if (!Number.isFinite(rssMb) || rssMb <= 0) return null
+  return { pid, name: KNOWN_PROCESS_NAMES.has(rawName) ? rawName : 'other', rssMb }
+}
+
+export async function readTopMemoryProcesses(procRoot = '/proc'): Promise<MemoryConsumer[]> {
+  const entries = await readdir(procRoot).catch(() => [])
+  const pids = entries.filter((entry) => /^\d+$/.test(entry)).map(Number)
+  const top: MemoryConsumer[] = []
+  // Bound outstanding reads even on a box with thousands of processes.
+  for (let offset = 0; offset < pids.length; offset += 32) {
+    const batch = await Promise.all(pids.slice(offset, offset + 32).map(async (pid) => {
+      const status = await readText(`${procRoot}/${pid}/status`)
+      return status === null ? null : parseMemoryConsumer(pid, status)
+    }))
+    for (const process of batch) if (process) top.push(process)
+    top.sort((a, b) => b.rssMb - a.rssMb)
+    top.length = Math.min(top.length, 6)
+  }
+  return top
+}
+
 export interface SnapshotInputs {
   daemonPid: number
   runtimePid: number | null
   diskPaths: string[]
   discoverRuntimePids?: () => Promise<number[]>
+  readTopProcesses?: () => Promise<MemoryConsumer[]>
 }
 
 export async function readResourceSnapshot(inputs: SnapshotInputs): Promise<ResourceSnapshot> {
@@ -241,19 +279,25 @@ export async function readResourceSnapshot(inputs: SnapshotInputs): Promise<Reso
   } catch {
     cpus = null
   }
+  const memory = meminfo
+    ? parseMeminfo(meminfo)
+    : { totalMb: null, availableMb: null, usedPct: null, swapTotalMb: null, swapFreeMb: null }
+  const pressure = Math.max(memory.usedPct ?? 0, cgroup.usedPct ?? 0)
+  const topProcesses = pressure >= 80
+    ? await (inputs.readTopProcesses ?? readTopMemoryProcesses)().catch(() => [])
+    : []
   return {
     at: new Date().toISOString(),
     uptimeS: uptime ? Math.round(Number(uptime.split(/\s+/)[0])) || null : null,
     load: loadavg ? parseLoadavg(loadavg) : null,
     cpus,
-    memory: meminfo
-      ? parseMeminfo(meminfo)
-      : { totalMb: null, availableMb: null, usedPct: null, swapTotalMb: null, swapFreeMb: null },
+    memory,
     cgroup,
     disks,
     daemon,
     runtime,
     runtimePids,
+    topProcesses,
   }
 }
 

@@ -35,7 +35,8 @@ case "$mode" in
       cov="--coverage --coverage-reporter=lcov --coverage-reporter=text --coverage-dir=coverage"
     fi
     test_timeout="${KORTIX_TEST_TIMEOUT_MS:-15000}"
-    api_test_workers="${KORTIX_API_TEST_WORKERS:-4}"
+    source scripts/test-workers.sh
+    api_test_workers="${KORTIX_API_TEST_WORKERS:-$(detect_api_test_workers)}"
     case "$api_test_workers" in
       ''|*[!0-9]*|0)
         echo "error: KORTIX_API_TEST_WORKERS must be a positive integer" >&2
@@ -57,11 +58,10 @@ case "$mode" in
     # collisions are order-dependent and can silently pass or fail depending
     # on which files happen to run adjacently.
     #
-    # Four parallel worker processes cut the 570-file suite from 113.65s to
-    # 31.68s on the local reference machine. Eight workers reduced it to 27.92s
-    # but caused the archive contract to exceed its 15s timeout. Keep the safe
-    # worker count bounded. The 15s default preserves explicit 15s test budgets
-    # under load without increasing the duration of passing tests.
+    # Four workers are safe on a 32 GiB CI runner. A 12 GiB agent sandbox needs
+    # two: four workers exhausted it during a detached 924-file suite. Explicit
+    # KORTIX_API_TEST_WORKERS remains available for known dedicated runners.
+    echo "API unit suite: $count files, $api_test_workers Bun workers" >&2
     exec bun test --isolate --parallel="$api_test_workers" --env-file=scripts/test.env --timeout="$test_timeout" $cov $files
     ;;
   *)

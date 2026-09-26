@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -88,8 +89,12 @@ describe('local test runner contract', () => {
   it('runs isolated API test files through a bounded parallel worker pool', () => {
     const source = readFileSync(resolve(root, 'apps/api/scripts/test.sh'), 'utf8');
 
-    expect(source).toContain('api_test_workers="${KORTIX_API_TEST_WORKERS:-4}"');
+    expect(source).toContain('api_test_workers="${KORTIX_API_TEST_WORKERS:-$(detect_api_test_workers)}"');
     expect(source).toContain('--parallel="$api_test_workers"');
+    const choose = (availableMb: number) => Number(execFileSync('bash', [
+      '-c', `source apps/api/scripts/test-workers.sh; select_api_test_workers ${availableMb}`,
+    ], { cwd: root, encoding: 'utf8' }).trim());
+    expect([choose(2048), choose(8192), choose(10600), choose(32768)]).toEqual([1, 1, 2, 4]);
   });
 
   it('keeps process-heavy package tests on their proven concurrency settings', () => {

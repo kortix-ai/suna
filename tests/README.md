@@ -2,6 +2,12 @@
 
 `pnpm test` is the only repository-level test command.
 
+The API package's direct `scripts/test.sh` command selects one to four Bun
+workers from available memory. It reserves 2 GiB for the agent and OS and
+budgets 4 GiB per worker. Set `KORTIX_API_TEST_WORKERS` only on a dedicated
+runner with measured headroom. A detached suite continues after an agent turn
+ends; check and stop that process before retrying a memory-guarded turn.
+
 The default run executes six lanes concurrently:
 
 1. Black-box REST and CLI flows against local Supabase, API, and gateway.
