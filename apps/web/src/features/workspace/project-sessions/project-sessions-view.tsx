@@ -17,6 +17,7 @@ import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/s
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   projectSessionsRefetchInterval,
+  resolveSessionListViewState,
   sessionLastActivityAt,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
@@ -338,6 +339,17 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     [visibleSessions],
   );
 
+  // The sidebar's rule: rows win over a failed refetch, and a first load that
+  // has not run yet (waiting on the manager probe, or paused offline) is
+  // loading, never "No sessions yet". No-matches is decided below from
+  // `grouped`, which also sees hidden sections.
+  const listState = resolveSessionListViewState({
+    hasData: sessionsQuery.data !== undefined,
+    isError: sessionsQuery.isError,
+    totalCount: sessions.length,
+    visibleCount: visibleSessions.length,
+  });
+
   // Selection must never outlive its own visibility: narrowing the filter after
   // selecting would otherwise leave "N selected" counting off-screen rows, and
   // "Delete N" would destroy sessions the user cannot see.
@@ -518,9 +530,9 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         </header>
 
         <div className={cn('mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 pb-4')}>
-          {sessionsQuery.isLoading ? (
+          {listState === 'loading' ? (
             <SessionListSkeleton />
-          ) : sessionsQuery.isError ? (
+          ) : listState === 'error' ? (
             <ErrorState
               size="sm"
               title={tI18nComplete.raw('textb6d85433a7ee')}
@@ -533,7 +545,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                 </Button>
               }
             />
-          ) : sessions.length === 0 ? (
+          ) : listState === 'empty' ? (
             <EmptyState
               size="sm"
               icon={ChatIcon}
@@ -658,9 +670,12 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                           disabled={sessionsQuery.isFetchingNextPage}
                           onClick={() => sessionsQuery.fetchNextPage()}
                         >
+                          {/* A failed page keeps the rows above it; the button is the retry. */}
                           {sessionsQuery.isFetchingNextPage
                             ? tSidebar('loadingMore')
-                            : tSidebar('loadMoreSessions')}
+                            : sessionsQuery.isFetchNextPageError
+                              ? tSidebar('retry')
+                              : tSidebar('loadMoreSessions')}
                         </Button>
                       </div>
                     )}
