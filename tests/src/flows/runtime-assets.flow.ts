@@ -14,7 +14,7 @@
  */
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
-import type { FlowContext } from '../core/types';
+import type { CreatedProject, FlowContext } from '../core/types';
 
 async function createProjectPat(ctx: FlowContext, label: string) {
   const project = await ctx.fixtures.project();
@@ -370,14 +370,29 @@ flow(
   },
 );
 
-// ── RTA-5 — "latest at prompt send", on a real box ──────────────────────────
+// ── RTA-5 / RTA-6 — "latest at prompt send", on a real box ──────────────────
 //
-// THE ASYMMETRY THIS PROVES. Config BLOCKS the turn, because config changes what
+// THE ASYMMETRY THESE PROVE. Config BLOCKS the turn, because config changes what
 // the agent IS; a stale box pays a measured 10,287-10,907 ms. Binaries MUST NOT
 // block: the daemon, the CLI, the overlay and OpenCode are ~96 MB, ~104 MB,
 // ~373 KB and ~167 MB, and a box that makes the user wait for those is a
 // regression on a box that is merely one turn behind. So the lane DETECTS and
-// SCHEDULES, and this flow's job is to show that detection is free.
+// SCHEDULES, and these flows' job is to show that detection is free.
+//
+// WHY TWO FLOWS, and not one. The digest half needs a real box and NO model
+// spend; the latency half needs real turns, so it needs `funded`, which no
+// automated lane sets (`tests/src/core/env.ts` — `KE2E_CAP_FUNDED` is '1'
+// nowhere in CI, and the local profile pins it to '0'). One combined flow
+// therefore ran NOWHERE. Split, RTA-5 runs on every preview against a real
+// Platinum box and RTA-6 stays the operator-run half.
+//
+// NEITHER RUNS AGAINST A LOCAL STACK, and not because of the capability flag: a
+// local-target project is a database project whose `repo_url` is unreachable
+// from a cloud box, so the box boots to
+// `opencodeBootPhase=…|repo_materialization_failed` and is stopped with
+// `stopReason=runtime_boot_failed` (observed 2026-09-26). That is what
+// `EXTERNAL_CAPABILITIES` excludes from the local profile, and it is why these
+// are deployed-target flows.
 //
 // WHAT CANNOT BE STAGED HERE, said plainly rather than faked: the BEHIND half
 // needs the deploy's binaries to differ from the box's image, which no test can
@@ -385,84 +400,124 @@ flow(
 // are proved in apps/kortix-sandbox-agent-server/src/__tests__/runtime-convergence.test.ts,
 // and the comparison and the memo in
 // apps/api/src/runtime-assets/__tests__/running-assets.test.ts.
+
+/** What a box says it is RUNNING — the health `runtime.running` block. */
+interface RunningAssets {
+  cli_sha256: string | null;
+  managed_skills_hash: string | null;
+  agent_sha256: string | null;
+  staged_agent_sha256: string | null;
+  opencode_version: string | null;
+}
+
+interface BootedBox {
+  sandboxId: string;
+  box: (suffix: string) => string;
+  runtimeBlock: () => Promise<{
+    running?: RunningAssets;
+    pinned?: boolean;
+    agentSwapPending?: boolean;
+  }>;
+}
+
+/** Boot a session to `ready` and return its box's addresses. */
+async function bootBox(ctx: FlowContext, project: CreatedProject): Promise<BootedBox> {
+  const session = await ctx.fixtures.session(project);
+  const started = await waitFor(
+    async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/projects/:projectId/sessions/:sessionId/start', {}, {
+          params: { projectId: project.id, sessionId: session.id },
+          query: { wait_ms: '8000' },
+          timeoutMs: 25_000,
+        });
+      if (r.statusCode >= 500) return null;
+      r.status(200);
+      return r.json<any>();
+    },
+    {
+      until: (s) => s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
+      timeoutMs: 600_000,
+      intervalMs: 3_000,
+      description: `session runtime ready for ${session.id}`,
+    },
+  );
+  const sandboxId = String(started.sandbox.external_id ?? started.sandbox.externalId);
+  const box = (suffix: string) => `/v1/p/${sandboxId}/8000${suffix}`;
+  return {
+    sandboxId,
+    box,
+    runtimeBlock: async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get(box('/kortix/health'));
+      r.status(200);
+      const runtime = r.json<{
+        runtime?: { running?: RunningAssets; pinned?: boolean; agentSwapPending?: boolean };
+      }>().runtime;
+      if (!runtime) throw new Error('the health report carries no `runtime` block');
+      return runtime;
+    },
+  };
+}
+
+/** Every component both sides state must agree, sha-to-sha where a sha exists. */
+async function assertBoxIsCurrent(ctx: FlowContext, running: RunningAssets): Promise<void> {
+  const manifest = await ctx.client.as(ctx.P.OWNER).get('/v1/runtime-assets/manifest');
+  manifest.status(200);
+  const m = manifest.json<{
+    components: {
+      cli?: { sha256?: string };
+      agent?: { sha256?: string };
+      opencode: { version: string };
+      'managed-skills': { hash: string };
+    };
+  }>();
+  // sha-to-sha wherever a sha exists: a version string cannot prove which bytes
+  // are on disk. OpenCode is the one exception and it is forced — the manifest
+  // carries only a version for it, because the bytes come from npm.
+  const pairs: Array<[string, string | undefined, string | null]> = [
+    ['managed-skills', m.components['managed-skills'].hash, running.managed_skills_hash],
+    ['cli', m.components.cli?.sha256, running.cli_sha256],
+    ['agent', m.components.agent?.sha256, running.agent_sha256],
+    ['opencode', m.components.opencode.version, running.opencode_version],
+  ];
+  for (const [name, want, have] of pairs) {
+    if (!want || !have) continue; // this deploy or this box states nothing to compare
+    if (want !== have) {
+      throw new Error(`a freshly booted box is behind on ${name}: deploy ${want}, box ${have}`);
+    }
+  }
+}
+
 flow(
   'RTA-5',
   {
     domain: 'runtime-assets',
-    requires: ['database', 'funded', 'daytona'],
-    timeoutMs: 1_200_000,
+    // NOT `funded`. Nothing here runs a model turn, so this half is the one that
+    // can run in every preview — which is the only place a real box exists.
+    requires: ['database', 'daytona'],
+    timeoutMs: 900_000,
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
-    let sandboxId = '';
-    let conversationId = '';
-    const box = (suffix: string) => `/v1/p/${sandboxId}/8000${suffix}`;
+    let booted: BootedBox;
+    let running: RunningAssets;
 
-    await ctx.step('a session boots and opens an OpenCode conversation', async () => {
-      const session = await ctx.fixtures.session(project, { prompt: 'say hello' });
-      const started = await waitFor(
-        async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .post('/v1/projects/:projectId/sessions/:sessionId/start', {}, {
-              params: { projectId: project.id, sessionId: session.id },
-              query: { wait_ms: '8000' },
-              timeoutMs: 25_000,
-            });
-          if (r.statusCode >= 500) return null;
-          r.status(200);
-          return r.json<any>();
-        },
-        {
-          until: (s) => s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
-          timeoutMs: 600_000,
-          intervalMs: 3_000,
-          description: `session runtime ready for ${session.id}`,
-        },
-      );
-      sandboxId = String(started.sandbox.external_id ?? started.sandbox.externalId);
-      const created = await waitFor(
-        async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .post(box(`/session?directory=${encodeURIComponent('/workspace')}`), {});
-          return r.statusCode >= 500 ? null : r;
-        },
-        { until: (r) => Boolean(r), timeoutMs: 180_000, intervalMs: 3_000, description: 'opencode conversation' },
-      );
-      created!.status(200);
-      conversationId = String(created!.json<{ id: string }>().id);
+    await ctx.step('a session boots on a real box', async () => {
+      booted = await bootBox(ctx, project);
     });
 
-    type Running = {
-      cli_sha256: string | null;
-      managed_skills_hash: string | null;
-      agent_sha256: string | null;
-      staged_agent_sha256: string | null;
-      opencode_version: string | null;
-    };
-    const runtimeBlock = async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(box('/kortix/health'));
-      r.status(200);
-      const runtime = r.json<{
-        runtime?: { running?: Running; pinned?: boolean; agentSwapPending?: boolean };
-      }>().runtime;
-      if (!runtime) throw new Error('the health report carries no `runtime` block');
-      return runtime;
-    };
-
-    let before: Running;
     await ctx.step('the box states WHICH BYTES it is running, not just what its last pass did', async () => {
-      const runtime = await runtimeBlock();
+      const runtime = await booted.runtimeBlock();
       if (!runtime.running) {
         throw new Error('`runtime.running` is missing — the API cannot tell a current box from a behind one');
       }
-      before = runtime.running;
+      running = runtime.running;
       // Read from /opt/kortix/runtime-assets-state.json, so it survives a daemon
       // restart. `build`/`at` describe the last PASS and may legitimately be
       // null on a box whose daemon restarted; `running` may not.
-      if (!before.managed_skills_hash) {
+      if (!running.managed_skills_hash) {
         throw new Error('a booted box must state the managed-skill overlay it has on disk');
       }
       if (runtime.pinned !== false) {
@@ -474,31 +529,52 @@ flow(
     });
 
     await ctx.step('a freshly booted box IS current — every digest equals the deploy`s', async () => {
-      const manifest = await ctx.client.as(ctx.P.OWNER).get('/v1/runtime-assets/manifest');
-      manifest.status(200);
-      const m = manifest.json<{
-        components: {
-          cli?: { sha256?: string };
-          agent?: { sha256?: string };
-          opencode: { version: string };
-          'managed-skills': { hash: string };
-        };
-      }>();
-      // sha-to-sha wherever a sha exists: a version string cannot prove which
-      // bytes are on disk. OpenCode is the one exception and it is forced — the
-      // manifest carries only a version for it, because the bytes come from npm.
-      const pairs: Array<[string, string | undefined, string | null]> = [
-        ['managed-skills', m.components['managed-skills'].hash, before.managed_skills_hash],
-        ['cli', m.components.cli?.sha256, before.cli_sha256],
-        ['agent', m.components.agent?.sha256, before.agent_sha256],
-        ['opencode', m.components.opencode.version, before.opencode_version],
-      ];
-      for (const [name, want, have] of pairs) {
-        if (!want || !have) continue; // this deploy or this box states nothing to compare
-        if (want !== have) {
-          throw new Error(`a freshly booted box is behind on ${name}: deploy ${want}, box ${have}`);
-        }
+      await assertBoxIsCurrent(ctx, running);
+    });
+
+    await ctx.step('and the lane APPLIED nothing while it was being read', async () => {
+      const after = (await booted.runtimeBlock()).running;
+      if (JSON.stringify(after) !== JSON.stringify(running)) {
+        throw new Error(
+          `reading a current box must not change it: ${JSON.stringify(running)} → ${JSON.stringify(after)}`,
+        );
       }
+    });
+  },
+);
+
+flow(
+  'RTA-6',
+  {
+    domain: 'runtime-assets',
+    // `funded`: every step below runs a real model turn. Operator-run.
+    requires: ['database', 'funded', 'daytona'],
+    timeoutMs: 1_200_000,
+    routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    let booted: BootedBox;
+    let conversationId = '';
+    let before: RunningAssets;
+
+    await ctx.step('a session boots and opens an OpenCode conversation', async () => {
+      booted = await bootBox(ctx, project);
+      const created = await waitFor(
+        async () => {
+          const r = await ctx.client
+            .as(ctx.P.OWNER)
+            .post(booted.box(`/session?directory=${encodeURIComponent('/workspace')}`), {});
+          return r.statusCode >= 500 ? null : r;
+        },
+        { until: (r) => Boolean(r), timeoutMs: 180_000, intervalMs: 3_000, description: 'opencode conversation' },
+      );
+      created!.status(200);
+      conversationId = String(created!.json<{ id: string }>().id);
+      const runtime = await booted.runtimeBlock();
+      if (!runtime.running) throw new Error('the health report carries no `runtime.running` block');
+      before = runtime.running;
+      await assertBoxIsCurrent(ctx, before);
     });
 
     await ctx.step('the lane costs the send nothing: a second prompt is no slower', async () => {
@@ -506,7 +582,7 @@ flow(
         const at = Date.now();
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post(box(`/session/${conversationId}/message`), { parts: [{ type: 'text', text }] }, {
+          .post(booted.box(`/session/${conversationId}/message`), { parts: [{ type: 'text', text }] }, {
             timeoutMs: 180_000,
           });
         r.status(200);
@@ -530,8 +606,40 @@ flow(
       }
     });
 
+    // THE SECRETS-GATE PARITY HALF, on a real box.
+    //
+    // `/p/<ext>/4096/...` is the same turn as `/p/<ext>/8000/...`: Platinum
+    // rewrites 4096 → 8000 upstream and Daytona passes it through. Before this
+    // lane the two call sites in `sandbox-proxy/routes/preview.ts` read
+    // DIFFERENT port variables for that one request, so the prompt got the
+    // config convergence and the undeclared-agent drop but no secret refresh and
+    // no connector-grant re-mint. Both sites now read `upstreamPort` through one
+    // predicate.
+    //
+    // WHAT THIS STEP CAN AND CANNOT SEE. The env sync and the re-mint are
+    // server-side and leave no field on this response, so what is asserted here
+    // is that the widened predicate carries a real turn on the OpenCode port
+    // rather than refusing or wedging it. Which collaborators run for which
+    // (port, path) is proved exactly, with both providers' routing shapes, in
+    // apps/api/src/sandbox-proxy/routes/preview-env-sync-ports.test.ts.
+    await ctx.step('a prompt addressed straight at the OpenCode port runs a real turn', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          `/v1/p/${booted.sandboxId}/4096/session/${conversationId}/message`,
+          { parts: [{ type: 'text', text: 'reply with the single word three' }] },
+          { timeoutMs: 180_000 },
+        );
+      r.status(200);
+      const body = r.json<any>();
+      if (body?.deduplicated) throw new Error('the prompt was swallowed as a duplicate');
+      if (!body?.info || !Array.isArray(body?.parts)) {
+        throw new Error(`the :4096 send did not answer with a message: ${JSON.stringify(body).slice(0, 200)}`);
+      }
+    });
+
     await ctx.step('and it APPLIED nothing: the box runs the same bytes it started with', async () => {
-      const after = (await runtimeBlock()).running;
+      const after = (await booted.runtimeBlock()).running;
       if (JSON.stringify(after) !== JSON.stringify(before)) {
         throw new Error(
           `a current box must not be changed by sending prompts: ${JSON.stringify(before)} → ${JSON.stringify(after)}`,
