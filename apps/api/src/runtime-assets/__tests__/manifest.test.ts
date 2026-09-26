@@ -354,6 +354,16 @@ describe('manifest v2 components', () => {
     // No `path`: 167 MB per stale box must not cross our control plane.
     expect(Object.hasOwn(opencode, 'path')).toBe(false);
   });
+
+  test('managed-catalog states the current managed lineup, config-derived and stable per process', async () => {
+    _resetRuntimeAssetsCache();
+    const managedCatalog = (await runtimeAssetsManifest()).components['managed-catalog'];
+    expect(Array.isArray(managedCatalog.ids)).toBe(true);
+    // Not stat'd or hashed from a file — a second read within the same
+    // process is byte-identical without needing `_resetRuntimeAssetsCache()`.
+    const again = (await runtimeAssetsManifest()).components['managed-catalog'];
+    expect(again.ids).toEqual(managedCatalog.ids);
+  });
 });
 
 describe('manifest build number', () => {

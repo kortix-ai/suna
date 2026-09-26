@@ -8,7 +8,7 @@ import { noteOpencodeStopRequested } from './instance-guard'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { llmProxyBaseUrl, setLlmProxyToken } from '../../llm-proxy'
 import { logger } from '../../logger'
-import { requiresRespawn, type Opencode } from './lifecycle'
+import { convergeManagedModelCatalog, requiresRespawn, type Opencode } from './lifecycle'
 import { reconcileProjectEnv } from '../../project-env'
 import { readRepoInfo, refreshRepo, syncWorkspaceToBase } from '../../git'
 import { scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
@@ -344,7 +344,21 @@ export function createOpenCodeControlService(
           // API's start budget expired on both boxes). main.ts schedules the
           // post-boot pass itself once `opencode-ready` is marked; this call is
           // for a box that is already up.
-          if (opencode.getState() === 'ok') scheduleRuntimeAssetsReconcile(cfg)
+          if (opencode.getState() === 'ok') {
+            scheduleRuntimeAssetsReconcile(cfg)
+            // NON-BLOCKING catalog reconcile — same three moments as the line
+            // above (warm reuse, reload, and a resume/wake), and the reason
+            // this exists: a box woken after the managed lineup moved kept
+            // answering ModelNotFound for the platform's own current models
+            // because nothing on the wake path ever re-applied the overlay.
+            // Detached and file-only — never restarts OpenCode from here, see
+            // `convergeManagedModelCatalog`'s `allowRestart: false` doc.
+            void convergeManagedModelCatalog(opencode, cfg, { allowRestart: false }).catch((err) =>
+              logger.warn('[refresh] non-blocking catalog reconcile failed', {
+                err: err instanceof Error ? err.message : String(err),
+              }),
+            )
+          }
           return {
             // The repo work succeeded either way; `reload.outcome` carries whether
             // the new config actually took. Reporting ok:false here would hide a
@@ -389,6 +403,23 @@ export function createOpenCodeControlService(
             // supplies the same probe for the boot-scheduled convergence.
             turnInFlight: () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace),
           }),
+        // EAGER managed-catalog repair — `POST /kortix/catalog/converge`. The
+        // API's turn-start gate calls this AWAITED, and only when the model
+        // THIS turn asked for is missing from the box's last-reported map
+        // (`missing_managed_model_id` on the request has no bearing on the
+        // daemon's own fetch-and-diff; the API decides WHETHER to call this at
+        // all, this call decides HOW to repair). One attempt, idle-gated,
+        // never ends a running turn — see `convergeManagedModelCatalog`.
+        async convergeCatalog() {
+          const result = await convergeManagedModelCatalog(opencode, cfg, { allowRestart: true })
+          return {
+            ok: result.outcome !== 'no-gateway',
+            outcome: result.outcome,
+            missing: result.missing,
+            managed: result.managed,
+            reason: result.reason ?? null,
+          }
+        },
         async abort() {
           const sessionId = readOpenCodeSessionPin()
           if (!sessionId) {

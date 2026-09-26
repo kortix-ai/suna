@@ -46,7 +46,9 @@ export interface SandboxRuntimeRefreshDeps {
   sleep: (ms: number) => Promise<void>;
 }
 
-async function loadActiveSandbox(
+/** Exported for `model-catalog-turn-start.ts`'s single-attempt daemon call —
+ *  same active-sandbox lookup, no reason to duplicate the query. */
+export async function loadActiveSandbox(
   sessionId: string,
 ): Promise<{ externalId: string; serviceKey: string } | null> {
   const [row] = await db

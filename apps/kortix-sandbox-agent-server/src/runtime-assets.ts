@@ -1458,6 +1458,24 @@ export interface RunningRuntimeAssets {
   opencode_version: string | null
   /** Highest manifest epoch this box has converged to, from DISK. */
   build: number | null
+  /**
+   * Managed model ids this box currently believes are servable — the cheap
+   * freshness signal for the third convergeable "asset": the gateway model
+   * catalog. Unlike the fields above this is NOT read from the persisted
+   * state file (nothing here writes it there); it comes live from the
+   * opencode harness's in-process cache, via the optional `catalogSnapshot`
+   * hook on `runtimeConvergenceReport`. Null on a harness with no such
+   * concept (pi) or a box that has never confirmed a live fetch.
+   */
+  managed_model_ids: string[] | null
+  /**
+   * Why this box is not (or was not, last time it tried) confirmed against
+   * the control plane's live managed lineup. Null when the last attempt
+   * succeeded, or on a harness with no such concept. See
+   * `lifecycle.ts`'s `managedCatalogFallbackReason` for the NO-SILENT-
+   * STALENESS reasoning this exists for.
+   */
+  managed_catalog_fallback_reason: string | null
 }
 
 const NO_RUNNING_ASSETS: RunningRuntimeAssets = {
@@ -1468,6 +1486,8 @@ const NO_RUNNING_ASSETS: RunningRuntimeAssets = {
   staged_agent_sha256: null,
   opencode_version: null,
   build: null,
+  managed_model_ids: null,
+  managed_catalog_fallback_reason: null,
 }
 
 function str(value: unknown): string | null {
@@ -1492,6 +1512,12 @@ export async function runningRuntimeAssets(
     staged_agent_sha256: str(state.staged_agent_sha256),
     opencode_version: str(state.opencode_version),
     build: typeof state.build === 'number' && Number.isFinite(state.build) ? state.build : null,
+    // Never on disk — overlaid live by `runtimeConvergenceReport`'s
+    // `catalogSnapshot` hook. A direct caller of this function alone (there is
+    // none in production; `boot.ts`'s health reads always go through
+    // `runtimeConvergenceReport`) gets the safe "unconfirmed" default.
+    managed_model_ids: null,
+    managed_catalog_fallback_reason: null,
   }
 }
 
@@ -1540,6 +1566,18 @@ export function noteRuntimeConvergence(result: RuntimeAssetsResult): void {
 export async function runtimeConvergenceReport(
   stateDir: string = process.env.KORTIX_AGENT_STATE_DIR ?? DEFAULT_AGENT_STATE_DIR,
   statePath: string = DEFAULT_STATE_PATH,
+  /**
+   * The opencode harness's live catalog signal, injected rather than imported
+   * here directly: this module serves every harness (pi included), and
+   * `harness/open-code/lifecycle.ts` is opencode-specific — importing it here
+   * would put a gateway-model concept into a module that has none. The
+   * default answers "unconfirmed" for any caller that supplies nothing, which
+   * is exactly what a harness with no such concept should report.
+   */
+  catalogSnapshot: () => { ids: string[] | null; fallbackReason: string | null } = () => ({
+    ids: null,
+    fallbackReason: null,
+  }),
 ): Promise<RuntimeConvergenceReport> {
   // `running` is read from DISK on every call, for the same reason the rollback
   // latch is: it must survive this process. A daemon that restarted seconds ago
@@ -1567,7 +1605,16 @@ export async function runtimeConvergenceReport(
     harnessPinned,
     runningRuntimeAssets(statePath),
   ])
-  return { ...lastConvergence, pinned: agentPinned || harnessLatched, running }
+  const snap = catalogSnapshot()
+  return {
+    ...lastConvergence,
+    pinned: agentPinned || harnessLatched,
+    running: {
+      ...running,
+      managed_model_ids: snap.ids,
+      managed_catalog_fallback_reason: snap.fallbackReason,
+    },
+  }
 }
 
 export function resetRuntimeConvergenceReportForTests(): void {
