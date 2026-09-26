@@ -19175,7 +19175,10 @@
       "text467f597e95b0": "SSO-Domain verifiziert",
       "text8295f9d4861b": "SSO-Domain-Verifizierung des Kontos gesetzt",
       "text7beaff63a7d3": "Projekt-Konfigurationsarchiv heruntergeladen",
-      "text5176d59f25fd": "Config-Release der Sitzung aufgelöst"
+      "text5176d59f25fd": "Config-Release der Sitzung aufgelöst",
+      "text273c48dbf3b9": "Gerät für Push-Benachrichtigungen registriert",
+      "textbb666ddf7a57": "Gerät für Push-Benachrichtigungen entfernt",
+      "text397ab5aecbbf": "Berechtigungsanfrage für Sitzung weitergeleitet"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
