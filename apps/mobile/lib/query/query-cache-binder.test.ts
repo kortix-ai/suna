@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { QueryClient } from '@tanstack/react-query';
+import { InfiniteQueryObserver, QueryClient } from '@tanstack/react-query';
 import type { KeyValueStorage } from '@kortix/sdk';
+
+import { sessionsNextCursor, type SessionPage } from '@/lib/session/session-pages';
 
 import { applyPersistedQueryDefaults, isPersistedQueryKey } from './persisted-queries';
 import { createQueryCacheBinder } from './query-cache-binder';
@@ -89,6 +91,52 @@ describe('a cold start renders the last known lists', () => {
     expect(dataOf(client, SESSIONS)).toEqual(PAGES);
     expect(dataOf(client, PROJECT)).toEqual({ project_id: 'p-1' });
     expect(client.getQueryState(SESSIONS)?.dataUpdatedAt).toBe(T0 - 60_000);
+  });
+
+  test('the drawer’s paged list renders the restored pages, then refetches each with its cursor', async () => {
+    const { storage } = asyncStorage();
+    const twoPages = {
+      pages: [
+        { items: [{ session_id: 's-1' }], next_cursor: 'c1' },
+        { items: [{ session_id: 's-2' }], next_cursor: null },
+      ],
+      pageParams: [null, 'c1'],
+    };
+    await previousRun(storage, 'user-a', (client) =>
+      client.setQueryData(SESSIONS, twoPages, { updatedAt: T0 - 60_000 })
+    );
+
+    const client = newClient();
+    await binderOver(storage).bind(client, 'user-a');
+    const cursors: (string | null)[] = [];
+    // The options `useProjectSessionsPaged` passes (lib/projects/hooks.ts).
+    const observer = new InfiniteQueryObserver(client, {
+      queryKey: SESSIONS,
+      initialPageParam: null as string | null,
+      queryFn: async ({ pageParam }): Promise<SessionPage<{ session_id: string }>> => {
+        cursors.push(pageParam);
+        return {
+          items: [{ session_id: `fresh-${pageParam ?? 'first'}` }],
+          next_cursor: pageParam === null ? 'c1' : null,
+        };
+      },
+      getNextPageParam: sessionsNextCursor,
+      staleTime: 10_000,
+    });
+
+    // The first frame: the restored rows, already refetching.
+    const unsubscribe = observer.subscribe(() => {});
+    const onMount = observer.getCurrentResult();
+    expect(onMount.isPending).toBe(false);
+    expect(onMount.data).toEqual(twoPages);
+    expect(onMount.isFetching).toBe(true);
+
+    await client.getQueryCache().find({ queryKey: SESSIONS })?.promise;
+    expect(cursors).toEqual([null, 'c1']);
+    expect(observer.getCurrentResult().data?.pages.map((page) => page.items[0].session_id)).toEqual(
+      ['fresh-first', 'fresh-c1']
+    );
+    unsubscribe();
   });
 
   test('the start screen and the layout share one restore per user', async () => {
