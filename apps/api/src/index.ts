@@ -1207,12 +1207,12 @@ app.onError((err, c) => {
   // single backstop for every commit path that lets the error propagate here;
   // the agent-config route additionally maps it to a typed 409 at the call site.
   if (isRemotePushPolicyRejection(err)) {
-    appLogger.warn(`${method} ${path} -> 409 [GitOperationError:push-policy] ${err.message}`, {
+    // Git stderr can include the customer's repository URL and ref name.
+    // Keep both out of team-visible logs for this expected rejection.
+    appLogger.warn(`${method} -> 409 [GitOperationError:push-policy]`, {
       method,
-      path,
       errorType: 'GitOperationError',
       gitKind: err.kind,
-      gitArgs: err.gitArgs,
     });
     return c.json(
       {
