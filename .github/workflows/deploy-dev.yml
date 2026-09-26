@@ -1,11 +1,13 @@
 name: Deploy Dev
 
 # DEV pipeline. `main` is the dev branch: every push auto-deploys the surfaces
-# that changed vs what dev currently runs, on the LATEST commit, cancelling any
-# superseded in-flight deploy (see the `on:` and `concurrency:` blocks). A manual
+# that changed vs what dev currently runs. Deploys QUEUE: an in-flight deploy
+# always finishes, and only the newest waiting push runs after it (see the
+# `on:` and `concurrency:` blocks). Every merged pull request gets one "Live on
+# dev" comment once /health serves its commit (the `announce-live` job). A manual
 # `workflow_dispatch` can force all/frontend on demand. Builds are versioned
 # `<next>-dev.<sha8>`, where <next> is one patch above the latest published release
-# tag (see the dev-version job). So dev tracks prod's version line automatically
+# tag (see detect-changes). So dev tracks prod's version line automatically
 # and `main` carries no release-version bump.
 #
 #   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest, deployed to dev
@@ -30,9 +32,8 @@ name: Deploy Dev
 on:
   # DEV auto-deploys the LATEST main commit on every push, building only the
   # surfaces that actually changed vs what dev is currently running (detect-
-  # changes below diffs against dev-api's live SHA). A newer push CANCELS the
-  # in-progress deploy — dev should always converge to newest, never spend
-  # minutes finishing a superseded build.
+  # changes below diffs against dev-api's live SHA). A push that lands while a
+  # deploy runs waits for it; see `concurrency:` for why it no longer cancels.
   push:
     branches: [main]
   # Manual override: force a full or frontend-only redeploy, or re-deploy on
@@ -54,28 +55,24 @@ on:
         required: true
         default: false
 
-# Cancel a superseded deploy so dev always converges to the newest commit.
+# QUEUE, never cancel. GitHub keeps at most one running and one pending run in
+# this group, and a newer pending run replaces the older pending one. So the
+# in-flight deploy finishes, then the NEWEST waiting commit deploys. detect-
+# changes diffs against dev's LIVE SHA, so that run carries every surface the
+# replaced pending runs would have built. Worst case for a merge: the remainder
+# of one deploy plus its own deploy (~2 x ~8 min).
 #
-# HISTORY: this was flipped to `false` on 2026-08-10 after `true` caused a 3.5h
-# outage — the multi-arch API image took ~23 min, main landed every ~10-20 min,
-# so a frontend-only push kept cancelling the in-flight API build and 5 API
-# commits stranded (it never outran the trunk). TWO things fixed the root cause,
-# so `true` is safe again and is what we want:
-#   1. The API image is single-arch amd64 now (~4-7 min, not ~23) — it comfortably
-#      outruns the push cadence, so a cancel is a fresh fast rebuild, not a starve.
-#   2. detect-changes diffs against dev's LIVE SHA, so a surface whose deploy was
-#      cancelled is still stale-vs-dev and the next run rebuilds it. A cancel can
-#      no longer strand a surface — the property the 2026-08-10 stranding relied on
-#      is gone.
-# Residual risk, dev-only and recoverable: a cancel can kill `migrate-db` mid-run.
-# node-pg-migrate wraps each step in a transaction so a killed ordinary migration
-# rolls back cleanly and the next deploy re-applies it; a `.concurrent` migration
-# can leave an INVALID index that the next `IF NOT EXISTS` skips — drop+rebuild it
-# by hand (learnings: "CREATE INDEX CONCURRENTLY under lock_timeout"). staging/prod
-# are unaffected — they are promote-gated, never per-push.
+# HISTORY: `true` from 2026-08-20 (d8847d39ba) to 2026-09-26. Measured
+# 2026-09-19..26: 90 of 235 push runs cancelled (38%); merge -> live p50
+# 10.7 min, p90 28.8 min, max 49.8 min, because 40% of pushes land < 10 min after the previous one and each
+# cancel restarted the ~10 min pipeline (starvation on busy afternoons). A
+# cancel could also kill `migrate-db` mid-run and leave an INVALID concurrent
+# index. `false` caused the 2026-08-10 outage only because the API image then
+# took ~23 min and detect-changes diffed the push delta; the image is ~1.5 min
+# now and the diff is against the live SHA, so neither condition exists.
 concurrency:
   group: deploy-dev
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # ── Detect what changed (so unrelated surfaces are skipped) ─────────────────
@@ -89,13 +86,41 @@ jobs:
       cli: ${{ steps.outputs.outputs.cli }}
       apps_router: ${{ steps.outputs.outputs.apps_router }}
       terraform: ${{ steps.outputs.outputs.terraform }}
+      version: ${{ steps.version.outputs.version }}
+      sha8: ${{ steps.version.outputs.sha8 }}
+      # The SHA dev ran before this run; announce-live names every pull request
+      # merged since. Empty when unknown (fail-safe build of every surface).
+      base: ${{ steps.base.outputs.base }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           # Full history so the change-diff can be taken against the SHA that dev
-          # is ACTUALLY running (below), which may be many commits back.
+          # is ACTUALLY running (below), which may be many commits back. It also
+          # carries the release tags the dev version is derived from.
           fetch-depth: 0
+      # Dev builds are a pre-release of the UPCOMING version, derived from the
+      # latest published release tag (vX.Y.Z tags are created only when a
+      # release lands on `prod`). So dev always tracks prod: prod 0.9.6 → dev
+      # `0.9.7-dev.<sha8>`. No VERSION-file bump on `main` is needed. This was
+      # its own job; computing it here removes one runner hand-off (~30 s) from
+      # every surface's critical path.
+      - name: Derive dev version from the latest release tag
+        id: version
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin >/dev/null 2>&1 || true
+          # Strict vX.Y.Z only — excludes alias/stray tags like `v1` that would
+          # otherwise sort highest and jump the dev version.
+          LATEST="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 | sed 's/^v//')"
+          # Fallback to the VERSION file before the first tagged release.
+          [ -n "$LATEST" ] || LATEST="$(tr -d '[:space:]' < VERSION)"
+          IFS='.' read -r MA MI PA <<< "$LATEST"
+          : "${MA:=0}"; : "${MI:=0}"; : "${PA:=0}"
+          NEXT="${MA}.${MI}.$((PA + 1))"
+          echo "version=${NEXT}-dev.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          echo "sha8=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          echo "Latest release: ${LATEST:-none} → dev ${NEXT}-dev.${GITHUB_SHA::8}"
       - name: Resolve deploy base (what dev is actually running)
         id: base
         # Runs for the change-diffing paths: an ordinary push, and an explicit
@@ -260,27 +285,27 @@ jobs:
   # images, never infrastructure.
 
   # environments/dev is the API root. It plans `api_image`, so it waits for
-  # tag-api: the value must be an image that exists, and the freshly published
-  # :dev-<sha8> tag is the one this run is about to roll onto ECS. tag-api only
+  # build-api: the value must be an image that exists, and the freshly pushed
+  # :dev-<sha8> tag is the one this run is about to roll onto ECS. build-api only
   # pushes to Docker Hub, so infrastructure still converges before anything
-  # touches AWS. When no API changed, tag-api is skipped and the root keeps its
-  # committed default (:dev-latest) — never a tag nobody published.
+  # touches AWS. When no API changed, build-api is skipped and the root keeps
+  # its committed default (:dev-latest) — never a tag nobody published.
   terraform-dev-api:
     name: Apply dev API Terraform
-    needs: [detect-changes, tag-api]
+    needs: [detect-changes, build-api]
     if: >-
       ${{ always()
         && needs.detect-changes.outputs.terraform == 'true'
         && vars.TF_APPLY_ROLE_ARN_DEV != ''
         && github.ref == 'refs/heads/main'
-        && (needs.tag-api.result == 'success' || needs.tag-api.result == 'skipped') }}
+        && (needs.build-api.result == 'success' || needs.build-api.result == 'skipped') }}
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/terraform-apply.yml
     with:
       tf_root: infra/terraform/environments/dev
-      api_image: ${{ needs.tag-api.outputs.image || 'kortix/kortix-api:dev-latest' }}
+      api_image: ${{ needs.build-api.outputs.image || 'kortix/kortix-api:dev-latest' }}
       aws_region: us-west-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_DEV }}
       github_environment: dev
@@ -312,44 +337,13 @@ jobs:
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
     secrets: inherit
 
-  # ── Compute the dev version (single source of truth) ────────────────────────
-  # Dev builds are a pre-release of the UPCOMING version, derived from the latest
-  # published release tag (vX.Y.Z tags are created only when a release lands on
-  # `prod`). So dev always tracks prod: prod 0.9.6 → dev `0.9.7-dev.<sha8>`. No
-  # VERSION-file bump on `main` is needed (promote.yml never touches main).
-  dev-version:
-    name: Compute dev version
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.api == 'true' || needs.detect-changes.outputs.gateway == 'true' || needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.cli == 'true' }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
-    outputs:
-      version: ${{ steps.v.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # need tags to find the latest released version
-      - name: Derive dev version from the latest release tag
-        id: v
-        run: |
-          set -euo pipefail
-          git fetch --tags --force origin >/dev/null 2>&1 || true
-          # Strict vX.Y.Z only — excludes alias/stray tags like `v1` that would
-          # otherwise sort highest and jump the dev version.
-          LATEST="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 | sed 's/^v//')"
-          # Fallback to the VERSION file before the first tagged release.
-          [ -n "$LATEST" ] || LATEST="$(tr -d '[:space:]' < VERSION)"
-          IFS='.' read -r MA MI PA <<< "$LATEST"
-          : "${MA:=0}"; : "${MI:=0}"; : "${PA:=0}"
-          NEXT="${MA}.${MI}.$((PA + 1))"
-          echo "version=${NEXT}-dev.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
-          echo "Latest release: ${LATEST:-none} → dev ${NEXT}-dev.${GITHUB_SHA::8}"
-
-  # ── Build + push the multi-arch API image ───────────────────────────────────
   build-api:
     name: Build API image (amd64)
-    needs: [detect-changes, dev-version]
+    needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    outputs:
+      image: kortix/kortix-api:dev-${{ needs.detect-changes.outputs.sha8 }}
     steps:
       - uses: actions/checkout@v7
         with: { submodules: false }
@@ -379,7 +373,7 @@ jobs:
         # sticky disk (setup-docker-builder above), so warm builds reuse layers
         # instead of every build being cold.
         # Bake the dev version (e.g. 0.9.7-dev.<sha8>) into the image so
-        # /v1/health reports it. The immutable :dev-<sha8> tag (tag-api job below)
+        # /v1/health reports it. The immutable :dev-<sha8> tag (see `tags:`)
         # is the artifact's real identity.
         uses: useblacksmith/build-push-action@v2
         with:
@@ -391,41 +385,19 @@ jobs:
           cache-to: type=registry,ref=kortix/kortix-api:dev-buildcache,mode=max
           build-args: |
             SERVICE=apps/api
-            KORTIX_VERSION=${{ needs.dev-version.outputs.version }}
+            KORTIX_VERSION=${{ needs.detect-changes.outputs.version }}
             KORTIX_COMMIT=${{ github.sha }}
+          # :dev-<sha8> is the artifact's immutable identity; every later job
+          # rolls and re-tags that one. Pushing it from this build (instead of
+          # re-tagging :dev-latest in a follow-up job) saves a runner hand-off
+          # and can never pick up another run's :dev-latest.
           tags: |
             kortix/kortix-api:dev-latest
+            kortix/kortix-api:dev-${{ needs.detect-changes.outputs.sha8 }}
 
-  # docker/build-push-action's `tags` does not support shell slicing, so we
-  # retag the published :dev-latest to the :dev-<sha8> immutable tag here.
-  tag-api:
-    name: Tag API dev-<sha8>
-    needs: [detect-changes, build-api]
-    if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
-    outputs:
-      image: ${{ steps.tag.outputs.image }}
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Retag :dev-latest → :dev-<sha8> (multi-arch manifest)
-        id: tag
-        run: |
-          set -euo pipefail
-          SHA8="${GITHUB_SHA::8}"
-          docker buildx imagetools create \
-            --tag "kortix/kortix-api:dev-${SHA8}" \
-            "kortix/kortix-api:dev-latest"
-          echo "image=kortix/kortix-api:dev-${SHA8}" >> "$GITHUB_OUTPUT"
-
-  # ── Supply chain: scan, SBOM, sign, provenance (SLSA) on the immutable tag ──
   supply-chain:
     name: Scan + SBOM + sign API image
-    needs: [detect-changes, tag-api]
+    needs: [detect-changes, build-api]
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 20
@@ -435,7 +407,7 @@ jobs:
       attestations: write
       artifact-metadata: write
     env:
-      IMAGE: ${{ needs.tag-api.outputs.image }}
+      IMAGE: ${{ needs.build-api.outputs.image }}
     steps:
       - uses: actions/checkout@v7
       - name: Trivy image scan (fail on fixable CRITICAL)
@@ -468,7 +440,7 @@ jobs:
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "ref=kortix/kortix-api@${DIGEST}" >> "$GITHUB_OUTPUT"
       - name: Generate SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: ${{ steps.digest.outputs.ref }}
           format: spdx-json
@@ -490,7 +462,7 @@ jobs:
 
   migrate-db:
     name: Apply DB migrations to dev
-    needs: [detect-changes, dev-version]
+    needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
@@ -519,7 +491,7 @@ jobs:
   # ── Roll the freshly-built image onto the dev ECS Fargate service ───────────
   deploy-api-ecs:
     name: Deploy API to dev (ECS Fargate)
-    needs: [detect-changes, dev-version, tag-api, migrate-db, terraform-dev-api, terraform-dev]
+    needs: [detect-changes, build-api, migrate-db, terraform-dev-api, terraform-dev]
     # `always()` is required because both terraform jobs are SKIPPED whenever no
     # dev Terraform changed — without it GitHub would skip this job too. Every
     # other upstream is still required to have succeeded. Both roots are listed:
@@ -528,7 +500,7 @@ jobs:
     if: >-
       ${{ always()
         && needs.detect-changes.outputs.api == 'true'
-        && needs.tag-api.result == 'success'
+        && needs.build-api.result == 'success'
         && needs.migrate-db.result == 'success'
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
         && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
@@ -573,8 +545,22 @@ jobs:
       # boots (0 of 30 plain), and each retry cost more than the ~300 ms the
       # clean accelerated download saved. Re-enable only after the daemon
       # resumes a short body in place (PR #7399).
+      #
+      # KORTIX_CONFIG_ARCHIVE_S3_* points the API's ONE object store
+      # (apps/api/src/object-store/s3.ts) at the SAME bucket for config release
+      # archives, under the `config-releases/` prefix
+      # (KORTIX_CONFIG_ARCHIVE_S3_PREFIX, default). Own keys, not the snapshot
+      # ones, so naming a config bucket never starts the snapshot producer.
+      # Credentials: the task role, which already holds PutObject/GetObject on
+      # the objects and ListBucket on the bucket.
+      # KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT=0 hands retention to the
+      # bucket's lifecycle rule (expiration_days = 30 in
+      # infra/terraform/modules/project-snapshots-bucket): that role has NO
+      # s3:DeleteObject, and expiry is safe because the archive is a cache the
+      # API rebuilds from its Git mirror.
+      # docs/specs/config-releases.md#store
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false"}
+        {"CONFIG_RELEASES_ENABLED":"true","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -586,7 +572,7 @@ jobs:
       # the computed dev version even if the image's baked string ever diverges
       # (retags, rebuilds) — same parity rule as staging/prod.
       - name: Roll the dev ECS service onto the freshly-built image
-        run: bash infra/scripts/ecs-deploy.sh dev "${{ needs.tag-api.outputs.image }}" --version "${{ needs.dev-version.outputs.version }}"
+        run: bash infra/scripts/ecs-deploy.sh dev "${{ needs.build-api.outputs.image }}" --version "${{ needs.detect-changes.outputs.version }}" --wait-for serving
 
   deploy-apps-router:
     name: Deploy Kortix Apps router
@@ -631,10 +617,10 @@ jobs:
   # (docker buildx imagetools create — zero rebuild).
   promote-dev-channel-api:
     name: Move :dev → this build (API)
-    needs: [detect-changes, tag-api, deploy-api-ecs]
+    needs: [detect-changes, build-api, deploy-api-ecs]
     if: ${{ always()
       && needs.detect-changes.outputs.api == 'true'
-      && needs.tag-api.result == 'success'
+      && needs.build-api.result == 'success'
       && needs.deploy-api-ecs.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
@@ -643,19 +629,19 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Re-tag ${{ needs.tag-api.outputs.image }} → kortix/kortix-api:dev
+      - name: Re-tag ${{ needs.build-api.outputs.image }} → kortix/kortix-api:dev
         run: |
           set -euo pipefail
           docker buildx imagetools create \
             --tag kortix/kortix-api:dev \
-            "${{ needs.tag-api.outputs.image }}"
-          echo "✓ kortix/kortix-api:dev → ${{ needs.tag-api.outputs.image }}"
+            "${{ needs.build-api.outputs.image }}"
+          echo "✓ kortix/kortix-api:dev → ${{ needs.build-api.outputs.image }}"
 
   # ── Build + push the multi-arch gateway image ───────────────────────────────
   # Standalone LLM gateway (apps/llm-gateway). Same dev-<sha8> versioning as the API.
   build-gateway:
     name: Build gateway image (amd64)
-    needs: [detect-changes, dev-version]
+    needs: detect-changes
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     steps:
@@ -687,34 +673,17 @@ jobs:
           cache-from: type=registry,ref=kortix/kortix-gateway:dev-buildcache
           cache-to: type=registry,ref=kortix/kortix-gateway:dev-buildcache,mode=max
           build-args: |
-            KORTIX_VERSION=${{ needs.dev-version.outputs.version }}
+            KORTIX_VERSION=${{ needs.detect-changes.outputs.version }}
             KORTIX_COMMIT=${{ github.sha }}
+          # :dev-<sha8> is the immutable tag deploy-gateway-ecs rolls; see
+          # build-api for why the build pushes it directly.
           tags: |
             kortix/kortix-gateway:dev-latest
-
-  tag-gateway:
-    name: Tag gateway dev-<sha8>
-    needs: [detect-changes, build-gateway]
-    if: needs.detect-changes.outputs.gateway == 'true'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Retag :dev-latest → :dev-<sha8> (multi-arch manifest)
-        run: |
-          set -euo pipefail
-          SHA8="${GITHUB_SHA::8}"
-          docker buildx imagetools create \
-            --tag "kortix/kortix-gateway:dev-${SHA8}" \
-            "kortix/kortix-gateway:dev-latest"
+            kortix/kortix-gateway:dev-${{ needs.detect-changes.outputs.sha8 }}
 
   deploy-gateway-ecs:
     name: Deploy gateway to dev (ECS Fargate)
-    needs: [detect-changes, dev-version, tag-gateway]
+    needs: [detect-changes, build-gateway]
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     permissions:
@@ -736,16 +705,17 @@ jobs:
             dev \
             "kortix/kortix-gateway:dev-${GITHUB_SHA::8}" \
             --service gateway \
-            --version "${{ needs.dev-version.outputs.version }}"
+            --wait-for serving \
+            --version "${{ needs.detect-changes.outputs.version }}"
 
   verify-gateway-dev-parity:
     name: Verify gateway dev commit parity
-    needs: [detect-changes, dev-version, deploy-gateway-ecs]
+    needs: [detect-changes, deploy-gateway-ecs]
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     env:
       EXPECTED_COMMIT: ${{ github.sha }}
-      EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
+      EXPECTED_VERSION: ${{ needs.detect-changes.outputs.version }}
     steps:
       - name: Require ECS and public gateway parity
         run: |
@@ -779,10 +749,10 @@ jobs:
   # ── Move the self-host `:dev` channel tag onto the verified image ───────────
   promote-dev-channel-gateway:
     name: Move :dev → this build (gateway)
-    needs: [detect-changes, tag-gateway, verify-gateway-dev-parity]
+    needs: [detect-changes, build-gateway, verify-gateway-dev-parity]
     if: ${{ always()
       && needs.detect-changes.outputs.gateway == 'true'
-      && needs.tag-gateway.result == 'success'
+      && needs.build-gateway.result == 'success'
       && needs.verify-gateway-dev-parity.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
@@ -804,7 +774,7 @@ jobs:
   # The same immutable image serves Dev ECS and the self-host distribution.
   build-frontend:
     name: Build frontend image (amd64)
-    needs: [detect-changes, dev-version]
+    needs: detect-changes
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     outputs:
@@ -829,7 +799,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
           NEXT_PUBLIC_BILLING_ENABLED: "false"
-          NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.dev-version.outputs.version }}
+          NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.detect-changes.outputs.version }}
           NEXT_PUBLIC_KORTIX_COMMIT: ${{ github.sha }}
           NEXT_OUTPUT: standalone
       - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
@@ -872,7 +842,7 @@ jobs:
 
   deploy-web-ecs:
     name: Deploy frontend to dev (ECS Fargate)
-    needs: [detect-changes, dev-version, build-frontend, terraform-dev-api, terraform-dev]
+    needs: [detect-changes, build-frontend, terraform-dev-api, terraform-dev]
     # Same soft dependency as deploy-api-ecs: environments/dev-web owns the web
     # ALB, WAF association, and task roles this image runs behind, and
     # environments/dev must have converged before it.
@@ -914,7 +884,8 @@ jobs:
             dev \
             "${{ needs.build-frontend.outputs.image }}" \
             --service web \
-            --version "${{ needs.dev-version.outputs.version }}"
+            --wait-for serving \
+            --version "${{ needs.detect-changes.outputs.version }}"
 
   publish-web-ecs-dns:
     name: Publish canonical Dev ECS DNS
@@ -950,14 +921,14 @@ jobs:
 
   verify-web-dev:
     name: Verify canonical Dev frontend on ECS
-    needs: [detect-changes, dev-version, publish-web-ecs-dns]
+    needs: [detect-changes, publish-web-ecs-dns]
     if: ${{ always()
       && needs.detect-changes.outputs.frontend == 'true'
       && needs.publish-web-ecs-dns.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     env:
       EXPECTED_COMMIT: ${{ github.sha }}
-      EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
+      EXPECTED_VERSION: ${{ needs.detect-changes.outputs.version }}
       WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
     steps:
       - name: Verify ECS health, protection, runtime configuration, and edge headers
@@ -969,7 +940,11 @@ jobs:
           }
           base=https://dev.kortix.com
           consecutive_matches=0
-          for attempt in $(seq 1 40); do
+          # Four consecutive matching checks, 5 s apart: the same evidence as
+          # before in ~15 s instead of >= 60 s (was 20 s apart). With queued
+          # deploys every second of a run delays the next merge. Budget stays
+          # ~13 min (160 x 5 s).
+          for attempt in $(seq 1 160); do
             cookie_jar="$(mktemp)"
             body="$(curl -fsS --max-time 15 "$base/api/health" || true)"
             commit="$(jq -r '.commit // empty' <<<"$body" 2>/dev/null || true)"
@@ -982,7 +957,7 @@ jobs:
             headers="$(curl -sS -D - -o /dev/null --max-time 15 "$base/" || true)"
             vercel_headers="$(awk 'BEGIN { IGNORECASE=1 } /^x-vercel-/ { count++ } END { print count + 0 }' <<<"$headers")"
             rm -f "$cookie_jar"
-            echo "(${attempt}/40) commit=${commit:-?} version=${version:-?} anonymous=${anonymous:-?} wrong=${wrong:-?} protected=${protected:-?} cookie_only=${cookie_only:-?} vercel_headers=${vercel_headers}"
+            echo "(${attempt}/160) commit=${commit:-?} version=${version:-?} anonymous=${anonymous:-?} wrong=${wrong:-?} protected=${protected:-?} cookie_only=${cookie_only:-?} vercel_headers=${vercel_headers}"
             if [ "$commit" = "$EXPECTED_COMMIT" ] \
               && [ "$version" = "$EXPECTED_VERSION" ] \
               && [ "$anonymous" = 401 ] \
@@ -1000,7 +975,7 @@ jobs:
             else
               consecutive_matches=0
             fi
-            sleep 20
+            sleep 5
           done
           echo "::error::Canonical Dev ECS verification failed for ${EXPECTED_COMMIT}."
           exit 1
@@ -1042,7 +1017,7 @@ jobs:
   # ── Build dev CLI (4 targets on one Linux runner via Bun cross-compile) ─────
   build-cli:
     name: Build dev CLI (all targets)
-    needs: [detect-changes, dev-version]
+    needs: detect-changes
     if: needs.detect-changes.outputs.cli == 'true'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     steps:
@@ -1068,7 +1043,7 @@ jobs:
       - name: Build every target (Bun cross-compile)
         run: |
           set -euo pipefail
-          CLI_VERSION="${{ needs.dev-version.outputs.version }}"
+          CLI_VERSION="${{ needs.detect-changes.outputs.version }}"
           API_BASE="https://dev-api.kortix.com"
           mkdir -p artifacts
           for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
@@ -1174,3 +1149,39 @@ jobs:
             Defaults to `https://dev-api.kortix.com`.
           files: |
             release/*
+
+  # ── Tell every merged pull request whether its commit is live on dev ────────
+  # One sticky comment per pull request, edited in place: "Live on dev — 6m 12s
+  # after merge" with the /health-verified commit per surface, or "Not live on
+  # dev yet" naming the surface that failed. Nobody polls /health or this run to
+  # learn whether a merge landed; GitHub notifies the author. Covers every pull
+  # request merged since the SHA dev ran before this run, because a queued
+  # deploy ships several merges at once. Never fails the run
+  # (scripts/ci/announce-dev-live.sh).
+  announce-live:
+    name: Announce live on dev
+    needs: [detect-changes, deploy-api-ecs, verify-gateway-dev-parity, verify-web-dev]
+    if: ${{ always() && !cancelled()
+      && github.ref == 'refs/heads/main'
+      && (needs.detect-changes.outputs.api == 'true'
+        || needs.detect-changes.outputs.gateway == 'true'
+        || needs.detect-changes.outputs.frontend == 'true') }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHA: ${{ github.sha }}
+      BASE: ${{ needs.detect-changes.outputs.base }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      API_RESULT: ${{ needs.detect-changes.outputs.api == 'true' && needs.deploy-api-ecs.result || 'unchanged' }}
+      GATEWAY_RESULT: ${{ needs.detect-changes.outputs.gateway == 'true' && needs.verify-gateway-dev-parity.result || 'unchanged' }}
+      WEB_RESULT: ${{ needs.detect-changes.outputs.frontend == 'true' && needs.verify-web-dev.result || 'unchanged' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ci
+      - name: Comment on the shipped pull requests
+        run: bash scripts/ci/announce-dev-live.sh

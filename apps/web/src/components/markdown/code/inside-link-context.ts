@@ -12,7 +12,7 @@ import { createContext, useContext } from 'react';
  * descendant of <a>`"). Inside a link the inline code renders as styled `<code>`;
  * the surrounding anchor already carries the click.
  *
- * Providers: every markdown `a:` renderer (`unified-markdown`, `doc-markdown`,
+ * Providers: every markdown `a:` renderer (`unified-markdown`,
  * `docs-mdx-components`) wraps its children in `InsideLinkContext.Provider value={true}`.
  */
 export const InsideLinkContext = createContext(false);

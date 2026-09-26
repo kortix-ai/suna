@@ -85,3 +85,24 @@ test('getPublicSessionShareMessages surfaces 503 (sandbox not ready)', async () 
     expect((err as PublicSessionShareError).status).toBe(503);
   }
 });
+
+test('getPublicSessionShareMessages accepts the kps_ public token and reports which source answered', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      available: true,
+      reason: 'Sandbox is not running',
+      source: 'mirror',
+      captured_at: '2026-09-26T00:00:00.000Z',
+      opencode_session_id: 'oc1',
+      message_count: 0,
+      messages: [],
+    },
+  };
+  const result = await getPublicSessionShareMessages('kps_11111111111141118111111111111111');
+  expect(last().url).toBe('http://test.local/public/session-shares/kps_11111111111141118111111111111111/messages');
+  expect(last().headers.Authorization).toBeUndefined();
+  const source: 'live' | 'mirror' | 'none' | undefined = result.source;
+  expect(source).toBe('mirror');
+  expect(result.captured_at).toBe('2026-09-26T00:00:00.000Z');
+});

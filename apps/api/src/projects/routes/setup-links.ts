@@ -14,16 +14,19 @@
 import { auth, errors, json } from '../../openapi';
 import { config } from '../../config';
 import { createRoute, z } from '@hono/zod-openapi';
+import { validateConnectionLabel } from '../../connectors/connection-identity';
 import { connectLinkEligibility } from '../../connectors/db-deps';
 import { pipedreamConfigured } from '../../connectors/pipedream';
 import { composioConfigured } from '../../connectors/composio';
 import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
 import { isValidSecretName } from '../secrets';
+import { sessionWithheldSecrets, withheldSecretsFix } from '../lib/session-secret-reach';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { parseConnectorConnectOwner } from '../lib/connection-access';
 import { PROJECT_ACTIONS } from '../../iam';
-import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString, readBody } from '../lib/serializers';
+import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 function frontendBase(): string {
   return (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
@@ -51,7 +54,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     // Floor 'read'; project.secret.write is the real gate — the same leaf as
     // POST /secrets. Was 'manage' → project.write, so unchecking secret.write
     // did nothing here.
@@ -102,18 +105,34 @@ projectsApp.openapi(
     // turn a server-side credential into plaintext sandbox environment state.
     // Runtime delivery remains available only through an explicit opt-in.
     const scope = requestedScope === 'runtime' ? 'runtime' : 'connector';
+    const sessionId = (c.get('sessionId') as string | undefined) ?? null;
     const { token, expiresAt } = mintSetupLink(
       projectId,
-      { kind: 'secret', fields, scope, uid: loaded.userId, sid: (c.get('sessionId') as string | undefined) ?? null },
+      { kind: 'secret', fields, scope, uid: loaded.userId, sid: sessionId },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
+
+    // A runtime value this session's agent is not granted is saved and then
+    // never delivered. Say so now, while the agent can still tell the human the
+    // one extra step, instead of after they fill the form and nothing arrives.
+    // Only names the agent itself just requested are judged, against its own
+    // grant, so this reveals nothing about which secrets exist.
+    const requested = fields.map((f) => f.name);
+    const reach = scope === 'runtime' && sessionId ? await sessionWithheldSecrets(sessionId, requested) : null;
 
     return c.json({
       kind: 'secret',
       url: `${frontendBase()}/secret-intake/${token}`,
-      names: fields.map((f) => f.name),
+      names: requested,
       scope,
       expires_at: new Date(expiresAt).toISOString(),
+      ...(reach
+        ? {
+            agent: reach.agent,
+            withheld: reach.withheld,
+            withheld_fix: withheldSecretsFix(reach.agent, reach.withheld),
+          }
+        : {}),
     });
   },
 );
@@ -141,7 +160,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     // Floor 'read'; project.connector.write is the real gate (minting a Pipedream
     // Quick Connect link is a connector operation). Was 'manage' → project.write.
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -212,7 +231,7 @@ projectsApp.openapi(
       );
     }
     // Minting a link that authorizes the SHARED account is administration —
-    // the same capability r4's project-owned connection create asserts
+    // the same capability the project-owned connection create (connections.ts) asserts
     // (PROJECT_CONNECTOR_CONNECTIONS_MANAGE), not just connector.write.
     if (owner === 'project') {
       const mayManage = await projectCapabilityAllowed(
@@ -225,6 +244,15 @@ projectsApp.openapi(
       if (!mayManage) return c.json({ error: 'Forbidden' }, 403);
     }
 
+    // A suggested name for the NEW account ("Dad's Gmail"). The human sees it
+    // prefilled in the dialog and may change it; the same rules as any label.
+    let label: string | null = null;
+    if (body.label !== undefined && body.label !== null) {
+      const checked = validateConnectionLabel(body.label);
+      if (!checked.ok) return c.json({ error: checked.error }, 400);
+      label = checked.label;
+    }
+
     const { token, expiresAt } = mintSetupLink(
       projectId,
       {
@@ -234,6 +262,7 @@ projectsApp.openapi(
         uid: loaded.userId,
         sid: (c.get('sessionId') as string | undefined) ?? null,
         owner,
+        label,
       },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
@@ -244,6 +273,7 @@ projectsApp.openapi(
       slug,
       app: conn.app,
       owner,
+      label,
       expires_at: new Date(expiresAt).toISOString(),
     });
   },

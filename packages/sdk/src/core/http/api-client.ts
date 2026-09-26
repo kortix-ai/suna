@@ -1,9 +1,10 @@
-import { normalizeClientSource } from '../../platform/auth-core';
-import { getSupabaseAccessTokenWithRetry } from './auth';
+import { syntheticUnauthenticatedResponse } from '../../platform/auth-core';
 import { ApiError, AuthError, parseBillingError, RequestTooLargeError } from './api/errors';
 import { platformConfig } from './config';
-import { impersonationHeaders } from './impersonation';
 import { abortable, abortableDelay, createAbortError } from './abort';
+import { send } from './transport';
+
+export { isAdminBypassEnabled, setAdminBypass } from './transport';
 
 const getApiUrl = () => platformConfig().backendUrl || '';
 
@@ -49,8 +50,8 @@ export interface ApiClientOptions {
    * (`globalThis.fetch = …`) — so a test (or a host with an unusual runtime)
    * can hand in a stub `Response` with a real streamed `ReadableStream` body
    * without touching the network. Ignored by `get`/`post`/`put`/`patch`/
-   * `delete`/`upload`, which all go through `makeRequest` and the ambient
-   * `fetch`. Defaults to the ambient `fetch`.
+   * `delete`/`upload`, which use `configureKortix({ fetch })`. Defaults to
+   * `configureKortix({ fetch })`, then the global `fetch`.
    *
    * Deliberately narrower than `typeof fetch` (no `preconnect` static) so a
    * plain `async (input, init?) => new Response(...)` stub satisfies it
@@ -86,7 +87,7 @@ export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
  * Stable error code the platform API returns (HTTP 409) when a user tries to
  * set a model their account can't use — e.g. a managed model on a free tier,
  * or a BYOK model whose provider isn't connected. The API emits this from the
- * model-defaults PUT (`apps/api/src/projects/routes/r4.ts`) and the channel
+ * model-defaults PUT (`apps/api/src/projects/routes/models.ts`) and the channel
  * binding model set (`apps/api/src/projects/routes/channel-bindings.ts`) via
  * `isModelServableForAccount`. This is an EXPECTED condition — a UI validation
  * error, not a server bug — so `makeRequest` classifies a 409 carrying this
@@ -104,7 +105,7 @@ export const MODEL_NOT_SERVABLE_CODE = 'model_not_servable';
  * carrying the same `idempotency_key` is still mid-provision — see
  * `apps/api/src/projects/lib/provision-idempotency.ts`'s `in_flight` case and
  * the two `POST /projects/provision` handlers in
- * `apps/api/src/projects/routes/r1.ts`. This is a RETRYABLE, EXPECTED state:
+ * `apps/api/src/projects/routes/projects.ts`. This is a RETRYABLE, EXPECTED state:
  * the concurrent attempt simply hasn't committed yet, and the caller retries
  * with the same key until it does. First-run onboarding hits it whenever a
  * second tab (or the other entry door) races the same auto-create, so it must
@@ -132,6 +133,45 @@ const isRequestDeadlineResponse = (
       ? (errorData as { code?: unknown }).code
       : undefined;
   return code === REQUEST_DEADLINE_CODE || LEGACY_REQUEST_DEADLINE_MESSAGE.test(message);
+};
+
+/**
+ * Stable error code the platform API returns (HTTP 503) when a project's git
+ * mirror cold-clone/fetch fails for a TRANSIENT, retryable upstream reason
+ * (GitHub edge blip, a momentarily unusable private-mirror credential, a
+ * mid-transfer timeout). The API already classifies the cause out of its OWN
+ * Sentry (`apps/api/src/projects/git/mirror.ts`'s `isTransientGitMirrorError`)
+ * and answers a clean 503 + `Retry-After`; this is the frontend mirror.
+ *
+ * The 503 RESPONSE crosses the boundary: `makeRequest` extracts the message
+ * and calls `onError` → the web host's `handleApiError`, which captures every
+ * 5xx to the FRONTEND Sentry (app 2346967 — a SEPARATE app from the API's
+ * 2346961). That is exactly how Better Stack frontend pattern `b4d05df2…`
+ * (`ApiError: git mirror is temporarily unavailable`, on a session start that
+ * cold-clones the project mirror) reached the frontend telemetry. Treat it as
+ * SILENT here — skip the global `onError` (Sentry) capture — but still return
+ * the `ApiError` so callers can branch on `.code`. A genuine 503 with another
+ * message/code still reports.
+ *
+ * Must stay in sync with `GIT_MIRROR_UNAVAILABLE_CODE` in
+ * `apps/api/src/projects/git/mirror.ts`. `LEGACY_GIT_MIRROR_UNAVAILABLE_MESSAGE`
+ * covers a response from an API deployed before the typed code (the same
+ * rollout shim as `LEGACY_REQUEST_DEADLINE_MESSAGE`).
+ */
+const GIT_MIRROR_UNAVAILABLE_CODE = 'git_mirror_unavailable';
+const LEGACY_GIT_MIRROR_UNAVAILABLE_MESSAGE = /^git mirror is temporarily unavailable$/;
+
+const isGitMirrorUnavailableResponse = (
+  status: number,
+  errorData: unknown,
+  message: string,
+): boolean => {
+  if (status !== 503) return false;
+  const code =
+    typeof errorData === 'object' && errorData !== null && 'code' in errorData
+      ? (errorData as { code?: unknown }).code
+      : undefined;
+  return code === GIT_MIRROR_UNAVAILABLE_CODE || LEGACY_GIT_MIRROR_UNAVAILABLE_MESSAGE.test(message);
 };
 
 /**
@@ -173,22 +213,6 @@ const isAbortError = (error: unknown): boolean =>
   (error as { name?: string } | null)?.name === 'AbortSignal' ||
   (error instanceof Error && error.message.includes('aborted'));
 
-// Platform-admin read-only bypass toggle (web only). In-memory, per-tab — never
-// persisted — so it resets on reload and can't linger silently. When on, every
-// request from this client carries `x-kortix-admin-bypass: 1`; the API only
-// honors it for a real platform admin/super_admin on a `read` action (see
-// apps/api/src/projects/lib/access.ts), so this is safe to set unconditionally
-// here rather than threading it through every call site.
-let adminBypassEnabled = false;
-
-export function setAdminBypass(enabled: boolean): void {
-  adminBypassEnabled = enabled;
-}
-
-export function isAdminBypassEnabled(): boolean {
-  return adminBypassEnabled;
-}
-
 async function makeRequest<T = any>(
   url: string,
   options: RequestInit & ApiClientOptions = {},
@@ -222,52 +246,13 @@ async function makeRequest<T = any>(
       }
     }, timeout);
 
-    const token = await abortable(getSupabaseAccessTokenWithRetry(), controller.signal);
-
-    // Don't set Content-Type for FormData - browser will set it automatically with boundary
-    const isFormData = fetchOptions.body instanceof FormData;
-    const headers: Record<string, string> = {};
-
-    if (!isFormData) {
-      headers['Content-Type'] = 'application/json';
-    }
-
-    // Merge with any headers from fetchOptions
-    Object.assign(headers, fetchOptions.headers as Record<string, string>);
-
-    const clientSource = normalizeClientSource(platformConfig().clientSource);
-    const hasClientSource = Object.keys(headers).some(
-      (name) => name.toLowerCase() === 'x-kortix-client',
-    );
-    if (clientSource && !hasClientSource) {
-      headers['X-Kortix-Client'] = clientSource;
-    }
-
-    if (adminBypassEnabled) {
-      headers['x-kortix-admin-bypass'] = '1';
-    }
-
-    // Act-as: while a platform admin holds a live grant, EVERY platform request
-    // from this tab carries it, exactly as the banner claims. Attached after the
-    // caller's own headers so a call site cannot accidentally drop it, and
-    // before `Authorization` because the server validates the pair together.
-    Object.assign(headers, impersonationHeaders(url));
-
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    } else {
-      // No session yet — Supabase hasn't hydrated from cookies.
-      // Return a silent failure instead of sending a naked request that will 401.
-      // Callers gated by `enabled: !!user` should prevent this path, but this
-      // is a safety net for any calls that slip through.
-      return {
-        error: new AuthError(),
-        success: false,
-      };
-    }
-
-    // Note: X-Refresh-Token was removed to reduce header size and prevent HTTP 431 errors.
-    // The backend handles token refresh via Supabase directly.
+    // Don't set Content-Type for FormData - browser will set it automatically
+    // with boundary. `send` resolves the token on every attempt and adds the
+    // bearer, client surface, admin bypass and act-as headers after these.
+    const headers: Record<string, string> = {
+      ...(fetchOptions.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(fetchOptions.headers as Record<string, string>),
+    };
 
     const retryableRead = isIdempotentMethod(fetchOptions.method);
     // A DELETE is retried on a TRANSPORT failure only (see the predicate). It is
@@ -293,20 +278,30 @@ async function makeRequest<T = any>(
       }
 
       try {
-        const fetchImpl = platformConfig().fetch ?? fetch;
+        // The attempt deadline above is the only deadline (`timeoutMs: null`).
         response = await abortable(
-          fetchImpl(url, {
-            ...fetchOptions,
-            headers,
-            signal: attemptController.signal,
-            credentials: fetchOptions.credentials ?? 'omit',
-          }),
+          send(
+            url,
+            {
+              ...fetchOptions,
+              headers,
+              signal: attemptController.signal,
+              credentials: fetchOptions.credentials ?? 'omit',
+            },
+            { timeoutMs: null },
+          ),
           attemptController.signal,
         );
       } catch (error) {
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
+        }
+        // No token: the host has no session yet (Supabase has not hydrated
+        // from cookies). `send` sent nothing. A silent failure, never retried:
+        // callers gated by `enabled: !!user` should not reach this path.
+        if (error instanceof AuthError) {
+          return { error: new AuthError(), success: false };
         }
         // A self-timeout (OUR deadline fired, the caller did not abort) means
         // this attempt got no response, so replaying it is safe for a
@@ -389,6 +384,13 @@ async function makeRequest<T = any>(
 
       if (activeController.signal.aborted) throw createAbortError();
       const isRequestDeadline = isRequestDeadlineResponse(response.status, errorData, errorMessage);
+      // Expected, retryable transient git-mirror 503 — classified silent like
+      // the request deadline above (see `isGitMirrorUnavailableResponse`).
+      const isGitMirrorUnavailable = isGitMirrorUnavailableResponse(
+        response.status,
+        errorData,
+        errorMessage,
+      );
       let error: ApiError | Error = new ApiError(errorMessage, {
         status: response.status,
         response: response,
@@ -455,7 +457,7 @@ async function makeRequest<T = any>(
 
       // Expected "this model isn't available for this account" state — the
       // backend returns a TYPED 409 with `code: 'model_not_servable'` (from
-      // `isModelServableForAccount` in `apps/api/src/projects/routes/r4.ts` and
+      // `isModelServableForAccount` in `apps/api/src/projects/routes/models.ts` and
       // `channel-bindings.ts`) when a user picks a model their account can't
       // use (free-tier managed model, disconnected BYOK provider). This is a UI
       // validation error, not a server defect, so it must NEVER page Better
@@ -482,7 +484,8 @@ async function makeRequest<T = any>(
         !isFeatureNotSupported &&
         !isModelNotServable &&
         !isProvisionInFlight &&
-        !isRequestDeadline
+        !isRequestDeadline &&
+        !isGitMirrorUnavailable
       ) {
         platformConfig().onError?.(error, errorContext);
       }
@@ -633,16 +636,12 @@ export const supabaseClient = {
  * Streaming POST — bypasses `makeRequest`'s single-shot body consumption
  * (`.json()`/`.text()`/`.blob()`, which can only run once) and hands back
  * the raw `Response` so a caller can read `response.body` incrementally as
- * Server-Sent-Event frames arrive. No idempotent-read retry (POST is not
+ * Server-Sent-Event frames arrive. No transient retry (POST is not
  * retryable), no automatic body parsing.
  *
- * Auth mirrors `makeRequest`: same bearer token, client-source header, and
- * admin-bypass header. Unlike `makeRequest`, a missing token does not
- * short-circuit before the network call — the caller either gets a stream to
- * read or the server's own 401, not a synthetic client-side one, because this
- * is the one path where "no token yet" and "an actually-unauthorized create"
- * both have to reach the caller as the SAME kind of terminal failure (a
- * rejected promise), not silently different ones.
+ * Auth and headers come from `send`, as for every other backend request. A
+ * missing token resolves a synthetic 401 without a request, so "no token yet"
+ * and a server 401 reach the caller the same way: a non-ok `Response`.
  *
  * `timeout` bounds only the initial connect/response-headers exchange (as
  * `fetch()`'s promise settles), not how long the stream stays open —
@@ -654,32 +653,24 @@ async function postStream(
   data: unknown,
   options: ApiClientOptions = {},
 ): Promise<Response> {
-  const { timeout = 30000, fetch: fetchImpl = fetch } = options;
-  const token = await getSupabaseAccessTokenWithRetry();
-
-  const headers: Record<string, string> = {
-    Accept: 'text/event-stream',
-    'Content-Type': 'application/json',
-  };
-  const clientSource = normalizeClientSource(platformConfig().clientSource);
-  if (clientSource) headers['X-Kortix-Client'] = clientSource;
-  if (adminBypassEnabled) headers['x-kortix-admin-bypass'] = '1';
-  // Same act-as rule as makeRequest — a streamed POST is still a platform
-  // request, and an SSE stream opened without the header would silently read
-  // the OPERATOR's account while the banner named the customer's.
-  Object.assign(headers, impersonationHeaders(endpoint));
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
+  const { timeout = 30000, fetch: fetchImpl } = options;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
   try {
-    return await fetchImpl(`${getApiUrl()}${endpoint}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data),
-      signal: controller.signal,
-      credentials: 'omit',
-    });
+    return await send(
+      `${getApiUrl()}${endpoint}`,
+      {
+        method: 'POST',
+        headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+        signal: controller.signal,
+        credentials: 'omit',
+      },
+      { timeoutMs: null, fetch: fetchImpl },
+    );
+  } catch (error) {
+    if (error instanceof AuthError) return syntheticUnauthenticatedResponse();
+    throw error;
   } finally {
     clearTimeout(timeoutId);
   }

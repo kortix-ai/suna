@@ -29,6 +29,7 @@ import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
 import { ToastProvider } from '@/components/kortix/toast-provider';
 import { OfflineBanner } from '@/components/kortix/OfflineBanner';
 import { SessionEndedDialog } from '@/components/kortix/SessionEndedDialog';
+import { PushNotificationsBridge } from '@/components/notifications/PushNotificationsBridge';
 import { reportUnauthorized } from '@/lib/auth/session-expiry-monitor';
 import {
   GlobalUpgradeSheet,
@@ -51,9 +52,13 @@ import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-rean
 import { supabase } from '@/api/supabase';
 import { log } from '@/lib/logger';
 import { useThemeStore } from '@/stores/theme-store';
+import { useBootStore } from '@/stores/boot-store';
+import { SPLASH_SAFETY_TIMEOUT_MS, shouldHideSplash } from '@/lib/boot/splash-gate';
 import { OtaUpdateManager } from '@/components/updates/OtaUpdateManager';
 import { subscribeOnlineStatus } from '@/lib/network/use-online-status';
 import { installHapticsGate } from '@/lib/haptics';
+import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
+import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { configureKortix } from '@kortix/sdk';
 import { API_URL, getAuthToken } from '@/api/config';
 import {
@@ -69,6 +74,12 @@ import {
 // Patch expo-haptics globally so every Haptics.* call across the app respects
 // the user's "Haptic Feedback" toggle in Settings → Sounds.
 installHapticsGate();
+
+// Dev only: URLs the local API hands back (attachment upload targets) point at
+// 127.0.0.1, which on a phone is the phone. Open them on the dev host instead.
+if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
+  installLoopbackRewrite(XMLHttpRequest, resolveLocalUrl);
+}
 
 // Wire the SDK's single app-specific seam once at startup, before any screen
 // mounts. `backendUrl`/`getToken` reuse mobile's own env resolution and
@@ -104,6 +115,14 @@ configureReanimatedLogger({
 });
 
 SplashScreen.preventAutoHideAsync();
+
+/** Hide the native splash once; screens own their loaders from then on. */
+function hideSplash() {
+  const boot = useBootStore.getState();
+  if (boot.splashHidden) return;
+  boot.markSplashHidden();
+  SplashScreen.hideAsync().catch(() => {});
+}
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -147,11 +166,22 @@ export default function RootLayout() {
     }
   }, [colorScheme]);
 
+  // The splash stays until the start route resolves (`SplashGate`); this is
+  // the safety net that hides it whatever is still loading (KRTX-244).
+  const splashTimedOut = useBootStore((s) => s.timedOut);
+  // While the splash covers boot, the start route's destination replaces it
+  // with no push animation: the splash fades straight onto the first screen,
+  // never onto a screen still sliding in (KRTX-244). Default push after.
+  const splashHidden = useBootStore((s) => s.splashHidden);
+  const bootAnimation = splashHidden ? undefined : ('none' as const);
   useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
+    const timer = setTimeout(() => useBootStore.getState().timeOut(), SPLASH_SAFETY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    // Also covers fonts that never load: `SplashGate` mounts only after them.
+    if (splashTimedOut) hideSplash();
+  }, [splashTimedOut]);
 
   // Keep the status bar visible with icons that contrast with the theme.
   // - iOS resets the bar appearance on suspend/resume, and the declarative
@@ -476,6 +506,7 @@ export default function RootLayout() {
                                   style={activeColorScheme === 'dark' ? 'light' : 'dark'}
                                 />
                                 <View className="flex-1">
+                                  <SplashGate />
                                   <AuthProtection>
                                     {/* Every stack is the native Stack with the platform default
                                         push/pop on iOS and Android. `index` only redirects, so it
@@ -491,9 +522,12 @@ export default function RootLayout() {
                                           `index`; nothing sits under them to swipe to. */}
                                       <Stack.Screen
                                         name="welcome"
-                                        options={{ gestureEnabled: false }}
+                                        options={{ gestureEnabled: false, animation: bootAnimation }}
                                       />
-                                      <Stack.Screen name="new" options={{ gestureEnabled: false }} />
+                                      <Stack.Screen
+                                        name="new"
+                                        options={{ gestureEnabled: false, animation: bootAnimation }}
+                                      />
                                       {/* The Projects list: a plain page, no tab bar. */}
                                       <Stack.Screen
                                         name="projects/index"
@@ -501,7 +535,7 @@ export default function RootLayout() {
                                       />
                                       <Stack.Screen
                                         name="auth"
-                                        options={{ gestureEnabled: false }}
+                                        options={{ gestureEnabled: false, animation: bootAnimation }}
                                       />
                                       <Stack.Screen
                                         name="projects/[id]"
@@ -510,7 +544,7 @@ export default function RootLayout() {
                                         // list (ProjectLeftDrawer). The project stack has
                                         // no swipe-back either: its left edge opens the
                                         // project drawer on every project page.
-                                        options={{ gestureEnabled: false }}
+                                        options={{ gestureEnabled: false, animation: bootAnimation }}
                                       />
                                       <Stack.Screen
                                         name="(settings)"
@@ -534,6 +568,7 @@ export default function RootLayout() {
                                 <PortalHost />
                                 <OfflineBanner />
                                 <SessionEndedDialog />
+                                <PushNotificationsBridge />
                               </ThemeProvider>
                             </BottomSheetModalProvider>
                             {/* Above every bottom sheet: dropdowns opened from inside a sheet. */}
@@ -551,6 +586,37 @@ export default function RootLayout() {
       </GestureHandlerRootView>
     </QueryClientProvider>
   );
+}
+
+/**
+ * Hides the native splash when the start route has resolved: fonts (this
+ * mounts only after them), auth, and the landing decision (KRTX-244). One
+ * loader at boot — the splash — and the first screen is the destination.
+ */
+function SplashGate() {
+  const { isLoading: authLoading, isAuthenticated } = useAuthContext();
+  const segment = (useSegments() as string[])[0];
+  const landingSettled = useBootStore((s) => s.landingSettled);
+  const timedOut = useBootStore((s) => s.timedOut);
+  const splashHidden = useBootStore((s) => s.splashHidden);
+
+  useEffect(() => {
+    if (
+      shouldHideSplash({
+        splashHidden,
+        timedOut,
+        fontsReady: true,
+        authLoading,
+        authenticated: isAuthenticated,
+        segment,
+        landingSettled,
+      })
+    ) {
+      hideSplash();
+    }
+  }, [splashHidden, timedOut, authLoading, isAuthenticated, segment, landingSettled]);
+
+  return null;
 }
 
 function AuthProtection({ children }: { children: React.ReactNode }) {

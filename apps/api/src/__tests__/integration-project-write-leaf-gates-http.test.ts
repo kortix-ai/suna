@@ -1,10 +1,19 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
-import { db } from '../shared/db';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
-import { PROJECT_ACTIONS } from '../iam';
+import { insertIntoView } from './helpers/compat-views';
+import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
+
+// The model-defaults routes 404 `llm_gateway_disabled` BEFORE their leaf gate
+// when the gateway is unavailable, so the leaf would never be measured. The
+// operator master switch (config.LLM_GATEWAY_ENABLED) defaults off and is read
+// once at config import, so it must be set before the app loads. The project
+// row below also opts in explicitly.
+process.env.LLM_GATEWAY_ENABLED = 'true';
+const { db } = await import('../shared/db');
+const { app } = await import('../index');
+const { createAccountToken } = await import('../repositories/account-tokens');
+const { PROJECT_ACTIONS } = await import('../iam');
 
 // Every capability checkbox must be authoritative: unchecking a leaf must DENY
 // its endpoint. These endpoints previously gated on a coarse floor only (or an
@@ -20,8 +29,10 @@ const MEMBER = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
 
 const minted: string[] = [];
+let upstream: LocalGitUpstream;
 
 beforeAll(async () => {
+  upstream = createLocalGitUpstream('write-leaf-gates');
   await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
@@ -31,17 +42,19 @@ beforeAll(async () => {
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'write-leaf-gate-test-project',
-    repoUrl: 'https://example.com/write-leaf-gate-test.git',
+    repoUrl: upstream.repoUrl,
     // Flag-gated routes in CASES (channels/email/*, channels/teams/*) reject
     // with 403 `feature_disabled` when off. Turn them on so this suite measures
     // the LEAF gate, not the flag.
-    metadata: { experimental: { agentmail_email: true, teams: true } },
+    // `llm_gateway` likewise: model-defaults PUT 404s `llm_gateway_disabled`
+    // before the leaf gate when the project has the gateway off.
+    metadata: { experimental: { agentmail_email: true, teams: true, llm_gateway: true } },
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);
@@ -53,6 +66,7 @@ afterAll(async () => {
   }
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
+  upstream.remove();
 });
 
 async function mint(userId: string, permissions: string[] | null): Promise<string> {

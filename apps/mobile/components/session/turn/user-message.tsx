@@ -1,32 +1,33 @@
 /**
  * UserMessage — the user side of a turn. Mirrors apps/web
  * `features/session/turn/user-message.tsx` (`UserMessage`, `UserMessageBubble`,
- * `UserMessageActions`, `UserMessageEditor`, `MessageAttachments`).
+ * `UserMessageEditor`, `MessageAttachments`). Web's `UserMessageActions` row
+ * (time · Edit · Copy) is a long-press menu on mobile instead
+ * (`UserMessageMenuSheet`, Jay 2026-09-27).
  *
- * One right-aligned column capped at 80%: attachments → bubble → actions.
+ * One right-aligned column capped at 80%: attachments → bubble → a queued
+ * status line (only while one applies).
  * Pixel values are web's RENDERED values (web spacing is 0.23rem per step, see
  * `webSpace` in `lib/session/user-message.ts`). Pure logic lives in
  * `lib/session/user-message.ts`, `lib/session/mention-segments.ts` and
  * `lib/session/attachment-tile.ts`.
  */
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Clipboard from 'expo-clipboard';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { TURN_ACTION_HIT_SLOP } from '@/components/session/turn/session-turn-meta';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import {
   CaretDownIcon,
-  CheckIcon,
   CopyIcon,
+  PencilIcon,
+  TextTIcon,
   DownloadSimpleIcon,
   PaperPlaneTiltIcon,
-  PencilSimpleRegularIcon,
   SlackLogoIcon,
   TimerIcon,
 } from '@/lib/icons';
@@ -41,8 +42,8 @@ import { formatMegabytes } from '@/lib/session/image-load';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
 import {
   isPreviewableImage,
+  localOrResolvedSource,
   planAttachmentGrid,
-  resolveAttachmentSource,
 } from '@/lib/session/attachment-tile';
 import {
   commandMessageText,
@@ -50,13 +51,25 @@ import {
   parseUserMessageText,
   queuedPromptStatusLabel,
   quoteMarginBottom,
-  userMessageMetaItems,
+  userMessageSentLabel,
   webSpace,
   type QueuedPromptState,
 } from '@/lib/session/user-message';
 import { MentionChip } from '../mention-chip';
 import { AttachmentOverflowTile, AttachmentTile } from '../attachment-tile';
 import { useSandboxImage } from './use-sandbox-image';
+import { haptics } from '@/lib/haptics';
+import * as Clipboard from 'expo-clipboard';
+import type { TriggerRef } from '@rn-primitives/context-menu';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import { useToast } from '@/components/kortix/toast-provider';
 
 // ─── Values (web → rendered px) ──────────────────────────────────────────────
 
@@ -78,39 +91,6 @@ const CHANNEL_BRAND_COLOR = {
   Telegram: 'hsl(198.7 91.9% 56.3%)', // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
   Slack: 'hsl(339.6 82.2% 51.6%)', // hex-allowlist: Slack pink, web CHANNEL_BRAND_COLOR.Slack hsl(339.6 82.2% 51.6%)
 } as const;
-
-// ─── One clock for every relative time label ─────────────────────────────────
-
-const TICK_MS = 30_000;
-const clockListeners = new Set<() => void>();
-let clockTimer: ReturnType<typeof setInterval> | null = null;
-let clockNow = 0;
-
-function subscribeClock(listener: () => void): () => void {
-  clockListeners.add(listener);
-  if (!clockTimer) {
-    clockTimer = setInterval(() => {
-      clockNow = Date.now();
-      for (const l of clockListeners) l();
-    }, TICK_MS);
-  }
-  return () => {
-    clockListeners.delete(listener);
-    if (clockListeners.size === 0 && clockTimer) {
-      clearInterval(clockTimer);
-      clockTimer = null;
-    }
-  };
-}
-
-function getClockNow(): number {
-  if (clockNow === 0) clockNow = Date.now();
-  return clockNow;
-}
-
-function useNow(): number {
-  return useSyncExternalStore(subscribeClock, getClockNow, getClockNow);
-}
 
 /** `isDark` is passed down from SessionTurn. */
 function paletteFor(isDark: boolean) {
@@ -136,6 +116,8 @@ interface MessageAttachment {
   filename: string;
   mime?: string;
   src?: string;
+  /** The picked file on the device (an optimistic send, COR-185): shown until the server echo replaces the message. */
+  localUri?: string;
 }
 
 // ─── UserMessage ─────────────────────────────────────────────────────────────
@@ -201,8 +183,8 @@ export function UserMessage({
         src: f.path || undefined,
       })),
       ...fileParts.map((p) => {
-        const fp = p as unknown as { id: string; filename?: string; mime: string; url?: string };
-        return { key: fp.id, filename: fp.filename || 'File', mime: fp.mime, src: fp.url };
+        const fp = p as unknown as { id: string; filename?: string; mime: string; url?: string; localUri?: string };
+        return { key: fp.id, filename: fp.filename || 'File', mime: fp.mime, src: fp.url, localUri: fp.localUri };
       }),
     ];
     return { rawText, content, attachments };
@@ -239,20 +221,41 @@ export function UserMessage({
 
   const statusLabel = queueState ? queuedPromptStatusLabel(queueState) : null;
 
-  const actions = (
-    <UserMessageActions
-      isDark={isDark}
-      timestamp={timestamp}
-      edited={edited}
-      copyText={promptText || undefined}
-      onEdit={
-        onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo
-          ? () => onEditStart(messageId, promptText)
-          : undefined
-      }
-      leadingStatus={statusLabel}
-    />
-  );
+  // Long press opens the message menu right under the bubble (Jay,
+  // 2026-09-27: a sheet pulled the eye away): the time it was sent, then
+  // Copy · Select text · Edit. It replaced the "just now · Edit · Copy" row
+  // under the bubble; only a queued status line (or Select text's Done)
+  // stays there. The bubble's own long press opens it through the trigger's
+  // ref: the bubble is already a Pressable (tap expands a long message).
+  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo;
+  const menuRef = useRef<TriggerRef>(null);
+  // Select text: the bubble's text becomes selectable in place until Done.
+  const [selecting, setSelecting] = useState(false);
+  const openMenu = useCallback(() => {
+    if (!promptText) return;
+    haptics.medium();
+    menuRef.current?.open();
+  }, [promptText]);
+  const menuProps = {
+    menuRef,
+    text: promptText,
+    timestamp,
+    edited,
+    onEdit: canEdit ? () => onEditStart?.(messageId, promptText) : undefined,
+  };
+
+  const actions = selecting ? (
+    <Button variant="ghost" size="sm" className="rounded-full" onPress={() => setSelecting(false)}>
+      <Text>Done</Text>
+    </Button>
+  ) : statusLabel ? (
+    <Text
+      variant="muted"
+      numberOfLines={1}
+      style={[META_TEXT_STYLE, { color: withAlpha(paletteFor(isDark).mutedForeground, 0.7) }]}>
+      {statusLabel}
+    </Text>
+  ) : null;
 
   // Editing replaces the whole column with the full-width editor.
   if (editingText != null && onEditSend && onEditCancel) {
@@ -274,7 +277,10 @@ export function UserMessage({
     return (
       <Reanimated.View className="px-4" style={dimStyle}>
         <View className="items-end" style={{ gap: webSpace(1) }}>
-          <View
+          <MessageMenu {...menuProps}>
+          <Pressable
+            onLongPress={openMenu}
+            delayLongPress={350}
             className="border-border/60 bg-muted/40 rounded-lg border"
             style={{ maxWidth: '80%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}
           >
@@ -297,7 +303,8 @@ export function UserMessage({
             {channelMessageInfo.messageText ? (
               <Text className="text-sm">{channelMessageInfo.messageText}</Text>
             ) : null}
-          </View>
+          </Pressable>
+          </MessageMenu>
           {actions}
         </View>
       </Reanimated.View>
@@ -308,7 +315,10 @@ export function UserMessage({
     return (
       <Reanimated.View className="px-4" style={dimStyle}>
         <View className="items-end" style={{ gap: webSpace(1) }}>
-          <View
+          <MessageMenu {...menuProps}>
+          <Pressable
+            onLongPress={openMenu}
+            delayLongPress={350}
             className="border-border/60 bg-muted/40 rounded-lg border"
             style={{ maxWidth: '80%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}
           >
@@ -330,7 +340,8 @@ export function UserMessage({
                 {triggerEventInfo.prompt}
               </Text>
             ) : null}
-          </View>
+          </Pressable>
+          </MessageMenu>
           {actions}
         </View>
       </Reanimated.View>
@@ -349,25 +360,128 @@ export function UserMessage({
 
         {hasBubble ? (
           // A failed send greys its bubble; "Try again" above stays full strength.
-          <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
-            <UserMessageBubble isDark={isDark} quotes={content.quotes}>
-              {bodyText || commandInfo ? (
-                <MessageBody
-                  text={bodyText}
-                  command={commandInfo?.name}
-                  sessions={content.sessions}
-                  agentNames={agentNames}
-                  onFileMention={onFileMention}
-                  onSessionMention={onSessionMention}
-                />
-              ) : null}
-            </UserMessageBubble>
-          </View>
+          <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
+            <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
+              <UserMessageBubble
+                isDark={isDark}
+                quotes={content.quotes}
+                // While selecting, a long press belongs to the text selection.
+                onLongPress={selecting ? undefined : openMenu}>
+                {selecting ? (
+                  <SelectableMessageText text={promptText} isDark={isDark} />
+                ) : bodyText || commandInfo ? (
+                  <MessageBody
+                    text={bodyText}
+                    command={commandInfo?.name}
+                    sessions={content.sessions}
+                    agentNames={agentNames}
+                    onFileMention={onFileMention}
+                    onSessionMention={onSessionMention}
+                  />
+                ) : null}
+              </UserMessageBubble>
+            </View>
+          </MessageMenu>
         ) : null}
 
         {actions}
       </View>
     </Reanimated.View>
+  );
+}
+
+// ─── Long-press menu ─────────────────────────────────────────────────────────
+
+/**
+ * The message menu, anchored under its bubble (`relativeTo="trigger"`, bottom,
+ * end-aligned like the bubble): the time it was sent, then Copy · Select text
+ * · Edit. The components are the RNR `context-menu`; `ContextMenuContent`
+ * portals over the thread and closes on a tap outside or an item.
+ */
+function MessageMenu({
+  menuRef,
+  text,
+  timestamp,
+  edited,
+  onEdit,
+  onSelectText,
+  children,
+}: {
+  menuRef: React.RefObject<TriggerRef | null>;
+  text: string;
+  timestamp: number | null;
+  edited: boolean;
+  onEdit?: () => void;
+  onSelectText?: () => void;
+  children: React.ReactNode;
+}) {
+  const toast = useToast();
+  // Read when the menu renders its content (on open), so "Today" is current.
+  const sentLabel = userMessageSentLabel({ timestamp, edited, now: Date.now() });
+  const copy = useCallback(async () => {
+    await Clipboard.setStringAsync(text);
+    haptics.success();
+    toast.success('Copied');
+  }, [text, toast]);
+
+  return (
+    <ContextMenu relativeTo="trigger">
+      {/* The trigger only measures the bubble: the bubble's own long press
+          calls `menuRef.current.open()`. */}
+      <ContextMenuTrigger ref={menuRef} asChild>
+        <View>{children}</View>
+      </ContextMenuTrigger>
+      <ContextMenuContent side="bottom" align="end" sideOffset={6} className="min-w-48">
+        {sentLabel ? (
+          <>
+            <ContextMenuLabel className="text-muted-foreground text-xs font-normal">{sentLabel}</ContextMenuLabel>
+            <ContextMenuSeparator />
+          </>
+        ) : null}
+        <ContextMenuItem onPress={() => void copy()}>
+          <Icon as={CopyIcon} size={16} className="text-foreground" />
+          <Text>Copy</Text>
+        </ContextMenuItem>
+        {onSelectText ? (
+          <ContextMenuItem onPress={onSelectText}>
+            <Icon as={TextTIcon} size={16} className="text-foreground" />
+            <Text>Select text</Text>
+          </ContextMenuItem>
+        ) : null}
+        {onEdit ? (
+          <ContextMenuItem onPress={onEdit}>
+            <Icon as={PencilIcon} size={16} className="text-foreground" />
+            <Text>Edit</Text>
+          </ContextMenuItem>
+        ) : null}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+/**
+ * Select text: the message, selectable in its own bubble, in the bubble's type.
+ * Android: a selectable `Text` is a TextView with range selection. iOS: a
+ * selectable `Text` offers only "Copy" of the whole text, so a read-only raw
+ * `TextInput` (not `Input`: it is not a field, and `Input` draws one) gives
+ * range selection.
+ */
+function SelectableMessageText({ text, isDark }: { text: string; isDark: boolean }) {
+  if (Platform.OS === 'ios') {
+    return (
+      <TextInput
+        value={text}
+        editable={false}
+        multiline
+        scrollEnabled={false}
+        style={[BUBBLE_TEXT_STYLE, { color: paletteFor(isDark).foreground, padding: 0 }]}
+      />
+    );
+  }
+  return (
+    <Text selectable style={BUBBLE_TEXT_STYLE}>
+      {text}
+    </Text>
   );
 }
 
@@ -452,11 +566,14 @@ export function UserMessageBubble({
   isDark,
   quotes = [],
   children,
+  onLongPress,
 }: {
   isDark: boolean;
   /** Quoted passages above the text. Omitted by the connecting screen's pending-prompt bubble. */
   quotes?: string[];
   children?: React.ReactNode;
+  /** Opens the message menu (Copy · Select text · Edit). */
+  onLongPress?: () => void;
 }) {
   const palette = paletteFor(isDark);
   const surface = isDark ? palette.muted : palette.sidebar;
@@ -481,7 +598,9 @@ export function UserMessageBubble({
   return (
     <Pressable
       onPress={canExpand ? toggle : undefined}
-      disabled={!canExpand}
+      onLongPress={onLongPress}
+      delayLongPress={350}
+      disabled={!canExpand && !onLongPress}
       accessible={false}
       style={{
         maxWidth: '100%',
@@ -547,99 +666,6 @@ export function UserMessageBubble({
         </View>
       ) : null}
     </Pressable>
-  );
-}
-
-// ─── Actions row ─────────────────────────────────────────────────────────────
-
-/**
- * `flex justify-end gap-2`: status, `InlineMeta` (relative time · edited at
- * `text-xs text-muted-foreground/70`, `·` at `/30`), Edit, Copy. Web reveals
- * the row on hover above 768px and shows it always below; a phone always shows it.
- */
-export function UserMessageActions({
-  isDark,
-  timestamp,
-  edited,
-  copyText,
-  onEdit,
-  leadingStatus,
-}: {
-  isDark: boolean;
-  timestamp: number | null;
-  edited: boolean;
-  copyText?: string;
-  onEdit?: () => void;
-  leadingStatus?: string | null;
-}) {
-  const palette = paletteFor(isDark);
-  const now = useNow();
-  const [copied, setCopied] = useState(false);
-  const items = userMessageMetaItems({ timestamp, edited, now });
-  const metaColor = withAlpha(palette.mutedForeground, 0.7);
-  const separatorColor = withAlpha(palette.mutedForeground, 0.3);
-
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 2000);
-    return () => clearTimeout(t);
-  }, [copied]);
-
-  const handleCopy = useCallback(async () => {
-    if (!copyText) return;
-    await Clipboard.setStringAsync(copyText);
-    setCopied(true);
-  }, [copyText]);
-
-  if (!leadingStatus && items.length === 0 && !copyText) return null;
-
-  return (
-    // 28pt `icon-sm` buttons, pulled back to web's 24px row height.
-    <View className="-my-0.5 flex-row items-center justify-end" style={{ gap: webSpace(2) }}>
-      {leadingStatus ? (
-        <Text variant="muted" numberOfLines={1} className="shrink" style={[META_TEXT_STYLE, { color: metaColor }]}>
-          {leadingStatus}
-        </Text>
-      ) : null}
-      {items.length > 0 ? (
-        <View className="shrink flex-row items-center" style={{ gap: webSpace(2) }}>
-          {items.map((item, i) => (
-            <View key={`${i}-${item}`} className="shrink flex-row items-center" style={{ gap: webSpace(2) }}>
-              {i > 0 ? (
-                <Text variant="muted" style={[META_TEXT_STYLE, { color: separatorColor }]}>
-                  ·
-                </Text>
-              ) : null}
-              <Text variant="muted" numberOfLines={1} style={[META_TEXT_STYLE, { color: metaColor, fontVariant: ['tabular-nums'] }]}>
-                {item}
-              </Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
-      {copyText ? (
-        <View className="flex-row items-center">
-          {onEdit ? (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              hitSlop={TURN_ACTION_HIT_SLOP}
-              onPress={onEdit}
-              accessibilityLabel="Edit message">
-              <Icon as={PencilSimpleRegularIcon} size={webSpace(4)} className="text-foreground" />
-            </Button>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            hitSlop={TURN_ACTION_HIT_SLOP}
-            onPress={handleCopy}
-            accessibilityLabel={copied ? 'Copied' : 'Copy message'}>
-            <Icon as={copied ? CheckIcon : CopyIcon} size={webSpace(4)} className="text-foreground" />
-          </Button>
-        </View>
-      ) : null}
-    </View>
   );
 }
 
@@ -786,7 +812,7 @@ function MessageAttachmentTile({
   file: MessageAttachment;
   onOpenPath?: (path: string) => void;
 }) {
-  const source = resolveAttachmentSource(file.src);
+  const source = localOrResolvedSource(file.localUri, file.src);
   const path = source && 'path' in source ? source.path : '';
   const directUri = source && 'uri' in source ? source.uri : null;
   const isImage = isPreviewableImage(file.filename, file.mime);

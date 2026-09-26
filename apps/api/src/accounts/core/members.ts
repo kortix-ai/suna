@@ -45,8 +45,8 @@ import {
   lookupEmailsByUserIds,
   normalizeEmail,
   parseRole,
-  readBody,
 } from './app';
+import { readJsonObject } from '../../shared/http-body';
 
 
 /**
@@ -379,7 +379,7 @@ export function registerMemberRoutes(): void {
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
 
-      const body = await readBody(c);
+      const body = await readJsonObject(c);
       const email = normalizeEmail(body.email);
       if (!email) return c.json({ error: 'A valid email is required' }, 400);
 
@@ -869,7 +869,7 @@ export function registerMemberRoutes(): void {
       if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_UPDATE);
 
-      const body = await readBody(c);
+      const body = await readJsonObject(c);
       const newRole = parseRole(body.role, ['owner', 'admin', 'member']);
       if (!newRole) return c.json({ error: 'role must be one of owner|admin|member' }, 400);
 
@@ -909,7 +909,8 @@ export function registerMemberRoutes(): void {
 
       const writer = await actorOf(c, accountId);
       await auditAccountRoleRevoked(writer, accountId, targetUserId, newRole);
-      await db
+      // Demoting an owner also clears the super-admin bypass the owner held
+      // (`clearSuperAdminAfterOwnerLoss`, run by the exclusive grant).
       await grantAccountRole(writer, accountId, targetUserId, newRole);
 
       if (newRole === 'owner' || newRole === 'admin') {

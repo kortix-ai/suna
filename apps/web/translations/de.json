@@ -29,7 +29,8 @@
     "rotateKey": "Schlüssel erneuern",
     "manageAccess": "Zugriff verwalten",
     "sessionKeyPool": "Sitzungsschlüsselpool",
-    "sharedDescription": "Fügen Sie mehrere API-Schlüssel und ChatGPT-Konten hinzu. Standardmäßig kann jeder in diesem Projekt sie nutzen. Beschränken Sie den Zugriff pro Verbindung und wählen Sie Schlüssel pro Sitzung.",
+    "sharedSessionKeys": "Diese Sitzung ist für das Projekt freigegeben, daher funktionieren hier nur Schlüssel, die für das ganze Projekt freigegeben sind. Ihnen zugewiesene Schlüssel funktionieren in Ihren privaten Sitzungen.",
+    "sharedDescription": "Fügen Sie API-Schlüssel und ChatGPT-Konten hinzu. Neue Verbindungen sind privat, bis Sie sie teilen. Wählen Sie pro Sitzung, welche genutzt werden.",
     "empty": "Noch keine freigegebenen Anbieterschlüssel.",
     "key": "Schlüssel",
     "deleteAccount": "Konto löschen",
@@ -55,7 +56,26 @@
     "deleteConfirmDescription": "{label} wird aus allen Sitzungspools entfernt. Andere Schlüssel bleiben verfügbar.",
     "saveSelection": "Schlüsselauswahl speichern",
     "personalChatGptDefault": "Standard-ChatGPT-Verbindung verwenden",
-    "oauthPrivateDescription": "Neue ChatGPT-Konten sind standardmäßig für dieses Projekt verfügbar. Sie können jedes Konto auf ausgewählte Mitglieder beschränken.",
+    "oauthPrivateDescription": "Nutzen Sie Ihr ChatGPT-Plus- oder Pro-Abo in diesem Projekt. Neue Konten sind privat, bis Sie sie teilen.",
+    "chatGptSubscription": "ChatGPT-Abo",
+    "useYourChatGpt": "Eigenes ChatGPT-Abo nutzen",
+    "manageChatGptAccounts": "ChatGPT-Konten verwalten",
+    "connect": "Verbinden",
+    "connectChatGpt": "ChatGPT verbinden",
+    "noChatGptAccounts": "Noch keine ChatGPT-Konten",
+    "oauthCreationDescription": "Melden Sie sich mit Ihrem ChatGPT-Plus- oder Pro-Konto an. Kortix speichert die Anmeldung verschlüsselt und zeigt sie nie an.",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "Nur Sie",
+    "onlyYouDescription": "Nur Sie können sie in einer Sitzung auswählen.",
+    "onlyOwner": "Nur {name}",
+    "shareRequiresPermission": "Zum Teilen mit anderen brauchen Sie die Berechtigung, Projektgeheimnisse zu verwalten.",
+    "accountConnected": "ChatGPT-Konto verbunden",
+    "accountReconnected": "ChatGPT-Konto neu verbunden",
+    "connectFailed": "ChatGPT-Autorisierung fehlgeschlagen. Versuchen Sie es erneut.",
+    "reconnectAccount": "Neu verbinden",
+    "reconnectTitle": "{label} neu verbinden",
+    "reconnectDescription": "Melden Sie sich erneut bei ChatGPT an. Name, Zugriff und Sitzungsauswahl des Kontos bleiben erhalten.",
+    "needsReconnection": "Neu verbinden erforderlich",
     "saveKey": "Schlüssel speichern",
     "everyoneInProject": "Alle in diesem Projekt",
     "chooseProvider": "Anbieter auswählen.",
@@ -552,7 +572,7 @@
         },
         "pooled_provider_secrets": {
           "name": "Gemeinsam genutzte Anbieter-Schlüssel",
-          "description": "Teilen Sie mehrere Anbieter-Schlüssel mit Mitgliedern und wählen Sie einen Schlüsselpool pro Sitzung."
+          "description": "Mitglieder verbinden ihre eigenen ChatGPT-Abos und Anbieter-Schlüssel, teilen sie bei Bedarf und wählen pro Sitzung, welche genutzt werden."
         },
         "teams": {
           "name": "Microsoft Teams",
@@ -589,6 +609,10 @@
         "agent_principal": {
           "name": "Agenten als Prinzipale",
           "description": "Agenten handeln als sie selbst: mit ihren Kortix-Berechtigungen, begrenzt durch ihre Rolle. Wer einen Agenten ausführt, bringt nur die eigenen Konten ein."
+        },
+        "config_releases": {
+          "name": "Config-Releases",
+          "description": "Sitzungen mit der aktuellen Agent-Konfiguration des Basis-Branch ausführen, schreibgeschützt bereitgestellt, damit ein gemergter Agent, Skill oder Tool jede laufende Sitzung erreicht. Bei Aus liest eine Sitzung ihren eigenen Workspace-Konfigurationsordner."
         },
         "agentmail_email": {
           "name": "AgentMail-E-Mail",
@@ -1228,6 +1252,10 @@
       "faq": {
         "title": "Funktionsweise",
         "items": {
+          "1": {
+            "answer": "Ein Snapshot ist eine bereits eingerichtete Maschine. Das Repository dieses Projekts, seine Abhängigkeiten und die Kortix-Werkzeuge sind vorinstalliert. Eine Sitzung kopiert diese Maschine, anstatt alles neu zu installieren. Deshalb ist sie in Sekunden statt Minuten bereit.",
+            "question": "Was ist ein Snapshot?"
+          },
           "2": {
             "answer": "Kortix bereitet bei jeder Rezeptänderung eine neue Maschine vor, etwa bei einer neuen Sandbox-Vorlage, einer geänderten Dockerfile oder einer zusammengeführten Änderung. Jeder Versuch erhält eine eigene Zeile. Ältere Zeilen bleiben als Verlauf erhalten und sind keine Aufgabenliste.",
             "question": "Warum erscheinen immer neue Zeilen?"
@@ -1235,10 +1263,6 @@
           "3": {
             "answer": "Meist nicht. Ein fehlgeschlagener Versuch ist nur relevant, solange keine funktionierende Maschine verfügbar ist. Dann erscheint oben ein Hinweis mit einer Schaltfläche zur Neuerstellung. Eine fehlgeschlagene Zeile ohne Hinweis wurde bereits durch einen erfolgreichen Versuch ersetzt.",
             "question": "Ein Versuch ist fehlgeschlagen. Ist das ein Problem?"
-          },
-          "1": {
-            "answer": "Ein Snapshot ist eine bereits eingerichtete Maschine. Das Repository dieses Projekts, seine Abhängigkeiten und die Kortix-Werkzeuge sind vorinstalliert. Eine Sitzung kopiert diese Maschine, anstatt alles neu zu installieren. Deshalb ist sie in Sekunden statt Minuten bereit.",
-            "question": "Was ist ein Snapshot?"
           }
         }
       },
@@ -1611,15 +1635,10 @@
       "updateHint": "Bittet den Agenten, diese Sitzung zu aktualisieren",
       "message": "Das Projekt hat sich seit dem Start dieser Sitzung geändert. Aktualisiere sie, um mit der neuesten Version weiterzuarbeiten.",
       "updateFailed": "Der Aktualisierungs-Prompt konnte nicht gesendet werden.",
-      "resuming": "Wird fortgesetzt…",
-      "unavailable": "Der vorherige Arbeitsbereich ist nicht mehr verfügbar. Starte eine neue Sitzung im aktuellen Repository.",
       "dismiss": "Schließen",
       "update": "Auf neuesten Stand bringen",
-      "resume": "Vorherigen Arbeitsbereich fortsetzen",
-      "delete": "Sitzung löschen",
       "updateSent": "Aktualisierung in dieser Sitzung gestartet",
-      "updating": "Wird aktualisiert…",
-      "newSession": "Neue Sitzung starten"
+      "updating": "Wird aktualisiert…"
     },
     "stopped": {
       "message": "Der zugehörige Computer wurde freigegeben. Starte die Sitzung neu, um sie wiederherzustellen.",
@@ -1633,6 +1652,7 @@
     },
     "delete": "Sitzung löschen",
     "failedLabel": "Fehlgeschlagene Sitzung",
+    "loadingConversation": "Gespräch wird geladen",
     "missing": {
       "message": "Diese Sitzung ist nicht mehr verfügbar oder du hast keinen Zugriff darauf.",
       "title": "Sitzung konnte nicht gestartet werden"
@@ -1753,11 +1773,11 @@
         "imageAlt": "Nexus Enterprise Automation Platform Folien-Beispiel",
         "capabilities": {
           "0": "Pitch-Decks",
-          "5": "+ Vieles mehr",
           "1": "Schulungsmaterial",
-          "4": "Inhaltsumstrukturierung",
           "2": "Berichtspräsentationen",
-          "3": "Design- & Layoutvarianten"
+          "3": "Design- & Layoutvarianten",
+          "4": "Inhaltsumstrukturierung",
+          "5": "+ Vieles mehr"
         },
         "fileType": "PPTX",
         "description": "Erstelle auf Anhieb beeindruckende Präsentationen. Von Pitch-Decks über Berichte bis hin zu Schulungsmaterialien. Passt Designs, Layouts, Inhaltsstruktur an oder verfeinert bestehende Decks mit schnellen Bearbeitungen und Updates."
@@ -1767,11 +1787,11 @@
         "imageAlt": "Detaillierte Wettbewerber-Profile Recherche-Beispiel",
         "capabilities": {
           "0": "Markttrends analysieren",
-          "5": "+ Vieles mehr",
           "1": "Wettbewerbsrecherche",
-          "4": "Erkenntnisse synthetisieren",
           "2": "Tiefgreifende Themenuntersuchungen",
-          "3": "Quellen sammeln"
+          "3": "Quellen sammeln",
+          "4": "Erkenntnisse synthetisieren",
+          "5": "+ Vieles mehr"
         },
         "fileType": "PDF",
         "description": "Erforscht Themen umfassend. Von Markttrends über Wettbewerbsanalysen bis hin zu tiefgreifenden Untersuchungen. Sammelt Quellen, synthetisiert Erkenntnisse oder verfeinert bestehende Recherchen mit schnellen Updates."
@@ -1781,11 +1801,11 @@
         "imageAlt": "Wachstum ist nicht linear Grafik-Beispiel",
         "capabilities": {
           "0": "Produktfotos generieren",
-          "5": "+ Vieles mehr",
           "1": "Social-Media-Grafiken erstellen",
-          "4": "Logo- / Asset-Erstellung",
           "2": "Illustrationen erstellen",
-          "3": "Stil- & Beleuchtungsvarianten"
+          "3": "Stil- & Beleuchtungsvarianten",
+          "4": "Logo- / Asset-Erstellung",
+          "5": "+ Vieles mehr"
         },
         "fileType": "Bild",
         "description": "Erstelle Bilder nach Bedarf. Von Produktfotos über Social-Media-Grafiken bis hin zu vollständigen Illustrationen. Passt Stil, Beleuchtung, Farben und Layout an oder verfeinert bestehende Visuals mit schnellen Bearbeitungen und Retuschen."
@@ -1795,11 +1815,11 @@
         "imageAlt": "Q3 2025 Executive Summary Report Beispiel",
         "capabilities": {
           "0": "Vorschläge",
-          "5": "+ Vieles mehr",
           "1": "Anleitungen & Handbücher",
-          "4": "Formatieren & umstrukturieren",
           "2": "Inhalte",
-          "3": "Ton- & Stilvarianten"
+          "3": "Ton- & Stilvarianten",
+          "4": "Formatieren & umstrukturieren",
+          "5": "+ Vieles mehr"
         },
         "fileType": "PDF",
         "description": "Schreibt und bearbeitet Dokumente mühelos. Von Vorschlägen über Anleitungen bis hin zu Inhalten. Passt Ton, Struktur, Formatierung an oder verfeinert bestehende Dokumente mit schnellen Umschreibungen und Polierungen."
@@ -1809,11 +1829,11 @@
         "imageAlt": "Finanzmodell-Dashboard-Beispiel",
         "capabilities": {
           "0": "Dashboards",
-          "5": "+ Vieles mehr",
           "1": "Visualisierungen",
-          "4": "Erkenntnisse generieren",
           "2": "Datenberichte",
-          "3": "Daten bereinigen & organisieren"
+          "3": "Daten bereinigen & organisieren",
+          "4": "Erkenntnisse generieren",
+          "5": "+ Vieles mehr"
         },
         "fileType": "Vorschau",
         "description": "Verwandelt Rohdaten in Erkenntnisse. Von Tabellenkalkulationen über Dashboards bis hin zu Visualisierungen. Bereinigt Datensätze, erstellt Diagramme, erstellt Berichte oder verfeinert bestehende Analysen mit schnellen Updates."
@@ -2633,92 +2653,92 @@
     "prompts": {
       "video": {
         "0": "Animiere mein Produktfoto mit sanfter Rotation und Studiobeleuchtung",
-        "5": "Füge dramatische Beleuchtung und Farbkorrektur zu meinem Porträt hinzu",
         "1": "Verwandle mein Porträt in eine cinematische Szene mit Kamerabewegung",
-        "4": "Mein Produkt schwebend und rotierend mit weichen Schatten",
-        "9": "Generiere eine futuristische Stadtansicht mit Neonlichtern und Reflexionen",
         "2": "Generiere ein Naturvideo von langsam fallenden Kirschblüten",
+        "3": "Erstelle leuchtende Partikel die zusammen wirbeln in Zeitlupe",
+        "4": "Mein Produkt schwebend und rotierend mit weichen Schatten",
+        "5": "Füge dramatische Beleuchtung und Farbkorrektur zu meinem Porträt hinzu",
         "6": "Generiere einen Drohnenflug durch neblige Berggipfel",
         "7": "Erstelle ein Loop-Video von flüssigem Metall in organischen Formen",
         "8": "Verwandle meinen Fotohintergrund in Unterwasser mit Lichtstrahlen",
-        "3": "Erstelle leuchtende Partikel die zusammen wirbeln in Zeitlupe"
+        "9": "Generiere eine futuristische Stadtansicht mit Neonlichtern und Reflexionen"
       },
       "slides": {
         "0": "Erstelle ein Series-A-Pitch-Deck mit Marktgröße, Traktion und Finanzprognosen",
-        "5": "Erstelle eine Kunden-Fallstudien-Präsentation mit ROI und Erfolgsmetriken",
         "1": "Erstelle eine Q4-Geschäftsübersicht mit KPIs, Erfolgen und strategischen Initiativen",
-        "4": "Erstelle ein Investor-Update mit wichtigen Metriken und bevorstehenden Meilensteinen",
-        "9": "Erstelle eine Vorstands-Präsentation mit strategischen Empfehlungen",
         "2": "Gestalte eine Produkt-Launch-Präsentation mit Demo-Videos und Kundenstimmen",
+        "3": "Entwickle ein Sales-Enablement-Deck, das unseren Wertversprechen und Wettbewerbsvorteile erklärt",
+        "4": "Erstelle ein Investor-Update mit wichtigen Metriken und bevorstehenden Meilensteinen",
+        "5": "Erstelle eine Kunden-Fallstudien-Präsentation mit ROI und Erfolgsmetriken",
         "6": "Gestalte eine All-Hands-Präsentation mit Unternehmens-Updates und Vision",
         "7": "Entwickle ein Schulungs-Deck für neue Produktfunktionen und Workflows",
         "8": "Erstelle einen Konferenz-Vortrag über die Skalierung von Engineering-Teams",
-        "3": "Entwickle ein Sales-Enablement-Deck, das unseren Wertversprechen und Wettbewerbsvorteile erklärt"
+        "9": "Erstelle eine Vorstands-Präsentation mit strategischen Empfehlungen"
       },
       "research": {
         "0": "Analysiere aufkommende Trends im Quantencomputing und potenzielle Geschäftsanwendungen",
-        "5": "Recherchiere Web3-Adoptionsmuster unter Fortune-500-Unternehmen",
         "1": "Recherchiere die Top 10 Wettbewerber im KI-gestützten CRM-Bereich mit Feature-Vergleich",
-        "4": "Studiere die Auswirkungen von Remote-Arbeit auf die Nachfrage nach Gewerbeimmobilien in Großstädten",
-        "9": "Recherchiere das Wettbewerbsumfeld KI-gestützter Cybersicherheitslösungen",
         "2": "Untersuche regulatorische Anforderungen für den Launch einer Fintech-App in der EU",
+        "3": "Erstelle eine Marktanalyse über Elektrofahrzeug-Adoptionsraten in wichtigen Märkten",
+        "4": "Studiere die Auswirkungen von Remote-Arbeit auf die Nachfrage nach Gewerbeimmobilien in Großstädten",
+        "5": "Recherchiere Web3-Adoptionsmuster unter Fortune-500-Unternehmen",
         "6": "Analysiere das Verbraucherstimmungsbild gegenüber nachhaltigen Modemarken",
         "7": "Untersuche die neuesten Entwicklungen in der Gentherapie für seltene Krankheiten",
         "8": "Studiere Preisstrategien erfolgreicher D2C-Abonnementbox-Unternehmen",
-        "3": "Erstelle eine Marktanalyse über Elektrofahrzeug-Adoptionsraten in wichtigen Märkten"
+        "9": "Recherchiere das Wettbewerbsumfeld KI-gestützter Cybersicherheitslösungen"
       },
       "canvas": {
         "0": "Füge ein Tech-Startup-Banner zur Canvas mit futuristischer Stadtsilhouette hinzu",
-        "5": "Füge ein YouTube-Thumbnail zur Canvas für Produktivitätstipps-Video hinzu",
         "1": "Erstelle ein Kaffeemarken-Logo auf Canvas im minimalistischen Erdton-Stil",
-        "4": "Erstelle ein Sci-Fi-Buchcover auf Canvas im Cyberpunk-Stil",
-        "9": "Erstelle ein Musikfestival-Poster auf Canvas mit psychedelischem Vibe",
         "2": "Füge mein Produktfoto zur Canvas hinzu und entferne den Hintergrund",
+        "3": "Designe eine Infografik zu erneuerbaren Energien auf Canvas mit flachen Icons",
+        "4": "Erstelle ein Sci-Fi-Buchcover auf Canvas im Cyberpunk-Stil",
+        "5": "Füge ein YouTube-Thumbnail zur Canvas für Produktivitätstipps-Video hinzu",
         "6": "Erstelle ein Luxus-Mode-Moodboard auf Canvas für Millennials",
         "7": "Designe eine elegante Hochzeitseinladung auf Canvas mit Blumenmustern",
         "8": "Füge mein Porträt zur Canvas hinzu und wende Vintage-Film-Effekt an",
-        "3": "Designe eine Infografik zu erneuerbaren Energien auf Canvas mit flachen Icons"
+        "9": "Erstelle ein Musikfestival-Poster auf Canvas mit psychedelischem Vibe"
       },
       "docs": {
         "0": "Schreibe ein umfassendes PRD für eine KI-gestützte Empfehlungsmaschine",
-        "5": "Erstelle ein Unternehmenshandbuch mit Kultur, Richtlinien und Vorteilen",
         "1": "Erstelle ein technisches Architekturdokument für eine skalierbare Microservices-Plattform",
-        "4": "Schreibe einen API-Dokumentationsleitfaden mit Beispielen und Best Practices",
-        "9": "Erstelle einen umfassenden Styleguide für Marke und Content",
         "2": "Erstelle ein Go-to-Market-Strategiedokument für unseren Q2-Produkt-Launch",
+        "3": "Entwickle ein 90-Tage-Onboarding-Playbook für Engineering-Manager",
+        "4": "Schreibe einen API-Dokumentationsleitfaden mit Beispielen und Best Practices",
+        "5": "Erstelle ein Unternehmenshandbuch mit Kultur, Richtlinien und Vorteilen",
         "6": "Erstelle eine Datenschutzrichtlinie, die GDPR und CCPA entspricht",
         "7": "Entwickle ein Customer-Success-Playbook für SaaS-Enterprise-Konten",
         "8": "Schreibe einen Sicherheitsvorfall-Reaktionsplan mit Eskalationsverfahren",
-        "3": "Entwickle ein 90-Tage-Onboarding-Playbook für Engineering-Manager"
+        "9": "Erstelle einen umfassenden Styleguide für Marke und Content"
       },
       "data": {
         "0": "Erstelle ein Finanzmodell, das ARR-Wachstum mit verschiedenen Preisszenarien projiziert",
-        "5": "Erstelle ein Marketing-Attributionsmodell, das Kanalleistung vergleicht",
         "1": "Erstelle ein interaktives Sales-Dashboard, das Metriken nach Region und Quartal verfolgt",
-        "4": "Erstelle eine Kohortenanalyse, die Nutzerbindung und Abwanderungsmuster zeigt",
-        "9": "Erstelle ein Inventarverwaltungssystem mit automatischen Nachbestellungsalarmen",
         "2": "Analysiere 50K Kundenbewertungen und visualisiere Stimmungstrends über die Zeit",
+        "3": "Gestalte einen Content-Kalender, der Kampagnen mit ROI- und Engagement-Diagrammen verfolgt",
+        "4": "Erstelle eine Kohortenanalyse, die Nutzerbindung und Abwanderungsmuster zeigt",
+        "5": "Erstelle ein Marketing-Attributionsmodell, das Kanalleistung vergleicht",
         "6": "Entwickle einen Recruiting-Tracker mit Pipeline-Metriken und Time-to-Fill-Analyse",
         "7": "Erstelle eine Budgetplanungs-Tabelle mit Szenario-Modellierung",
         "8": "Analysiere Website-Traffic-Daten und visualisiere Conversion-Funnels",
-        "3": "Gestalte einen Content-Kalender, der Kampagnen mit ROI- und Engagement-Diagrammen verfolgt"
+        "9": "Erstelle ein Inventarverwaltungssystem mit automatischen Nachbestellungsalarmen"
       },
       "image": {
         "0": "Ein majestätischer goldener Adler, der durch neblige Berggipfel bei Sonnenaufgang mit dramatischer Beleuchtung schwebt",
-        "13": "Rustikale Bauernhausküche mit Kupfertöpfen, frischen Kräutern, Holzschneidebrettern und natürlichen Texturen",
-        "5": "Verspielte schwebende Inseln, verbunden durch Seilbrücken in einem pastellfarbenen Himmel mit verträumten Wolken",
         "1": "Nahaufnahme-Porträt eines Models mit avantgardistischem Make-up, Studio-Beleuchtung und hohen Kontrastschatten",
-        "4": "Elegante Produktfotografie einer Luxus-Parfümflasche auf Marmoroberfläche mit sanften Reflexionen",
-        "9": "Architektonisches Detail einer zeitgenössischen Glasfassade mit geometrischen Mustern und Reflexionen",
-        "11": "Ruhiger japanischer Zen-Garten mit geharktem Sand, moosbedeckten Steinen und Kirschblütenblättern",
         "2": "Gemütliches skandinavisches Wohnzimmer mit natürlichen Holzmöbeln, Zimmerpflanzen und sanftem Morgenlicht",
+        "3": "Futuristischer Cyberpunk-Straßenmarkt bei Nacht mit Neon-Schildern, regennassem Pflaster und holografischen Displays",
+        "4": "Elegante Produktfotografie einer Luxus-Parfümflasche auf Marmoroberfläche mit sanften Reflexionen",
+        "5": "Verspielte schwebende Inseln, verbunden durch Seilbrücken in einem pastellfarbenen Himmel mit verträumten Wolken",
         "6": "Makro-Nahaufnahme von Morgentautropfen auf lebendigen Blütenblättern mit Bokeh-Hintergrund",
-        "10": "Lebendiger Street-Food-Verkaufsstand mit bunten Zutaten, aufsteigendem Dampf und warmem Licht",
         "7": "Modernes Arbeitsplatz-Schreibtisch-Setup mit Laptop, Kaffee, Notizbuch und Sukkulenten von oben",
-        "14": "Abstrakte Fluid-Kunst mit wirbelnden metallischen Gold-, Tiefblau- und Smaragdgrün-Organischen Mustern",
         "8": "Mystischer Waldpfad mit uralten Bäumen, leuchtenden Glühwürmchen und ätherischen Lichtstrahlen durch Nebel",
+        "9": "Architektonisches Detail einer zeitgenössischen Glasfassade mit geometrischen Mustern und Reflexionen",
+        "10": "Lebendiger Street-Food-Verkaufsstand mit bunten Zutaten, aufsteigendem Dampf und warmem Licht",
+        "11": "Ruhiger japanischer Zen-Garten mit geharktem Sand, moosbedeckten Steinen und Kirschblütenblättern",
         "12": "Dynamische Actionaufnahme eines Athleten mitten im Sprung gegen dramatischen Sonnenuntergangshimmel, Silhouetten-Effekt",
-        "3": "Futuristischer Cyberpunk-Straßenmarkt bei Nacht mit Neon-Schildern, regennassem Pflaster und holografischen Displays"
+        "13": "Rustikale Bauernhausküche mit Kupfertöpfen, frischen Kräutern, Holzschneidebrettern und natürlichen Texturen",
+        "14": "Abstrakte Fluid-Kunst mit wirbelnden metallischen Gold-, Tiefblau- und Smaragdgrün-Organischen Mustern"
       }
     },
     "modes": {
@@ -6241,7 +6261,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Alle Worker-Ausführungen sind derzeit pausiert."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Kein Inhalt"
+      "line1115JsxTextNoContent": "Kein Inhalt",
+      "loadRemoteImage": "Bild von {host} laden"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Drücke Enter zum Starten..."
@@ -9471,7 +9492,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": ". Diese Änderungen existieren nur hier; sie sind noch nicht in deiner",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "Version. Schlage die Änderungen vor, damit sie geprüft und übernommen werden.",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Umbenennen…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Teilen…",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix-Sitzung wird gestartet",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "Neues Terminal",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "Dateiansicht",
@@ -18578,6 +18598,17 @@
       "textea5d0ffa0962": "Ein Projektmanager verbindet das gemeinsame Konto.",
       "text3d6627454174": "Anmeldedaten festlegen",
       "text929505ef815a": "Es ist noch kein Konto verbunden. Fügen Sie unten Ihr eigenes hinzu, oder bitten Sie einen Projektmanager, ein gemeinsames Konto zu verbinden.",
+      "text931cb67e2af7": "Die neue Agent-Konfiguration konnte nicht geladen werden. Diese Sitzung läuft weiter mit einer früheren Konfiguration.",
+      "textd9ff3a72833d": "Konfiguration nicht geladen",
+      "textebfb07812fb4": "Die neue Agent-Konfiguration konnte nicht geladen werden",
+      "text4e62b29dd3b6": "Eine frühere Konfiguration läuft in dieser Sitzung. Die fehlerhafte Konfiguration wird erst nach einer Änderung am Basis-Branch erneut versucht.",
+      "textf81ab834de5f": "Grund",
+      "text44cdf35701cd": "Läuft jetzt",
+      "text591f9f0f3259": "Fehlgeschlagenes Release",
+      "text00ed4c71dc2b": "Letztes funktionierendes Release",
+      "textbd7a1a3b4141": "Die Standardkonfiguration der Plattform",
+      "text643df05476ab": "Die Standardkonfiguration der Plattform läuft in dieser Sitzung. Die fehlerhafte Konfiguration wird erst nach einer Änderung am Basis-Branch erneut versucht.",
+      "text40652e008fc9": "Die neue Agent-Konfiguration konnte nicht geladen werden. Diese Sitzung läuft mit der Standardkonfiguration der Plattform.",
       "text3312ddb06c1d": "Registriere einen Bot in Azure, verbinde ihn hier und lade dann das App-Paket in Teams hoch.",
       "text7f1b55a356b0": "Bot in Azure registrieren",
       "text91004edf8b30": "Mit diesem Projekt verbinden",
@@ -18686,7 +18717,9 @@
       "texta0bcee97cbb3": "Inline-Checkout bestätigt",
       "text0b751a917c97": "GitHub-Installation verbunden",
       "text8b7a8797d532": "Mandant für Microsoft Teams verbunden",
+      "text83c0e255d4bb": "Microsoft Teams-Installation abgeschlossen",
       "text17a8cf884e2a": "Slack-Workspace verbunden",
+      "textf887cb0e6800": "Slack-App-Installation abgeschlossen",
       "textc7f9ec5ed69c": "Computer-Tunnel-Agent verbunden",
       "textafd58fcedeee": "E-Mail-Postfach verbunden",
       "text2eda12b4ed38": "Vorhandene GitHub App verbunden",
@@ -18943,6 +18976,7 @@
       "text60954a626cee": "LLM-Gateway-Schlüssel widerrufen",
       "text32c1477a3336": "Computer-Tunnel-Berechtigung widerrufen",
       "text953488439740": "Connector-Konto widerrufen",
+      "texte817b7da7436": "Privates Connector-Konto geteilt",
       "text538cb0effaea": "Persönliches Zugriffstoken widerrufen",
       "text74be1c139903": "Zugriffsrecht auf gepoolten Anbieterschlüssel widerrufen",
       "text6d3935be0516": "Projekt-CLI-Token widerrufen",
@@ -19149,7 +19183,50 @@
       "text2afef4702cc0": "Systemstatus-Banner angezeigt",
       "textbda3fcd4343c": "Stufenkonfigurationen angezeigt",
       "text30cef615e8e3": "Transaktionsübersicht angezeigt",
-      "textd2c6127fc332": "Versions-Diff angezeigt"
+      "textd2c6127fc332": "Versions-Diff angezeigt",
+      "text8cc0d84b66bb": "Slack-Identitätslink angesehen",
+      "text508b43cc4545": "Teams-Identitätslink angesehen",
+      "text467f597e95b0": "SSO-Domain verifiziert",
+      "text8295f9d4861b": "SSO-Domain-Verifizierung des Kontos gesetzt",
+      "text7beaff63a7d3": "Projekt-Konfigurationsarchiv heruntergeladen",
+      "text5176d59f25fd": "Config-Release der Sitzung aufgelöst",
+      "text273c48dbf3b9": "Gerät für Push-Benachrichtigungen registriert",
+      "textbb666ddf7a57": "Gerät für Push-Benachrichtigungen entfernt",
+      "text397ab5aecbbf": "Berechtigungsanfrage für Sitzung weitergeleitet"
+    },
+    "publicShareConfirm": {
+      "title": "Öffentlichen Link erstellen?",
+      "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",
+      "confirm": "Link erstellen"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "Öffentlicher Link",
+      "sectionDescription": "Jeder mit dem Link kann diese Unterhaltung ohne Anmeldung lesen.",
+      "create": "Öffentlichen Link erstellen",
+      "revokeDescription": "Die Unterhaltung lädt für niemanden mit dem Link mehr. Du kannst danach einen neuen Link erstellen.",
+      "rowMeta": "Schreibgeschützte Unterhaltung",
+      "unavailable": "Diese Unterhaltung ist vorübergehend nicht verfügbar.",
+      "unavailableDescription": "Die Unterhaltung kann gerade nicht gelesen werden. Versuche es gleich noch einmal.",
+      "loadFailedDescription": "Die Unterhaltung konnte nicht geladen werden.",
+      "empty": "Noch keine Nachrichten",
+      "savedCopy": "Gespeicherte Kopie vom {date}"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service}-Konto",
+      "chatWorkspace": "{service}-Workspace",
+      "checking": "Link wird geprüft…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} wurde nicht verbunden",
+      "mismatch": "Diese Installation wurde von einem anderen Kortix-Konto oder für ein anderes Projekt gestartet. Melde dich mit diesem Konto an oder starte die Installation im Projekt erneut.",
+      "expired": "Dieser Installationslink ist ungültig oder abgelaufen. Starte die Installation im Projekt erneut.",
+      "failed": "Die Installation konnte nicht abgeschlossen werden. Starte sie im Projekt erneut.",
+      "backToProject": "Zurück zum Projekt"
+    },
+    "secretIntakeWithheld": {
+      "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
+      "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
+      "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
     }
   },
   "projectOnboarding": {
@@ -19208,7 +19285,17 @@
   },
   "commandPalette": {
     "title": "Befehlspalette",
-    "description": "Nach einem auszuführenden Befehl suchen..."
+    "description": "Nach einem auszuführenden Befehl suchen...",
+    "copyTitle": "Kopieren",
+    "copyEmail": "E-Mail",
+    "copyUserId": "Benutzer-ID",
+    "copyAccountId": "Konto-ID",
+    "copyProjectId": "Projekt-ID",
+    "copySessionId": "Sitzungs-ID",
+    "copySessionLink": "Sitzungslink",
+    "copyAction": "{label} kopieren",
+    "copied": "{label} kopiert",
+    "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
   },
   "personalWelcome": {
     "emailCopied": "E-Mail-Adresse kopiert",
@@ -19975,6 +20062,9 @@
     "providerError": "Der Anbieterzugriff konnte nicht aktualisiert werden.",
     "managedTitle": "Von Kortix verwaltete Modelle",
     "managedDescription": "Verwaltete Modelle, abgerechnet über Kortix-Guthaben. Kein API-Schlüssel erforderlich.",
+    "pricingEstimate": "Geschätzter Kundenpreis. Die genutzte Route bestimmt die Kosten.",
+    "pricingRoute": "{route}: {input} Eingabe / {cacheRead} Cache / {output} Ausgabe pro 1 Mio. Token",
+    "pricingPreferred": "Bevorzugt",
     "textImage": "Text + Bild",
     "textOnly": "Nur Text",
     "zdrTitle": "Keine Datenspeicherung",
@@ -20105,5 +20195,64 @@
   },
   "connectorsAppReturn": {
     "done": "Fertig. Zurück zur Kortix-App"
+  },
+  "ssoDomainVerification": {
+    "title": "Domain-Verifizierung",
+    "verified": "Verifiziert",
+    "unverified": "Nicht verifiziert",
+    "verifiedDescription": "Ihrem Identitätsanbieter wird für {domain} vertraut. Die SSO-Pflicht gilt für diese Domain.",
+    "unverifiedDescription": "Fügen Sie diesen DNS-TXT-Eintrag hinzu, um nachzuweisen, dass Sie {domain} kontrollieren. Bis dahin funktioniert die SSO-Anmeldung nur innerhalb dieses Kontos, und die SSO-Pflicht hat keine Wirkung.",
+    "recordName": "Name",
+    "recordValue": "Wert",
+    "verify": "Domain verifizieren",
+    "verifiedToast": "Domain verifiziert",
+    "failedToast": "Domain noch nicht verifiziert",
+    "enforceNeedsVerification": "Verifizieren Sie zuerst die Domain. Die SSO-Pflicht gilt nur für eine verifizierte Domain."
+  },
+  "accessSharing": {
+    "everyone": "Alle in {project}",
+    "everyoneRoleNote": "Alle behalten ihre eigene Projektrolle. Die ausgewählten Agents gelten für alle in {project}.",
+    "shareTitle": "{label} teilen",
+    "shareDescription": "Wählen Sie, wer dieses Konto verwenden darf. Wählen Sie nur sich selbst, um es für sich zu behalten.",
+    "whoCanUse": "Wer es verwenden darf",
+    "add": "Personen oder Gruppen hinzufügen",
+    "everyoneDefaultMeta": "Bis Sie eine Gruppe oder Person hinzufügen",
+    "everyoneMeta": "Alle mit Zugriff auf das Projekt",
+    "groupMeta": "Gruppe",
+    "memberMeta": "Mitglied",
+    "remove": "{name} entfernen",
+    "keep": "Behalten",
+    "removedMeta": "Wird beim Speichern entfernt",
+    "resultEveryone": "Alle in {project} können dieses Konto verwenden.",
+    "resultNarrowed": "Nur die ausgewählten Personen können dieses Konto verwenden, in ihren privaten Sitzungen.",
+    "save": "Speichern",
+    "saved": "Zugriff aktualisiert",
+    "saveFailed": "Zugriff konnte nicht aktualisiert werden",
+    "manageAccess": "Zugriff verwalten",
+    "sharedWith": "Geteilt mit {names}",
+    "notSharedWithYou": "Nicht mit Ihnen geteilt",
+    "removeEveryoneTitle": "{agent} nicht mehr mit allen teilen?",
+    "removeEveryoneDescription": "Nur die Personen und Gruppen, denen {agent} gewährt wurde, behalten ihn. Andere Mitglieder verlieren den Zugriff.",
+    "removeEveryone": "Nicht mehr teilen",
+    "removed": "Entfernt",
+    "removeFailed": "Zugriff konnte nicht entfernt werden",
+    "accountsTitle": "Konten",
+    "addAccount": "Konto hinzufügen",
+    "addAccountTitle": "{connector}-Konto hinzufügen",
+    "addAccountDescription": "Benennen Sie das Konto und wählen Sie, wer es verwenden darf.",
+    "onlyYou": "Nur Sie",
+    "onlyYouDescription": "Nur Sie können es verwenden, in Ihren privaten Sitzungen.",
+    "specificPeople": "Bestimmte Personen oder Gruppen",
+    "specificPeopleDescription": "Nur die ausgewählten Personen und Gruppen, in ihren privaten Sitzungen.",
+    "shareRequiresManage": "Zum Teilen eines Kontos benötigen Sie die Berechtigung, die Verbindungen des Projekts zu verwalten.",
+    "nameTaken": "Ein Konto namens {label} gibt es bereits.",
+    "noAccountsTitle": "Noch kein Konto",
+    "noAccountsDescription": "Fügen Sie ein Konto hinzu, um {connector} in Sitzungen zu verwenden.",
+    "visibilityEveryone": "Alle im Projekt",
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "Gespeichert als {label}",
+    "connectFailed": "Das Konto konnte nicht verbunden werden. Versuchen Sie es erneut.",
+    "sharePrivateDescription": "Wählen Sie, wer Ihr Konto außerdem verwenden darf. Es wird zu einem geteilten Konto, das auch die Verbindungsverwalter des Projekts verwalten können.",
+    "ownerMeta": "Ihr Konto"
   }
 }

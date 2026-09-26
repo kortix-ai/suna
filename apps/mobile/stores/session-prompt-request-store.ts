@@ -1,6 +1,6 @@
 /**
- * A prompt another surface asks the open thread to send — the session actions
- * sheet's Open change request. `SessionPage` for that session takes the
+ * A prompt another surface asks a thread to send — the session actions
+ * sheet's Open change request, the Review sheet's Resolve conflicts. `SessionPage` for that session takes the
  * request and sends it the way its composer does: at once when idle, into the
  * message queue while the agent works. One request at a time; a newer one
  * replaces an unsent older one.
@@ -15,7 +15,11 @@ export interface SessionPromptRequest {
 
 interface SessionPromptRequestState {
   request: SessionPromptRequest | null;
-  /** Ask the thread of `sessionId` (its OpenCode id) to send `text`. */
+  /**
+   * Ask the thread of `sessionId` to send `text`: its OpenCode id, or its
+   * project session id when the thread has not connected yet (Review's
+   * Resolve conflicts). `SessionPage` takes a request keyed by either.
+   */
   requestSend: (sessionId: string, text: string) => void;
   /** Remove and return the request for `sessionId`, if there is one. */
   take: (sessionId: string) => SessionPromptRequest | null;

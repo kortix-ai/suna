@@ -208,7 +208,7 @@ function endedLedgerTurns(value: unknown): EndedTurnRecord[] {
  * bound JS array as a record and Postgres rejects `cannot cast type record to
  * text[]`. Every value is still a bound parameter.
  */
-/** What the daemon said went wrong, as `routes/r4.ts` reads it off an end frame. */
+/** What the daemon said went wrong, as `routes/turn-stream.ts` reads it off an end frame. */
 export interface SandboxTurnEndError {
   name?: string;
   message?: string;
@@ -230,11 +230,18 @@ export const ABORT_END_ERROR_NAMES = ['MessageAbortedError', 'AbortError'];
 
 // A STOP SOMEBODY ASKED FOR IS NOT A FAILURE, and the end frame cannot say so:
 // a requested stop and an abort nobody asked for both reach the ledger as the
-// same OpenCode "Aborted" frame. So the request is stamped on the OPEN turn, at
-// the one place each kind of request passes through the control plane:
+// same OpenCode "Aborted" frame. So the request is stamped on the OPEN turn,
+// BEFORE the abort can reach OpenCode, at every place a request passes through
+// the control plane:
 //
-//   UserStop        every client abort (web, mobile, SDK, CLI) is an OpenCode
-//                   `POST /session/:id/abort` through the sandbox proxy.
+//   UserStop        - `POST .../prompts/hold {held:true}`, the first request of
+//                     a web, SDK or mobile Stop. Its settle
+//                     (`inbox-hold-settle.ts`) can abort the box before the
+//                     client's own abort arrives.
+//                   - every client abort (web, mobile, SDK, CLI): an OpenCode
+//                     `POST /session/:id/abort` through the sandbox proxy.
+//                   - `abortRuntimeTurn(…, { requestedStop: true })`: the hold
+//                     settle's re-abort, and Slack/Teams Stop.
 //   QueueInterrupt  a prompt sent into a busy session arms an interrupt at the
 //                   next tool boundary (`armQuickQueueInterrupt`).
 //
@@ -245,6 +252,30 @@ export type RequestedStopName = (typeof REQUESTED_STOP_NAMES)[number];
 
 export function isRequestedStopName(name: string | null | undefined): name is RequestedStopName {
   return (REQUESTED_STOP_NAMES as readonly string[]).includes(name ?? '');
+}
+
+/**
+ * Is this `end_error` already a cause the unidentified-cause recorder must not
+ * replace? An abort (`ABORT_END_ERROR_NAMES`) is the EFFECT of whatever stopped
+ * the turn, never its cause, so it is the only replaceable name. A requested
+ * stop (`REQUESTED_STOP_NAMES`) and every other named cause are protected.
+ *
+ * The JS and SQL forms below are mirrors over the same `ABORT_END_ERROR_NAMES`:
+ * the recorder's rewrite predicates and the ledger upsert CASE all read one
+ * definition, so their precedence cannot drift.
+ */
+export function isProtectedEndError(name: string | null | undefined): boolean {
+  return !!name && !(ABORT_END_ERROR_NAMES as readonly string[]).includes(name);
+}
+
+/** SQL form of `isProtectedEndError`, over an `end_error` jsonb column. */
+function protectedEndErrorPredicate(column: SQL): SQL {
+  const abortNames = sql.join(
+    ABORT_END_ERROR_NAMES.map((name) => sql`${name}`),
+    sql`, `,
+  );
+  return sql`(${column} IS NOT NULL
+    AND coalesce(${column}->>'name', '') NOT IN (${abortNames}))`;
 }
 
 /** Which open turns a request applies to. Omitted fields match every turn. */
@@ -332,9 +363,11 @@ export type UnidentifiedTurnCauseOutcome = 'refined_ended' | 'marked_open' | 'no
  *  1. The newest turn of this OpenCode session that ended with a bare abort
  *     in the last `windowMs` gets the cause. This beats an open turn: the
  *     next prompt can start before the cause lands.
- *  2. Otherwise the open turn holds the cause, like a requested stop. The
- *     abort that follows keeps it; a completion drops it.
- * A requested stop or another named cause is never rewritten.
+ *  2. Otherwise the open turn holds the cause. The abort that follows keeps
+ *     it; a completion drops it.
+ * Only a bare abort (`ABORT_END_ERROR_NAMES`) is rewritten: a requested stop or
+ * another named cause is never. `protectedEndErrorPredicate` is the one
+ * precedence this path and the ledger CASE read.
  */
 export async function recordUnidentifiedTurnCause(
   sessionId: string,
@@ -343,8 +376,6 @@ export async function recordUnidentifiedTurnCause(
   windowMs = UNIDENTIFIED_CAUSE_WINDOW_MS,
 ): Promise<UnidentifiedTurnCauseOutcome> {
   const causeJson = JSON.stringify(cause);
-  const abortNames = sql.join(ABORT_END_ERROR_NAMES.map((name) => sql`${name}`), sql`, `);
-  const requestedStopNames = sql.join(REQUESTED_STOP_NAMES.map((name) => sql`${name}`), sql`, `);
   const sameRoot = sql`(${opencodeSessionId ?? null}::text IS NULL
                          OR t.opencode_session_id IS NULL
                          OR t.opencode_session_id = ${opencodeSessionId ?? null})`;
@@ -362,7 +393,7 @@ export async function recordUnidentifiedTurnCause(
             AND ${sameRoot}
           ORDER BY t.ended_at DESC
           LIMIT 1)
-         AND (end_error IS NULL OR end_error->>'name' IN (${abortNames}))
+         AND NOT ${protectedEndErrorPredicate(sql`end_error`)}
       RETURNING turn_token`),
   );
   if (refined && refined.length > 0) return 'refined_ended';
@@ -373,9 +404,7 @@ export async function recordUnidentifiedTurnCause(
        WHERE t.session_id = ${sessionId}
          AND t.state <> 'ended'
          AND ${sameRoot}
-         AND (t.end_error IS NULL
-           OR t.end_error->>'name' IN (${abortNames})
-           OR t.end_error->>'name' IN (${requestedStopNames}))
+         AND NOT ${protectedEndErrorPredicate(sql`t.end_error`)}
       RETURNING t.turn_token`),
   );
   return marked && marked.length > 0 ? 'marked_open' : 'none';
@@ -406,8 +435,9 @@ function endedTurnLedger(
   // A mark held on the open turn — a requested stop, or a cause that arrived
   // before its abort (`recordUnidentifiedTurnCause`) — survives only the abort
   // it caused. A turn that completed drops it, and a NAMED cause in the end
-  // frame always wins: the mark must never hide a failure.
-  const abortNames = sql.join(ABORT_END_ERROR_NAMES.map((name) => sql`${name}`), sql`, `);
+  // frame always wins: the mark must never hide a failure. `protectedEndError`
+  // is the same precedence `recordUnidentifiedTurnCause` reads, so the two
+  // cannot drift.
   const values = sql.join(
     turns.map(
       (turn) => sql`(${turn.token}, ${owner.sessionId}, ${owner.sandboxId}::uuid,
@@ -435,10 +465,8 @@ function endedTurnLedger(
               WHEN ${endErrorIsFallback}
                 THEN coalesce(kortix.session_turns.end_error, EXCLUDED.end_error)
               WHEN EXCLUDED.end_reason = 'failed'
-               AND kortix.session_turns.end_error IS NOT NULL
-               AND coalesce(kortix.session_turns.end_error->>'name', '') NOT IN (${abortNames})
-               AND (EXCLUDED.end_error IS NULL
-                 OR EXCLUDED.end_error->>'name' IN (${abortNames}))
+               AND ${protectedEndErrorPredicate(sql`kortix.session_turns.end_error`)}
+               AND NOT ${protectedEndErrorPredicate(sql`EXCLUDED.end_error`)}
                 THEN kortix.session_turns.end_error
               ELSE EXCLUDED.end_error
             END,
@@ -546,6 +574,21 @@ export async function settleOpenSandboxTurns(
   }
 }
 
+/** The backstop statement, built once so the index test EXPLAINs what ships. */
+export function settleOrphanedSandboxTurnsQuery(): SQL {
+  return sql`UPDATE kortix.session_turns t
+                SET state = 'ended',
+                    end_reason = coalesce(t.end_reason, 'runtime_gone'),
+                    ended_at = coalesce(t.ended_at, now()),
+                    updated_at = now()
+              WHERE t.state <> 'ended'
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM kortix.session_sandboxes s
+                   WHERE s.sandbox_id = t.sandbox_id
+                     AND s.status IN ('active', 'provisioning'))`;
+}
+
 /**
  * THE BACKSTOP: close every ledger row still open on a sandbox that is no
  * longer running, platform-wide.
@@ -568,18 +611,7 @@ export async function settleOpenSandboxTurns(
  */
 export async function settleOrphanedSandboxTurns(): Promise<number> {
   try {
-    const result = await execute(sql`
-      UPDATE kortix.session_turns t
-         SET state = 'ended',
-             end_reason = coalesce(t.end_reason, 'runtime_gone'),
-             ended_at = coalesce(t.ended_at, now()),
-             updated_at = now()
-       WHERE t.state <> 'ended'
-         AND NOT EXISTS (
-           SELECT 1
-             FROM kortix.session_sandboxes s
-            WHERE s.sandbox_id = t.sandbox_id
-              AND s.status IN ('active', 'provisioning'))`);
+    const result = await execute(settleOrphanedSandboxTurnsQuery());
     return (result as { count?: number } | null)?.count ?? 0;
   } catch (error) {
     console.warn(
@@ -1134,10 +1166,6 @@ function refineEndedTurnError(
   identity: Partial<SandboxTurnIdentity>,
   endError: SessionTurnEndErrorRecord,
 ): SQL {
-  const abortNames = sql.join(
-    ABORT_END_ERROR_NAMES.map((name) => sql`${name}`),
-    sql`, `,
-  );
   return sql`
     UPDATE kortix.session_turns t
        SET end_error = ${JSON.stringify(endError)}::jsonb,
@@ -1149,7 +1177,7 @@ function refineEndedTurnError(
        AND (${identity.opencodeSessionId ?? null}::text IS NULL
          OR t.opencode_session_id IS NULL
          OR t.opencode_session_id = ${identity.opencodeSessionId ?? null})
-       AND (t.end_error IS NULL OR t.end_error->>'name' IN (${abortNames}))`;
+       AND NOT ${protectedEndErrorPredicate(sql`t.end_error`)}`;
 }
 
 async function wasSandboxTurnAlreadyClosed(
@@ -1334,7 +1362,7 @@ export async function completeSandboxTurn(
   const endError = endErrorRecord(status, error);
   if (turns.length === 0) {
     if (await wasSandboxTurnAlreadyClosed(sessionId, identity)) {
-      if (identity && endError?.name && !ABORT_END_ERROR_NAMES.includes(endError.name)) {
+      if (identity && endError && isProtectedEndError(endError.name)) {
         await recordTurnLedger(
           refineEndedTurnError(sessionId, identity, endError),
           `refine end error ${identity.messageId} (${endError.name})`,

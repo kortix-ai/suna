@@ -125,7 +125,7 @@ const LIST_OUTPUT = `/workspace/apps/web/src/app/page.tsx
 // FileViewer fixture — the sandbox fetch behind FilePreview always
 // fails on this page (no live sandbox), so the toggle can't be reached
 // through Outputs. Render it directly with realistic content: one markdown
-// file (proves the Preview/Raw split + real DocMarkdown rendering) and one
+// file (proves the Preview/Raw split + real markdown rendering) and one
 // non-markdown file (proves the source-only path — no tabs, just a language
 // label).
 // ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
-// Mirrors GET /projects/:id/model-defaults (apps/api/src/projects/routes/r4.ts:3187).
+// Mirrors GET /projects/:id/model-defaults (apps/api/src/projects/routes/models.ts).
 interface ModelDefaults {
   platformDefault: string | null;
   accountDefault: string | null;

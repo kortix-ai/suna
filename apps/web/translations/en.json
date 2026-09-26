@@ -29,7 +29,8 @@
     "rotateKey": "Rotate key",
     "manageAccess": "Manage access",
     "sessionKeyPool": "Session key pool",
-    "sharedDescription": "Add multiple API keys and ChatGPT accounts. Everyone in this project can use each by default. Restrict access per connection and choose keys per session.",
+    "sharedSessionKeys": "This session is shared with the project, so only keys shared with the whole project work here. Keys granted to you work in your private sessions.",
+    "sharedDescription": "Add API keys and ChatGPT accounts. New ones are private to you until you share them. Choose which ones each session uses.",
     "empty": "No shared provider keys yet.",
     "key": "Key",
     "deleteAccount": "Delete account",
@@ -55,7 +56,26 @@
     "deleteConfirmDescription": "{label} will be removed from every session pool. Other keys stay available.",
     "saveSelection": "Save key selection",
     "personalChatGptDefault": "Using your default ChatGPT connection",
-    "oauthPrivateDescription": "New ChatGPT accounts are available to this project by default. You can restrict each account to selected members.",
+    "oauthPrivateDescription": "Use your ChatGPT Plus or Pro plan in this project. New accounts are private to you until you share them.",
+    "chatGptSubscription": "ChatGPT subscription",
+    "useYourChatGpt": "Use your ChatGPT subscription",
+    "manageChatGptAccounts": "Manage ChatGPT accounts",
+    "connect": "Connect",
+    "connectChatGpt": "Connect ChatGPT",
+    "noChatGptAccounts": "No ChatGPT accounts yet",
+    "oauthCreationDescription": "Sign in with your ChatGPT Plus or Pro account. Kortix stores the login encrypted and never shows it.",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "Only you",
+    "onlyYouDescription": "Only you can select it in a session.",
+    "onlyOwner": "Only {name}",
+    "shareRequiresPermission": "Sharing with others requires permission to manage project secrets.",
+    "accountConnected": "ChatGPT account connected",
+    "accountReconnected": "ChatGPT account reconnected",
+    "connectFailed": "ChatGPT authorization failed. Try again.",
+    "reconnectAccount": "Reconnect",
+    "reconnectTitle": "Reconnect {label}",
+    "reconnectDescription": "Sign in with ChatGPT again. The account keeps its name, access, and session selections.",
+    "needsReconnection": "Needs reconnection",
     "saveKey": "Save key",
     "everyoneInProject": "Everyone in this project",
     "chooseProvider": "Choose a provider.",
@@ -552,7 +572,7 @@
         },
         "pooled_provider_secrets": {
           "name": "Pooled Provider Secrets",
-          "description": "Share multiple provider keys with members and select a key pool for each session."
+          "description": "Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses."
         },
         "teams": {
           "name": "Microsoft Teams",
@@ -589,6 +609,10 @@
         "agent_principal": {
           "name": "Agents as Principals",
           "description": "Agents act as themselves: their Kortix permissions, capped by their role. Whoever runs an agent adds only their own accounts."
+        },
+        "config_releases": {
+          "name": "Config Releases",
+          "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."
         },
         "agentmail_email": {
           "name": "AgentMail Email",
@@ -1228,6 +1252,10 @@
       "faq": {
         "title": "How this works",
         "items": {
+          "1": {
+            "answer": "A snapshot is a machine that has already been set up: this project’s repository, its dependencies, and the Kortix tools, all installed ahead of time. Starting a session copies that prepared machine instead of installing everything from scratch, which is why a session is ready in seconds rather than minutes.",
+            "question": "What is a snapshot?"
+          },
           "2": {
             "answer": "Kortix prepares a new machine whenever the recipe changes — a new sandbox template, an edited Dockerfile, or a merged change — and each attempt gets its own row. Older rows are kept as a record. They are history, not a list of things to deal with.",
             "question": "Why do new rows keep appearing?"
@@ -1235,10 +1263,6 @@
           "3": {
             "answer": "Usually not. A failed attempt only matters while no working machine is left, and when that happens a banner appears at the top of this page with a Rebuild button. A failed row with no banner above it has already been replaced by one that worked.",
             "question": "One of them failed. Is that a problem?"
-          },
-          "1": {
-            "answer": "A snapshot is a machine that has already been set up: this project’s repository, its dependencies, and the Kortix tools, all installed ahead of time. Starting a session copies that prepared machine instead of installing everything from scratch, which is why a session is ready in seconds rather than minutes.",
-            "question": "What is a snapshot?"
           }
         }
       },
@@ -1611,15 +1635,10 @@
       "updateHint": "Asks the agent to update this session",
       "message": "The project changed after this session started. Update it to keep working on the latest version.",
       "updateFailed": "Could not send the update prompt.",
-      "resuming": "Resuming…",
-      "unavailable": "The previous workspace is no longer available. Start a new session in the current repository.",
       "dismiss": "Dismiss",
       "update": "Update to latest",
-      "resume": "Resume previous workspace",
-      "delete": "Delete session",
       "updateSent": "Update started in this session",
-      "updating": "Updating…",
-      "newSession": "Start new session"
+      "updating": "Updating…"
     },
     "stopped": {
       "message": "Its computer was released. Restart the session to bring it back.",
@@ -1633,6 +1652,7 @@
     },
     "delete": "Delete session",
     "failedLabel": "Failed session",
+    "loadingConversation": "Loading conversation",
     "missing": {
       "message": "This session is no longer available, or you do not have access to it.",
       "title": "Couldn't start session"
@@ -1753,11 +1773,11 @@
         "imageAlt": "Nexus Enterprise Automation Platform slide example",
         "capabilities": {
           "0": "Pitch decks",
-          "5": "+ Much more",
           "1": "Training material",
-          "4": "Content restructuring",
           "2": "Report presentations",
-          "3": "Theme & layout variations"
+          "3": "Theme & layout variations",
+          "4": "Content restructuring",
+          "5": "+ Much more"
         },
         "fileType": "PPTX",
         "description": "Create stunning presentations instantly. From pitch decks to reports to training materials. Adjusts themes, layouts, content structure, or refines existing decks with quick edits and updates."
@@ -1767,11 +1787,11 @@
         "imageAlt": "Detailed Competitor Profiles research example",
         "capabilities": {
           "0": "Analyze market trends",
-          "5": "+ Much more",
           "1": "Competitive research",
-          "4": "Synthesize findings",
           "2": "Deep topic dives",
-          "3": "Gather sources"
+          "3": "Gather sources",
+          "4": "Synthesize findings",
+          "5": "+ Much more"
         },
         "fileType": "PDF",
         "description": "Researches topics comprehensively. From market trends to competitive analysis to deep dives. Gathers sources, synthesizes findings, or refines existing research with quick updates."
@@ -1781,11 +1801,11 @@
         "imageAlt": "Growth Isn't Linear graphic example",
         "capabilities": {
           "0": "Generate product shots",
-          "5": "+ Much more",
           "1": "Create social graphics",
-          "4": "Logo / asset creation",
           "2": "Make illustrations",
-          "3": "Style & lighting variations"
+          "3": "Style & lighting variations",
+          "4": "Logo / asset creation",
+          "5": "+ Much more"
         },
         "fileType": "image",
         "description": "Create images on demand. From product shots to social graphics to full illustrations. Adjusts style, lighting, colors, and layout, or refines existing visuals with quick edits and touch-ups."
@@ -1795,11 +1815,11 @@
         "imageAlt": "Q3 2025 Executive Summary Report example",
         "capabilities": {
           "0": "Proposals",
-          "5": "+ Much more",
           "1": "Guides & manuals",
-          "4": "Format & restructure",
           "2": "Content pieces",
-          "3": "Tone & style variations"
+          "3": "Tone & style variations",
+          "4": "Format & restructure",
+          "5": "+ Much more"
         },
         "fileType": "PDF",
         "description": "Writes and edits documents effortlessly. From proposals to guides to content pieces. Adjusts tone, structure, formatting, or refines existing documents with quick rewrites and polish."
@@ -1809,11 +1829,11 @@
         "imageAlt": "Financial Model Dashboard example",
         "capabilities": {
           "0": "Dashboards",
-          "5": "+ Much more",
           "1": "Visualizations",
-          "4": "Generate insights",
           "2": "Data reports",
-          "3": "Clean & organize data"
+          "3": "Clean & organize data",
+          "4": "Generate insights",
+          "5": "+ Much more"
         },
         "fileType": "Preview",
         "description": "Transforms raw data into insights. From spreadsheets to dashboards to visualizations. Cleans datasets, creates charts, builds reports, or refines existing analyses with quick updates."
@@ -2646,92 +2666,92 @@
     "prompts": {
       "video": {
         "0": "Animate my product photo rotating smoothly with studio lighting",
-        "5": "Add dramatic cinematic lighting and color grading to my portrait",
         "1": "Transform my portrait into a cinematic scene with camera movement",
-        "4": "Make my product float and rotate with soft shadows and reflections",
-        "9": "Generate a futuristic cityscape video with neon lights and reflections",
         "2": "Generate a peaceful nature video of cherry blossoms falling slowly",
+        "3": "Create abstract glowing particles swirling together in slow motion",
+        "4": "Make my product float and rotate with soft shadows and reflections",
+        "5": "Add dramatic cinematic lighting and color grading to my portrait",
         "6": "Generate a smooth drone shot flying through foggy mountain peaks",
         "7": "Create a looping video of liquid metal flowing into organic shapes",
         "8": "Transform my photo background into an underwater scene with light rays",
-        "3": "Create abstract glowing particles swirling together in slow motion"
+        "9": "Generate a futuristic cityscape video with neon lights and reflections"
       },
       "slides": {
         "0": "Create a Series A pitch deck with market size, traction, and financial projections",
-        "5": "Build a customer case study presentation showing ROI and success metrics",
         "1": "Build a Q4 business review showcasing KPIs, wins, and strategic initiatives",
-        "4": "Create an investor update highlighting key metrics and upcoming milestones",
-        "9": "Build a board meeting presentation with strategic recommendations",
         "2": "Design a product launch presentation with demo videos and customer testimonials",
+        "3": "Develop a sales enablement deck explaining our value prop and competitive advantages",
+        "4": "Create an investor update highlighting key metrics and upcoming milestones",
+        "5": "Build a customer case study presentation showing ROI and success metrics",
         "6": "Design an all-hands presentation covering company updates and vision",
         "7": "Develop a training deck for new product features and workflows",
         "8": "Create a conference talk about scaling engineering teams",
-        "3": "Develop a sales enablement deck explaining our value prop and competitive advantages"
+        "9": "Build a board meeting presentation with strategic recommendations"
       },
       "research": {
         "0": "Analyze emerging trends in quantum computing and potential business applications",
-        "5": "Research Web3 adoption patterns among Fortune 500 companies",
         "1": "Research top 10 competitors in the AI-powered CRM space with feature comparison",
-        "4": "Study the impact of remote work on commercial real estate demand in major cities",
-        "9": "Research the competitive landscape of AI-powered cybersecurity solutions",
         "2": "Investigate regulatory requirements for launching a fintech app in the EU",
+        "3": "Compile market analysis on electric vehicle adoption rates across major markets",
+        "4": "Study the impact of remote work on commercial real estate demand in major cities",
+        "5": "Research Web3 adoption patterns among Fortune 500 companies",
         "6": "Analyze consumer sentiment towards sustainable fashion brands",
         "7": "Investigate the latest developments in gene therapy for rare diseases",
         "8": "Study pricing strategies of successful D2C subscription box companies",
-        "3": "Compile market analysis on electric vehicle adoption rates across major markets"
+        "9": "Research the competitive landscape of AI-powered cybersecurity solutions"
       },
       "canvas": {
         "0": "Add a tech startup banner to canvas with futuristic city skyline",
-        "5": "Add a YouTube thumbnail to canvas for productivity tips video",
         "1": "Create a coffee brand logo on canvas using earthy minimalist style",
-        "4": "Create a sci-fi book cover on canvas with cyberpunk aesthetics",
-        "9": "Create a music festival poster on canvas with psychedelic vibes",
         "2": "Add my product photo to canvas and remove its background",
+        "3": "Design a renewable energy infographic on canvas with flat icons",
+        "4": "Create a sci-fi book cover on canvas with cyberpunk aesthetics",
+        "5": "Add a YouTube thumbnail to canvas for productivity tips video",
         "6": "Build a luxury fashion mood board on canvas for millennials",
         "7": "Design an elegant wedding invitation on canvas with floral patterns",
         "8": "Add my portrait to canvas and apply vintage film effect",
-        "3": "Design a renewable energy infographic on canvas with flat icons"
+        "9": "Create a music festival poster on canvas with psychedelic vibes"
       },
       "docs": {
         "0": "Write a comprehensive PRD for an AI-powered recommendation engine",
-        "5": "Create a company handbook covering culture, policies, and benefits",
         "1": "Draft a technical architecture document for a scalable microservices platform",
-        "4": "Write an API documentation guide with examples and best practices",
-        "9": "Create a comprehensive style guide for brand and content",
         "2": "Create a go-to-market strategy document for our Q2 product launch",
+        "3": "Develop a 90-day onboarding playbook for engineering managers",
+        "4": "Write an API documentation guide with examples and best practices",
+        "5": "Create a company handbook covering culture, policies, and benefits",
         "6": "Draft a data privacy policy compliant with GDPR and CCPA",
         "7": "Develop a customer success playbook for SaaS enterprise accounts",
         "8": "Write a security incident response plan with escalation procedures",
-        "3": "Develop a 90-day onboarding playbook for engineering managers"
+        "9": "Create a comprehensive style guide for brand and content"
       },
       "data": {
         "0": "Build a financial model projecting ARR growth with different pricing scenarios",
-        "5": "Create a marketing attribution model comparing channel performance",
         "1": "Create an interactive sales dashboard tracking metrics by region and quarter",
-        "4": "Build a cohort analysis showing user retention and churn patterns",
-        "9": "Create an inventory management system with automated reorder alerts",
         "2": "Analyze 50K customer reviews and visualize sentiment trends over time",
+        "3": "Design a content calendar tracking campaigns with ROI and engagement charts",
+        "4": "Build a cohort analysis showing user retention and churn patterns",
+        "5": "Create a marketing attribution model comparing channel performance",
         "6": "Develop a hiring tracker with pipeline metrics and time-to-fill analysis",
         "7": "Build a budget planning spreadsheet with scenario modeling",
         "8": "Analyze website traffic data and visualize conversion funnels",
-        "3": "Design a content calendar tracking campaigns with ROI and engagement charts"
+        "9": "Create an inventory management system with automated reorder alerts"
       },
       "image": {
         "0": "A majestic golden eagle soaring through misty mountain peaks at sunrise with dramatic lighting",
-        "13": "Rustic farmhouse kitchen with copper pots, fresh herbs, wooden cutting boards, and natural textures",
-        "5": "Whimsical floating islands connected by rope bridges in a pastel sky with dreamy clouds",
         "1": "Close-up portrait of a fashion model with avant-garde makeup, studio lighting, high contrast shadows",
-        "4": "Elegant product photography of luxury perfume bottle on marble surface with soft reflections",
-        "9": "Architectural detail of contemporary glass building facade with geometric patterns and reflections",
-        "11": "Serene Japanese zen garden with raked sand, moss-covered stones, and cherry blossom petals",
         "2": "Cozy Scandinavian living room with natural wood furniture, indoor plants, and soft morning sunlight",
+        "3": "Futuristic cyberpunk street market at night with neon signs, rain-slicked pavement, and holographic displays",
+        "4": "Elegant product photography of luxury perfume bottle on marble surface with soft reflections",
+        "5": "Whimsical floating islands connected by rope bridges in a pastel sky with dreamy clouds",
         "6": "Macro close-up of morning dew drops on vibrant flower petals with bokeh background",
-        "10": "Vibrant street food vendor stall with colorful ingredients, steam rising, and warm lighting",
         "7": "Modern workspace desk setup with laptop, coffee, notebook, and succulent plants from above",
-        "14": "Abstract fluid art with swirling metallic gold, deep blue, and emerald green organic patterns",
         "8": "Mystical forest path with ancient trees, glowing fireflies, and ethereal light beams through fog",
+        "9": "Architectural detail of contemporary glass building facade with geometric patterns and reflections",
+        "10": "Vibrant street food vendor stall with colorful ingredients, steam rising, and warm lighting",
+        "11": "Serene Japanese zen garden with raked sand, moss-covered stones, and cherry blossom petals",
         "12": "Dynamic action shot of athlete mid-jump against dramatic sunset sky, silhouette effect",
-        "3": "Futuristic cyberpunk street market at night with neon signs, rain-slicked pavement, and holographic displays"
+        "13": "Rustic farmhouse kitchen with copper pots, fresh herbs, wooden cutting boards, and natural textures",
+        "14": "Abstract fluid art with swirling metallic gold, deep blue, and emerald green organic patterns"
       }
     },
     "modes": {
@@ -6254,7 +6274,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "All Worker executions are currently paused."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "No content"
+      "line1115JsxTextNoContent": "No content",
+      "loadRemoteImage": "Load image from {host}"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Press Enter to boot..."
@@ -9479,7 +9500,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "Propose changes",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "View changes",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Rename…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Share…",
     "autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00": "New session",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix Session is starting",
     "autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70": "Connecting…",
@@ -18591,6 +18611,17 @@
       "textea5d0ffa0962": "A project manager connects the shared account.",
       "text3d6627454174": "Set credential",
       "text929505ef815a": "No account is connected yet. Add your own below, or ask a project manager to connect a shared one.",
+      "text931cb67e2af7": "The new agent config failed to load. An earlier config still runs this session.",
+      "textd9ff3a72833d": "Config failed to load",
+      "textebfb07812fb4": "The new agent config failed to load",
+      "text4e62b29dd3b6": "An earlier config runs this session. The failed config is not retried until the base branch changes.",
+      "textf81ab834de5f": "Reason",
+      "text44cdf35701cd": "Now running",
+      "text591f9f0f3259": "Failed release",
+      "text00ed4c71dc2b": "Last working release",
+      "textbd7a1a3b4141": "The platform default config",
+      "text643df05476ab": "The platform default config runs this session. The failed config is not retried until the base branch changes.",
+      "text40652e008fc9": "The new agent config failed to load. The platform default config runs this session.",
       "text3312ddb06c1d": "Register a bot in Azure, connect it here, then upload the app package to Teams.",
       "text7f1b55a356b0": "Register the bot in Azure",
       "text91004edf8b30": "Connect it to this project",
@@ -18699,7 +18730,9 @@
       "texta0bcee97cbb3": "Confirmed inline checkout",
       "text0b751a917c97": "Connected GitHub installation",
       "text8b7a8797d532": "Connected Microsoft Teams tenant",
+      "text83c0e255d4bb": "Completed Microsoft Teams install",
       "text17a8cf884e2a": "Connected Slack workspace",
+      "textf887cb0e6800": "Completed Slack app install",
       "textc7f9ec5ed69c": "Connected computer tunnel agent",
       "textafd58fcedeee": "Connected email inbox",
       "text2eda12b4ed38": "Connected existing GitHub App",
@@ -18956,6 +18989,7 @@
       "text60954a626cee": "Revoked LLM gateway key",
       "text32c1477a3336": "Revoked computer tunnel permission",
       "text953488439740": "Revoked connector account",
+      "texte817b7da7436": "Shared a private connector account",
       "text538cb0effaea": "Revoked personal access token",
       "text74be1c139903": "Revoked pooled provider key grant",
       "text6d3935be0516": "Revoked project CLI token",
@@ -19162,7 +19196,50 @@
       "text2afef4702cc0": "Viewed system status banner",
       "textbda3fcd4343c": "Viewed tier configurations",
       "text30cef615e8e3": "Viewed transaction summary",
-      "textd2c6127fc332": "Viewed version diff"
+      "textd2c6127fc332": "Viewed version diff",
+      "text8cc0d84b66bb": "Previewed Slack identity link",
+      "text508b43cc4545": "Previewed Teams identity link",
+      "text467f597e95b0": "Verified SSO domain",
+      "text8295f9d4861b": "Set account SSO domain verification",
+      "text7beaff63a7d3": "Downloaded project config archive",
+      "text5176d59f25fd": "Resolved session config release",
+      "text273c48dbf3b9": "Registered push notification device",
+      "textbb666ddf7a57": "Removed push notification device",
+      "text397ab5aecbbf": "Relayed session permission request"
+    },
+    "publicShareConfirm": {
+      "title": "Create a public link?",
+      "description": "Anyone with the link can view this without signing in. The link stays active until you revoke it.",
+      "confirm": "Create link"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "Public link",
+      "sectionDescription": "Anyone with the link can read this conversation without signing in.",
+      "create": "Create public link",
+      "revokeDescription": "The conversation stops loading for everyone with the link. You can create a new link afterwards.",
+      "rowMeta": "Read-only conversation",
+      "unavailable": "This conversation is temporarily unavailable.",
+      "unavailableDescription": "The conversation could not be read right now. Try again in a moment.",
+      "loadFailedDescription": "The conversation could not be loaded.",
+      "empty": "No messages yet",
+      "savedCopy": "Saved copy from {date}"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} account",
+      "chatWorkspace": "{service} workspace",
+      "checking": "Checking link…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} was not connected",
+      "mismatch": "This install was started from another Kortix account or for another project. Sign in with that account, or start the install again from the project.",
+      "expired": "This install link is invalid or has expired. Start the install again from the project.",
+      "failed": "The install could not be finished. Start it again from the project.",
+      "backToProject": "Back to the project"
+    },
+    "secretIntakeWithheld": {
+      "title": "Saved, but {agent} can't read it yet",
+      "grant": "{names} {count, plural, one {is} other {are}} not in the {agent} agent's secrets. Open Customize → Agents → {agent} → Secrets and enable {count, plural, one {it} other {them}}.",
+      "allowlist": "{names} {count, plural, one {is} other {are}} outside this session's secrets. Start a new session to use {count, plural, one {it} other {them}}."
     }
   },
   "projectOnboarding": {
@@ -19221,7 +19298,17 @@
   },
   "commandPalette": {
     "title": "Command Palette",
-    "description": "Search for a command to run..."
+    "description": "Search for a command to run...",
+    "copyTitle": "Copy",
+    "copyEmail": "email",
+    "copyUserId": "user ID",
+    "copyAccountId": "account ID",
+    "copyProjectId": "project ID",
+    "copySessionId": "session ID",
+    "copySessionLink": "session link",
+    "copyAction": "Copy {label}",
+    "copied": "Copied {label}",
+    "copyFailed": "Could not copy to the clipboard"
   },
   "personalWelcome": {
     "emailCopied": "Email address copied",
@@ -19988,6 +20075,9 @@
     "providerError": "Could not update provider access.",
     "managedTitle": "Kortix Managed Models",
     "managedDescription": "Managed models billed with Kortix credits. No API key needed.",
+    "pricingEstimate": "Estimated customer price. The serving route determines the charge.",
+    "pricingRoute": "{route}: {input} input / {cacheRead} cached / {output} output per 1M tokens",
+    "pricingPreferred": "Preferred",
     "textImage": "Text + image",
     "textOnly": "Text only",
     "zdrTitle": "Zero data retention",
@@ -20105,5 +20195,64 @@
   },
   "connectorsAppReturn": {
     "done": "Done. Back to the Kortix app"
+  },
+  "ssoDomainVerification": {
+    "title": "Domain verification",
+    "verified": "Verified",
+    "unverified": "Not verified",
+    "verifiedDescription": "Your identity provider is trusted for {domain}. Enforcing SSO applies to this domain.",
+    "unverifiedDescription": "Add this DNS TXT record to prove you control {domain}. Until then, SSO sign-in works only inside this account, and enforcing SSO has no effect.",
+    "recordName": "Name",
+    "recordValue": "Value",
+    "verify": "Verify domain",
+    "verifiedToast": "Domain verified",
+    "failedToast": "Domain not verified yet",
+    "enforceNeedsVerification": "Verify the domain first. Enforcing SSO applies only to a verified domain."
+  },
+  "accessSharing": {
+    "everyone": "Everyone in {project}",
+    "everyoneRoleNote": "Everyone keeps their own project role. The agents you pick apply to everyone in {project}.",
+    "shareTitle": "Share {label}",
+    "shareDescription": "Choose who can use this account. Pick only yourself to keep it to you.",
+    "whoCanUse": "Who can use it",
+    "add": "Add people or groups",
+    "everyoneDefaultMeta": "Until you add a group or a person",
+    "everyoneMeta": "Everyone with access to the project",
+    "groupMeta": "Group",
+    "memberMeta": "Member",
+    "remove": "Remove {name}",
+    "keep": "Keep",
+    "removedMeta": "Removed when you save",
+    "resultEveryone": "Everyone in {project} can use this account.",
+    "resultNarrowed": "Only the people you chose can use this account, in their private sessions.",
+    "save": "Save",
+    "saved": "Access updated",
+    "saveFailed": "Could not update access",
+    "manageAccess": "Manage access",
+    "sharedWith": "Shared with {names}",
+    "notSharedWithYou": "Not shared with you",
+    "removeEveryoneTitle": "Stop sharing {agent} with everyone?",
+    "removeEveryoneDescription": "Only the people and groups granted {agent} keep it. Other members lose access.",
+    "removeEveryone": "Stop sharing",
+    "removed": "Removed",
+    "removeFailed": "Could not remove access",
+    "accountsTitle": "Accounts",
+    "addAccount": "Add account",
+    "addAccountTitle": "Add a {connector} account",
+    "addAccountDescription": "Name the account and choose who can use it.",
+    "onlyYou": "Only you",
+    "onlyYouDescription": "Only you can use it, in your private sessions.",
+    "specificPeople": "Specific people or groups",
+    "specificPeopleDescription": "Only the people and groups you pick, in their private sessions.",
+    "shareRequiresManage": "Sharing an account needs permission to manage the project's connections.",
+    "nameTaken": "An account named {label} already exists.",
+    "noAccountsTitle": "No account yet",
+    "noAccountsDescription": "Add an account to use {connector} in sessions.",
+    "visibilityEveryone": "Everyone in project",
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "Saved as {label}",
+    "connectFailed": "Could not connect the account. Try again.",
+    "sharePrivateDescription": "Choose who else can use your account. It becomes a shared account, which the project's connection managers can also manage.",
+    "ownerMeta": "Your account"
   }
 }

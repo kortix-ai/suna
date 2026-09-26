@@ -289,6 +289,62 @@ export function isTransientGitMirrorError(err: unknown): err is GitOperationErro
 }
 
 /**
+ * Stable error code the platform API returns (HTTP 503) when a project's git
+ * mirror cold-clone/fetch fails for a TRANSIENT, retryable upstream reason
+ * (see `isTransientGitMirrorError`). The global `app.onError` in
+ * `apps/api/src/index.ts` attaches this code to the 503 body so the frontend
+ * can classify the response as an EXPECTED degradation instead of an opaque
+ * `ApiError` that pages Sentry (Better Stack frontend pattern `b4d05df2…`).
+ *
+ * Must stay in sync with `GIT_MIRROR_UNAVAILABLE_CODE` in
+ * `packages/sdk/src/core/http/api-client.ts` (the SDK cannot import from the
+ * API, so the string is declared on both sides, exactly like
+ * `FEATURE_NOT_SUPPORTED_CODE`).
+ */
+export const GIT_MIRROR_UNAVAILABLE_CODE = 'git_mirror_unavailable';
+
+/**
+ * GitHub rejects a push that a repository rule, branch protection or a
+ * server-side hook forbids rather than a stale tip. The prod Better Stack
+ * pattern `5e505349…` is the canonical case:
+ *
+ *   ! [remote rejected] <sha> -> main (push declined due to repository rule violations)
+ *   error: failed to push some refs to 'https://github.com/<org>/<repo>.git'
+ *
+ * This is a PERMANENT, user-actionable REMOTE POLICY outcome: the same commit
+ * is rejected again on every retry. It is NOT a revision race
+ * (`isExpectedFileRevisionRace` — "our tip was stale, refetch and retry") and
+ * NOT transient (`isTransientGitMirrorError` — retry cannot help). It must
+ * surface as a typed 4xx the dashboard renders as a message, never as a 5xx
+ * that pages Better Stack.
+ *
+ * Anchored on the push subcommand so an identical phrase in a fetch/clone error
+ * is not misclassified, and on the explicit protection phrases so a
+ * non-fast-forward `[rejected]` still belongs to the race classifier.
+ */
+const REMOTE_PUSH_POLICY_REJECTION_PATTERN =
+  /push declined due to repository rule violations|protected branch hook declined|protected branch update failed|pre-receive hook declined|refusing to allow|GH006|GH013/i;
+
+export function isRemotePushPolicyRejection(err: unknown): err is GitOperationError {
+  if (!isGitOperationError(err)) return false;
+  if (err.gitArgs[0] !== 'push') return false;
+  const text = `${err.message}\n${err.stderr}\n${err.stdout}`;
+  return REMOTE_PUSH_POLICY_REJECTION_PATTERN.test(text);
+}
+
+/** Build the policy warning without Git output, repository URLs, or refs. */
+export function pushPolicyWarning(method: string, err: GitOperationError) {
+  return {
+    message: `${method} -> 409 [GitOperationError:push-policy]`,
+    fields: {
+      method,
+      errorType: 'GitOperationError',
+      gitKind: err.kind,
+    },
+  };
+}
+
+/**
  * Cold bare clone with bounded retry for TRANSIENT failures. Exported with
  * injected side effects so the retry policy is unit-testable without a real git
  * process or network — see `mirror-transient.test.ts`.

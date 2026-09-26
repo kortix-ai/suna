@@ -1,8 +1,7 @@
 /**
- * The style of the project home's Kortix symbol (`MetalKortixLogo`).
- * `ProjectHero` renders `DEFAULT_LOGO_STYLE_ID`; the hidden sheet that let
- * the user pick a style (`LogoPaletteSheet`) is deleted (COR-156). Pure: no
- * React Native, so it runs under `bun test`.
+ * The style of the project home's Kortix symbol (`MetalKortixLogo`), as a
+ * choice the user can make from the hidden sheet (`LogoPaletteSheet`). Pure:
+ * no React Native, so it runs under `bun test`.
  *
  * Two styles, one shader each (`lib/effects/*-sksl.ts`), both driven by the
  * same tilt (`useTiltMotion`): a move sweeps the shader's time, the direction

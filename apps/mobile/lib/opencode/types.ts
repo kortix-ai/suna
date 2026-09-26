@@ -137,7 +137,10 @@ export interface FilePart {
   id: string;
   mime: string;
   filename: string;
-  url: string;
+  /** Absent on an optimistic send's part until the server echo replaces it (COR-185). */
+  url?: string;
+  /** The picked file on the device: an optimistic send's thumbnail (COR-185). Never on a server part. */
+  localUri?: string;
 }
 
 export interface AgentPart {
@@ -281,6 +284,8 @@ export interface MessageWithParts {
 export interface Turn {
   userMessage: MessageWithParts;
   assistantMessages: MessageWithParts[];
+  /** The prompt is not loaded; `userMessage` is a stand-in (see the SDK's `TurnLike.partial`). */
+  partial?: true;
 }
 
 export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk';

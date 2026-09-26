@@ -18,6 +18,18 @@ export interface QuestionRequest {
   questions: QuestionInfo[]
 }
 
+// opencode's PermissionRequest (`permission.asked` properties), mirrored from
+// the v2 SDK. `metadata` is tool-specific (an edit carries its diff).
+export interface PermissionRequest {
+  id: string
+  sessionID: string
+  permission: string
+  patterns: string[]
+  metadata?: Record<string, unknown>
+  always?: string[]
+  tool?: { messageID: string; callID: string }
+}
+
 // Flattened opencode error (from session.error / AssistantMessage.error), passed
 // to onSessionError so the turn-end relay can tell apps/api *why* a run failed
 // (out of credits, rate limit, provider auth, …) instead of a blank "no reply".
@@ -38,6 +50,7 @@ export type OpencodeEventHandlers = {
   /** Every parsed OpenCode event, before specialized dispatch. */
   onEvent?: (event: { type?: string; properties?: unknown }) => void
   onQuestionAsked?: (req: QuestionRequest) => void
+  onPermissionAsked?: (req: PermissionRequest) => void
   // Fired when an opencode session finishes processing a turn (idle) or dies
   // mid-turn (error). opencode emits these for EVERY session — including
   // subagent (Task tool) child sessions — so the handler is responsible for
@@ -297,6 +310,11 @@ export function dispatch(
     if (req?.id && req?.sessionID && Array.isArray(req.questions)) {
       handlers.onQuestionAsked(req)
     }
+    return
+  }
+  if (event.type === 'permission.asked' && handlers.onPermissionAsked) {
+    const req = event.properties as PermissionRequest
+    if (req?.id && req?.sessionID) handlers.onPermissionAsked(req)
     return
   }
   if (event.type === 'session.status' && handlers.onSessionStatus) {

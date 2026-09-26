@@ -8,34 +8,42 @@
  * — the API does the sandbox round-trip server-side and returns compacted
  * JSON (see `shared/public-session-share-view.ts`).
  *
- * `:shareId` is the share's raw `share_id` (the uuid primary key on
- * `project_session_public_shares` — the same value the CRUD routes call
- * `share_id` and the frontend's `[shareId]` route param already is), NOT the
- * `kps_...` public token. Every other public-share surface
- * (`/v1/p/public-share/:token`, `public_path: /share/session/:token`) is
- * keyed by the token instead, so accepting the bare id here — and deriving
- * the token server-side via the existing `publicShareToken()` — means the
- * frontend never needs to know the `kps_` derivation exists; it just forwards
- * the id already in its own URL. The two are equally sensitive: a token IS
- * `kps_` + the id with dashes stripped, so either one alone already discloses
- * the other — this is a wire-format choice, not a security difference.
+ * `:shareId` is either the share's raw `share_id` (the uuid primary key on
+ * `project_session_public_shares`, what the CRUD routes call `share_id`) or
+ * its `kps_...` public token (what `/v1/p/public-share/:token` and the web
+ * viewer at `public_path: /share/session/:token` are keyed by). The two are
+ * equally sensitive: a token IS `kps_` + the id with dashes stripped, so
+ * either one alone already discloses the other. Accepting both is a
+ * wire-format convenience, not a security difference.
  *
  * Reuses `resolvePublicShare` (session-public-shares.ts) for the exact same
- * 404 (unknown) / 410 (revoked or expired) / 503 (sandbox not provisioned
- * yet) semantics SESS-13 already covers — ANY valid share for a session
- * (created for a `preview` or a `file`, the only two kinds the CRUD routes
- * support today) unlocks the transcript view here too. A share token is
- * proof the session's owner handed this link to someone outside the account;
- * once handed out, viewing the read-only conversation is not more sensitive
- * than the live interactive preview or arbitrary workspace file the SAME
- * token already grants.
+ * 404 (unknown) / 410 (revoked, expired, or session deleted) semantics SESS-13
+ * covers. A `preview` or `file` share whose sandbox has no `externalId` yet
+ * still 503s there; a `transcript` share never needs a sandbox, and
+ * `/messages` 503s only when no sandbox runs AND no transcript was saved.
+ *
+ * A share grants exactly the resource it names. A `file` share names one
+ * document, and the proxies pin it to that path; a `preview` share names one
+ * app port. Neither names the conversation, which carries prompts, pasted
+ * values, and tool output the owner never chose to publish. So `/messages`
+ * answers only for a `transcript` share (`shareUnlocksTranscript`), minted by
+ * the CRUD route with `{ transcript: true }`; every `preview` and `file` share
+ * gets `404`. `GET /:shareId` still returns the share and the session title,
+ * which the share page shows beside the shared resource.
+ *
+ * A transcript share needs no running sandbox: `/messages` reads the live
+ * conversation when the box is up and the saved transcript mirror otherwise
+ * (`source: 'live' | 'mirror'`).
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json, makeOpenApiApp } from '../openapi';
-import { UUID_V4_REGEX } from '../projects/lib/serializers';
 import { createPublicSessionShareRateLimitMiddleware } from '../shared/rate-limit';
-import { publicShareToken, resolvePublicShare } from '../shared/session-public-shares';
+import {
+  publicShareToken,
+  resolvePublicShare,
+  shareIdFromPublicRef,
+} from '../shared/session-public-shares';
 import { getPublicSessionInfo, getPublicSessionMessages } from '../shared/public-session-share-view';
 
 export const publicSessionSharesApp = makeOpenApiApp();
@@ -45,11 +53,12 @@ publicSessionSharesApp.use('/:shareId/messages', createPublicSessionShareRateLim
 
 const ShareParams = z.object({ shareId: z.string() });
 
-async function resolveShareId(shareId: string) {
-  if (!UUID_V4_REGEX.test(shareId)) {
+async function resolveShareId(ref: string, opts: { requireTranscript?: boolean } = {}) {
+  const shareId = shareIdFromPublicRef(ref);
+  if (!shareId) {
     return { ok: false as const, status: 400, error: 'Invalid share id' };
   }
-  return resolvePublicShare(publicShareToken(shareId));
+  return resolvePublicShare(publicShareToken(shareId), opts);
 }
 
 publicSessionSharesApp.openapi(
@@ -101,11 +110,8 @@ publicSessionSharesApp.openapi(
   }),
   async (c: any) => {
     const shareId = c.req.param('shareId');
-    const resolved = await resolveShareId(shareId);
+    const resolved = await resolveShareId(shareId, { requireTranscript: true });
     if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status as any);
-    if (!resolved.row.externalId) {
-      return c.json({ error: 'Sandbox is not ready' }, 503);
-    }
 
     const result = await getPublicSessionMessages({
       sessionId: resolved.row.sessionId,

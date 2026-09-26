@@ -199,6 +199,14 @@ const envSchema = z.object({
    * off-sandbox token use`.
    */
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: optBoolTrue,
+  /**
+   * Hosts a connector may call even though they resolve to a private address.
+   * Comma-separated hostnames or IP literals, matched exactly. Empty (the
+   * default) means every connector endpoint must be a public address. Set it
+   * on a self-hosted deployment whose connectors call internal APIs; the local
+   * test stack sets `127.0.0.1` for its loopback upstream.
+   */
+  KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: optStr,
 
   // ── Streaming secret relay (POST /v1/projects/:id/secrets/:id/relay) ──────
   //
@@ -400,6 +408,10 @@ const envSchema = z.object({
   OPENROUTER_API_KEY: optStr,
   MORPH_API_URL: optUrl('https://api.morphllm.com/v1'),
   MORPH_API_KEY: optStr,
+  // Managed model IDs that use Morph direct as their first candidate.
+  // An empty value disables Morph for every managed model.
+  MORPH_MANAGED_MODELS: z.string().default('deepseek-v4.1-flash,kimi-k3')
+    .transform((value) => value.split(',').map((id) => id.trim()).filter(Boolean)),
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -588,6 +600,44 @@ const envSchema = z.object({
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: optInt(900),
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: optInt(512 * 1024 * 1024),
 
+  // ── Config releases (optional) ──────────────────────────────────────────
+  // Operator kill switch for the whole config-release feature (the
+  // `config_releases` per-project flag, docs/specs/config-releases.md →
+  // "Feature flag"). Default ON: a session runs the base branch's current
+  // config. Set to false and the flag is unavailable platform-wide — the
+  // Settings row disappears, both routes answer 403 `feature_disabled` for
+  // every project, no convergence is scheduled, and every session falls back
+  // to reading its workspace config dir, whatever a project chose.
+  CONFIG_RELEASES_ENABLED: optBoolFalse,
+  // Config archives go through the API's ONE object store
+  // (src/object-store/s3.ts), same as project snapshots above, with their own
+  // bucket/prefix so that naming a config bucket never starts the snapshot
+  // producer (which the snapshot bucket setting gates).
+  //   dev/staging/prod: the environment's S3 bucket, credentials from the AWS
+  //     SDK default chain (the ECS task role). Point the prefix somewhere
+  //     distinct when the bucket is shared with project snapshots.
+  //   local/preview/self-host: Supabase Storage's S3 PROTOCOL endpoint
+  //     (`<supabase>/storage/v1/s3`) with the S3 protocol key pair, bucket
+  //     `kortix-config-releases` (created by database migration).
+  // Required when CONFIG_RELEASES_ENABLED is on — see the conditional check in
+  // validateEnv(); without it every archive request rebuilds from the mirror.
+  KORTIX_CONFIG_ARCHIVE_S3_BUCKET: optStr,
+  KORTIX_CONFIG_ARCHIVE_S3_REGION: optStr,
+  /** S3-compatible endpoint. Empty = the AWS regional endpoint. */
+  KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: optUrl(''),
+  KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: optBoolFalse,
+  KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: optStr,
+  KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: optStr,
+  /** Key prefix inside the bucket. Keeps config archives apart from snapshots. */
+  KORTIX_CONFIG_ARCHIVE_S3_PREFIX: optStr.transform((v) => (v.trim() ? v.trim() : 'config-releases')),
+  /** Archives kept per project. Older ones are deleted after a publish. */
+  KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT: optInt(20),
+  // The endpoint the SANDBOX reaches the store through, when it differs from
+  // the API's. Download URLs are presigned for this host and the archive route
+  // answers 302 to them. Unset = presign for the API's own endpoint, and the
+  // route streams the bytes when that host is loopback or private.
+  KORTIX_CONFIG_ARCHIVE_PUBLIC_URL: optUrl(''),
+
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
   // pt_live_… key; PLATINUM_API_URL is the control-plane base
@@ -700,6 +750,15 @@ const envSchema = z.object({
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: optInt(600),
   KORTIX_PROXY_REQS_PER_MIN: optInt(600),
+  // Proxies in front of the API that APPEND to X-Forwarded-For. The client is
+  // the entry this many places from the right; everything to its left was
+  // written by the client. Cloud: Cloudflare + ALB = 2. Self-host Caddy
+  // replaces an untrusted header with one entry, which the rule also reads
+  // correctly. See shared/client-ip.ts.
+  KORTIX_TRUSTED_PROXY_HOPS: optInt(2),
+  // Per client IP: Kortix bearer tokens that need a fresh hash (not seen by
+  // this process recently). A token already validated here is not counted.
+  KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: optInt(300),
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED: optBoolTrue,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: optInt(1_000),
@@ -751,6 +810,17 @@ const envSchema = z.object({
   // domain is not yet claimed/verified in the Resend team. The intended from
   // address is preserved as Reply-To.
   RESEND_FROM_EMAIL: optStr,
+  // Mobile push notifications through the Expo Push API
+  // (notifications/expo-push.ts). The access token is optional: Expo accepts
+  // unauthenticated sends unless the project enables enhanced push security.
+  EXPO_ACCESS_TOKEN: optStr,
+  // Kill switch for session push notifications. On by default; `0` or `false`
+  // stops every send. Device-token registration keeps working.
+  PUSH_NOTIFICATIONS_ENABLED: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((v) => !['0', 'false'].includes(v.trim().toLowerCase())),
   // Local-only HTTP capture. The deterministic test profile points this at
   // Supabase Mailpit. Deployed environments leave it unset.
   MAILPIT_API_URL: optStr,
@@ -922,6 +992,45 @@ function validateEnv(): z.infer<typeof envSchema> {
       });
   }
 
+  // ── Conditional: config releases on → need the ONE object store ────────
+  // `CONFIG_RELEASES_ENABLED` is the operator switch and defaults to FALSE
+  // while the rollout runs. An environment turns it on together with the
+  // bucket, and only then can a project opt in
+  // (the per-project flag itself is OFF by default) and publish config
+  // archives from that moment on. They go through the API's one
+  // object store (src/object-store/s3.ts); there is no second store and no
+  // fallback path that quietly writes somewhere else. Unset ⇒ every archive
+  // request rebuilds from the Git mirror, every time, for every box.
+  // Managed cloud (billing on) is a hard error — a deploy that forgot the
+  // bucket must not reach users. Self-host warns and boots: the store is a
+  // cache, and an operator upgrading a container with a stale env block must
+  // not be locked out of their own dashboard.
+  const configReleasesOn =
+    (raw as any).CONFIG_RELEASES_ENABLED === 'true' || (raw as any).CONFIG_RELEASES_ENABLED === true;
+  if (configReleasesOn) {
+    const bucket = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_BUCKET ?? '').trim();
+    const endpoint = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT ?? '').trim();
+    const keyId = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID ?? '').trim();
+    const keySecret = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY ?? '').trim();
+    if (!bucket) {
+      issues.push({
+        var: 'KORTIX_CONFIG_ARCHIVE_S3_BUCKET',
+        message: billingOn
+          ? 'Required when CONFIG_RELEASES_ENABLED is on — no config archive is stored and every box rebuilds from the Git mirror'
+          : 'Not set — config archives are not cached; every box rebuilds them from the Git mirror (set the KORTIX_CONFIG_ARCHIVE_S3_* block, or CONFIG_RELEASES_ENABLED=false)',
+        level: billingOn ? 'error' : 'warn',
+      });
+    } else if (endpoint && !(keyId && keySecret)) {
+      // A custom S3 endpoint (Supabase Storage, MinIO) never has a task role.
+      issues.push({
+        var: 'KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID',
+        message:
+          'Required with KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT — an S3-compatible endpoint has no AWS task role to fall back to',
+        level: 'error',
+      });
+    }
+  }
+
   // ── Conditional: GitHub App configured → need its OAuth client too ─────
   // The App's own OAuth client is what proves "this GitHub user is you" when
   // linking an installation to an account (POST /projects/github/installations/
@@ -1078,6 +1187,10 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
+  KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean),
   KORTIX_SECRET_RELAY_STREAM_ENABLED: env.KORTIX_SECRET_RELAY_STREAM_ENABLED,
   KORTIX_RELAY_WS_ENABLED: env.KORTIX_RELAY_WS_ENABLED,
   KORTIX_RELAY_MAX_REQUEST_BYTES: env.KORTIX_RELAY_MAX_REQUEST_BYTES,
@@ -1171,6 +1284,7 @@ export const config = {
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   MORPH_API_URL: env.MORPH_API_URL,
   MORPH_API_KEY: env.MORPH_API_KEY,
+  MORPH_MANAGED_MODELS: env.MORPH_MANAGED_MODELS,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
@@ -1226,6 +1340,16 @@ export const config = {
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
   KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: env.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: env.KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS,
+  CONFIG_RELEASES_ENABLED: env.CONFIG_RELEASES_ENABLED,
+  KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,
+  KORTIX_CONFIG_ARCHIVE_S3_REGION: env.KORTIX_CONFIG_ARCHIVE_S3_REGION,
+  KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: env.KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT,
+  KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: env.KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE,
+  KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: env.KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID,
+  KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: env.KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY,
+  KORTIX_CONFIG_ARCHIVE_S3_PREFIX: env.KORTIX_CONFIG_ARCHIVE_S3_PREFIX,
+  KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT: env.KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT,
+  KORTIX_CONFIG_ARCHIVE_PUBLIC_URL: env.KORTIX_CONFIG_ARCHIVE_PUBLIC_URL,
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: env.KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
@@ -1324,6 +1448,8 @@ export const config = {
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
+  KORTIX_TRUSTED_PROXY_HOPS: env.KORTIX_TRUSTED_PROXY_HOPS,
+  KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: env.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN,
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT:
     env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
   KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,
@@ -1348,6 +1474,8 @@ export const config = {
   AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
+  EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
+  PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,

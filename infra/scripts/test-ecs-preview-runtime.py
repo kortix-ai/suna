@@ -578,7 +578,13 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn("autoArchiveDays: 0,", PREVIEW_CORE)
         self.assertIn("autoDeleteDays: 0,", PREVIEW_CORE)
         self.assertIn("branchEnvSandboxName(input.branchEnv)", PREVIEW_CORE)
-        self.assertIn("selectTeardownSandboxIds(await allPlatinumPreviewSandboxes(api), input)", PREVIEW_PROVIDERS)
+        # Teardown takes one provider snapshot, selects the owned host, stops
+        # the host's child session boxes, then deletes the host. The old exact
+        # one-line assertion rejected this stronger lifecycle because listing
+        # moved into a local variable.
+        self.assertIn("const sandboxes = await allPlatinumPreviewSandboxes(api);", PREVIEW_PROVIDERS)
+        self.assertIn("const owned = selectTeardownSandboxIds(sandboxes, input);", PREVIEW_PROVIDERS)
+        self.assertIn("await stopPreviewSessionsOf(api, sandboxes, ownedNames);", PREVIEW_PROVIDERS)
         self.assertIn("PREVIEW_BRANCH_ENV", job("teardown"))
 
     def test_a_failed_pull_request_query_never_reads_as_no_active_previews(self):
@@ -607,7 +613,8 @@ class PreviewHealthGate(unittest.TestCase):
         # OLD: the workflow polled https://pr-<n>.preview-api.kortix.com/v1/health
         # for `.environment == "preview"` and `.commit == $COMMIT`, and the
         # frontend for `.commit`. NEW: the bootstrap script runs the same
-        # assertion against the sandbox origin, then runs the deployed suite.
+        # assertion against the sandbox origin; the deployed suite runs as its
+        # own step afterwards, against the commit that assertion proved.
         self.assertIn(
             '\'.status == "ok" and .environment == "preview" and .commit == $sha\'',
             PREVIEW_CORE,
@@ -616,7 +623,9 @@ class PreviewHealthGate(unittest.TestCase):
         self.assertIn("up -d --wait --wait-timeout 300", PREVIEW_CORE)
         self.assertIn("condition: service_healthy", PREVIEW_STACK)
         self.assertIn("pnpm test -- --target-full", PREVIEW_CORE)
-        self.assertIn("Deploy sandbox and run pnpm test -- --target-full", WORKFLOW)
+        self.assertIn("'.status == \"ok\" and .commit == $sha'", PREVIEW_CORE)
+        self.assertIn("- name: Deploy the preview stack", WORKFLOW)
+        self.assertIn("- name: Run pnpm test -- --target-full against the preview", WORKFLOW)
 
     def test_provider_fallback_hides_no_product_failure(self):
         # A failing test run or a controller bug must surface, not trigger a

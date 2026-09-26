@@ -13,12 +13,15 @@ import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verif
 import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
-import { syncSsoMembership } from '../iam/sso-sync';
+import { createHash } from 'node:crypto';
+import { extractSsoProviderId, syncSsoMembership } from '../iam/sso-sync';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { requestClientKey } from '../shared/client-ip';
 import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { buildActor } from '../iam/actor';
 import { beginStage } from '../lib/server-timing';
+import { presentedKortixToken, withTokenAttemptBudget } from './token-attempt-budget';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -60,14 +63,60 @@ async function withActor(c: Context, next: Next) {
  * those paths, SSO users whose requests take a different path are never
  * provisioned into their org. Never fails the request — the user already
  * authenticated; sync errors are logged for ops review.
+ *
+ * A successful sync is remembered per (user, IdP, login session, claims) for
+ * `SSO_SYNC_MEMO_TTL_MS`. The claims only change when the IdP issues a new
+ * login, so re-running the sync on every request (one transaction, one
+ * account-wide advisory lock, several email lookups) changed nothing but
+ * serialized every SSO user of an account behind one lock. Membership that SCIM
+ * or an admin changes does not depend on this sync; a new group mapping reaches
+ * a signed-in user within one TTL.
  */
+const SSO_SYNC_MEMO_TTL_MS = 5 * 60_000;
+const SSO_SYNC_MEMO_MAX_ENTRIES = 10_000;
+const ssoSyncMemo = new Map<string, number>();
+
+function ssoSyncMemoKey(
+  userId: string,
+  email: string,
+  jwtPayload: Record<string, unknown> | undefined,
+): string | null {
+  const providerId = extractSsoProviderId(jwtPayload);
+  if (!providerId) return null;
+  const loginSession = jwtPayload?.session_id ?? jwtPayload?.iat;
+  if (typeof loginSession !== 'string' && typeof loginSession !== 'number') return null;
+  const claims = createHash('sha256')
+    .update(JSON.stringify([jwtPayload?.app_metadata ?? null, jwtPayload?.user_metadata ?? null]))
+    .digest('base64url');
+  return `${userId}|${providerId}|${loginSession}|${email.trim().toLowerCase()}|${claims}`;
+}
+
+/** Test hook: forget every remembered SSO sync. */
+export function clearSsoSyncMemo(): void {
+  ssoSyncMemo.clear();
+}
+
 async function jitSyncSso(
   userId: string,
   email: string,
   jwtPayload: Record<string, unknown> | undefined,
 ): Promise<void> {
+  const key = ssoSyncMemoKey(userId, email, jwtPayload);
+  const now = Date.now();
+  if (key) {
+    const expiresAt = ssoSyncMemo.get(key);
+    if (expiresAt !== undefined && expiresAt > now) return;
+    ssoSyncMemo.delete(key);
+  }
   try {
     await syncSsoMembership({ userId, email, jwtPayload });
+    if (key) {
+      if (ssoSyncMemo.size >= SSO_SYNC_MEMO_MAX_ENTRIES) {
+        const oldest = ssoSyncMemo.keys().next().value;
+        if (oldest !== undefined) ssoSyncMemo.delete(oldest);
+      }
+      ssoSyncMemo.set(key, now + SSO_SYNC_MEMO_TTL_MS);
+    }
   } catch (err) {
     console.warn('[auth] SAML JIT sync failed', err);
   }
@@ -103,7 +152,9 @@ async function jitSyncSso(
 export async function apiKeyAuth(c: Context, next: Next) {
   const endAuth = beginStage('auth');
   try {
-    await resolveApiKeyAuth(c, () => withActor(c, () => (endAuth(), next())));
+    await withTokenAttemptBudget(c, presentedKortixToken(c), () =>
+      resolveApiKeyAuth(c, () => withActor(c, () => (endAuth(), next()))),
+    );
   } finally {
     endAuth();
   }
@@ -139,7 +190,7 @@ async function resolveApiKeyAuth(c: Context, next: Next) {
 
   if (!result.isValid) {
     console.warn(
-      `[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'}`,
+      `[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${requestClientKey(c)}`,
     );
     auditLoginFail({
       c,
@@ -225,8 +276,10 @@ export async function supabaseAuth(c: Context, next: Next) {
   // the handler starts (or the chain throws a 401/403).
   const endAuth = beginStage('auth');
   try {
-    return await resolveSupabaseAuth(c, () =>
-      applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+    return await withTokenAttemptBudget(c, presentedKortixToken(c), () =>
+      resolveSupabaseAuth(c, () =>
+        applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+      ),
     );
   } finally {
     endAuth();
@@ -340,6 +393,9 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
   const sandboxTokenPathAllowed =
     path.endsWith('/turn-stream') ||
     path.endsWith('/turn-question') ||
+    // The daemon relays OpenCode `permission.asked` so apps/api can push the
+    // session creator. The handler re-checks sandbox, project, and session.
+    /^\/v1\/projects\/[^/]+\/turn-permission$/.test(path) ||
     // The seed daemon fetches the org model catalog at PARK with its sandbox
     // token (no per-session LLM key yet) so the no-restart warm-fork bakes the
     // full picker. Catalog is the non-secret model list — safe for a sandbox token.
@@ -510,8 +566,10 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
 export async function combinedAuth(c: Context, next: Next) {
   const endAuth = beginStage('auth');
   try {
-    return await resolveCombinedAuth(c, () =>
-      applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+    return await withTokenAttemptBudget(c, presentedKortixToken(c, PREVIEW_SESSION_COOKIE), () =>
+      resolveCombinedAuth(c, () =>
+        applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+      ),
     );
   } finally {
     endAuth();

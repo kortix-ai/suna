@@ -24,20 +24,3 @@ export function AgentStopTool({ part, forceOpen }: ToolProps) {
 }
 ToolRegistry.register('agent_stop', AgentStopTool);
 ToolRegistry.register('agent-stop', AgentStopTool);
-
-function parseTaskRows(
-  output: string,
-): Array<{ id: string; title: string; status: string; sessionId?: string }> {
-  if (!output) return [];
-  const rows: Array<{ id: string; title: string; status: string; sessionId?: string }> = [];
-
-  const lines = output.split('\n').filter((l) => l.trim());
-  for (const line of lines) {
-    const m = line.match(/\*\*(task-[a-z0-9]+)\*\*\s+(.+?)\s+—\s+(\w+)/);
-    if (m) {
-      const sessionMatch = line.match(/\bses_[a-zA-Z0-9]+/);
-      rows.push({ id: m[1], title: m[2], status: m[3], sessionId: sessionMatch?.[0] });
-    }
-  }
-  return rows;
-}

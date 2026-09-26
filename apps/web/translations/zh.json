@@ -29,7 +29,8 @@
     "rotateKey": "轮换密钥",
     "manageAccess": "管理访问权限",
     "sessionKeyPool": "会话密钥池",
-    "sharedDescription": "添加多个 API 密钥和 ChatGPT 账户。默认情况下，此项目的所有成员都可以使用。您可以按连接限制访问权限，并为每个会话选择密钥。",
+    "sharedSessionKeys": "此会话已与项目共享，因此这里只能使用与整个项目共享的密钥。授予您的密钥可在您的私有会话中使用。",
+    "sharedDescription": "添加 API 密钥和 ChatGPT 账户。新连接在您共享之前仅供您自己使用。为每个会话选择要使用的连接。",
     "empty": "尚无共享的提供商密钥。",
     "key": "键",
     "deleteAccount": "删除账户",
@@ -55,7 +56,26 @@
     "deleteConfirmDescription": "{label} 将从所有会话密钥池中移除。其他密钥仍可使用。",
     "saveSelection": "保存密钥选择",
     "personalChatGptDefault": "使用您的默认 ChatGPT 连接",
-    "oauthPrivateDescription": "新的 ChatGPT 账户默认可供此项目的所有成员使用。您可以将每个账户限制为指定成员使用。",
+    "oauthPrivateDescription": "在此项目中使用您的 ChatGPT Plus 或 Pro 套餐。新账户在您共享之前仅供您自己使用。",
+    "chatGptSubscription": "ChatGPT 订阅",
+    "useYourChatGpt": "使用您的 ChatGPT 订阅",
+    "manageChatGptAccounts": "管理 ChatGPT 账户",
+    "connect": "连接",
+    "connectChatGpt": "连接 ChatGPT",
+    "noChatGptAccounts": "还没有 ChatGPT 账户",
+    "oauthCreationDescription": "使用您的 ChatGPT Plus 或 Pro 账户登录。Kortix 会加密保存登录信息，且从不显示。",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "仅您自己",
+    "onlyYouDescription": "只有您可以在会话中选择它。",
+    "onlyOwner": "仅 {name}",
+    "shareRequiresPermission": "与他人共享需要管理项目密钥的权限。",
+    "accountConnected": "ChatGPT 账户已连接",
+    "accountReconnected": "ChatGPT 账户已重新连接",
+    "connectFailed": "ChatGPT 授权失败，请重试。",
+    "reconnectAccount": "重新连接",
+    "reconnectTitle": "重新连接 {label}",
+    "reconnectDescription": "请重新登录 ChatGPT。账户的名称、访问权限和会话选择保持不变。",
+    "needsReconnection": "需要重新连接",
     "saveKey": "保存密钥",
     "everyoneInProject": "此项目中的所有成员",
     "chooseProvider": "请选择提供商。",
@@ -552,7 +572,7 @@
         },
         "pooled_provider_secrets": {
           "name": "共享提供商密钥",
-          "description": "与成员共享多个提供商密钥，并为每个会话选择密钥池。"
+          "description": "成员连接自己的 ChatGPT 订阅和提供商密钥，按需共享，并为每个会话选择要使用的连接。"
         },
         "teams": {
           "name": "Microsoft Teams",
@@ -589,6 +609,10 @@
         "agent_principal": {
           "name": "代理作为主体",
           "description": "代理以自身身份执行操作：使用其 Kortix 权限，并受其角色上限约束。运行代理的人只会提供自己的账户。"
+        },
+        "config_releases": {
+          "name": "配置发布",
+          "description": "使用基础分支当前的智能体配置运行会话，以只读方式提供，让已合并的智能体、技能或工具到达每个运行中的会话。关闭时，会话读取自己工作区的配置目录。"
         },
         "agentmail_email": {
           "name": "AgentMail 邮件",
@@ -1228,6 +1252,10 @@
       "faq": {
         "title": "工作原理",
         "items": {
+          "1": {
+            "answer": "快照是已经设置好的机器，其中提前安装了此项目的仓库、依赖项和 Kortix 工具。启动会话时会复制这台预备机器，而不是从头安装所有内容。因此，会话可在几秒钟内就绪，而无需几分钟。",
+            "question": "什么是快照？"
+          },
           "2": {
             "answer": "每当配置发生变化时，Kortix 都会准备新机器，例如新增沙盒模板、编辑 Dockerfile 或合并更改。每次尝试都会生成一行。旧行作为历史记录保留，并非待处理事项。",
             "question": "为什么会不断出现新行？"
@@ -1235,10 +1263,6 @@
           "3": {
             "answer": "通常不是。只有在没有可用机器时，失败的尝试才会产生影响。此时页面顶部会显示带有重新构建按钮的提示。上方没有提示的失败行已经被成功尝试取代。",
             "question": "有一次尝试失败了，这是问题吗？"
-          },
-          "1": {
-            "answer": "快照是已经设置好的机器，其中提前安装了此项目的仓库、依赖项和 Kortix 工具。启动会话时会复制这台预备机器，而不是从头安装所有内容。因此，会话可在几秒钟内就绪，而无需几分钟。",
-            "question": "什么是快照？"
           }
         }
       },
@@ -1611,15 +1635,10 @@
       "updateHint": "让智能体更新此会话",
       "message": "此会话开始后项目已更改。请更新以继续在最新版本上工作。",
       "updateFailed": "无法发送更新提示。",
-      "resuming": "正在恢复…",
-      "unavailable": "先前的工作区已不可用。请在当前仓库中启动新会话。",
       "dismiss": "关闭",
       "update": "更新到最新",
-      "resume": "恢复先前的工作区",
-      "delete": "删除会话",
       "updateSent": "已在此会话中开始更新",
-      "updating": "正在更新…",
-      "newSession": "启动新会话"
+      "updating": "正在更新…"
     },
     "stopped": {
       "message": "其计算机已被释放。重启会话即可恢复。",
@@ -1633,6 +1652,7 @@
     },
     "delete": "删除会话",
     "failedLabel": "会话失败",
+    "loadingConversation": "正在加载对话",
     "missing": {
       "message": "此会话已不可用，或你无权访问。",
       "title": "无法启动会话"
@@ -1753,11 +1773,11 @@
         "imageAlt": "Nexus企业自动化平台幻灯片示例",
         "capabilities": {
           "0": "推介演示",
-          "5": "+ 更多",
           "1": "培训材料",
-          "4": "内容重组",
           "2": "报告演示",
-          "3": "主题和布局变化"
+          "3": "主题和布局变化",
+          "4": "内容重组",
+          "5": "+ 更多"
         },
         "fileType": "PPTX",
         "description": "即时创建令人惊叹的演示文稿。从推介演示到报告再到培训材料。调整主题、布局、内容结构，或通过快速编辑和更新来完善现有演示文稿。"
@@ -1767,11 +1787,11 @@
         "imageAlt": "详细竞争对手档案研究示例",
         "capabilities": {
           "0": "分析市场趋势",
-          "5": "+ 更多",
           "1": "竞争研究",
-          "4": "综合发现",
           "2": "深入主题研究",
-          "3": "收集来源"
+          "3": "收集来源",
+          "4": "综合发现",
+          "5": "+ 更多"
         },
         "fileType": "PDF",
         "description": "全面研究主题。从市场趋势到竞争分析再到深入研究。收集来源、综合发现，或通过快速更新来完善现有研究。"
@@ -1781,11 +1801,11 @@
         "imageAlt": "增长不是线性的图形示例",
         "capabilities": {
           "0": "生成产品照片",
-          "5": "+ 更多",
           "1": "创建社交媒体图形",
-          "4": "徽标/资产创建",
           "2": "制作插图",
-          "3": "风格和照明变化"
+          "3": "风格和照明变化",
+          "4": "徽标/资产创建",
+          "5": "+ 更多"
         },
         "fileType": "图片",
         "description": "按需创建图像。从产品照片到社交媒体图形再到完整插图。调整风格、照明、颜色和布局，或通过快速编辑和修饰来完善现有视觉效果。"
@@ -1795,11 +1815,11 @@
         "imageAlt": "2025年第三季度执行摘要报告示例",
         "capabilities": {
           "0": "提案",
-          "5": "+ 更多",
           "1": "指南和手册",
-          "4": "格式化和重组",
           "2": "内容片段",
-          "3": "语气和风格变化"
+          "3": "语气和风格变化",
+          "4": "格式化和重组",
+          "5": "+ 更多"
         },
         "fileType": "PDF",
         "description": "轻松编写和编辑文档。从提案到指南再到内容片段。调整语气、结构、格式，或通过快速重写和润色来完善现有文档。"
@@ -1809,11 +1829,11 @@
         "imageAlt": "财务模型仪表板示例",
         "capabilities": {
           "0": "仪表板",
-          "5": "+ 更多",
           "1": "可视化",
-          "4": "生成洞察",
           "2": "数据报告",
-          "3": "清理和组织数据"
+          "3": "清理和组织数据",
+          "4": "生成洞察",
+          "5": "+ 更多"
         },
         "fileType": "预览",
         "description": "将原始数据转化为洞察。从电子表格到仪表板再到可视化。清理数据集、创建图表、构建报告，或通过快速更新来完善现有分析。"
@@ -2633,92 +2653,92 @@
     "prompts": {
       "video": {
         "0": "用工作室灯光将我的产品照片平滑旋转动画化",
-        "5": "为我的肖像添加戏剧性灯光和调色",
         "1": "将我的肖像转换为带有相机运动的电影场景",
-        "4": "让我的产品带柔和阴影和反射漂浮旋转",
-        "9": "生成带霓虹灯和反射的未来城市景观视频",
         "2": "生成樱花花瓣缓缓飘落的自然视频",
+        "3": "创建慢动作旋转在一起的发光粒子",
+        "4": "让我的产品带柔和阴影和反射漂浮旋转",
+        "5": "为我的肖像添加戏剧性灯光和调色",
         "6": "生成飞越雾蒙山峰的流畅无人机镜头",
         "7": "创建液态金属流入有机形状的循环视频",
         "8": "将我照片的背景转换为带光线的水下场景",
-        "3": "创建慢动作旋转在一起的发光粒子"
+        "9": "生成带霓虹灯和反射的未来城市景观视频"
       },
       "slides": {
         "0": "创建一个包含市场规模、牵引力和财务预测的 A 轮融资路演",
-        "5": "构建一个展示投资回报率和成功指标的客户案例研究演示",
         "1": "构建一个展示 KPI、成果和战略举措的第四季度业务回顾",
-        "4": "创建一个突出关键指标和即将到来的里程碑的投资者更新",
-        "9": "构建一个包含战略建议的董事会会议演示",
         "2": "设计一个包含演示视频和客户推荐的产品发布演示",
+        "3": "开发一个销售赋能演示，解释我们的价值主张和竞争优势",
+        "4": "创建一个突出关键指标和即将到来的里程碑的投资者更新",
+        "5": "构建一个展示投资回报率和成功指标的客户案例研究演示",
         "6": "设计一个涵盖公司更新和愿景的全员演示",
         "7": "为新产品功能和工作流程开发培训演示",
         "8": "创建一个关于扩展工程团队的会议演讲",
-        "3": "开发一个销售赋能演示，解释我们的价值主张和竞争优势"
+        "9": "构建一个包含战略建议的董事会会议演示"
       },
       "research": {
         "0": "分析量子计算的新兴趋势和潜在商业应用",
-        "5": "研究财富 500 强公司中的 Web3 采用模式",
         "1": "研究 AI 驱动的 CRM 领域的十大竞争对手，并进行功能比较",
-        "4": "研究远程工作对主要城市商业房地产需求的影响",
-        "9": "研究 AI 驱动的网络安全解决方案的竞争格局",
         "2": "调查在欧盟推出金融科技应用的监管要求",
+        "3": "汇编主要市场电动汽车采用率的市场分析",
+        "4": "研究远程工作对主要城市商业房地产需求的影响",
+        "5": "研究财富 500 强公司中的 Web3 采用模式",
         "6": "分析消费者对可持续时尚品牌的情绪",
         "7": "调查罕见疾病基因治疗的最新进展",
         "8": "研究成功的 D2C 订阅盒公司的定价策略",
-        "3": "汇编主要市场电动汽车采用率的市场分析"
+        "9": "研究 AI 驱动的网络安全解决方案的竞争格局"
       },
       "canvas": {
         "0": "向画布添加带有未来主义城市天际线的科技创业公司横幅",
-        "5": "向画布添加生产力技巧视频的 YouTube 缩略图",
         "1": "在画布上创建大地色调极简风格的咖啡品牌标志",
-        "4": "在画布上创建带有赛博朋克美学的科幻小说封面",
-        "9": "在画布上创建带有迷幻氛围的音乐节海报",
         "2": "将我的产品照片添加到画布并移除背景",
+        "3": "在画布上设计带有扁平图标的可再生能源信息图",
+        "4": "在画布上创建带有赛博朋克美学的科幻小说封面",
+        "5": "向画布添加生产力技巧视频的 YouTube 缩略图",
         "6": "在画布上为千禧一代构建奢侈时尚情绪板",
         "7": "在画布上设计带有花卉图案的优雅婚礼请柬",
         "8": "将我的肖像添加到画布并应用复古胶片效果",
-        "3": "在画布上设计带有扁平图标的可再生能源信息图"
+        "9": "在画布上创建带有迷幻氛围的音乐节海报"
       },
       "docs": {
         "0": "为 AI 驱动的推荐引擎编写全面的产品需求文档",
-        "5": "创建涵盖文化、政策和福利的公司手册",
         "1": "为可扩展的微服务平台起草技术架构文档",
-        "4": "编写包含示例和最佳实践的 API 文档指南",
-        "9": "创建涵盖品牌和内容的全面风格指南",
         "2": "为我们的第二季度产品发布创建上市策略文档",
+        "3": "为工程经理开发 90 天入职手册",
+        "4": "编写包含示例和最佳实践的 API 文档指南",
+        "5": "创建涵盖文化、政策和福利的公司手册",
         "6": "起草符合 GDPR 和 CCPA 的数据隐私政策",
         "7": "为 SaaS 企业账户开发客户成功手册",
         "8": "编写包含升级程序的安全事件响应计划",
-        "3": "为工程经理开发 90 天入职手册"
+        "9": "创建涵盖品牌和内容的全面风格指南"
       },
       "data": {
         "0": "构建一个财务模型，预测不同定价场景下的 ARR 增长",
-        "5": "创建一个比较渠道表现的营销归因模型",
         "1": "创建一个按地区和季度跟踪指标的交互式销售仪表板",
-        "4": "构建一个显示用户留存和流失模式的队列分析",
-        "9": "创建一个带有自动补货提醒的库存管理系统",
         "2": "分析 5 万条客户评论，并可视化随时间的情感趋势",
+        "3": "设计一个内容日历，跟踪带有投资回报率和参与度图表的营销活动",
+        "4": "构建一个显示用户留存和流失模式的队列分析",
+        "5": "创建一个比较渠道表现的营销归因模型",
         "6": "开发一个带有管道指标和填补时间分析的招聘跟踪器",
         "7": "构建一个带有场景建模的预算规划电子表格",
         "8": "分析网站流量数据并可视化转化漏斗",
-        "3": "设计一个内容日历，跟踪带有投资回报率和参与度图表的营销活动"
+        "9": "创建一个带有自动补货提醒的库存管理系统"
       },
       "image": {
         "0": "日出时分，一只雄伟的金色雄鹰在薄雾笼罩的山峰间翱翔，光线戏剧性",
-        "13": "乡村农舍厨房，铜锅，新鲜香草，木制砧板，自然质感",
-        "5": "梦幻的浮岛，由绳索桥连接，在柔和的天空和梦幻的云朵中",
         "1": "时尚模特的近距离肖像，前卫妆容，工作室灯光，高对比度阴影",
-        "4": "优雅的产品摄影，豪华香水瓶放在大理石表面，柔和的反射",
-        "9": "当代玻璃建筑立面的建筑细节，几何图案和反射",
-        "11": "宁静的日式禅意花园，耙过的沙子，长满苔藓的石头，樱花花瓣",
         "2": "舒适的斯堪的纳维亚客厅，天然木制家具，室内植物，柔和的晨光",
+        "3": "未来主义赛博朋克风格的夜间街头市场，霓虹灯招牌，雨湿的路面，全息显示屏",
+        "4": "优雅的产品摄影，豪华香水瓶放在大理石表面，柔和的反射",
+        "5": "梦幻的浮岛，由绳索桥连接，在柔和的天空和梦幻的云朵中",
         "6": "充满活力的花瓣上晨露的微距特写，背景虚化",
-        "10": "充满活力的街头小吃摊，色彩丰富的食材，蒸汽升腾，温暖的灯光",
         "7": "现代工作空间桌面设置，从上方看有笔记本电脑、咖啡、笔记本和多肉植物",
-        "14": "抽象流动艺术，旋转的金属金色，深蓝色和翠绿色有机图案",
         "8": "神秘的森林小径，古树，发光的萤火虫，透过雾气的光束",
+        "9": "当代玻璃建筑立面的建筑细节，几何图案和反射",
+        "10": "充满活力的街头小吃摊，色彩丰富的食材，蒸汽升腾，温暖的灯光",
+        "11": "宁静的日式禅意花园，耙过的沙子，长满苔藓的石头，樱花花瓣",
         "12": "运动员跳跃中的动态动作镜头，背景是戏剧性的日落天空，剪影效果",
-        "3": "未来主义赛博朋克风格的夜间街头市场，霓虹灯招牌，雨湿的路面，全息显示屏"
+        "13": "乡村农舍厨房，铜锅，新鲜香草，木制砧板，自然质感",
+        "14": "抽象流动艺术，旋转的金属金色，深蓝色和翠绿色有机图案"
       }
     },
     "modes": {
@@ -6241,7 +6261,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "所有 Worker 执行当前已暂停。"
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "无内容"
+      "line1115JsxTextNoContent": "无内容",
+      "loadRemoteImage": "从 {host} 加载图片"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "按 Enter 启动..."
@@ -9471,7 +9492,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": "。这些更改仅存在于此处，尚未包含在你的",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "版本中。提议这些更改以供审核和应用。",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "重命名...",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "分享...",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix 会话正在启动",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "新航站楼",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "文件视图",
@@ -18578,6 +18598,17 @@
       "textea5d0ffa0962": "共享账户由项目管理员连接。",
       "text3d6627454174": "设置凭据",
       "text929505ef815a": "尚未连接任何账户。在下方添加你自己的账户，或请项目管理员连接一个共享账户。",
+      "text931cb67e2af7": "无法加载新的智能体配置。此会话仍在使用较早的配置运行。",
+      "textd9ff3a72833d": "配置加载失败",
+      "textebfb07812fb4": "无法加载新的智能体配置",
+      "text4e62b29dd3b6": "此会话正在使用较早的配置运行。在基础分支发生变化之前，不会重试失败的配置。",
+      "textf81ab834de5f": "原因",
+      "text44cdf35701cd": "当前运行",
+      "text591f9f0f3259": "失败的发布",
+      "text00ed4c71dc2b": "最后可用的发布",
+      "textbd7a1a3b4141": "平台默认配置",
+      "text643df05476ab": "此会话正在使用平台默认配置运行。在基础分支发生变化之前，不会重试失败的配置。",
+      "text40652e008fc9": "无法加载新的智能体配置。此会话正在使用平台默认配置运行。",
       "text3312ddb06c1d": "在 Azure 中注册机器人，在此连接，然后将应用包上传到 Teams。",
       "text7f1b55a356b0": "在 Azure 中注册机器人",
       "text91004edf8b30": "将其连接到此项目",
@@ -18686,7 +18717,9 @@
       "texta0bcee97cbb3": "已确认内嵌结账",
       "text0b751a917c97": "已连接 GitHub 安装",
       "text8b7a8797d532": "已连接 Microsoft Teams 租户",
+      "text83c0e255d4bb": "已完成 Microsoft Teams 安装",
       "text17a8cf884e2a": "已连接 Slack 工作区",
+      "textf887cb0e6800": "已完成 Slack 应用安装",
       "textc7f9ec5ed69c": "已连接电脑隧道代理",
       "textafd58fcedeee": "已连接邮件收件箱",
       "text2eda12b4ed38": "已连接现有 GitHub App",
@@ -18943,6 +18976,7 @@
       "text60954a626cee": "已撤销 LLM 网关密钥",
       "text32c1477a3336": "已撤销电脑隧道权限",
       "text953488439740": "已撤销连接器账户",
+      "texte817b7da7436": "已共享私有连接器账户",
       "text538cb0effaea": "已撤销个人访问令牌",
       "text74be1c139903": "已撤销池化提供商密钥授权",
       "text6d3935be0516": "已撤销项目 CLI 令牌",
@@ -19149,7 +19183,50 @@
       "text2afef4702cc0": "已查看系统状态横幅",
       "textbda3fcd4343c": "已查看层级配置",
       "text30cef615e8e3": "已查看交易摘要",
-      "textd2c6127fc332": "已查看版本差异"
+      "textd2c6127fc332": "已查看版本差异",
+      "text8cc0d84b66bb": "预览了 Slack 身份链接",
+      "text508b43cc4545": "预览了 Teams 身份链接",
+      "text467f597e95b0": "已验证 SSO 域名",
+      "text8295f9d4861b": "已设置账户 SSO 域名验证",
+      "text7beaff63a7d3": "已下载项目配置归档",
+      "text5176d59f25fd": "已解析会话配置发布",
+      "text273c48dbf3b9": "已注册推送通知设备",
+      "textbb666ddf7a57": "已移除推送通知设备",
+      "text397ab5aecbbf": "已转发会话权限请求"
+    },
+    "publicShareConfirm": {
+      "title": "创建公开链接？",
+      "description": "任何拥有此链接的人都无需登录即可查看。链接在你撤销之前一直有效。",
+      "confirm": "创建链接"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "公开链接",
+      "sectionDescription": "任何拥有此链接的人都无需登录即可阅读此对话。",
+      "create": "创建公开链接",
+      "revokeDescription": "所有持有此链接的人将无法再加载此对话。之后你可以创建新链接。",
+      "rowMeta": "只读对话",
+      "unavailable": "此对话暂时不可用。",
+      "unavailableDescription": "暂时无法读取此对话。请稍后再试。",
+      "loadFailedDescription": "无法加载此对话。",
+      "empty": "暂无消息",
+      "savedCopy": "保存于 {date} 的副本"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} 账户",
+      "chatWorkspace": "{service} 工作区",
+      "checking": "正在检查链接…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} 未连接",
+      "mismatch": "此安装是从另一个 Kortix 账户或为另一个项目发起的。请使用该账户登录，或从项目中重新开始安装。",
+      "expired": "此安装链接无效或已过期。请从项目中重新开始安装。",
+      "failed": "无法完成安装。请从项目中重新开始。",
+      "backToProject": "返回项目"
+    },
+    "secretIntakeWithheld": {
+      "title": "已保存，但 {agent} 暂时无法读取",
+      "grant": "{count, plural, other {# 个密钥}}（{names}）不在智能体 {agent} 的密钥中。请打开 自定义 → Agents → {agent} → 密钥 并启用{count, plural, =1 {它} other {它们}}。",
+      "allowlist": "{count, plural, other {# 个密钥}}（{names}）不在此会话的密钥范围内。请启动新会话以使用{count, plural, =1 {它} other {它们}}。"
     }
   },
   "projectOnboarding": {
@@ -19208,7 +19285,17 @@
   },
   "commandPalette": {
     "title": "命令面板",
-    "description": "搜索要运行的命令..."
+    "description": "搜索要运行的命令...",
+    "copyTitle": "复制",
+    "copyEmail": "邮箱",
+    "copyUserId": "用户 ID",
+    "copyAccountId": "账户 ID",
+    "copyProjectId": "项目 ID",
+    "copySessionId": "会话 ID",
+    "copySessionLink": "会话链接",
+    "copyAction": "复制{label}",
+    "copied": "已复制{label}",
+    "copyFailed": "无法复制到剪贴板"
   },
   "personalWelcome": {
     "emailCopied": "已复制电子邮件地址",
@@ -19975,6 +20062,9 @@
     "providerError": "无法更新提供商访问权限。",
     "managedTitle": "Kortix 托管模型",
     "managedDescription": "使用 Kortix 额度计费的托管模型。无需 API 密钥。",
+    "pricingEstimate": "客户预估价格。实际费用取决于使用的路由。",
+    "pricingRoute": "{route}：每百万 token 输入 {input} / 缓存 {cacheRead} / 输出 {output}",
+    "pricingPreferred": "首选",
     "textImage": "文本 + 图像",
     "textOnly": "仅文本",
     "zdrTitle": "零数据保留",
@@ -20105,5 +20195,64 @@
   },
   "connectorsAppReturn": {
     "done": "完成。返回 Kortix 应用"
+  },
+  "ssoDomainVerification": {
+    "title": "域名验证",
+    "verified": "已验证",
+    "unverified": "未验证",
+    "verifiedDescription": "您的身份提供商在 {domain} 上受信任。强制 SSO 适用于此域名。",
+    "unverifiedDescription": "添加此 DNS TXT 记录以证明您控制 {domain}。在此之前，SSO 登录仅在此账户内有效，强制 SSO 不生效。",
+    "recordName": "名称",
+    "recordValue": "值",
+    "verify": "验证域名",
+    "verifiedToast": "域名已验证",
+    "failedToast": "域名尚未验证",
+    "enforceNeedsVerification": "请先验证域名。强制 SSO 仅适用于已验证的域名。"
+  },
+  "accessSharing": {
+    "everyone": "{project} 中的所有人",
+    "everyoneRoleNote": "每个人保留自己的项目角色。你选择的代理适用于 {project} 中的所有人。",
+    "shareTitle": "共享 {label}",
+    "shareDescription": "选择谁可以使用此账户。只选择自己即可仅供自己使用。",
+    "whoCanUse": "谁可以使用",
+    "add": "添加人员或组",
+    "everyoneDefaultMeta": "直到你添加一个组或一个人",
+    "everyoneMeta": "所有可以访问该项目的人",
+    "groupMeta": "组",
+    "memberMeta": "成员",
+    "remove": "移除 {name}",
+    "keep": "保留",
+    "removedMeta": "保存时移除",
+    "resultEveryone": "{project} 中的所有人都可以使用此账户。",
+    "resultNarrowed": "只有你选择的人可以在其私密会话中使用此账户。",
+    "save": "保存",
+    "saved": "访问权限已更新",
+    "saveFailed": "无法更新访问权限",
+    "manageAccess": "管理访问权限",
+    "sharedWith": "已与 {names} 共享",
+    "notSharedWithYou": "未与你共享",
+    "removeEveryoneTitle": "停止与所有人共享 {agent}？",
+    "removeEveryoneDescription": "只有被授予 {agent} 的人员和组可以继续使用。其他成员将失去访问权限。",
+    "removeEveryone": "停止共享",
+    "removed": "已移除",
+    "removeFailed": "无法移除访问权限",
+    "accountsTitle": "账户",
+    "addAccount": "添加账户",
+    "addAccountTitle": "添加 {connector} 账户",
+    "addAccountDescription": "为账户命名，并选择谁可以使用它。",
+    "onlyYou": "仅你自己",
+    "onlyYouDescription": "只有你可以在自己的私密会话中使用。",
+    "specificPeople": "特定人员或群组",
+    "specificPeopleDescription": "只有你选择的人员和群组，可在其私密会话中使用。",
+    "shareRequiresManage": "共享账户需要管理项目连接的权限。",
+    "nameTaken": "名为 {label} 的账户已存在。",
+    "noAccountsTitle": "还没有账户",
+    "noAccountsDescription": "添加账户后即可在会话中使用 {connector}。",
+    "visibilityEveryone": "整个项目",
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "已保存为 {label}",
+    "connectFailed": "无法连接账户，请重试。",
+    "sharePrivateDescription": "选择还有谁可以使用你的账户。它会变为共享账户，项目的连接管理员也可以管理它。",
+    "ownerMeta": "你的账户"
   }
 }

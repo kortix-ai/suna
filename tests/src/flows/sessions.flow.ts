@@ -2,9 +2,12 @@
  * Sessions — create/list/get/delete + unified runtime start. Maps to spec §16 (SESS-*).
  * Session creation provisions a REAL Daytona sandbox (fire-and-forget), so these
  * assert the contract (201 provisioning, status transitions) without blocking on
- * a full boot. Gated on the `daytona` capability.
+ * a full boot. Gated on the `daytona` capability, except SESS-36, which runs on
+ * the local profile against a database session with a saved transcript.
  */
 import { flow } from '../core/flow';
+import { createDatabaseSession } from '../fixtures/database-project';
+import { seedSessionTranscript } from '../fixtures/session-transcript';
 
 flow(
   'SESS-1',
@@ -137,8 +140,9 @@ flow(
  *  - a revoked token resolves → 410 "Share link revoked" (resolvePublicShare
  *    checks `revokedAt` BEFORE it ever looks at the sandbox) — NOT 404.
  *  - an unknown token → 404 "Share link not found".
- *  - a real, not-yet-revoked token whose sandbox has no `externalId` yet → 503
- *    "Sandbox is not ready". `resolvePublicShare` LEFT (not INNER) JOINs
+ *  - a real, not-yet-revoked preview/file token whose sandbox has no
+ *    `externalId` yet → 503 "Sandbox is not ready" (a transcript token needs no
+ *    sandbox — SESS-36). `resolvePublicShare` LEFT (not INNER) JOINs
  *    `session_sandboxes` for exactly this reason: a freshly-created session
  *    frequently has no `session_sandboxes` row at all yet (provisioning is
  *    kicked off in the background, not awaited before POST /sessions
@@ -776,25 +780,24 @@ flow(
  * could never serve a session's title/transcript to a logged-out visitor.
  *
  * `:shareId` here is the SESS-13 share's raw `share_id` (the uuid — the SAME
- * value the CRUD responses call `share.share_id`), NOT the `kps_...` public
- * token `/v1/p/public-share/:token` uses. The route derives the token
- * server-side (`publicShareToken(shareId)`) and resolves through the exact
- * same `resolvePublicShare()` SESS-13 covers, so it inherits identical
- * 404 (unknown) / 410 (revoked or expired) / 503 (sandbox not provisioned
- * yet) semantics — and ANY existing share for the session (created as a
- * `preview` or a `file`, the only kinds the CRUD supports today) unlocks the
- * transcript view too: a share token already proves the owner handed this
- * link to someone outside the account, and the read-only conversation is not
- * more sensitive than the live preview or workspace file that SAME token
- * already exposes.
+ * value the CRUD responses call `share.share_id`) or its `kps_...` public
+ * token. The route resolves through the exact same `resolvePublicShare()`
+ * SESS-13 covers, so it inherits identical 404 (unknown) / 410 (revoked or
+ * expired) semantics. A share grants exactly the resource it names: a
+ * `preview` share names one app port and a `file` share one document, so
+ * neither reads the conversation — `.../messages` answers 404 for both
+ * (SCOPE-4 pins this on the local profile). A `transcript` share
+ * (`{transcript:true}`) reads it; SESS-36 pins that contract locally, and the
+ * last steps here run it against a real sandbox.
  *
  * The metadata route (`GET /:shareId`) is DB-only (title/status/timestamps),
  * so it does not itself 503 on an inactive sandbox — only `resolvePublicShare`'s
- * own missing-`externalId` check can. The messages route additionally 503s
- * when the sandbox row exists but isn't `active`, and otherwise degrades to a
- * 200 `{available:false, reason}` digest (mirroring the authenticated
- * `/transcript` debug endpoint's behavior) for transient OpenCode-not-ready
- * states — a polling frontend should retry those, not treat them as fatal.
+ * missing-`externalId` check can, and only for a preview/file share. For a
+ * transcript share the messages route reads the live sandbox when it is
+ * `active` (`source:"live"`) and the saved transcript otherwise
+ * (`source:"mirror"`); it 503s only when neither exists, and a running sandbox
+ * with nothing readable degrades to a 200 `{available:false, source:"none"}`
+ * digest a polling frontend should retry.
  */
 flow(
   'SESS-16',
@@ -864,15 +867,12 @@ flow(
     );
 
     await ctx.step(
-      'anon: read the sanitized transcript for the real share → 200 (digest) or 503 (sandbox not up)',
+      'anon: a preview share does not read the transcript → 404 (the share names one app port)',
       async () => {
         const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
           params: { shareId },
         });
-        r.status([200, 503]);
-        if (r.statusCode === 200) {
-          r.body().exists('$.available').exists('$.messages').exists('$.message_count');
-        }
+        r.status(404).body().has('$.error', 'This share does not include the conversation');
       },
     );
 
@@ -896,6 +896,248 @@ flow(
         params: { shareId },
       });
       r.status(410);
+    });
+
+    let transcriptShareId = '';
+    await ctx.step('mint a transcript public share → 201', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/public-shares',
+        { transcript: true },
+        { params: { projectId: project.id, sessionId: session.id } },
+      );
+      r.status(201).body().has('$.share.resource_type', 'transcript');
+      transcriptShareId = r.json<any>()?.share?.share_id;
+    });
+
+    await ctx.step(
+      'anon: the transcript share reads the conversation → 200 digest from the live sandbox or the saved transcript',
+      async () => {
+        const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
+          params: { shareId: transcriptShareId },
+        });
+        r.status(200).body().exists('$.messages');
+        const source = r.json<{ source?: string }>().source;
+        if (source !== 'live' && source !== 'mirror') {
+          throw new Error(`expected source live or mirror, got ${JSON.stringify(source)}`);
+        }
+      },
+    );
+
+    await ctx.step('revoke the transcript share → 200, then its messages → 410', async () => {
+      (
+        await owner.del('/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId', {
+          params: { projectId: project.id, sessionId: session.id, shareId: transcriptShareId },
+        })
+      ).status(200);
+      (
+        await anon.get('/v1/public/session-shares/:shareId/messages', {
+          params: { shareId: transcriptShareId },
+        })
+      ).status(410);
+    });
+  },
+);
+
+/**
+ * SESS-36 — public transcript share. `POST .../public-shares {transcript:true}`
+ * mints the ONE share kind that reads the conversation; the anonymous
+ * `/v1/public/session-shares/:ref/messages` then answers with the sanitized
+ * digest. Runs on the local profile: the session is a database row with a
+ * stopped sandbox and a saved transcript, so the read proves the mirror
+ * fallback a shared link depends on once its sandbox idles out.
+ */
+flow(
+  'SESS-36',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'POST /v1/projects/:projectId/sessions/:sessionId/public-shares',
+      'GET /v1/projects/:projectId/sessions/:sessionId/public-shares',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
+      'GET /v1/public/session-shares/:shareId',
+      'GET /v1/public/session-shares/:shareId/messages',
+      'GET /v1/p/public-share/:token',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    // A human-owned PRIVATE session: only its creator may publish it.
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: ctx.P.OWNER.userId!,
+      visibility: 'private',
+    });
+    ctx.track('session', sessionId, { projectId: project.id });
+    await seedSessionTranscript(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      sessionId,
+    });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const anon = ctx.client.as(ctx.P.ANON);
+    const sharesRoute = '/v1/projects/:projectId/sessions/:sessionId/public-shares';
+    const params = { projectId: project.id, sessionId };
+    type Share = {
+      share_id: string;
+      resource_type: string;
+      public_token: string;
+      public_path: string;
+      public_url: string | null;
+      proxy_path: string;
+      revoked_at: string | null;
+    };
+
+    await ctx.step('ANON cannot mint a transcript share → 401', async () => {
+      (await anon.post(sharesRoute, { transcript: true }, { params })).status(401);
+    });
+
+    await ctx.step('NONMEMBER cannot mint a transcript share → 403, no share is written', async () => {
+      (await ctx.client.as(ctx.P.NONMEMBER).post(sharesRoute, { transcript: true }, { params })).status(403);
+      const list = await owner.get(sharesRoute, { params });
+      list.status(200);
+      if (list.json<{ shares: Share[] }>().shares.length !== 0) throw new Error('a refused mint wrote a share');
+    });
+
+    await ctx.step('a project MEMBER who did not create the private session cannot mint → 403, no share is written', async () => {
+      (await ctx.client.as(member).post(sharesRoute, { transcript: true }, { params })).status(403);
+      const list = await owner.get(sharesRoute, { params });
+      list.status(200);
+      if (list.json<{ shares: Share[] }>().shares.length !== 0) throw new Error('a refused mint wrote a share');
+    });
+
+    await ctx.step('a transcript share combined with a file → 400', async () => {
+      (await owner.post(sharesRoute, { transcript: true, file: { path: '/workspace/a.md' } }, { params }))
+        .status(400)
+        .body()
+        .has('$.error', 'A public share names one resource');
+    });
+
+    let share!: Share;
+    await ctx.step('the owner mints a transcript share → 201, a view-only link to the web viewer', async () => {
+      const r = await owner.post(sharesRoute, { transcript: true }, { params });
+      r.status(201)
+        .body()
+        .has('$.share.resource_type', 'transcript')
+        .has('$.share.session_id', sessionId)
+        .has('$.share.label', 'Conversation')
+        .has('$.share.mode', 'view')
+        .has('$.share.port', null)
+        .has('$.share.file_path', null);
+      share = r.json<{ share: Share }>().share;
+      if (share.public_token !== `kps_${share.share_id.replaceAll('-', '')}`) throw new Error(`token ${share.public_token}`);
+      if (share.public_path !== `/share/session/${share.public_token}`) throw new Error(`path ${share.public_path}`);
+      if (!share.public_url?.endsWith(share.public_path)) throw new Error(`public_url ${share.public_url}`);
+      if (share.proxy_path !== `/v1/public/session-shares/${share.public_token}/messages`) {
+        throw new Error(`proxy_path ${share.proxy_path}`);
+      }
+    });
+
+    await ctx.step('minting again returns the same live link → 200', async () => {
+      (await owner.post(sharesRoute, { transcript: true }, { params }))
+        .status(200)
+        .body()
+        .has('$.share.share_id', share.share_id);
+    });
+
+    await ctx.step('the owner lists exactly one transcript share', async () => {
+      const r = await owner.get(sharesRoute, { params });
+      r.status(200);
+      const transcripts = r.json<{ shares: Share[] }>().shares.filter((s) => s.resource_type === 'transcript');
+      if (transcripts.length !== 1 || transcripts[0].share_id !== share.share_id) {
+        throw new Error(`expected one transcript share, got ${JSON.stringify(transcripts)}`);
+      }
+    });
+
+    await ctx.step('anon reads the share metadata by share id and by token → 200, no sandbox needed', async () => {
+      for (const ref of [share.share_id, share.public_token]) {
+        (await anon.get('/v1/public/session-shares/:shareId', { params: { shareId: ref } }))
+          .status(200)
+          .body()
+          .has('$.share.share_id', share.share_id)
+          .has('$.share.resource_type', 'transcript')
+          .has('$.session.session_id', sessionId);
+      }
+    });
+
+    await ctx.step('anon reads the saved conversation through the token → 200 sanitized digest', async () => {
+      const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
+        params: { shareId: share.public_token },
+      });
+      r.status(200)
+        .body()
+        .has('$.available', true)
+        .has('$.source', 'mirror')
+        .has('$.message_count', 2)
+        .has('$.messages[0].role', 'user')
+        .has('$.messages[0].text', 'Show my saved conversation.')
+        .has('$.messages[1].role', 'assistant')
+        .has('$.messages[1].text', 'This reply is stored in the database.');
+      const [first] = r.json<{ messages: Record<string, unknown>[] }>().messages;
+      const keys = Object.keys(first).sort().join(',');
+      if (keys !== 'completed,created,files,reasoning_omitted,role,text,tools') {
+        throw new Error(`an anonymous message carries more than the digest fields: ${keys}`);
+      }
+    });
+
+    await ctx.step('anon resolves the token on the proxy edge → 200 transcript, opens no port', async () => {
+      (await anon.get('/v1/p/public-share/:token', { params: { token: share.public_token } }))
+        .status(200)
+        .body()
+        .has('$.share.resource_type', 'transcript')
+        .has('$.share.proxy_path', share.proxy_path)
+        .has('$.share.public_url', share.public_url);
+    });
+
+    let previewShareId = '';
+    await ctx.step('a preview share of the same session still does not read the conversation → 404', async () => {
+      const r = await owner.post(sharesRoute, { preview: { port: 3000 } }, { params });
+      r.status(201);
+      previewShareId = r.json<{ share: Share }>().share.share_id;
+      (await anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: previewShareId } }))
+        .status(404)
+        .body()
+        .has('$.error', 'This share does not include the conversation');
+    });
+
+    await ctx.step('the owner revokes the transcript share → 200 with revoked_at', async () => {
+      const r = await owner.del(`${sharesRoute}/:shareId`, { params: { ...params, shareId: share.share_id } });
+      r.status(200);
+      if (!r.json<{ share: Share }>().share.revoked_at) throw new Error('revoked_at is not set');
+    });
+
+    await ctx.step('anon: the revoked link → 410 on metadata and messages', async () => {
+      (await anon.get('/v1/public/session-shares/:shareId', { params: { shareId: share.public_token } })).status(410);
+      (await anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: share.public_token } }))
+        .status(410);
+    });
+
+    await ctx.step('minting after a revoke creates a new link → 201 with a new share id', async () => {
+      const r = await owner.post(sharesRoute, { transcript: true }, { params });
+      r.status(201);
+      const next = r.json<{ share: Share }>().share;
+      if (next.share_id === share.share_id) throw new Error('a revoked link was handed back');
+      share = next;
+    });
+
+    await ctx.step('the owner deletes the session → its live links answer 410 and read back revoked', async () => {
+      (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params })).status(200);
+      (await anon.get('/v1/public/session-shares/:shareId', { params: { shareId: share.public_token } })).status(410);
+      (await anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: share.public_token } }))
+        .status(410);
+      (await anon.get('/v1/p/public-share/:token', { params: { token: share.public_token } })).status(410);
+      const list = await owner.get(sharesRoute, { params });
+      list.status(200);
+      const shares = list.json<{ shares: Share[] }>().shares;
+      const live = shares.filter((s) => !s.revoked_at);
+      if (shares.length === 0 || live.length !== 0) {
+        throw new Error(`the delete did not revoke every share: ${JSON.stringify(shares)}`);
+      }
     });
   },
 );

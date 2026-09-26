@@ -31,7 +31,8 @@ import {
   GroupMemberSchema,
   ProjectGrantSchema,
 } from './app';
-import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
+import { auditIam, isUniqueViolation, requireEntitlement } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 
 // Groups are an Enterprise-only construct (no free-tier group concept). The
 // `rbac` entitlement gates every route that CREATES or GROWS group state
@@ -128,7 +129,7 @@ iamRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name) return c.json({ error: 'name is required' }, 400);
     if (name.length > 128) return c.json({ error: 'name too long' }, 400);
@@ -229,7 +230,7 @@ iamRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const patch: { name?: string; description?: string | null } = {};
     if (typeof body.name === 'string') {
       const name = body.name.trim();
@@ -391,7 +392,7 @@ iamRouter.openapi(
     // IdP-owned membership: local adds get clobbered by the next push.
     if (group.source === 'scim') return idpManagedGroupError(c, 'membership');
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const userIds: string[] = Array.isArray(body.userIds)
       ? body.userIds.filter((v): v is string => typeof v === 'string')
       : typeof body.userId === 'string'

@@ -8,8 +8,14 @@
  * single-file version. No React / DOM / framework imports allowed.
  */
 
-import type { MessageWithPartsLike, PartLike, PartWithMessage, ToolPartLike, TurnLike } from './types';
+import type { MessageInfoLike, MessageWithPartsLike, PartLike, PartWithMessage, ToolPartLike, TurnLike } from './types';
 import { isTextPart, isToolPart } from './parts';
+import {
+  WIRE_ID_CLOCK_TOLERANCE,
+  absoluteWireIdClockAt,
+  unwrapWireIdClock,
+  wireIdClock,
+} from '../session/wire-message-id';
 
 // ============================================================================
 // Internal wire shapes (structural casts, never exported)
@@ -67,8 +73,34 @@ interface TextPartLike extends PartLike {
  * it is the latest thing the user did — and two such are a TIE, so the stable
  * sort keeps the order the host handed them over in. Equal timestamps keep id
  * order.
+ *
+ * AN ID IS A POSITION ONLY WHILE IT AGREES WITH ITS OWN CLOCK. The id encodes
+ * the low 48 bits of `Date.now() * 0x1000`, so a placed message is ordered by
+ * that clock UNWRAPPED against its own `time.created` — which is what keeps a
+ * session spanning the 2026-08-14 wrap in order. Every correct mint sits within
+ * minutes of its timestamp. An id more than {@link WIRE_ID_CLOCK_TOLERANCE}
+ * (1 hour) away from it was not placed by any transcript — `kortix sessions
+ * send` minted the HIGH bits, ~40 days ahead, until 2026-09 — and falls back to
+ * the server's own order: `time.created`, then id (`MessageV2.page()`). Without
+ * this, every turn sent after such a prompt rendered ABOVE it. A placed message
+ * with no timestamp (an optimistic stub keyed by a wire id) is unwrapped
+ * against the newest timestamp in the list being sorted — the stub is the
+ * newest thing the user did — or, compared pairwise, against the current clock.
  */
 const WIRE_DISPLAY_ID = /^msg_[0-9a-f]{12}/;
+
+type DisplayOrdered = { info: { id: string; time?: { created?: number } } };
+
+/** The absolute id clock a placed message is ordered by. */
+function placedDisplayClock(message: DisplayOrdered, untimedAnchor: bigint): bigint {
+  const clock = wireIdClock(message.info.id) ?? BigInt(0);
+  const created = message.info.time?.created;
+  if (typeof created !== 'number') return unwrapWireIdClock(clock, untimedAnchor);
+  const own = absoluteWireIdClockAt(created);
+  const unwrapped = unwrapWireIdClock(clock, own);
+  const drift = unwrapped > own ? unwrapped - own : own - unwrapped;
+  return drift <= WIRE_ID_CLOCK_TOLERANCE ? unwrapped : own;
+}
 
 /** `0` for a message the server has placed, `1` for one only this tab knows. */
 function displaySegment(id: string): 0 | 1 {
@@ -83,13 +115,32 @@ export function compareMessagesForDisplay(
   a: { info: { id: string; time?: { created?: number } } },
   b: { info: { id: string; time?: { created?: number } } },
 ): number {
+  return compareForDisplayAt(a, b, absoluteWireIdClockAt(Date.now()));
+}
+
+/** The anchor untimed placed ids unwrap against: the list's newest timestamp. */
+function untimedAnchorOf(messages: readonly DisplayOrdered[]): bigint {
+  let newest: number | null = null;
+  for (const message of messages) {
+    const created = message.info.time?.created;
+    if (typeof created === 'number' && (newest === null || created > newest)) newest = created;
+  }
+  return absoluteWireIdClockAt(newest ?? Date.now());
+}
+
+function compareForDisplayAt(a: DisplayOrdered, b: DisplayOrdered, untimedAnchor: bigint): number {
   const segmentA = displaySegment(a.info.id);
   const segmentB = displaySegment(b.info.id);
   if (segmentA !== segmentB) return segmentA - segmentB;
 
   // Placed: the wire id is the position, and it is the only clock that agrees
   // with the loop that produced the messages.
-  if (segmentA === 0) return compareIds(a.info.id, b.info.id);
+  if (segmentA === 0) {
+    const clockA = placedDisplayClock(a, untimedAnchor);
+    const clockB = placedDisplayClock(b, untimedAnchor);
+    if (clockA !== clockB) return clockA < clockB ? -1 : 1;
+    return compareIds(a.info.id, b.info.id);
+  }
 
   // Local: the send instant is the only record of what the user did, and it is
   // this tab's own clock for both sides, so it is comparable. Untimed last.
@@ -124,13 +175,14 @@ export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
   const pendingOrder = new Map(
     [...(options?.pendingMessageIds ?? [])].map((id, index) => [id, index]),
   );
+  const untimedAnchor = untimedAnchorOf(input);
   const messages = [...input].sort((a, b) => {
     const aPending = pendingOrder.get(a.info.id);
     const bPending = pendingOrder.get(b.info.id);
     if (aPending !== undefined && bPending !== undefined) return aPending - bPending;
     if (aPending !== undefined) return 1;
     if (bPending !== undefined) return -1;
-    return compareMessagesForDisplay(a, b);
+    return compareForDisplayAt(a, b, untimedAnchor);
   });
   const turns: TurnLike<M>[] = [];
   const turnsByUserMsgId = new Map<string, TurnLike<M>>();
@@ -151,6 +203,13 @@ export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
 
   // Second pass: link assistant messages via parentID or sequential
   let lastTurn: TurnLike<M> | null = null;
+  // Assistant messages that precede every loaded prompt, in display order.
+  // Those that name a parent are the tail of a turn whose prompt the loaded
+  // window did not reach (a long run); each run of them becomes a `partial`
+  // turn. Those that name none (a session-init failure) keep their contract:
+  // the first turn, or a synthetic turn when no prompt is loaded at all.
+  const partialTurns: TurnLike<M>[] = [];
+  const leadingParentless: M[] = [];
   for (const msg of messages) {
     if (msg.info.role === 'user') {
       lastTurn = turnsByUserMsgId.get(msg.info.id) ?? null;
@@ -194,22 +253,74 @@ export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
       continue;
     }
 
-    // Orphan assistant message that precedes every user message in the
-    // session (e.g. a session-init failure with no parentID). Attaching to
-    // the LAST turn would surface its error under an unrelated, much later
-    // user prompt. Attach to the FIRST turn instead so it renders at its
-    // real chronological position — or create a synthetic turn if no user
-    // messages exist at all.
-    if (turns.length > 0) {
-      turns[0].assistantMessages.unshift(msg);
+    // An orphan that precedes every loaded prompt. Collected in display order
+    // and placed after the loop. Prepending each one as it arrived reversed a
+    // whole run: a long automated turn opened on its newest step, with every
+    // earlier step above it, filed under whatever later prompt was loaded.
+    if (assistantMsg.parentID) {
+      const current = partialTurns[partialTurns.length - 1];
+      if (current && current.userMessage.info.id === assistantMsg.parentID) {
+        current.assistantMessages.push(msg);
+      } else {
+        partialTurns.push({
+          userMessage: unloadedPrompt(assistantMsg.parentID, msg),
+          assistantMessages: [msg],
+          partial: true,
+        });
+      }
       continue;
     }
-
-    const syntheticTurn: TurnLike<M> = { userMessage: msg, assistantMessages: [] };
-    turns.push(syntheticTurn);
+    leadingParentless.push(msg);
   }
 
-  return turns;
+  // A parentless orphan (e.g. a session-init failure) attaches to the FIRST
+  // turn, so it renders at its real chronological position instead of under
+  // an unrelated, much later prompt; with no prompt loaded it opens a
+  // synthetic turn of its own.
+  if (leadingParentless.length > 0) {
+    const first = turns[0] ?? partialTurns[0];
+    if (first) {
+      first.assistantMessages.unshift(...leadingParentless);
+    } else {
+      const [opening, ...rest] = leadingParentless;
+      turns.push({ userMessage: opening, assistantMessages: rest });
+    }
+  }
+
+  return partialTurns.length > 0 ? [...partialTurns, ...turns] : turns;
+}
+
+/**
+ * Stand-ins for prompts the loaded window does not include, by session, id,
+ * and the first reply's creation time. Grouping runs on every transcript
+ * update, and hosts' stable-turn caches compare messages by reference, so the
+ * same window must hand back the same object. Bounded: the oldest entry goes.
+ */
+const unloadedPrompts = new Map<string, MessageWithPartsLike>();
+const UNLOADED_PROMPT_LIMIT = 256;
+
+/** The stand-in for an unloaded prompt: its id, the `user` role, no parts. */
+function unloadedPrompt<M extends MessageWithPartsLike>(parentID: string, firstReply: M): M {
+  const info = firstReply.info as MessageInfoLike & { sessionID?: string };
+  const created = info.time?.created;
+  const key = `${info.sessionID ?? ''}|${parentID}|${created ?? ''}`;
+  const cached = unloadedPrompts.get(key);
+  if (cached) return cached as M;
+  const prompt = {
+    info: {
+      id: parentID,
+      role: 'user',
+      ...(info.sessionID ? { sessionID: info.sessionID } : {}),
+      ...(typeof created === 'number' ? { time: { created } } : {}),
+    },
+    parts: [],
+  } as MessageWithPartsLike;
+  if (unloadedPrompts.size >= UNLOADED_PROMPT_LIMIT) {
+    const oldest = unloadedPrompts.keys().next().value;
+    if (oldest !== undefined) unloadedPrompts.delete(oldest);
+  }
+  unloadedPrompts.set(key, prompt);
+  return prompt as M;
 }
 
 // ============================================================================

@@ -9,7 +9,7 @@ describe('accountHubUrl', () => {
   });
 
   test('builds every valid tab', () => {
-    for (const tab of ['members', 'groups', 'git', 'audit'] as const) {
+    for (const tab of ['members', 'git', 'audit'] as const) {
       expect(accountHubUrl('https://kortix.com', 'acc-1', tab)).toBe(
         `https://kortix.com/projects?accountId=acc-1&accountTab=${tab}`
       );

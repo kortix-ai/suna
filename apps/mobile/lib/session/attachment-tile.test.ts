@@ -6,6 +6,7 @@ import {
   NAME_TAIL_CHARS,
   attachmentExtension,
   isPreviewableImage,
+  localOrResolvedSource,
   planAttachmentGrid,
   resolveAttachmentSource,
   splitFilenameForTile,
@@ -109,5 +110,19 @@ describe('resolveAttachmentSource', () => {
   test('empty is null', () => {
     expect(resolveAttachmentSource('')).toBeNull();
     expect(resolveAttachmentSource(undefined)).toBeNull();
+  });
+});
+
+describe('localOrResolvedSource', () => {
+  test('a local device uri loads directly', () => {
+    expect(localOrResolvedSource('file:///data/user/0/cache/photo_1.jpg', undefined)).toEqual({
+      uri: 'file:///data/user/0/cache/photo_1.jpg',
+    });
+  });
+
+  test('no local uri keeps sandbox resolution', () => {
+    expect(localOrResolvedSource(undefined, 'file:///workspace/a.png')).toEqual({
+      path: '/workspace/a.png',
+    });
   });
 });

@@ -35,9 +35,11 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
+import { getFileCategory, getLanguageFromExt, type FileCategory } from './preview-policy';
 // Direct module import, not the feature barrel: the barrel re-exports THIS file.
 import { HtmlPreview } from './html-preview';
 import { usePreviewFit } from './preview-fit';
+import { useContentRevision } from './use-content-revision';
 
 // ---------------------------------------------------------------------------
 // Lazy-load heavy renderers to keep initial bundle small
@@ -80,147 +82,6 @@ const ZipRenderer = lazy(() =>
 /** Categories that need a blob fetched via readFileAsBlob */
 const BLOB_CATEGORIES = ['docx', 'video', 'audio', 'pptx', 'zip'] as const;
 type BlobCategory = (typeof BLOB_CATEGORIES)[number];
-
-export type FileCategory =
-  | 'image'
-  | 'pdf'
-  | 'docx'
-  | 'pptx'
-  | 'xlsx'
-  | 'csv'
-  | 'sqlite'
-  | 'video'
-  | 'audio'
-  | 'html'
-  | 'zip'
-  | 'code'
-  | 'text'
-  | 'binary';
-
-export function getFileCategory(filename: string, mimeType?: string): FileCategory {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-
-  if (
-    [
-      'png',
-      'jpg',
-      'jpeg',
-      'gif',
-      'svg',
-      'webp',
-      'ico',
-      'bmp',
-      'avif',
-      'tiff',
-      'tif',
-      'heic',
-      'heif',
-    ].includes(ext)
-  )
-    return 'image';
-  if (ext === 'pdf') return 'pdf';
-  if (ext === 'docx') return 'docx';
-  if (['pptx', 'ppt'].includes(ext)) return 'pptx';
-  if (['xlsx', 'xls'].includes(ext)) return 'xlsx';
-  if (['csv', 'tsv'].includes(ext)) return 'csv';
-  if (['db', 'sqlite', 'sqlite3', 'db3', 'sdb', 's3db'].includes(ext)) return 'sqlite';
-  if (['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v'].includes(ext)) return 'video';
-  if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma'].includes(ext)) return 'audio';
-  if (['html', 'htm'].includes(ext)) return 'html';
-  // Zip CONTAINERS only. `.docx`/`.xlsx`/`.pptx` are zips too and are matched
-  // above, because their contents are an implementation detail rather than
-  // something anyone wants to browse. `.tar.gz`/`.tgz` are deliberately absent
-  // — they are not zip, and jszip cannot read them.
-  if (['zip', 'jar', 'war', 'whl', 'vsix', 'nupkg', 'xpi', 'apk'].includes(ext)) return 'zip';
-
-  // Code/text files
-  if (getLanguageFromExt(filename) !== 'plaintext') return 'code';
-  if (mimeType?.startsWith('text/')) return 'text';
-
-  return 'binary';
-}
-
-export function getLanguageFromExt(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-  const fileNameLower = filename.toLowerCase();
-  const baseName = (fileNameLower.split('/').pop() ?? fileNameLower).split('.')[0];
-
-  // .env files (e.g., .env, .env.local, .env.production)
-  if (fileNameLower.includes('.env') || fileNameLower.startsWith('.env')) {
-    return 'properties';
-  }
-
-  // Files without a useful extension — detect by base name
-  if (baseName === 'dockerfile' || fileNameLower.startsWith('dockerfile.')) return 'dockerfile';
-  if (baseName === 'makefile' || baseName === 'gnumakefile') return 'makefile';
-
-  const map: Record<string, string> = {
-    ts: 'typescript',
-    tsx: 'tsx',
-    js: 'javascript',
-    jsx: 'jsx',
-    mjs: 'javascript',
-    cjs: 'javascript',
-    py: 'python',
-    rb: 'ruby',
-    go: 'go',
-    rs: 'rust',
-    java: 'java',
-    c: 'c',
-    cpp: 'cpp',
-    h: 'c',
-    hpp: 'cpp',
-    cs: 'csharp',
-    swift: 'swift',
-    kt: 'kotlin',
-    php: 'php',
-    html: 'html',
-    css: 'css',
-    scss: 'scss',
-    less: 'less',
-    json: 'json',
-    jsonc: 'json',
-    json5: 'json',
-    yaml: 'yaml',
-    yml: 'yaml',
-    toml: 'toml',
-    xml: 'xml',
-    sql: 'sql',
-    sh: 'bash',
-    bash: 'bash',
-    zsh: 'bash',
-    fish: 'bash',
-    md: 'markdown',
-    mdx: 'markdown',
-    mmd: 'mermaid',
-    mermaid: 'mermaid',
-    txt: 'plaintext',
-    dockerfile: 'dockerfile',
-    makefile: 'makefile',
-    vue: 'vue',
-    svelte: 'svelte',
-    env: 'properties',
-    ini: 'properties',
-    conf: 'properties',
-    cfg: 'properties',
-    properties: 'properties',
-    graphql: 'graphql',
-    gql: 'graphql',
-    prisma: 'prisma',
-    proto: 'proto',
-    nix: 'nix',
-    lua: 'lua',
-    r: 'r',
-    dart: 'dart',
-    tf: 'hcl',
-    hcl: 'hcl',
-    tfvars: 'hcl',
-    diff: 'diff',
-    patch: 'diff',
-    vim: 'vim',
-  };
-  return map[ext] || 'plaintext';
-}
 
 function isImageMime(mimeType?: string): boolean {
   return !!mimeType && mimeType.startsWith('image/');
@@ -313,6 +174,10 @@ export interface FileContentRendererProps {
   fitOnOpen?: boolean;
   /** Additional class name for the code editor */
   codeEditorEditorClassName?: string;
+  /** Bumped by the surface's Refresh control. Remounts the renderers that read
+   *  their own bytes (xlsx, sqlite, the HTML frame), which a cache refetch
+   *  cannot reach. */
+  reloadKey?: number;
 }
 
 export function FileContentRenderer({
@@ -330,6 +195,7 @@ export function FileContentRenderer({
   onStatusChange,
   fitOnOpen = false,
   codeEditorEditorClassName,
+  reloadKey = 0,
 }: FileContentRendererProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -362,7 +228,16 @@ export function FileContentRenderer({
     isLoading,
     error,
     refetch,
+    dataUpdatedAt,
   } = useFileContent(isHeicImage || isZipArchive ? null : filePath);
+
+  // The agent's turn end refetches this file. The xlsx and sqlite renderers
+  // read their own bytes, so they remount only when the content really
+  // changed (structural sharing keeps the reference otherwise). The HTML frame
+  // reloads on every refetch: its stylesheets can change while its markup
+  // does not. Neither moves on the first load.
+  const contentRevision = useContentRevision(fileContent);
+  const fetchRevision = useContentRevision(dataUpdatedAt || undefined);
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -1001,6 +876,7 @@ export function FileContentRenderer({
           {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (
             <Suspense fallback={<RendererFallback />}>
               <XlsxRenderer
+                key={`xlsx-${filePath}-${contentRevision}-${reloadKey}`}
                 filePath={filePath}
                 fileName={fileName}
                 className="h-full"
@@ -1013,6 +889,7 @@ export function FileContentRenderer({
           {!isLoading && !error && !isNotFound && fileCategory === 'sqlite' && (
             <Suspense fallback={<RendererFallback />}>
               <SqliteRenderer
+                key={`sqlite-${filePath}-${contentRevision}-${reloadKey}`}
                 filePath={filePath}
                 fileName={fileName}
                 className="h-full"
@@ -1082,6 +959,7 @@ export function FileContentRenderer({
             <HtmlPreview
               key={`html-preview-${filePath}`}
               path={toSandboxAbsolutePath(filePath)}
+              reloadKey={`${fetchRevision}-${reloadKey}`}
               fileName={fileName}
               pendingLabel={tHardcodedUi.raw(
                 'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',

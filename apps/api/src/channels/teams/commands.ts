@@ -1,20 +1,13 @@
 import { config } from '../../config';
 import { formatRelativeTime, sessionWebUrl } from '../slack/util';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
-import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
-import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
-import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
-import { toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
-import { channelModelContext } from '../slack/model-gate';
-import {
-  currentChannelSelection,
-  loadProjectAgentGovernance,
-  setChannelAgent,
-  setChannelConversationPolicy,
-  setChannelModel,
-} from '../slack/selection';
+import { currentChannelSelection } from '../slack/selection';
+import { type SettingsChannel, changeChannelAgent, changeChannelPolicy, switchChannelProject } from '../core/settings';
+import { teamsAgentChangeText, teamsSettingsChannel, teamsSettingsRefusal } from './settings-text';
+import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { buildAgentsPicker } from './agent-picker';
 import { stopTeamsTurn } from './stop';
+import { applyTeamsModelChoice, buildTeamsModelsCard, statusModel } from './model-choice';
 import { messageAfterFreshStart, startFreshTeamsConversation } from './fresh-start';
 import { createOrJoinTeamsConversationSession } from './session';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
@@ -33,10 +26,10 @@ import {
   ensureTeamsConversationBinding,
   listTenantProjects,
   resolveConversationProject,
-  setConversationProject,
   teamsChannelCtx,
 } from './binding';
-import { lookupTeamsIdentity, revokeTeamsIdentity, teamsUserId } from './identity';
+import { teamsUserId } from './identity';
+import { type ChatUser, chatUser, lookupChatIdentity, revokeChatIdentity } from '../core/identity';
 import { buildTeamsLoginUrl } from './login';
 import { conversationScope, describeTeamsConversation, type TeamsCommand } from './util';
 import type { TeamsActivity, TeamsConversationRef } from './types';
@@ -64,13 +57,18 @@ export async function handleTeamsCommand(input: {
   activity: TeamsActivity;
   tenantId: string;
   projectId: string;
+  /** Per-project (BYO) bot: session lookups stay inside `projectId`. */
+  projectScoped?: boolean;
 }): Promise<boolean> {
   const ref = conversationRef(input.activity, input.projectId);
+  const sessionProjectId = input.projectScoped ? input.projectId : undefined;
   if (!ref) return false;
   const { verb, arg } = input.command;
   const conversationId = ref.conversationId;
   const ctx = teamsChannelCtx(input.tenantId, conversationId);
   const userId = teamsUserId(input.activity);
+  const actor = chatUser('teams', input.tenantId, userId ?? '');
+  const settings = teamsSettingsChannel(input.activity, input.tenantId, conversationId);
 
   const post = (card: unknown) => sendCard(ref, card as Record<string, unknown>);
 
@@ -85,7 +83,7 @@ export async function handleTeamsCommand(input: {
       }
       case 'logout':
       case 'disconnect': {
-        const revoked = userId ? await revokeTeamsIdentity(input.tenantId, userId) : false;
+        const revoked = userId ? await revokeChatIdentity(chatUser('teams', input.tenantId, userId)) : false;
         await post(buildNoticeCard(revoked ? 'Disconnected. Run `/login` to reconnect.' : "You weren't connected.", revoked ? '✅' : ''));
         return true;
       }
@@ -100,7 +98,7 @@ export async function handleTeamsCommand(input: {
       case 'cancel': {
         // The live card's Stop button is the primary lever; this is the one
         // that still works after the card has scrolled out of reach.
-        const session = await conversationSession(input.tenantId, conversationId);
+        const session = await conversationSession(input.tenantId, conversationId, sessionProjectId);
         if (!session) {
           await post(buildNoticeCard('Nothing is running in this conversation.'));
           return true;
@@ -133,6 +131,7 @@ export async function handleTeamsCommand(input: {
           scope: conversationScope(input.activity),
           teamsUserId: userId ?? '',
           channelPolicy: selection?.conversationPolicy ?? null,
+          projectId: sessionProjectId,
         });
         if (!outcome.reset) {
           await post(buildNoticeCard(outcome.notice));
@@ -161,15 +160,19 @@ export async function handleTeamsCommand(input: {
       case 'status':
       case 'config':
       case 'settings':
-        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId));
+        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId, sessionProjectId));
         return true;
       case 'models':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
-        await post(await buildModelsCard(ctx));
+        await post(await buildTeamsModelsCard(input.activity, input.tenantId, conversationId));
         return true;
       case 'model':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
-        await post(await setModel(ctx, arg));
+        await post(
+          arg.trim()
+            ? await applyTeamsModelChoice(input.activity, input.tenantId, conversationId, arg, sessionProjectId)
+            : await buildTeamsModelsCard(input.activity, input.tenantId, conversationId),
+        );
         return true;
       case 'agents':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
@@ -177,18 +180,18 @@ export async function handleTeamsCommand(input: {
         return true;
       case 'agent':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
-        await post(await setAgent(ctx, arg));
+        await post(await setAgent(settings, actor, arg));
         return true;
       case 'projects':
         await post(await buildProjectsCard(input.tenantId, input.projectId));
         return true;
       case 'use':
       case 'switch':
-        await post(await switchProject(input.tenantId, conversationId, arg));
+        await post(await switchProject(actor, settings, arg));
         return true;
       case 'policy':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
-        await post(await setPolicy(ctx, arg));
+        await post(await setPolicy(settings, actor, arg));
         return true;
       default:
         return false;
@@ -235,11 +238,13 @@ async function buildStatusCard(
   tenantId: string,
   conversationId: string,
   projectId: string,
+  sessionProjectId?: string,
 ) {
-  const [selection, projects, session] = await Promise.all([
+  const [selection, projects, session, gatewayOn] = await Promise.all([
     currentChannelSelection(ctx),
     listTenantProjects(tenantId).catch(() => []),
-    conversationSession(tenantId, conversationId).catch(() => null),
+    conversationSession(tenantId, conversationId, sessionProjectId).catch(() => null),
+    projectLlmGatewayEnabledById(projectId).catch(() => true),
   ]);
   const projectName = projects.find((p) => p.projectId === projectId)?.name ?? projectId;
   return buildPanelCard({
@@ -248,7 +253,7 @@ async function buildStatusCard(
     rows: [
       { label: 'Project', value: projectName },
       { label: 'Agent', value: selection?.agentName || 'default' },
-      { label: 'Model', value: selection?.opencodeModel ? labelForModelRef(selection.opencodeModel) : 'project default' },
+      { label: 'Model', value: statusModel(selection?.opencodeModel ?? null, session, gatewayOn) },
       // The run itself. `/status` was the one place a user looks to answer
       // "what is this conversation doing", and it answered everything except
       // that — so a run that had quietly stopped looked identical to one still
@@ -303,7 +308,7 @@ async function buildWhoamiCard(
   userId: string | null,
   projectId: string,
 ) {
-  const identity = userId ? await lookupTeamsIdentity(tenantId, userId) : null;
+  const identity = userId ? await lookupChatIdentity(chatUser('teams', tenantId, userId)) : null;
   if (!identity) {
     return buildConnectAccountCard(
       buildTeamsLoginUrl({ tenantId, teamsUserId: userId ?? '' }),
@@ -321,98 +326,10 @@ async function buildWhoamiCard(
   });
 }
 
-async function buildModelsCard(ctx: ReturnType<typeof teamsChannelCtx>) {
-  const gate = await channelModelContext(ctx);
-  if (!gate) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
-  const selection = await currentChannelSelection(ctx);
-  const current = selection?.opencodeModel ?? null;
-  // Native mode: no gateway picker catalog — the channel model is a native
-  // `provider/model` ref set directly.
-  if (!gate.llmGatewayEnabled) {
-    return buildNoticeCard(
-      current
-        ? `This conversation uses \`${current}\`. This project runs native OpenCode models (LLM gateway off) — set any connected provider's model with \`/model provider/model\`, or \`/model default\` to reset.`
-        : 'This conversation uses the project default (resolved by OpenCode in the sandbox). This project runs native OpenCode models (LLM gateway off) — set any connected provider\'s model with `/model provider/model`, e.g. `/model anthropic/claude-sonnet-4-6`.',
-      '🧠',
-    );
-  }
-  const isCurrent = (id: string) => !!current && toWireModel(current) === toWireModel(id);
-
-  const { models, projectDefault } = await listPickerModels({
-    projectId: gate.projectId,
-    userId: gate.ownerUserId,
-    accountId: gate.accountId,
-    freeManagedOnly: gate.freeManagedOnly,
-    agentName: selection?.agentName ?? null,
-  });
-
-  const options: SelectOption[] = [
-    { label: 'Project default', hint: projectDefault.label ?? undefined, current: !current, data: { model: '' } },
-    ...models.slice(0, 6).map((m) => ({
-      label: m.label,
-      hint: m.id,
-      current: isCurrent(m.id),
-      data: { model: m.id },
-    })),
-  ];
-
-  return buildSelectCard({
-    emoji: '🧠',
-    title: 'Model',
-    subtitle: current ? `Currently ${labelForModelRef(current)}` : 'Currently the project default',
-    verb: 'teams_set_model',
-    options,
-    footer: 'Or set any provider/model-id you have connected in Kortix: `/model anthropic/claude-sonnet-4.6`.',
-  });
-}
-
-async function setModel(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
-  const id = arg.trim();
-  if (!id) return buildModelsCard(ctx);
-  const gate = await channelModelContext(ctx);
-  if (!gate) return buildNoticeCard('Connect a project to this conversation first.');
-  if (id.toLowerCase() === 'default') {
-    await setChannelModel(ctx, null);
-    return buildNoticeCard('Model reset to the project default.');
-  }
-  // Native mode (gateway off): no gateway catalog — accept a native
-  // `provider/model` ref verbatim.
-  if (!gate.llmGatewayEnabled) {
-    const nativeShapeError = validateNativeOpencodeModelRef(id);
-    if (nativeShapeError) {
-      return buildNoticeCard(`\`${id}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`, e.g. \`anthropic/claude-sonnet-4-6\`.`);
-    }
-    await setChannelModel(ctx, id);
-    return buildNoticeCard(`Model set to \`${id}\`. New sessions will use it.`);
-  }
-  const servable = await isModelServableForAccount({
-    userId: gate.ownerUserId,
-    accountId: gate.accountId,
-    projectId: gate.projectId,
-    freeModelsOnly: gate.freeManagedOnly,
-    model: id,
-  });
-  if (!servable) {
-    return buildNoticeCard(`\`${id}\` isn't available here. Pick one with /models or connect that provider in Kortix.`);
-  }
-  const stored = toOpencodeModelRef(id);
-  await setChannelModel(ctx, stored);
-  return buildNoticeCard(`Model set to ${labelForModelRef(stored)}. New sessions will use it.`);
-}
-
-async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
+async function setAgent(ctx: SettingsChannel, user: ChatUser, arg: string) {
   const name = arg.trim();
   if (!name) return buildAgentsPicker(ctx, (await currentChannelSelection(ctx))?.projectId ?? '');
-  if (name.toLowerCase() === 'default') {
-    await setChannelAgent(ctx, null);
-    return buildNoticeCard('Agent reset to the project default.');
-  }
-  const res = await setChannelAgent(ctx, name);
-  if (!res.ok && res.reason === 'unknown_agent') {
-    return buildNoticeCard(`\`${name}\` isn't a declared agent in this project. Try /agents.`);
-  }
-  if (!res.ok) return buildNoticeCard('Connect a project to this conversation first.');
-  return buildNoticeCard(`Agent set to ${name}. New sessions will use it.`);
+  return buildNoticeCard(teamsAgentChangeText(await changeChannelAgent(user, ctx, name), name));
 }
 
 const POLICY_ALIASES: Record<string, 'project_open' | 'owner_only' | 'owner_approval'> = {
@@ -427,7 +344,7 @@ const POLICY_ALIASES: Record<string, 'project_open' | 'owner_only' | 'owner_appr
   approve: 'owner_approval',
 };
 
-async function setPolicy(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
+async function setPolicy(ctx: SettingsChannel, user: ChatUser, arg: string) {
   const selection = await currentChannelSelection(ctx);
   if (!selection) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
   const current = normalizeConversationPolicy(selection.conversationPolicy);
@@ -446,8 +363,8 @@ async function setPolicy(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   }
   const next = POLICY_ALIASES[requested];
   if (!next) return buildNoticeCard('Use `/policy open`, `/policy approval`, or `/policy owner`.');
-  const ok = await setChannelConversationPolicy(ctx, next);
-  if (!ok) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
+  const result = await changeChannelPolicy(user, ctx, next);
+  if (!result.ok) return buildNoticeCard(teamsSettingsRefusal(result.reason, 'Connect a project to this conversation first — try /projects.'), '📁');
   return buildNoticeCard(`Session policy set to **${conversationPolicyLabel(next)}**. New sessions started here use it.`, '✅');
 }
 
@@ -470,13 +387,22 @@ async function buildProjectsCard(tenantId: string, currentProjectId: string) {
   });
 }
 
-async function switchProject(tenantId: string, conversationId: string, arg: string) {
+async function switchProject(user: ChatUser, channel: SettingsChannel, arg: string) {
+  const tenantId = channel.teamId;
+  const conversationId = channel.channelId;
   const projects = await listTenantProjects(tenantId);
   const q = arg.trim().toLowerCase();
   const match = q
     ? projects.find((p) => p.name.toLowerCase() === q || p.projectId === arg.trim())
     : null;
   if (!match) return buildProjectsCard(tenantId, (await resolveConversationProject(tenantId, conversationId)) ?? '');
-  await setConversationProject({ tenantId, conversationId, projectId: match.projectId });
+  const result = await switchChannelProject(user, channel, match.projectId);
+  if (!result.ok) {
+    return buildNoticeCard(
+      result.reason === 'not_installed'
+        ? "That project isn't connected to this Teams tenant."
+        : teamsSettingsRefusal(result.reason, ''),
+    );
+  }
   return buildNoticeCard(`This conversation now runs **${match.name}**.`);
 }

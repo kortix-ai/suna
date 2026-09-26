@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test';
 import {
   composioCatalogSections,
+  composioHiddenToolkits,
+  customAuthConfigIds,
+  requiresOwnAuthConfig,
   searchComposioCatalog,
   type ComposioCatalogClient,
 } from './composio-catalog-search';
@@ -319,4 +322,134 @@ test('a search matches category names and ids, after name matches', async () => 
 
   const byLabel = await searchComposioCatalog({ q: 'Email', catalogClient });
   expect(byLabel.toolkits.map((t) => t.slug)).toEqual(['gmail']);
+});
+
+// Composio holds no OAuth app for these toolkits (X since 2026-02-12). Tool
+// Router refuses them with 400 code 4300 until the project has an auth config
+// carrying the operator's own app. Live check on 2026-09-26: 47 of 47 toolkits
+// this rule selects were refused; 0 of 25 sampled other toolkits were.
+function authToolkit(
+  slug: string,
+  auth: { schemes?: string[]; managed?: string[]; noAuth?: boolean },
+) {
+  return {
+    slug,
+    name: slug.toUpperCase(),
+    no_auth: auth.noAuth === true,
+    auth_schemes: auth.schemes ?? [],
+    composio_managed_auth_schemes: auth.managed ?? [],
+    meta: { categories: [{ id: 'social', name: 'Social' }] },
+  };
+}
+
+const AUTH_CATALOG = [
+  authToolkit('twitter', { schemes: ['OAUTH2'] }),
+  authToolkit('gmail', { schemes: ['OAUTH2'], managed: ['OAUTH2'] }),
+  authToolkit('firecrawl', { schemes: ['API_KEY'] }),
+  authToolkit('shopify', { schemes: ['OAUTH2', 'API_KEY'] }),
+  authToolkit('composio_search', { noAuth: true }),
+];
+
+type AuthConfigRow = {
+  id: string;
+  status: 'ENABLED' | 'DISABLED';
+  is_composio_managed?: boolean;
+  toolkit: { slug: string };
+  created_at?: string;
+};
+
+function catalogWithAuthConfigs(
+  configs: AuthConfigRow[] | Error,
+  calls: Array<Record<string, unknown>> = [],
+): ComposioCatalogClient {
+  return {
+    toolkits: {
+      async list() {
+        return { items: AUTH_CATALOG };
+      },
+    },
+    authConfigs: {
+      async list(query) {
+        calls.push(query);
+        if (configs instanceof Error) throw configs;
+        return { items: configs, next_cursor: null };
+      },
+    },
+  };
+}
+
+test('only an OAuth-only toolkit with no Composio-managed scheme needs its own auth config', () => {
+  expect(AUTH_CATALOG.filter(requiresOwnAuthConfig).map((item) => item.slug)).toEqual(['twitter']);
+});
+
+test('the catalogue hides a toolkit Composio cannot connect until an auth config exists', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const catalogClient = catalogWithAuthConfigs(
+    [
+      // Neither of these can serve twitter: one is disabled, one is Composio's own.
+      { id: 'ac_disabled', status: 'DISABLED', is_composio_managed: false, toolkit: { slug: 'twitter' } },
+      { id: 'ac_managed', status: 'ENABLED', is_composio_managed: true, toolkit: { slug: 'twitter' } },
+    ],
+    calls,
+  );
+  const sections = await composioCatalogSections({ catalogClient });
+  expect(sections.sections[0].toolkits.map((item) => item.slug)).toEqual([
+    'gmail',
+    'firecrawl',
+    'shopify',
+    'composio_search',
+  ]);
+  expect(sections.categories).toEqual([{ key: 'social', label: 'Social', count: 4 }]);
+  const search = await searchComposioCatalog({ q: 'tw', catalogClient });
+  expect(search).toMatchObject({ total: 0, toolkits: [] });
+  expect(calls[0]).toMatchObject({ is_composio_managed: false, show_disabled: false });
+});
+
+test('the catalogue shows that toolkit once an enabled custom auth config exists', async () => {
+  const catalogClient = catalogWithAuthConfigs([
+    { id: 'ac_twitter', status: 'ENABLED', is_composio_managed: false, toolkit: { slug: 'TWITTER' } },
+  ]);
+  const search = await searchComposioCatalog({ q: 'tw', catalogClient });
+  expect(search).toMatchObject({ total: 1, toolkits: [{ slug: 'twitter' }] });
+  expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set());
+});
+
+test('the catalogue hides nothing when the auth config list is unavailable', async () => {
+  const catalogClient = catalogWithAuthConfigs(new Error('503 upstream'));
+  const search = await searchComposioCatalog({ q: 'tw', catalogClient });
+  expect(search).toMatchObject({ total: 1, toolkits: [{ slug: 'twitter' }] });
+});
+
+test('customAuthConfigIds keeps the newest enabled custom config per toolkit across pages', async () => {
+  const queries: Array<Record<string, unknown>> = [];
+  const catalogClient: ComposioCatalogClient = {
+    toolkits: { async list() { return { items: [] }; } },
+    authConfigs: {
+      async list(query) {
+        queries.push(query);
+        return query.cursor
+          ? {
+              items: [
+                { id: 'ac_new', status: 'ENABLED', is_composio_managed: false, toolkit: { slug: 'twitter' }, created_at: '2026-09-02T00:00:00Z' },
+              ],
+              next_cursor: null,
+            }
+          : {
+              items: [
+                { id: 'ac_old', status: 'ENABLED', is_composio_managed: false, toolkit: { slug: 'twitter' }, created_at: '2026-09-01T00:00:00Z' },
+                { id: 'ac_off', status: 'DISABLED', is_composio_managed: false, toolkit: { slug: 'xero' } },
+                { id: 'ac_managed', status: 'ENABLED', is_composio_managed: true, toolkit: { slug: 'xero' } },
+              ],
+              next_cursor: 'page-2',
+            };
+      },
+    },
+  };
+  expect(await customAuthConfigIds({ catalogClient, toolkit: 'twitter' })).toEqual(
+    new Map([['twitter', 'ac_new']]),
+  );
+  expect(queries).toEqual([
+    { toolkit_slug: 'twitter', is_composio_managed: false, show_disabled: false, limit: 100 },
+    { toolkit_slug: 'twitter', is_composio_managed: false, show_disabled: false, limit: 100, cursor: 'page-2' },
+  ]);
 });

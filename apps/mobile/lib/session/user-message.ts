@@ -6,7 +6,7 @@
  * `turn/queued-prompt-bubbles.tsx`, and `session-chat.tsx`.
  */
 
-import { formatMessageDay, isAbortError } from '@kortix/sdk';
+import { isAbortError } from '@kortix/sdk';
 import {
   fileTagBlocks,
   referenceHeaders,
@@ -55,9 +55,37 @@ export interface ParsedUserMessageText {
   sessions: ParsedSessionRef[];
 }
 
+const XML_ATTR_ESCAPES: Readonly<Record<string, string>> = {
+  '&': '&amp;',
+  '"': '&quot;',
+  "'": '&#39;',
+  '<': '&lt;',
+  '>': '&gt;',
+};
+
+/** One-pass attribute escape; same table as the web composer (project-preamble.ts). */
+function escapeAttr(value: string): string {
+  return value.replace(/[&"'<>]/g, (ch) => XML_ATTR_ESCAPES[ch]!);
+}
+
+/**
+ * The `Referenced sessions` block the composer appends for session mentions.
+ * Same wire shape as the web composer (`buildSessionRefsBlock` in
+ * apps/web/src/lib/project-preamble.ts): ids and titles are attribute-escaped,
+ * so a title with a quote cannot break the tag.
+ */
+export function buildSessionRefsBlock(sessions: readonly { id: string; title: string }[]): string {
+  if (!sessions.length) return '';
+  const refs = sessions
+    .map((s) => `<session_ref id="${escapeAttr(s.id)}" title="${escapeAttr(s.title)}" />`)
+    .join('\n');
+  return `Referenced sessions (${SESSION_REFERENCE_HINT}):\n${refs}`;
+}
+
 function unescapeAttr(value: string): string {
   return value
     .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');
@@ -180,7 +208,8 @@ export function parseUserMessageText(raw: string): ParsedUserMessageText {
 
   const sessions: ParsedSessionRef[] = [];
   text = text.replace(/<session_ref\s+id="([^"]*?)"\s+title="([^"]*?)"\s*\/>/g, (_, id: string, title: string) => {
-    sessions.push({ id, title });
+    // `buildSessionRefsBlock` (and the web composer) escape both attributes.
+    sessions.push({ id: unescapeAttr(id), title: unescapeAttr(title) });
     return '';
   });
   text = removeSpans(text, referenceHeaders(text, 'sessions', SESSION_REFERENCE_HINT)).trim();
@@ -233,10 +262,28 @@ export function isUserMessageEdited(parts: readonly PartLike[]): boolean {
   );
 }
 
-// ─── Meta line ───────────────────────────────────────────────────────────────
+// ─── Sent time (the long-press menu) ─────────────────────────────────────────
 
-/** The items of the meta line under a bubble: relative time, then "edited". */
-export function userMessageMetaItems({
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** `3:42 PM`: the device's local time, 12-hour. */
+function clockTime(date: Date): string {
+  const hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours % 12 === 0 ? 12 : hours % 12}:${minutes} ${hours < 12 ? 'AM' : 'PM'}`;
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/**
+ * When a message was sent, in full, for the long-press menu's first line
+ * (Jay, 2026-09-27: it replaced the "just now" under the bubble): "Today,
+ * 3:42 PM", "Yesterday, 9:05 AM", "Sep 3, 12:15 AM", "Dec 31, 2025, 12:00 PM",
+ * then " · Edited" for an edited message. Empty with neither.
+ */
+export function userMessageSentLabel({
   timestamp,
   edited,
   now,
@@ -244,12 +291,24 @@ export function userMessageMetaItems({
   timestamp: number | null;
   edited: boolean;
   now: number;
-}): string[] {
-  const items: string[] = [];
-  const label = timestamp !== null ? formatMessageDay(timestamp, now) : '';
-  if (label) items.push(label);
-  if (edited) items.push('edited');
-  return items;
+}): string {
+  const parts: string[] = [];
+  if (timestamp !== null) {
+    const sent = new Date(timestamp);
+    const today = new Date(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(today.getDate() - 1);
+    const day = sameDay(sent, today)
+      ? 'Today'
+      : sameDay(sent, yesterday)
+        ? 'Yesterday'
+        : sent.getFullYear() === today.getFullYear()
+          ? `${MONTHS[sent.getMonth()]} ${sent.getDate()}`
+          : `${MONTHS[sent.getMonth()]} ${sent.getDate()}, ${sent.getFullYear()}`;
+    parts.push(`${day}, ${clockTime(sent)}`);
+  }
+  if (edited) parts.push('Edited');
+  return parts.join(' · ');
 }
 
 // ─── Queued prompt state ─────────────────────────────────────────────────────

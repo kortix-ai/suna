@@ -15,7 +15,6 @@ import {
   archiveProject,
   buildSandboxTemplate,
   closeChangeRequest,
-  createAccount,
   connectSlack,
   createProjectSession,
   createProjectTrigger,
@@ -44,12 +43,9 @@ import {
   getProjectCommitDiff,
   getProjectFileHistory,
   getVersionDiff,
-  linkRepository,
   listAccounts,
   listChangeRequests,
   listConnectors,
-  listGitHubInstallations,
-  listGitHubRepositories,
   listPipedreamApps,
   listProjectAccess,
   listProjectBranches,
@@ -63,7 +59,6 @@ import {
   mergeChangeRequest,
   openChangeRequest,
   patchChangeRequest,
-  provisionProject,
   readProjectFile,
   reopenChangeRequest,
   setPersonalProjectSecret,
@@ -80,12 +75,6 @@ import {
   listPendingProjectInvites,
   resendPendingProjectInvite,
   revokePendingProjectInvite,
-  listProjectGroupGrants,
-  attachGroupToProject,
-  updateProjectGroupGrant,
-  detachGroupFromProject,
-  listAccountGroups,
-  removeGroupMember,
   type ChangeRequestStatus,
   type ConnectorSharing,
   type ExperimentalFeatureKey,
@@ -96,11 +85,9 @@ import {
   type OpenChangeRequestInput,
   type PolicyDefaultMode,
   type ProjectPolicy,
-  type ProvisionProjectInput,
   type UpdateProjectTriggerInput,
   type UpdateSandboxTemplateInput,
 } from './projects-client';
-import { invalidateAfterProjectCreation } from './project-mutation-cache';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
@@ -124,6 +111,9 @@ export const projectKeys = {
    */
   projectSessionsPaged: (projectId: string | null | undefined) =>
     ['project-sessions', projectId, 'paged'] as const,
+  /** A session's public shares (KRTX-248: the transcript link). */
+  sessionPublicShares: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
+    ['session-public-shares', projectId, sessionId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
   secrets: (projectId: string | null | undefined) => ['project-secrets', projectId] as const,
   slackInstall: (projectId: string | null | undefined) => ['slack-install', projectId] as const,
@@ -163,20 +153,11 @@ export const projectKeys = {
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
   pendingInvites: (projectId: string | null | undefined) =>
     ['project-pending-invites', projectId] as const,
-  groupGrants: (projectId: string | null | undefined) =>
-    ['project-group-grants', projectId] as const,
-  accountGroups: (accountId: string | null | undefined) => ['account-groups', accountId] as const,
   policies: (projectId: string | null | undefined) => ['project-policies', projectId] as const,
   pipedreamApps: (projectId: string | null | undefined, q: string) =>
     ['pipedream-apps', projectId, q] as const,
   pipedreamAppMeta: (projectId: string | null | undefined, slug: string | null | undefined) =>
     ['pipedream-app-meta', projectId, slug] as const,
-  githubInstallations: (accountId: string | null | undefined) =>
-    ['github-installations', accountId] as const,
-  githubRepositories: (
-    accountId: string | null | undefined,
-    installationId: string | null | undefined
-  ) => ['github-repositories', accountId, installationId] as const,
 };
 
 export function useAccounts(enabled = true) {
@@ -185,16 +166,6 @@ export function useAccounts(enabled = true) {
     queryFn: listAccounts,
     enabled,
     staleTime: 60_000,
-  });
-}
-
-export function useCreateAccount() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) => createAccount(name),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-    },
   });
 }
 
@@ -354,30 +325,11 @@ export function usePendingProjectInvites(projectId: string | null, enabled: bool
   });
 }
 
-export function useProjectGroupGrants(projectId: string | null) {
-  return useQuery({
-    queryKey: projectKeys.groupGrants(projectId),
-    queryFn: () => listProjectGroupGrants(projectId!),
-    enabled: !!projectId,
-    staleTime: 20_000,
-  });
-}
-
-export function useAccountGroups(accountId: string | null, enabled: boolean) {
-  return useQuery({
-    queryKey: projectKeys.accountGroups(accountId),
-    queryFn: () => listAccountGroups(accountId!),
-    enabled: enabled && !!accountId,
-    staleTime: 60_000,
-  });
-}
-
-/** Invalidate everything that a membership/group change can ripple into. */
+/** Invalidate everything that a membership change can ripple into. */
 function useInvalidateMembership(projectId: string) {
   const queryClient = useQueryClient();
   return () => {
     queryClient.invalidateQueries({ queryKey: projectKeys.projectAccess(projectId) });
-    queryClient.invalidateQueries({ queryKey: projectKeys.groupGrants(projectId) });
     queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
     queryClient.invalidateQueries({ queryKey: ['projects'] });
   };
@@ -428,41 +380,6 @@ export function useRevokeProjectInvite(projectId: string) {
     mutationFn: (inviteId: string) => revokePendingProjectInvite(projectId, inviteId),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: projectKeys.pendingInvites(projectId) }),
-  });
-}
-
-export function useAttachGroup(projectId: string) {
-  const invalidate = useInvalidateMembership(projectId);
-  return useMutation({
-    mutationFn: ({ groupId, role }: { groupId: string; role: ProjectRole }) =>
-      attachGroupToProject(projectId, groupId, role),
-    onSuccess: invalidate,
-  });
-}
-
-export function useUpdateGroupGrant(projectId: string) {
-  const invalidate = useInvalidateMembership(projectId);
-  return useMutation({
-    mutationFn: ({ groupId, role }: { groupId: string; role: ProjectRole }) =>
-      updateProjectGroupGrant(projectId, groupId, role),
-    onSuccess: invalidate,
-  });
-}
-
-export function useDetachGroup(projectId: string) {
-  const invalidate = useInvalidateMembership(projectId);
-  return useMutation({
-    mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
-    onSuccess: invalidate,
-  });
-}
-
-export function useRemoveGroupMember(projectId: string, accountId: string | null) {
-  const invalidate = useInvalidateMembership(projectId);
-  return useMutation({
-    mutationFn: ({ groupId, userId }: { groupId: string; userId: string }) =>
-      removeGroupMember(accountId ?? '', groupId, userId),
-    onSuccess: invalidate,
   });
 }
 
@@ -567,50 +484,6 @@ export function useArchiveProject() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
-  });
-}
-
-export function useProvisionProject() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    // Wrapped: TanStack v5 calls mutationFn(variables, context), and the
-    // context must not land in provisionProject's ApiClientOptions.
-    mutationFn: (input: ProvisionProjectInput) => provisionProject(input),
-    onSuccess: () => {
-      invalidateAfterProjectCreation(queryClient);
-    },
-  });
-}
-
-export function useLinkRepository() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: linkRepository,
-    onSuccess: () => {
-      invalidateAfterProjectCreation(queryClient);
-    },
-  });
-}
-
-export function useGitHubInstallations(accountId: string | null, enabled: boolean) {
-  return useQuery({
-    queryKey: projectKeys.githubInstallations(accountId),
-    queryFn: () => listGitHubInstallations(accountId!),
-    enabled: enabled && !!accountId,
-    staleTime: 0,
-  });
-}
-
-export function useGitHubRepositories(
-  accountId: string | null,
-  installationId: string | null,
-  enabled: boolean
-) {
-  return useQuery({
-    queryKey: projectKeys.githubRepositories(accountId, installationId),
-    queryFn: () => listGitHubRepositories(accountId!, installationId),
-    enabled: enabled && !!accountId && !!installationId,
-    staleTime: 30_000,
   });
 }
 

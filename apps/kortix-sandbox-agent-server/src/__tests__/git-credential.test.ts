@@ -7,7 +7,9 @@ import { describe, expect, it } from 'bun:test'
 
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import {
+  buildGitAuthArgs,
   configureGitCredentialHelper,
+  configureGlobalGitIdentity,
   configureRepoCredentialHelper,
   resolveGitCredentialOutput,
 } from '../git'
@@ -129,32 +131,50 @@ describe('git credential helper', () => {
     }
   })
 
-  it('repo-local config is a no-op when the repo is not materialized', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'kortix-cred-norepo-'))
-    try {
-      // No `git init` — there's no .git here.
-      await configureRepoCredentialHelper(baseConfig(), dir)
-      const res = await execFileAsync('git', ['-C', dir, 'config', '--local', '--get', 'credential.https://api.kortix.test.helper'], { encoding: 'utf8' })
-        .then(() => ({ ok: true }))
-        .catch(() => ({ ok: false }))
-      expect(res.ok).toBe(false)
-    } finally {
-      await rm(dir, { recursive: true, force: true })
-    }
-  })
-
-  it('skips configuration for a non-managed (no repo) sandbox', async () => {
+  it('skips configuration when the sandbox is not a managed project', async () => {
+    // A proxy repo URL alone is not enough: without the project identity the
+    // guard must write nothing (the URL would otherwise yield a host).
     const home = await mkdtemp(join(tmpdir(), 'kortix-cred-home-'))
     try {
-      await configureGitCredentialHelper(baseConfig({ repoUrl: undefined }), home)
+      await configureGitCredentialHelper(baseConfig({ projectId: undefined }), home)
       const env = { ...process.env, HOME: home }
       const res = await execFileAsync(
         'git',
-        ['config', '--global', '--get', 'credential.https://api.kortix.test.helper'],
+        ['config', '--global', '--get-regexp', '^credential\\.'],
         { env, encoding: 'utf8' },
       ).catch((err: { code?: number }) => ({ code: err.code }))
       // `git config --get` exits 1 when the key is absent.
       expect('code' in res ? res.code : 0).toBe(1)
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('sends the git auth header only to the Kortix Git proxy host', () => {
+    // A token sent to github.com or a direct origin would leak the sandbox
+    // credential off-platform.
+    const encoded = Buffer.from('x-access-token:secret-token').toString('base64')
+
+    expect(buildGitAuthArgs(undefined, undefined)).toEqual([])
+    expect(buildGitAuthArgs('https://git.example.test/repo-id', 'secret-token')).toEqual([])
+    expect(buildGitAuthArgs('https://github.com/kortix/suna.git', 'secret-token')).toEqual([])
+    expect(buildGitAuthArgs('https://api.kortix.test/v1/git/project-123.git', 'secret-token')).toEqual([
+      '-c',
+      `http.https://api.kortix.test/.extraheader=AUTHORIZATION: basic ${encoded}`,
+      '-c',
+      `http.extraheader=AUTHORIZATION: basic ${encoded}`,
+    ])
+  })
+
+  it('configures the default git identity in the harness home', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'kortix-git-home-'))
+    try {
+      await configureGlobalGitIdentity(baseConfig(), home)
+      const env = { ...process.env, HOME: home }
+      const name = await execFileAsync('git', ['config', '--global', 'user.name'], { env, encoding: 'utf8' })
+      const email = await execFileAsync('git', ['config', '--global', 'user.email'], { env, encoding: 'utf8' })
+      expect(name.stdout.trim()).toBe('Kortix Agent')
+      expect(email.stdout.trim()).toBe('agent@kortix.ai')
     } finally {
       await rm(home, { recursive: true, force: true })
     }

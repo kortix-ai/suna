@@ -1,6 +1,6 @@
 /**
  * Client-side mirror of the name rules in `POST /v1/projects/provision`
- * (`apps/api/src/projects/routes/r1.ts`). The server stays authoritative — this
+ * (`apps/api/src/projects/routes/projects.ts`). The server stays authoritative — this
  * exists so a bad name is an inline field error instead of a network round-trip
  * that ends in a 400.
  *

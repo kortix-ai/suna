@@ -5,6 +5,8 @@
  * as the single source of truth for messages.
  *
  * Sends messages via fire-and-forget promptAsync with agent/model/variant.
+ * A send with files goes through the server prompt inbox
+ * (`createSessionPrompt`) with the upload handles (COR-185).
  */
 
 import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
@@ -35,7 +37,7 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ListIcon as MenuIcon, XIcon as CloseIcon, ListIcon, XIcon, PaperPlaneTiltIcon, ArrowUpIcon, ArrowDownIcon, CaretUpIcon, CaretDownIcon } from '@/lib/icons';
+import { XIcon, CaretUpIcon, CaretDownIcon } from '@/lib/icons';
 import type { SheetRef } from '@/components/kortix/sheet';
 import { FLOATING_MENU_CLEARANCE, FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import { ConnectProviderSheet } from '@/components/session/ConnectProviderSheet';
@@ -50,17 +52,21 @@ import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
 import { useProjectModelCatalog } from '@/lib/projects/hooks';
 import { catalogPickerModels, offeredSessionModels, type PickerCatalogModel, type PickerModel } from '@/lib/session/model-picker';
+import { isModelUnavailable } from '@/lib/session/composer-model';
 import type { SubAgentRelation } from '@/lib/session/sub-agents';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { playSound } from '@/lib/sounds';
+import { SessionChangeRequests } from '@/components/session/SessionChangeRequests';
+import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
-import { Text as RNText } from 'react-native';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 
 import { clearOptimistic, useSyncStore } from '@/lib/opencode/sync-store';
 import { reconcileLiveSession, useSessionSync } from '@/lib/opencode/session-sync';
-import { compactionTurnInfo, groupMessagesIntoTurns, resolveWorkingTurn } from '@kortix/sdk';
+import { compactionTurnInfo, createSessionPrompt, groupMessagesIntoTurns, resolveWorkingTurn } from '@kortix/sdk';
+import * as Crypto from 'expo-crypto';
+import { promptParts } from '@/lib/session/prompt-parts';
 import type { Turn, QuestionRequest, MessageWithParts, PermissionRequest } from '@/lib/opencode/types';
 import {
   reuseStableTurns,
@@ -86,9 +92,15 @@ import {
   turnTopGap,
 } from '@/lib/session/auto-scroll';
 import { mintWireMessageId } from '@/lib/session/wire-message-id';
-import { useFailedSendStore, useFailedSends } from '@/lib/session/failed-sends';
+import { sendIdsFor, useFailedSendStore, useFailedSends, type SendIds } from '@/lib/session/failed-sends';
+import { optimisticUserParts } from '@/lib/session/optimistic-parts';
 import { draftKey } from '@/lib/session/composer-draft';
-import { interruptedTurnIds, rewindHiddenMessageIds, webSpace } from '@/lib/session/user-message';
+import {
+  buildSessionRefsBlock,
+  interruptedTurnIds,
+  rewindHiddenMessageIds,
+  webSpace,
+} from '@/lib/session/user-message';
 import {
   hasCompactionTurn as findCompactionTurn,
   isSuppressedFailedCompaction,
@@ -109,6 +121,7 @@ import { questionsToHydrate } from '@/lib/opencode/stream-policy';
 import { useSession, replyToQuestion, rejectQuestion, replyToPermission } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
+import { queueHeaderLabel } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import type { QueuedMessage } from '@/stores/message-queue-store';
 import { useCompactionStore } from '@/stores/compaction-store';
@@ -128,7 +141,12 @@ import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 
-import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
+import {
+  SessionChatInput,
+  type PromptOptions,
+  type SendAttachments,
+  type TrackedMention,
+} from './SessionChatInput';
 import { SandboxHealthPill } from './SandboxHealthPill';
 import { LiveUpdatesPausedPill } from './LiveUpdatesPausedPill';
 import { useLiveUpdates } from '@/hooks/useLiveUpdates';
@@ -153,6 +171,8 @@ interface SessionPageProps {
   sessionId: string;
   /** The session's project: its model catalog is the thread's model list. */
   projectId?: string;
+  /** The project session row's id: a send with files posts to its prompt inbox (COR-185). */
+  projectSessionId?: string;
   onBack: () => void;
   onOpenDrawer?: () => void;
   /** Opens the session actions sheet (floating chrome's `···`). */
@@ -241,7 +261,7 @@ function flatModelFromCatalog(model: PickerModel, entry: PickerCatalogModel): Fl
   };
 }
 
-function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -460,9 +480,6 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   );
   const queueEnqueue = useMessageQueueStore((s) => s.enqueue);
   const queueRemove = useMessageQueueStore((s) => s.remove);
-  const queueMoveUp = useMessageQueueStore((s) => s.moveUp);
-  const queueMoveDown = useMessageQueueStore((s) => s.moveDown);
-  const queueClearSession = useMessageQueueStore((s) => s.clearSession);
 
   // Hydrate queue store from AsyncStorage once
   useEffect(() => {
@@ -514,8 +531,17 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   // ── Send / Stop handlers (defined early so queue drain logic can reference them) ──
 
   const handleSend = useCallback(
-    async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
-      if (!sandboxUrl) return;
+    async (
+      text: string,
+      options: PromptOptions,
+      mentions?: TrackedMention[],
+      attachments?: SendAttachments,
+      /** A retry's ids (`FailedSend`): the same prompt keeps the same ids. */
+      retryIds?: Partial<SendIds>,
+    ) => {
+      // No early return on a missing `sandboxUrl`: the composer has already
+      // cleared its draft and files, so a dropped send would lose them. The
+      // files path does not need the sandbox; the text path fails visibly.
 
       // Clear the tracked input text so it isn't saved when a question appears
       inputTextRef.current = '';
@@ -527,20 +553,28 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       let finalText = text;
       const sessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value);
       if (sessionMentions && sessionMentions.length > 0) {
-        const refs = sessionMentions
-          .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
-          .join('\n');
-        finalText = `${text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
+        const block = buildSessionRefsBlock(
+          sessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })),
+        );
+        finalText = `${text}\n\n${block}`;
       }
 
       // Optimistic user message
       // Wire-format id: the thread sorts messages by id as a string, so the
       // optimistic message must sort after the real ones already present.
-      const messageId = mintWireMessageId({
-        nowMs: Date.now(),
-        knownMessageIds: (useSyncStore.getState().messages[sessionId] ?? EMPTY_MESSAGES).map((m) => m.info.id),
-      });
-      const partId = `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      // A retry reuses the failed attempt's ids: the prompt inbox dedupes on
+      // `clientMessageId`, so a prompt that already landed does not run twice.
+      const { clientMessageId, messageId } = sendIdsFor(retryIds, () => ({
+        clientMessageId: Crypto.randomUUID(),
+        messageId: mintWireMessageId({
+          nowMs: Date.now(),
+          knownMessageIds: (useSyncStore.getState().messages[sessionId] ?? EMPTY_MESSAGES).map((m) => m.info.id),
+        }),
+      }));
+      // The text part (none for an image-only send), then one part per picked
+      // file with its device URI: the bubble shows the local thumbnail until
+      // the server echo replaces the message.
+      const optimisticParts = optimisticUserParts(finalText, attachments?.files ?? [], Date.now());
 
       useSyncStore.getState().addOptimisticMessage(sessionId, {
         info: {
@@ -549,7 +583,7 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
           sessionID: sessionId,
           time: { created: Date.now() },
         },
-        parts: [{ type: 'text', id: partId, text: finalText }],
+        parts: optimisticParts,
       });
       useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
       void playSound('send');
@@ -567,8 +601,54 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       // optimistic, so a refetch keeps it instead of swapping it out.
       const markFailed = () => {
         clearOptimistic([messageId]);
-        useFailedSendStore.getState().markFailed(sessionId, messageId, { text, options, mentions });
+        useFailedSendStore.getState().markFailed(sessionId, messageId, {
+          text,
+          options,
+          mentions,
+          fileParts: attachments?.fileParts,
+          localFiles: attachments?.files,
+          clientMessageId,
+          messageId,
+        });
       };
+
+      // With files: the server prompt inbox, carrying the upload handles. The
+      // optimistic message's id is the prompt's `messageId`, so the echo
+      // replaces the bubble.
+      if (attachments?.fileParts.length) {
+        try {
+          if (!projectId || !projectSessionId) throw new Error('No project session to send files to');
+          await createSessionPrompt(projectId, projectSessionId, {
+            clientMessageId,
+            messageId,
+            parts: promptParts(finalText, attachments.fileParts),
+            overrides: {
+              agent: options.agent ?? null,
+              model: options.model ?? null,
+              variant: options.variant ?? null,
+            },
+            clientSentAtMs: Date.now(),
+          });
+          log.log('[SessionPage] Prompt with files accepted');
+          void requestPushPermissionOnce();
+        } catch (err: any) {
+          log.error('[SessionPage] Prompt with files failed:', err?.message || err);
+          userSentRef.current = false;
+          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+          markFailed();
+        }
+        return;
+      }
+
+      // The sandbox is still waking: keep the message as a failed send the
+      // user can try again, never drop it silently.
+      if (!sandboxUrl) {
+        log.error('[SessionPage] Prompt not sent: no sandbox URL yet');
+        userSentRef.current = false;
+        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        markFailed();
+        return;
+      }
 
       try {
         const token = await getAuthToken();
@@ -589,6 +669,8 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
           markFailed();
         } else {
           log.log('[SessionPage] Prompt sent (async)');
+          // The first send asks for notification permission, once per install.
+          void requestPushPermissionOnce();
         }
       } catch (err: any) {
         log.error('[SessionPage] Prompt error:', err?.message || err);
@@ -597,18 +679,30 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
         markFailed();
       }
     },
-    [sandboxUrl, sessionId],
+    [sandboxUrl, sessionId, projectId, projectSessionId],
   );
 
   // "Try again" on a failed send: the failed copy leaves the thread and the
-  // same text, options and mentions go out as a new send.
+  // same text, options and mentions go out again under the same ids.
   const failedSends = useFailedSends(sessionId);
   const handleRetrySend = useCallback(
     (messageId: string) => {
       const failed = useFailedSendStore.getState().take(sessionId, messageId);
       if (!failed) return;
       useSyncStore.getState().removeMessage(sessionId, messageId);
-      void handleSend(failed.text, failed.options as PromptOptions, failed.mentions as TrackedMention[] | undefined);
+      const mentions = failed.mentions as TrackedMention[] | undefined;
+      if (failed.fileParts?.length) {
+        // Re-posts the same upload handles; nothing uploads again.
+        void handleSend(
+          failed.text,
+          failed.options as PromptOptions,
+          mentions,
+          { fileParts: failed.fileParts, files: failed.localFiles ?? [] },
+          failed,
+        );
+        return;
+      }
+      void handleSend(failed.text, failed.options as PromptOptions, mentions, undefined, failed);
     },
     [sessionId, handleSend],
   );
@@ -707,16 +801,21 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
       if (!msg) return;
       queueInFlightRef.current = null;
       queueRemove(messageId);
+      // Send now interrupts: say so, so the stopped reply is not a surprise.
+      if (isBusy) toast.info('Stopped the current reply to send this now');
       handleStop();
       setTimeout(() => {
         handleSend(msg.text, {});
       }, 200);
     },
-    [queueRemove, handleStop, handleSend],
+    [queueRemove, handleStop, handleSend, isBusy, toast],
   );
 
   // Agent/model/variant config
-  const { data: agents = EMPTY_AGENTS } = useOpenCodeAgents(sandboxUrl);
+  const agentsQuery = useOpenCodeAgents(sandboxUrl);
+  const agents = agentsQuery.data ?? EMPTY_AGENTS;
+  // No list yet (sandbox still starting, or its first fetch in flight).
+  const agentsLoading = !agentsQuery.data;
   // Models are derived here from the providers query (the same query
   // useOpenCodeModels reads) so the arrays keep their identity between
   // renders and the memoized composer can skip stream renders.
@@ -738,6 +837,13 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
     [modelCatalog, allModels],
   );
   const modelsLoading = catalogLoading || (!modelCatalog && !providers);
+  // A gateway project whose catalog offers no model: Send opens the connect
+  // sheet instead of posting (KRTX-251). No catalog (gateway off) never blocks.
+  const modelUnavailable = isModelUnavailable({
+    hasCatalog: modelCatalog !== undefined,
+    loading: catalogLoading,
+    modelCount: visibleModels.length,
+  });
   // `ConnectProviderSheet` refetches once the in-app browser closes, to toast
   // "Provider connected" only once the catalog actually turns up a model.
   const refetchModelCount = useCallback(async () => {
@@ -779,12 +885,18 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   // request): sent as the composer sends it — at once when idle, with the
   // composer's agent/model/variant; into the queue while the agent works or a
   // question waits.
+  // Keyed by the OpenCode id (the actions sheet, on the open thread) or by the
+  // project session id (Review's Resolve conflicts, sent before this thread
+  // has connected, when only that id is known).
   const promptRequest = useSessionPromptRequestStore((s) =>
-    s.request?.sessionId === sessionId ? s.request : null,
+    s.request && (s.request.sessionId === sessionId || (!!projectSessionId && s.request.sessionId === projectSessionId))
+      ? s.request
+      : null,
   );
   useEffect(() => {
     if (!promptRequest) return;
-    const request = useSessionPromptRequestStore.getState().take(sessionId);
+    const store = useSessionPromptRequestStore.getState();
+    const request = store.take(sessionId) ?? (projectSessionId ? store.take(projectSessionId) : null);
     if (!request) return;
     if (isBusy || hasQuestion) {
       queueEnqueue(sessionId, request.text);
@@ -796,7 +908,7 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
     if (modelKey) options.model = modelKey;
     if (variant) options.variant = variant;
     void handleSend(request.text, options);
-  }, [promptRequest, sessionId, isBusy, hasQuestion, queueEnqueue, handleSend]);
+  }, [promptRequest, sessionId, projectSessionId, isBusy, hasQuestion, queueEnqueue, handleSend]);
   const resolvedAgents = useShallowStableArray(resolved.agents);
   const resolvedVariants = useShallowStableArray(resolved.variants);
   const resolvedModel = resolved.model;
@@ -1649,7 +1761,27 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
 
   const handleToggleQueue = useCallback(() => setQueueExpanded((v) => !v), []);
-  const handleClearQueue = useCallback(() => queueClearSession(sessionId), [queueClearSession, sessionId]);
+  // Remove acts at once; the toast's Undo puts the message back.
+  const offerQueueUndo = useCallback(
+    (message: string, snapshot: QueuedMessage[], removedIds: string[]) => {
+      if (removedIds.length === 0) return;
+      toast.info(message, {
+        action: {
+          label: 'Undo',
+          onPress: () => useMessageQueueStore.getState().restore(snapshot, removedIds),
+        },
+      });
+    },
+    [toast],
+  );
+  const handleRemoveQueued = useCallback(
+    (messageId: string) => {
+      const snapshot = useMessageQueueStore.getState().messages;
+      queueRemove(messageId);
+      offerQueueUndo('Removed from queue', snapshot, [messageId]);
+    },
+    [queueRemove, offerQueueUndo],
+  );
   // The oldest pending permission, pinned above the composer (COR-137 Task 7)
   // — above the queue panel in the same top slot, so it is never missed
   // off-screen while a tool call waits on it.
@@ -1671,11 +1803,9 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
           key="queue"
           messages={queuedMessages}
           expanded={queueExpanded}
+          busy={isBusy}
           onToggle={handleToggleQueue}
-          onRemove={queueRemove}
-          onMoveUp={queueMoveUp}
-          onMoveDown={queueMoveDown}
-          onClear={handleClearQueue}
+          onRemove={handleRemoveQueued}
           onSendNow={handleQueueSendNow}
           isDark={isDark}
         />,
@@ -1688,10 +1818,8 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
     queuedMessages,
     queueExpanded,
     handleToggleQueue,
-    queueRemove,
-    queueMoveUp,
-    queueMoveDown,
-    handleClearQueue,
+    isBusy,
+    handleRemoveQueued,
     handleQueueSendNow,
     isDark,
   ]);
@@ -1850,6 +1978,15 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
             <View>
               {/* Footer content above the spacer — part of the anchor span. */}
               <View onLayout={handleFooterContentLayout} className="px-4">
+                {/* Web: the change requests this session opened, as cards.
+                    A tap opens the Review page's sheet. */}
+                {projectId && projectSessionId ? (
+                  <SessionChangeRequests
+                    projectId={projectId}
+                    projectSessionId={projectSessionId}
+                    style={turns.length > 0 ? { marginTop: webSpace(6) } : undefined}
+                  />
+                ) : null}
                 {/* Web: the optimistic compaction marker, where the real
                     compaction turn will mount, until that turn exists. */}
                 {isCompacting && !hasCompactionTurn ? (
@@ -1927,6 +2064,8 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
             model={resolvedModel}
             models={visibleModels}
             modelsLoading={modelsLoading}
+            agentsLoading={agentsLoading}
+            modelUnavailable={modelUnavailable}
             onConnectModel={handleConnectModel}
             modelKey={resolvedModelKey}
             variant={resolved.variant}
@@ -1936,6 +2075,8 @@ function SessionPageImpl({ sessionId, projectId, onBack, onOpenDrawer, onOpenRig
             sessions={allSessions}
             currentSessionId={sessionId}
             sandboxUrl={sandboxUrl}
+            projectId={projectId}
+            canAttach={Boolean(projectId && projectSessionId)}
             onEnqueue={handleEnqueue}
             commands={commands}
             onCommand={handleCommand}
@@ -2080,36 +2221,34 @@ function FreshSessionHero({
 }
 
 // ---------------------------------------------------------------------------
-// QueuePanel — collapsible list of queued messages shown above the text input
+// QueuePanel — the messages waiting to send, above the text input. Header
+// "Up next · N" toggles the list. Each row: the message, a "Send now" pill,
+// and a 44pt remove. Remove acts at once; the caller shows a toast with Undo.
+// No Clear-all (Jay, 2026-09-25): the per-row X is enough.
 // ---------------------------------------------------------------------------
 
 function QueuePanel({
   messages,
   expanded,
+  busy,
   onToggle,
   onRemove,
-  onMoveUp,
-  onMoveDown,
-  onClear,
   onSendNow,
   isDark,
 }: {
   messages: QueuedMessage[];
   expanded: boolean;
+  /** The agent is working: Send now stops the current reply first. */
+  busy: boolean;
   onToggle: () => void;
   onRemove: (id: string) => void;
-  onMoveUp: (id: string) => void;
-  onMoveDown: (id: string) => void;
-  onClear: () => void;
   onSendNow: (id: string) => void;
   isDark: boolean;
 }) {
   const bgColor = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03);
   const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
-  // Original literals (`#888`/`#999`) had their light/dark branches swapped
-  // relative to their own lightness.
-  const mutedText = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
-  const fgText = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedText = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const first = messages[0]?.text ?? '';
 
   return (
     <View
@@ -2122,69 +2261,39 @@ function QueuePanel({
         overflow: 'hidden',
       }}
     >
-      {/* Header — tap to expand/collapse. Clear sits beside the toggle, not
-          inside it: a button nested in a button is hidden from VoiceOver and
-          its hit area is clipped to the parent. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 4 }}>
         <Button
           variant="ghost"
           onPress={onToggle}
           accessibilityState={{ expanded }}
-          className="h-auto w-auto flex-1 flex-row items-center justify-start rounded-none active:opacity-70"
-          style={{
-            minHeight: 44,
-            paddingLeft: 12,
-            paddingRight: 4,
-            paddingVertical: 10,
-          }}
+          accessibilityLabel={`${queueHeaderLabel(messages.length)}. ${expanded ? 'Hide' : 'Show'} queued messages`}
+          className="h-auto w-auto flex-1 flex-row items-center justify-start gap-2 rounded-none active:opacity-70"
+          style={{ minHeight: 44, paddingLeft: 12, paddingRight: 4, paddingVertical: 10 }}
         >
-          <ListIcon size={14} color={mutedText} style={{ marginRight: 6 }} />
-          <RNText
-            style={{
-              flex: 1,
-              fontSize: 13,
-              fontFamily: 'Roobert-Medium',
-              color: mutedText,
-            }}
-            numberOfLines={1}
-          >
-            {messages.length} message{messages.length !== 1 ? 's' : ''} queued
-            {!expanded && messages.length > 0
-              ? ` — ${messages[0].text.length > 40 ? messages[0].text.slice(0, 40) + '...' : messages[0].text}`
-              : ''}
-          </RNText>
-          {/* Expand/collapse chevron */}
+          <Text variant="small" className="leading-5">
+            {queueHeaderLabel(messages.length)}
+          </Text>
+          <Text variant="muted" numberOfLines={1} className="flex-1">
+            {expanded ? '' : first}
+          </Text>
           {expanded ? (
             <CaretUpIcon size={14} color={mutedText} />
           ) : (
             <CaretDownIcon size={14} color={mutedText} />
           )}
         </Button>
-        {/* Clear all */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={() => onClear()}
-          accessibilityLabel="Clear queue"
-          className="mr-1"
-        >
-          <XIcon size={16} color={mutedText} />
-        </Button>
       </View>
 
-      {/* Expanded list */}
       {expanded && messages.length > 0 && (
-        <View style={{ maxHeight: 160 }}>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
-          >
-            {messages.map((qm, idx) => (
+        <View style={{ maxHeight: 176 }}>
+          <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
+            {messages.map((qm) => (
               <View
                 key={qm.id}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
+                  gap: 8,
                   paddingLeft: 12,
                   paddingRight: 4,
                   paddingVertical: 2,
@@ -2192,77 +2301,29 @@ function QueuePanel({
                   borderTopColor: borderColor,
                 }}
               >
-                {/* Index badge */}
-                <RNText
-                  style={{
-                    fontSize: 13,
-                    fontFamily: 'Roobert-Medium',
-                    color: mutedText,
-                    width: 22,
-                  }}
-                >
-                  {idx + 1}
-                </RNText>
-
-                {/* Message text */}
-                <RNText
-                  numberOfLines={1}
-                  style={{
-                    flex: 1,
-                    fontSize: 13,
-                    fontFamily: 'Roobert',
-                    color: fgText,
-                    marginRight: 8,
-                  }}
-                >
+                <Text variant="small" numberOfLines={1} className="flex-1 leading-5">
                   {qm.text}
-                </RNText>
-
-                {/* Action buttons — 40pt `icon` boxes 4pt apart; the Button's
-                    default 2pt hit slop makes each target 44pt without
-                    reaching into its neighbour. */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  {/* Send now */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onPress={() => onSendNow(qm.id)}
-                    accessibilityLabel="Send now"
-                  >
-                    <PaperPlaneTiltIcon size={16} color={THEME.accent.blue} weight="fill" />
-                  </Button>
-                  {/* Move up */}
-                  {idx > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onPress={() => onMoveUp(qm.id)}
-                      accessibilityLabel="Move up"
-                    >
-                      <ArrowUpIcon size={16} color={mutedText} />
-                    </Button>
-                  )}
-                  {/* Move down */}
-                  {idx < messages.length - 1 && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onPress={() => onMoveDown(qm.id)}
-                      accessibilityLabel="Move down"
-                    >
-                      <ArrowDownIcon size={16} color={mutedText} />
-                    </Button>
-                  )}
-                  {/* Remove */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onPress={() => onRemove(qm.id)}
-                    accessibilityLabel="Remove from queue"
-                  >
-                    <XIcon size={16} color={mutedText} />
-                  </Button>
-                </View>
+                </Text>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-full"
+                  onPress={() => onSendNow(qm.id)}
+                  accessibilityLabel="Send now"
+                  accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
+                >
+                  <Text>Send now</Text>
+                </Button>
+                {/* 40pt box + the Button's default 2pt hit slop = 44pt target. */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full"
+                  onPress={() => onRemove(qm.id)}
+                  accessibilityLabel="Remove from queue"
+                >
+                  <XIcon size={16} color={mutedText} />
+                </Button>
               </View>
             ))}
           </ScrollView>

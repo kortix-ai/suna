@@ -21,9 +21,8 @@ import * as sdk from '@kortix/sdk';
 
 // ── Generic fetch helper ────────────────────────────────────────────────────
 // Kept mobile-native: this is the shared primitive for endpoints the SDK does
-// NOT cover at all (account-level IAM groups/MFA/session-policy/PAT-policy/
-// service-accounts/audit — see lib/accounts/{accounts-client,groups-client,
-// iam-client}.ts, all of which import `apiFetch` from this file) as well as
+// NOT cover at all (account-level IAM MFA/session-policy/PAT-policy/
+// service-accounts/audit — see lib/accounts/accounts-client.ts, which imports `apiFetch` from this file) as well as
 // the couple of functions below kept mobile-native for behavioral reasons.
 // Uses the same token source (`api/config.ts#getAuthToken`) that's wired into
 // `configureKortix({ getToken })`, so both paths share one auth story.
@@ -74,11 +73,6 @@ export type { KortixAccount } from '@kortix/sdk';
 
 export { listAccounts } from '@kortix/sdk';
 
-/** Mobile calls this with a bare `name` string; the SDK takes `{ name }`. */
-export function createAccount(name: string) {
-  return sdk.createAccount({ name });
-}
-
 // ── Projects ───────────────────────────────────────────────────────────────
 
 export type {
@@ -86,7 +80,6 @@ export type {
   ExperimentalFeatureKey,
   ExperimentalFeatureView,
   ProjectInput,
-  ProvisionProjectInput,
   RepoCollaboratorInvite,
 } from '@kortix/sdk';
 
@@ -98,7 +91,6 @@ export {
   archiveProject,
   updateProject,
   updateExperimentalFeature,
-  provisionProject,
 } from '@kortix/sdk';
 
 // ── Dev (web parity: customize/sections/dev-view) ─────────────────────────────
@@ -122,6 +114,17 @@ export {
   deleteProjectSession,
   setProjectSessionSharing,
   stopProjectSession,
+} from '@kortix/sdk';
+
+// ── Session public shares (KRTX-248: the public transcript link) ────────────
+// `createSessionPublicShare(pid, sid, { transcript: true })` returns the live
+// transcript share when one exists (200) or mints one (201).
+export type { SessionPublicShare } from '@kortix/sdk';
+export {
+  createSessionPublicShare,
+  findActiveTranscriptShare,
+  listSessionPublicShares,
+  revokeSessionPublicShare,
 } from '@kortix/sdk';
 
 export type { SessionStartStage, SessionStartResult } from '@kortix/sdk';
@@ -214,7 +217,7 @@ export async function disconnectConnector(projectId: string, slug: string) {
  * Kept MOBILE-NATIVE: the SDK's `pipedreamConnect(projectId, slug)` sends an
  * EMPTY body. Mobile needs `success_redirect_uri`/`error_redirect_uri` so the
  * in-app browser auto-dismisses back to the app once Pipedream's OAuth flow
- * finishes (see components/pages/ConnectorsPage.tsx) — swapping to the SDK's
+ * finishes (see components/session/ConnectorAuthSheet.tsx) — swapping to the SDK's
  * version would silently drop those redirects. Same endpoint, same response
  * shape as the SDK's version; only the request body differs.
  */
@@ -261,47 +264,6 @@ export {
   resendPendingProjectInvite,
 } from '@kortix/sdk';
 
-// ── IAM V2: project ⇄ group attachments (project-scoped) ─────────────────────
-// NOTE: account-LEVEL group listing (`listAccountGroups`, `removeGroupMember`)
-// has no SDK equivalent — the SDK's `access.ts` only covers PROJECT-scoped
-// group grants. Kept mobile-native below via `apiFetch`.
-
-export type { ProjectGroupGrant } from '@kortix/sdk';
-
-export {
-  listProjectGroupGrants,
-  attachGroupToProject,
-  updateProjectGroupGrant,
-  detachGroupFromProject,
-} from '@kortix/sdk';
-
-/** Account-level group directory — NOT covered by `@kortix/sdk`
- *  (its `access.ts` only has project ⇄ group grants, not the account's group
- *  list). Mirrors the type mobile's `lib/accounts/groups-client.ts` re-exports. */
-export interface AccountGroup {
-  group_id: string;
-  name: string;
-  description: string | null;
-  source: 'manual' | 'scim';
-  member_count?: number;
-  project_count?: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export function listAccountGroups(accountId: string) {
-  return apiFetch<{ groups: AccountGroup[] }>(
-    `/accounts/${encodeURIComponent(accountId)}/iam/groups`,
-  ).then((r) => r.groups);
-}
-
-export function removeGroupMember(accountId: string, groupId: string, userId: string) {
-  return apiFetch<{ removed: boolean }>(
-    `/accounts/${encodeURIComponent(accountId)}/iam/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}`,
-    { method: 'DELETE' },
-  );
-}
-
 // ── Connector policies (tool-approval rules) ──────────────────────────────────
 
 export type {
@@ -312,24 +274,6 @@ export type {
 } from '@kortix/sdk';
 
 export { listProjectPolicies, setProjectPolicies } from '@kortix/sdk';
-
-// ── GitHub import ──────────────────────────────────────────────────────────
-
-export type {
-  GitHubRepository,
-  GitHubRepositoriesResponse,
-  GitHubInstallationStatus,
-  GitHubInstallationsResponse,
-  LinkRepositoryInput,
-  LinkRepositoryResponse,
-} from '@kortix/sdk';
-
-export {
-  listGitHubInstallations,
-  listGitHubRepositories,
-  deleteGitHubInstallation,
-  linkRepository,
-} from '@kortix/sdk';
 
 // ── Project secrets (web parity: customize/sections/secrets-view) ─────────────
 

@@ -1,3 +1,4 @@
+import { isWireIdAheadOf } from '../../projects/wire-message-id';
 import { clientAbortTarget } from '../client-abort';
 import { markTurnStopRequested } from '../../projects/sandbox-turn-lifecycle';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
@@ -18,6 +19,7 @@ import { dropUndeclaredPromptAgent } from '../undeclared-prompt-agent';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
+import { ingressTargetUrl } from '../../platform/providers/ingress-url';
 import { recordSessionActivity } from '../../projects/session-activity';
 import {
   createExtendThrottle,
@@ -62,11 +64,11 @@ import {
   type PrePromptEnvSyncDeps,
   bodyWithoutPromptAgent,
   errorMessage,
+  isTurnStartEnvSync,
   jsonProxyError,
   requestedPromptAgent,
   runPrePromptEnvSync,
   secretGrantErrorResponse,
-  shouldSyncProjectEnvBeforeProxy,
 } from '../pre-prompt-env-sync';
 import {
   EFFECTIVE_MESSAGE_ID_HEADER,
@@ -80,6 +82,7 @@ import {
 } from '../prompt-wire-id-repair';
 import {
   PROXY_RETRY_BUDGET_MS,
+  PROXY_RETRY_DELAYS_MS,
   isFileImportRequest,
   isLongTurnCompletionRequest,
   isUploadRequest,
@@ -87,10 +90,10 @@ import {
 } from '../preview-retry-budget';
 import {
   claimPromptDelivery,
+  deliveryKeyIdentifiesOneSubmission,
   isNonIdempotentSessionWrite,
   promptDeliveryKey,
   releasePromptDelivery,
-  shouldClaimPromptDelivery,
 } from '../prompt-dedupe';
 import {
   PROXY_HOP_HEADER,
@@ -176,11 +179,15 @@ export function forwardsClientEncoding(port: number, remainingPath: string): boo
 // suites that already read these names off `./preview`, keep working.
 export {
   bodyWithoutPromptAgent,
+  isTurnStartEnvSync,
   requestedPromptAgent,
   runPrePromptEnvSync,
   secretGrantErrorResponse,
-  shouldSyncProjectEnvBeforeProxy,
 } from '../pre-prompt-env-sync';
+import {
+  convergeBeforeTurnStart,
+  scheduleAssetConvergence,
+} from '../../projects/lib/turn-start-convergence';
 export type { PrePromptEnvSyncDeps } from '../pre-prompt-env-sync';
 
 // One deadline write per minute per box for HUMAN preview traffic. Mirrors
@@ -465,23 +472,6 @@ function isConnectionRefusedError(err: unknown): boolean {
 }
 
 /**
- * Does this request START A USER TURN that a missing connector should block?
- *
- * The same shape as `isTurnStartRequest` MINUS `/summarize`. Summarize is
- * compaction, not a user turn: refusing to compact a conversation because Gmail
- * is disconnected would wedge the session instead of protecting it.
- *
- * Built on `isTurnStartRequest` rather than the env-sync predicate
- * (`shouldSyncProjectEnvBeforeProxy`) because that one keys on the
- * client-addressed port, so a request sent straight to :4096 slips past it, and
- * it does not strip the in-box `/proxy/{port}` prefix.
- */
-function isConnectorGatedTurn(port: number, method: string, path: string): boolean {
-  if (!isTurnStartRequest(port, method, path)) return false;
-  return !/^\/session\/[^/]+\/summarize(?:$|[/?#])/.test(path.replace(/^\/proxy\/\d+(?=\/)/, ''));
-}
-
-/**
  * May this caller run the agent this prompt names? Response to refuse, or null.
  *
  * Hoisted out of the forward loop so it runs BEFORE the connector gate. The
@@ -718,11 +708,10 @@ export function shouldAutoResumeStoppedSandbox(
 export function shouldWakeStoppedSandboxForWsAttach(
   status: string,
   remainingPath: string,
-  opts: { wakeRequested: boolean; accessKind?: string },
+  opts: { wakeRequested: boolean },
 ): boolean {
   if (status !== 'stopped') return false;
   if (!opts.wakeRequested) return false;
-  if (opts.accessKind && opts.accessKind !== 'principal') return false;
   return classifyPtyWebSocketPath(remainingPath) !== null;
 }
 /**
@@ -807,11 +796,19 @@ export async function forwardToSandbox(
   // The AUTH/CONTROL guards below (session-visibility gate + /kortix/env block)
   // key on THIS via carriesSessionData(), which covers BOTH 8000 and opencode's
   // 4096 — Platinum reroutes 4096→8000, Daytona does not, and gating on 8000
-  // alone left the direct-:4096 Daytona path ungated. NOTE:
-  // redirectPrefix/X-Forwarded-Prefix and shouldSyncProjectEnvBeforeProxy stay on
-  // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
-  // client actually used (/4096), and env-sync-before-prompt must behave identically
-  // to Daytona, which likewise skips it on the direct 4096 opencode path.
+  // alone left the direct-:4096 Daytona path ungated.
+  //
+  // EVERY TURN-START PREPARATION KEYS ON `upstreamPort` + `remainingPath`, and
+  // there is now ONE predicate for all of them (`isTurnStartEnvSync`, built on
+  // `isTurnStartRequest`). The previous rule — "env-sync stays on the
+  // client-addressed `port` ON PURPOSE, to behave identically to Daytona" — was
+  // wrong, and it made one request get different preparations on different
+  // providers: Platinum rewrote 4096→8000 so the sync ran, Daytona passed 4096
+  // through so it did not, and a prompt at :4096 got the config convergence and
+  // the undeclared-agent drop but no secret refresh and no grant re-mint.
+  // `redirectPrefix`/`X-Forwarded-Prefix` DO still key on the client-addressed
+  // `port`, and that one is genuinely on purpose: the prefix must reflect the
+  // URL the client actually used (/4096).
   const ingressRequest = {
     port,
     path: remainingPath,
@@ -824,7 +821,7 @@ export async function forwardToSandbox(
   // the self-renewing lease this design deletes is rebuilt through the proxy.
   const sandboxAuthored = access.kind === 'principal' && access.sandboxAuthored;
   // "May the proxy send this body twice?" — its OWN predicate, no longer
-  // borrowed from `shouldSyncProjectEnvBeforeProxy`. The two questions look
+  // borrowed from `isTurnStartEnvSync`. The two questions look
   // alike and are not: env sync is about `/message` + `/prompt_async` carrying
   // a user prompt, non-idempotency is about ANY call that creates a turn — and
   // `/command` does that while needing neither the agent-lock rewrite nor
@@ -935,7 +932,7 @@ export async function forwardToSandbox(
     });
   }
 
-  if (shouldSyncProjectEnvBeforeProxy(upstreamPort, method, remainingPath)) {
+  if (isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
     const guardProjectId = record.projectId;
     const checked = await dropUndeclaredPromptAgent({
       body: requestBody,
@@ -954,7 +951,10 @@ export async function forwardToSandbox(
     });
     requestBody = checked.body;
   }
-  if (!sandboxAuthored && isConnectorGatedTurn(upstreamPort, method, remainingPath)) {
+  // Was `isConnectorGatedTurn`, a byte-identical second copy of the predicate
+  // below. One definition: "a USER turn", i.e. `isTurnStartRequest` minus
+  // `/summarize`.
+  if (!sandboxAuthored && isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
     const promptAgent = requestedPromptAgent(requestBody, incomingHeaders);
     // Authorization FIRST. The connector gate below reads this agent's manifest,
     // and its refusal names the connectors that agent requires — not something a
@@ -1009,6 +1009,41 @@ export async function forwardToSandbox(
   }
   const serviceKey = record.serviceKey;
 
+  // ── C9 — a prompt on a box that is behind converges FIRST, then runs ─────
+  // THE one funnel: the HTTP proxy and the server-side prompt queue both
+  // arrive here, and `isTurnStartRequest` covers the OpenCode ports (4096/
+  // 4097) as well as 8000. The env-sync gate below is now the same predicate
+  // minus `/summarize`, so the two can no longer disagree about one request.
+  //
+  // The position is load-bearing. This runs BEFORE `claimPromptDelivery` and
+  // before the first upstream fetch, so an OpenCode swap here cannot lose a
+  // claimed or delivered prompt, and it cannot burn an Idempotency-Key. It
+  // never ends a running turn: the convergence refuses mid-turn.
+  //
+  // A box already on the project's current config costs nothing — see
+  // `convergeBeforeTurnStart`, which answers from two memos with no network
+  // call at all in that case.
+  if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
+    const converged = await convergeBeforeTurnStart(record.sessionId);
+    ptl.mark('config-converge');
+    // …and the BINARIES, which must not block. `convergeBeforeTurnStart` above
+    // awaits because config changes what the agent IS; the daemon, the CLI, the
+    // overlay and OpenCode are ~96 MB / ~104 MB / ~373 KB / ~167 MB and a box
+    // one turn behind on them is the state that exists today. This call returns
+    // synchronously, never throws, and adds no network call at all to a box the
+    // API last saw current — it reads two in-process maps, and its only probe is
+    // the health GET the gate above already made. Do not await it.
+    scheduleAssetConvergence(record.sessionId);
+    if (converged.decision !== 'current' && converged.decision !== 'skipped') {
+      console.log('[PREVIEW] turn-start config convergence', {
+        session_id: record.sessionId,
+        decision: converged.decision,
+        outcome: converged.outcome,
+        ms: converged.ms,
+      });
+    }
+  }
+
   // Dedupe OpenCode prompt delivery up-front. Claim a stable key before the retry
   // loop so a duplicate inbound prompt cannot enqueue the user message twice.
   //
@@ -1020,24 +1055,29 @@ export async function forwardToSandbox(
   const idempotencyKey = incomingHeaders.get('idempotency-key');
   // Non-idempotent (never re-sent by us) and dedupe-claimed (a later lookalike
   // is short-circuited) are DIFFERENT guarantees — see
-  // `shouldClaimPromptDelivery`. A command body has no client-unique field, so
-  // claiming one on content alone silently swallows a deliberate re-run.
-  if (promptDelivery && shouldClaimPromptDelivery(remainingPath, !!idempotencyKey?.trim())) {
-    promptDedupeKey = promptDeliveryKey({
+  // `deliveryKeyIdentifiesOneSubmission`. A body with no client-unique field
+  // yields a content hash, and claiming on that silently swallows a deliberate
+  // re-send: the same sentence, the same command, the same /compact.
+  if (promptDelivery) {
+    const key = promptDeliveryKey({
       idempotencyKey,
       sandboxId,
       sessionId: record.sessionId,
       body: requestBody,
     });
-    if (!claimPromptDelivery(promptDedupeKey)) {
-      return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+    if (deliveryKeyIdentifiesOneSubmission(key)) {
+      promptDedupeKey = key;
+      if (!claimPromptDelivery(key)) {
+        return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+      }
     }
-    // Stamped HERE, and only here: past the dedupe claim, so a re-sent prompt
-    // cannot double-count, and outside the retry loop below, so a wake retry
-    // cannot either. This is the sidebar's authoritative "last activity" —
-    // unlike the opencode_sessions snapshot scheduled further down, it needs no
-    // sandbox round-trip, so a session stays correctly dated even when the box
-    // is unreachable. See projects/session-activity.ts.
+    // Stamped for EVERY turn-creating POST, claimed or not: a prompt the proxy
+    // cannot dedupe is still the user acting on this session. Past the claim,
+    // so a re-sent prompt cannot double-count, and outside the retry loop
+    // below, so a wake retry cannot either. This is the sidebar's authoritative
+    // "last activity" — unlike the opencode_sessions snapshot scheduled further
+    // down, it needs no sandbox round-trip, so a session stays correctly dated
+    // even when the box is unreachable. See projects/session-activity.ts.
     void recordSessionActivity({
       sessionId: record.sessionId,
       projectId: record.projectId,
@@ -1108,14 +1148,8 @@ export async function forwardToSandbox(
   };
 
   // 2. Forward with auto-wake retry.
-  const MAX_RETRIES = 3;
-  // Short early delays so a transient post-restore RX stall (CH virtio-net misses
-  // the first RX interrupt → daemon briefly unreachable ~1s) clears on the next
-  // attempt instead of stretching to seconds. The old [2000,5000,8000] turned a
-  // ~1s stall into the multi-second session-list lag observed in-browser
-  // (opencode-listed +5578ms, 2026-06-14). Later delays stay progressive for a
-  // genuinely cold-booting port.
-  const RETRY_DELAYS_MS = [250, 1000, 3000];
+  const RETRY_DELAYS_MS = PROXY_RETRY_DELAYS_MS;
+  const MAX_RETRIES = RETRY_DELAYS_MS.length;
   let wakeTriggered = false;
   // Only a CONFIRMED-dead provider signal (box stopped/archived) errors the row.
   // A transient unreachable / RX stall must NEVER error a sandbox whose daemon
@@ -1192,9 +1226,9 @@ export async function forwardToSandbox(
       ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
-      const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
+      const targetUrl = ingressTargetUrl(ingress, remainingPath + queryString);
 
-      if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
+      if (isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
         // The agent-lock 409 and the project.agent.read 403 used to live here.
         // They now run in `agentSwitchRefusal`, above the dedupe claim and above
@@ -1265,21 +1299,28 @@ export async function forwardToSandbox(
       // read keeps the client's id); runs after every refusal point and before
       // the ledger begins, so the identity recorded is the one delivered. Once
       // per request: a retry attempt keeps the placement the first computed.
+      // The inbox drain already placed its id and says so with a header — one
+      // fewer round-trip. Any client can send that header, so it skips only
+      // the READ: an id far ahead of the clock (the pre-fix CLI's high-bits
+      // mint) is re-minted on the id alone either way.
+      const clientWireId = promptBodyMessageId(requestBody);
+      const placedByInbox = incomingHeaders.get(WIRE_ID_PLACED_HEADER) === '1';
       if (
         promptDelivery &&
         !sandboxAuthored &&
         effectiveMessageId === null &&
         isPromptWireIdRepairPath(remainingPath) &&
-        // The inbox drain already placed it — one fewer round-trip.
-        incomingHeaders.get(WIRE_ID_PLACED_HEADER) !== '1' &&
         // No client id, nothing to place — OpenCode mints, and the read is
         // skipped entirely so a plain body pays nothing.
-        promptBodyMessageId(requestBody) !== null
+        clientWireId !== null &&
+        (!placedByInbox || isWireIdAheadOf(clientWireId, Date.now()))
       ) {
         const readUrl =
           previewUrl.replace(/\/$/, '') +
           promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
-        const newestKnownTime = await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
+        const newestKnownTime = placedByInbox
+          ? null
+          : await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
         ptl.mark('wire-id-read');
         const placed = repairPromptWireId({
           body: requestBody,
@@ -1898,7 +1939,6 @@ export async function resolvePreviewWsUpstream(opts: {
     if (
       shouldWakeStoppedSandboxForWsAttach(record.status, remainingPath, {
         wakeRequested: opts.wakeRequested === true,
-        accessKind: 'principal',
       })
     ) {
       const resumeExternalId = record.externalId;
@@ -1931,7 +1971,9 @@ export async function resolvePreviewWsUpstream(opts: {
     providerHeaders: ingress.headers,
   });
 
-  const upstreamUrl = new URL(wsBase + remainingPath + queryString);
+  const upstreamUrl = new URL(
+    ingressTargetUrl({ url: wsBase, queryToken: ingress.queryToken }, remainingPath + queryString),
+  );
   if (ingress.websocket?.userContextQueryParam) {
     const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
     if (signedContext) {
@@ -2050,18 +2092,6 @@ preview.all('/:sandboxId/:port/*', async (c) => {
     undefined, // redirectPrefix → default `/v1/p/{sandbox}/{port}`
     publicOrigin,
   );
-});
-
-// Requests without a trailing path (e.g. /:sandboxId/:port) → normalize.
-preview.all('/:sandboxId/:port', async (c) => {
-  const sandboxId = c.req.param('sandboxId');
-  const port = c.req.param('port');
-  const url = new URL(c.req.url);
-  // The app is mounted at /v1/p (see apps/api/src/index.ts), so a Location
-  // built from the route-relative path drops the mount and sends the browser to
-  // `https://<api>/<sandbox>/<port>/` — a 404. Mirrors the sibling normalizer in
-  // routes/public-share.ts.
-  return c.redirect(`/v1/p/${sandboxId}/${port}/${url.search}`, 301);
 });
 
 export { preview };

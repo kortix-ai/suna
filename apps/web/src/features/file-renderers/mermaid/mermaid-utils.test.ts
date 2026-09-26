@@ -1,4 +1,4 @@
-import { getFileCategory, getLanguageFromExt } from '@/features/file-viewer/file-content-renderer';
+import { getFileCategory, getLanguageFromExt } from '@/features/file-viewer/preview-policy';
 import { languageFor } from '@/features/session/action-panel/easy/file-viewer';
 import { fileIconFor } from '@/lib/utils/file-utils';
 import { TreeStructureIcon } from '@phosphor-icons/react';
@@ -102,5 +102,43 @@ describe('withIntrinsicSize', () => {
   test('leaves an SVG without a viewBox untouched', () => {
     const svg = '<svg width="10" height="10"></svg>';
     expect(withIntrinsicSize(svg)).toBe(svg);
+  });
+});
+
+// `hasOwnMermaidConfig` looked for a `config:` line in the front matter with
+// `/^\s*config\s*:/m`. `\s*` crosses lines, so the regex retried every line
+// start inside a blank run: 60k blank lines ran for over 12 s. The old
+// function is kept here ONLY as the parity oracle.
+function legacyHasOwnMermaidConfig(source: string): boolean {
+  if (/%%\{\s*init(ialize)?\s*:/i.test(source)) return true;
+  const front = /^\s*---\r?\n([\s\S]*?)\r?\n---/.exec(source);
+  return !!front && /^\s*config\s*:/m.test(front[1]);
+}
+
+describe('hasOwnMermaidConfig reads the front matter in linear time', () => {
+  test('returns what the regex version returned on 3000 random sources', () => {
+    let seed = 151;
+    const next = () => {
+      seed = (seed * 1103515245 + 12345) >>> 0;
+      return seed / 4294967296;
+    };
+    const pick = <T,>(options: readonly T[]): T => options[Math.floor(next() * options.length)] as T;
+    const tokens = ['config', 'config:', ' config :', 'configx:', 'Config:', ':', ' ', '\t', '\n', '\r\n', String.fromCharCode(0x2028), 'x', 'theme: dark'];
+    let configured = 0;
+    for (let i = 0; i < 3000; i++) {
+      let yaml = '';
+      for (let k = 0, n = Math.floor(next() * 7); k < n; k++) yaml += pick(tokens);
+      const source = `${pick(['', ' ', '\n'])}---\n${yaml}\n---\nflowchart TD\n  A-->B`;
+      const expected = legacyHasOwnMermaidConfig(source);
+      expect(hasOwnMermaidConfig(source)).toBe(expected);
+      if (expected) configured++;
+    }
+    expect(configured).toBeGreaterThan(600);
+  });
+
+  test('front matter holding 240k blank lines', () => {
+    const started = performance.now();
+    hasOwnMermaidConfig(`---\n${'\n'.repeat(240_000)}x\n---\nflowchart TD`);
+    expect(performance.now() - started).toBeLessThan(100);
   });
 });

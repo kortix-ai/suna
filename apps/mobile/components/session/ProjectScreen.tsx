@@ -44,6 +44,8 @@ import {
   type ParamListBase,
 } from 'expo-router/react-navigation';
 import { useAuthContext } from '@/contexts';
+import { requestPushPermissionOnce } from '@/lib/notifications/registration';
+import { usePushStore } from '@/stores/push-store';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { useLastProjectStore } from '@/stores/last-project-store';
 import {
@@ -64,6 +66,9 @@ import {
   returnThreadForPage,
   drawerRouteMove,
   drawerSessionRowMove,
+  drawerThreadMove,
+  threadOpenTarget,
+  type PendingThreadFocus,
   returnHomeMove,
   shownProjectSessionId,
   projectEdgeGesture,
@@ -81,12 +86,19 @@ import {
   type OpenedThread,
 } from '@/lib/session/session-sandbox';
 import { ProjectHome, type ProjectHomeSubmit } from '@/components/session/ProjectHome';
-import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
-import { resolveSessionTitle, sessionDisplayTitle } from '@/lib/session/session-list';
+import type { AttachedFile } from '@/lib/session/attachments';
+import { newSessionCreateInput } from '@/lib/session/new-session-input';
+import {
+  projectSessionForOpenCodeId,
+  resolveSessionTitle,
+  sessionDisplayTitle,
+  subsessionTitle,
+} from '@/lib/session/session-list';
 import { subAgentRelation, subAgentsOf } from '@/lib/session/sub-agents';
 import { ProjectLeftDrawer } from '@/components/session/ProjectLeftDrawer';
 import {
   SessionActionsSheet,
+  type SessionActionsInitialView,
   type SessionActionsSheetRef,
 } from '@/components/session/SessionActionsSheet';
 import { Drawer } from 'react-native-drawer-layout';
@@ -100,9 +112,11 @@ import {
   useProjectSessions,
   useCreateProjectSession,
 } from '@/lib/projects/hooks';
+import { DRAWER_CLOSE, DRAWER_OPEN } from '@/lib/ui/drawer-springs';
 import { useReviewItems } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
-import { countReviewItemsBySegment } from '@kortix/sdk';
+import { countReviewItemsBySegment, getProjectSession } from '@kortix/sdk';
+import * as Crypto from 'expo-crypto';
 import {
   deleteProjectSession,
   startProjectSession,
@@ -112,7 +126,15 @@ import type {
   ProjectSession,
   SessionStartResult,
 } from '@/lib/projects/projects-client';
-import { connectStepFromRequestError, connectStepFromStart } from '@/lib/session/connect-step';
+import {
+  connectStepFromRequestError,
+  connectStepFromStart,
+  shouldAwaitHealthProbe,
+  startPollDelayMs,
+} from '@/lib/session/connect-step';
+import { createSessionCommitted } from '@/lib/session/create-session';
+import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from '@/lib/session/first-prompt-seed';
+import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useToast } from '@/components/kortix/toast-provider';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
@@ -133,6 +155,9 @@ const Pages = {
   },
   get SecretsNavPage(): typeof import('@/components/pages/SecretsNavPage').SecretsNavPage {
     return require('@/components/pages/SecretsNavPage').SecretsNavPage;
+  },
+  get MembersNavPage(): typeof import('@/components/pages/MembersNavPage').MembersNavPage {
+    return require('@/components/pages/MembersNavPage').MembersNavPage;
   },
   get SchedulesPage(): typeof import('@/components/pages/SchedulesPage').SchedulesPage {
     return require('@/components/pages/SchedulesPage').SchedulesPage;
@@ -196,100 +221,8 @@ async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
   }
 }
 
-/**
- * Deliver the composer's first prompt into a session's OpenCode root, once it
- * exists. Web parity: the project home stashes the prompt and sends it after the
- * session connects rather than passing `initial_prompt` to createProjectSession
- * (the boot-time first-turn path can leave OpenCode perpetually
- * not-ready). Fire-and-forget — SessionPage's sync surfaces the message/reply.
- */
-async function sendOpencodePrompt(
-  sandboxUrl: string,
-  opencodeSessionId: string,
-  text: string,
-  picks?: ProjectHomeSubmit['picks'],
-  agent?: string | null
-): Promise<boolean> {
-  try {
-    const token = await getAuthToken();
-    const res = await fetch(
-      `${sandboxUrl.replace(/\/$/, '')}/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        // The same body the thread sends (SessionPage): model and level at the top.
-        body: JSON.stringify({
-          parts: [{ type: 'text', text }],
-          ...(picks ? { model: picks.model, variant: picks.variant } : {}),
-          ...(agent ? { agent } : {}),
-        }),
-      }
-    );
-    if (!res.ok) {
-      // The response body is read for development logs only.
-      if (__DEV__) {
-        log.error('[connect] initial prompt failed:', res.status, await res.text().catch(() => ''));
-      } else {
-        log.error('[connect] initial prompt failed:', res.status);
-      }
-      return false;
-    }
-    return true;
-  } catch (err: any) {
-    log.error('[connect] initial prompt error:', err?.message || err);
-    return false;
-  }
-}
-
-/** A project-home prompt waiting for its session's sandbox. */
-interface PendingPrompt {
-  text: string;
-  files: AttachedFile[];
-  /** The model and thinking level picked on project home (`firstPromptPicks`). */
-  picks: ProjectHomeSubmit['picks'];
-  /** The agent picked on project home. */
-  agent: string | null;
-}
-
-/**
- * Upload a pending prompt's files into the now-running sandbox, then send the
- * prompt with their `<file>` references. An upload failure still sends the
- * text, like the thread composer.
- */
-async function deliverPendingPrompt(
-  sandboxUrl: string,
-  opencodeSessionId: string,
-  { text, files, picks, agent }: PendingPrompt
-): Promise<boolean> {
-  let fileBlock = '';
-  try {
-    fileBlock = await uploadAttachments(sandboxUrl, files);
-  } catch (err: any) {
-    log.error('[connect] attachment upload failed:', err?.message || err);
-  }
-  return sendOpencodePrompt(sandboxUrl, opencodeSessionId, withAttachments(text, fileBlock), picks, agent);
-}
-
 // ─── Main screen ────────────────────────────────────────────────────────────
 
-/**
- * The drawer's close spring (Jay, 2026-09-22). The library's one spring
- * (stiffness 1000, damping 500, mass 3) is 4.6× overdamped: its slow pole
- * decays at ~2/s, so a close crawls over its last third. This one is
- * critically damped (damping = 2·√stiffness at mass 1): 90% of the travel in
- * ~195ms, settled in ~330ms, no overshoot. It stays a spring, so a swipe
- * release keeps its velocity. Open keeps the library spring: an exit runs
- * faster than an enter.
- *
- * `closeSpringConfig` is not a library prop: it comes from
- * `patches/react-native-drawer-layout+4.2.10.patch`. When the patch is not
- * applied (`npx patch-package` after an install), `tsc` fails on the prop.
- * Module scope: the library lists it as a `useCallback` dependency.
- */
-const DRAWER_CLOSE_SPRING = { stiffness: 400, damping: 40, mass: 1 };
 /** Shared empty list: a fresh `[]` per render would re-render the thread. */
 const EMPTY_SUB_AGENTS: ProjectSession[] = [];
 
@@ -325,8 +258,9 @@ export function ProjectScreen() {
   // reaches it without its own state.
   const actionsSheetRef = useRef<SessionActionsSheetRef>(null);
   // `initialView` (COR-140): the thread header's title tap opens this same
-  // sheet straight to Rename, instead of a second rename implementation.
-  const openSessionActions = useCallback((session: ProjectSession, initialView?: 'rename') => {
+  // sheet straight to Rename, and its Share button straight to Share
+  // (KRTX-248), instead of a second implementation of either.
+  const openSessionActions = useCallback((session: ProjectSession, initialView?: SessionActionsInitialView) => {
     actionsSheetRef.current?.present(session, initialView);
   }, []);
   // The project/account switcher (COR-124): mounted here once, beside the
@@ -365,6 +299,10 @@ export function ProjectScreen() {
   // A project session that's provisioning — the middle pane shows a connecting
   // state and the project-sessions poll opens it once its sandbox is ready.
   const [connectingProjectSessionId, setConnectingProjectSessionId] = useState<string | null>(null);
+  // The same id, current for callbacks that closed over an older render
+  // (`goHome` runs from navigation listeners).
+  const connectingIdRef = useRef<string | null>(null);
+  connectingIdRef.current = connectingProjectSessionId;
   // Inline runtime-failure state for the connecting screen (web parity).
   const [connectError, setConnectError] = useState<SessionConnectError | null>(null);
   const [restartingSession, setRestartingSession] = useState(false);
@@ -382,16 +320,17 @@ export function ProjectScreen() {
   // once `isHome` is computed) and set at once by `goHome`, so a callback that
   // fires between a state update and its render still reads the new value.
   const isHomeRef = useRef(true);
-  // The typed text of a fresh dashboard send, keyed by the session id it
-  // created — shown as the loading page's first message (and its title until
-  // the session has one) and, read-and-cleared once, restored into the
-  // composer if the user leaves a failed start ("Back to project",
-  // `ProjectHome`'s `takeInitialDraft`). Cleared once the session connects.
-  const firstMessageRef = useRef<Record<string, string>>({});
-  const pendingDraftRef = useRef('');
+  // The typed text and picked files of a fresh dashboard send, keyed by the
+  // session id it created — shown as the loading page's first message and
+  // file tiles (the text is also its title until the session has one) and,
+  // read-and-cleared once, restored into the composer if the user leaves a
+  // failed start ("Back to project", `ProjectHome`'s `takeInitialDraft`).
+  // Cleared once the session connects.
+  const firstPromptRef = useRef<Record<string, { text: string; files: AttachedFile[] }>>({});
+  const pendingDraftRef = useRef<{ text: string; files: AttachedFile[] }>({ text: '', files: [] });
   const takeInitialDraft = useCallback(() => {
     const draft = pendingDraftRef.current;
-    pendingDraftRef.current = '';
+    pendingDraftRef.current = { text: '', files: [] };
     return draft;
   }, []);
   const createProjectSession = useCreateProjectSession(projectId);
@@ -421,8 +360,6 @@ export function ProjectScreen() {
 
   // ── Handlers (copied verbatim from ProjectScreenLegacy) ──
 
-  // Composer prompts awaiting their session's OpenCode root, keyed by session id.
-  const pendingPromptsRef = useRef<Record<string, PendingPrompt>>({});
   // The thread the connect flow opened and the exact sandbox URL it switched
   // in. A ref: the thread (zustand) can commit before the sandbox (React
   // state), and that render must already see the expected URL.
@@ -444,6 +381,67 @@ export function ProjectScreen() {
     []
   );
 
+  // The busy watchdog of each seeded root (COR-185), keyed by OpenCode id.
+  const seedWatchdogsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  useEffect(() => {
+    const watchdogs = seedWatchdogsRef.current;
+    return () => {
+      for (const timer of Object.values(watchdogs)) clearTimeout(timer);
+    };
+  }, []);
+
+  // Write a dashboard send's first prompt into the sync store as an optimistic
+  // user message, plus a busy status, BEFORE the thread mounts (COR-185).
+  // SessionPage then opens with the prompt and the busy row on its first
+  // frame, instead of the empty hero until the echo lands. The echo replaces
+  // the seed through the ordinary optimistic swap. Always under the OpenCode
+  // root, never the Kortix session id. The server holds this prompt, so the
+  // seed never offers "Try again" (a client re-send would run it twice): the
+  // watchdog only clears a busy row that saw no sign of the prompt in 30 s,
+  // and the seed stays optimistic so a late echo still replaces it.
+  const seedFirstPrompt = useCallback(
+    (root: string, first: { text: string; files: AttachedFile[] } | undefined) => {
+      if (!first) return;
+      const store = useSyncStore.getState();
+      const seed = firstPromptSeed({
+        ...first,
+        opencodeSessionId: root,
+        knownMessageIds: (store.messages[root] ?? []).map((m) => m.info.id),
+        nowMs: Date.now(),
+      });
+      if (!seed) return;
+      store.addOptimisticMessage(root, seed);
+      store.setStatus(root, { type: 'busy' });
+      clearTimeout(seedWatchdogsRef.current[root]);
+      seedWatchdogsRef.current[root] = setTimeout(() => {
+        delete seedWatchdogsRef.current[root];
+        const now = useSyncStore.getState();
+        if (seedUndelivered(now.messages[root], seed.info.id) && now.sessionStatus[root]?.type === 'busy') {
+          log.warn(`⏱️ [connect] first prompt not seen in ${SEED_BUSY_WATCHDOG_MS} ms; clearing busy`);
+          now.setStatus(root, { type: 'idle' });
+        }
+      }, SEED_BUSY_WATCHDOG_MS);
+    },
+    []
+  );
+
+  // The Kortix `session_id` of each thread this screen opened, keyed by its
+  // OpenCode root id. The thread's `projectSessionId` falls back to it while
+  // the sessions list has not caught up with a just-created session, so a
+  // new thread takes photos from its first frame (COR-185).
+  const openedProjectSessionIdsRef = useRef<Record<string, string>>({});
+  // A sub-session to show once its project session's thread connects: a
+  // sub-session row tapped while its parent was not open (or still
+  // connecting). `connectToProjectSession` opens the thread on it instead of
+  // the root, then clears it. Any other open replaces or clears it.
+  const pendingThreadFocusRef = useRef<PendingThreadFocus | null>(null);
+
+  // Refetch both session lists (the drawer's and the paged Sessions page).
+  const refreshSessionLists = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+    void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessionsPaged(projectId) });
+  }, [queryClient, projectId]);
+
   // Switch the SandboxContext to a session's sandbox and render its chat. Needs
   // both the sandbox URL and the resolved OpenCode pin (opencode_session_id).
   const connectToProjectSession = useCallback(
@@ -451,9 +449,13 @@ export function ProjectScreen() {
       if (!ps.sandbox_url || !ps.opencode_session_id) return false;
       const externalId =
         ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
+      // The root, or a pending sub-session of this session. The sandbox gate
+      // (openedThreadRef) records the id the store is about to show.
+      const threadId = threadOpenTarget(pendingThreadFocusRef.current, ps.session_id, ps.opencode_session_id);
+      pendingThreadFocusRef.current = null;
       // The same value switchSandbox derives from `external_id`.
       openedThreadRef.current = {
-        sessionId: ps.opencode_session_id,
+        sessionId: threadId,
         sandboxUrl: getSandboxUrl(externalId),
       };
       switchSandbox({
@@ -470,17 +472,17 @@ export function ProjectScreen() {
       setConnectError(null);
       erroredSessionRef.current = null;
       if (freshSessionIdRef.current === ps.session_id) freshSessionIdRef.current = null;
-      delete firstMessageRef.current[ps.session_id];
-      navigateToSession(ps.opencode_session_id);
-      // Deliver the composer's first prompt now that the OpenCode root exists.
-      const pending = pendingPromptsRef.current[ps.session_id];
-      if (pending) {
-        delete pendingPromptsRef.current[ps.session_id];
-        void deliverPendingPrompt(ps.sandbox_url, ps.opencode_session_id, pending);
-      }
+      seedFirstPrompt(ps.opencode_session_id, firstPromptRef.current[ps.session_id]);
+      delete firstPromptRef.current[ps.session_id];
+      openedProjectSessionIdsRef.current[ps.opencode_session_id] = ps.session_id;
+      openedProjectSessionIdsRef.current[threadId] = ps.session_id;
+      navigateToSession(threadId);
+      // The row may be missing from the lists yet (a just-created session):
+      // refetch them, so the thread's title and `···` menu appear.
+      refreshSessionLists();
       return true;
     },
-    [switchSandbox, navigateToSession]
+    [switchSandbox, navigateToSession, seedFirstPrompt, refreshSessionLists]
   );
 
   // Resolve the session's canonical runtime through the unified /start endpoint,
@@ -537,6 +539,26 @@ export function ProjectScreen() {
           const sandbox = start.sandbox;
           if (step.kind === 'open' && sandbox?.external_id) {
             const sandboxUrl = getSandboxUrl(sandbox.external_id);
+            const openSession = (opencodeSessionId: string) =>
+              connectToProjectSession({
+                session_id: sessionId,
+                sandbox_id: sandbox.sandbox_id,
+                sandbox_url: sandboxUrl,
+                opencode_session_id: opencodeSessionId,
+                sandbox_provider: sandbox.provider ?? 'daytona',
+                created_at: sandbox.created_at,
+                updated_at: sandbox.updated_at,
+              } as ProjectSession);
+
+            // `/start` already reports the runtime ready with its pin: open
+            // the thread now (COR-185). The probe still runs, unawaited, as
+            // it keeps the proxy route warm.
+            if (!shouldAwaitHealthProbe(start) && start.opencode_session_id) {
+              log.log(`💓 [connect] attempt ${attempt}: stage=ready pin=ok, opening without the health wait`);
+              openSession(start.opencode_session_id);
+              void probeSandboxHealth(sandboxUrl);
+              return;
+            }
 
             const health = await probeSandboxHealth(sandboxUrl);
             if (ensuringRef.current !== sessionId) return; // back on project home (goHome)
@@ -557,22 +579,15 @@ export function ProjectScreen() {
             );
 
             if (start.stage === 'ready' && start.opencode_session_id) {
-              connectToProjectSession({
-                session_id: sessionId,
-                sandbox_id: sandbox.sandbox_id,
-                sandbox_url: sandboxUrl,
-                opencode_session_id: start.opencode_session_id,
-                sandbox_provider: sandbox.provider ?? 'daytona',
-                created_at: sandbox.created_at,
-                updated_at: sandbox.updated_at,
-              } as ProjectSession);
+              openSession(start.opencode_session_id);
               return;
             }
           } else {
             log.log(`💓 [connect] attempt ${attempt}: stage=${start.stage}`);
           }
 
-          await new Promise((r) => setTimeout(r, 1_500));
+          // Not ready yet: 300 ms, 700 ms, then 1.5 s between polls.
+          await new Promise((r) => setTimeout(r, startPollDelayMs(attempt)));
         }
         failConnect(sessionId, {
           title: 'Could not start session',
@@ -597,8 +612,13 @@ export function ProjectScreen() {
   // Open a project session from the list. Always enter the connecting state —
   // ensureAndOpen polls the sandbox endpoint (re-provisioning/waking as needed)
   // before opening, so even a previously-idle session comes back cleanly.
+  // `focusOpenCodeId` (a sub-session row): the thread opens on that
+  // sub-session instead of the root once it connects.
   const handleOpenProjectSession = useCallback(
-    (ps: ProjectSession) => {
+    (ps: ProjectSession, focusOpenCodeId?: string) => {
+      pendingThreadFocusRef.current = focusOpenCodeId
+        ? { sessionId: ps.session_id, openCodeId: focusOpenCodeId }
+        : null;
       haptics.tap();
       releaseWarmSession(ps.session_id);
       navigateToSession(null);
@@ -614,6 +634,7 @@ export function ProjectScreen() {
   // Open a session by raw id (e.g. Fix-with-agent returns a new session).
   const handleOpenSessionById = useCallback(
     (sessionId: string) => {
+      pendingThreadFocusRef.current = null;
       releaseWarmSession(sessionId);
       navigateToSession(null);
       setConnectError(null);
@@ -648,18 +669,25 @@ export function ProjectScreen() {
     }
   }, [connectingProjectSessionId, restartingSession, projectId, ensureAndOpen]);
 
-  // The active tab's project-session row. The tab store's activeSessionId is the
-  // OPENCODE root id (connectToProjectSession navigates with
-  // ps.opencode_session_id), so resolve back to the Kortix row through the pin —
-  // every /projects/:id/sessions/:sid API call needs the Kortix UUID.
+  // The active tab's project-session row. The tab store's activeSessionId is an
+  // OPENCODE id — the root (connectToProjectSession navigates with
+  // ps.opencode_session_id), or a sub-session of it (a drawer sub-session row,
+  // a task tool's View) — so resolve back to the Kortix row through the pin or
+  // the row's `opencode_sessions` snapshot. Every
+  // /projects/:id/sessions/:sid API call needs the Kortix UUID.
   const activeProjectSession = useMemo(
-    () =>
-      activeSessionId
-        ? (projectSessions.find(
-            (s) => s.opencode_session_id === activeSessionId || s.session_id === activeSessionId
-          ) ?? null)
-        : null,
+    () => projectSessionForOpenCodeId(projectSessions, activeSessionId),
     [projectSessions, activeSessionId]
+  );
+  // The thread shows a sub-session of that row, not its root: the header
+  // reads the sub-session's title and the title tap (rename of the project
+  // session) is off.
+  const activeSubsession = useMemo(
+    () =>
+      activeProjectSession && activeSessionId && activeSessionId !== activeProjectSession.opencode_session_id
+        ? ((activeProjectSession.opencode_sessions ?? []).find((item) => item.id === activeSessionId) ?? null)
+        : null,
+    [activeProjectSession, activeSessionId]
   );
 
   // The open thread's sub-agent relation (COR-162): the same relation the
@@ -679,11 +707,13 @@ export function ProjectScreen() {
   const connectingRow = connectingProjectSessionId
     ? (projectSessions.find((s) => s.session_id === connectingProjectSessionId) ?? null)
     : activeProjectSession;
-  const connectingFirstMessage = connectingProjectSessionId
-    ? firstMessageRef.current[connectingProjectSessionId]
+  const connectingFirstPrompt = connectingProjectSessionId
+    ? firstPromptRef.current[connectingProjectSessionId]
     : undefined;
   const connectingTitle =
-    (connectingRow ? resolveSessionTitle(connectingRow) : null) ?? connectingFirstMessage ?? 'New session';
+    (connectingRow ? resolveSessionTitle(connectingRow) : null) ??
+    (connectingFirstPrompt?.text || null) ??
+    'New session';
 
   // Drive the connecting state. ensureAndOpen polls /start and opens the chat.
   // It guards against concurrent runs, so re-firing on re-render is harmless. A
@@ -733,6 +763,11 @@ export function ProjectScreen() {
   // it. Stops a running connect loop, so a session that boots later does not
   // reopen the view.
   const goHome = useCallback(() => {
+    // A connecting session's first prompt belongs to that attempt only:
+    // reopening the session later must not show it again with a busy row.
+    // `handleCancelConnect` reads the entry before it calls this.
+    const connectingId = connectingIdRef.current;
+    if (connectingId) delete firstPromptRef.current[connectingId];
     isHomeRef.current = true;
     returnThreadRef.current = null;
     ensuringRef.current = null;
@@ -765,30 +800,31 @@ export function ProjectScreen() {
   }, [returnToThread, goHome]);
 
   // Simplified project-home send flow (ported from web 3f150e0). Creates a
-  // project session with the typed prompt as initial_prompt and drops into the
-  // connecting state — the effect provisions and opens it once ready.
+  // project session with the first prompt and drops into the connecting
+  // state — the effect provisions and opens it once ready. Resolves `true`
+  // once the session exists, `false` on any failure (ProjectHome then keeps
+  // the draft and hands its uploads back to the composer).
   const [isDashboardSending, setIsDashboardSending] = useState(false);
 
   const handleDashboardSend = useCallback(
-    async ({ text, files, model, picks, agent }: ProjectHomeSubmit) => {
-      if (!projectId || isDashboardSending) return;
-      if (!text.trim() && files.length === 0) return;
+    async ({ text, files, fileParts, model, picks, agent }: ProjectHomeSubmit): Promise<boolean> => {
+      if (!projectId || isDashboardSending) return false;
+      if (!text.trim() && files.length === 0) return false;
 
       setIsDashboardSending(true);
       try {
-        // Files must upload into the session's sandbox, which does not exist
-        // yet. Those sends stash the prompt and deliver it once the session
-        // connects (connectToProjectSession). Text-only sends keep the
-        // server-side initial_prompt. The model is baked in at create.
+        // Files are already uploaded (ProjectHome's `useComposerAttachments`)
+        // and ride the create as `pending_prompt.parts`, which the server
+        // delivers once the runtime is up. The model is baked in at create.
         // A thinking level cannot ride `initial_prompt` (it carries text only),
-        // so a text-only send with a level uses web's channel instead:
-        // `pending_prompt`, which the server delivers with its model and level
-        // (apps/api session-lifecycle/pending-prompt.ts).
+        // so a send with a level uses `pending_prompt` too
+        // (`lib/session/new-session-input.ts`).
         const hasFiles = files.length > 0;
         // Warm path (web parity, `lib/session/warm-session.ts`): the project
         // keeps one session booted while this screen is open. A send on the
         // project defaults claims it with its first prompt, so the sandbox
-        // boot is already done. Anything it does not fit, or a refused claim,
+        // boot is already done. A send with files never fits it
+        // (`warmFitsSend`). Anything it does not fit, or a refused claim,
         // runs the ordinary create below with the same prompt.
         const warm = warmSessionPool.take(
           projectId,
@@ -807,25 +843,41 @@ export function ProjectScreen() {
             : null;
         if (claimedWarm) {
           log.log('🔥 [Project] Home send took the warm session');
-          void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
         }
-        const firstPrompt = hasFiles
-          ? {}
-          : picks
-            ? { pending_prompt: { text, agent, model: picks.model, variant: picks.variant } }
-            : { initial_prompt: text };
-        const session = claimedWarm
-          ? { session_id: claimedWarm }
-          : await createProjectSession.mutateAsync({
-              ...firstPrompt,
-              ...(model ? { opencode_model: model } : {}),
-              // The session is bound to this agent; `initial_prompt` runs on it.
-              ...(agent ? { agent_name: agent } : {}),
-            });
-        if (hasFiles) pendingPromptsRef.current[session.session_id] = { text, files, picks, agent };
-        // The loading page's first message + "Back to project"'s draft
-        // restore both key off this — set for every text send, file or not.
-        if (text.trim()) firstMessageRef.current[session.session_id] = text.trim();
+        // Ordinary create (web parity, COR-185): the client mints the id, so a
+        // timed-out create that committed is read back and used instead of
+        // letting a re-send create a second session. Created FIRST, then the
+        // connecting state below: a failed create never shows a live-looking
+        // session. The composer's send slot shows the spinner meanwhile.
+        const createNew = async (): Promise<string> => {
+          const sessionId = Crypto.randomUUID();
+          const input = newSessionCreateInput({
+            sessionId,
+            text,
+            fileParts,
+            fileNames: files.map((f) => f.name),
+            model,
+            picks,
+            agent,
+          });
+          return createSessionCommitted(
+            {
+              create: (body) => createProjectSession.mutateAsync(body),
+              read: (id) => getProjectSession(projectId, id, { showErrors: false }),
+            },
+            { ...input, session_id: sessionId },
+          );
+        };
+        const session = { session_id: claimedWarm ?? (await createNew()) };
+        // The lists learn of the new session now, not at their next poll —
+        // also after a timed-out create that committed (`createSessionCommitted`).
+        refreshSessionLists();
+        // The loading page's first message and file tiles, and "Back to
+        // project"'s draft restore, all key off this. An image-only send
+        // sets it too, so the loading page shows the photo.
+        if (text.trim() || hasFiles) {
+          firstPromptRef.current[session.session_id] = { text: text.trim(), files };
+        }
         // Enter the connecting state — the effect drives provisioning and opens
         // the server-created session once ready.
         navigateToSession(null);
@@ -836,22 +888,33 @@ export function ProjectScreen() {
         // The session holds the prompt now: drop the home's saved draft
         // (COR-143). Cancel hands the text back through `takeInitialDraft`.
         clearComposerDraftIfSent(draftKey({ kind: 'project', projectId }), text);
+        // The first send asks for notification permission, once per install.
+        void requestPushPermissionOnce();
+        return true;
       } catch (err: any) {
-        if (showUpgradeForError(err)) return;
+        if (showUpgradeForError(err)) return false;
         log.error('❌ [Project] Home send failed:', err?.message || err);
         toast.error(err?.message || 'Failed to start session');
+        return false;
       } finally {
         setIsDashboardSending(false);
       }
     },
-    [projectId, isDashboardSending, createProjectSession, navigateToSession, showUpgradeForError, toast, queryClient]
+    [projectId, isDashboardSending, createProjectSession, navigateToSession, showUpgradeForError, toast, refreshSessionLists]
   );
 
   // The model sheet's Agent tab `+` (thread and home alike): a new session on
   // the shared "configure a new agent" prompt, web's Agents page "New". Same
   // create + connecting path as a project-home send.
   const handleCreateAgent = useCallback(() => {
-    handleDashboardSend({ text: newConfigPrompt('agent'), files: [], model: null, picks: null, agent: null });
+    void handleDashboardSend({
+      text: newConfigPrompt('agent'),
+      files: [],
+      fileParts: [],
+      model: null,
+      picks: null,
+      agent: null,
+    });
   }, [handleDashboardSend]);
 
   // Left drawer open state (ProjectLeftDrawer).
@@ -871,37 +934,33 @@ export function ProjectScreen() {
     setHomeKey((key) => key + 1);
   }, []);
 
-  // Cancel the connecting screen (COR-146, always available: the loading
-  // checklist and the inline error state both pin it). Stops the client-side
-  // connect loop and returns home immediately — never blocked on the network
-  // call below. A session THIS screen just created (freshSessionIdRef) is
-  // DELETED server-side (the same call as the actions sheet's Delete), so no
-  // stopped session keeps the cancelled prompt and a re-send of the restored
-  // draft cannot run it twice. A session reopened from the list is never
-  // deleted or stopped: it may hold real history the user still wants. If the
-  // typed text that started this attempt is still known (a dashboard send), it
-  // is restored into the project-home composer (`ProjectHome`'s
-  // `takeInitialDraft`, consumed once).
+  // Leave a connecting session (COR-146). `SessionConnecting` offers this only
+  // in its error state, as "Back to project" (Jay, 2026-09-24: no Cancel bar
+  // while it loads); Android back and the drawer leave through `goHome`.
+  // Stops the client-side connect loop and returns home immediately — never
+  // blocked on the network call below. A session THIS screen just created
+  // (freshSessionIdRef) is DELETED server-side (the same call as the actions
+  // sheet's Delete), so no stopped session keeps the cancelled prompt and a
+  // re-send of the restored draft cannot run it twice. A session reopened
+  // from the list is never deleted or stopped: it may hold real history the
+  // user still wants. If the text and files that started this attempt are
+  // still known (a dashboard send), they are restored into the project-home
+  // composer (`ProjectHome`'s `takeInitialDraft`, consumed once); the
+  // restored files upload again there, as the deleted session held the old
+  // uploads.
   const handleCancelConnect = useCallback(() => {
     const sid = connectingProjectSessionId;
     haptics.tap();
-    const restoreText = sid ? firstMessageRef.current[sid] : undefined;
+    const restore = sid ? firstPromptRef.current[sid] : undefined;
     const wasFresh = sid !== null && freshSessionIdRef.current === sid;
-    if (sid) {
-      delete firstMessageRef.current[sid];
-      delete pendingPromptsRef.current[sid];
-    }
+    if (sid) delete firstPromptRef.current[sid];
     freshSessionIdRef.current = null;
-    if (restoreText) {
-      pendingDraftRef.current = restoreText;
+    if (restore && (restore.text || restore.files.length > 0)) {
+      pendingDraftRef.current = { text: restore.text, files: restore.files };
       setHomeKey((key) => key + 1);
     }
     goHome();
     if (wasFresh && sid) {
-      const refreshLists = () => {
-        void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
-        void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessionsPaged(projectId) });
-      };
       // One retry after 2 s: a dropped request must not leave an orphan
       // session holding the cancelled prompt.
       deleteProjectSession(projectId, sid)
@@ -909,9 +968,9 @@ export function ProjectScreen() {
         .catch((err) => {
           log.warn('⚠️ [connect] Cancel: could not delete the just-created session:', err?.message || err);
         })
-        .finally(refreshLists);
+        .finally(refreshSessionLists);
     }
-  }, [connectingProjectSessionId, goHome, projectId, queryClient]);
+  }, [connectingProjectSessionId, goHome, projectId, refreshSessionLists]);
 
   // The top (focused) route of the project stack and its navigation object,
   // captured from the stack's focus events (screenListeners below). This
@@ -1063,19 +1122,71 @@ export function ProjectScreen() {
   });
   const shownSessionIdRef = useRef(shownSessionId);
   shownSessionIdRef.current = shownSessionId;
+  // The OpenCode id the thread on screen shows (null under a tool page or
+  // while connecting): which drawer sub-session row is highlighted.
+  const shownOpenCodeId = shownSessionId && !activePageId ? activeSessionId : null;
+  const shownOpenCodeIdRef = useRef(shownOpenCodeId);
+  shownOpenCodeIdRef.current = shownOpenCodeId;
 
-  // A drawer session row (the drawer has already closed itself). The row of
-  // the session on screen does nothing more: reopening it would unmount the
-  // thread, show Connecting, and rerun the connect loop.
-  const openSessionFromDrawer = useCallback(
-    (ps: ProjectSession) => {
-      if (drawerSessionRowMove(ps.session_id, shownSessionIdRef.current) === 'close') {
-        haptics.tap();
+  // Push (components/notifications/PushNotificationsBridge): the session on
+  // screen suppresses its own notification banner while this project is on top.
+  useEffect(() => {
+    usePushStore.getState().setViewingSessionId(isFocused ? shownSessionId : null);
+  }, [isFocused, shownSessionId]);
+  useEffect(() => () => usePushStore.getState().setViewingSessionId(null), []);
+
+  // A tapped notification for this project: open its session, the same path
+  // as the Sessions page. The session already on screen stays as it is.
+  const pushOpen = usePushStore((s) => s.pendingOpen);
+  useEffect(() => {
+    if (!pushOpen || !projectId || !scopeReady || !isFocused) return;
+    const open = usePushStore.getState().takeOpen(projectId);
+    if (!open) return;
+    if (drawerSessionRowMove(open.sessionId, shownSessionIdRef.current) === 'open') {
+      handleOpenSessionById(open.sessionId);
+    }
+  }, [pushOpen, projectId, scopeReady, isFocused, handleOpenSessionById]);
+
+  // A drawer row (the drawer has already closed itself) that targets one
+  // OpenCode session of `ps`: its root (a session row) or a sub-session (a
+  // row under it). Another session opens through the connect path. On the
+  // session on screen, another OpenCode session of it only swaps the thread's
+  // active id — the same sandbox, no reconnect (the task tool's View does the
+  // same) — and the one already showing does nothing more: reopening it would
+  // unmount the thread, show Connecting, and rerun the connect loop. While
+  // the session on screen still connects, the target waits for the thread
+  // (`queue`). A sub-session row of another session opens that session and
+  // then shows the sub-session (`handleOpenProjectSession` focus).
+  const openThreadFromDrawer = useCallback(
+    (ps: ProjectSession, targetOpenCodeId: string | null) => {
+      const move = drawerThreadMove({
+        rowSessionId: ps.session_id,
+        targetOpenCodeId,
+        shownSessionId: shownSessionIdRef.current,
+        activeOpenCodeId: shownOpenCodeIdRef.current,
+      });
+      if (move === 'open') {
+        // A sub-session row: open its parent, then show the sub-session.
+        const focus = targetOpenCodeId && targetOpenCodeId !== ps.opencode_session_id ? targetOpenCodeId : undefined;
+        handleOpenProjectSession(ps, focus);
         return;
       }
-      handleOpenProjectSession(ps);
+      haptics.tap();
+      if (move === 'focus' && targetOpenCodeId) navigateToSession(targetOpenCodeId);
+      // Still connecting: the thread opens on the target when it connects.
+      if (move === 'queue' && targetOpenCodeId) {
+        pendingThreadFocusRef.current = { sessionId: ps.session_id, openCodeId: targetOpenCodeId };
+      }
     },
-    [handleOpenProjectSession]
+    [handleOpenProjectSession, navigateToSession]
+  );
+  const openSessionFromDrawer = useCallback(
+    (ps: ProjectSession) => openThreadFromDrawer(ps, ps.opencode_session_id ?? null),
+    [openThreadFromDrawer]
+  );
+  const openSubsessionFromDrawer = useCallback(
+    (ps: ProjectSession, childId: string) => openThreadFromDrawer(ps, childId),
+    [openThreadFromDrawer]
   );
 
   // The left drawer. It mounts through renderDrawerContent, so it stays mounted while visually closed.
@@ -1086,23 +1197,29 @@ export function ProjectScreen() {
       <ProjectLeftDrawer
         projectId={projectId}
         activeProjectSessionId={shownSessionId}
+        activeOpenCodeSessionId={shownOpenCodeId}
         reviewNeedsYouCount={reviewNeedsYouCount}
         needsYouBySession={needsYouSessions}
         // New session opens project home: its composer starts the session.
         onNewSession={returnHome}
         onOpenProjectSession={openSessionFromDrawer}
+        onOpenSubsession={openSubsessionFromDrawer}
         onNavigateRoute={navigateProjectRoute}
         onSessionActions={openSessionActions}
         onOpenSwitcher={openSwitcher}
         onClose={closeDrawer}
+        open={drawerOpen}
       />
     ),
     [
       projectId,
       shownSessionId,
+      shownOpenCodeId,
+      drawerOpen,
       reviewNeedsYouCount,
       returnHome,
       openSessionFromDrawer,
+      openSubsessionFromDrawer,
       navigateProjectRoute,
       openSessionActions,
       openSwitcher,
@@ -1189,15 +1306,26 @@ export function ProjectScreen() {
           <SessionPage
             sessionId={activeSessionId}
             projectId={projectId}
+            projectSessionId={
+              activeProjectSession?.session_id ?? openedProjectSessionIdsRef.current[activeSessionId]
+            }
             onBack={handleBack}
             onOpenDrawer={openDrawer}
             onOpenRightDrawer={
               activeProjectSession ? () => openSessionActions(activeProjectSession) : undefined
             }
             onRenamePress={
-              activeProjectSession ? () => openSessionActions(activeProjectSession, 'rename') : undefined
+              activeProjectSession && !activeSubsession
+                ? () => openSessionActions(activeProjectSession, 'rename')
+                : undefined
             }
-            sessionTitle={activeProjectSession ? sessionDisplayTitle(activeProjectSession) : undefined}
+            sessionTitle={
+              activeSubsession
+                ? subsessionTitle(activeSubsession)
+                : activeProjectSession
+                  ? sessionDisplayTitle(activeProjectSession)
+                  : undefined
+            }
             subAgentRelation={activeSubAgentRelation}
             subAgents={activeSubAgents}
             onOpenProjectSession={handleOpenProjectSession}
@@ -1215,11 +1343,13 @@ export function ProjectScreen() {
               title={<SessionThreadTitle title={connectingTitle} />}
             />
             <SessionConnecting
-              firstMessage={connectingFirstMessage}
+              firstMessage={connectingFirstPrompt?.text}
+              firstFiles={connectingFirstPrompt?.files}
               error={connectError}
               onCancel={handleCancelConnect}
               onRestart={handleRestartSession}
               restarting={restartingSession}
+              showLoader={!drawerOpen}
             />
           </View>
         ) : null}
@@ -1242,6 +1372,8 @@ export function ProjectScreen() {
           return <Pages.SchedulesPage page={page} projectId={projectId} onBack={onBack} />;
         case 'page:secrets-nav':
           return <Pages.SecretsNavPage page={page} projectId={projectId} onBack={onBack} />;
+        case 'page:members':
+          return <Pages.MembersNavPage page={page} projectId={projectId} onBack={onBack} />;
       }
     },
     [projectId, openSubPage]
@@ -1305,7 +1437,16 @@ export function ProjectScreen() {
         swipeEnabled={isFocused && edgeGesture === 'drawer'}
         swipeEdgeWidth={80}
         swipeMinDistance={30}
-        closeSpringConfig={DRAWER_CLOSE_SPRING}
+        // A tap opens on the iOS sheet curve (420ms, 90% by ~154ms) and closes
+        // on ease-out-quad (320ms, 80% by ~170ms); a swipe release keeps a
+        // critically damped spring and its
+        // velocity (`lib/ui/drawer-springs.ts`). The props come from
+        // `patches/react-native-drawer-layout+4.2.10.patch`; without the patch
+        // applied (`npx patch-package`), `tsc` fails on them. Module-level
+        // constants: the library lists them as `useCallback` dependencies, and
+        // a new object would re-toggle the drawer.
+        openSpringConfig={DRAWER_OPEN}
+        closeSpringConfig={DRAWER_CLOSE}
         renderDrawerContent={renderDrawer}>
         <ProjectRouteProvider value={projectRoute}>
           {/* Native Stack: platform default push/pop. No iOS swipe-back: the

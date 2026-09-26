@@ -84,7 +84,7 @@ export class UpstreamHttpError extends Error {
 // used for merely "irrelevant to this route model") so the pipeline can carry
 // a specific, actionable code/message/suggestion all the way to the client
 // instead of collapsing every cause into one generic "No upstream configured"
-// string. See packages/llm-gateway/src/pipeline/handler.ts's dispatch loop.
+// string. See pipeline/simple-handler.ts and pipeline/dispatch.ts.
 export type NoUpstreamReasonCode =
   | 'model_not_found'
   | 'model_disabled_on_deployment'
@@ -107,11 +107,6 @@ export class GatewayResolutionError extends Error {
   }
 }
 
-function errorText(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return typeof err === 'string' ? err : '';
-}
-
 // Substrings that reliably indicate a TERMINAL, permanent client-auth failure
 // across every provider shape this gateway talks to — OpenAI/Anthropic-style
 // JSON error codes, AWS SigV4/STS credential exceptions (Bedrock), and generic
@@ -119,8 +114,7 @@ function errorText(err: unknown): string {
 // `.message`.
 //
 // Exists because not every upstream failure carries a clean numeric HTTP
-// status by the time it reaches `defaultIsRetryable`/`indicatesUpstreamDown`:
-// an AWS credential/SigV4 resolution error can throw before any HTTP response
+// status by the time it is classified: an AWS credential/SigV4 resolution error can throw before any HTTP response
 // ever exists, and some AI-SDK error classes don't expose `.statusCode` at
 // all (see transports/ai-sdk/index.ts's `toTransportError`). Without this
 // fallback those errors collapse to a generic retryable NetworkError, and a
@@ -143,58 +137,6 @@ export function looksLikeTerminalAuthFailure(message: string | undefined | null)
   if (!message) return false;
   const lower = message.toLowerCase();
   return TERMINAL_AUTH_FAILURE_MARKERS.some((marker) => lower.includes(marker));
-}
-
-export function defaultIsRetryable(err: unknown): boolean {
-  if (err instanceof ClientAbortError) return false;
-  // A misconfigured descriptor (missing/invalid baseUrl) never becomes usable
-  // on retry — it's a resolution-time defect, not a transient host condition.
-  if (err instanceof UpstreamMisconfiguredError) return false;
-  if (err instanceof UpstreamHttpError) {
-    // 401/403 are a dead credential or a permission the caller doesn't have —
-    // never a transient host issue, so never worth retrying. Called out
-    // explicitly (rather than left to fall through to `false` below it) so
-    // the intent is documented and independently testable — see
-    // TERMINAL_AUTH_FAILURE_MARKERS above for the same rule applied when no
-    // clean status is available at all.
-    if (err.status === 401 || err.status === 403) return false;
-    return err.status === 429 || (err.status >= 500 && err.status <= 599);
-  }
-  // A generic/NetworkError-shaped error can still be a terminal auth failure in
-  // disguise (see TERMINAL_AUTH_FAILURE_MARKERS) — check before the
-  // TimeoutError/NetworkError defaults below ever get a chance to call it
-  // retryable.
-  if (looksLikeTerminalAuthFailure(errorText(err))) return false;
-  if (err instanceof TimeoutError) return true;
-  if (err instanceof NetworkError) return true;
-  return true;
-}
-
-// A circuit breaker exists to fail fast when an upstream is genuinely DOWN —
-// network failures, timeouts, 5xx. This is deliberately NOT the same set as
-// `defaultIsRetryable`: a 429/402/403 is per-credential flow control (rate
-// limit, quota, billing), not a host-health signal. Breakers are keyed by
-// provider and SHARED across every caller of that provider, so counting one
-// tenant's rate-limited BYOK key as a "failure" would open the breaker for all
-// other tenants whose own keys are fine. A 429 is therefore still retried and
-// failed-over, but it never trips the breaker.
-export function indicatesUpstreamDown(err: unknown): boolean {
-  if (err instanceof ClientAbortError) return false;
-  // A bad descriptor is this candidate's own resolution-time defect, not a
-  // signal the PROVIDER is unhealthy — the request never even went out. Same
-  // shared-breaker reasoning as the dead-credential carve-out below: must
-  // never punish every other tenant's requests to this provider for one
-  // candidate's misconfiguration.
-  if (err instanceof UpstreamMisconfiguredError) return false;
-  // A dead credential is this caller's problem, not the host's — same
-  // reasoning as the 429/402/403 carve-out above, extended to the
-  // statusCode-less shape (see TERMINAL_AUTH_FAILURE_MARKERS): must never trip
-  // the shared breaker for every other tenant on this provider.
-  if (looksLikeTerminalAuthFailure(errorText(err))) return false;
-  if (err instanceof TimeoutError) return true;
-  if (err instanceof NetworkError) return true;
-  if (err instanceof UpstreamHttpError) return err.status >= 500 && err.status <= 599;
-  return false;
 }
 
 /**

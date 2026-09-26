@@ -53,10 +53,11 @@ A group is a principal, exactly like a person. Assign a role to a group at a sco
 
 ## Object assignments
 
-An assignment can name one object inside a project: an `agent`, a `skill`, a `secret`, an `app`, or a `trigger`. Kortix enforces object assignments on agents and skills today.
+An assignment can name one object inside a project: an `agent`, a `skill`, a `secret`, an `app`, a `trigger`, or a `connection` (a shared connector account). Kortix enforces object assignments on agents, skills, and connections today.
 
-- **Agents are closed by default.** A member reaches an agent only when an assignment names them, or names one of their groups.
-- **Every other object type is open by default.** With no assignment on the object, a member reaches it.
+- **Agents are closed by default.** A member reaches an agent only when an assignment names them, one of their groups, or everyone in the project.
+- **Every other object type is open by default.** With no assignment on the object, a member reaches it. A shared connector account with an assignment is usable only by the people it names — see [Choose who can use a shared account](/docs/connect/connectors#choose-who-can-use-a-shared-account).
+- **Everyone in the project is a principal too.** In the **Grant access** dialog, pick **Everyone in** followed by the project's name to give an agent to every member at once (`principal_type: "project"`, `principal_id` = the project id). It holds object assignments only — never a role — so each person keeps their own project role.
 - **An object assignment restricts a project manager too.** That is what makes "scope this agent to the finance group" mean anything. What the manager role buys is the unscoped default, not an exemption.
 - **Account owners and admins are never restricted by an object assignment**, and neither is a service account acting on its own assignments.
 
@@ -84,6 +85,23 @@ Custom roles need the enterprise `rbac` entitlement. Without it, assigning one a
 
 Super-admin is not a role. It is a flag on one account membership. It bypasses every permission check, and every bypass is written to the audit log. Roles are the mechanism for ordinary access; super-admin is the audited escape hatch.
 
+The account creator starts as owner and super-admin. When an owner is demoted, the owner role and the super-admin flag go together: the change clears the flag and records `iam.member.super_admin.revoke`. A super-admin flag granted to someone who is not an owner stays until an owner revokes it.
+
+## Single sign-on domain
+
+A SAML identity provider asserts each person's email address. Kortix trusts that address outside your account only for a domain your account has verified. Until then:
+
+- a person signed in through your identity provider still joins your account and gets their groups;
+- their SSO identity matches no invitation from another account, and another account's "add member by email" does not find it;
+- SSO sign-in never merges an existing identity into the SSO identity;
+- **Enforce SSO** has no effect, and password sign-in keeps working for the domain.
+
+To verify the domain, open **Identity** in account settings. The SSO card shows a DNS TXT record: name `_kortix-verification.<your-domain>`, value `kortix-verification=<token>`. Publish it at your DNS provider, then select **Verify domain** (`POST /v1/accounts/:accountId/iam/sso/provider/verify-domain`). One domain belongs to one account: a domain that another account has verified cannot be verified again. Changing the primary domain starts a new, unverified claim.
+
+With a verified domain and **Enforce SSO** on, the web sign-in form, `/v1/access/check-email`, and the headless `/v1/auth/sign-in/password`, `/v1/auth/sign-in/magic-link` and `/v1/auth/verify-otp` routes all refuse the password and email-code paths for that domain (`403 sso_required`).
+
+SSO sign-in never merges an owner or a super-admin into an SSO identity, even on a verified domain. They keep their existing identity, and the SSO identity joins as a separate member.
+
 ## Per-feature access settings
 
 Some features carry their own visibility setting on top of the role model:
@@ -110,7 +128,7 @@ Each one narrows access to one resource. None of them grants a permission the ro
 
 The catalog is data, not a hardcoded list. Each permission carries its `action`, `scope_type`, `resource_type`, `delegable` flag, `description`, `area`, `level`, and `implies`. Read it instead of hardcoding action strings.
 
-The write routes choose the permission they require from what you are granting: `project.members.manage` for a project role or an object assignment, `member.update` for an account role, `policy.create` for a custom role. You cannot side-step a ceiling by picking a different route.
+The write routes choose the permission they require from what you are granting: `project.members.manage` for a project role or an object assignment, `project.connector.connections.manage` for a `connection` assignment, `member.update` for an account role, `policy.create` for a custom role. You cannot side-step a ceiling by picking a different route.
 
 ## Branding
 

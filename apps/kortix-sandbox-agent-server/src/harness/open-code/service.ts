@@ -16,6 +16,7 @@ import {
   type OpencodeEventSubscription,
 } from './events'
 import { createOpencodeLifecycle, type Opencode, type OpencodeLifecycleOptions } from './lifecycle'
+import { createInstanceGuard, type InstanceGuard } from './instance-guard'
 
 /** Native reload semantics remain explicit; these are not universal promises. */
 export type OpenCodeConfigurationService = Pick<
@@ -45,22 +46,35 @@ export interface OpenCodeHarnessService extends HarnessService {
    * consumers cannot bypass the boundary. No native operations are removed.
    */
   readonly native: Opencode
+  /** Keeps one Stop from poisoning the OpenCode instance. See instance-guard.ts. */
+  readonly instanceGuard: InstanceGuard
 }
 
-/** Compose services over ONE lifecycle without changing startup behavior. */
+/** Create the OpenCode lifecycle and compose every service over it. */
 export function createOpenCodeHarnessService(
   cfg: Config,
-  opencodeConfigDir: string,
   projectEnv?: ProjectEnvStore,
   options: OpencodeLifecycleOptions = {},
 ): OpenCodeHarnessService {
-  const lifecycle = createOpencodeLifecycle(cfg, opencodeConfigDir, projectEnv, options)
+  return composeOpenCodeHarnessService(cfg, createOpencodeLifecycle(cfg, projectEnv, options))
+}
+
+/**
+ * Compose services over ONE lifecycle without changing startup behavior. The
+ * daemon HTTP tests call this with a fake lifecycle, so a wiring change here
+ * reaches every one of them.
+ */
+export function composeOpenCodeHarnessService(cfg: Config, lifecycle: Opencode): OpenCodeHarnessService {
   // One interrupt per service: control arms it, background delivers events to it.
   const quickQueue = createOpenCodeQuickQueueInterrupt(lifecycle, cfg)
+  const instanceGuard = createInstanceGuard({
+    getInternalUrl: () => lifecycle.getInternalUrl(),
+    workspace: () => cfg.workspace,
+  })
   return {
     id: 'opencode',
     environment: { home: OPENCODE_HOME },
-    proxy: createOpenCodeProxyService(lifecycle),
+    proxy: createOpenCodeProxyService(lifecycle, instanceGuard),
     control: createOpenCodeControlService(lifecycle, quickQueue),
     diagnostics: createOpenCodeDiagnosticsService(lifecycle),
     queries: createOpenCodeQueryService(lifecycle),
@@ -69,12 +83,17 @@ export function createOpenCodeHarnessService(
       getInternalUrl: () => lifecycle.getInternalUrl(),
       restart: () => lifecycle.restart(),
       workspace: () => cfg.workspace,
+      // The rollback path's only way to know the restart actually brought
+      // opencode back. Without it a failed install leaves the box down with no
+      // retained previous version — the one hole the agent half does not have.
+      getState: () => lifecycle.getState(),
     }),
     // Keep the method owner: restart/reload/reconfigure call sibling methods
     // through `this`. Copying unbound methods into separate objects breaks it.
     lifecycle,
     configuration: lifecycle,
     native: lifecycle,
+    instanceGuard,
     events: {
       subscribe: (currentCfg, handlers, eventOptions) =>
         startOpencodeEventLoop(lifecycle, currentCfg, handlers, eventOptions),
@@ -107,7 +126,7 @@ export const openCodeDefinition: HarnessDefinition = {
   },
   createService: (cfg, projectEnv, options) => {
     const native = requireOpenCodeConfig(cfg)
-    return createOpenCodeHarnessService(native, native.defaultOpencodeConfigDir, projectEnv, options)
+    return createOpenCodeHarnessService(native, projectEnv, options)
   },
   run: async (context) => (await import('./boot')).runOpenCode({ ...context, cfg: requireOpenCodeConfig(context.cfg) }),
   runWarmSeed: async (context) => (await import('./boot')).runOpenCodeWarmSeed({ ...context, cfg: requireOpenCodeConfig(context.cfg) }),

@@ -40,6 +40,11 @@ build/
 !apps/web/.env.dev
 !apps/web/.env.prod
 
+# The API unit-test env: PLAINTEXT ON PURPOSE, fake values only (see its
+# header). It stays tracked; listing it here is what lets `dotenvx ext
+# precommit` accept a commit that changes it, including a merge of main.
+apps/api/scripts/test.env
+
 # Secrets & keys (defense-in-depth with secret-scanning push protection + gitleaks)
 # The committed root .npmrc is config-only (no secrets); ignore token-bearing variants
 # like .npmrc.release. *.key does not match Android's debug.keystore.

@@ -51,7 +51,7 @@ export function reasoningEffort(body: Json): string | undefined {
  *   reasoning_effort to 'none'."
  *
  * (observed live against api.openai.com — BYOK gpt-5.5/gpt-5.6 agent sessions
- * on sampleco.kortix.cloud, session 21c6cfd0-5157-4e78-9d26-4198656b1a81).
+ * on a customer deployment).
  *
  * This function is a pure ROUTING PREDICATE — it decides whether a request
  * needs OpenAI's Responses API instead of chat/completions; it does not

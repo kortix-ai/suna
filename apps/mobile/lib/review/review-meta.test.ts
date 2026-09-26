@@ -7,6 +7,7 @@ import {
   reviewKindLabel,
   reviewRiskLabel,
   reviewVerdictLabel,
+  reviewVerdictToast,
   verdictNeedsConfirm,
   verdictNeedsFeedback,
 } from './review-meta';
@@ -110,5 +111,22 @@ describe('change verdicts', () => {
   test('a change offers Merge and Request changes; closing is not offered', () => {
     const { reviewVerdictsFor } = require('./review-verdict');
     expect(reviewVerdictsFor('change')).toEqual(['approve', 'changes']);
+  });
+});
+
+describe('reviewVerdictToast', () => {
+  test('a change names its number', () => {
+    expect(reviewVerdictToast('change', 'approve', 8)).toBe('Change request #8 merged');
+    expect(reviewVerdictToast('change', 'changes', 8)).toBe('Changes requested on #8');
+    expect(reviewVerdictToast('change', 'dismiss', 8)).toBe('Change request #8 closed');
+    expect(reviewVerdictToast('change', 'approve')).toBe('Change request merged');
+  });
+
+  test('other kinds name the verdict', () => {
+    expect(reviewVerdictToast('approval', 'approve')).toBe('Approved');
+    expect(reviewVerdictToast('approval', 'reject')).toBe('Denied');
+    expect(reviewVerdictToast('decision', 'answer')).toBe('Answered');
+    expect(reviewVerdictToast('output', 'changes')).toBe('Changes requested');
+    expect(reviewVerdictToast('batch', 'dismiss')).toBe('Dismissed');
   });
 });

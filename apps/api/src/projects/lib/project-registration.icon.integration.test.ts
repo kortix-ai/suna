@@ -1,7 +1,7 @@
 /**
- * Real-DB proof for Task 3's r2.ts icon glue.
+ * Real-DB proof for Task 3's project-from-repository.ts icon glue.
  *
- * r2.ts adds, at each of its three project-creation call sites (PAT-linked
+ * project-from-repository.ts adds, at each of its three project-creation call sites (PAT-linked
  * import, GitHub-App-linked import, create-repo):
  *
  *   const icon = normalizeProjectIcon(body.icon);
@@ -21,8 +21,8 @@
  *
  * `repo` / `installation` are plain data objects here, not fetched from
  * GitHub, so this needs no GitHub network access or credentials — the actual
- * r1.ts /provision path (managed git via code.storage) was verified over real
- * HTTP instead (see task-3-report.md); r2.ts's three routes need a real
+ * projects.ts /provision path (managed git via code.storage) was verified over real
+ * HTTP instead (see task-3-report.md); project-from-repository.ts's three routes need a real
  * GitHub App installation / PAT to drive end to end, which this environment
  * intentionally avoids exercising against a live GitHub org for an
  * automated task. This test is the safe substitute: it calls the same
@@ -30,11 +30,12 @@
  *
  * Gated on TEST_DATABASE_URL + explicit confirmation + non-prod — same
  * harness contract as trigger-execution-store.integration.test.ts and
- * e2e-stuck-session-reconcile.test.ts. Skipped otherwise.
+ * integration-stuck-session-reconcile.test.ts. The `db-suites` lane of
+ * `pnpm test` supplies all three and fails the suite if it skips.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Database, accounts, createDb, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { GitHubRepo } from '../github';
 import { normalizeProjectIcon } from './project-icon';
 import { registerGitHubLinkedProject, registerPatLinkedProject } from './project-registration';
@@ -61,6 +62,17 @@ async function cleanup() {
   const d = db();
   await d.delete(projects).where(eq(projects.accountId, ACCOUNT_ID));
   await d.delete(accounts).where(eq(accounts.accountId, ACCOUNT_ID));
+  await d.execute(sql`delete from auth.users where id = ${USER_ID}::uuid`);
+}
+
+// registerLinkedProject grants the creator the project owner role through
+// assignRole, which requires the principal to be a real auth user (#6554,
+// 3d876d755d). The creator is a synthetic auth user.
+async function seedCreator() {
+  await db().execute(sql`
+    insert into auth.users (id, email)
+    values (${USER_ID}::uuid, ${`icon-glue-${USER_ID}@example.com`})
+    on conflict do nothing`);
 }
 
 function fakeRepo(name: string): GitHubRepo {
@@ -94,17 +106,18 @@ const fakeInstallation = {
 };
 
 describeWithDb(
-  'r2.ts icon glue — registerGitHubLinkedProject / registerPatLinkedProject (real DB)',
+  'project-from-repository.ts icon glue — registerGitHubLinkedProject / registerPatLinkedProject (real DB)',
   () => {
     beforeEach(async () => {
       await cleanup();
+      await seedCreator();
       await db().insert(accounts).values({ accountId: ACCOUNT_ID, name: 'r2 icon glue test' });
     });
     afterEach(cleanup);
 
     test('registerGitHubLinkedProject: a valid emoji in body.icon persists to metadata.icon', async () => {
       const body = { icon: '🚀' };
-      const icon = normalizeProjectIcon(body.icon); // exact r2.ts call site
+      const icon = normalizeProjectIcon(body.icon); // exact project-from-repository.ts call site
       expect(icon).toBe('🚀');
 
       const row = await registerGitHubLinkedProject({
@@ -115,7 +128,7 @@ describeWithDb(
         name: 'icon-ok',
         defaultBranch: 'main',
         manifestPath: 'kortix.yaml',
-        ...(icon ? { projectMetadata: { icon } } : {}), // exact r2.ts spread
+        ...(icon ? { projectMetadata: { icon } } : {}), // exact project-from-repository.ts spread
       });
 
       expect((row.metadata as Record<string, unknown>).icon).toBe('🚀');

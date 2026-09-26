@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { Client } from "pg";
 import {
   LOCAL_AUTH_EMAIL_HOOK_SECRET,
+  LOCAL_STRIPE_WEBHOOK_SECRET,
   LOCAL_FLOW_INTERNAL_SERVICE_KEY,
   localWebUrl,
   type LocalSupabaseEnvironment,
@@ -133,6 +135,8 @@ export function parseSupabaseEnvironment(
         "ANON_KEY",
         "SERVICE_ROLE_KEY",
         "JWT_SECRET",
+        "S3_PROTOCOL_ACCESS_KEY_ID",
+        "S3_PROTOCOL_ACCESS_KEY_SECRET",
       ].includes(key)
     )
       continue;
@@ -335,6 +339,74 @@ export async function ensureLocalMigrations(
   if (exitCode !== 0) {
     throw new Error(`local database migration exited with code ${exitCode}`);
   }
+  await waitForLocalPostgrest(supabase);
+}
+
+export interface PostgrestReadinessDeps {
+  reload?: (dbUrl: string) => Promise<void>;
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+  timeoutMs?: number;
+}
+
+/**
+ * Waits until PostgREST serves the migrated schema.
+ *
+ * `supabase start` on an empty database boots PostgREST before the `kortix`
+ * schema exists. Its first schema-cache load fails (`3F000`) and it retries
+ * with exponential backoff, answering `503 PGRST002` meanwhile. Without this
+ * wait, a flow that calls `/rest/v1` (SEC-K) ran inside that backoff window.
+ * A `reload schema` notification loads the cache at once.
+ *
+ * Returns when the REST gateway is unreachable: the runner itself needs only
+ * Auth and Postgres, and a flow that needs PostgREST reports its own error.
+ */
+export async function waitForLocalPostgrest(
+  supabase: LocalSupabaseEnvironment,
+  deps: PostgrestReadinessDeps = {},
+): Promise<void> {
+  const { API_URL, DB_URL, ANON_KEY } = supabase;
+  if (!API_URL || !DB_URL || !ANON_KEY) return;
+  const reload = deps.reload ?? notifyPostgrestReload;
+  const request = deps.fetch ?? ((url, init) => fetch(url, init));
+  const sleep = deps.sleep ?? ((ms) => Bun.sleep(ms));
+  const now = deps.now ?? Date.now;
+  const timeoutMs = deps.timeoutMs ?? 60_000;
+  const deadline = now() + timeoutMs;
+  let lastBody = "";
+  for (let attempt = 0; ; attempt += 1) {
+    // Re-send every 2 s: a notification that lands while PostgREST
+    // reconnects is lost.
+    if (attempt % 4 === 0) await reload(DB_URL).catch(() => {});
+    let response: Response;
+    try {
+      response = await request(`${API_URL}/rest/v1/`, {
+        headers: { apikey: ANON_KEY },
+        signal: AbortSignal.timeout(5_000),
+      });
+    } catch {
+      return;
+    }
+    if (response.status !== 503) return;
+    lastBody = (await response.text()).slice(0, 200);
+    if (now() >= deadline) {
+      throw new Error(
+        `local PostgREST still answers 503 after ${Math.round(timeoutMs / 1000)}s: ${lastBody}`,
+      );
+    }
+    await sleep(500);
+  }
+}
+
+async function notifyPostgrestReload(dbUrl: string): Promise<void> {
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+  try {
+    await client.query("NOTIFY pgrst, 'reload schema'");
+  } finally {
+    await client.end();
+  }
 }
 
 export async function localApiHealthy(apiUrl: string): Promise<boolean> {
@@ -532,7 +604,14 @@ export async function ensureLocalStack(
     );
   }
 
-  const { DB_URL, API_URL, SERVICE_ROLE_KEY, JWT_SECRET } = options.supabase;
+  const {
+    DB_URL,
+    API_URL,
+    SERVICE_ROLE_KEY,
+    JWT_SECRET,
+    S3_PROTOCOL_ACCESS_KEY_ID,
+    S3_PROTOCOL_ACCESS_KEY_SECRET,
+  } = options.supabase;
   if (!DB_URL || !API_URL || !SERVICE_ROLE_KEY) {
     throw new Error("local Supabase environment is incomplete");
   }
@@ -553,6 +632,10 @@ export async function ensureLocalStack(
           INTERNAL_KORTIX_ENV: "dev",
           KORTIX_LOCAL_DEV: "1",
           KORTIX_LOCAL_TEST_PROFILE: "1",
+          // Connector flows stand up a loopback upstream (CONN-ATT-1, CONN-EGRESS-1).
+          // Only this exact host is exempt from the connector egress check;
+          // every other private address stays refused.
+          KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
           PORT: String(apiPort),
           KORTIX_APPS_LOCAL: "true",
           KORTIX_APPS_LOCAL_PORT: String(apiPort),
@@ -569,6 +652,22 @@ export async function ensureLocalStack(
           INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
           ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
           KORTIX_SKIP_ENSURE_SCHEMA: "1",
+          // Config archives go through the API's one object store, pointed at
+          // this profile's Supabase Storage S3 endpoint. `--no-env-file` above
+          // means apps/api/.env is NOT read here, so the whole block has to be
+          // explicit — and it is required: billing is on in this profile, so a
+          // missing bucket is a startup error, not a warning.
+          CONFIG_RELEASES_ENABLED: "true",
+          KORTIX_CONFIG_ARCHIVE_S3_BUCKET: "kortix-config-releases",
+          KORTIX_CONFIG_ARCHIVE_S3_REGION: "local",
+          KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
+          KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: "true",
+          ...(S3_PROTOCOL_ACCESS_KEY_ID
+            ? { KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID }
+            : {}),
+          ...(S3_PROTOCOL_ACCESS_KEY_SECRET
+            ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET }
+            : {}),
           SCHEDULER_ENABLED: "false",
           KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
           KORTIX_WORKERS_ENABLED: "false",
@@ -580,7 +679,7 @@ export async function ensureLocalStack(
           DAYTONA_SERVER_URL: "http://127.0.0.1:1",
           DAYTONA_TARGET: "local-test-provider-disabled",
           STRIPE_SECRET_KEY: "sk_test_local_flow_runner_disabled",
-          STRIPE_WEBHOOK_SECRET: "whsec_local_flow_runner_disabled",
+          STRIPE_WEBHOOK_SECRET: LOCAL_STRIPE_WEBHOOK_SECRET,
           PIPEDREAM_WEBHOOK_SECRET: "local-flow-runner-disabled",
           SLACK_CLIENT_ID: "local-flow-runner-disabled",
           SLACK_CLIENT_SECRET: "local-flow-runner-disabled",

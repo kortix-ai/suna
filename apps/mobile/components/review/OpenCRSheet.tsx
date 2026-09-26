@@ -10,7 +10,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { View, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Pressable, ScrollView } from 'react-native';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { GitBranchIcon as GitBranch, GitDiffIcon as GitCompare } from '@/lib/icons';
@@ -24,9 +25,9 @@ import type { ProjectBranch } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { useToast } from '@/components/kortix/toast-provider';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** A branch name for display: a UUID branch shows its first 8 characters. */
-export const shortRef = (ref: string) => (UUID_RE.test(ref) ? ref.slice(0, 8) : ref);
+import { shortRef } from '@/lib/review/review-detail';
+
+export { shortRef };
 
 function BranchPills({
   options,
@@ -143,7 +144,7 @@ export function OpenCRSheet({
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {branchesQuery.isLoading ? (
-          <View style={{ paddingVertical: 40, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}><KortixLoader size="small" /></View>
         ) : headOptions.length === 0 ? (
           <View style={{ paddingVertical: 30, alignItems: 'center', gap: 8 }}>
             <GitCompare size={24} color={muted} />
@@ -161,7 +162,7 @@ export function OpenCRSheet({
             {headRef && baseRef && headRef !== baseRef && (
               <View style={{ marginTop: 14, padding: 12, borderRadius: 12, backgroundColor: inputBg }}>
                 {vdiff.isLoading ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><ActivityIndicator size="small" color={muted} /><Text style={{ fontSize: 12.5, color: muted }}>Comparing…</Text></View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><KortixLoader customSize={16} /><Text style={{ fontSize: 12.5, color: muted }}>Comparing…</Text></View>
                 ) : !hasChanges ? (
                   <Text style={{ fontSize: 12.5, color: muted }}>
                     {preview?.is_same_ref ? 'Same version — pick a different one.' : 'Nothing to merge — these versions are already in sync.'}
@@ -204,7 +205,7 @@ export function OpenCRSheet({
           disabled={!canSubmit}
           style={{ height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}
         >
-          {createMut.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
+          {createMut.isPending && <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Open change request</Text>
         </Pressable>
       </View>

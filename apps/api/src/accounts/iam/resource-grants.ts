@@ -23,7 +23,8 @@ import { objectGrantRows } from '../../iam/read-models';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
-import { isUuid, lookupEmailsByUserIds } from '../../projects/lib/access';
+import { lookupEmailsByUserIds } from '../../projects/lib/access';
+import { isUuid } from '../../shared/validate';
 import { iamRouter, AccountIdParam } from './app';
 
 const ResourceGrantRowSchema = z
@@ -93,7 +94,9 @@ iamRouter.openapi(
         // doc comment in ../../iam/resource-grants.ts) — the account-wide view
         // surfaces only the two live resource kinds, same filter the
         // per-project route applies.
-        if (g.resourceType === 'secret') return false;
+        // Connection grants are a shared account's audience, not part of a
+        // person's agent/skill footprint.
+        if (g.resourceType !== 'agent' && g.resourceType !== 'skill') return false;
         if (
           (principalType === 'member' || principalType === 'group') &&
           g.principalType !== principalType
@@ -147,10 +150,14 @@ iamRouter.openapi(
         resource_id: r.resourceId,
         principal_type: r.principalType,
         principal_id: r.principalId,
+        // `project` = everyone with access to that project; its label is the
+        // project's name.
         principal_label:
           r.principalType === 'member'
             ? (emailByUser.get(r.principalId) ?? r.principalId)
-            : (groupNameById.get(r.principalId) ?? r.principalId),
+            : r.principalType === 'project'
+              ? r.projectName
+              : (groupNameById.get(r.principalId) ?? r.principalId),
         granted_by: r.grantedBy,
         created_at: r.createdAt.toISOString(),
         expires_at: r.expiresAt?.toISOString() ?? null,

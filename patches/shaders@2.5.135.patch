@@ -1,0 +1,13 @@
+diff --git a/dist/core/index.js b/dist/core/index.js
+index 42c2d4c0b6446f1b4c3b4f33cb798947b8a0cee5..6e381ce904b4c72cf436438b716f7d2fa3375140 100644
+--- a/dist/core/index.js
++++ b/dist/core/index.js
+@@ -639,7 +639,7 @@ function createUniformsMap(component, reactiveProps, instanceId) {
+ 			});
+ 			uniformValue = 0;
+ 		}
+-		const uniformNode = uniform(uniformValue).setName(`${propName}_${instanceId}`.replace(/[^a-zA-Z0-9_]/g, "_"));
++		const uniformNode = uniform(uniformValue).setName(`${propName}_${instanceId}`.replace(/[^a-zA-Z0-9_]/g, "_").replace(/_{2,}/g, "_"));
+ 		if (typeof uniformValue === "string" && uniformNode.value === null) uniformNode.value = uniformValue;
+ 		uniformsMap[propName] = {
+ 			uniform: uniformNode,

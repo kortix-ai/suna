@@ -43,6 +43,7 @@ import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents } from '../agents';
 import { readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
+import { isRemotePushPolicyRejection } from '../git/mirror';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
@@ -108,6 +109,26 @@ const DefaultAgentResponseSchema = z.object({
   ok: z.boolean(),
   default_agent: z.string(),
 });
+
+/**
+ * A commit the remote rejected by repository policy — branch protection,
+ * repository rules, or a server-side hook — is a PERMANENT, user-actionable
+ * outcome. The same commit is rejected on every retry, so it must be a typed
+ * 409 the dashboard renders as a message, never a 5xx that pages Better Stack
+ * (prod pattern `5e505349…`:
+ * `Failed to commit agent config: … push declined due to repository rule violations`).
+ *
+ * The branch name is not customer data; the raw git stderr is omitted because
+ * it carries the customer's repository URL.
+ */
+function pushPolicyRejectedBody(branch: string) {
+  return {
+    error:
+      `The repository rejected the push to "${branch}" because of its branch protection or repository rules. ` +
+      `Allow the Kortix GitHub App to push to "${branch}", or connect a repository where it can, then try again.`,
+    code: 'repository_push_rejected',
+  };
+}
 
 /** Read + parse an agent's `.md` (governance-declared or not — behavior and
  *  governance are independently addressable). Never throws: a missing file
@@ -295,6 +316,9 @@ projectsApp.openapi(
       if (error instanceof GitFileRevisionConflictError) {
         return c.json({ error: error.message }, 409);
       }
+      if (isRemotePushPolicyRejection(error)) {
+        return c.json(pushPolicyRejectedBody(loaded.row.defaultBranch), 409);
+      }
       return c.json(
         { error: `Failed to commit default agent: ${(error as Error).message || String(error)}` },
         502,
@@ -454,7 +478,7 @@ projectsApp.openapi(
     // governance write already landed, stranding kortix.yaml and the agent's
     // `.md` out of sync — commitMultipleFilesToBranch (git/branches.ts) commits
     // every file in one tree/commit, same helper the marketplace install/
-    // uninstall paths use for their own atomic multi-file writes (r10.ts).
+    // uninstall paths use for their own atomic multi-file writes (marketplace-install-session.ts).
     const writes = manifestWrites(manifest, manifestPath);
     const files = [...writes.files, ...(behaviorWrite ? [behaviorWrite] : [])];
     const message = behaviorWrite
@@ -480,6 +504,9 @@ projectsApp.openapi(
     } catch (err) {
       if (err instanceof GitFileRevisionConflictError) {
         return c.json({ error: err.message }, 409);
+      }
+      if (isRemotePushPolicyRejection(err)) {
+        return c.json(pushPolicyRejectedBody(loaded.row.defaultBranch), 409);
       }
       return c.json(
         { error: `Failed to commit agent config: ${(err as Error).message || String(err)}` },

@@ -98,7 +98,7 @@ export function ProjectHome({
 
   const showSandboxPicker = sandboxItems.length >= 1;
   // `GET /projects/:id/access-requests` asserts project.members.manage
-  // (`apps/api/src/projects/routes/r6.ts`), so firing it for a plain member is
+  // (`apps/api/src/projects/routes/access-requests.ts`), so firing it for a plain member is
   // a guaranteed 403 for a bell they could never act on anyway. Probe the leaf
   // first and keep the query disabled until it says yes — `showErrors: false`
   // only silenced the toast, the request still went out and still failed.

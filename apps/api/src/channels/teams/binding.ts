@@ -1,7 +1,8 @@
-import { chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ChannelCtx } from '../slack/selection';
+import { findChatThread } from '../core/threads';
 
 const PLATFORM = 'teams';
 
@@ -184,19 +185,17 @@ export async function ensureTeamsConversationBinding(input: {
   return true;
 }
 
-export async function setConversationProject(input: {
-  tenantId: string;
-  conversationId: string;
-  projectId: string;
-}): Promise<boolean> {
-  return ensureTeamsConversationBinding(input);
-}
-
 export interface TeamsConversationSession {
   sessionId: string;
   status: string | null;
   agentName: string | null;
   createdAt: Date | null;
+  /** The session's creator: the user its turns run as. */
+  createdBy: string | null;
+  /** The model the session was pinned to at start (`metadata.opencode_model`). */
+  opencodeModel: string | null;
+  /** The join policy frozen on the session at start (`metadata.teams.conversation_policy`). */
+  conversationPolicy: string | null;
 }
 
 /**
@@ -211,24 +210,19 @@ export interface TeamsConversationSession {
 export async function conversationSession(
   tenantId: string,
   conversationId: string,
+  /** Only a session of this project counts (a per-project bot's scope). */
+  projectId?: string,
 ): Promise<TeamsConversationSession | null> {
-  const [thread] = await db
-    .select({ sessionId: chatThreads.sessionId })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.platform, PLATFORM),
-        eq(chatThreads.workspaceId, tenantId),
-        eq(chatThreads.threadId, conversationId),
-      ),
-    )
-    .limit(1);
+  const thread = await findChatThread({ platform: PLATFORM, workspaceId: tenantId, threadId: conversationId }, projectId);
   if (!thread?.sessionId) return null;
   const [row] = await db
     .select({
       status: projectSessions.status,
       agentName: projectSessions.agentName,
       createdAt: projectSessions.createdAt,
+      createdBy: projectSessions.createdBy,
+      opencodeModel: sql<string | null>`${projectSessions.metadata}->>'opencode_model'`,
+      conversationPolicy: sql<string | null>`${projectSessions.metadata}->'teams'->>'conversation_policy'`,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, thread.sessionId))
@@ -238,5 +232,8 @@ export async function conversationSession(
     status: row?.status ?? null,
     agentName: row?.agentName ?? null,
     createdAt: row?.createdAt ?? null,
+    createdBy: row?.createdBy ?? null,
+    opencodeModel: row?.opencodeModel?.trim() || null,
+    conversationPolicy: row?.conversationPolicy ?? null,
   };
 }
