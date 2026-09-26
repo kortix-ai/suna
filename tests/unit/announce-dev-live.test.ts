@@ -66,7 +66,6 @@ interface Fixture {
 
 function run(fixture: Fixture) {
   const dir = mkdtempSync(join(tmpdir(), 'announce-dev-live-'));
-  const gh = join(dir, 'gh');
   const fixtures = join(dir, 'gh');
   writeFileSync(join(dir, 'gh.log'), '');
   writeFileSync(join(dir, 'writes.log'), '');
