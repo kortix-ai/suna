@@ -503,6 +503,57 @@ describe('chatSseToAnthropicSse', () => {
     assertEveryDeltaTargetsAnOpenBlock(events);
   });
 
+  test('keeps resumed tool arguments on an open block after interleaved text', async () => {
+    const openai = encodeSse(
+      chunk({ role: 'assistant', content: '' }),
+      chunk({
+        tool_calls: [{
+          index: 0,
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'get_weather', arguments: '{"city":' },
+        }],
+      }),
+      chunk({ content: 'Checking.' }),
+      chunk({
+        tool_calls: [{
+          index: 0,
+          function: { arguments: '"Paris"}' },
+        }],
+      }),
+      chunk({}, 'tool_calls'),
+      'data: [DONE]\n\n',
+    );
+
+    const events = await collectAnthropicEvents(chatSseToAnthropicSse(openai));
+    assertEveryDeltaTargetsAnOpenBlock(events);
+    const argumentDeltas = events
+      .filter((entry) => entry.event === 'content_block_delta')
+      .map((entry) => entry.data.delta)
+      .filter((delta): delta is { type: string; partial_json: string } =>
+        delta?.type === 'input_json_delta',
+      );
+    expect(argumentDeltas.map((delta) => delta.partial_json).join('')).toBe('{"city":"Paris"}');
+  });
+
+  test('keeps interleaved tool indices in separate complete blocks', async () => {
+    const openai = encodeSse(
+      chunk({ tool_calls: [{ index: 0, id: 'call_0', function: { name: 'first', arguments: '{"a":' } }] }),
+      chunk({ tool_calls: [{ index: 1, id: 'call_1', function: { name: 'second', arguments: '{"b":2}' } }] }),
+      chunk({ tool_calls: [{ index: 0, function: { arguments: '1}' } }] }),
+      chunk({}, 'tool_calls'),
+      'data: [DONE]\n\n',
+    );
+
+    const events = await collectAnthropicEvents(chatSseToAnthropicSse(openai));
+    assertEveryDeltaTargetsAnOpenBlock(events);
+    const starts = events.filter((entry) => entry.event === 'content_block_start');
+    expect(starts.map((entry) => entry.data.content_block?.id)).toEqual(['call_0', 'call_1']);
+    const deltas = events.filter((entry) => entry.event === 'content_block_delta');
+    expect(deltas.filter((entry) => entry.data.index === 0).map((entry) => entry.data.delta?.partial_json).join('')).toBe('{"a":1}');
+    expect(deltas.filter((entry) => entry.data.index === 1).map((entry) => entry.data.delta?.partial_json).join('')).toBe('{"b":2}');
+  });
+
   test('translates a mid-stream OpenAI error frame into an Anthropic error event without dropping the connection', async () => {
     const openai = encodeSse(
       chunk({ role: 'assistant', content: '' }),
