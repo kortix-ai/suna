@@ -90,20 +90,16 @@ Confirm the applied limit with `docker stats --no-stream`.
 
 ## Serper.dev-compatible endpoints
 
-Support any Serper.dev-compatible endpoint (like litescrape.com, serpbase.dev, and others)
-through the existing Serper proxy. Use a Serper-compatible base URL and API key,
-not an incompatible native API endpoint.
+The web-search proxy supports any Serper.dev-compatible endpoint (for example
+litescrape.com or serpbase.dev), not only `google.serper.dev`. Point it at a
+Serper-compatible base URL and API key — not an incompatible native API.
 
-Set `SERPER_API_URL` and `SERPER_API_KEY` in the API container environment,
-then restart the API. For a source checkout, use the gitignored
-`apps/api/.env.local` file instead. Never commit a real API key.
-
-For example, Litescrape's web-search shim uses:
-
-```dotenv
-SERPER_API_URL=https://api.litescrape.com
-SERPER_API_KEY=your-provider-api-key
+```sh
+kortix self-host env set SERPER_API_URL=https://api.litescrape.com SERPER_API_KEY=your-provider-api-key
 ```
+
+For a source checkout, set both in the gitignored `apps/api/.env.local` file
+instead and restart the API. Never commit a real API key.
 
 ## Updates
 
