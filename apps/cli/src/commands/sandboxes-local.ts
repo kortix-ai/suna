@@ -42,7 +42,7 @@ import {
   normalizeUserDockerfileForSnapshot,
 } from '@kortix/shared/sandbox';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared/runtime-versions';
-import { emitJson, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { emitJson, takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
 import { dockerAvailable, hostPlatform } from '../docker.ts';
 import { loadLocalManifest, resolveLocalManifest } from '../manifest.ts';
 import { C, status } from '../style.ts';
@@ -207,8 +207,7 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
       json: opts.json,
     };
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
 
   const manifest = resolveLocalManifest(process.cwd());
@@ -222,8 +221,7 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
   try {
     parsed = loadLocalManifest(process.cwd())?.data ?? null;
   } catch (err) {
-    process.stderr.write(`${status.err(`kortix.yaml doesn't parse: ${(err as Error).message}`)}\n`);
-    return 2;
+    return fail(`kortix.yaml doesn't parse: ${(err as Error).message}`);
   }
 
   const resolved = resolveLocalTemplate(
@@ -231,18 +229,12 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
     extractSandboxTemplates(parsed),
     extractSandboxDefault(parsed),
   );
-  if ('error' in resolved) {
-    process.stderr.write(`${status.err(resolved.error)}\n`);
-    return 2;
-  }
+  if ('error' in resolved) return fail(resolved.error);
   const template = resolved.template;
 
   const projectRoot = dirname(manifest.path);
   const user = userDockerfileForTemplate(template, projectRoot);
-  if ('error' in user) {
-    process.stderr.write(`${status.err(user.error)}\n`);
-    return 2;
-  }
+  if ('error' in user) return fail(user.error);
 
   const composed = composeSandboxDockerfile(user.text, { layer: flags.layer });
 
@@ -311,10 +303,7 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
   // display, and the CLI has no spinner primitive to wrap it in.
   const args = dockerBuildArgs({ platform, tag, noCache: flags.noCache });
   const res = spawnSync('docker', args, { input: composed, stdio: ['pipe', 'inherit', 'inherit'] });
-  if (res.error) {
-    process.stderr.write(`${status.err(`Couldn't run docker: ${res.error.message}`)}\n`);
-    return 2;
-  }
+  if (res.error) return fail(`Couldn't run docker: ${res.error.message}`);
   if (res.status !== 0) {
     process.stderr.write(`\n${status.err(`Build failed (docker exited ${res.status}) — see the output above.`)}\n`);
     process.stderr.write(

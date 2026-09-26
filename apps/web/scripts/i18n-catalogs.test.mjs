@@ -357,6 +357,36 @@ describe('mergeCatalogTexts', () => {
     );
   });
 
+  test('default conflict markers ignore a caller diff3 setting', () => {
+    const keys = ['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'];
+    const previous = keys.map((key) => process.env[key]);
+    try {
+      process.env.GIT_CONFIG_COUNT = '1';
+      process.env.GIT_CONFIG_KEY_0 = 'merge.conflictStyle';
+      process.env.GIT_CONFIG_VALUE_0 = 'diff3';
+      const { text } = mergeCatalogTexts(
+        serializeCatalog(base),
+        serializeCatalog({ ...base, common: { ...base.common, save: 'Store' } }),
+        serializeCatalog({ ...base, common: { ...base.common, save: 'Keep' } }),
+      );
+      expect(text).toContain('<<<<<<< ours');
+      expect(text).toContain('=======');
+      expect(text).not.toContain('||||||| base');
+      const explicit = mergeCatalogTexts(
+        serializeCatalog(base),
+        serializeCatalog({ ...base, common: { ...base.common, save: 'Store' } }),
+        serializeCatalog({ ...base, common: { ...base.common, save: 'Keep' } }),
+        { conflictStyle: 'diff3' },
+      );
+      expect(explicit.text).toContain('||||||| base');
+    } finally {
+      keys.forEach((key, index) => {
+        if (previous[index] === undefined) delete process.env[key];
+        else process.env[key] = previous[index];
+      });
+    }
+  });
+
   // The comma after the previous key depends on which side wins, so the hunk
   // takes that line in too, and either choice is valid JSON.
   test('deleting the last key of an object against an edit to it gives valid JSON on either side', () => {

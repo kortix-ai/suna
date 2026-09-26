@@ -26,6 +26,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Module-level state: clear it on the way OUT too, or the next file in this
+  // bun process inherits it (see test-state-reset-tripwire.test.ts).
+  resetClaimedInitialTurnForTests()
   for (const key of KEYS) {
     const value = saved[key];
     if (value === undefined) delete process.env[key];
