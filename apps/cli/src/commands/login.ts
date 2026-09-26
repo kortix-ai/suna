@@ -16,6 +16,8 @@ import {
   validateHostName,
 } from '../api/config.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
+import { takeFlags } from '../command-argv.ts';
+import { takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
@@ -53,60 +55,15 @@ Examples:
   kortix login --token kortix_pat_... --account acme
 `;
 
-interface LoginFlags {
-  token?: string;
-  api?: string;
-  host?: string;
-  account?: string;
-  noProject: boolean;
-  help: boolean;
-}
-
-function parseFlags(argv: string[]): LoginFlags {
-  const f: LoginFlags = { help: false, noProject: false };
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i];
-    if (a === '-h' || a === '--help') f.help = true;
-    else if (a === '--no-project') f.noProject = true;
-    else if (a === '--token') {
-      const next = argv[i + 1];
-      if (!next) throw new Error('--token requires a value');
-      f.token = next;
-      i += 1;
-    } else if (a === '--api') {
-      const next = argv[i + 1];
-      if (!next) throw new Error('--api requires a value');
-      f.api = next;
-      i += 1;
-    } else if (a === '--host') {
-      const next = argv[i + 1];
-      if (!next) throw new Error('--host requires a value');
-      f.host = next;
-      i += 1;
-    } else if (a === '--account') {
-      const next = argv[i + 1];
-      if (!next) throw new Error('--account requires a value');
-      f.account = next;
-      i += 1;
-    } else {
-      throw new Error(`unknown option "${a}"`);
-    }
-  }
-  return f;
-}
-
 export async function runLogin(argv: string[]): Promise<number> {
-  let flags: LoginFlags;
-  try {
-    flags = parseFlags(argv);
-  } catch (err) {
-    process.stderr.write(`${(err as Error).message}\n\n${HELP}`);
-    return 2;
-  }
-  if (flags.help) {
-    process.stdout.write(HELP);
-    return 0;
-  }
+  const flags = takeFlags(argv, HELP, (rest) => ({
+    host: takeFlagValue(rest, ['--host']),
+    api: takeFlagValue(rest, ['--api']),
+    token: takeFlagValue(rest, ['--token']),
+    account: takeFlagValue(rest, ['--account']),
+    noProject: takeFlagBool(rest, ['--no-project']),
+  }));
+  if (typeof flags === 'number') return flags;
 
   // Resolve which host we're logging into (top-level `login` selects it via
   // `--host`; the active host is the default). The `hosts login <name>`
@@ -147,8 +104,7 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
   try {
     validateHostName(hostName);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
 
   // Pick the API base URL with this priority:

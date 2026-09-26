@@ -2,6 +2,7 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { insertIntoView } from './helpers/compat-views';
+import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
 
 // The model-defaults routes 404 `llm_gateway_disabled` BEFORE their leaf gate
 // when the gateway is unavailable, so the leaf would never be measured. The
@@ -28,8 +29,10 @@ const MEMBER = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
 
 const minted: string[] = [];
+let upstream: LocalGitUpstream;
 
 beforeAll(async () => {
+  upstream = createLocalGitUpstream('write-leaf-gates');
   await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
@@ -39,7 +42,7 @@ beforeAll(async () => {
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'write-leaf-gate-test-project',
-    repoUrl: 'https://example.com/write-leaf-gate-test.git',
+    repoUrl: upstream.repoUrl,
     // Flag-gated routes in CASES (channels/email/*, channels/teams/*) reject
     // with 403 `feature_disabled` when off. Turn them on so this suite measures
     // the LEAF gate, not the flag.
@@ -63,6 +66,7 @@ afterAll(async () => {
   }
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
+  upstream.remove();
 });
 
 async function mint(userId: string, permissions: string[] | null): Promise<string> {
