@@ -101,5 +101,7 @@ export async function loadMutableConnection(c: Context, projectId: string, conne
     mayManageSystemConnections,
     agentPrincipal,
   };
-  return mayMutateConnection(connection, actor) ? { loaded, connection } : null;
+  return mayMutateConnection(connection, actor)
+    ? { loaded, connection, mayManageSystemConnections }
+    : null;
 }

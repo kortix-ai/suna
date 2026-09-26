@@ -1438,3 +1438,133 @@ describe('connection owner authorization over HTTP', () => {
     expect(replace.status).toBe(404);
   });
 });
+
+describe('sharing your own private account', () => {
+  const grantsOn = async (connectionId: string) => {
+    const result = await db.execute<{ principal_type: string; principal_id: string }>(sql`
+      select principal_type, principal_id::text as principal_id from kortix.role_assignments
+      where object_type = 'connection' and object_id = ${connectionId}
+      order by principal_id`);
+    return ((result as unknown as { rows?: unknown[] }).rows ?? result) as Array<{
+      principal_type: string;
+      principal_id: string;
+    }>;
+  };
+  const ownerOf = async (connectionId: string) => {
+    const [row] = await db
+      .select({
+        ownerType: connectorConnections.ownerType,
+        ownerId: connectorConnections.ownerId,
+        isDefault: connectorConnections.isDefault,
+      })
+      .from(connectorConnections)
+      .where(eq(connectorConnections.connectionId, connectionId))
+      .limit(1);
+    return row;
+  };
+  // One default per owner: only the first test's account is the default, to
+  // prove sharing clears it.
+  const privateAccount = async (ownerId: string, label: string, isDefault = false) => {
+    const connectionId = crypto.randomUUID();
+    await db.insert(connectorConnections).values({
+      connectionId,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      connectorId: CONNECTOR,
+      ownerType: 'member',
+      ownerId,
+      label,
+      isDefault,
+    });
+    return connectionId;
+  };
+  const listFor = async (userId: string) => {
+    const res = await request('GET', `/v1/projects/${PROJECT}/connections`, await mint(userId));
+    expect(res.status).toBe(200);
+    return (
+      (await res.json()) as {
+        connections: Array<{
+          connection_id: string;
+          usable?: boolean;
+          shared_with?: Array<{ principal_type: string; principal_id: string }>;
+        }>;
+      }
+    ).connections;
+  };
+  const share = (connectionId: string, token: string, principals: unknown) =>
+    request('POST', `/v1/projects/${PROJECT}/connections/${connectionId}/share`, token, { principals });
+
+  test('the owner, a connections manager, shares it with chosen people: it becomes a shared account narrowed to them', async () => {
+    const connectionId = await privateAccount(MANAGER, 'Manager inbox', true);
+    const res = await share(connectionId, await mint(MANAGER), [
+      { principal_type: 'user', principal_id: MANAGER },
+      { principal_type: 'user', principal_id: ALICE },
+    ]);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      connection_id: connectionId,
+      owner_type: 'project',
+      owner_id: null,
+      label: 'Manager inbox',
+      is_default: false,
+    });
+    expect(await ownerOf(connectionId)).toEqual({ ownerType: 'project', ownerId: null, isDefault: false });
+    expect((await grantsOn(connectionId)).map((g) => g.principal_id).sort()).toEqual([ALICE, MANAGER].sort());
+
+    // The audience is in force at once: Alice uses it, Bob never sees it.
+    const alice = (await listFor(ALICE)).find((c) => c.connection_id === connectionId);
+    expect(alice?.usable).toBe(true);
+    expect((await listFor(BOB)).some((c) => c.connection_id === connectionId)).toBe(false);
+  });
+
+  test('an empty audience shares it with everyone in the project', async () => {
+    const connectionId = await privateAccount(MANAGER, 'Manager calendar');
+    const res = await share(connectionId, await mint(MANAGER), []);
+    expect(res.status).toBe(200);
+    expect(await grantsOn(connectionId)).toEqual([]);
+    const bob = (await listFor(BOB)).find((c) => c.connection_id === connectionId);
+    expect(bob).toMatchObject({ usable: true, shared_with: [] });
+  });
+
+  test("another member's private account → 404, and it stays theirs", async () => {
+    const res = await share(ALICE_CONNECTION, await mint(MANAGER), []);
+    expect(res.status).toBe(404);
+    expect(await ownerOf(ALICE_CONNECTION)).toMatchObject({ ownerType: 'member', ownerId: ALICE });
+  });
+
+  test('an owner without the connections-manage right → 403, no grant written, the account stays private', async () => {
+    const connectionId = await privateAccount(BOB, 'Bob inbox');
+    const res = await share(connectionId, await mint(BOB), [{ principal_type: 'user', principal_id: ALICE }]);
+    expect(res.status).toBe(403);
+    expect(await ownerOf(connectionId)).toMatchObject({ ownerType: 'member', ownerId: BOB });
+    expect(await grantsOn(connectionId)).toEqual([]);
+  });
+
+  test('an account that is already shared → 409: its audience is edited with the grants API', async () => {
+    const res = await share(DEFAULT_CONNECTION, await mint(MANAGER), []);
+    expect(res.status).toBe(409);
+  });
+
+  test('a shared account of the same name → 409 before any grant is written', async () => {
+    const connectionId = await privateAccount(MANAGER, 'project DEFAULT');
+    const res = await share(connectionId, await mint(MANAGER), [{ principal_type: 'user', principal_id: ALICE }]);
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toContain('project DEFAULT');
+    expect(await ownerOf(connectionId)).toMatchObject({ ownerType: 'member', ownerId: MANAGER });
+    expect(await grantsOn(connectionId)).toEqual([]);
+  });
+
+  test('a malformed audience → 400 before anything is written', async () => {
+    const connectionId = await privateAccount(MANAGER, 'Manager drive');
+    for (const principals of [undefined, 'everyone', [{ principal_type: 'robot', principal_id: ALICE }]]) {
+      const res = await request(
+        'POST',
+        `/v1/projects/${PROJECT}/connections/${connectionId}/share`,
+        await mint(MANAGER),
+        principals === undefined ? {} : { principals },
+      );
+      expect(res.status).toBe(400);
+    }
+    expect(await ownerOf(connectionId)).toMatchObject({ ownerType: 'member' });
+  });
+});

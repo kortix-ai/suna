@@ -58,6 +58,14 @@ export interface AssignRoleInput {
   scope: AssignmentScope;
   /** Narrow the assignment to ONE object inside the scope. */
   object?: { type: ObjectType; id: string };
+  /**
+   * Internal, never read from a request body: the share route
+   * (connection-actions.ts) grants on the caller's OWN private account just
+   * before it turns that account into a shared one, so the account is never
+   * open to the whole project in between. A private account ignores its grants
+   * until then (connectionIsReachable reads only the owner for a member row).
+   */
+  privateConnectionOwnerId?: string;
   expiresAt?: Date | null;
   source?: AssignmentSource;
   /**
@@ -216,7 +224,9 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
   }
   if (scopeId) await assertProjectInAccount(accountId, scopeId);
   assertProjectPrincipalShape(input, role, scopeId);
-  if (input.object && scopeId) await assertObjectAssignable(scopeId, input.object);
+  if (input.object && scopeId) {
+    await assertObjectAssignable(scopeId, input.object, input.privateConnectionOwnerId);
+  }
 
   await assertPrincipalExists(accountId, input.principal);
   assertAccountRoleHolder(writer, role, scopeType, input.principal);
@@ -700,6 +710,7 @@ function assertProjectPrincipalShape(
 async function assertObjectAssignable(
   projectId: string,
   object: { type: ObjectType; id: string },
+  privateConnectionOwnerId?: string,
 ): Promise<void> {
   if (object.type !== 'connection') return;
   // Raw SQL, not the `connectorConnections` table object: this module sits
@@ -709,7 +720,10 @@ async function assertObjectAssignable(
     select 1 as found from kortix.connector_connections
     where connection_id::text = ${object.id}
       and project_id = ${projectId}::uuid
-      and owner_type = 'project'
+      and (owner_type = 'project'
+           or (${privateConnectionOwnerId ?? null}::text is not null
+               and owner_type = 'member'
+               and owner_id = ${privateConnectionOwnerId ?? null}::text))
     limit 1`);
   const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
   if ((rows as Array<{ found: number }>).length === 0) {
