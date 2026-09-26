@@ -1547,6 +1547,82 @@ export function isUserscriptManagerNoise(input: {
   return sources.some(isUserscriptManagerInjectedSource);
 }
 
+// Vercel Live Feedback (`vercel-live-feedback`) toolbar instrumentation noise.
+// Vercel injects its Live Feedback toolbar as the deployment-scoped chunk
+// `app:///_next-live/feedback/instrument.<id>.js?dpl=dpl_…` — the same
+// synthetic `app:///` browser-bundle origin shape as our own
+// `app:///_next/static/…` chunks, but under Vercel's reserved `_next-live/`
+// path (NOT a first-party source path). The toolbar's own event handler
+// (function `s`, registered through `addEventListener`) detaches its listener
+// with `window.parent.removeEventListener(...)`; when `window.parent` is
+// `null` (the toolbar script running detached, or its parent frame already
+// gone) the property access throws the engine's canonical null-deref
+// `TypeError` — SpiderMonkey/Firefox wording
+// `can't access property "removeEventListener", window.parent is null` (the
+// observed prod message), V8 wording `Cannot read properties of null (reading
+// 'removeEventListener')`, JSC wording
+// `null is not an object (evaluating 'window.parent.removeEventListener')`.
+// The throw is in Vercel's toolbar script, never first-party app code: the
+// breadcrumbs show a `ui.click` on `vercel-live-feedback` immediately before
+// the throw, and a first-party call site de-minifies to `apps/web/src/…`,
+// never `_next-live/feedback/…`.
+//
+// Better Stack pattern
+// b81e1f084e007841cfb868f8a45299ce4888e8b1f4e9194f261fb4acea3eaa47
+// (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+// `can't access property "removeEventListener", window.parent is null`,
+// 1 occurrence / 0 identified users, first 2026-09-24 19:57:42 UTC, release
+// `4f496426b67b2cbb2e6f5b0c66749a5763bb1196`, request URL a co-worker session
+// page, browser Firefox 155 on macOS, mechanism
+// `auto.browser.browserapierrors.addEventListener` (UNCAUGHT, `handled:false`
+// — Sentry's `BrowserApiErrors` integration auto-wraps `addEventListener` and
+// captures the handler throw). Stack frames: `n` in
+// `app:///_next/static/immutable/chunks/3vyqedzurxshp.js` (the scheduling
+// frame) and `s` in `app:///_next-live/feedback/instrument.<id>.js?dpl=dpl_…`
+// (THE THROW SITE — the Vercel Live Feedback toolbar chunk).
+//
+// The `_next-live/feedback/` frame is Vercel's own reserved toolbar source and
+// is never a first-party call site, so anchoring on it (rather than on the
+// engine-specific message wording, which differs per browser) is conservative
+// and covers every engine variant. A NEGATIVE guard preserves any event whose
+// stack carries a resolved first-party `apps/web/src/…` frame — if our own
+// code somehow triggered the toolbar path, the error is actionable and keeps
+// reporting. Deliberately NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list — that gate has no frame context, so a bare-string match
+// there could swallow a real first-party `window.parent` null-deref; the
+// frame-aware `beforeSend` hook (which calls
+// `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const VERCEL_LIVE_FEEDBACK_FRAME_PATTERNS: ReadonlyArray<RegExp> = [
+  /^app:\/\/\/_next-live\/feedback\//,
+  /^https?:\/\/[^/]+\/_next-live\/feedback\//,
+];
+
+function isVercelLiveFeedbackFrame(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return VERCEL_LIVE_FEEDBACK_FRAME_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * Whether a Sentry / window.onerror event originates from Vercel's Live
+ * Feedback toolbar (`_next-live/feedback/…`). The toolbar's own
+ * `window.parent.removeEventListener` null-deref on a detached/parent-less
+ * context is framework noise, never first-party app code. Requires a positive
+ * `_next-live/feedback/` frame/filename anchor and a NEGATIVE guard: any
+ * resolved first-party `apps/web/src/…` source keeps the event reporting.
+ * See `VERCEL_LIVE_FEEDBACK_FRAME_PATTERNS` for the full rationale and Better
+ * Stack pattern `b81e1f08…`.
+ */
+export function isVercelLiveFeedbackNoise(input: {
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
+  if (!sources.some(isVercelLiveFeedbackFrame)) {
+    return false;
+  }
+  return !sources.some(isFirstPartyResolvedSource);
+}
+
 // OneTrust cookie-consent SDK JSON-parse noise. OneTrust
 // (`https://onetrust.com`) is a third-party cookie-consent / IAB TCF banner
 // vendors inject into pages via a small bootstrap stub
@@ -4611,6 +4687,15 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Vercel Live Feedback toolbar (`_next-live/feedback/…`) instrumentation
+  // noise — the toolbar's own `window.parent.removeEventListener` null-deref on
+  // a detached/parent-less context. Framework noise, never first-party code.
+  // Requires the `_next-live/feedback/` frame/filename anchor with a
+  // first-party negative guard. See `isVercelLiveFeedbackNoise`.
+  if (isVercelLiveFeedbackNoise({ filename: input.filename })) {
+    return true;
+  }
+
   // Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
   // FireMonkey) injected user-script noise — the script's own logic bug (e.g.
   // `JSON.parse(undefined)` → `SyntaxError: "undefined" is not valid JSON`)
@@ -5079,6 +5164,17 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   }
 
   if (frames.some((frame) => isInjectedAppSource(frame.filename))) {
+    return true;
+  }
+
+  // Vercel Live Feedback toolbar (`_next-live/feedback/…`) instrumentation
+  // noise — the toolbar's own `window.parent.removeEventListener` null-deref on
+  // a detached/parent-less context, captured by Sentry's `BrowserApiErrors`
+  // `addEventListener` auto-wrapper. Framework noise, never first-party code;
+  // requires the `_next-live/feedback/` frame anchor with a first-party
+  // negative guard. See `isVercelLiveFeedbackNoise` and Better Stack pattern
+  // `b81e1f08…`.
+  if (isVercelLiveFeedbackNoise({ frames })) {
     return true;
   }
 

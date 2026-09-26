@@ -51,6 +51,7 @@ import {
   isUndefinedVariableThirdPartyNoise,
   isUnresolvableStackOverflowNoise,
   isUserscriptManagerNoise,
+  isVercelLiveFeedbackNoise,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
 } from './browser-error-noise.ts';
@@ -9063,6 +9064,165 @@ test('does NOT suppress a near-worded Firefox DOM message (over-match guard)', (
       `expected near-worded "${message}" to keep reporting`,
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// Vercel Live Feedback toolbar (`vercel-live-feedback`) `_next-live/feedback/…`
+// instrumentation noise (Better Stack pattern
+// b81e1f084e007841cfb868f8a45299ce4888e8b1f4e9194f261fb4acea3eaa47, Kortix
+// Frontend prod, application_id 2346967). Vercel injects its Live Feedback
+// toolbar as the deployment-scoped chunk
+// `app:///_next-live/feedback/instrument.<id>.js?dpl=dpl_…` (Vercel's reserved
+// `_next-live/` path, NOT a first-party `apps/web/src/…` source). Its own
+// `addEventListener` handler (function `s`) calls
+// `window.parent.removeEventListener(...)` to detach the listener; when
+// `window.parent` is `null` the engine throws the canonical null-deref
+// TypeError — SpiderMonkey/Firefox wording `can't access property
+// "removeEventListener", window.parent is null`, V8 wording `Cannot read
+// properties of null (reading 'removeEventListener')`, JSC wording `null is not
+// an object (evaluating 'window.parent.removeEventListener')`. 1 occurrence /
+// 0 identified users, first 2026-09-24 19:57:42 UTC, release
+// `4f496426b67b2cbb2e6f5b0c66749a5763bb1196`, request URL a co-worker session
+// page, Firefox 155 on macOS, mechanism
+// `auto.browser.browserapierrors.addEventListener` (UNCAUGHT, handled:false).
+// Stack frames: `n` in `app:///_next/static/immutable/chunks/3vyqedzurxshp.js`
+// (scheduling frame) + `s` in the `_next-live/feedback/instrument.<id>.js`
+// chunk (THE THROW SITE). Breadcrumbs show a `ui.click` on
+// `vercel-live-feedback` immediately before the throw. The matcher anchors on
+// the `_next-live/feedback/` frame source (engine-agnostic) with a first-party
+// negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event (SpiderMonkey/Firefox
+// wording). The other engine wordings differ, which is why the matcher anchors
+// on the frame source rather than the message.
+const VERCEL_LIVE_FEEDBACK_MESSAGE =
+  'can\'t access property "removeEventListener", window.parent is null';
+
+// The Vercel Live Feedback toolbar throw-site chunk (the reserved
+// `_next-live/feedback/` path). The `<id>` hash and the (duplicated) `?dpl=`
+// deploy query are the production event's own values, kept verbatim.
+const VERCEL_LIVE_FEEDBACK_FRAME =
+  'app:///_next-live/feedback/instrument.edc1868bf1eb68ebda97.js?dpl=dpl_EAgzEi6pn7FBntVjwigWXg13i3Gn?dpl=dpl_EAgzEi6pn7FBntVjwigWXg13i3Gn';
+
+// The two production stack frames: the first-party bundle chunk that scheduled
+// the listener (`n`), then the Vercel Live Feedback toolbar throw site (`s`).
+// NO de-minified first-party `apps/web/src/…` frame, so the negative guard does
+// not fire.
+const VERCEL_LIVE_FEEDBACK_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: 'app:///_next/static/immutable/chunks/3vyqedzurxshp.js', function: 'n' },
+  { filename: VERCEL_LIVE_FEEDBACK_FRAME, function: 's' },
+];
+
+test('classifies the Vercel Live Feedback `window.parent` null-deref prod event as noise', () => {
+  assert.equal(
+    isVercelLiveFeedbackNoise({ frames: VERCEL_LIVE_FEEDBACK_PROD_FRAMES }),
+    true,
+    'expected the `_next-live/feedback/` throw site to classify as noise',
+  );
+  // The runtime gate anchors on the window.onerror `filename` instead of frames.
+  assert.equal(
+    isVercelLiveFeedbackNoise({ filename: VERCEL_LIVE_FEEDBACK_FRAME }),
+    true,
+    'expected the `_next-live/feedback/` filename to classify as noise',
+  );
+  // The https origin variant (a non-`app://` browser bundle origin).
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      filename: 'https://kortix.com/_next-live/feedback/instrument.abc123.js?dpl=dpl_x',
+    }),
+    true,
+    'expected the https `_next-live/feedback/` filename to classify as noise',
+  );
+});
+
+test('suppresses the Vercel Live Feedback prod event via the Sentry beforeSend gate', () => {
+  // Reproduces the exact production event: BS pattern b81e1f08…, release
+  // 4f496426…, request URL a co-worker session page, mechanism
+  // `auto.browser.browserapierrors.addEventListener` (UNCAUGHT, handled:false).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/x/sessions/y' },
+      exception: {
+        values: [
+          {
+            value: VERCEL_LIVE_FEEDBACK_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.browserapierrors.addEventListener',
+              handled: false,
+            },
+            stacktrace: { frames: VERCEL_LIVE_FEEDBACK_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses the Vercel Live Feedback prod event via the runtime gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: VERCEL_LIVE_FEEDBACK_MESSAGE,
+      filename: VERCEL_LIVE_FEEDBACK_FRAME,
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress a first-party `window.parent` null-deref (negative guard)', () => {
+  // A real first-party `window.parent.removeEventListener` regression
+  // de-minifies to `apps/web/src/…` and must keep reporting, even when a
+  // Vercel toolbar frame is coincidentally present in the stack.
+  const firstPartyFrame = 'app:///_next/static/chunks/apps/web/src/features/foo.tsx';
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      frames: [{ filename: firstPartyFrame, function: 'n' }, ...VERCEL_LIVE_FEEDBACK_PROD_FRAMES],
+    }),
+    false,
+    'expected a resolved first-party frame to keep the event reporting',
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: VERCEL_LIVE_FEEDBACK_MESSAGE,
+            stacktrace: {
+              frames: [
+                { filename: firstPartyFrame, function: 'n' },
+                ...VERCEL_LIVE_FEEDBACK_PROD_FRAMES,
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+    'expected the Sentry gate to keep a first-party-framed event reporting',
+  );
+});
+
+test('does NOT suppress unrelated frames (over-match guard)', () => {
+  // No `_next-live/feedback/` frame → never matched, even with the exact
+  // `window.parent` message.
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      frames: [
+        { filename: 'app:///_next/static/immutable/chunks/3vyqedzurxshp.js', function: 'n' },
+      ],
+    }),
+    false,
+  );
+  assert.equal(isVercelLiveFeedbackNoise({ filename: '<anonymous>' }), false);
+  assert.equal(isVercelLiveFeedbackNoise({}), false);
+  // A same-origin `_next/static/` chunk is NOT a `_next-live/` frame.
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      filename: 'app:///_next/static/chunks/webpack-abc.js',
+    }),
+    false,
+  );
 });
 
 // ---------------------------------------------------------------------------
