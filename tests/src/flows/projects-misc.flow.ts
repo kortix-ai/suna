@@ -311,14 +311,14 @@ flow(
   },
 );
 
-// PROJ-37 — turn-permission relay. The daemon reports OpenCode
+// PROJ-38 — turn-permission relay. The daemon reports OpenCode
 // `permission.asked`; the route pushes "needs your approval" once per request
 // id and never answers the permission. Only the session's own sandbox
 // credential may call it: a user token would let any member push another
 // member's devices. The sandbox credential is a project PAT bound to a
 // synthetic live session (bindDatabaseSessionCredential).
 flow(
-  'PROJ-37',
+  'PROJ-38',
   { domain: 'projects', routes: ['POST /v1/projects/:projectId/turn-permission'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();

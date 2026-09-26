@@ -8,6 +8,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
+import { revokeAllPublicSharesForSession } from '../../shared/session-public-shares';
 import {
   legacyRehydrateSpec,
   rehydrateSessionChat,
@@ -102,6 +103,14 @@ export async function deleteSession(input: {
   await Promise.resolve().then(() => sessionAttachmentStore().removeSession(projectId, sessionId)).catch((error) => {
     console.error('[session-attachments] cleanup failed', { projectId, sessionId, error });
   });
+
+  // Public links end with the session. `resolvePublicShare` already refuses a
+  // tombstoned session (410); this makes the owner's share list say so too.
+  await Promise.resolve()
+    .then(() => revokeAllPublicSharesForSession(sessionId, deletedAt))
+    .catch((error) => {
+      console.error('[public-shares] revoke on session delete failed', { sessionId, error });
+    });
 
   if (sandbox) {
     const removable =
