@@ -17,6 +17,7 @@ export function useProjectFileSource(): FileSource {
   const ctx = useProjectContext();
   return useMemo<FileSource>(
     () => ({
+      id: 'project-ref',
       useFileContent,
       useBinaryBlob,
       download: (filePath, fileName) =>

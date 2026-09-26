@@ -5,6 +5,7 @@ import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
 import { activeHostName, hasEnvTokenHost } from '../api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from '../api/client.ts';
 import { isKortixProject, loadLink, saveLink, resolveProjectId } from '../project-link.ts';
+import { takeFlags } from '../command-argv.ts';
 import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
 import { confirm, prompt, promptSecret } from '../prompts.ts';
@@ -97,7 +98,6 @@ interface ShipFlags {
   dryRun: boolean;
   project?: string;
   host?: string;
-  help: boolean;
 }
 
 interface ProvisionResponse extends ProjectSummary {
@@ -125,17 +125,22 @@ export function resolveExistingShipGitTarget(project: ProjectSummary): ProjectGi
 }
 
 export async function runShip(argv: string[]): Promise<number> {
-  let flags: ShipFlags;
-  try {
-    flags = parseFlags(argv);
-  } catch (err) {
-    process.stderr.write(`${(err as Error).message}\n\n${HELP}`);
-    return 2;
-  }
-  if (flags.help) {
-    process.stdout.write(HELP);
-    return 0;
-  }
+  const flags = takeFlags(argv, HELP, (rest): ShipFlags => ({
+    name: takeFlagValue(rest, ['--name']),
+    account: takeFlagValue(rest, ['--account']),
+    origin: takeFlagValue(rest, ['--origin']),
+    githubToken: takeFlagValue(rest, ['--github-token']),
+    message: takeFlagValue(rest, ['--message', '-m']),
+    project: takeFlagValue(rest, ['--project']),
+    host: takeFlagValue(rest, ['--host']),
+    noCommit: takeFlagBool(rest, ['--no-commit']),
+    noVerify: takeFlagBool(rest, ['--no-verify']),
+    noEnv: takeFlagBool(rest, ['--no-env']),
+    noConnect: takeFlagBool(rest, ['--no-connect']),
+    yes: takeFlagBool(rest, ['-y', '--yes']),
+    dryRun: takeFlagBool(rest, ['-n', '--dry-run']),
+  }));
+  if (typeof flags === 'number') return flags;
 
   // ── Guards ───────────────────────────────────────────────────────────────
   if (!isKortixProject()) {
@@ -1043,35 +1048,6 @@ async function resolveShipAccount(
 }
 
 // ── plumbing ────────────────────────────────────────────────────────────────
-
-function parseFlags(argv: string[]): ShipFlags {
-  const rest = [...argv];
-  const flags: ShipFlags = {
-    noCommit: false,
-    noVerify: false,
-    noEnv: false,
-    noConnect: false,
-    yes: false,
-    dryRun: false,
-    help: false,
-  };
-  flags.name = takeFlagValue(rest, ['--name']);
-  flags.account = takeFlagValue(rest, ['--account']);
-  flags.origin = takeFlagValue(rest, ['--origin']);
-  flags.githubToken = takeFlagValue(rest, ['--github-token']);
-  flags.message = takeFlagValue(rest, ['--message', '-m']);
-  flags.project = takeFlagValue(rest, ['--project']);
-  flags.host = takeFlagValue(rest, ['--host']);
-  flags.noCommit = takeFlagBool(rest, ['--no-commit']);
-  flags.noVerify = takeFlagBool(rest, ['--no-verify']);
-  flags.noEnv = takeFlagBool(rest, ['--no-env']);
-  flags.noConnect = takeFlagBool(rest, ['--no-connect']);
-  flags.yes = takeFlagBool(rest, ['-y', '--yes']);
-  flags.dryRun = takeFlagBool(rest, ['-n', '--dry-run']);
-  flags.help = takeFlagBool(rest, ['-h', '--help']);
-  if (rest.length > 0) throw new Error(`kortix ship: unknown option "${rest[0]}"`);
-  return flags;
-}
 
 /**
  * When the linked project can't be fetched, explain *why* in terms of the

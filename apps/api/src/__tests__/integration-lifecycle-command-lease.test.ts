@@ -450,8 +450,8 @@ describe('markCommandFailed decides retry or dead-letter', () => {
 
 describe('a prompt whose runtime is unreachable', () => {
   const T = new Date('2026-09-25T10:00:00.000Z');
-  /** Far enough ahead that every parked row is due for the next claim. */
-  const LATER = new Date('2026-09-26T10:00:00.000Z');
+  /** Later than both rows created during this test and the parked retry dates. */
+  const LATER = new Date(Math.max(Date.now(), T.getTime()) + 24 * 60 * 60 * 1000);
 
   test('is parked, not failed: queued, its attempt given back, due after the first rung', async () => {
     const row = await enqueue('park-first');
