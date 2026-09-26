@@ -609,6 +609,39 @@ mock.module('../shared/supabase', () => ({
   }),
 }));
 
+/**
+ * Apply a project-session UPDATE to the fixture row. A `metadata` value is a
+ * `projectSessionMetadataMerge()` SQL expression (jsonb `||`), not a plain
+ * object, so evaluate it here exactly like `applySandboxUpdates`: start from
+ * the row's current metadata and assign each JSON parameter on top. This is
+ * what lets a test prove the merge does not drop keys the row already had.
+ */
+function applyProjectSessionUpdates(
+  row: typeof projectSessions.$inferSelect,
+  updates: Partial<typeof projectSessions.$inferSelect>,
+): typeof projectSessions.$inferSelect {
+  let metadata = updates.metadata;
+  if (metadata && typeof metadata === 'object' && 'queryChunks' in metadata) {
+    const query = new PgDialect().sqlToQuery(metadata as unknown as SQL);
+    const merged = { ...((row.metadata ?? {}) as Record<string, unknown>) };
+    for (const param of query.params) {
+      if (typeof param !== 'string' || !param.trimStart().startsWith('{')) continue;
+      try {
+        Object.assign(merged, JSON.parse(param) as Record<string, unknown>);
+      } catch {
+        // Non-JSON SQL parameters are unrelated to metadata merges.
+      }
+    }
+    metadata = merged as unknown as typeof updates.metadata;
+  }
+  return {
+    ...row,
+    ...updates,
+    metadata: metadata === undefined ? row.metadata : metadata,
+    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+  };
+}
+
 function applySandboxUpdates(
   row: SandboxRowFixture,
   updates: Partial<typeof sessionSandboxes.$inferSelect>,
@@ -949,11 +982,7 @@ mock.module('../shared/db', () => ({
                 !('metadata' in updates)
               )
                 return [];
-              sessionRow = {
-                ...sessionRow,
-                ...updates,
-                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-              };
+              sessionRow = applyProjectSessionUpdates(sessionRow, updates);
               return [sessionRow];
             }
             if (table === sessionSandboxes) {
@@ -987,11 +1016,7 @@ mock.module('../shared/db', () => ({
               const rows = await (async () => {
                 if (table === projectSessions) {
                   if (!sessionRow) return [];
-                  sessionRow = {
-                    ...sessionRow,
-                    ...updates,
-                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-                  };
+                  sessionRow = applyProjectSessionUpdates(sessionRow, updates);
                   return [sessionRow];
                 }
                 if (table === sessionSandboxes) {
@@ -3899,6 +3924,34 @@ describe('project session API contract', () => {
       custom: 'ok',
       custom_name: 'Human name',
     });
+  });
+
+  // A name supplied at create is an EXPLICIT user name, so it must land in the
+  // same override key a rename uses (`metadata.custom_name`) — never the
+  // `metadata.name` auto-title slot, which the runtime title outranks on the
+  // display chain and the first prompt is allowed to fill.
+  test('a session created with a name stores it as the explicit override', async () => {
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'default',
+        name: 'My Explicit Session',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const metadata = lastSessionInsertValues?.metadata as Record<string, unknown>;
+    expect(metadata.custom_name).toBe('My Explicit Session');
+    expect(metadata).not.toHaveProperty('name');
+    // The display chain resolves the explicit name, and it is exposed as
+    // `custom_name` so a client can tell an override from an auto title.
+    expect(body.custom_name).toBe('My Explicit Session');
+    expect(body.name).toBe('My Explicit Session');
   });
 
   // The warm create runs `createProjectSession` with an empty body: no prompt,

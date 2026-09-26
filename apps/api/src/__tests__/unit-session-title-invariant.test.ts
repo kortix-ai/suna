@@ -59,8 +59,6 @@ describe('session-title invariant', () => {
     const allow = [
       // THE writer.
       'projects/session-title-generate.ts',
-      // body.name — the documented "I already know the title" escape hatch.
-      'projects/lib/sessions.ts',
       // carries the legacy Suna thread title onto the migrated row.
       'projects/suna-migration/suna-migration-phases.ts',
     ];
