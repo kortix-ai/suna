@@ -113,6 +113,7 @@ import {
   useProjectSessions,
   useCreateProjectSession,
 } from '@/lib/projects/hooks';
+import { DRAWER_CLOSE, DRAWER_OPEN } from '@/lib/ui/drawer-springs';
 import { useReviewItems } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
 import { countReviewItemsBySegment, getProjectSession, sessionConnectionLabel } from '@kortix/sdk';
@@ -224,21 +225,6 @@ async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
 
 // ─── Main screen ────────────────────────────────────────────────────────────
 
-/**
- * The drawer's close spring (Jay, 2026-09-22). The library's one spring
- * (stiffness 1000, damping 500, mass 3) is 4.6× overdamped: its slow pole
- * decays at ~2/s, so a close crawls over its last third. This one is
- * critically damped (damping = 2·√stiffness at mass 1): 90% of the travel in
- * ~195ms, settled in ~330ms, no overshoot. It stays a spring, so a swipe
- * release keeps its velocity. Open keeps the library spring: an exit runs
- * faster than an enter.
- *
- * `closeSpringConfig` is not a library prop: it comes from
- * `patches/react-native-drawer-layout+4.2.10.patch`. When the patch is not
- * applied (`npx patch-package` after an install), `tsc` fails on the prop.
- * Module scope: the library lists it as a `useCallback` dependency.
- */
-const DRAWER_CLOSE_SPRING = { stiffness: 400, damping: 40, mass: 1 };
 /** Shared empty list: a fresh `[]` per render would re-render the thread. */
 const EMPTY_SUB_AGENTS: ProjectSession[] = [];
 
@@ -1485,7 +1471,16 @@ export function ProjectScreen() {
         swipeEnabled={isFocused && edgeGesture === 'drawer'}
         swipeEdgeWidth={80}
         swipeMinDistance={30}
-        closeSpringConfig={DRAWER_CLOSE_SPRING}
+        // A tap opens on the iOS sheet curve (420ms, 90% by ~154ms) and closes
+        // on ease-out-quad (320ms, 80% by ~170ms); a swipe release keeps a
+        // critically damped spring and its
+        // velocity (`lib/ui/drawer-springs.ts`). The props come from
+        // `patches/react-native-drawer-layout+4.2.10.patch`; without the patch
+        // applied (`npx patch-package`), `tsc` fails on them. Module-level
+        // constants: the library lists them as `useCallback` dependencies, and
+        // a new object would re-toggle the drawer.
+        openSpringConfig={DRAWER_OPEN}
+        closeSpringConfig={DRAWER_CLOSE}
         renderDrawerContent={renderDrawer}>
         <ProjectRouteProvider value={projectRoute}>
           {/* Native Stack: platform default push/pop. No iOS swipe-back: the

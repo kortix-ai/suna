@@ -28,6 +28,136 @@ import { projectsApp } from '../lib/app';
 import { loadMutableConnection } from '../lib/connection-mutation';
 import { readJsonObject } from '../../shared/http-body';
 import { ConnectionViewSchema, serializeConnection } from '../lib/connection-view';
+import { actorOf } from '../../iam/actor';
+import { assignRole } from '../../iam/assignments';
+
+const ShareConnectionInput = z
+  .object({
+    principals: z
+      .array(
+        z
+          .object({
+            principal_type: z.enum(['user', 'group', 'project']),
+            principal_id: z.string().uuid(),
+          })
+          .strict(),
+      )
+      .max(100),
+  })
+  .strict();
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/connections/{connectionId}/share',
+    tags: ['connectors'],
+    summary: 'Share your own private connection',
+    description:
+      "Turn the caller's own private account into a shared account that only `principals` may " +
+      'use (an empty list: everyone in the project). The grants are written first and the ' +
+      'account becomes shared in one update, so it is never open to the whole project in ' +
+      'between. Needs `project.connector.connections.manage`, the right to create a shared ' +
+      'account. A shared account is managed by every connections manager from then on.',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
+      body: { content: { 'application/json': { schema: ShareConnectionInput } } },
+    },
+    responses: {
+      200: json(ConnectionViewSchema, 'The shared connection'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const connectionId = c.req.param('connectionId');
+    const parsed = ShareConnectionInput.safeParse(await readJsonObject(c));
+    if (!parsed.success) {
+      return c.json(
+        { error: 'principals must be a list of { principal_type: user | group | project, principal_id }' },
+        400,
+      );
+    }
+    // Only the owner reaches their own private row here; anyone else gets null.
+    const mutable = await loadMutableConnection(c, projectId, connectionId);
+    if (!mutable) return c.json({ error: 'Not found' }, 404);
+    const { loaded, connection } = mutable;
+    if (connection.ownerType === 'project') {
+      return c.json(
+        { error: 'This account is already shared. Change who can use it with its Share dialog or the grants API.' },
+        409,
+      );
+    }
+    if (connection.ownerType !== 'member' || connection.ownerId !== loaded.userId) {
+      return c.json({ error: 'Not found' }, 404);
+    }
+    if (!mutable.mayManageSystemConnections) {
+      return c.json(
+        { error: "Sharing an account needs permission to manage the project's connections" },
+        403,
+      );
+    }
+    const label = connection.label;
+    const clashes = (other: { label: string }) =>
+      c.json(
+        { error: `A shared account of this connector is already named "${other.label}". Rename one first.` },
+        409,
+      );
+    const [clash] = await db
+      .select({ label: connectorConnections.label })
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.connectorId, connection.connectorId),
+          eq(connectorConnections.ownerType, 'project'),
+          isNull(connectorConnections.ownerId),
+          sql`lower(btrim(${connectorConnections.label})) = ${label.trim().toLowerCase()}`,
+        ),
+      )
+      .limit(1);
+    if (clash) return clashes({ label });
+
+    // Grants first, on the still-private row, which ignores them. Each goes
+    // through assignRole: principal checks, audit, cache invalidation.
+    const writer = await actorOf(c, loaded.row.accountId);
+    for (const principal of parsed.data.principals) {
+      await assignRole(writer, loaded.row.accountId, {
+        principal: { type: principal.principal_type, id: principal.principal_id },
+        roleKey: 'agent-user',
+        scope: { type: 'project', id: projectId },
+        object: { type: 'connection', id: connectionId },
+        privateConnectionOwnerId: loaded.userId,
+        source: 'manual',
+      });
+    }
+    // Then shared, in one update guarded on the row still being this owner's.
+    // Not the default of the project's accounts: pinning one stays deliberate.
+    let updated: Array<{ connectionId: string }>;
+    try {
+      updated = await db
+        .update(connectorConnections)
+        .set({ ownerType: 'project', ownerId: null, isDefault: false })
+        .where(
+          and(
+            eq(connectorConnections.connectionId, connectionId),
+            eq(connectorConnections.ownerType, 'member'),
+            eq(connectorConnections.ownerId, loaded.userId),
+          ),
+        )
+        .returning({ connectionId: connectorConnections.connectionId });
+    } catch (error) {
+      if (isUniqueViolation(error)) return clashes({ label });
+      throw error;
+    }
+    if (updated.length === 0) {
+      return c.json({ error: 'The account changed while it was being shared. Try again.' }, 409);
+    }
+    return c.json(
+      serializeConnection({ ...connection, ownerType: 'project', ownerId: null, isDefault: false }),
+      200,
+    );
+  },
+);
 
 projectsApp.openapi(
   createRoute({

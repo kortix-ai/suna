@@ -1,3 +1,4 @@
+import { useDiagnosticsStore } from '../browser/stores/diagnostics-store';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -11,6 +12,7 @@ import './use-model-store';
 registerIdentityReset(() => useSyncStore.getState().reset());
 registerIdentityReset(() => useOpenCodePendingStore.getState().clear());
 registerIdentityReset(() => useSessionWorkingStore.getState().reset());
+registerIdentityReset(() => useDiagnosticsStore.getState().clearAll());
 registerIdentityReset(resetSessionSyncControllers);
 registerIdentityReset(resetSessionCacheOwnership);
 registerIdentityReset(resetSessionOpenPrefetches);
@@ -22,10 +24,11 @@ registerIdentityReset(resetSessionOpenPrefetches);
  * without a page load.
  *
  * Clears: session transcripts (sync store), pending permission and question
- * asks and per-session auto-approve, turn receipts, session history
- * controllers and their cache ownership, open-read prefetch windows, and the
- * model store (per-agent, per-session and default model picks, plus its
- * `localStorage` key).
+ * asks and per-session auto-approve, turn receipts, LSP diagnostics (file
+ * paths and messages from the event stream), session history controllers and
+ * their cache ownership, open-read prefetch windows, and the model store
+ * (per-agent, per-session and default model picks, plus its `localStorage`
+ * key).
  *
  * It does NOT clear the host's own caches (React Query, host stores) or the
  * auth token source; the host resets those beside this call. Never throws: a

@@ -24,6 +24,7 @@ import {
   updateProjectAccess,
   updateProjectGroupGrant,
   type ProjectAccessMember,
+  type ProjectResourceGrant,
 } from './access';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -283,6 +284,26 @@ test('listProjectResourceGrants GETs the resource-grants list', async () => {
   expect(last().url).toContain('/projects/P1/resource-grants');
   expect(last().method).toBe('GET');
   expect(result.grants).toEqual([]);
+});
+
+test('listProjectResourceGrants carries a grant to everyone in the project', async () => {
+  const everyone: ProjectResourceGrant = {
+    grant_id: 'gr-everyone',
+    resource_type: 'agent',
+    resource_id: 'support-bot',
+    principal_type: 'project',
+    principal_id: 'P1',
+    principal_label: 'Acme',
+    granted_by: null,
+    created_at: '2026-09-25T00:00:00.000Z',
+    expires_at: null,
+  };
+  nextResponse = {
+    status: 200,
+    body: { resources: { agents: [], skills: [] }, grants: [everyone] },
+  };
+  const result = await listProjectResourceGrants('P1');
+  expect(result.grants[0]?.principal_type).toBe('project');
 });
 
 test('createProjectResourceGrant POSTs snake_case fields, omitting expires_at when not given', async () => {

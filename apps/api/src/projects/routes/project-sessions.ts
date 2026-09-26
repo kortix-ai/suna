@@ -33,7 +33,7 @@ import { readJsonObject } from '../../shared/http-body';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
-import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
+import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
@@ -275,6 +275,7 @@ projectsApp.openapi(
     userId: loaded.userId,
     effectiveRole: loaded.effectiveRole,
     scope,
+    orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
     limit: query.limit,
     cursor: query.cursor ?? null,
     boundCredentialSessionId: callerKortixSessionId(c),
@@ -442,7 +443,7 @@ projectsApp.openapi(
 
   if (
     intent.mode !== 'private' &&
-    (await sessionHasMemberConnectorBinding({
+    (await sessionHasPersonalConnectorBinding({
       accountId: loaded.row.accountId,
       projectId,
       sessionId,

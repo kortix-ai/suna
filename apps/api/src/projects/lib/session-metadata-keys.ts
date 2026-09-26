@@ -48,6 +48,10 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'telegram',
   // Warm-session pool marker (`lib/warm-sessions.ts`).
   'warm',
+  // Activity-ordered session list (`session-list.ts` `orderByActivity`). The
+  // server stamps conversation activity; a client value would let it fake a
+  // sidebar position.
+  'last_activity_at',
 ] as const;
 
 /**

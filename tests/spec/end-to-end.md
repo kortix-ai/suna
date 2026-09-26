@@ -247,6 +247,8 @@ The human-in-the-loop surface an agent's write/destructive tool calls gate on, p
 
 `IAM-41` **Project-scoped assignments stay in the project's account** — `POST /accounts/:id/iam/assignments` with a `scope_id` whose project belongs to another account → 404 `project not found in this account`, for a project role and for an object grant alike, even when the caller owns (and is super-admin of) the account in the URL. No row is stored in either account, and the caller gains no access to the project. The project's own account still grants roles on it → 201. The same rule holds at the storage layer (`role_assignments_project_account_guard` trigger), and the engine's object-grant and project-role readers only count rows written in the project's own account.
 
+`IAM-43` **Everyone in the project** — `POST /accounts/:id/iam/assignments {principal_type:'project', principal_id:<project>, role_key:'agent-user', scope_type:'project', scope_id:<project>, object_type:'agent', object_id:<agent>}` → 201 grants ONE agent to everyone with access to the project. Before the grant a project member's `GET /projects/:id` lists no agents (agents are closed at the member tier); after it, the same read lists that agent. An account member with no project role still reaches nothing. `GET /projects/:id/resource-grants` lists the grant with `principal_type:'project'` and the project's name as `principal_label`; `GET /projects/:id/access` gives every member a `resource_grants` entry with `source:'project'` and creates no group entry. A `project` principal is refused as a role (`role_key:'member'`), on another project (`principal_id ≠ scope_id`), or without an object → 400; a plain member writing it → 403. Deleting the grant (`DELETE /projects/:id/resource-grants/:grantId`) closes the agent to the member again.
+
 `IAM-42` **Demoting an owner ends the super-admin bypass** — an owner makes a co-founder owner and super-admin; demoting that owner to `member` (`PATCH /accounts/:id/members/:userId`) clears `is_super_admin` in the same call and records `iam.member.super_admin.revoke`. The demoted member cannot grant themselves `owner` again (`POST …/iam/assignments` → 403). A super-admin flag granted while the principal is not an owner survives a role change that removes no owner role.
 
 ### SSO identity trust (which email an IdP may vouch for)
@@ -298,7 +300,7 @@ DB `project_sessions` (`status queued|branching|provisioning|running|stopped|fai
 `SESS-1` `POST /projects/:id/sessions {agent_name?,initial_prompt?,base_ref?,provider?,name?,session_id?,branch_already_created?,runtime_context?}` → `session` (any project member, **M_VIEWER included** — viewer is the base usable role) → 201 status `provisioning` (fire-and-forget sandbox). `runtime_context` is an optional non-secret scalar map (max 64 entries / 16 KiB UTF-8 JSON; lower-case semantic keys only; no credential-like keys); it is stored outside user-editable session metadata and restored into every replacement runtime as the single server-owned `KORTIX_SESSION_CONTEXT` JSON variable. Nested/oversize/reserved/credential-shaped input → 400 before session persistence or provisioning; raw env/MCP fields are unknown and rejected. MEMBER with no project grant / NONMEMBER → 403. (An invalid `provider` for an allowed caller → 400, proving the role gate passed before provider validation.)
 `SESS-2` concurrency cap — Nth session over tier cap → **429** + `X-RateLimit-Limit/-Remaining` headers.
 `SESS-3` CLI client-branch optimization — `kortix sessions new`: if server can't self-create a branch through its configured Git credentials AND local `origin` == `project.repo_url`, CLI mints uuid, `git push origin HEAD:refs/heads/<uuid>`, then posts `session_id`+`branch_already_created:true`+`base_ref`.
-`SESS-4` `GET /projects/:id/sessions` → `read` → list (updatedAt desc).
+`SESS-4` `GET /projects/:id/sessions` → `read` → keyset page (`updated_at` desc by default). A project with `metadata.session_list_order="activity"` pages by `metadata.last_activity_at` (fallback `updated_at`) and uses a separately sealed cursor. The first and second pages must not overlap. Clients cannot set `last_activity_at` through session create or patch.
 `SESS-5` `GET /projects/:id/sessions/:sid` → `read` → 200; non-uuid `sid` → 400.
 `SESS-6` `PATCH /projects/:id/sessions/:sid {name?,metadata?}` → `session` (any project member, M_VIEWER included); attempting `status`/`sandbox_url`/`error`/`opencode_session_id` or server-owned metadata → 400 (server-managed). The server-owned keys are one list in `apps/api/src/projects/lib/session-metadata-keys.ts`: every key server code reads for a decision (soft delete, model pin, invocation and trigger attribution including `trigger_session_key`, titles, `spawned_by_session`, `legacy_migration`, the `slack`/`teams`/`email`/`telegram` channel origin, `warm`), plus `repository_access`/`repository_generation`/`workspace_mode`/`sandbox_slug`/`audit_v2` on PATCH; POST refuses the same list; any other field → 400 (not user-editable). `name` sets a sticky USER override stored in `metadata.custom_name` (NOT clobbered by the server-side OpenCode title mirror, which only writes the auto title `metadata.name` during session reads); `name:""`/null clears it. Response `name` = resolved display (`custom_name ?? metadata.name`); `custom_name` exposed separately (authoritative override or null).
 `SESS-7` `DELETE /projects/:id/sessions/:sid` → `session` (then **owner or project manager** only — `canManageLifecycle`, NOT `canManageSharing`; see `SESS-26` — a viewer can stop sessions they own) → 200 soft-delete status `stopped`; **remote branch preserved**.
@@ -881,6 +883,55 @@ connector's sole active project-owned account. Only `PUT
 connector's accounts (`user` = member-owned accounts only); the `PUT
 …/authorization-strategy` route is a deprecation no-op (CONN-13) and no client
 sends the key on create.
+
+`CONN-28` **A shared account narrowed to an audience.** A project-owned
+connection with no `connection` grant is usable by every project member, as
+before; `GET /projects/:id/connections` returns it with `shared_with:[]` and
+`usable:true`. A connections manager narrows it with `POST
+/accounts/:id/iam/assignments {principal_type:'group'|'user'|'project',
+role_key:'agent-user', scope_type:'project', object_type:'connection',
+object_id:<connection_id>}` → 201. A plain member writing that grant → 403
+(the writer needs `project.connector.connections.manage`); naming a private
+(member-owned) connection or an unknown id → 404. After a group grant, a member
+of the group still lists the account (`usable:true`, `shared_with` naming the
+group by label); a member outside the group no longer lists it; the account
+owner, outside the group but managing connections, lists it with
+`usable:false`. A grant to the project (`principal_type:'project'`) opens it to
+everyone again beside the group grant. `DELETE
+/projects/:id/resource-grants/:grantId` (the agent/skill route) cannot delete a
+connection grant → 404; `DELETE /accounts/:id/iam/assignments/:assignmentId`
+does. With every grant revoked the account is everyone's again. A narrowed
+account follows the personal-account rules — humans in the audience, private
+sessions only, never an unattended service account — which
+`integration-connection-audience.test.ts` pins against real PostgreSQL through
+the gateway's own resolution functions.
+
+`CONN-29` **A narrowed shared account at the gateway.** Three session tokens
+call `POST /connectors/projects/:id/call` naming one shared account: a group
+member in a private session, a member outside the group in a private session,
+and the group member in a shared (`visibility:'project'`) session. With no
+`connection` grant all three resolve it: the call passes account resolution and
+stops at `404 action_not_found`. After a group grant only the group member's
+private session resolves it; the outsider and the shared session get `403
+connector_not_connected` whose `available_accounts` omits the account. A grant
+to the project opens it to all three again.
+
+`CONN-30` **The real `kortix` CLI shares a connector account.** Three CLI
+processes log in with personal access tokens: the owner, a member in a Sales
+group, and a member outside it. `kortix access grant --group <id> --connection
+<id>` exits 0 and prints the assignment. `kortix connectors connections ls`
+shows the account's WHO CAN USE as the group label plus `(not you)` for the
+owner. `kortix connectors accounts <slug> --json` lists the account for the
+Sales member and omits it for the outsider. `kortix access assignments` names
+the grant. `kortix access grant --everyone --connection <id>` opens it: the
+outsider lists it, WHO CAN USE reads `everyone`, and the listing names the
+principal `everyone`. `kortix access grant --everyone --agent kortix` writes a
+`project` principal agent grant. `--everyone` with only a role exits 2 before
+any request. `kortix connectors connections share <id> --group <id>` shares the
+owner's OWN private account: it becomes a project account narrowed to Sales
+(`connections ls` shows `project` and `Sales (not you)`), the Sales member
+lists it and the outsider does not. A plain member sharing their own private
+account exits non-zero with the manage-connections reason (the API's `403`).
 
 ---
 

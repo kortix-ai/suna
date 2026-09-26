@@ -81,6 +81,28 @@ export function reviewVerdictLabel(kind: ReviewItemKind, verdict: ReviewVerdict)
   return VERDICT_LABEL_BY_KIND[kind]?.[verdict] ?? VERDICT_LABEL[verdict];
 }
 
+const VERDICT_TOAST: Record<ReviewVerdict, string> = {
+  approve: 'Approved',
+  reject: 'Denied',
+  changes: 'Changes requested',
+  answer: 'Answered',
+  dismiss: 'Dismissed',
+};
+
+/**
+ * The success toast once a verdict lands. A change names its number: a merge
+ * is the one verdict the server takes seconds on, so the toast is the proof.
+ */
+export function reviewVerdictToast(kind: ReviewItemKind, verdict: ReviewVerdict, number?: number): string {
+  if (kind === 'change') {
+    const name = number != null ? `Change request #${number}` : 'Change request';
+    if (verdict === 'approve') return `${name} merged`;
+    if (verdict === 'dismiss' || verdict === 'reject') return `${name} closed`;
+    if (verdict === 'changes') return number != null ? `Changes requested on #${number}` : 'Changes requested';
+  }
+  return VERDICT_TOAST[verdict];
+}
+
 export function reviewRiskLabel(risk: ReviewItemRisk): string | null {
   if (risk === 'high') return 'High risk';
   if (risk === 'medium') return 'Medium risk';

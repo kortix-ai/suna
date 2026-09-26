@@ -11,12 +11,12 @@ styling inline. If a primitive is missing a capability, extend the primitive
 — do not work around it in a screen.
 
 `components/ui/` is unmodified React Native Reusables (RNR) registry output —
-18 files, no barrel, no capitalized filenames. `components/kortix/` is
+19 files, no barrel, no capitalized filenames. `components/kortix/` is
 Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
 `@/components/ui` barrel.** Import direct paths only, e.g.
 `@/components/ui/button`, `@/components/kortix/avatar`.
 
-## Canonical UI primitives — `components/ui/` (RNR registry, 18 files)
+## Canonical UI primitives — `components/ui/` (RNR registry, 19 files)
 
 | Need | Use ONLY | Never |
 | --- | --- | --- |
@@ -38,6 +38,7 @@ Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
 | Separator | `@/components/ui/separator` → `<Separator>` | ad-hoc `border-b` / hairline `View`s |
 | Avatar (3-part composition) | `@/components/ui/avatar` → `<Avatar>` + `AvatarImage` / `AvatarFallback` | see **Avatar** section — most screens want `@/components/kortix/avatar` instead |
 | Native-only animated wrapper | `@/components/ui/native-only-animated-view` → `<NativeOnlyAnimatedView>` | animating a view that must also render inertly on web |
+| Context menu (long press, anchored to its trigger) | `@/components/ui/context-menu` → `<ContextMenu relativeTo="trigger">` + `ContextMenuTrigger` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuLabel` (the user message menu, `turn/user-message.tsx`) | a bottom sheet for a short action list on one element; `react-native-context-menu-view` (native module, absent in Expo Go) |
 
 ## Kortix-specific components — `components/kortix/` (34 files)
 
@@ -358,7 +359,7 @@ that drops props silently breaks the screens that still pass them.
 
 ## Invariants (mechanically checked)
 
-1. `components/ui/` contains ONLY RNR registry output — 18 files, no barrel,
+1. `components/ui/` contains ONLY RNR registry output — 19 files, no barrel,
    no capitalized filenames. A file here that differs from
    `https://reactnativereusables.com/r/nativewind/<name>.json` is a bug.
    Never edit one; extend it in `components/kortix/` and record the reason in
@@ -384,11 +385,11 @@ that drops props silently breaks the screens that still pass them.
    which IS tracked — that file, not the captures, is the source of truth.
 
    Stock RNR imports its icons from `lucide-react-native`. This app imports the
-   same glyphs from `@/lib/icons` (Phosphor). In 2 files (`dialog`, `select`)
+   same glyphs from `@/lib/icons` (Phosphor). In 3 files (`dialog`, `select`, `context-menu`)
    that import line is the icon delta, and `icon.tsx` is rewritten for Phosphor.
    These are recorded in `rnr-fork-delta.md` → Icon library, and are not forks.
 
-   Beyond the icon delta, exactly six files may differ, all recorded in `rnr-fork-delta.md`:
+   Beyond the icon delta, exactly seven files may differ, all recorded in `rnr-fork-delta.md`:
    `text.tsx` (adds `font-roobert` to the base class — 164 importers depend on
    it, and React Native cannot synthesize the family),
    `native-only-animated-view.tsx` (a cast around an upstream typing gap that
@@ -400,8 +401,11 @@ that drops props silently breaks the screens that still pass them.
    border), and `dialog.tsx` + `alert-dialog.tsx` (no `border` on the
    content; `DialogContent` renders its X close button only with
    `showCloseButton` — Jay, 2026-09-15; content surface is `bg-popover`, the
-   bottom-sheet token, over a `bg-black/70` overlay — Jay, 2026-09-16). A
-   seventh entry means someone forked a primitive.
+   bottom-sheet token, over a `bg-black/70` overlay — Jay, 2026-09-16), and
+   `context-menu.tsx` (`ContextMenuLabel` and `ContextMenuShortcut` render the
+   design-system `Text`, not react-native's; the surface is `popover.tsx`'s
+   `rounded-xl` + `shadow-md`, items `rounded-lg` — Jay, 2026-09-27). An eighth
+   entry means someone forked a primitive.
 2. `global.css` is the single source of color (see **Color** above),
    pinned by `lib/utils/theme.test.ts`.
 3. Mobile spacing intentionally diverges from web's tighter scale (see

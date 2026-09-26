@@ -65,6 +65,9 @@ export type SetupLinkPayload =
       app: string | null;
       sid: string | null;
       owner: ConnectorConnectOwner;
+      /** The name the agent suggests for the NEW account; the dialog prefills
+       *  it and the human may change it. Absent on older tokens. */
+      label?: string | null;
     })
   /**
    * A human-in-the-loop APPROVAL for one gated connector call.
@@ -102,6 +105,8 @@ type ConnectorSpec = {
   sid?: string | null;
   /** Whose account the link authorizes. Defaults to `me`. */
   owner?: ConnectorConnectOwner;
+  /** Suggested name for the new account. */
+  label?: string | null;
 };
 type ApprovalSpec = {
   kind: 'approval';
@@ -143,6 +148,7 @@ export function mintSetupLink(
             app: spec.app ?? null,
             sid: spec.sid ?? null,
             owner: spec.owner ?? 'me',
+            label: spec.label ?? null,
           };
 
   const envelope = encryptProjectSecret(projectId, JSON.stringify(payload));

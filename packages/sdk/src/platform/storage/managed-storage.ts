@@ -22,6 +22,8 @@
  *     on every write, so an ephemeral key space can't grow unbounded.
  *  3. `createSafeJSONStorage` gives every zustand `persist` store the same
  *     never-throw guarantee, so no store can ever be the crash site again.
+ *     `createSafeSessionJSONStorage` is the same for a store that persists to
+ *     sessionStorage.
  *
  * Anything that should be sacrificed under memory pressure must register its
  * key family here (ScopedCache does this for you). Durable user preferences are
@@ -53,16 +55,41 @@ export function registerDisposableKey(key: string): void {
   disposableKeys.add(key);
 }
 
-function hasWindow(): boolean {
-  return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+/**
+ * Resolve `window.localStorage` or `window.sessionStorage`, or `null` when it is
+ * unavailable.
+ *
+ * Where storage is blocked (iframe partitioning, Safari private mode) reading
+ * the accessor throws `SecurityError`. Some embedded Android WebViews resolve
+ * it to `null` instead. `typeof null === 'object'`, so a `typeof localStorage
+ * !== 'undefined'` probe reports storage as available, and the next `.getItem`,
+ * `.length` or `.key(i)` throws `TypeError: Cannot read properties of null`.
+ *
+ * Every accessor below reads storage only through the object this returns, so
+ * a blocked or null storage degrades to "nothing saved" instead of a crash.
+ */
+function resolveStorage(name: 'localStorage' | 'sessionStorage'): Storage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window[name] ?? null;
+  } catch {
+    return null;
+  }
 }
 
-/** Every localStorage key currently present (snapshot — safe to mutate during). */
-function allKeys(): string[] {
+/**
+ * Every key currently in `storage` (a snapshot, safe to mutate during). A
+ * storage that throws on read yields no keys, so nothing is evicted.
+ */
+function allKeys(storage: Storage): string[] {
   const keys: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (k !== null) keys.push(k);
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k !== null) keys.push(k);
+    }
+  } catch {
+    /* unreadable storage — nothing to enumerate */
   }
   return keys;
 }
@@ -90,9 +117,9 @@ function entryTimestamp(raw: string | null): number {
  * All disposable entries currently in storage, oldest first. Used both for the
  * under-pressure reclaim and as the eviction order for any single family.
  */
-function disposableEntriesOldestFirst(): Array<{ key: string; t: number }> {
+function disposableEntriesOldestFirst(storage: Storage): Array<{ key: string; t: number }> {
   const entries: Array<{ key: string; t: number }> = [];
-  for (const key of allKeys()) {
+  for (const key of allKeys(storage)) {
     if (disposableKeys.has(key)) {
       // Exact-key blobs are evicted last (sort to the end).
       entries.push({ key, t: Number.MAX_SAFE_INTEGER });
@@ -100,7 +127,7 @@ function disposableEntriesOldestFirst(): Array<{ key: string; t: number }> {
     }
     for (const family of disposableFamilies) {
       if (keyBelongsToFamily(key, family)) {
-        entries.push({ key, t: entryTimestamp(localStorage.getItem(key)) });
+        entries.push({ key, t: entryTimestamp(safeGetItem(key)) });
         break;
       }
     }
@@ -115,21 +142,22 @@ function disposableEntriesOldestFirst(): Array<{ key: string; t: number }> {
  * never evicted. Returns whether the value was ultimately persisted.
  */
 export function safeSetItem(key: string, value: string): boolean {
-  if (!hasWindow()) return false;
+  const storage = resolveStorage('localStorage');
+  if (!storage) return false;
   try {
-    localStorage.setItem(key, value);
+    storage.setItem(key, value);
     return true;
   } catch {
     // Likely QuotaExceededError. Reclaim space from disposable caches.
-    const victims = disposableEntriesOldestFirst().filter((e) => e.key !== key);
+    const victims = disposableEntriesOldestFirst(storage).filter((e) => e.key !== key);
     for (const victim of victims) {
       try {
-        localStorage.removeItem(victim.key);
+        storage.removeItem(victim.key);
       } catch {
         /* ignore — try the next victim */
       }
       try {
-        localStorage.setItem(key, value);
+        storage.setItem(key, value);
         return true;
       } catch {
         /* still over quota — keep evicting */
@@ -140,18 +168,45 @@ export function safeSetItem(key: string, value: string): boolean {
 }
 
 export function safeGetItem(key: string): string | null {
-  if (!hasWindow()) return null;
   try {
-    return localStorage.getItem(key);
+    return resolveStorage('localStorage')?.getItem(key) ?? null;
   } catch {
     return null;
   }
 }
 
 export function safeRemoveItem(key: string): void {
-  if (!hasWindow()) return;
   try {
-    localStorage.removeItem(key);
+    resolveStorage('localStorage')?.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
+
+// sessionStorage has no disposable registry, so a write that does not fit is
+// dropped. These give sessionStorage callers the same never-throw guarantee.
+export function safeSessionGetItem(key: string): string | null {
+  try {
+    return resolveStorage('sessionStorage')?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function safeSessionSetItem(key: string, value: string): boolean {
+  const storage = resolveStorage('sessionStorage');
+  if (!storage) return false;
+  try {
+    storage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function safeSessionRemoveItem(key: string): void {
+  try {
+    resolveStorage('sessionStorage')?.removeItem(key);
   } catch {
     /* ignore */
   }
@@ -211,7 +266,6 @@ export class ScopedCache<T> {
   }
 
   set(scope: string, value: T): void {
-    if (!hasWindow()) return;
     const wrapped: Wrapped<T> = { v: value, t: Date.now() };
     safeSetItem(this.keyFor(scope), JSON.stringify(wrapped));
     this.prune();
@@ -223,11 +277,12 @@ export class ScopedCache<T> {
 
   /** Drop all but the `maxScopes` most-recently-written scopes in this family. */
   prune(): void {
-    if (!hasWindow()) return;
+    const storage = resolveStorage('localStorage');
+    if (!storage) return;
     const entries: Array<{ key: string; t: number }> = [];
-    for (const key of allKeys()) {
+    for (const key of allKeys(storage)) {
       if (keyBelongsToFamily(key, this.family)) {
-        entries.push({ key, t: entryTimestamp(localStorage.getItem(key)) });
+        entries.push({ key, t: entryTimestamp(safeGetItem(key)) });
       }
     }
     if (entries.length <= this.maxScopes) return;
@@ -247,7 +302,6 @@ export class ScopedCache<T> {
  * respected.
  */
 export function pruneDisposableCaches(caches: ReadonlyArray<ScopedCache<unknown>>): void {
-  if (!hasWindow()) return;
   for (const cache of caches) cache.prune();
 }
 
@@ -258,7 +312,6 @@ export function pruneDisposableCaches(caches: ReadonlyArray<ScopedCache<unknown>
  * families, and they're imported as soon as the app shell mounts.
  */
 export function pruneAllRegisteredCaches(): void {
-  if (!hasWindow()) return;
   for (const cache of registeredCaches) cache.prune();
 }
 
@@ -278,4 +331,21 @@ export const safeLocalStorage: StateStorage = {
 /** Drop-in replacement for `createJSONStorage(() => localStorage)`. */
 export function createSafeJSONStorage<S>() {
   return createJSONStorage<S>(() => safeLocalStorage);
+}
+
+/**
+ * The sessionStorage twin of `safeLocalStorage`. A write that does not fit, or
+ * a missing, blocked or `null` sessionStorage, degrades to "nothing saved".
+ */
+export const safeSessionStorage: StateStorage = {
+  getItem: (name) => safeSessionGetItem(name),
+  setItem: (name, value) => {
+    safeSessionSetItem(name, value);
+  },
+  removeItem: (name) => safeSessionRemoveItem(name),
+};
+
+/** Drop-in replacement for `createJSONStorage(() => sessionStorage)`. */
+export function createSafeSessionJSONStorage<S>() {
+  return createJSONStorage<S>(() => safeSessionStorage);
 }
