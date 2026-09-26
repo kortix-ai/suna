@@ -124,6 +124,8 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+
+import { snapshotsQueryRetry } from './snapshots-query';
 import type { SandboxProviderMode } from '../../customize/sections/view/sandbox-provider-coverage';
 
 /** Build-status tile icons render solid/fill — a filled status glyph inside
@@ -1045,6 +1047,7 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
     queryKey: qk.project.snapshots(projectId),
     queryFn: () => listProjectSnapshots(projectId),
     ...contract('config'),
+    retry: snapshotsQueryRetry,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;

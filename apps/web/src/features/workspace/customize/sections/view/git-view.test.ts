@@ -7,7 +7,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { projectRepoFallback, RepositoryValue } from './git-view';
 import {
+  BRANCH_PICKER_LIMIT,
   connectionStatusLabel,
+  filterBranchNames,
   providerLabel,
   providerSentence,
   repositoryWebUrl,
@@ -329,4 +331,30 @@ test('nothing on this path is gated on billing', () => {
   expect(code).not.toContain('Entitlement');
   expect(code).not.toContain('openUpgrade');
   expect(code).not.toContain('isBillingEnabled');
+});
+
+test('the branch picker renders at most BRANCH_PICKER_LIMIT rows of thousands', () => {
+  const names = Array.from({ length: 5000 }, (_, i) => `kortix/session-${i}`);
+  const { visible, hidden } = filterBranchNames(['main', ...names], 'main', '');
+  expect(visible).toHaveLength(BRANCH_PICKER_LIMIT);
+  expect(visible[0]).toBe('main');
+  expect(hidden).toBe(5001 - BRANCH_PICKER_LIMIT);
+});
+
+test('the branch picker keeps the current branch first and filters case-insensitively', () => {
+  const names = ['develop', 'main', 'Release/1.0', 'release/2.0'];
+  expect(filterBranchNames(names, 'release/2.0', 'RELEASE')).toEqual({
+    visible: ['release/2.0', 'Release/1.0'],
+    hidden: 0,
+  });
+  expect(filterBranchNames(names, 'main', 'nope')).toEqual({ visible: [], hidden: 0 });
+});
+
+test('the branch picker shows the current branch before /branches answers', () => {
+  expect(filterBranchNames([], 'main', '')).toEqual({ visible: ['main'], hidden: 0 });
+});
+
+test('the default branch is never a Radix <Select> of every remote branch', () => {
+  expect(code).toContain('<BranchPicker');
+  expect(code).not.toMatch(/branchNames\.map\(\(branch\) => \(\s*<SelectItem/);
 });

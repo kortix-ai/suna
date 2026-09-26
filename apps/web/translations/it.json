@@ -15,7 +15,11 @@
     "selectInstallation": "Seleziona installazione",
     "manifestRequirement": "Il nuovo repository deve contenere {manifest} nel branch predefinito. Prima interrompi le sessioni attive e chiudi le richieste di modifica aperte.",
     "cancel": "Annulla",
-    "changing": "Modifica in corso…"
+    "changing": "Modifica in corso…",
+    "searchBranches": "Cerca branch…",
+    "loadingBranches": "Caricamento dei branch…",
+    "noBranches": "Nessun branch corrispondente.",
+    "moreBranches": "Altri {count}. Digita per filtrare."
   },
   "pooledSecrets": {
     "saveChanges": "Salva modifiche",

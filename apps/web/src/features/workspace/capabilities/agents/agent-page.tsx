@@ -75,6 +75,7 @@ import {
   AGENT_CONFIG_SECTIONS,
   type AgentConfigSectionKey,
   AgentConfigSections,
+  agentEditorOptionQueries,
   DEFAULT_AGENT_CONFIG_SECTION,
   isAgentConfigSectionKey,
   useAgentDraft,
@@ -120,7 +121,7 @@ import {
   UsersIcon,
   WrenchIcon,
 } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -184,7 +185,19 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
   const config = detailQuery.data?.config ?? null;
   const agent = toArray(config?.agents).find((a) => a.name === agentName) ?? null;
 
-  const configQuery = useAgentConfig(projectId, agent ? agentName : undefined);
+  // All reads start on the first render, in parallel. The agent-config read
+  // used to wait for detail to list the agent, and the editor's option reads
+  // for the editor to mount: three round trips in a row, each a Git read on
+  // the API. Now the skeleton lasts as long as the slowest single read.
+  const configQuery = useAgentConfig(projectId, agentName);
+  const editorOptionQueries = agentEditorOptionQueries(projectId);
+  useQueries({
+    queries: [
+      editorOptionQueries.secrets,
+      editorOptionQueries.connectors,
+      editorOptionQueries.sandboxes,
+    ].map((query) => ({ ...query, enabled: canWrite })),
+  });
 
   if (detailQuery.isLoading || (agent && configQuery.isLoading)) {
     return <AgentPageSkeleton />;

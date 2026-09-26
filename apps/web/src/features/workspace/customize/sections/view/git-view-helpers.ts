@@ -94,3 +94,32 @@ export function connectionStatusLabel(
   }
   return { tone: 'unknown', label: copy.disconnected };
 }
+
+/** Rows the default-branch picker renders at once. */
+export const BRANCH_PICKER_LIMIT = 50;
+
+/**
+ * The rows the default-branch picker shows for one search string.
+ *
+ * A long-lived project's remote holds one branch per session: thousands of
+ * refs. Rendering each as a menu row froze the tab, then crashed it. The
+ * picker now renders at most `limit` rows and says how many it held back.
+ *
+ * The current branch always comes first when it matches, so the selected
+ * value is visible without a search. Matching is a case-insensitive
+ * substring; the order is otherwise the server's.
+ */
+export function filterBranchNames(
+  names: readonly string[],
+  current: string,
+  query: string,
+  limit: number = BRANCH_PICKER_LIMIT,
+): { visible: string[]; hidden: number } {
+  const needle = query.trim().toLowerCase();
+  const matches = (name: string) => !needle || name.toLowerCase().includes(needle);
+  const ordered = [current, ...names.filter((name) => name !== current)].filter(
+    (name) => name && matches(name),
+  );
+  const unique = [...new Set(ordered)];
+  return { visible: unique.slice(0, limit), hidden: Math.max(0, unique.length - limit) };
+}
