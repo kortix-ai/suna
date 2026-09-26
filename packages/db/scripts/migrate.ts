@@ -265,6 +265,9 @@ async function main() {
       onRetry: (attempt) => {
         console.warn(`[migrate] PostgreSQL deadlock rolled back the transaction; retrying pending migrations (${attempt}/2).`);
       },
+      onLockRetry: (attempt) => {
+        console.warn(`[migrate] another migration holds the advisory lock; retrying pending migrations (${attempt}/12).`);
+      },
     },
   );
 
