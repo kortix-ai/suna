@@ -27,7 +27,6 @@ import { createEnvRouter } from '../routes/env'
 import { createOpenCodeControlService } from '../harness/open-code/control'
 import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
 import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
-import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
 import {
   __resetRuntimeProjectionRelayForTests,
   __setRuntimeProjectionStateReaderForTests,
