@@ -15,6 +15,7 @@ import { FilePathBreadcrumbs } from '@/features/project-files/components/file-br
  * module-stable and read the active sandbox, so this is a module constant.
  */
 export const workspaceFileSource: FileSource = {
+  id: 'sandbox-workspace',
   useFileContent,
   useBinaryBlob,
   download: downloadFile,
