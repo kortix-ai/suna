@@ -623,6 +623,8 @@ export async function handleChatCompletions(
       relayStream({
         upstreamBody: upstream.body,
         requestId: id,
+        upstreamProvider: served.provider,
+        upstreamModel: served.resolvedModel ?? routedModel,
         logger,
         signal: req.signal,
         settle,

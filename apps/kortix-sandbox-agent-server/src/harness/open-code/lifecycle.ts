@@ -170,10 +170,9 @@ export const RESPAWN_REQUIRED_ENV_NAMES = [
  * 208). Whether `POST /global/dispose` re-registers a server that was not
  * previously in the set is UNVERIFIED against the pinned opencode.
  *
- * Left alone rather than guessed at: adding it here breaks the tested
- * invariant in dispose-reload.test.ts ("every name spawnChild consumes outside
- * the config file is listed") and would buy an ~8s respawn for a case nobody
- * has measured. Resolve it with a live sandbox — enable the face mid-session,
+ * Left alone rather than guessed at: every name here is one spawnChild
+ * consumes OUTSIDE the config file, which this name is not, and adding it
+ * would buy an ~8s respawn for a case nobody has measured. Resolve it with a live sandbox — enable the face mid-session,
  * then ask opencode whether the server is registered — and update whichever
  * comment turns out to be false.
  */
@@ -822,8 +821,6 @@ function scheduleCatalogWarmToPath(
   })()
 }
 
-export const buildConnectorMcpConfigContent = buildOpencodeConfigContent
-
 /**
  * Where the composed Kortix config is materialized for an OpenCode child.
  * Derived from the DAEMON's own home, never from `env.HOME`: a project may name
@@ -978,7 +975,7 @@ let lastConfiguredProviderModelIds: Set<string> | null = null
  * Purely additive in both cases: nothing is removed, so a transient fetch can
  * never shrink a working picker.
  */
-export function withManagedOverlay(
+function withManagedOverlay(
   base: Record<string, KortixGatewayModel>,
   live: Record<string, KortixGatewayModel> | null | undefined,
 ): Record<string, KortixGatewayModel> {
@@ -1100,12 +1097,6 @@ export async function settleManagedModelsPrefetch(): Promise<Record<
   const pending = managedPrefetch
   if (pending) await pending.catch(() => null)
   return cachedManagedModels()
-}
-
-/** The kortix model ids the running OpenCode's provider map holds (i.e. the ids
- *  in the config written by the last spawn), or null before any config build. */
-export function configuredProviderModelIds(): Set<string> | null {
-  return lastConfiguredProviderModelIds
 }
 
 /**
@@ -1380,7 +1371,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
  *  Used when the live managed fetch is unavailable, so a managed model is
  *  present in OpenCode's provider map even with a stale baked catalog AND a
  *  down gateway. Kept in sync with @kortix/llm-catalog MANAGED_MODELS by
- *  __tests__/managed-fallback-sync.test.ts — a managed model missing here and
+ *  apps/api/src/llm-gateway/models/managed-fallback-sync.test.ts — a managed model missing here and
  *  missing from the baked image is the exact 2026-08-19 ModelNotFound outage. */
 export const BUNDLED_MANAGED_MODELS: Record<string, KortixGatewayModel> = Object.fromEntries(
   Object.entries(MINIMAL_FALLBACK_MODELS).filter(
@@ -1410,7 +1401,7 @@ const KNOWN_LIMIT_BY_TAIL: Record<string, { context?: number; output?: number }>
 // long sessions then blow past the window and get stuck (session pinned at 100%
 // context). Backfill from the known-model table (exact id, then bare id), else a
 // conservative default. Models that already declare a usable limit are untouched.
-export function withModelLimits(
+function withModelLimits(
   models: Record<string, KortixGatewayModel>,
 ): Record<string, KortixGatewayModel> {
   const out: Record<string, KortixGatewayModel> = {}
@@ -2040,8 +2031,7 @@ export function createOpencodeLifecycle(
 
   /**
    * Signal a process GROUP and resolve once it is gone (or the hard-kill
-   * deadline passes). Extracted from stop() so the verified reload can retire
-   * the old opencode with the same discipline.
+   * deadline passes). stop() and the verified reload's retirement both use it.
    */
   function killProcessGroup(proc: ChildProcess, signal: NodeJS.Signals): Promise<void> {
     const killGroup = (sig: NodeJS.Signals) => {
@@ -2536,39 +2526,11 @@ export function createOpencodeLifecycle(
         readinessTimer = null
       }
       if (!child) return
-      const c = child
-      // Spawned with detached: true, so c.pid also identifies the process
-      // group opencode leads — signal the whole group (-pid), not just this
-      // direct child, so a grandchild opencode forks (e.g. its own `bun
-      // install` for the config dir) can't outlive the kill and race a
-      // freshly-spawned opencode's install into the same directory. Falls
-      // back to a plain child kill if the group signal itself throws.
-      const killGroup = (sig: NodeJS.Signals) => {
-        if (c.pid) {
-          try {
-            process.kill(-c.pid, sig)
-            return
-          } catch {}
-        }
-        c.kill(sig)
-      }
-      return new Promise<void>((resolve) => {
-        const onExit = () => resolve()
-        c.once('exit', onExit)
-        try {
-          killGroup(signal)
-        } catch {
-          resolve()
-          return
-        }
-        // Hard kill if the child (or its group) ignores SIGTERM.
-        setTimeout(() => {
-          try {
-            killGroup('SIGKILL')
-          } catch {}
-          resolve()
-        }, 5_000).unref()
-      })
+      // Spawned with detached: true, so the pid also names the process group
+      // OpenCode leads: signal the whole group, so a grandchild it forked (its
+      // own `bun install` for the config dir) cannot outlive the kill and race
+      // a fresh OpenCode's install into the same directory.
+      await killProcessGroup(child, signal)
     },
 
     async restart(opts?: { finalizeTurn?: boolean }) {

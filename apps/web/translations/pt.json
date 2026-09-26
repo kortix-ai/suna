@@ -19313,7 +19313,17 @@
   },
   "commandPalette": {
     "title": "Paleta de comandos",
-    "description": "Pesquise um comando para executar..."
+    "description": "Pesquise um comando para executar...",
+    "copyTitle": "Copiar",
+    "copyEmail": "e-mail",
+    "copyUserId": "ID do usuário",
+    "copyAccountId": "ID da conta",
+    "copyProjectId": "ID do projeto",
+    "copySessionId": "ID da sessão",
+    "copySessionLink": "link da sessão",
+    "copyAction": "Copiar {label}",
+    "copied": "Copiado: {label}",
+    "copyFailed": "Não foi possível copiar para a área de transferência"
   },
   "personalWelcome": {
     "dismiss": "Fechar",

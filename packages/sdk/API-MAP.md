@@ -40,7 +40,7 @@ designed API.
 ## IN SCOPE — the agent product (what the SDK needs)
 
 ### 1. Auth / session token  ✅
-Injection seam, not an endpoint. `configureKortix({ getToken })` → Supabase token on every request; 401 retry; cache invalidation.
+Injection seam, not an endpoint. `configureKortix({ getToken })` → token on every request. `backendApi`, `backendApi.postStream` and `authenticatedFetch` all send through `send()` (`core/http/transport.ts`): one header policy (bearer, client surface, admin bypass, act-as), one default deadline, one 401 replay with a fresh token.
 
 ### 1b. Token validation helper (pasted-API-key UX)  ✅
 `kortix.validateToken()` → `GET /v1/accounts/me`. Never throws — resolves

@@ -19313,7 +19313,17 @@
   },
   "commandPalette": {
     "title": "命令面板",
-    "description": "搜索要运行的命令..."
+    "description": "搜索要运行的命令...",
+    "copyTitle": "复制",
+    "copyEmail": "邮箱",
+    "copyUserId": "用户 ID",
+    "copyAccountId": "账户 ID",
+    "copyProjectId": "项目 ID",
+    "copySessionId": "会话 ID",
+    "copySessionLink": "会话链接",
+    "copyAction": "复制{label}",
+    "copied": "已复制{label}",
+    "copyFailed": "无法复制到剪贴板"
   },
   "personalWelcome": {
     "dismiss": "关闭",

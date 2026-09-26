@@ -64,7 +64,6 @@ export async function deleteSession(input: {
   sessionId: string;
   accountId: string;
   userId: string;
-  metadata?: Record<string, unknown> | null;
 }): Promise<{ ok: true } | { error: string; status: number }> {
   const { projectId, sessionId, accountId, userId } = input;
   const [sandbox] = await db
@@ -464,7 +463,24 @@ export async function restartSession(input: {
               sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
             ),
           );
-        await provider.start(externalId);
+        await provider.start(externalId, {
+          // A restore from cold storage runs inside start() and can outlast
+          // the restart lease; keep it, fenced to this restart.
+          onProgress: async () => {
+            const leaseExpiresAt = new Date(Date.now() + RUNTIME_RESTART_LEASE_MS);
+            await db
+              .update(sessionSandboxes)
+              .set({
+                metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ runtimeRestartLeaseExpiresAt: leaseExpiresAt.toISOString() })}::jsonb`,
+              })
+              .where(
+                and(
+                  eq(sessionSandboxes.sandboxId, sessionId),
+                  sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
+                ),
+              );
+          },
+        });
         if (!(await ownsRestart('after_start'))) return;
         // Provider ingress credentials can change on every stop/start cycle.
         // Remove any link resolved while the sandbox was stopped.

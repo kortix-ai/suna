@@ -120,7 +120,6 @@
   "description": "<div align=\"center\">",
   "main": "index.js",
   "directories": {
-    "doc": "docs",
     "test": "tests"
   },
   "dependencies": {

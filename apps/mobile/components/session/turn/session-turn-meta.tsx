@@ -91,7 +91,6 @@ export function SessionTurnMeta({
           testID="session-turn-meta-trigger">
           <Icon
             as={DotsThreeIcon}
-            weight="bold"
             size={TURN_ACTION_ICON_SIZE}
             color={withAlpha(THEME[scheme].foreground, 0.7)}
           />

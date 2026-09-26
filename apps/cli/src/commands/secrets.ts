@@ -71,12 +71,13 @@ Subcommands:
                                     while one is unexpired. Warns when this
                                     session's agent will not receive a name.
                                     --scope runtime|connector  --expires <min>
-  sync                              Force a re-push of all project secrets to
-                                    this session's sandbox. Use after setting
-                                    a secret via the intake link or after a
-                                    secret was updated mid-session. People
-                                    only: an agent session gets 403 — its env
-                                    re-syncs on every prompt.
+  sync                              Re-push secrets into sandboxes. In an agent
+                                    session: pulls THIS session's secrets and
+                                    grant now (the per-prompt sync, on
+                                    demand). As a person: every active
+                                    sandbox of the project. Use after a secret
+                                    is set via the intake link, updated, or
+                                    newly granted to the agent mid-session.
   delivery IDENTIFIER EXPOSURE      Set environment (default), enforced, or
                                     none. \`enforced\` is EXPERIMENTAL and needs
                                     the project's \`secrets_egress\` feature flag
@@ -472,7 +473,7 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
       )}\n` +
         `  ${C.dim}Fix (a person with project access; an agent cannot widen its own grant): ` +
         `Customize → Agents → ${agentScope.agent} → Secrets and enable ${notGranted.length === 1 ? 'it' : 'them'}. ` +
-        `This session receives the change when it is saved.${C.reset}\n`,
+        `Then run \`kortix secrets sync\` to pull ${notGranted.length === 1 ? 'it' : 'them'} into this session.${C.reset}\n`,
     );
   }
   if (scopedGrant && agentScope) {

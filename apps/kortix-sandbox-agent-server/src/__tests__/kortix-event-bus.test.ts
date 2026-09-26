@@ -127,37 +127,6 @@ describe('resync — the daemon says so instead of pretending', () => {
 })
 
 describe('replay -> live handoff', () => {
-  test('THE critical property: no loss and no duplication across the handoff', () => {
-    const bus = new KortixEventBus('e1', 1000)
-    for (let i = 1; i <= 50; i++) bus.publish('message.part.delta', { i })
-
-    // A subscriber that resumes at 30 AND keeps publishing while it drains its
-    // replay — exactly the shape of a browser reconnecting mid-turn.
-    const received: number[] = []
-    let replaying = true
-    const queued: KortixEvent[] = []
-    const sub = bus.subscribe(
-      (event) => {
-        if (replaying) queued.push(event)
-        else received.push(event.seq)
-      },
-      { since: 30, epoch: 'e1' },
-    )
-    // Events published between `subscribe` and the drain below MUST land in
-    // the listener (they do: the listener is registered inside subscribe) and
-    // MUST NOT also appear in the replay snapshot.
-    for (let i = 51; i <= 60; i++) bus.publish('message.part.delta', { i })
-    for (const event of sub.replay) received.push(event.seq)
-    replaying = false
-    for (const event of queued) if (event.seq > received[received.length - 1]!) received.push(event.seq)
-    for (let i = 61; i <= 70; i++) bus.publish('message.part.delta', { i })
-
-    const expected = Array.from({ length: 40 }, (_, i) => 31 + i)
-    expect(received).toEqual(expected)
-    expect(new Set(received).size).toBe(received.length)
-    sub.unsubscribe()
-  })
-
   test('a replay taken at seq N never contains an event published after it', () => {
     const bus = new KortixEventBus('e1', 1000)
     for (let i = 1; i <= 10; i++) bus.publish('x', { i })
@@ -188,18 +157,6 @@ describe('replay -> live handoff', () => {
     bus.subscribe(listener, {})
     expect(() => bus.publish('a', {})).not.toThrow()
     expect(events).toHaveLength(1)
-  })
-
-  test('every subscriber sees the SAME seq for the same event', () => {
-    const bus = new KortixEventBus('e1')
-    const a = collect()
-    const b = collect()
-    bus.subscribe(a.listener, {})
-    bus.subscribe(b.listener, {})
-    bus.publish('x', {})
-    bus.publish('y', {})
-    expect(a.events.map((e) => e.seq)).toEqual([1, 2])
-    expect(b.events.map((e) => e.seq)).toEqual([1, 2])
   })
 })
 

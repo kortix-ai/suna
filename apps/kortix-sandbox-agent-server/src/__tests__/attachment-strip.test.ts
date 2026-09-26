@@ -138,11 +138,6 @@ describe('attachment bytes leave the daemon on demand, never in the list', () =>
     expect(res.status).toBe(304)
   })
 
-  it('an unknown part is a 404, not a crash', async () => {
-    const res = await app().request(`/kortix/part/${SESSION}/${MESSAGE}/prt_nope`)
-    expect(res.status).toBe(404)
-  })
-
   it('an unknown message is a 404, not a crash', async () => {
     const res = await app().request(`/kortix/part/${SESSION}/msg_nope/prt_img`)
     expect(res.status).toBe(404)

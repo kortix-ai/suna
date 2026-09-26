@@ -659,7 +659,7 @@ flow(
         if (download.status !== 403) throw new Error(`restricted download: expected 403, got ${download.status}`);
       });
 
-      await ctx.step('a root skills/ folder joins the release, and its archive is rebuilt from the commit its URL names', async () => {
+      await ctx.step('a root skills/ folder joins the release, its archive URL names the commit, and the stored archive serves with or without it', async () => {
         const tip = await fixture.commit(
           { 'skills/root-demo/SKILL.md': '---\nname: root-demo\ndescription: root layout\n---\nRoot skill.\n' },
           'root layout skill',
@@ -678,9 +678,12 @@ flow(
         for (const path of ['skills/root-demo/SKILL.md', 'skills/demo/SKILL.md', 'agents/kortix.md', 'opencode.json']) {
           if (!files.has(path)) throw new Error(`archive lacks ${path}`);
         }
-        // The composed tree is in no mirror: without its commit the route cannot vouch for it.
+        // The composed tree is in no mirror. The release stored its archive, so
+        // the project-scoped store key serves it without the commit too (CFG-7);
+        // the commit only lets the API rebuild an archive the store lacks.
         const bare = await fixture.download(own.secret, composed.config_tree_id!);
-        if (bare.status !== 404) throw new Error(`download without the commit: expected 404, got ${bare.status}`);
+        if (bare.status !== 200) throw new Error(`download without the commit: expected 200, got ${bare.status}`);
+        if (!bare.bytes.equals(download.bytes)) throw new Error('download without the commit returned different bytes');
       });
     } finally {
       await fixture.cleanup();

@@ -1,0 +1,9 @@
+---
+recorded: 2026-08-27T12:09:14Z
+commit: a69156b6af
+---
+# Under the gateway every model is `providerID: 'kortix'` — a "same provider" heuristic keyed on `providerID` spans the whole catalog
+
+- **Incident (2026-08-27, SampleCo self-host, web `39685da4`):** the composer model picker looked dead — every click left the chip on "Claude Opus 5 (Global)" and every prompt was sent with it. The click DID persist the pick; `healBedrockModelKey` (#6915, 2026-08-26) then replaced it at resolution time. The heal finds "the key's own provider" by `providerID` equality and detects Bedrock by any sibling ranking as an inference profile. On the gateway all 481 catalog models share `providerID: 'kortix'`, `bedrockInferenceProfileRank` strips the `amazon-bedrock/` prefix so `amazon-bedrock/global.anthropic.claude-opus-5` still ranks 2, and OpenRouter/Codex/bare-Bedrock picks (no `global.` twin) fell through to the auto-seed fallback = the newest profile in the whole catalog. The unit suite (16/0) was green because every fixture used native ids (`amazon-bedrock` / `xai.grok-4.6`); no test flattened a gateway catalog.
+- **Rule:** any SDK/web logic that groups, filters, or "heals" models by provider must resolve the REAL provider (`FlatModel.provider`, or the modelID prefix under the gateway), never `providerID` alone — and must be tested against BOTH shapes: a native list and a `projectLlmCatalogToProviderList` gateway list. A native-only guard (the gateway already retries bare Bedrock ids after the 400, #6897) must short-circuit on `GATEWAY_PROVIDER_IDS`.
+- **Enforcement:** `healBedrockModelKey` step 0 returns gateway keys untouched; `bedrock-invokable.test.ts` "under the gateway the heal is inert" builds the fixture through the real `projectLlmCatalogToProviderList` → `flattenModels` and pins OpenRouter, bare-Bedrock and Codex picks as untouched.

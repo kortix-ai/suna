@@ -81,7 +81,8 @@ describe('storageOriginIsPublic', () => {
     ['http://[::1]:54321', false],
     ['not a url', false],
     ['https://abc.supabase.co', true],
-    ['https://essentia.kortix.cloud', true],
+    ['https://selfhost.example.test', true],
+    ['https://acme.kortix.cloud', true],
     ['http://34.120.1.2', true],
   ])('%s -> %p', (origin, expected) => {
     expect(storageOriginIsPublic(origin)).toBe(expected);
@@ -180,6 +181,41 @@ describe('serveConfigArchive', () => {
     expect(response.headers.get('x-kortix-config-archive-source')).toBe('mirror');
   });
 
+  test('CFG-7: a tree the mirror no longer has (repository replaced) still serves from the store', async () => {
+    // A repository replacement points the project's origin at unrelated
+    // history: no fetch of the CURRENT origin will ever reproduce a tree the
+    // OLD origin built. The store still holds the byte-identical archive,
+    // keyed by this project's own prefix, and must serve it without the
+    // mirror ever containing the tree.
+    const goneTree = 'e'.repeat(40);
+    const store = new MemoryConfigArchiveStore();
+    const archive = await buildConfigArchive(repo, tree);
+    await store.putIfAbsent(configArchiveKey(project.projectId, goneTree), archive);
+    const m = mirrors();
+    const response = await serveConfigArchive(project, goneTree, m.mirror, m.forced, {
+      store,
+      ...PRIVATE,
+      fetch: async () => new Response(new Uint8Array(archive)),
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-kortix-config-archive-source')).toBe('store');
+    expect(Buffer.from(await response.arrayBuffer()).equals(archive)).toBe(true);
+    // Both the warm and the forced mirror were consulted and missed, exactly
+    // like the plain-404 case, before the store fallback ran.
+    expect(m.calls.forced).toBe(1);
+  });
+
+  test('CFG-7: a tree neither the mirror nor the store has is still 404', async () => {
+    const goneTree = 'd'.repeat(40);
+    const m = mirrors();
+    const response = await serveConfigArchive(project, goneTree, m.mirror, m.forced, {
+      store: new MemoryConfigArchiveStore(),
+      ...PRIVATE,
+    });
+    expect(response.status).toBe(404);
+    expect(m.calls.forced).toBe(1);
+  });
+
   test('a tree over the archive limit is 413', async () => {
     const m = mirrors();
     const response = await serveConfigArchive(project, hugeTree, m.mirror, m.forced, {
@@ -223,7 +259,7 @@ describe('serveConfigArchive — a composed release tree (root skills/)', () => 
     expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
   });
 
-  test('404 without the commit, and for a commit that composes a different tree', async () => {
+  test('with nothing stored: 404 without the commit, and for a commit that composes a different tree', async () => {
     const m = mirrors();
     const store = new MemoryConfigArchiveStore();
     expect((await serveConfigArchive(project, composedTree, m.mirror, m.forced, { store, ...PRIVATE })).status).toBe(404);

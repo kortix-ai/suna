@@ -19313,7 +19313,17 @@
   },
   "commandPalette": {
     "title": "Befehlspalette",
-    "description": "Nach einem auszuführenden Befehl suchen..."
+    "description": "Nach einem auszuführenden Befehl suchen...",
+    "copyTitle": "Kopieren",
+    "copyEmail": "E-Mail",
+    "copyUserId": "Benutzer-ID",
+    "copyAccountId": "Konto-ID",
+    "copyProjectId": "Projekt-ID",
+    "copySessionId": "Sitzungs-ID",
+    "copySessionLink": "Sitzungslink",
+    "copyAction": "{label} kopieren",
+    "copied": "{label} kopiert",
+    "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
   },
   "personalWelcome": {
     "dismiss": "Schließen",

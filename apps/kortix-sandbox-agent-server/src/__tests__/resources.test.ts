@@ -2,7 +2,8 @@
  * Box resource telemetry — the numbers every "the session stopped"
  * investigation needed and never had on record.
  */
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { logger } from '../logger'
 import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason } from '../harness/open-code/resource-diagnostics'
 import {
   type ResourceSnapshot,
@@ -180,36 +181,39 @@ describe('startResourceMonitor', () => {
     stop = null
   })
 
-  test('ticks on start, on demand, and on an opencode state change; pressure logs once per change', async () => {
-    const reasons: string[] = []
-    let state = 'ok'
+  test('ticks on start and on demand; pressure warns once per change, not once per tick', async () => {
     let pressured = false
-    const monitor = startResourceMonitor({
-      intervalMs: 60_000,
-      runtimePid: () => 2423,
-      runtimeState: () => state,
-      snapshot: async () => {
-        return pressured
-          ? snapshot({ memory: { totalMb: 3892, availableMb: 100, usedPct: 97, swapTotalMb: 0, swapFreeMb: 0 } })
-          : snapshot()
-      },
-    })
-    stop = monitor.stop
-    // The start tick is async; wait for it.
-    await Bun.sleep(20)
-    expect(monitor.latest()).not.toBeNull()
+    const warn = spyOn(logger, 'warn')
+    try {
+      const monitor = startResourceMonitor({
+        intervalMs: 60_000,
+        runtimePid: () => 2423,
+        snapshot: async () =>
+          pressured
+            ? snapshot({ memory: { totalMb: 3892, availableMb: 100, usedPct: 97, swapTotalMb: 0, swapFreeMb: 0 } })
+            : snapshot(),
+      })
+      stop = monitor.stop
+      // The start tick is async; wait for it.
+      await Bun.sleep(20)
+      expect(monitor.latest()).not.toBeNull()
 
-    pressured = true
-    const s = await monitor.tick('diag')
-    reasons.push('diag')
-    expect(s.memory.usedPct).toBe(97)
-    expect(monitor.latest()?.memory.usedPct).toBe(97)
+      pressured = true
+      const s = await monitor.tick('diag')
+      await monitor.tick('diag')
+      expect(s.memory.usedPct).toBe(97)
+      expect(monitor.latest()?.memory.usedPct).toBe(97)
+      const pressureWarnings = () => warn.mock.calls.filter(([msg]) => msg === '[resources] pressure')
+      expect(pressureWarnings()).toHaveLength(1)
 
-    state = 'starting'
-    // The state watcher polls every 5 s; drive a tick directly to keep the test fast.
-    const t = await monitor.tick('opencode ok -> starting')
-    expect(t.memory.usedPct).toBe(97)
-    expect(reasons).toEqual(['diag'])
+      pressured = false
+      await monitor.tick('diag')
+      pressured = true
+      await monitor.tick('diag')
+      expect(pressureWarnings()).toHaveLength(2)
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 
