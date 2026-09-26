@@ -43,7 +43,10 @@ export function defaultAgentFile(agentName: string): string {
  */
 export function safeRepoPath(value: unknown): string | null {
   if (typeof value !== 'string') return null;
-  const trimmed = value.trim().replace(/\/+$/, '');
+  // An index scan, not /\/+$/: that regex is quadratic on a long run of slashes.
+  let end = value.trimEnd().length;
+  while (end > 0 && value[end - 1] === '/') end--;
+  const trimmed = value.slice(0, end).trim();
   if (!trimmed || trimmed.startsWith('/') || trimmed.startsWith('-')) return null;
   const safe = trimmed
     .split('/')

@@ -21,6 +21,13 @@ describe('safeRepoPath', () => {
       expect(safeRepoPath(bad)).toBeNull();
     }
   });
+
+  test('runs in linear time on a long run of slashes', () => {
+    const started = performance.now();
+    expect(safeRepoPath(`a${'/'.repeat(100_000)}b`)).toBeNull();
+    expect(safeRepoPath(`agents${'/'.repeat(100_000)}`)).toBe('agents');
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });
 
 describe('safeAgentFile and AGENT_FILE_PATTERN agree', () => {
