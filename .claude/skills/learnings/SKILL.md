@@ -6780,3 +6780,33 @@ again after the public session start. Pre-boot presence is not migration proof.
 restored, and end-to-end verified events. The final event runs after the public
 start route reaches ready. Archive completion cannot mark the session verified
 without that final workspace event.
+
+### 2026-09-26 — Bound database shutdown in persistent migration workers
+
+**Incident.** Two persistent migration controllers finished their batches, then
+hung for 21 hours while closing PostgreSQL connections after a transient DNS
+failure. The process supervisor saw live child processes and did not restart
+them. The ledger did not advance.
+
+**Rule.** Persistent batch workers use a bounded database shutdown. Process
+presence is not a health check. A watchdog must also detect stale ledger
+progress for each controller independently.
+
+**Enforcement.** PostgreSQL clients close with a five-second timeout. Launch
+agents restart exited batches. The watchdog checks provider-transfer and
+workspace-repair progress independently instead of treating a process as proof
+of work.
+
+### 2026-09-26 — Preserve workspace drift before canonical repair
+
+**Near miss.** Exact workspace verification detected changed file metadata in a
+previously restored folder. Replacing that folder directly could have discarded
+activity created after the first import.
+
+**Rule.** A canonical workspace repair never overwrites a divergent destination
+folder. It moves the current folder into the sandbox archive before restoring
+and verifying the canonical source copy.
+
+**Enforcement.** The repair controller runs exact verification first. On a
+mismatch, it preserves the current folder under the durable sandbox archive,
+restores from the verified manifest and archive, and reruns exact verification.
