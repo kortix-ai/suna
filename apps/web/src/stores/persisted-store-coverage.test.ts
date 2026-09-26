@@ -136,12 +136,13 @@ describe('every persisted zustand store is covered by the sign-out disk sweep', 
   const discovered = discoverPersistedStores();
 
   test('the walk actually finds persisted stores — an empty walk would pass everything', () => {
-    // A floor on the CURRENT, real count (12 as of this test's writing) minus
-    // slack, not an exact pin — an exact count would churn on every unrelated
-    // store addition. The floor exists so a walker broken by a directory
-    // rename or a changed `persist(` call shape fails loud instead of
-    // quietly checking zero stores.
-    expect(discovered.length).toBeGreaterThanOrEqual(11);
+    // A floor on the CURRENT, real count (10 as of this test's writing, after
+    // diagnostics-store.ts became a re-export shim with no persist() call of
+    // its own) minus slack, not an exact pin — an exact count would churn on
+    // every unrelated store addition. The floor exists so a walker broken by
+    // a directory rename or a changed `persist(` call shape fails loud
+    // instead of quietly checking zero stores.
+    expect(discovered.length).toBeGreaterThanOrEqual(10);
   });
 
   for (const store of discovered) {

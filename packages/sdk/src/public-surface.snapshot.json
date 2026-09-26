@@ -1570,6 +1570,30 @@
     "pruneIDBCache",
     "saveSessionToIDB"
   ],
+  "./internal/diagnostics-store": [
+    "buildDiagnosticCountsMap",
+    "findDiagnosticsForFile",
+    "getRelativePath",
+    "parseDiagnosticsFromToolOutput",
+    "useDiagnosticsStore"
+  ],
+  "./internal/managed-storage": [
+    "ScopedCache",
+    "createSafeJSONStorage",
+    "createSafeSessionJSONStorage",
+    "pruneAllRegisteredCaches",
+    "pruneDisposableCaches",
+    "registerDisposableFamily",
+    "registerDisposableKey",
+    "safeGetItem",
+    "safeLocalStorage",
+    "safeRemoveItem",
+    "safeSessionGetItem",
+    "safeSessionRemoveItem",
+    "safeSessionSetItem",
+    "safeSessionStorage",
+    "safeSetItem"
+  ],
   "./opencode-client": [
     "RuntimeNotReadyError",
     "approveTask",

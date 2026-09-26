@@ -23,6 +23,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `<script>` tag with no bundler.
 - `KortixMasterProject` — the kortix-master daemon's board project.
 - `@kortix/sdk/internal/*` for the zustand stores. Not covered by semver.
+- `@kortix/sdk/internal/diagnostics-store` and
+  `@kortix/sdk/internal/managed-storage`. `apps/web` now imports the SDK's
+  LSP diagnostics store and quota-safe storage instead of keeping its own
+  copies. Not covered by semver.
 
 ### Deprecated
 - The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
@@ -60,6 +64,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     Retired queries never retry or poll.
 
 ### Fixed
+- `safeGetItem`, `safeSetItem`, `ScopedCache` and `pruneAllRegisteredCaches`
+  no longer throw when `window.localStorage` resolves to `null` (some
+  embedded WebViews do this instead of throwing) or when a resolved storage
+  throws on read during quota reclaim or pruning. Added
+  `safeSessionGetItem`, `safeSessionSetItem` and `safeSessionRemoveItem` with
+  the same guarantee for `sessionStorage`, plus `safeSessionStorage` and
+  `createSafeSessionJSONStorage` for zustand `persist` stores.
 - `BillingError` (402) and `RequestTooLargeError` (431) now extend `ApiError`.
   `err instanceof ApiError` matches every failed request, and a 402 keeps the
   backend's machine `code` (for example `app_budget_exceeded`), `details` and

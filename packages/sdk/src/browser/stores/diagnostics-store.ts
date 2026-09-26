@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeSessionJSONStorage } from '../../platform/storage/managed-storage';
 
 // ============================================================================
 // Types
@@ -167,6 +168,21 @@ export function buildDiagnosticCountsMap(
   return map;
 }
 
+/** Common project-root directory names, checked left-to-right in a path. */
+const PROJECT_ROOT_MARKERS = new Set([
+  'src',
+  'lib',
+  'app',
+  'pages',
+  'components',
+  'public',
+  'test',
+  'tests',
+  'pkg',
+  'cmd',
+  'internal',
+]);
+
 /**
  * Extract the relative filename from a diagnostic's file path.
  * Used by the diagnostics panel to show short names.
@@ -179,9 +195,8 @@ export function getRelativePath(absPath: string): string {
     // Strategy: find the deepest "project root" heuristic and strip it
     // Common patterns: /workspace/X/Y/ where Y is the project
     const parts = clean.split('/').filter(Boolean);
-    // Look for common project markers going from right to left
     for (let i = 0; i < parts.length; i++) {
-      if (['src', 'lib', 'app', 'pages', 'components', 'public', 'test', 'tests', 'pkg', 'cmd', 'internal'].includes(parts[i])) {
+      if (PROJECT_ROOT_MARKERS.has(parts[i])) {
         return parts.slice(i).join('/');
       }
     }
@@ -382,37 +397,10 @@ export const useDiagnosticsStore = create<DiagnosticsState>()(
 }),
   {
     name: 'kortix-diagnostics',
-    storage: {
-      // Guarded with try/catch (not just `typeof window`): React Native sets a
-      // global `window` shim but has no `sessionStorage`, so a bare reference
-      // throws a ReferenceError there. Degrading to "diagnostics didn't
-      // persist" is fine; crashing the store is not.
-      getItem: (name) => {
-        try {
-          if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return null;
-          const str = sessionStorage.getItem(name);
-          return str ? JSON.parse(str) : null;
-        } catch {
-          return null;
-        }
-      },
-      setItem: (name, value) => {
-        try {
-          if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return;
-          sessionStorage.setItem(name, JSON.stringify(value));
-        } catch {
-          /* ignore — quota or unavailable storage */
-        }
-      },
-      removeItem: (name) => {
-        try {
-          if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return;
-          sessionStorage.removeItem(name);
-        } catch {
-          /* ignore */
-        }
-      },
-    },
+    // The SDK's never-throw sessionStorage. Where storage is missing, blocked
+    // or `null` (React Native, Safari private mode, embedded WebViews),
+    // diagnostics stay in memory only. Corrupt saved JSON hydrates nothing.
+    storage: createSafeSessionJSONStorage<DiagnosticsState>(),
     partialize: (state) => ({ byFile: state.byFile }) as unknown as DiagnosticsState,
   },
 ));
