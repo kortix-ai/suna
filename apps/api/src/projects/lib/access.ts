@@ -706,11 +706,6 @@ const userIdentityMemo = ttlMemo({
   },
 });
 
-/** Drop a user's cached identity — call after a profile/email write. */
-export function invalidateUserIdentity(userId: string): void {
-  userIdentityMemo.invalidate(userId);
-}
-
 export async function resolveUserIdentities(userIds: string[]): Promise<Map<string, UserIdentity>> {
   const result = new Map<string, UserIdentity>();
   if (userIds.length === 0) return result;
