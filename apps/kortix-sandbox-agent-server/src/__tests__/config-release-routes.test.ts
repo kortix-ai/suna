@@ -230,6 +230,10 @@ describe('POST /kortix/config/converge end to end through the OpenCode control s
     const opencode = {
       getPid: () => 7,
       getState: () => 'ok',
+      // The route path now hands `convergeConfigRelease` a turn probe
+      // (control.ts), and the probe needs a base url. No session is pinned in
+      // this test, which `opencodeTurnInFlight` answers as a definite `false`.
+      getInternalUrl: () => 'http://127.0.0.1:4096',
       async reloadVerified(): Promise<VerifiedReloadResult> {
         return { outcome: 'swapped', port: 4097, pid: 8, turnEnded: false, orphanedMessageId: null }
       },
