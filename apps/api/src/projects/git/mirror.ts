@@ -289,6 +289,21 @@ export function isTransientGitMirrorError(err: unknown): err is GitOperationErro
 }
 
 /**
+ * Stable error code the platform API returns (HTTP 503) when a project's git
+ * mirror cold-clone/fetch fails for a TRANSIENT, retryable upstream reason
+ * (see `isTransientGitMirrorError`). The global `app.onError` in
+ * `apps/api/src/index.ts` attaches this code to the 503 body so the frontend
+ * can classify the response as an EXPECTED degradation instead of an opaque
+ * `ApiError` that pages Sentry (Better Stack frontend pattern `b4d05df2…`).
+ *
+ * Must stay in sync with `GIT_MIRROR_UNAVAILABLE_CODE` in
+ * `packages/sdk/src/core/http/api-client.ts` (the SDK cannot import from the
+ * API, so the string is declared on both sides, exactly like
+ * `FEATURE_NOT_SUPPORTED_CODE`).
+ */
+export const GIT_MIRROR_UNAVAILABLE_CODE = 'git_mirror_unavailable';
+
+/**
  * Cold bare clone with bounded retry for TRANSIENT failures. Exported with
  * injected side effects so the retry policy is unit-testable without a real git
  * process or network — see `mirror-transient.test.ts`.

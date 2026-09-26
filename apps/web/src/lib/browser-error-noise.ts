@@ -1040,6 +1040,38 @@ const SERVER_DEADLINE_NOISE_WRAPPERS: ReadonlyArray<RegExp> = [
   /^Unhandled promise rejection: (?:ApiError: )?Request exceeded the \d+s server processing deadline$/,
 ];
 
+// The API's transient git-mirror 503.
+// `apps/api/src/projects/git/mirror.ts`'s `isTransientGitMirrorError` classifies
+// a cold-clone/fetch failure for a TRANSIENT upstream reason (GitHub edge blip,
+// a momentarily unusable private-mirror credential, a mid-transfer timeout) as
+// EXPECTED and retryable; `apps/api/src/index.ts`'s `onError` answers a clean
+// 503 + `Retry-After` with `code: 'git_mirror_unavailable'` and the message
+// `git mirror is temporarily unavailable`, WITHOUT capturing to the API's OWN
+// Sentry (app 2346961).
+//
+// BUT the 503 RESPONSE crosses the boundary into the frontend: the SDK's
+// `makeRequest` extracts `errorData.message`, wraps it in an
+// `ApiError(status: 503)`, and (before the fix) fired `onError` →
+// `handleApiError`, which captures every 5xx to the FRONTEND Sentry (app
+// 2346967 — a SEPARATE app from the API's). That is exactly how Better Stack
+// frontend pattern `b4d05df2…` (`ApiError: git mirror is temporarily
+// unavailable`, first seen 2026-09-25, on session starts that cold-clone the
+// project mirror) reached the frontend telemetry despite the API-side
+// classification. `handleApiError` skips `captureException` for
+// `status === 503 && isGitMirrorUnavailableNoiseMessage(message)`; these
+// patterns are the telemetry-side backstop for leak paths that bypass that
+// guard (`<ClientErrorBoundary>`, route-error/app-error, and the Sentry SDK's
+// own `onunhandledrejection`).
+//
+// The match is anchored on the API's exact message (with the canonical
+// `ApiError: ` / unhandled-rejection wrappers) so a generic 503
+// (`HTTP 503: Service Unavailable`, `sandbox waking up`) is never matched.
+const GIT_MIRROR_UNAVAILABLE_NOISE_WRAPPERS: ReadonlyArray<RegExp> = [
+  /^git mirror is temporarily unavailable$/,
+  /^ApiError: git mirror is temporarily unavailable$/,
+  /^Unhandled promise rejection: (?:ApiError: )?git mirror is temporarily unavailable$/,
+];
+
 const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/scripts\/inpage\.js$/,
   /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
@@ -2080,6 +2112,21 @@ export function isClientRequestTimeoutMessage(message: unknown): boolean {
 export function isServerDeadlineNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message).trim();
   return SERVER_DEADLINE_NOISE_WRAPPERS.some((re) => re.test(normalized));
+}
+
+/**
+ * Whether a message is the API's transient git-mirror 503
+ * (`git mirror is temporarily unavailable`, emitted by `apps/api/src/index.ts`
+ * when `isTransientGitMirrorError` matches). The API already classifies the
+ * cause out of its OWN Sentry and answers a retryable 503 + `Retry-After`; the
+ * response crosses into the FRONTEND Sentry as an `ApiError(status: 503)`
+ * (`handleApiError` captures every 5xx) — Better Stack frontend pattern
+ * `b4d05df2…`. Such a message must NEVER page Better Stack, regardless of which
+ * capture path delivered it. See `GIT_MIRROR_UNAVAILABLE_NOISE_WRAPPERS`.
+ */
+export function isGitMirrorUnavailableNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return GIT_MIRROR_UNAVAILABLE_NOISE_WRAPPERS.some((re) => re.test(normalized));
 }
 
 /**
@@ -4463,6 +4510,16 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Expected transient git-mirror 503 (the API's `isTransientGitMirrorError` →
+  // clean 503 + Retry-After with `code: 'git_mirror_unavailable'`). The API
+  // de-noises it from its OWN Sentry, but the 503 response crosses into the
+  // FRONTEND Sentry as an `ApiError(status: 503)` (Better Stack pattern
+  // `b4d05df2…`). Never page Better Stack for it, no matter which capture path
+  // delivered it. See `isGitMirrorUnavailableNoiseMessage`.
+  if (isGitMirrorUnavailableNoiseMessage(message)) {
+    return true;
+  }
+
   // Expected billing-gate 402 outcomes are user-facing business states handled
   // by a toast/upgrade dialog — never page Better Stack for them, even when the
   // SDK's `ApiError` reaches window.onerror / unhandledrejection before
@@ -4859,6 +4916,16 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // Drop it so the expected deadline state never pages Better Stack. See
   // `isServerDeadlineNoiseMessage`.
   if (isServerDeadlineNoiseMessage(message)) {
+    return true;
+  }
+
+  // Expected transient git-mirror 503 (the API's `isTransientGitMirrorError` →
+  // clean 503 + Retry-After with `code: 'git_mirror_unavailable'`). The API
+  // de-noises it from its OWN Sentry, but the 503 response crosses into the
+  // FRONTEND Sentry as an `ApiError(status: 503)` (Better Stack pattern
+  // `b4d05df2…`). Never page Better Stack for it, no matter which capture path
+  // delivered it. See `isGitMirrorUnavailableNoiseMessage`.
+  if (isGitMirrorUnavailableNoiseMessage(message)) {
     return true;
   }
 

@@ -19,6 +19,7 @@ import {
   isFailedToSendMessageNoise,
   isFirefoxReactSchedulerReentryNoise,
   isFramelessNetworkErrorNoise,
+  isGitMirrorUnavailableNoiseMessage,
   isInjectedAppSource,
   isInjectedScriptSendMessageNoise,
   isInpageJsNoErrorMessageNoise,
@@ -2537,6 +2538,97 @@ test('does NOT suppress a real 5xx server ApiError', () => {
       shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
       false,
       `expected real server error "${value}" to keep reporting`,
+    );
+  }
+});
+
+// Regression for Better Stack frontend pattern `b4d05df2…`
+// (`ApiError: git mirror is temporarily unavailable`) on session starts:
+// `POST /v1/projects/:id/sessions` cold-clones the project's private git
+// mirror; a transient GitHub-edge/credential blip yields `fatal: repository
+// '<url>' not found`, which the API's `isTransientGitMirrorError` classifies as
+// EXPECTED and retryable. The API answers a clean 503 + `Retry-After` with
+// `code: 'git_mirror_unavailable'` and de-noises it from the API's OWN Sentry,
+// but the 503 crosses into the FRONTEND Sentry as an `ApiError(status: 503)`
+// (app 2346967 — a separate app). `handleApiError` skips `captureException`
+// for `status === 503 && isGitMirrorUnavailableNoiseMessage(message)`; these
+// checks are the telemetry-side backstop for leak paths (ClientErrorBoundary /
+// route-error / app-error / onunhandledrejection).
+const GIT_MIRROR_UNAVAILABLE_NOISE_EVENTS = [
+  // The exact API body message.
+  'git mirror is temporarily unavailable',
+  // The ApiError-class-prefixed wrapper.
+  'ApiError: git mirror is temporarily unavailable',
+  // Unhandled-rejection leak paths preserving the message.
+  'Unhandled promise rejection: git mirror is temporarily unavailable',
+  'Unhandled promise rejection: ApiError: git mirror is temporarily unavailable',
+];
+
+test('classifies every transient git-mirror 503 message as expected noise', () => {
+  for (const message of GIT_MIRROR_UNAVAILABLE_NOISE_EVENTS) {
+    assert.equal(
+      isGitMirrorUnavailableNoiseMessage(message),
+      true,
+      `expected "${message}" to be classified as a git-mirror 503`,
+    );
+  }
+});
+
+test('suppresses a transient git-mirror 503 Sentry event regardless of capture path', () => {
+  for (const value of GIT_MIRROR_UNAVAILABLE_NOISE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/projects/p/sessions/s' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [{ filename: 'app:///_next/static/chunks/38irc0p4wwe9z.js' }],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    );
+  }
+});
+
+test('suppresses a transient git-mirror 503 unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Unhandled promise rejection: ApiError: git mirror is temporarily unavailable',
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress a generic 503 message that is not the git-mirror wording', () => {
+  // A generic 503 (`HTTP 503: Service Unavailable`, `sandbox waking up`,
+  // `sandbox provider is temporarily unavailable`) must keep reporting — only
+  // the exact git-mirror message the API's `isTransientGitMirrorError` branch
+  // emits is classified as noise.
+  for (const value of [
+    'HTTP 503: Service Unavailable',
+    'Service Unavailable',
+    'sandbox waking up',
+    'sandbox provider is temporarily unavailable',
+    'git mirror is permanently unavailable',
+    'git mirror unavailable',
+    'git mirror is temporarily unavailable.',
+    'A git mirror is temporarily unavailable',
+  ]) {
+    assert.equal(
+      isGitMirrorUnavailableNoiseMessage(value),
+      false,
+      `expected generic git-mirror message "${value}" to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
+      false,
+      `expected generic git-mirror Sentry event "${value}" to keep reporting`,
     );
   }
 });
