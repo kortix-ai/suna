@@ -43,6 +43,7 @@ import { type AttachStatus, type RunAttachResult, runAttach } from './features/a
 import { CustomizeScreen } from './features/customize/index.ts';
 import { FilesScreen } from './features/files/index.ts';
 import { HelpOverlay } from './features/help/index.ts';
+import { PortsOverlay, type UsePortsResult } from './features/ports/index.ts';
 import { ReviewScreen } from './features/review/index.ts';
 import { SessionView } from './features/session/index.ts';
 import { focusHints } from './features/session/session-view.tsx';
@@ -131,6 +132,10 @@ export function App({
   );
   const [attachStatus, setAttachStatus] = useState<AttachStatus | null>(null);
   const [attaching, setAttaching] = useState(false);
+  // Hoisted from `SessionView`'s `usePorts()` — see the note on `onMetrics`
+  // just below for why overlays live at the root and state flows up to it.
+  const [portsApi, setPortsApi] = useState<UsePortsResult | null>(null);
+  const onPortsApi = useCallback((api: UsePortsResult) => setPortsApi(api), []);
 
   const wide = dimensions.width >= SPLIT_MIN_COLUMNS;
   const showSidebar = dimensions.width >= SIDEBAR_MIN_COLUMNS;
@@ -142,6 +147,15 @@ export function App({
   useEffect(() => {
     if (!order.includes(focus)) setFocus(order[0] as Focus);
   }, [order, focus]);
+
+  // A stale ports API (from the previous session's `SessionView` instance)
+  // must never answer for the new one — the new instance re-hoists its own
+  // within a render or two, but this closes the gap. `sessionId` is a pure
+  // re-run trigger, never read in the body.
+  // biome-ignore lint/correctness/useExhaustiveDependencies(sessionId): trigger-only dependency, not read in the body.
+  useEffect(() => {
+    setPortsApi(null);
+  }, [sessionId]);
 
   useEffect(() => {
     if (!quitArmed) return;
@@ -274,6 +288,9 @@ export function App({
       case 'toggle-terminal':
         return toggleTerminal();
       case 'overlay':
+        if (action.overlay === 'ports' && !portsApi) {
+          return pushToast('Open a session first.', 'error');
+        }
         return setOverlay(action.overlay);
       case 'new-session':
         return void createSession();
@@ -296,11 +313,15 @@ export function App({
 
   const sidebarHeight = Math.max(dimensions.height - 1, 3);
   const mainWidth = Math.max(dimensions.width - (showSidebar ? SIDEBAR_WIDTH : 0), 20);
+  const forwardedPorts = (portsApi?.rows ?? [])
+    .filter((row) => row.state === 'forwarding')
+    .map((row) => row.sandboxPort);
+  const portsHint = forwardedPorts.length ? `⇄ ${forwardedPorts.join(', ')} · ` : '';
   const hints = attaching
     ? 'opencode has the terminal…'
     : quitArmed
       ? 'Press Ctrl+C again to quit'
-      : `${focusHints(focus)} · ? help`;
+      : `${portsHint}${focusHints(focus)} · ? help`;
 
   return (
     <box
@@ -356,6 +377,7 @@ export function App({
 
         {route === 'session' && projectId && sessionId ? (
           <SessionView
+            host={host}
             projectId={projectId}
             sessionId={sessionId}
             title={title}
@@ -373,6 +395,7 @@ export function App({
             }}
             onCommand={runCommand}
             onToast={pushToast}
+            onPortsApi={onPortsApi}
           />
         ) : null}
 
@@ -457,6 +480,16 @@ export function App({
             }
           }}
           onClose={() => setOverlay(null)}
+        />
+      ) : null}
+
+      {overlay === 'ports' && portsApi ? (
+        <PortsOverlay
+          rows={portsApi.rows}
+          onToggle={portsApi.toggle}
+          onAdd={portsApi.addManual}
+          onClose={() => setOverlay(null)}
+          onToast={pushToast}
         />
       ) : null}
     </box>

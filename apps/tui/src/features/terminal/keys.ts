@@ -48,16 +48,17 @@ export const TERMINAL_KEYMAP: readonly Binding[] = [
     chords: [],
     description:
       'Every other key goes to the remote shell, Ctrl+C included. Quit the TUI with Ctrl+Q; ' +
-      'Tab and Alt+T still move focus and toggle the panel.',
+      'Tab, Alt+T and Alt+P still move focus, toggle the panel, and open the Ports panel.',
   },
 ] as const;
 
 /**
- * The four chords the APP keeps while the terminal is focused. The panel
+ * The five chords the APP keeps while the terminal is focused. The panel
  * swallows them (`preventDefault`) so the shell never sees them:
  *
  *   Tab / Shift+Tab  cycle focus out of the panel
  *   Alt+T            toggle the panel
+ *   Alt+P            open the Ports panel
  *   Ctrl+Q           quit the TUI
  *
  * `Ctrl+C` is deliberately absent — it is the shell's.
@@ -66,6 +67,7 @@ export const TERMINAL_RESERVED_CHORDS: readonly Chord[] = [
   { key: 'tab' },
   { key: 'tab', shift: true },
   { key: 't', alt: true },
+  { key: 'p', alt: true },
   { key: 'q', ctrl: true },
 ] as const;
 

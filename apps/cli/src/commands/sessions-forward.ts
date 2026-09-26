@@ -75,7 +75,8 @@ export async function runSessionsForward(argv: string[]): Promise<number> {
   const found = await locateSessionAnywhere(
     sessionId,
     { projectArg, hostArg },
-    (host) => `kortix sessions forward ${sessionId} --host ${host} ${portArgs.map((p) => `--port ${p}`).join(' ')}`,
+    (host) =>
+      `kortix sessions forward ${sessionId} --host ${host} ${portArgs.map((p) => `--port ${p}`).join(' ')}`,
   );
   if (!found) return 1;
   const { auth, projectId, projectName, hostName, session } = found.located;

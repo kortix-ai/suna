@@ -85,6 +85,13 @@ export interface TerminalPanelProps {
   onClose: () => void;
   onToast?: (message: string, kind?: ToastKind) => void;
   /**
+   * Raw PTY output text, called BEFORE it reaches the terminal renderable.
+   * The Ports panel (`features/ports`) taps this to notice a sandbox port a
+   * shell command printed (e.g. `python3 -m http.server 3000`). Never throws
+   * from here — a detector bug must not blank the terminal.
+   */
+  onOutput?: (text: string) => void;
+  /**
    * Socket factory. The default is the real Bun WebSocket. `scripts/
    * dev-terminal.tsx` overrides it to hold the socket and drop it on purpose,
    * which is how the reconnect path is exercised against a live sandbox.
@@ -101,9 +108,16 @@ export function TerminalPanel({
   height,
   onClose,
   onToast,
+  onOutput,
   openSocket = openPtyWebSocket,
 }: TerminalPanelProps) {
   const terminalRef = useRef<EmbeddedTerminalRenderable | null>(null);
+  // A ref, not a PtySession effect dependency: `onOutput` is an inline arrow
+  // from `SessionView` on every render, and the socket-owning effect below
+  // must NOT tear down and reconnect the PTY just because that identity
+  // changed.
+  const onOutputRef = useRef(onOutput);
+  onOutputRef.current = onOutput;
   const focusedRef = useRef(false);
   const ptySessionRef = useRef<PtySession | null>(null);
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -158,7 +172,14 @@ export function TerminalPanel({
     const ptySession = new PtySession({
       resolveUrl: ({ wake }) => getPtyWebSocketUrl(ptyId, undefined, { wake }),
       openSocket,
-      onOutput: (text) => terminalRef.current?.write(text),
+      onOutput: (text) => {
+        try {
+          onOutputRef.current?.(text);
+        } catch {
+          // A detector bug must never blank the terminal.
+        }
+        terminalRef.current?.write(text);
+      },
       onState: setState,
     });
     ptySessionRef.current = ptySession;

@@ -2,12 +2,12 @@ import { describe, expect, test } from 'bun:test';
 
 import type { RunningSandboxPortProxy } from '../api/sdk.ts';
 import {
-  PortForwardError,
   type PortForwardDeps,
+  PortForwardError,
   type PortForwardResolveRequest,
   startPortForward,
 } from '../port-forward.ts';
-import { SessionRuntimeError, type SessionRuntime } from '../session-runtime.ts';
+import { type SessionRuntime, SessionRuntimeError } from '../session-runtime.ts';
 import { auth, session } from './support/attach-fixtures.ts';
 
 function runtimeFor(overrides: Partial<SessionRuntime> = {}): SessionRuntime {
@@ -159,7 +159,9 @@ describe('startPortForward', () => {
       deps: h.deps,
     });
 
-    expect(result.forwards.map(({ sandboxPort, localPort, url }) => ({ sandboxPort, localPort, url }))).toEqual([
+    expect(
+      result.forwards.map(({ sandboxPort, localPort, url }) => ({ sandboxPort, localPort, url })),
+    ).toEqual([
       { sandboxPort: 3000, localPort: 3000, url: 'http://127.0.0.1:3000' },
       { sandboxPort: 5173, localPort: 5174, url: 'http://127.0.0.1:5174' },
     ]);
@@ -171,13 +173,16 @@ describe('startPortForward', () => {
       startProxy: (options) => {
         calls += 1;
         if (calls === 2) throw new Error('EADDRINUSE');
-        const proxy: RunningSandboxPortProxy = { url: `http://127.0.0.1:${options.port}`, close: () => {} };
+        const proxy: RunningSandboxPortProxy = {
+          url: `http://127.0.0.1:${options.port}`,
+          close: () => {},
+        };
         return proxy;
       },
     });
     const closedFlags: boolean[] = [];
     const trackedStart: PortForwardDeps['startProxy'] = (options) => {
-      const proxy = h.deps.startProxy!(options);
+      const proxy = h.deps.startProxy?.(options) as RunningSandboxPortProxy;
       const original = proxy.close;
       let closed = false;
       closedFlags.push(false);
@@ -222,7 +227,10 @@ describe('startPortForward', () => {
   test('surfaces a stopped session as PortForwardError without attempting to restart it', async () => {
     const h = harness({
       resolveRuntime: async () => {
-        throw new SessionRuntimeError('not-running', `Session ${session.session_id} is stopped, not running.`);
+        throw new SessionRuntimeError(
+          'not-running',
+          `Session ${session.session_id} is stopped, not running.`,
+        );
       },
     });
 

@@ -2,16 +2,12 @@ import { createServer } from 'node:net';
 
 import type { Auth } from './api/auth.ts';
 import { clientFromAuth } from './api/client.ts';
-import {
-  type RunningSandboxPortProxy,
-  startSandboxPortProxy,
-  withKortixScope,
-} from './api/sdk.ts';
+import { type RunningSandboxPortProxy, startSandboxPortProxy, withKortixScope } from './api/sdk.ts';
 import type { ProjectSession } from './api/types.ts';
 import {
+  type SessionRuntime,
   fetchProjectSession,
   resolveSessionRuntime,
-  type SessionRuntime,
 } from './session-runtime.ts';
 
 /**

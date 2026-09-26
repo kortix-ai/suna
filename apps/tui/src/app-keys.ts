@@ -34,7 +34,7 @@ export type Route = 'session' | 'files' | 'review' | 'apps' | 'customize' | 'acc
 export type Focus = 'sidebar' | 'transcript' | 'composer' | 'terminal' | 'screen';
 
 /** The one overlay slot's contents. */
-export type Overlay = 'help' | 'switcher' | null;
+export type Overlay = 'help' | 'switcher' | 'ports' | null;
 
 /** Route chords, in the order the handler tests them. */
 export const SCREEN_BINDINGS: readonly (readonly [string, Route])[] = [
@@ -108,6 +108,10 @@ export function globalKeyAction(key: KeyEvent, state: AppKeyState): AppKeyAction
   if (matchesBinding(key, 'focus.next')) return { kind: 'focus', step: 1 };
   if (matchesBinding(key, 'focus.prev')) return { kind: 'focus', step: -1 };
   if (matchesBinding(key, 'panel.terminal')) return { kind: 'toggle-terminal' };
+  // Ports (Alt+P) is reserved while the terminal is focused too — see
+  // `TERMINAL_RESERVED_CHORDS` — so it is tested here, before the terminal
+  // keeps the rest.
+  if (matchesBinding(key, 'ports')) return { kind: 'overlay', overlay: 'ports' };
   // Nothing below this line is reserved, so the terminal keeps the rest.
   if (terminalFocused) return null;
 

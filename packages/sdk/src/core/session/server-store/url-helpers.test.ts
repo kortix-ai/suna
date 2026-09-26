@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'bun:test';
-import { getBackendUrl, getPublicShareUrlForToken, getSandboxUrlForExternalId } from './url-helpers';
+import {
+  getBackendUrl,
+  getPublicShareUrlForToken,
+  getSandboxUrlForExternalId,
+} from './url-helpers';
 
 describe('getSandboxUrlForExternalId', () => {
   it('defaults to the OpenCode port (8000) when no port is given', () => {
-    expect(getSandboxUrlForExternalId('sb-abc123')).toBe(
-      `${getBackendUrl()}/p/sb-abc123/8000`,
-    );
+    expect(getSandboxUrlForExternalId('sb-abc123')).toBe(`${getBackendUrl()}/p/sb-abc123/8000`);
   });
 
   it('addresses any sandbox port when one is given — the authenticated proxy for port forwarding', () => {

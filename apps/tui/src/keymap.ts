@@ -28,6 +28,7 @@ import { APPS_KEYS } from './features/apps/keys.ts';
 import { CUSTOMIZE_KEYS } from './features/customize/keys.ts';
 import { FILES_KEYS } from './features/files/keys.ts';
 import { LOGIN_KEYS } from './features/login/keys.ts';
+import { PORTS_KEYS } from './features/ports/keys.ts';
 import { REVIEW_KEYS } from './features/review/keys.ts';
 import { COMPOSER_KEYMAP } from './features/session/composer/keys.ts';
 import { TRANSCRIPT_KEYS } from './features/session/transcript/keys.ts';
@@ -54,6 +55,7 @@ export type KeyScope =
   | 'customize'
   | 'login'
   | 'account'
+  | 'ports'
   | 'modal';
 
 /** Help-overlay section titles, in the order the overlay prints them. */
@@ -69,6 +71,7 @@ export const SCOPE_ORDER: readonly KeyScope[] = [
   'customize',
   'account',
   'login',
+  'ports',
   'modal',
 ] as const;
 
@@ -84,6 +87,7 @@ export const SCOPE_TITLE: Record<KeyScope, string> = {
   customize: 'Customize',
   account: 'Account',
   login: 'Login',
+  ports: 'Ports panel',
   modal: 'Lists, pickers and dialogs',
 };
 
@@ -161,6 +165,12 @@ export const KEYMAP: readonly Binding[] = [
     scope: 'global',
     chords: [chord('t', { alt: true })],
     description: 'Toggle the terminal panel.',
+  },
+  {
+    id: 'ports',
+    scope: 'global',
+    chords: [chord('p', { alt: true })],
+    description: 'Open the Ports panel: sandbox ports detected in output, and every local forward.',
   },
   {
     id: 'screen.files',
@@ -262,6 +272,7 @@ function featureTables(): readonly (readonly Binding[])[] {
     CUSTOMIZE_KEYS,
     ACCOUNT_KEYS,
     LOGIN_KEYS,
+    PORTS_KEYS,
   ];
 }
 
