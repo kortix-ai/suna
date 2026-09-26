@@ -134,7 +134,7 @@ export const SESSION_NOTICE = {
   /** A first prompt is waiting for a new computer. */
   starting: "Starting this session's computer. Your message sends automatically.",
   /** The computer sleeps while the session is idle; a send wakes it. */
-  idle: 'This session is idle. Your next message wakes its computer and is delivered.',
+  idle: 'This session is idle. The next message you send wakes its computer and is delivered.',
   /** The computer is waking. */
   waking: "Waking this session's computer. Messages you send are queued and go out automatically.",
 } as const;
