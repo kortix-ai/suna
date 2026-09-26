@@ -346,14 +346,16 @@ export function ModelsTab({
                         )}
                         {isManaged && pricingRoutes && pricingRoutes.length > 0 && (
                           <div className="text-muted-foreground space-y-0.5 text-xs tabular-nums">
-                            <div>Estimated customer price; the serving route determines the charge.</div>
+                            <div>{tAccess('pricingEstimate')}</div>
                             {pricingRoutes.map((price) => (
                               <div key={price.route}>
-                                {price.route === 'morph' ? 'Morph' : `OpenRouter · ${price.route}`}:
-                                {' '}{formatPricePerMillion(price.input)} input /
-                                {' '}{formatPricePerMillion(price.cacheRead)} cached /
-                                {' '}{formatPricePerMillion(price.output)} output per 1M tokens
-                                {price.role === 'preferred' ? ' · preferred' : ''}
+                                {tAccess('pricingRoute', {
+                                  route: price.route === 'morph' ? 'Morph' : `OpenRouter · ${price.route}`,
+                                  input: formatPricePerMillion(price.input),
+                                  cacheRead: formatPricePerMillion(price.cacheRead),
+                                  output: formatPricePerMillion(price.output),
+                                })}
+                                {price.role === 'preferred' ? ` · ${tAccess('pricingPreferred')}` : ''}
                               </div>
                             ))}
                           </div>
