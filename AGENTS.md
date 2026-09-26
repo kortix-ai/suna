@@ -111,6 +111,16 @@ symlink to it. Add a skill in `.agents/skills/`, then add the symlink. Third-par
 from `npx skills add` and are pinned in `skills-lock.json`. The PR procedure is the
 **contributing** skill. Browser work is the **agent-browser** skill.
 
+## Ponytail is on by default in Claude Code
+
+`.claude/settings.json` enables the [ponytail](https://github.com/DietrichGebert/ponytail)
+plugin, pinned to tag `v4.10.0`. Its hooks inject the "write only what the task needs"
+ladder into every session and subagent at level `full`. Switch with `/ponytail lite|full|ultra`,
+or send "stop ponytail". `PONYTAIL_DEFAULT_MODE` sets the level for new sessions. Ponytail
+applies to the code you write. It never lowers the verification, documentation, or
+ownership bar in this file. To upgrade, change `ref` in `.claude/settings.json` after
+you read the diff of the hooks between the two tags.
+
 ## Learnings: the episodic ledger in the `learnings` skill
 
 `.agents/skills/learnings/` is the append-only, timestamped ledger of rules paid
