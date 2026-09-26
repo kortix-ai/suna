@@ -49,6 +49,9 @@ cannot bound memory retained by one worker across the full suite.
 The resource tests cover process classification, top-process ordering, and the
 guard reason. The test-runner contract executes the worker-selection function
 against 2, 8, 10.6 and 32 GiB budgets. The UI test checks the recovery copy.
+The full API suite completed in 12 batches with two workers: 10,543 passed,
+6 skipped, 0 failed across 906 files. A synthetic coverage run produced one
+LCOV record from each of two batches in the combined report.
 
 The worker budget reduces this suite's default concurrency on a 12 GiB box
 from four to two. Batching limits the lifetime of each Bun worker. Other

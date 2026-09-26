@@ -30,9 +30,10 @@ case "$mode" in
       echo "error: only $count test files matched (floor ${KORTIX_MIN_TEST_FILES:-400}) — the discovery glob is broken, refusing to report success." >&2
       exit 1
     fi
-    cov=""
+    coverage_dir=""
     if [ "${COVERAGE:-}" = "1" ]; then
-      cov="--coverage --coverage-reporter=lcov --coverage-reporter=text --coverage-dir=coverage"
+      mkdir -p coverage
+      coverage_dir="$(mktemp -d coverage/.batches.XXXXXX)"
     fi
     test_timeout="${KORTIX_TEST_TIMEOUT_MS:-15000}"
     source scripts/test-workers.sh
@@ -72,13 +73,34 @@ case "$mode" in
     failed=0
     for ((offset=0; offset<count; offset+=batch_size)); do
       batch=("${test_files[@]:offset:batch_size}")
-      echo "API unit batch $((offset / batch_size + 1))/$batch_count: ${#batch[@]} files" >&2
-      if bun test --isolate --parallel="$api_test_workers" --env-file=scripts/test.env --timeout="$test_timeout" $cov "${batch[@]}"; then
+      batch_number=$((offset / batch_size + 1))
+      echo "API unit batch $batch_number/$batch_count: ${#batch[@]} files" >&2
+      coverage_args=()
+      if [[ -n "$coverage_dir" ]]; then
+        coverage_args=(--coverage --coverage-reporter=lcov --coverage-reporter=text --coverage-dir="$coverage_dir/$batch_number")
+      fi
+      if bun test --isolate --parallel="$api_test_workers" --env-file=scripts/test.env --timeout="$test_timeout" "${coverage_args[@]}" "${batch[@]}"; then
         :
       else
         failed=1
       fi
     done
+    if [[ -n "$coverage_dir" ]]; then
+      # LCOV is a stream of SF...end_of_record entries. Keep every batch's
+      # entries in the public report instead of overwriting it on each run.
+      : > coverage/lcov.info
+      reports=0
+      for report in "$coverage_dir"/*/lcov.info; do
+        if [[ -f "$report" ]]; then
+          cat "$report" >> coverage/lcov.info
+          reports=$((reports + 1))
+        fi
+      done
+      if (( reports != batch_count )); then
+        echo "error: coverage reports found for $reports/$batch_count API unit batches" >&2
+        failed=1
+      fi
+    fi
     exit "$failed"
     ;;
   *)
