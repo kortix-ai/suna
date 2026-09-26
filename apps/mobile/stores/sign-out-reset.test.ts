@@ -57,6 +57,14 @@ describe('sign-out resets the in-memory account stores', () => {
     expect(useLastProjectStore.getState().byUser).toEqual({});
   });
 
+  test('last project: a gone project is forgotten for its user only (app/index.tsx)', () => {
+    useLastProjectStore.getState().remember('user_a', 'project_a');
+    useLastProjectStore.getState().remember('user_b', 'project_b');
+    useLastProjectStore.getState().forget('user_a');
+    expect(useLastProjectStore.getState().byUser).toEqual({ user_b: 'project_b' });
+    useLastProjectStore.getState().reset();
+  });
+
   test('selected project: the project choice is cleared', () => {
     useSelectedProjectStore.getState().setProjectId('project_a');
     useSelectedProjectStore.getState().reset();

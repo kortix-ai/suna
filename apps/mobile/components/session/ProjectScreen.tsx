@@ -106,6 +106,7 @@ import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  listCreatedSession,
   projectKeys,
   useAccounts,
   useProject,
@@ -877,7 +878,13 @@ export function ProjectScreen() {
           return createSessionCommitted(
             {
               create: (body) => createProjectSession.mutateAsync(body),
-              read: (id) => getProjectSession(projectId, id, { showErrors: false }),
+              read: async (id) => {
+                const row = await getProjectSession(projectId, id, { showErrors: false });
+                // A create that timed out but committed: listed now, like
+                // one that answered (`useCreateProjectSession`).
+                listCreatedSession(queryClient, projectId, row);
+                return row;
+              },
             },
             { ...input, session_id: sessionId },
           );
@@ -914,7 +921,7 @@ export function ProjectScreen() {
         setIsDashboardSending(false);
       }
     },
-    [projectId, isDashboardSending, createProjectSession, navigateToSession, showUpgradeForError, toast, refreshSessionLists]
+    [projectId, isDashboardSending, createProjectSession, queryClient, navigateToSession, showUpgradeForError, toast, refreshSessionLists]
   );
 
   // The model sheet's Agent tab `+` (thread and home alike): a new session on

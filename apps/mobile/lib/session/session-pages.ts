@@ -91,10 +91,16 @@ export function shouldAutoFetchForFilter(state: {
 
 /**
  * Which state a paged session list shows (COR-146: a failure must never look
- * like an empty list). The drawer's session list and the Sessions page share
- * this decision so they never drift apart:
+ * like an empty list; a list not loaded yet must never look empty either).
+ * The drawer's session list and the Sessions page share this decision so they
+ * never drift apart:
  *
- * - `loading` — the first fetch, no rows yet.
+ * - `loading` — no page has loaded yet (`isPending`, react-query's
+ *   `status: 'pending'`): the first fetch runs, retries, or waits for the
+ *   network. Not `isLoading`: offline, react-query pauses the first fetch
+ *   (`fetchStatus: 'paused'`, `isLoading` false), and the drawer and the
+ *   Sessions page showed "No sessions yet" — the Sessions page then cleared
+ *   the saved search and filter of a project that has sessions.
  * - `error` — the query failed and no session survived (nothing loaded
  *   before the failure, or a refetch failed with nothing cached).
  * - `empty` — the query succeeded with zero sessions.
@@ -105,11 +111,11 @@ export function shouldAutoFetchForFilter(state: {
 export type SessionListState = 'loading' | 'error' | 'empty' | 'rows';
 
 export function sessionListState(state: {
-  isLoading: boolean;
+  isPending: boolean;
   isError: boolean;
   hasSessions: boolean;
 }): SessionListState {
-  if (state.isLoading) return 'loading';
+  if (state.isPending) return 'loading';
   if (state.hasSessions) return 'rows';
   return state.isError ? 'error' : 'empty';
 }

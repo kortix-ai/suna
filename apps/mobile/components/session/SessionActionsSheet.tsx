@@ -100,6 +100,11 @@ import {
   type ProjectSession,
 } from '@/lib/projects/projects-client';
 import { sessionDisplayStatus, sessionDisplayTitle } from '@/lib/session/session-list';
+import {
+  applyToSessionCache,
+  withoutSession,
+  writeSessionLists,
+} from '@/lib/session/session-cache-write';
 import { useTabStore } from '@/stores/tab-store';
 
 /**
@@ -366,11 +371,28 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       mutationFn: (session: ProjectSession) => deleteProjectSession(projectId, session.session_id),
     });
 
+    // Set from the tap: `isPending` flips only once the request starts, after
+    // the list write below, and a second tap in between would delete twice.
+    const deletingRef = React.useRef(false);
     const confirmDeleteSession = React.useCallback(async () => {
-      if (!confirmDelete || deleteSession.isPending) return;
+      if (!confirmDelete || deletingRef.current) return;
+      deletingRef.current = true;
       haptics.medium();
       setDeleteFailed(false);
+      let undo = () => {};
       try {
+        // The row leaves the drawer and the Sessions page behind the dialog
+        // now, and comes back if the server refuses. A refetch in flight would
+        // put it back first, so it is cancelled. The paged list only: the flat
+        // one names the open thread, which keeps its title until the delete
+        // succeeds.
+        const pagedKey = projectKeys.projectSessionsPaged(projectId);
+        await queryClient.cancelQueries({ queryKey: pagedKey });
+        undo = writeSessionLists(queryClient, [pagedKey], (cached) =>
+          applyToSessionCache<ProjectSession>(cached, (rows) =>
+            withoutSession(rows, confirmDelete.session_id)
+          )
+        );
         await deleteSession.mutateAsync(confirmDelete);
         // Drop the session's tab, so the store never points at a deleted
         // session and no dead tab survives — matters most when this was the
@@ -386,12 +408,14 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
         toast.success('Session deleted');
         setConfirmDelete(null);
       } catch {
+        undo();
         haptics.warning();
         setDeleteFailed(true);
       } finally {
+        deletingRef.current = false;
         void invalidateSessions();
       }
-    }, [confirmDelete, deleteSession, toast, invalidateSessions]);
+    }, [confirmDelete, deleteSession, projectId, queryClient, toast, invalidateSessions]);
 
     const menuStatus = menuSession ? sessionDisplayStatus(menuSession) : null;
     const canManageLifecycle = menuSession?.can_manage_lifecycle !== false;

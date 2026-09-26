@@ -6,6 +6,10 @@
  * Ported from web's RenameSessionModal: PATCH /projects/:id/sessions/:sid with
  * { name }. An empty name reverts to the automatic title, which the placeholder
  * shows. The field is `SheetTextInput`, the one text field for sheets.
+ *
+ * The new name is written into the cached session lists at once (the drawer,
+ * the Sessions page, the thread header), then the server's answer, then the
+ * refetch. A refused rename puts the old name back.
  */
 import * as React from 'react';
 import { Keyboard, View } from 'react-native';
@@ -16,8 +20,14 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
-import { projectKeys } from '@/lib/projects/hooks';
+import { projectKeys, sessionListKeys } from '@/lib/projects/hooks';
 import { updateProjectSession, type ProjectSession } from '@/lib/projects/projects-client';
+import {
+  applyToSessionCache,
+  mergeRenamed,
+  renameInRows,
+  writeSessionLists,
+} from '@/lib/session/session-cache-write';
 
 const MAX_NAME_LENGTH = 120;
 
@@ -36,14 +46,33 @@ export function SessionRenameForm({ projectId, session, onDone }: SessionRenameF
 
   const rename = useMutation({
     mutationFn: (name: string) => updateProjectSession(projectId, session.session_id, { name }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+    onMutate: async (name) => {
+      // A refetch in flight would land the old name over the new one.
+      await queryClient.cancelQueries({ queryKey: projectKeys.projectSessions(projectId) });
+      const undo = writeSessionLists(queryClient, sessionListKeys(projectId), (cached) =>
+        applyToSessionCache<ProjectSession>(cached, (rows) =>
+          renameInRows(rows, session.session_id, name)
+        )
+      );
+      return { undo };
+    },
+    onSuccess: (updated) => {
+      // The server's name (normalized, or the automatic title after a clear).
+      writeSessionLists(queryClient, sessionListKeys(projectId), (cached) =>
+        applyToSessionCache<ProjectSession>(cached, (rows) => mergeRenamed(rows, updated))
+      );
       haptics.success();
       onDone();
     },
-    onError: () => {
+    onError: (_error, _name, context) => {
+      context?.undo();
       haptics.warning();
       toast.error('Unable to rename the session. Try again.');
+    },
+    // The server stays the source: refetch after either answer. Not awaited:
+    // the mutation would stay pending ("Saving…") until the refetch lands.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
     },
   });
 
