@@ -511,6 +511,16 @@ A routing policy holds a default model, a vision model, and an ordered
 fallback chain, each model attempted at most once; `fallbackOn` is
 `transient` or `any-error`.
 
+The gateway moves to the next fallback model only when the current model
+failed before it returned any output:
+
+- `transient`: a network error, a timeout, any `5xx`, or `402`, `403`, `429`.
+- `any-error`: every failure, including a `400`.
+
+A failure after output started stays with that model. A request on your own
+provider key (BYOK) never falls back to a Kortix-billed model. Each fallback
+model gets its own generation defaults.
+
 #### `p.channels` — Slack / email / voice
 
 Connector surfaces that let an agent act as a Slack app, an email address,
@@ -632,6 +642,22 @@ await files.upload(file, '/workspace/uploads', file.name, {
 
 Uploads larger than 64 KiB cross the sandbox edge in verified chunks. The
 progress callback runs after each chunk reaches the session filesystem.
+
+`files.write(path, blob)` replaces the file at `path` and fails if `path` is a
+folder. `files.create(path)` creates an empty file and never overwrites: when a
+file or folder already exists at `path`, it throws `FileExistsError`
+(`status` `409`, `code` `'FILE_EXISTS'`).
+
+```ts
+import { FileExistsError, files } from '@kortix/sdk';
+
+try {
+  await files.create('/workspace/notes.md');
+} catch (error) {
+  if (error instanceof FileExistsError) console.log(`${error.path} already exists`);
+  else throw error;
+}
+```
 
 `files` targets the globally active sandbox. If your host runs more than one
 session at a time, call `s.files` on the session handle instead. It always

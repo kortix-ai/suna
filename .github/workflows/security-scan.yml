@@ -10,7 +10,9 @@ name: Security Scan
 
 on:
   schedule:
-    - cron: "0 6 * * 1"
+    # Re-registered 2026-09-25: the schedule belonged to a user who left the org,
+    # and GitHub stopped dispatching it after 2026-08-03. See db-drift.yml.
+    - cron: "23 6 * * 1" # 06:23 UTC Mondays
   pull_request:
     branches: [main, staging, prod]
     paths:

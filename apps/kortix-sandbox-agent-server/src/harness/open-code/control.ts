@@ -1,16 +1,18 @@
 import type { HarnessControlService, HarnessControlOperations, HarnessEnvironmentInput, HarnessRefreshInput } from '../control'
-import { requireOpenCodeConfig, resolveOpencodeConfigDirRelative } from './config'
+import { requireOpenCodeConfig } from './config'
+import { convergeConfigRelease, releaseGovernanceActive } from './config-release'
 import { writeAgentEnvFile } from '../../agent-env-file'
 import { syncEgressShim } from '../../egress-shim'
 import { invalidateRuntimeState } from './runtime-state-projection'
+import { noteOpencodeStopRequested } from './instance-guard'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { llmProxyBaseUrl, setLlmProxyToken } from '../../llm-proxy'
 import { logger } from '../../logger'
 import { requiresRespawn, type Opencode } from './lifecycle'
 import { reconcileProjectEnv } from '../../project-env'
-import { refreshRepo, syncConfigDirToBase, syncWorkspaceToBase } from '../../git'
+import { readRepoInfo, refreshRepo, syncWorkspaceToBase } from '../../git'
 import { scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
-import { readPinnedOpencodeSessionId } from './boot'
+import { readOpenCodeSessionPin } from './runtime-state'
 import type { QuickQueueInterrupt } from './quick-queue-interrupt'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
@@ -43,6 +45,13 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_SECRET_CAPABILITIES',
 ])
 
+/**
+ * Owned by a config release while one is active (config-release.ts). A push
+ * of these names is ignored then, so the release's governance stays the one
+ * the next spawn composes.
+ */
+const RELEASE_OWNED_ENV_NAMES = new Set(['KORTIX_COMPILED_AGENT_CONFIG', 'KORTIX_COMPILED_AGENT_CONFIG_ETAG'])
+
 function applyOpencodeRuntimeEnv(input: unknown): { changed: boolean; names: string[] } {
   if (input === undefined) return { changed: false, names: [] }
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -50,9 +59,14 @@ function applyOpencodeRuntimeEnv(input: unknown): { changed: boolean; names: str
   }
 
   const changedNames: string[] = []
+  const releaseOwned = releaseGovernanceActive()
   for (const [rawName, rawValue] of Object.entries(input as Record<string, unknown>)) {
     const name = rawName.trim().toUpperCase()
     if (!OPENCODE_RUNTIME_ENV_NAMES.has(name)) continue
+    if (releaseOwned && RELEASE_OWNED_ENV_NAMES.has(name)) {
+      logger.info('[env] compiled governance push ignored; the config release owns it', { name })
+      continue
+    }
     if (rawValue === null) {
       if (process.env[name] !== undefined) {
         delete process.env[name]
@@ -124,9 +138,11 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
   })
 }
 
-/** Runtime-assets reconciliation must not restart a runtime during boot. */
-export function refreshMayConvergeRuntime(runtimeState: string): boolean {
-  return runtimeState === 'ok'
+/** `repo=0`: report the checkout as it is; nothing is fetched or pulled. */
+async function unchangedRepo(projectTarget: string) {
+  const info = await readRepoInfo(projectTarget)
+  if (!info) throw new Error('project repo is not materialized')
+  return { before: info, after: info }
 }
 
 /** Native control operations. HTTP parsing, authorization and status mapping stay in routes. */
@@ -287,15 +303,12 @@ export function createOpenCodeControlService(
             opencode_turn_ended: reloadTurnEnded,
           }
         },
-        async refresh({ syncBase, skipRestart, syncConfigDir, baseSha, forceFail }: HarnessRefreshInput) {
+        async refresh({ syncBase, skipRestart, skipRepo, baseSha, forceFail }: HarnessRefreshInput) {
           const repo = syncBase
             ? await syncWorkspaceToBase(cfg, baseSha)
-            : await refreshRepo(cfg)
-          // After the repo op, so a successful pull is reflected before we compare
-          // the config dir against base.
-          const configDir = syncConfigDir
-            ? await syncConfigDirToBase(cfg, await resolveOpencodeConfigDirRelative(cfg), baseSha)
-            : undefined
+            : skipRepo
+              ? await unchangedRepo(cfg.projectTarget)
+              : await refreshRepo(cfg)
           // Verified swap, not a kill-then-hope restart: boot the new opencode,
           // prove it serves, and only then retire the running one. A config that
           // cannot boot leaves the session on the opencode it already had.
@@ -330,7 +343,7 @@ export function createOpenCodeControlService(
           // API's start budget expired on both boxes). main.ts schedules the
           // post-boot pass itself once `opencode-ready` is marked; this call is
           // for a box that is already up.
-          if (refreshMayConvergeRuntime(opencode.getState())) scheduleRuntimeAssetsReconcile(cfg)
+          if (opencode.getState() === 'ok') scheduleRuntimeAssetsReconcile(cfg)
           return {
             // The repo work succeeded either way; `reload.outcome` carries whether
             // the new config actually took. Reporting ok:false here would hide a
@@ -340,7 +353,6 @@ export function createOpenCodeControlService(
               before: repo.before,
               after: repo.after,
             },
-            ...(configDir ? { config_dir: configDir } : {}),
             ...(reload
               ? {
                   reload: {
@@ -361,14 +373,18 @@ export function createOpenCodeControlService(
             opencode_pid: opencode.getPid(),
           }
         },
+        // Config releases (docs/specs/config-releases.md). The descriptor is
+        // always fetched from the API; nothing here takes one as input.
+        convergeConfig: () => convergeConfigRelease({ cfg, opencode }),
         async abort() {
-          const sessionId = readPinnedOpencodeSessionId()
+          const sessionId = readOpenCodeSessionPin()
           if (!sessionId) {
             return { outcome: 'not-pinned', body: { ok: false, error: 'No opencode session pinned.' } }
           }
 
           const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
           const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/abort?directory=${encodeURIComponent(workspace)}`
+          noteOpencodeStopRequested(sessionId, 'kortix-abort')
           try {
             // CodeQL js/file-access-to-http (alert 6375) flags `url` here because
             // `sessionId` comes from the pin FILE. Nothing leaves the sandbox:

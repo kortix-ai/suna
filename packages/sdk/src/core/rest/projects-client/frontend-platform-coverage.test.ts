@@ -2,12 +2,10 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   cancelAccountDeletion,
-  convertPresentationToGoogleSlides,
   deleteAccountImmediately,
   getAccountDeletionStatus,
   getAdminProviderDistribution,
   getAdminRole,
-  getGoogleAuthUrl,
   requestAccountDeletion,
   setAdminProviderFallback,
 } from '.';
@@ -22,7 +20,7 @@ beforeEach(() => {
       method: options.method ?? 'GET',
       body: typeof options.body === 'string' ? JSON.parse(options.body) : undefined,
     });
-    return new Response(JSON.stringify({ success: true, isAdmin: true, auth_url: 'https://google.test' }), {
+    return new Response(JSON.stringify({ success: true, isAdmin: true }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -47,16 +45,12 @@ test('account lifecycle and admin role methods own their REST paths', async () =
   ]);
 });
 
-test('provider administration and presentation methods own their REST paths', async () => {
+test('provider administration methods own their REST paths', async () => {
   await getAdminProviderDistribution();
   await setAdminProviderFallback(true);
-  await getGoogleAuthUrl('https://app.test/project');
-  await convertPresentationToGoogleSlides('/tmp/deck.pptx', 'https://sandbox.test');
 
   expect(calls.map((call) => call.url)).toEqual([
     'http://test.local/admin/api/provider-distribution',
     'http://test.local/admin/api/provider-fallback',
-    'http://test.local/google/auth-url?return_url=https%3A%2F%2Fapp.test%2Fproject',
-    'http://test.local/presentation-tools/convert-and-upload-to-slides',
   ]);
 });

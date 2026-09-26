@@ -2,9 +2,13 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   connectEmail,
+  completeSlackInstall,
+  completeTeamsInstall,
   connectSlack,
   bindSlackIdentity,
   bindTeamsIdentity,
+  previewSlackIdentity,
+  previewTeamsIdentity,
   disconnectEmail,
   disconnectSlack,
   getEmailInstallation,
@@ -71,6 +75,30 @@ test('chat identity binding stays behind typed SDK methods', async () => {
 
   await bindTeamsIdentity('teams-token');
   expect(last().url).toContain('/channels/teams/identity/bind');
+  expect(last().body).toEqual({ token: 'teams-token' });
+});
+
+test('previewSlackIdentity posts the token to the read-only preview route', async () => {
+  nextResponse = {
+    status: 200,
+    body: { service: 'slack', workspaceName: 'Team', chatUserId: 'U1', chatUserName: 'sam' },
+  };
+  const result = await previewSlackIdentity('slack-token');
+  expect(last().url).toContain('/channels/slack/identity/preview');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ token: 'slack-token' });
+  expect(result).toEqual({
+    service: 'slack',
+    workspaceName: 'Team',
+    chatUserId: 'U1',
+    chatUserName: 'sam',
+  });
+});
+
+test('previewTeamsIdentity posts the token and surfaces the server refusal', async () => {
+  nextResponse = { status: 410, body: { error: 'This link is invalid or has expired.' } };
+  await expect(previewTeamsIdentity('teams-token')).rejects.toThrow();
+  expect(last().url).toContain('/channels/teams/identity/preview');
   expect(last().body).toEqual({ token: 'teams-token' });
 });
 
@@ -306,4 +334,25 @@ test('updateChannelBinding PATCHes the binding by id', async () => {
   await expect(updateChannelBinding('P1', 'unknown', { agentName: null })).rejects.toThrow(
     'not found',
   );
+});
+
+test('completeSlackInstall posts the OAuth code and state and returns where to land', async () => {
+  nextResponse = { status: 200, body: { redirect_url: 'https://app.test/projects/P1?success=1' } };
+  const result = await completeSlackInstall('P1', { code: 'c1', state: 's1' });
+  expect(last().url).toContain('/projects/P1/channels/slack/oauth/complete');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ code: 'c1', state: 's1' });
+  expect(result).toEqual({ redirect_url: 'https://app.test/projects/P1?success=1' });
+});
+
+test('completeTeamsInstall surfaces the refusal code when another user started the install', async () => {
+  nextResponse = {
+    status: 403,
+    body: { error: 'This install was started by another Kortix account.', code: 'CHANNEL_INSTALL_STATE_MISMATCH' },
+  };
+  const error = await completeTeamsInstall('P1', { code: 'c2', state: 's2' }).catch((e: unknown) => e);
+  expect(last().url).toContain('/projects/P1/channels/teams/oauth/complete');
+  expect(last().body).toEqual({ code: 'c2', state: 's2' });
+  expect((error as { code?: string }).code).toBe('CHANNEL_INSTALL_STATE_MISMATCH');
+  expect((error as { status?: number }).status).toBe(403);
 });

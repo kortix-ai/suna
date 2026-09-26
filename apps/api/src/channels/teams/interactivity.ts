@@ -1,8 +1,6 @@
-import { labelForModelRef } from '../../llm-gateway/models/picker';
-import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
-import { setChannelAgent, setChannelModel } from '../slack/selection';
-import { setConversationProject, teamsChannelCtx } from './binding';
+import { changeChannelAgent, switchChannelProject } from '../core/settings';
+import { teamsAgentChangeText, teamsSettingsRefusal, teamsSettingsChannel } from './settings-text';
 import {
   MANAGED_TEAMS_INBOUND,
   conversationProjectFor,
@@ -12,15 +10,12 @@ import {
 } from './inbound';
 import { consumePendingTeamsPickerMessage } from './auth-resume';
 import { REVIEW_FEEDBACK_INPUT, TEAMS_FORM_VERB, TEAMS_STOP_VERB, buildNoticeCard } from './cards';
-import {
-  createTeamsAccessRequest,
-  notifyAdminsOfTeamsAccessRequest,
-  resolveTeamsActor,
-  teamsUserId,
-} from './identity';
+import { notifyAdminsOfTeamsAccessRequest, teamsUserId } from './identity';
+import { chatUser, createChatAccessRequest, resolveChatActor } from '../core/identity';
 import { decideTeamsThreadJoin } from './participants';
 import { createOrJoinTeamsConversationSession } from './session';
 import { stopTeamsTurn } from './stop';
+import { applyTeamsModelChoice } from './model-choice';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
 export interface TeamsInvokeResponse {
@@ -99,6 +94,11 @@ async function conversationInScope(
   return (await conversationProjectFor(inbound, convo.tenantId, convo.conversationId)) === inbound.projectId;
 }
 
+/**
+ * A model card's button or its dropdown's Use button. It used to store any
+ * model it was sent with no check at all; it now runs the same check and key
+ * selection as `/model` (model-choice.ts), as the person who pressed it.
+ */
 async function handleSetModel(
   activity: TeamsActivity,
   data: Record<string, unknown>,
@@ -108,14 +108,15 @@ async function handleSetModel(
   if (!convo) return cardResponse(buildNoticeCard("I couldn't update the model."));
   if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
   const model = typeof data.model === 'string' ? data.model : '';
-  const ctx = teamsChannelCtx(convo.tenantId, convo.conversationId);
-  if (!model) {
-    await setChannelModel(ctx, null);
-    return cardResponse(buildNoticeCard('Model reset to the project default.', '✅'));
-  }
-  const stored = toOpencodeModelRef(model);
-  await setChannelModel(ctx, stored);
-  return cardResponse(buildNoticeCard(`Model set to ${labelForModelRef(stored)}.`, '✅'));
+  return cardResponse(
+    await applyTeamsModelChoice(
+      activity,
+      convo.tenantId,
+      convo.conversationId,
+      model,
+      inbound.kind === 'managed' ? undefined : inbound.projectId,
+    ),
+  );
 }
 
 /**
@@ -163,16 +164,14 @@ async function handleSetAgent(
   if (!convo) return cardResponse(buildNoticeCard("I couldn't update the agent."));
   if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
   const agent = typeof data.agent === 'string' ? data.agent : '';
-  const ctx = teamsChannelCtx(convo.tenantId, convo.conversationId);
-  if (!agent) {
-    await setChannelAgent(ctx, null);
-    return cardResponse(buildNoticeCard('Agent reset to the project default.', '✅'));
-  }
-  const res = await setChannelAgent(ctx, agent);
-  if (!res.ok && res.reason === 'unknown_agent') {
-    return cardResponse(buildNoticeCard(`\`${agent}\` isn't a declared agent in this project.`));
-  }
-  return cardResponse(buildNoticeCard(`Agent set to ${agent}.`, '✅'));
+  const channel = teamsSettingsChannel(activity, convo.tenantId, convo.conversationId);
+  const result = await changeChannelAgent(presser(activity, convo), channel, agent || null);
+  return cardResponse(buildNoticeCard(teamsAgentChangeText(result, agent), result.ok ? '✅' : undefined));
+}
+
+/** The Teams user who pressed a card button, as a chat identity. */
+function presser(activity: TeamsActivity, convo: { tenantId: string }) {
+  return chatUser('teams', convo.tenantId, teamsUserId(activity) ?? '');
 }
 
 async function handlePickProject(
@@ -183,8 +182,20 @@ async function handlePickProject(
   const convo = convoOf(activity);
   const projectId = typeof data.projectId === 'string' ? data.projectId : null;
   if (!convo || !projectId) return cardResponse(buildNoticeCard("I couldn't switch project."));
-  const switched = await setConversationProject({ tenantId: convo.tenantId, conversationId: convo.conversationId, projectId });
-  if (!switched) return cardResponse(buildNoticeCard("That project isn't connected to this Teams tenant."));
+  const switched = await switchChannelProject(
+    presser(activity, convo),
+    teamsSettingsChannel(activity, convo.tenantId, convo.conversationId),
+    projectId,
+  );
+  if (!switched.ok) {
+    return cardResponse(
+      buildNoticeCard(
+        switched.reason === 'not_installed'
+          ? "That project isn't connected to this Teams tenant."
+          : teamsSettingsRefusal(switched.reason, ''),
+      ),
+    );
+  }
 
   // If this pick answered a project picker, replay the message that triggered it.
   const pendingId = typeof data.pendingId === 'string' ? data.pendingId : undefined;
@@ -333,7 +344,7 @@ async function handleReview(
   //
   // The item is loaded FIRST because the authorization is scoped to its own
   // account, not to whatever account the presser happens to belong to.
-  const actor = await resolveTeamsActor(convo.tenantId, uid ?? '', item.accountId, projectId);
+  const actor = await resolveChatActor(chatUser('teams', convo.tenantId, uid ?? ''), { projectId, accountId: item.accountId });
   if ('reason' in actor) {
     return cardResponse(
       buildNoticeCard(
@@ -428,7 +439,7 @@ async function handleRequestAccess(
     return cardResponse(buildNoticeCard("I couldn't file that request. Try again from the prompt."));
   }
 
-  const outcome = await createTeamsAccessRequest({ tenantId, teamsUserId: userId, projectId });
+  const outcome = await createChatAccessRequest(chatUser('teams', tenantId, userId), projectId);
   switch (outcome.status) {
     case 'created':
     case 'pending':

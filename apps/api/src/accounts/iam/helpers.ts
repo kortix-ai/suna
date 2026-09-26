@@ -1,9 +1,10 @@
-// Shared request helpers for the IAM V2 route modules: body parsing, the
-// context-bound audit writer, the Postgres unique-violation classifier, and
+// Shared request helpers for the IAM V2 route modules: the context-bound
+// audit writer, the Postgres unique-violation classifier, and
 // the compact HttpError used by the policy-parser short-circuits.
 
 import { Context } from 'hono';
 import { recordAuditEvent } from '../../shared/audit';
+import { requestClientIp } from '../../shared/client-ip';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import type { TierEntitlements } from '../../types';
 
@@ -42,14 +43,6 @@ export async function requireEntitlement(
   );
 }
 
-export async function readBody(c: Context): Promise<Record<string, unknown>> {
-  try {
-    return (await c.req.json()) ?? {};
-  } catch {
-    return {};
-  }
-}
-
 /**
  * Audit helper bound to the request context. The global middleware already
  * logs a coarse "POST /v1/accounts/.../iam/groups" row for every state
@@ -76,10 +69,7 @@ export async function auditIam(
       resourceId: args.resourceId ?? null,
       before: args.before ?? null,
       after: args.after ?? null,
-      ip:
-        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-        c.req.header('x-real-ip') ||
-        null,
+      ip: requestClientIp(c),
       userAgent: c.req.header('user-agent') || null,
     });
   } catch (err) {

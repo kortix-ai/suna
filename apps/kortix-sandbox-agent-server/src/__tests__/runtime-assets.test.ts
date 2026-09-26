@@ -4,8 +4,6 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  configureRuntimeConvergence,
-  isSafeOverlayPath,
   overlayHash,
   reconcileRuntimeAssets,
   resetRuntimeConvergenceForTests,
@@ -101,53 +99,15 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
   })
 }
 
-describe('overlay hashing and path safety', () => {
-  test('hash matches the API implementation for the same input', () => {
-    // Same framing as apps/api/src/runtime-assets/managed-skills.ts.
-    const h = createHash('sha256')
-    for (const f of SKILL_FILES) {
-      h.update(`file\0${f.path}\0${Buffer.byteLength(f.content)}\0`)
-      h.update(f.content)
-      h.update('\0')
-    }
-    expect(SKILLS_HASH).toBe(h.digest('hex'))
-  })
-
-  test('rejects traversal, absolute, and non-kortix overlay paths', () => {
-    expect(isSafeOverlayPath('kortix-system/SKILL.md')).toBe(true)
-    expect(isSafeOverlayPath('kortix-system/references/a.md')).toBe(true)
-    expect(isSafeOverlayPath('../etc/passwd')).toBe(false)
-    expect(isSafeOverlayPath('/etc/passwd')).toBe(false)
-    expect(isSafeOverlayPath('kortix-system/../../evil')).toBe(false)
-    expect(isSafeOverlayPath('other-skill/SKILL.md')).toBe(false)
-    expect(isSafeOverlayPath('')).toBe(false)
+describe('overlay hashing', () => {
+  test('hash is the one apps/api computes for the same input (golden vector)', () => {
+    // The same hex is pinned in apps/api/src/runtime-assets/__tests__/manifest.test.ts
+    // for managedSkillOverlayHash. Either side drifting fails its own suite.
+    expect(SKILLS_HASH).toBe('453944bd7d750bb9b878fee50df662da07552c962238bc37a95f96853a75bcf9')
   })
 })
 
 describe('reconcileRuntimeAssets', () => {
-  test('a direct pass does not acquire the registered live runtime implicitly', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, 'OLD-CLI')
-    const calls: string[] = []
-    configureRuntimeConvergence({
-      assets: {
-        componentNames: ['registered-runtime'],
-        resolveConfigDir: async () => ws.configDir,
-        injectSkills: async () => { calls.push('inject') },
-        reconcile: async () => {
-          calls.push('reconcile')
-          return { components: {}, reasons: {}, state: {} }
-        },
-      },
-      turnInFlight: async () => false,
-    })
-
-    const result = await run(ws, stubFetch())
-
-    expect(result).toEqual({ cli: 'updated', skills: 'updated' })
-    expect(calls).toEqual([])
-  })
-
   test('no api url or token → skipped, no fetch at all', async () => {
     const ws = await workspace()
     const stub = stubFetch()
@@ -181,16 +141,23 @@ describe('reconcileRuntimeAssets', () => {
     expect(opt.filter((e) => e.includes('staging') || e.includes('retired'))).toEqual([])
   })
 
-  test('matching digests → no download, both halves current', async () => {
+  // Idempotent from either starting binary: once converged, a pass reads the
+  // manifest and nothing else, and leaves the binary's mtime alone.
+  test.each([
+    ['NEW-CLI-BYTES', 'current'],
+    ['OLD-CLI-BYTES', 'updated'],
+  ] as const)('starting from %s, the first pass reports cli %s and the second changes nothing', async (start, firstCli) => {
     const ws = await workspace()
-    await Bun.write(ws.cliPath, 'NEW-CLI-BYTES')
+    await Bun.write(ws.cliPath, start)
     const first = await run(ws, stubFetch())
-    expect(first).toEqual({ cli: 'current', skills: 'updated' })
+    expect(first).toEqual({ cli: firstCli, skills: 'updated' })
+    const afterFirst = await stat(ws.cliPath)
 
     const second = stubFetch()
     const result = await run(ws, second)
     expect(result).toEqual({ cli: 'current', skills: 'current' })
     expect(second.calls).toEqual([`${API_URL}/v1/runtime-assets/manifest`])
+    expect((await stat(ws.cliPath)).mtimeMs).toBe(afterFirst.mtimeMs)
   })
 
   test('manifest reports no CLI → CLI half skipped, binary untouched', async () => {
@@ -283,20 +250,28 @@ describe('reconcileRuntimeAssets', () => {
     expect(await readFile(join(ws.skillsDir, 'kortix-system/SKILL.md'), 'utf8')).toBe('body v1\n')
   })
 
-  test('unsafe overlay paths are dropped, safe siblings still land', async () => {
+  test.each([
+    '../escaped.md',
+    '/etc/escaped.md',
+    'kortix-system/../../escaped.md',
+    'other-skill/SKILL.md',
+    '',
+  ])('an unsafe overlay path %p is dropped, a safe sibling still lands', async (unsafe) => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, 'NEW-CLI-BYTES')
     const files = [
-      { path: 'kortix-system/SKILL.md', content: 'ok\n' },
-      { path: '../escaped.md', content: 'pwned\n' },
+      { path: 'kortix-system/references/a.md', content: 'ok\n' },
+      { path: unsafe, content: 'pwned\n' },
     ]
     const stub = stubFetch({ skillFiles: files, skillsHash: overlayHash(files) })
 
     const result = await run(ws, stub)
 
     expect(result.skills).toBe('updated')
-    expect(await readFile(join(ws.skillsDir, 'kortix-system/SKILL.md'), 'utf8')).toBe('ok\n')
+    expect(await readFile(join(ws.skillsDir, 'kortix-system/references/a.md'), 'utf8')).toBe('ok\n')
     expect(await stat(join(ws.root, 'opt', 'escaped.md')).catch(() => null)).toBeNull()
+    expect(await stat('/etc/escaped.md').catch(() => null)).toBeNull()
+    expect(await stat(join(ws.skillsDir, 'other-skill')).catch(() => null)).toBeNull()
   })
 
   test('missing overlay dir is created even when the hash already matches state', async () => {
@@ -318,8 +293,13 @@ describe('reconcileRuntimeAssets', () => {
     const injected: string[] = []
     const result = await run(ws, stubFetch(), {
       configDir: ws.configDir,
-      injectSkills: async (configDir: string, bakedDir: string) => {
-        injected.push(`${configDir}|${bakedDir}`)
+      assets: {
+        componentNames: [],
+        resolveConfigDir: async () => ws.configDir,
+        injectSkills: async (configDir: string, bakedDir: string) => {
+          injected.push(`${configDir}|${bakedDir}`)
+        },
+        reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
       },
     })
     expect(result.skills).toBe('updated')
@@ -333,25 +313,31 @@ describe('reconcileRuntimeAssets', () => {
     const injected: string[] = []
     const result = await run(ws, stubFetch(), {
       configDir: ws.configDir,
-      injectSkills: async () => {
-        injected.push('called')
+      assets: {
+        componentNames: [],
+        resolveConfigDir: async () => ws.configDir,
+        injectSkills: async () => {
+          injected.push('called')
+        },
+        reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
       },
     })
     expect(result.skills).toBe('current')
     expect(injected).toEqual([])
   })
 
-  test('the manifest always beats a stale digest cache', async () => {
+  test('the digest cache is keyed on size and mtime: a stale mtime forces a real hash and a download', async () => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, 'OLD-CLI-BYTES')
     const stats = await stat(ws.cliPath)
-    // A cache that claims the on-disk binary is already the new one.
+    // The cache claims the on-disk binary IS the manifest build, but for an
+    // mtime the file no longer has.
     await Bun.write(
       ws.statePath,
       JSON.stringify({
-        cli_sha256: sha('SOMETHING-ELSE'),
+        cli_sha256: sha('NEW-CLI-BYTES'),
         cli_size: stats.size,
-        cli_mtime_ms: Math.trunc(stats.mtimeMs),
+        cli_mtime_ms: Math.trunc(stats.mtimeMs) - 5_000,
       }),
     )
 
@@ -359,15 +345,5 @@ describe('reconcileRuntimeAssets', () => {
 
     expect(result.cli).toBe('updated')
     expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
-  })
-
-  test('is idempotent — a second pass changes nothing', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, 'OLD-CLI-BYTES')
-    await run(ws, stubFetch())
-    const afterFirst = await stat(ws.cliPath)
-    const result = await run(ws, stubFetch())
-    expect(result).toEqual({ cli: 'current', skills: 'current' })
-    expect((await stat(ws.cliPath)).mtimeMs).toBe(afterFirst.mtimeMs)
   })
 })

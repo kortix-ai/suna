@@ -34,17 +34,37 @@ import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { invalidateProjectMirror, type GitBackedProject } from '../git';
+import { resolveCommitSha } from '../git/commits';
+import { refreshMirror } from '../git/mirror';
+import { opencodeConfigDirChangedBetween } from '../git/opencode-config-dir';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
+import { projectConfigReleasesEnabled } from '../../config-releases/enabled';
+import { recordDaemonConfigReport } from '../../config-releases/quarantine';
 import { pushSessionAgentConfigToSandbox } from './sandbox-env-sync';
+import {
+  hasConfigReleaseCapability,
+  parseConvergeResponse,
+  parseDaemonConfigReport,
+  toSessionConfigRelease,
+  type ConvergeOutcome,
+  type DaemonConfigReport,
+  type DaemonConvergeResponse,
+  type SessionConfigRelease,
+} from './session-config-release';
 import {
   repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 
 const SANDBOX_SERVICE_PORT = 8000;
+/** A competing refresh is a fetch plus a fast-forward: seconds, not minutes. */
+const REFRESH_BUSY_RETRIES = 5;
+const REFRESH_BUSY_DELAY_MS = 3_000;
+/** A convergence can hold the slot for the 90 s proven check: 40 × 3 s. */
+const CONVERGE_BUSY_RETRIES = 40;
 
 /**
  * What happened to the agent `.md` files opencode actually reads.
@@ -91,6 +111,54 @@ export function classifyAgentFiles(input: {
       // changed, and we must not claim the user's version was deliberately kept.
       return 'unknown';
   }
+}
+
+/**
+ * Does the box need the push — and the opencode restart that comes with it?
+ *
+ * Two independent reasons, because the config has two homes. Files that were
+ * just brought forward are read only at opencode's spawn, so they need the
+ * restart even when the compiled etag did not move (a skill body is not part of
+ * it). And a moved etag needs the push even when the files were kept: governance
+ * — connectors, secrets, scope — lives in the compiled config alone.
+ *
+ * An unknown etag on either side is NOT a reason. "Could not tell" is not
+ * permission to restart a runtime nobody asked to restart.
+ */
+export function configNeedsPush(input: {
+  agentFiles: ReloadAgentFiles;
+  runningEtag: string | null;
+  latestEtag: string | null;
+}): boolean {
+  if (input.agentFiles === 'updated') return true;
+  return (
+    input.runningEtag !== null &&
+    input.latestEtag !== null &&
+    input.runningEtag !== input.latestEtag
+  );
+}
+
+/**
+ * The session's own `/workspace` checkout, after a reload.
+ *
+ *  • `updated`         — fast-forwarded to a new commit.
+ *  • `already-current` — nothing to pull.
+ *  • `not-requested`   — the caller passed `refresh_repo: false`.
+ *  • `refused`         — the box declined the pull (local changes, no remote).
+ */
+export type WorkspaceCheckout = 'updated' | 'already-current' | 'not-requested' | 'refused';
+
+/** Classify the checkout half of a reload from the commits before and after. */
+export function classifyWorkspaceCheckout(input: {
+  requested: boolean;
+  ok: boolean;
+  before: string | null;
+  after: string | null;
+}): WorkspaceCheckout {
+  if (!input.requested) return 'not-requested';
+  if (!input.ok) return 'refused';
+  if (input.before && input.after && input.before !== input.after) return 'updated';
+  return 'already-current';
 }
 
 export interface SessionReloadResult {
@@ -145,6 +213,27 @@ export interface SessionReloadResult {
   turn_ended: boolean | null;
   /** Present when nothing was applied. */
   reason?: string;
+  /**
+   * The config release state after the reload (spec, "`GET /config`,
+   * extended"). Present only for a daemon with `config.release.v1`. Same
+   * shape as `SessionConfigRelease` in `@kortix/sdk`.
+   */
+  release?: SessionConfigRelease;
+  /** The converge `outcome`, or null when the daemon did not answer. Present with `release`. */
+  release_outcome?: ConvergeOutcome | null;
+  /**
+   * Which path the reload took: `release` sent `POST /kortix/config/converge`;
+   * `legacy` sent only `POST /kortix/refresh?restart=0` plus the compiled
+   * governance push. Absent when the box was not reached.
+   */
+  config_path?: 'release' | 'legacy';
+  /**
+   * What happened to the session's own `/workspace` checkout — the OTHER half
+   * of a reload. A reload does two things and must report both: it
+   * fast-forwards the checkout, and it converges the config the box runs.
+   * Absent when the box was not reached at all.
+   */
+  workspace_checkout?: WorkspaceCheckout;
 }
 
 /** Server-observed boundaries emitted by the streamed reload route. */
@@ -182,9 +271,55 @@ function withTurnNotice(sentence: string, result: SessionReloadResult): string {
   return result.turn_ended === true ? `${sentence} ${TURN_ENDED_SENTENCE}` : sentence;
 }
 
+/**
+ * A fallback outranks every other sentence: the box runs a config other than
+ * the one it was assigned, and the CLI prints only this text.
+ */
+function fallbackSentence(result: SessionReloadResult): string | null {
+  const reason = result.release?.fallback_reason;
+  if (!reason) return null;
+  return `The new config failed to load: ${reason.replace(/\.$/, '')}. ${fallbackRunsSentence(result.release?.source)}`;
+}
+
+/** What serves the session after a fallback, named the way the web header names it. */
+function fallbackRunsSentence(source: string | undefined): string {
+  if (source === 'image-default') return 'The platform default config runs this session.';
+  return 'An earlier config still runs this session.';
+}
+
+/**
+ * A reload does TWO things: it fast-forwards the session's `/workspace`
+ * checkout, and it converges the config the box runs. Both are reported, in
+ * one sentence each, so a half-sync is never silent. Empty when the API did
+ * not run the checkout half at all.
+ *
+ * The wording lives here, server-side, because every surface renders
+ * `detail`: `kortix sessions reload`, the web's "Reload config" toast, and the
+ * streamed reload. One sentence, one place.
+ */
+export function checkoutSentence(result: SessionReloadResult): string {
+  const at = result.commit_sha ? ` at ${result.commit_sha.slice(0, 12)}` : '';
+  switch (result.workspace_checkout) {
+    case 'updated':
+      return `The /workspace checkout was updated${at}.`;
+    case 'already-current':
+      return `The /workspace checkout was already current${at}.`;
+    case 'not-requested':
+      return 'The /workspace checkout was left alone; this call did not ask for it.';
+    case 'refused':
+      return 'The /workspace checkout was NOT updated: the sandbox declined the pull.';
+    default:
+      return '';
+  }
+}
+
 export function reloadDetail(result: SessionReloadResult): string {
-  if (!result.applied) return `Nothing to apply: ${result.reason ?? 'unchanged'}.`;
-  return withTurnNotice(reloadOutcomeSentence(result), result);
+  const checkout = checkoutSentence(result);
+  const withCheckout = (text: string) => (checkout ? `${text} ${checkout}` : text);
+  const fallback = fallbackSentence(result);
+  if (fallback) return withCheckout(withTurnNotice(fallback, result));
+  if (!result.applied) return withCheckout(`Nothing to apply: ${result.reason ?? 'unchanged'}.`);
+  return withCheckout(withTurnNotice(reloadOutcomeSentence(result), result));
 }
 
 function reloadOutcomeSentence(result: SessionReloadResult): string {
@@ -212,63 +347,125 @@ function reloadOutcomeSentence(result: SessionReloadResult): string {
  * warning on those was the first thing the review caught.
  */
 export function reloadNeedsAttention(result: SessionReloadResult): boolean {
+  if (result.release?.fallback_reason) return true;
   if (!result.applied) return true;
   return result.agent_files === 'kept-yours' || result.agent_files === 'unknown';
 }
 
-/** What the sandbox says it is running right now. */
-export async function readSandboxConfigState(input: {
-  sessionId: string;
-  /** Also ask whether a turn is running. Costs a call into opencode, so opt-in. */
-  includeTurnState?: boolean;
-}): Promise<{
+/** The daemon's service endpoint for a session's active sandbox, or null. */
+async function sandboxServiceEndpoint(sessionId: string): Promise<SandboxEndpoint | null> {
+  const [row] = await db
+    .select({ externalId: sessionSandboxes.externalId, config: sessionSandboxes.config })
+    .from(sessionSandboxes)
+    .where(and(eq(sessionSandboxes.sessionId, sessionId), eq(sessionSandboxes.status, 'active')))
+    .limit(1);
+  const serviceKey = (row?.config as Record<string, unknown> | null)?.serviceKey;
+  if (!row?.externalId || typeof serviceKey !== 'string') return null;
+  const { url, headers } = await resolveSandboxIngress(row.externalId, {
+    port: SANDBOX_SERVICE_PORT,
+    transport: 'http',
+  });
+  return {
+    baseUrl: url.replace(/\/$/, ''),
+    headers: { ...(headers as Record<string, string>), Authorization: `Bearer ${serviceKey}` },
+  };
+}
+
+type SandboxEndpoint = { baseUrl: string; headers: Record<string, string> };
+
+/**
+ * Seams for tests. Production uses the defaults: the session's active sandbox
+ * row, the global `fetch`, the compiled-governance push, and the etag compile.
+ */
+export interface SessionReloadDeps {
+  endpoint: (sessionId: string) => Promise<SandboxEndpoint | null>;
+  fetch: (url: string, init?: RequestInit) => Promise<Response>;
+  pushGovernance: typeof pushSessionAgentConfigToSandbox;
+  latestEtag: typeof latestAgentConfigEtag;
+  /** Wait between busy retries. */
+  sleep: (ms: number) => Promise<void>;
+  /** Record a daemon's failed and proven releases for the project quarantine. */
+  recordReport: typeof recordDaemonConfigReport;
+  /** The project's `config_releases` flag. False ⇒ the pre-release path. */
+  configReleasesEnabled: (projectId: string) => Promise<boolean>;
+}
+
+function defaultReloadDeps(): SessionReloadDeps {
+  return {
+    endpoint: sandboxServiceEndpoint,
+    fetch: (url, init) => fetch(url, init),
+    pushGovernance: pushSessionAgentConfigToSandbox,
+    latestEtag: latestAgentConfigEtag,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    recordReport: recordDaemonConfigReport,
+    configReleasesEnabled: projectConfigReleasesEnabled,
+  };
+}
+
+export interface SandboxConfigState {
   etag: string | null;
   commitSha: string | null;
+  /** Base commit the box's config dir represents; null before its first sync. */
+  configDirSha: string | null;
   reachable: boolean;
   /** `null` when the box could not tell us — see the reload gate. */
   turnInFlight: boolean | null;
-}> {
-  try {
-    const [row] = await db
-      .select({ externalId: sessionSandboxes.externalId, config: sessionSandboxes.config })
-      .from(sessionSandboxes)
-      .where(
-        and(eq(sessionSandboxes.sessionId, input.sessionId), eq(sessionSandboxes.status, 'active')),
-      )
-      .limit(1);
-    const unreachable = { etag: null, commitSha: null, reachable: false, turnInFlight: null };
-    if (!row?.externalId) return unreachable;
-    const serviceKey = (row.config as Record<string, unknown> | null)?.serviceKey;
-    if (typeof serviceKey !== 'string') return unreachable;
+  /** The daemon lists `config.release.v1` in `capabilities`. */
+  configReleases: boolean;
+  /** The health `config` block. Null for a daemon without config releases. */
+  release: DaemonConfigReport | null;
+}
 
-    const { url, headers } = await resolveSandboxIngress(row.externalId, {
-      port: SANDBOX_SERVICE_PORT,
-      transport: 'http',
+const UNREACHABLE_STATE: SandboxConfigState = {
+  etag: null,
+  commitSha: null,
+  configDirSha: null,
+  reachable: false,
+  turnInFlight: null,
+  configReleases: false,
+  release: null,
+};
+
+/** What the sandbox says it is running right now. */
+export async function readSandboxConfigState(
+  input: {
+    sessionId: string;
+    /** Also ask whether a turn is running. Costs a call into opencode, so opt-in. */
+    includeTurnState?: boolean;
+  },
+  deps: SessionReloadDeps = defaultReloadDeps(),
+): Promise<SandboxConfigState> {
+  try {
+    const endpoint = await deps.endpoint(input.sessionId);
+    if (!endpoint) return UNREACHABLE_STATE;
+    const res = await deps.fetch(`${endpoint.baseUrl}/kortix/health${input.includeTurnState ? '?turn=1' : ''}`, {
+      headers: endpoint.headers,
+      signal: AbortSignal.timeout(10_000),
     });
-    const res = await fetch(
-      `${url.replace(/\/$/, '')}/kortix/health${input.includeTurnState ? '?turn=1' : ''}`,
-      {
-        headers: { ...headers, Authorization: `Bearer ${serviceKey}` },
-        signal: AbortSignal.timeout(10_000),
-      },
-    );
-    if (!res.ok) return unreachable;
+    if (!res.ok) return UNREACHABLE_STATE;
     const body = (await res.json()) as {
       agent_config_etag?: unknown;
       commit_sha?: unknown;
+      config_dir_sha?: unknown;
       turn_in_flight?: unknown;
+      capabilities?: unknown;
+      config?: unknown;
     };
+    const configReleases = hasConfigReleaseCapability(body.capabilities);
     return {
       etag: typeof body.agent_config_etag === 'string' ? body.agent_config_etag : null,
       commitSha: typeof body.commit_sha === 'string' ? body.commit_sha : null,
+      configDirSha: typeof body.config_dir_sha === 'string' ? body.config_dir_sha : null,
       reachable: true,
       // Tri-state on purpose: `true` busy, `false` idle, `null` could not tell.
       // Absent (the caller did not ask) is also null.
       turnInFlight:
         body.turn_in_flight === true ? true : body.turn_in_flight === false ? false : null,
+      configReleases,
+      release: configReleases ? parseDaemonConfigReport(body.config) : null,
     };
   } catch {
-    return { etag: null, commitSha: null, reachable: false, turnInFlight: null };
+    return UNREACHABLE_STATE;
   }
 }
 
@@ -352,6 +549,50 @@ export function isConfigStale(runningEtag: string | null, latestEtag: string | n
   return runningEtag !== latestEtag;
 }
 
+/**
+ * One verdict from the two things a session's config is made of.
+ *
+ * `etagStale` is the compiled agent config (governance, agent frontmatter).
+ * `filesStale` is the config dir on disk (skills, tools, plugins, agent bodies).
+ * Either one alone is enough to be stale.
+ *
+ * An unknown `filesStale` does NOT poison a known etag: a daemon built before
+ * `config_dir_sha` shipped never reports it, and those boxes must keep the
+ * answer they had. An unknown etag still yields `null` unless the files are
+ * known to be stale — never `false`, which would read as "up to date".
+ */
+export function combineConfigStaleness(
+  etagStale: boolean | null,
+  filesStale: boolean | null,
+): boolean | null {
+  if (etagStale === true || filesStale === true) return true;
+  return etagStale;
+}
+
+/**
+ * Has the base branch's config dir moved past what this box holds?
+ *
+ * `configDirSha` when the box has synced at least once, else the commit it
+ * booted from. `null` when the mirror cannot answer — most often a session that
+ * committed without pushing, whose HEAD only the box has.
+ */
+export async function isSessionConfigDirStale(input: {
+  project: GitBackedProject;
+  baseRef: string;
+  configDirSha: string | null;
+  commitSha: string | null;
+}): Promise<boolean | null> {
+  const boxSha = input.configDirSha ?? input.commitSha;
+  if (!boxSha) return null;
+  try {
+    const mirror = await refreshMirror(input.project);
+    const tipSha = await resolveCommitSha(input.project, input.baseRef);
+    return await opencodeConfigDirChangedBetween(mirror, input.project, boxSha, tipSha);
+  } catch {
+    return null;
+  }
+}
+
 export async function reloadSessionConfig(input: {
   projectId: string;
   accountId: string;
@@ -360,23 +601,36 @@ export async function reloadSessionConfig(input: {
   defaultBranch: string;
   manifestPath?: string | null;
   baseRef?: string | null;
-  /** Pull the workspace before recompiling. Default true — the usual intent. */
+  /**
+   * Also fast-forward the session's own branch. Default true. It does NOT gate
+   * the config convergence, which never touches the checkout and always runs.
+   */
   refreshRepo?: boolean;
   /** Reload even if a turn is running. It will be ended. */
   force?: boolean;
+  /**
+   * Skip the push — and the opencode restart it costs — when the box is already
+   * current. For callers nobody asked: the wake-time convergence runs on every
+   * resume, and a current box must not pay a runtime restart for it. The reload
+   * button leaves this unset, because a person who asked for a reload gets one.
+   */
+  onlyIfStale?: boolean;
   /** Optional live progress sink. The JSON route leaves it unset. */
   onPhase?: (phase: SessionReloadPhase) => void;
-}): Promise<SessionReloadResult> {
+}, deps: SessionReloadDeps = defaultReloadDeps()): Promise<SessionReloadResult> {
   // Before anything reads the mirror — the base_sha resolve, the compile inside
   // the push, the etag compare. See `invalidateProjectMirror` above: a reload
   // served from a 60s cache can apply the pre-merge config and report success.
   invalidateProjectMirror(input.projectId);
 
   input.onPhase?.('checking-session');
-  const before = await readSandboxConfigState({
-    sessionId: input.sessionId,
-    includeTurnState: input.force !== true,
-  });
+  const before = await readSandboxConfigState(
+    {
+      sessionId: input.sessionId,
+      includeTurnState: input.force !== true,
+    },
+    deps,
+  );
   if (!before.reachable) {
     return {
       applied: false,
@@ -390,6 +644,34 @@ export async function reloadSessionConfig(input: {
       reason: 'no reachable sandbox',
     };
   }
+
+  // CHOKEPOINT — the `config_releases` flag for the reload path
+  // (docs/specs/config-releases.md, "Feature flag"). Off ⇒ the daemon's own
+  // capability is ignored and this reload takes the pre-release path: the
+  // plain refresh plus the compiled-governance push, an etag-based result,
+  // and no `release` block for the CLI or the web to render. Nothing is
+  // recorded in the quarantine ledger either, because no release is assigned.
+  const releasesEnabled = await deps.configReleasesEnabled(input.projectId);
+  const capable = releasesEnabled && before.configReleases;
+
+  if (releasesEnabled) {
+    await deps.recordReport({ projectId: input.projectId, sessionId: input.sessionId, report: before.release });
+  }
+  // Present for a daemon with `config.release.v1`: the state it reported
+  // before this reload.
+  const releaseBefore = capable && before.release ? toSessionConfigRelease(before.release) : null;
+  // The checkout half of the reload. Set by whichever branch below runs the
+  // refresh; a reload that never reached the refresh reports `not-requested`.
+  let checkout: WorkspaceCheckout = 'not-requested';
+  const releaseFields = (
+    release: SessionConfigRelease | null,
+    outcome: ConvergeOutcome | null,
+  ): Pick<SessionReloadResult, 'release' | 'release_outcome' | 'config_path' | 'workspace_checkout'> => ({
+    ...(capable
+      ? { ...(release ? { release } : {}), release_outcome: outcome, config_path: 'release' as const }
+      : { config_path: 'legacy' as const }),
+    workspace_checkout: checkout,
+  });
 
   // `null` counts as busy. "Could not tell" is not permission to restart — that
   // would defeat the one promise this gate makes, in precisely the case where
@@ -410,26 +692,102 @@ export async function reloadSessionConfig(input: {
         before.turnInFlight === true
           ? 'session is mid-turn'
           : 'could not confirm the session is idle',
+      ...releaseFields(releaseBefore, null),
     };
   }
 
+  const pullRepo = input.refreshRepo !== false;
   let repoRefreshed = false;
   let commitSha = before.commitSha;
-  // `null` until the box answers — a daemon built before the config-dir sync
-  // shipped ignores the request and reports nothing, which is not the same as
-  // declining to sync.
-  let configDirSynced: boolean | null = null;
-  let configDirReason: string | undefined;
-  if (input.refreshRepo !== false) {
-    input.onPhase?.('refreshing-workspace');
-    const refreshed = await refreshSandboxWorkspace(input.sessionId);
-    repoRefreshed = refreshed.ok;
-    commitSha = refreshed.commitSha ?? commitSha;
-    configDirSynced = refreshed.configDirSynced;
-    configDirReason = refreshed.configDirReason;
+
+  // ── Capability gate (spec, "Capability gate") ────────────────────────────
+  // A daemon with `config.release.v1` converges itself: it fetches the
+  // descriptor from the API, which carries the compiled governance, so no
+  // separate governance push and no `config_dir=1`.
+  if (capable) {
+    if (pullRepo) {
+      input.onPhase?.('refreshing-workspace');
+      const refreshed = await refreshSandboxWorkspace(input.sessionId, { pullRepo }, deps);
+      repoRefreshed = refreshed.ok;
+      checkout = classifyWorkspaceCheckout({
+        requested: true,
+        ok: refreshed.ok,
+        before: before.commitSha,
+        after: refreshed.commitSha,
+      });
+      commitSha = refreshed.commitSha ?? commitSha;
+    }
+    input.onPhase?.('applying-config');
+    const converged = await convergeSandboxConfig(input.sessionId, deps);
+    input.onPhase?.('confirming-config');
+    if (!converged) {
+      return {
+        applied: false,
+        previous_etag: before.etag,
+        etag: before.etag,
+        repo_refreshed: repoRefreshed,
+        commit_sha: commitSha,
+        agent_files: 'unknown',
+        opencode_reload: null,
+        turn_ended: null,
+        reason: 'the sandbox did not answer the config convergence',
+        ...releaseFields(releaseBefore, null),
+      };
+    }
+    await deps.recordReport({ projectId: input.projectId, sessionId: input.sessionId, report: converged.config });
+    // Read the etag the box runs now: the release carried the governance.
+    const after = converged.reload ? await readSandboxConfigState({ sessionId: input.sessionId }, deps) : null;
+    return {
+      ...convergeToReloadResult(converged, { previousEtag: before.etag, etagAfter: after?.etag ?? null }),
+      repo_refreshed: repoRefreshed,
+      commit_sha: commitSha,
+      ...releaseFields(toSessionConfigRelease(converged.config), converged.outcome),
+    };
   }
 
-  const push = await pushSessionAgentConfigToSandbox({
+  // ── The pre-release path ────────────────────────────────────────────────
+  // Reached two ways: a daemon without `config.release.v1`, and a project
+  // whose `config_releases` flag is OFF (spec, "Feature flag"). Only the plain
+  // refresh plus the governance push — what a reload did before releases.
+  // Never `config_dir=1`: the old handler writes into `/workspace`.
+  input.onPhase?.('refreshing-workspace');
+  const refreshed = await refreshSandboxWorkspace(input.sessionId, { pullRepo }, deps);
+  repoRefreshed = pullRepo && refreshed.ok;
+  checkout = classifyWorkspaceCheckout({
+    requested: pullRepo,
+    ok: refreshed.ok,
+    before: before.commitSha,
+    after: refreshed.commitSha,
+  });
+  commitSha = refreshed.commitSha ?? commitSha;
+
+  // An old daemon cannot report its agent files: the files converge after its
+  // self-update, on the convergence scheduler's 6- and 7-minute attempts.
+  const agentFiles: ReloadAgentFiles = 'unknown';
+  if (input.onlyIfStale) {
+    const latestEtag = await deps.latestEtag({
+      projectId: input.projectId,
+      accountId: input.accountId,
+      sessionId: input.sessionId,
+      baseRef: input.baseRef,
+    });
+    if (!configNeedsPush({ agentFiles, runningEtag: before.etag, latestEtag })) {
+      return {
+        applied: false,
+        previous_etag: before.etag,
+        etag: before.etag,
+        repo_refreshed: repoRefreshed,
+        commit_sha: commitSha,
+        agent_files: agentFiles,
+        opencode_reload: null,
+        turn_ended: null,
+        reason: 'already current',
+        ...releaseFields(null, null),
+      };
+    }
+  }
+
+  const push = await deps.pushGovernance({
     projectId: input.projectId,
     sessionId: input.sessionId,
     repoUrl: input.repoUrl,
@@ -440,7 +798,7 @@ export async function reloadSessionConfig(input: {
   });
 
   input.onPhase?.('confirming-config');
-  const latest = await latestAgentConfigEtag({
+  const latest = await deps.latestEtag({
     projectId: input.projectId,
     accountId: input.accountId,
     sessionId: input.sessionId,
@@ -455,11 +813,7 @@ export async function reloadSessionConfig(input: {
     etag: push.applied ? latest : before.etag,
     repo_refreshed: repoRefreshed,
     commit_sha: commitSha,
-    agent_files: classifyAgentFiles({
-      requested: input.refreshRepo !== false,
-      synced: configDirSynced,
-      reason: configDirReason,
-    }),
+    agent_files: agentFiles,
     opencode_reload: push.opencodeReload ?? null,
     turn_ended: push.opencodeTurnEnded ?? null,
     ...(push.applied
@@ -470,7 +824,92 @@ export async function reloadSessionConfig(input: {
           }
         : {}
       : { reason: push.reason ?? 'agent config unchanged' }),
+    ...releaseFields(null, null),
   };
+}
+
+/**
+ * Map a converge response (spec, "Converge response") onto the reload result.
+ * The `release`, `repo_refreshed`, and `commit_sha` fields are the caller's.
+ */
+export function convergeToReloadResult(
+  converged: DaemonConvergeResponse,
+  etags: { previousEtag: string | null; etagAfter: string | null },
+): Omit<SessionReloadResult, 'repo_refreshed' | 'commit_sha'> {
+  const reloaded = converged.reload !== null;
+  const common = {
+    previous_etag: etags.previousEtag,
+    etag: reloaded ? (etags.etagAfter ?? etags.previousEtag) : etags.previousEtag,
+    opencode_reload: reloaded ? ('restarted' as const) : null,
+    turn_ended: converged.reload?.turn_ended ?? null,
+  };
+  const failedId = converged.config.failed_release_id?.slice(0, 12);
+  switch (converged.outcome) {
+    case 'applied':
+      return { ...common, applied: true, agent_files: 'updated' };
+    case 'unchanged':
+      return { ...common, applied: false, agent_files: 'already-current', reason: 'already current' };
+    case 'declined':
+      return {
+        ...common,
+        applied: false,
+        agent_files: 'unknown',
+        opencode_reload: 'kept-old',
+        reason:
+          converged.reason ??
+          converged.config.fallback_reason ??
+          'the new config did not pass its proven check, so the session kept the config it was already running',
+      };
+    case 'quarantined':
+      return {
+        ...common,
+        applied: false,
+        agent_files: 'unknown',
+        reason:
+          converged.reason ??
+          `release ${failedId ?? 'assigned'} already failed on this sandbox, so the session keeps the config it runs`,
+      };
+    case 'failed':
+      return {
+        ...common,
+        applied: false,
+        agent_files: 'unknown',
+        reason: converged.reason ?? converged.config.fallback_reason ?? 'config convergence failed',
+      };
+  }
+}
+
+/**
+ * `POST /kortix/config/converge` on a daemon with `config.release.v1`. The
+ * daemon fetches the descriptor from the API itself; this request has no
+ * body. Null when the box did not answer with a converge response.
+ *
+ * 409 = a convergence already runs (single flight). It is over in seconds to
+ * ~90 s (the proven-check budget), so it is waited out.
+ */
+async function convergeSandboxConfig(
+  sessionId: string,
+  deps: SessionReloadDeps,
+): Promise<DaemonConvergeResponse | null> {
+  try {
+    const endpoint = await deps.endpoint(sessionId);
+    if (!endpoint) return null;
+    let res: Response;
+    for (let attempt = 0; ; attempt++) {
+      res = await deps.fetch(`${endpoint.baseUrl}/kortix/config/converge`, {
+        method: 'POST',
+        headers: endpoint.headers,
+        // Download, verify, and the 90 s proven check fit well inside this.
+        signal: AbortSignal.timeout(180_000),
+      });
+      if (res.status !== 409 || attempt >= CONVERGE_BUSY_RETRIES) break;
+      await deps.sleep(REFRESH_BUSY_DELAY_MS);
+    }
+    if (!res.ok) return null;
+    return parseConvergeResponse(await res.json());
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -499,58 +938,48 @@ export async function reloadSessionConfig(input: {
  * moving a live session onto a new base is a merge with conflicts, not a side
  * effect of a button labelled "Reload config".
  *
- * None of this weakens the reload's actual job. The agent config is compiled
- * server-side from the git MIRROR at the session's ref; it never came from the
- * sandbox's working tree, so it updates either way.
+ * NEVER `config_dir=1` (spec, "Capability gate"). On a daemon without
+ * `config.release.v1` that handler checks the base config out into
+ * `/workspace`; on a capable daemon it is an alias for converge, which the
+ * reload sends explicitly.
  *
  * `restart=0`: the config push right after restarts opencode anyway, and
  * restarting twice doubles the boot cost and the window where the box 503s.
  */
-async function refreshSandboxWorkspace(sessionId: string): Promise<{
-  ok: boolean;
-  commitSha: string | null;
-  configDirSynced: boolean | null;
-  configDirReason?: string;
-}> {
-  const unreachable = { ok: false, commitSha: null, configDirSynced: null };
+async function refreshSandboxWorkspace(
+  sessionId: string,
+  opts: { pullRepo: boolean },
+  deps: SessionReloadDeps,
+): Promise<{ ok: boolean; commitSha: string | null }> {
+  const unreachable = { ok: false, commitSha: null };
   try {
-    const [row] = await db
-      .select({ externalId: sessionSandboxes.externalId, config: sessionSandboxes.config })
-      .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.sessionId, sessionId), eq(sessionSandboxes.status, 'active')))
-      .limit(1);
-    const serviceKey = (row?.config as Record<string, unknown> | null)?.serviceKey;
-    if (!row?.externalId || typeof serviceKey !== 'string') return unreachable;
-
-    const { url, headers } = await resolveSandboxIngress(row.externalId, {
-      port: SANDBOX_SERVICE_PORT,
-      transport: 'http',
-    });
-    // `config_dir=1` is the half that makes a reload change behaviour — see the
-    // comment above. Sent unconditionally: a daemon built before it shipped just
-    // ignores the query parameter and answers without `config_dir`, which reads
-    // back as `null` ("could not tell") rather than `false`.
-    const res = await fetch(`${url.replace(/\/$/, '')}/kortix/refresh?restart=0&config_dir=1`, {
-      method: 'POST',
-      headers: { ...headers, Authorization: `Bearer ${serviceKey}` },
-      signal: AbortSignal.timeout(120_000),
-    });
+    const endpoint = await deps.endpoint(sessionId);
+    if (!endpoint) return unreachable;
+    // 409 = another refresh holds the daemon's single-flight slot. After a
+    // resume or restart that is the runtime-asset poke fired alongside this one
+    // (`scheduleSandboxRuntimeRefresh`), and it is over in seconds. Reading it as
+    // "unreachable" reports a failed pull for a box that was only busy for a
+    // moment, so wait it out instead.
+    let res: Response;
+    for (let attempt = 0; ; attempt++) {
+      // `repo=0` when the caller did not ask for the session branch to be
+      // pulled. The refresh still stages runtime assets, which is how an old
+      // daemon receives its replacement.
+      res = await deps.fetch(`${endpoint.baseUrl}/kortix/refresh?restart=0${opts.pullRepo ? '' : '&repo=0'}`, {
+        method: 'POST',
+        headers: endpoint.headers,
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (res.status !== 409 || attempt >= REFRESH_BUSY_RETRIES) break;
+      await deps.sleep(REFRESH_BUSY_DELAY_MS);
+    }
     if (!res.ok) return unreachable;
     // The daemon answers `{repo: {before, after}}` — there is no `repo.commit`,
     // so the old read was always undefined and `commit_sha` always reported the
     // PRE-reload value, making a successful pull look like a no-op.
-    const body = (await res.json()) as {
-      repo?: { after?: { commit?: unknown } };
-      config_dir?: { synced?: unknown; skipped?: unknown };
-    };
+    const body = (await res.json()) as { repo?: { after?: { commit?: unknown } } };
     const commit = body.repo?.after?.commit;
-    const dir = body.config_dir;
-    return {
-      ok: true,
-      commitSha: typeof commit === 'string' ? commit : null,
-      configDirSynced: typeof dir?.synced === 'boolean' ? dir.synced : null,
-      ...(typeof dir?.skipped === 'string' ? { configDirReason: dir.skipped } : {}),
-    };
+    return { ok: true, commitSha: typeof commit === 'string' ? commit : null };
   } catch {
     // A failed pull is not a failed reload: the config recompiles from the git
     // MIRROR, not the sandbox's working tree, so the agent still updates.

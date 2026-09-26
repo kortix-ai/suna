@@ -177,7 +177,7 @@ const TRIGGER_ACTIONS = {
 // only ever asserts project-scoped actions), so granting or omitting them in
 // a custom role was a silent no-op. The two routes that needed a real
 // send-primitive gate (Slack file upload, meet/speak) were moved onto
-// project.connector.write instead — see r4.ts.
+// project.connector.write instead — see routes/channel-slack.ts.
 
 // ─── Aggregate type for all valid action strings ───────────────────────────
 

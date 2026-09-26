@@ -11,7 +11,7 @@
  * This module owns catalog *construction + read*. There is no deterministic
  * install engine anymore — adding an item to an existing project is an agent
  * import (POST /:projectId/marketplace/install-session, in
- * projects/routes/r10.ts), which resolves an entry by id via `getCatalogEntry`
+ * projects/routes/marketplace-install-session.ts), which resolves an entry by id via `getCatalogEntry`
  * and hands its files to a session to read/merge/CR.
  */
 
@@ -1909,7 +1909,7 @@ type ItemQuery = { query?: string; type?: string; source?: string };
 // support files still exist in registries for dependency resolution but aren't
 // browse/install choices on their own. Install has no per-type authz of its own:
 // POST /:projectId/marketplace/install-session gates on a single project.write
-// check up front (see handleMarketplaceInstallSession in projects/routes/r10.ts),
+// check up front (see handleMarketplaceInstallSession in projects/routes/marketplace-install-session.ts),
 // then runs the install as an agent session that reads the item's source and
 // opens a change request — there is no per-committed-file capability gate. So
 // widening this set never bypasses authz.

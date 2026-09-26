@@ -1,4 +1,4 @@
-import { resolveSessionOpencodeEndpoint } from './engine';
+import { resolveSessionOpencodeEndpoint } from './runtime-client';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 
 const WORKSPACE = '/workspace';
@@ -23,7 +23,8 @@ const WORKSPACE = '/workspace';
  * decided the turn is dead; a sandbox that is parked, gone, or simply slow is
  * not a reason to fail the sweep.
  *
- * `requestedStop`: a person pressed Stop (Slack, Teams). This call does not pass
+ * `requestedStop`: a person pressed Stop (Slack, Teams, or the web Stop whose
+ * hold settle re-aborts the box). This call does not pass
  * the sandbox proxy that stamps `UserStop` on web and CLI stops, so it stamps
  * the open turn itself. Without the stamp the abort reads as a failure nobody
  * explained. A stamp that fails never blocks the stop.

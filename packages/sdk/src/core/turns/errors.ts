@@ -177,6 +177,22 @@ function visibleTextFromHtml(str: string, lower: string): string {
   return parts.join(' ').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * The AI SDK's `JSONParseError` for a streamed chunk that did not parse:
+ * `JSON parsing failed: Text: <every unparsed byte>. Error message: <cause>`.
+ * The embedded text is the model's raw stream (often several
+ * `chat.completion.chunk` bodies run together), so it is never the sentence.
+ * Name the model when a chunk carries one; the text stays available through
+ * `rawErrorText`.
+ */
+function streamParseFailure(str: string): string | undefined {
+  if (!str.startsWith('JSON parsing failed: Text:')) return undefined;
+  const model = str.match(/"model"\s*:\s*"([^"\\]{1,120})"/)?.[1]?.trim();
+  return model
+    ? `The response from ${model} could not be read.`
+    : 'The model response could not be read.';
+}
+
 /** `overloaded_error` → `Overloaded error`; `rate_limit_exceeded` → `Rate limit exceeded`. */
 function humanizeCode(code: string): string {
   const words = code.replace(/[_-]+/g, ' ').trim();
@@ -203,6 +219,9 @@ function unwrapString(
   const str = stripErrorPrefixes(raw);
   if (!str) return undefined;
   if (depth >= MAX_UNWRAP_DEPTH) return str;
+
+  const streamFailure = streamParseFailure(str);
+  if (streamFailure) return streamFailure;
 
   // The whole string is a body (possibly a double-encoded one).
   const parsed = tryParseJson(str);
@@ -280,6 +299,43 @@ export function unwrapError(raw: unknown): string {
   if (typeof raw === 'string') return unwrapString(raw, 0) ?? GENERIC_ERROR_MESSAGE;
   if (typeof raw === 'object') return unwrapObject(raw, 0) ?? GENERIC_ERROR_MESSAGE;
   return String(raw);
+}
+
+/**
+ * The technical text behind `unwrapError`'s sentence — the upstream body or
+ * the provider's own wording — for a collapsed "details" disclosure. Returns
+ * `undefined` when that text says nothing the sentence does not already say,
+ * so a host never renders a disclosure that repeats the title.
+ */
+export function rawErrorText(raw: unknown): string | undefined {
+  const text = rawTextOf(raw)?.trim();
+  if (!text) return undefined;
+  const sentence = unwrapError(raw);
+  if (text === sentence || stripErrorPrefixes(text) === sentence) return undefined;
+  return text;
+}
+
+/** OpenCode's envelope (`data.message`, plus the upstream `data.responseBody`
+ *  of an `APIError`), a thrown `Error`'s message, or the serialized value. */
+function rawTextOf(raw: unknown): string | undefined {
+  if (typeof raw === 'string') return raw;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const record = raw as Record<string, unknown>;
+  const data = record.data;
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const { message, responseBody } = data as Record<string, unknown>;
+    const parts = [message, responseBody].filter(
+      (part, index, all): part is string =>
+        typeof part === 'string' && part.trim() !== '' && all.indexOf(part) === index,
+    );
+    if (parts.length > 0) return parts.join('\n\n');
+  }
+  if (typeof record.message === 'string' && record.message) return record.message;
+  try {
+    return JSON.stringify(raw);
+  } catch {
+    return undefined;
+  }
 }
 
 /**

@@ -1,4 +1,4 @@
-import { grantCredits } from './credits';
+import { wallet } from '../wallet';
 import { MACHINE_CREDIT_BONUS } from './tiers';
 
 interface GrantMachineBonusOnceParams {
@@ -18,14 +18,14 @@ export async function grantMachineBonusOnce(params: GrantMachineBonusOnceParams)
     return { success: true, skipped: true };
   }
 
-  return grantCredits(
+  return wallet.grant({
     accountId,
-    MACHINE_CREDIT_BONUS,
-    'machine_bonus',
+    amount: MACHINE_CREDIT_BONUS,
+    kind: 'machine_bonus',
     description,
-    false,
-    idempotencyKey,
-  );
+    expiring: false,
+    key: { event: idempotencyKey },
+  });
 }
 
 export function getStripeMachineBonusKey(subscriptionId: string) {

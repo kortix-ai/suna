@@ -11,8 +11,8 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import type { Context } from 'hono';
 
 // Records every statement the pin issues. The real-PostgreSQL interleaving
-// proof is `src/__tests__/e2e-sandbox-metadata-race.test.ts` (needs
-// TEST_DATABASE_URL); this hermetic guard keeps the SHAPE in every CI run.
+// proof is `src/__tests__/integration-sandbox-metadata-race.test.ts` (the
+// `db-suites` lane); this hermetic guard keeps the SHAPE in the unit run.
 const statements: Array<{ kind: 'select' | 'update'; set?: unknown; where?: unknown }> = [];
 mock.module('../../shared/db', () => ({
   db: {

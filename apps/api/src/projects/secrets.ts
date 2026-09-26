@@ -609,7 +609,7 @@ export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>
  * it, and the daemon logged `withheld: 0` because it was dropped server-side.
  *
  * The row already carries the answer. The platform stamps `consumer` when it
- * stores a model credential (`routes/r3.ts` defaultToGateway, the
+ * stores a model credential (`routes/provider-oauth.ts` defaultToGateway, the
  * provider-connect UI) and `sandbox` when a human adds an ordinary secret. Trust
  * that stamp:
  *
@@ -663,7 +663,7 @@ export async function materializeSecretDelivery(
     // `GITHUB_TOKEN` (stored `consumer: 'sandbox'`, the shape the secrets UI
     // creates) was silently deleted from every sandbox env while the capability
     // catalog kept advertising it. The platform stamps `consumer` when it
-    // stores a model credential (`routes/r3.ts` defaultToGateway); trust that
+    // stores a model credential (`routes/provider-oauth.ts` defaultToGateway); trust that
     // stamp, not a third-party name table. `consumer == null` is a legacy row
     // with no stamp to trust, so it keeps today's strip.
     if (
@@ -678,7 +678,7 @@ export async function materializeSecretDelivery(
     }
     if (!input.llmGatewayEnabled && row.consumer === 'llm_gateway') {
       // Native mode: the row was stored `broker`/`llm_gateway` only because the
-      // platform defaulted provider keys there (routes/r3.ts `defaultToGateway`,
+      // platform defaulted provider keys there (routes/provider-oauth.ts `defaultToGateway`,
       // the provider-connect UI). With no gateway in the path it delivers like a
       // `runtime` row — plaintext, so toggling the flag never strands the key.
       delivered.push(row);

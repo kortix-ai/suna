@@ -7,6 +7,14 @@ import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
 import { inboxLaneSql, inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
+import { transitionSession } from './status-transitions';
+import {
+  type CommandLease,
+  LIFECYCLE_CLAIM_LOCK_MS,
+  logLeaseLost,
+  ownedByLease,
+} from './command-lease';
+import { randomUUID } from 'node:crypto';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -66,7 +74,7 @@ export function withRemintedWireId(id: string): SQL {
     coalesce(${sessionLifecycleCommands.payload}->'redeliveredMessageIds', '[]'::jsonb) || ${JSON.stringify([id])}::jsonb)`;
 }
 
-export function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
+function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
   return {
     body: command.body,
     requestingPrincipalType: command.requestingPrincipalType,
@@ -373,18 +381,25 @@ export async function markLegacyInlineAttachmentsRepaired(sessionId: string): Pr
  */
 export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
 
+/** True when a lease write matched its row; logs the loss otherwise. */
+function appliedUnderLease(lease: CommandLease, write: string, rows: unknown[]): boolean {
+  if (rows.length > 0) return true;
+  logLeaseLost(lease, write);
+  return false;
+}
+
 /**
  * Put back a REDELIVERY whose already-answered check could not read the
  * transcript. A prompt that was posted before may already have its answer on
  * record; re-sending it blind shows the user the same prompt twice. The row
- * waits and counts the failure; after `MAX_ANSWER_CHECK_FAILURES` (engine.ts)
+ * waits and counts the failure; after `MAX_ANSWER_CHECK_FAILURES` (queued-continue.ts)
  * the drain sends it anyway, so an unreadable box cannot strand the prompt.
  */
 export async function requeueUnverifiedRedelivery(
-  commandId: string,
+  lease: CommandLease,
   availableAt: Date,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .update(sessionLifecycleCommands)
     .set({
       status: 'queued',
@@ -398,7 +413,9 @@ export async function requeueUnverifiedRedelivery(
              COALESCE((${sessionLifecycleCommands.result}->>'answer_check_failures')::int, 0) + 1)`,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId));
+    .where(ownedByLease(lease))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return appliedUnderLease(lease, 'requeueUnverifiedRedelivery', rows);
 }
 
 /** How many times a prompt the runtime accepted-but-never-wrote is re-sent
@@ -417,7 +434,7 @@ export const MAX_LANDING_RETRIES = 2;
  * Returns false when the retry budget is spent; the caller dead-letters.
  */
 export async function requeueUnlandedPrompt(
-  commandId: string,
+  lease: CommandLease,
   reason: string,
   availableAt: Date,
 ): Promise<{ requeued: boolean; refusals: number }> {
@@ -439,7 +456,7 @@ export async function requeueUnlandedPrompt(
     })
     .where(
       and(
-        eq(sessionLifecycleCommands.commandId, commandId),
+        ownedByLease(lease),
         sql`COALESCE((${sessionLifecycleCommands.result}->>'landing_refusals')::int, 0) < ${MAX_LANDING_RETRIES}`,
       ),
     )
@@ -449,23 +466,20 @@ export async function requeueUnlandedPrompt(
 }
 
 /** Publish delivery only after the worker passes admission. */
-export async function markInboxDeliveryStarted(commandId: string): Promise<void> {
+export async function markInboxDeliveryStarted(lease: CommandLease): Promise<void> {
   await db.update(sessionLifecycleCommands).set({
     result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
       || ${JSON.stringify({ delivery_started_at: new Date().toISOString() })}::jsonb`,
     updatedAt: new Date(),
-  }).where(and(
-    eq(sessionLifecycleCommands.commandId, commandId),
-    eq(sessionLifecycleCommands.status, 'running'),
-  ));
+  }).where(ownedByLease(lease));
 }
 
 export async function requeueForAdmission(
-  commandId: string,
+  lease: CommandLease,
   reason: InboxAdmissionReason,
   availableAt: Date,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .update(sessionLifecycleCommands)
     .set({
       status: 'queued',
@@ -480,7 +494,9 @@ export async function requeueForAdmission(
       payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId));
+    .where(ownedByLease(lease))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return appliedUnderLease(lease, 'requeueForAdmission', rows);
 }
 
 /**
@@ -526,9 +542,6 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
   return next.idempotencyKey ?? null;
 }
 
-/** The lock a claim holds before an abandoned `running` row can be reclaimed. */
-export const LIFECYCLE_CLAIM_LOCK_MS = 5 * 60_000;
-
 /**
  * The row a create claim inserts. An inline create is claimed `running` by
  * THIS process, so it carries the same lock a drained row does: without one,
@@ -536,7 +549,7 @@ export const LIFECYCLE_CLAIM_LOCK_MS = 5 * 60_000;
  * never matches it, and a pod that dies mid-create leaves the idempotency key
  * answering `pending` for ever.
  */
-export function buildCreateSessionCommandValues(
+function buildCreateSessionCommandValues(
   command: CreateSessionCommand,
   opts: { initialStatus: 'queued' | 'running'; reason?: string | null },
   now: Date,
@@ -544,7 +557,8 @@ export function buildCreateSessionCommandValues(
   const inlineLock =
     opts.initialStatus === 'running'
       ? {
-          lockedBy: `session-lifecycle-inline:${process.pid}`,
+          // Unique per claim: the lock owner is the lease's fencing token.
+          lockedBy: `session-lifecycle-inline:${process.pid}:${randomUUID()}`,
           lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
         }
       : {};
@@ -691,11 +705,11 @@ export async function markCommandQueued(
 }
 
 export async function markCommandSucceeded(
-  commandId: string,
+  lease: CommandLease,
   result: Record<string, unknown>,
   sessionId?: string | null,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .update(sessionLifecycleCommands)
     .set({
       status: 'succeeded',
@@ -705,7 +719,9 @@ export async function markCommandSucceeded(
       lockedUntil: null,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId));
+    .where(ownedByLease(lease))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return appliedUnderLease(lease, 'markCommandSucceeded', rows);
 }
 
 /**
@@ -748,10 +764,10 @@ export async function markCommandSucceeded(
  * hold in force.
  */
 export async function markCommandForwarded(
-  commandId: string,
+  lease: CommandLease,
   sessionId: string,
   wireMessageId: string,
-): Promise<void> {
+): Promise<boolean> {
   const forwarded = {
     status: 'forwarded',
     forwarded_at: new Date().toISOString(),
@@ -760,7 +776,7 @@ export async function markCommandForwarded(
     // attempt actually used.
     forwarded_message_id: wireMessageId,
   };
-  await db
+  const rows = await db
     .update(sessionLifecycleCommands)
     .set({
       status: 'succeeded',
@@ -777,11 +793,13 @@ export async function markCommandForwarded(
       lockedUntil: null,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId));
+    .where(ownedByLease(lease))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return appliedUnderLease(lease, 'markCommandForwarded', rows);
 }
 
 export async function markCommandFailed(
-  commandId: string,
+  lease: CommandLease,
   error: string,
   opts: {
     retryable: boolean;
@@ -804,9 +822,13 @@ export async function markCommandFailed(
       lastError: error,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId))
+    .where(ownedByLease(lease))
     .returning();
-  if (retry || !row) return;
+  if (!row) {
+    logLeaseLost(lease, 'markCommandFailed');
+    return;
+  }
+  if (retry) return;
 
   // Dead-lettered = this command's work is being ABANDONED. That used to be a
   // console.warn deep in the drain — invisible to alerting while the user's
@@ -845,20 +867,13 @@ export async function markCommandFailed(
     // Park the target session 'failed': findReusableTriggerSession skips failed
     // sessions, so a `session_mode = "reuse"` trigger's next fire creates a
     // FRESH session instead of re-aiming prompts at a wedged one — the proven
-    // lossless self-heal. Status re-check in the UPDATE predicate (same pattern
-    // as reconcileStuckActiveSessions) so a concurrent transition isn't
-    // clobbered by a stale dead-letter.
+    // lossless self-heal. The `fail` transition re-checks the status and the
+    // tombstone in its own UPDATE, so a stale dead-letter cannot clobber a
+    // concurrent transition or touch a deleted session.
     try {
-      await db
-        .update(projectSessions)
-        .set({
-          status: 'failed',
-          error: `prompt delivery dead-lettered: ${error}`.slice(0, 1000),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(eq(projectSessions.sessionId, row.sessionId), ne(projectSessions.status, 'failed')),
-        );
+      await transitionSession('fail', row.sessionId, {
+        error: `prompt delivery dead-lettered: ${error}`.slice(0, 1000),
+      });
     } catch (err) {
       console.warn('[session-lifecycle] failed to park session after dead-letter', {
         sessionId: row.sessionId,
@@ -904,7 +919,7 @@ const RUNTIME_UNREACHABLE_BACKOFF_MS = [30_000, 120_000, 480_000] as const;
 /** Set by {@link parkPromptForUnreachableRuntime} on a row waiting for a box. */
 export const RUNTIME_UNREACHABLE_REASON = 'runtime_unreachable';
 
-export function runtimeUnreachableRetries(payload: unknown): number {
+function runtimeUnreachableRetries(payload: unknown): number {
   const value = (payload as { runtimeUnreachableRetries?: unknown } | null)
     ?.runtimeUnreachableRetries;
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
@@ -934,7 +949,7 @@ export function runtimeUnreachableRetries(payload: unknown): number {
  * `markCommandFailed`, which owns the alerting and the session-park policy.
  */
 export async function parkPromptForUnreachableRuntime(
-  commandId: string,
+  lease: CommandLease,
   error: string,
   opts: { sessionId?: string | null; now?: Date } = {},
 ): Promise<{ parked: boolean; retries: number }> {
@@ -942,7 +957,7 @@ export async function parkPromptForUnreachableRuntime(
   const [current] = await db
     .select({ payload: sessionLifecycleCommands.payload })
     .from(sessionLifecycleCommands)
-    .where(eq(sessionLifecycleCommands.commandId, commandId))
+    .where(eq(sessionLifecycleCommands.commandId, lease.commandId))
     .limit(1);
   if (!current) return { parked: false, retries: 0 };
 
@@ -984,17 +999,12 @@ export async function parkPromptForUnreachableRuntime(
         to_jsonb(${retries}::int))`,
       updatedAt: now,
     })
-    .where(
-      and(
-        eq(sessionLifecycleCommands.commandId, commandId),
-        ne(sessionLifecycleCommands.status, 'dead_lettered'),
-      ),
-    )
+    .where(ownedByLease(lease))
     .returning({ commandId: sessionLifecycleCommands.commandId });
   if (!row) return { parked: false, retries: spent };
 
   logger.info('[session-lifecycle] prompt parked — runtime unreachable, will re-attempt', {
-    command_id: commandId,
+    command_id: lease.commandId,
     session_id: opts.sessionId ?? null,
     runtime_retries: retries,
     max_retries: MAX_RUNTIME_UNREACHABLE_RETRIES,

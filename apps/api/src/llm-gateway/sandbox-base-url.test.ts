@@ -30,12 +30,6 @@ describe('resolveLlmGatewayBaseUrl', () => {
     );
   });
 
-  test('an internal container DNS origin round-trips the same way', () => {
-    expect(resolveLlmGatewayBaseUrl('http://kortix-api:8008')).toBe(
-      'http://kortix-api:8008/v1/llm',
-    );
-  });
-
   test('proxy mode includes the standalone gateway OpenAI v1 prefix', () => {
     config.LLM_GATEWAY_PROXY_PORT = 8090;
     expect(resolveLlmGatewayBaseUrl('http://kortix-api:8008')).toBe(

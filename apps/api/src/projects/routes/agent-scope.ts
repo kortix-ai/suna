@@ -38,6 +38,7 @@ import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { db } from '../../shared/db';
 import { isValidIdentifier } from '../secrets';
 import { commitManifest, loadManifestForEdit } from '../lib/triggers';
+import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 
 // `'all'` = every item the launcher can see; a list = an explicit allowlist;
 // `[]` = none. Mirrors the AgentSpec GrantSet.
@@ -183,6 +184,11 @@ projectsApp.openapi(
     if ('error' in committed) {
       return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
     }
+    // A person's edit is pushed now. An agent session's is not: forcing a
+    // re-push is refused to agents on POST /secrets/sync (the re-mint half of
+    // the policy-widening chain), and this route must not become a side door to
+    // it. The agent's own next prompt re-syncs through the normal path.
+    if (!isProjectSessionPrincipal(c)) pushGrantChange(projectId);
 
     const spec = check.specs.find((s) => s.name === agentName);
     return c.json({
@@ -195,6 +201,23 @@ projectsApp.openapi(
     });
   },
 );
+
+/**
+ * A grant edit changes which secrets live sessions may receive. Push it now:
+ * the pre-prompt sync would deliver it only on the session's NEXT prompt, and
+ * the person who just enabled a secret is usually looking at a session that is
+ * waiting for it. Best-effort — the commit already landed, and the next prompt
+ * re-syncs regardless. The push re-resolves each session's own grant, so a
+ * narrowing is delivered the same way.
+ */
+function pushGrantChange(projectId: string): void {
+  void propagateProjectSecretsToActiveSandboxes(projectId).catch((err) => {
+    console.warn('[agent-scope] could not push the grant change to active sessions', {
+      projectId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+}
 
 // POST /:projectId/secrets/:identifier/grant
 //
@@ -252,7 +275,7 @@ projectsApp.openapi(
     // BOTH leaves, because this route straddles two boundaries. Writing the
     // agent entry is `project.agent.write`, but deciding what to write means
     // reading secret metadata, and the secrets list itself is gated on
-    // `project.secret.read` (r3.ts). They are separate entries in
+    // `project.secret.read` (secrets.ts). They are separate entries in
     // kortix.role_permissions, so a role can hold one without the other — and with
     // only the write leaf the 404/409/200 split below would answer "does this
     // identifier exist, and is its delivery denied?" for a caller deliberately
@@ -358,6 +381,7 @@ projectsApp.openapi(
     if ('error' in committed) {
       return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
     }
+    pushGrantChange(projectId);
 
     return c.json({
       identifier,

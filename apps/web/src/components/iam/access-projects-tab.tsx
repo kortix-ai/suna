@@ -40,7 +40,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * member is scoped to, same direct-or-via-group shape), plus a top-level
  * `group_access` array — one entry per group with SOME access to this
  * project. Field names are copied byte-for-byte from the live handler
- * (`apps/api/src/projects/routes/r6.ts`). The SDK's `ProjectAccessMember` /
+ * (`apps/api/src/projects/routes/project-access.ts`). The SDK's `ProjectAccessMember` /
  * `ProjectAccessResponse` types do not carry these fields yet, so this file
  * declares its own extension types below rather than editing the SDK's
  * published types out from under a separate change.
@@ -49,7 +49,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * `group_access` entries carry no `expires_at` for the group's own
  * `built_in_role` grant (`project_group_grants.expires_at` exists in the
  * database and on `attachGroupToProject`/`updateProjectGroupGrant`'s params,
- * but `r6.ts`'s `groupAccessById` builder does not select it onto the
+ * but `project-access.ts`'s `groupAccessById` builder does not select it onto the
  * response). A group row therefore shows an expiry ONLY when its custom-role
  * policy carries one, rather than fabricating "never" for a value it cannot
  * see.

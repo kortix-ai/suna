@@ -33,7 +33,6 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { accountGroupMembers, oauthAccessTokens, oauthClients } from '@kortix/db';
 import { db } from '../shared/db';
 import { hashSecretKey, randomAlphanumeric } from '../shared/crypto';
-import { hashOauthToken } from '../oauth/token-hash';
 /*
  * The narrow email lookup (drizzle + db, its own cache, never throws) rather
  * than `projects/lib/access`'s re-export of it: that module drags the whole
@@ -290,7 +289,7 @@ export async function mintAppViewerToken(
   const accessToken = `kortix_oat_${randomAlphanumeric(48)}`;
   const expiresAt = new Date(Date.now() + APP_VIEWER_TOKEN_TTL_S * 1000);
   await db.insert(oauthAccessTokens).values({
-    tokenHash: hashOauthToken(accessToken),
+    tokenHash: hashSecretKey(accessToken),
     clientId,
     userId,
     accountId: app.accountId,

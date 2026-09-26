@@ -661,8 +661,23 @@ export interface SsoProvider {
   /** When true, the unified auth flow refuses the password/email-code paths
    *  for this provider's primary domain — the IdP becomes the only door. */
   enforce_sso: boolean;
+  /** True once the account proved control of `primary_domain`. Until then an
+   *  email this IdP asserts is trusted only inside this account, and
+   *  `enforce_sso` has no effect. */
+  domain_verified?: boolean;
+  domain_verified_at?: string | null;
+  /** The DNS TXT record that proves control of `primary_domain`. */
+  domain_verification?: SsoDomainVerificationRecord | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface SsoDomainVerificationRecord {
+  record_type: 'TXT';
+  /** DNS name, e.g. `_kortix-verification.example.com`. */
+  record_name: string;
+  /** TXT value, e.g. `kortix-verification=<token>`. */
+  record_value: string;
 }
 
 export interface SsoGroupMapping {
@@ -724,6 +739,22 @@ export async function importSsoProviderFromMetadata(
     await backendApi.post<{ provider: SsoProvider }>(
       `/accounts/${accountId}/iam/sso/provider/from-metadata`,
       input,
+      { showErrors: false },
+    ),
+  ).provider;
+}
+
+/**
+ * Check the DNS TXT record from `provider.domain_verification` and, when it is
+ * published, mark the provider's primary domain verified. Rejects with the
+ * API's 422 (`code: 'sso_domain_unverified'`) while the record is missing, and
+ * 409 (`sso_domain_claimed`) when another account verified the domain first.
+ */
+export async function verifySsoDomain(accountId: string) {
+  return unwrap(
+    await backendApi.post<{ provider: SsoProvider }>(
+      `/accounts/${accountId}/iam/sso/provider/verify-domain`,
+      {},
       { showErrors: false },
     ),
   ).provider;

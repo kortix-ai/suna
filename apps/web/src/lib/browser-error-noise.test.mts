@@ -37,6 +37,7 @@ import {
   isPaperShaderImageUniformNoise,
   isPaperShaderNullContextNoise,
   isPaperShaderWebGLUnsupportedNoise,
+  isRedefineInjectedWalletNoise,
   isRedefineWebdriverNoise,
   isRuntimeNotReadyNoiseMessage,
   isSafariGenericSecurityErrorNoise,
@@ -51,6 +52,7 @@ import {
   isUndefinedVariableThirdPartyNoise,
   isUnresolvableStackOverflowNoise,
   isUserscriptManagerNoise,
+  isVercelLiveFeedbackNoise,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
 } from './browser-error-noise.ts';
@@ -686,7 +688,7 @@ test('does NOT suppress a real compaction mutation failure (network / 5xx)', () 
 // `void` fire-and-forget → `onunhandledrejection`). The model name varies, so
 // the match is a REGEX anchored on the EXACT API wording
 // `Model "…" is not available for this account` (the same template across all
-// four emitting routes — `r4.ts:3045`, `channel-bindings.ts:288`, `r7.ts:2811`,
+// four emitting routes — `models.ts`, `channel-bindings.ts:288`, `r7.ts:2811`,
 // `sessions.ts:741`), with the canonical `ApiError: ` / `Unhandled promise
 // rejection: ` wrappers, so a longer real error that merely mentions the
 // phrase is never matched.
@@ -8229,6 +8231,131 @@ test('does NOT suppress the OperationError popErrorScope rejection when any reso
   }
 });
 
+// ---------------------------------------------------------------------------
+// SECOND production shape (KRTX-227 / KRTX-228): the SAME browser-internal
+// `OperationError: Instance dropped in popErrorScope` message arrives WITH a
+// stack. The only WebGPU code on the site is the three.js renderer behind the
+// public `/a1o` landing page's `<Canvas>` (`three@0.185.1`,
+// `apps/web/src/app/[locale]/a1o/die-scene.tsx`). The GPU device is dropped
+// (device loss / tab teardown / page navigation) between the error-scope push
+// and pop, so the browser rejects `popErrorScope()` and three.js surfaces the
+// rejection uncaught from its pipeline cache. The stack is entirely minified
+// three.js bundle frames in
+// `app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js` (pipeline helpers
+// `createRenderPipeline` / `_getRenderPipeline`), with NO resolved first-party
+// `apps/web/src/…` frame. Better Stack patterns `a44862f6…` (KRTX-228) and
+// `93f6cf89…` (KRTX-227), ~42-43 occurrences over ~11 h, 0 identified users,
+// release `52c2174f…`, request URL `https://kortix.com/`, Chrome, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT). The fix adds a positive three.js-WebGPU-pipeline anchor; the
+// first-party negative guard is unchanged.
+// ---------------------------------------------------------------------------
+
+// The exact minified three.js renderer frames from the production event.
+const THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES = [
+  { filename: 'app:///_next/static/immutable/chunks/1t2z4o9r-gb3e.js', function: 'n' },
+  { filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js', function: 'e' },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'dV._animationLoop',
+  },
+  { filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js', function: 'Te._renderScene' },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'Te._renderObjects',
+  },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'd4._getRenderPipeline',
+  },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'vz.createRenderPipeline',
+  },
+];
+
+test('suppresses the stack-bearing three.js WebGPU renderer popErrorScope noise (KRTX-228 prod shape)', () => {
+  // Gate #1: fails without the new positive anchor (the minified frames would
+  // fall through to negative guard #2 and keep reporting).
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES,
+    }),
+    true,
+  );
+});
+
+test('suppresses the WebGPU renderer popErrorScope Sentry event via the beforeSend gate', () => {
+  // The exact production shape: type `OperationError`, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught), the
+  // minified three.js renderer stack, no first-party frame.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: OPERATION_ERROR_POP_ERROR_SCOPE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+            stacktrace: { frames: THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress the WebGPU renderer popErrorScope shape when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame alongside the renderer frames means our
+  // own code is in the rejection path → actionable; guard #1 wins over the
+  // positive anchor.
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: [
+        ...THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES,
+        { filename: 'apps/web/src/app/[locale]/a1o/die-scene.tsx', function: 'DieScene' },
+      ],
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress a non-bundle createRenderPipeline stack (guard #2 unchanged)', () => {
+  // The anchor requires an `app:///_next/static/…` bundle frame; a
+  // `createRenderPipeline` function in an external URL is not the three.js
+  // anchor, so guard #2 keeps this attributable event reporting.
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: [{ filename: 'https://cdn.example.com/lib.js', function: 'lib.createRenderPipeline' }],
+    }),
+    false,
+  );
+});
+
+test('suppresses a single anchored WebGPU pipeline frame (minimal stack)', () => {
+  // One bundle frame whose method is a three.js pipeline helper is enough to
+  // classify the WebGPU error-scope shape.
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: [
+        {
+          filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+          function: 'vz.createRenderPipeline',
+        },
+      ],
+    }),
+    true,
+  );
+});
+
 test('does NOT suppress a non-matching message (suffix variant)', () => {
   // The matcher anchors on the EXACT message; a near-miss wording must not be
   // matched.
@@ -9066,6 +9193,165 @@ test('does NOT suppress a near-worded Firefox DOM message (over-match guard)', (
 });
 
 // ---------------------------------------------------------------------------
+// Vercel Live Feedback toolbar (`vercel-live-feedback`) `_next-live/feedback/…`
+// instrumentation noise (Better Stack pattern
+// b81e1f084e007841cfb868f8a45299ce4888e8b1f4e9194f261fb4acea3eaa47, Kortix
+// Frontend prod, application_id 2346967). Vercel injects its Live Feedback
+// toolbar as the deployment-scoped chunk
+// `app:///_next-live/feedback/instrument.<id>.js?dpl=dpl_…` (Vercel's reserved
+// `_next-live/` path, NOT a first-party `apps/web/src/…` source). Its own
+// `addEventListener` handler (function `s`) calls
+// `window.parent.removeEventListener(...)` to detach the listener; when
+// `window.parent` is `null` the engine throws the canonical null-deref
+// TypeError — SpiderMonkey/Firefox wording `can't access property
+// "removeEventListener", window.parent is null`, V8 wording `Cannot read
+// properties of null (reading 'removeEventListener')`, JSC wording `null is not
+// an object (evaluating 'window.parent.removeEventListener')`. 1 occurrence /
+// 0 identified users, first 2026-09-24 19:57:42 UTC, release
+// `4f496426b67b2cbb2e6f5b0c66749a5763bb1196`, request URL a co-worker session
+// page, Firefox 155 on macOS, mechanism
+// `auto.browser.browserapierrors.addEventListener` (UNCAUGHT, handled:false).
+// Stack frames: `n` in `app:///_next/static/immutable/chunks/3vyqedzurxshp.js`
+// (scheduling frame) + `s` in the `_next-live/feedback/instrument.<id>.js`
+// chunk (THE THROW SITE). Breadcrumbs show a `ui.click` on
+// `vercel-live-feedback` immediately before the throw. The matcher anchors on
+// the `_next-live/feedback/` frame source (engine-agnostic) with a first-party
+// negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event (SpiderMonkey/Firefox
+// wording). The other engine wordings differ, which is why the matcher anchors
+// on the frame source rather than the message.
+const VERCEL_LIVE_FEEDBACK_MESSAGE =
+  'can\'t access property "removeEventListener", window.parent is null';
+
+// The Vercel Live Feedback toolbar throw-site chunk (the reserved
+// `_next-live/feedback/` path). The `<id>` hash and the (duplicated) `?dpl=`
+// deploy query are the production event's own values, kept verbatim.
+const VERCEL_LIVE_FEEDBACK_FRAME =
+  'app:///_next-live/feedback/instrument.edc1868bf1eb68ebda97.js?dpl=dpl_EAgzEi6pn7FBntVjwigWXg13i3Gn?dpl=dpl_EAgzEi6pn7FBntVjwigWXg13i3Gn';
+
+// The two production stack frames: the first-party bundle chunk that scheduled
+// the listener (`n`), then the Vercel Live Feedback toolbar throw site (`s`).
+// NO de-minified first-party `apps/web/src/…` frame, so the negative guard does
+// not fire.
+const VERCEL_LIVE_FEEDBACK_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: 'app:///_next/static/immutable/chunks/3vyqedzurxshp.js', function: 'n' },
+  { filename: VERCEL_LIVE_FEEDBACK_FRAME, function: 's' },
+];
+
+test('classifies the Vercel Live Feedback `window.parent` null-deref prod event as noise', () => {
+  assert.equal(
+    isVercelLiveFeedbackNoise({ frames: VERCEL_LIVE_FEEDBACK_PROD_FRAMES }),
+    true,
+    'expected the `_next-live/feedback/` throw site to classify as noise',
+  );
+  // The runtime gate anchors on the window.onerror `filename` instead of frames.
+  assert.equal(
+    isVercelLiveFeedbackNoise({ filename: VERCEL_LIVE_FEEDBACK_FRAME }),
+    true,
+    'expected the `_next-live/feedback/` filename to classify as noise',
+  );
+  // The https origin variant (a non-`app://` browser bundle origin).
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      filename: 'https://kortix.com/_next-live/feedback/instrument.abc123.js?dpl=dpl_x',
+    }),
+    true,
+    'expected the https `_next-live/feedback/` filename to classify as noise',
+  );
+});
+
+test('suppresses the Vercel Live Feedback prod event via the Sentry beforeSend gate', () => {
+  // Reproduces the exact production event: BS pattern b81e1f08…, release
+  // 4f496426…, request URL a co-worker session page, mechanism
+  // `auto.browser.browserapierrors.addEventListener` (UNCAUGHT, handled:false).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/x/sessions/y' },
+      exception: {
+        values: [
+          {
+            value: VERCEL_LIVE_FEEDBACK_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.browserapierrors.addEventListener',
+              handled: false,
+            },
+            stacktrace: { frames: VERCEL_LIVE_FEEDBACK_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses the Vercel Live Feedback prod event via the runtime gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: VERCEL_LIVE_FEEDBACK_MESSAGE,
+      filename: VERCEL_LIVE_FEEDBACK_FRAME,
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress a first-party `window.parent` null-deref (negative guard)', () => {
+  // A real first-party `window.parent.removeEventListener` regression
+  // de-minifies to `apps/web/src/…` and must keep reporting, even when a
+  // Vercel toolbar frame is coincidentally present in the stack.
+  const firstPartyFrame = 'app:///_next/static/chunks/apps/web/src/features/foo.tsx';
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      frames: [{ filename: firstPartyFrame, function: 'n' }, ...VERCEL_LIVE_FEEDBACK_PROD_FRAMES],
+    }),
+    false,
+    'expected a resolved first-party frame to keep the event reporting',
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: VERCEL_LIVE_FEEDBACK_MESSAGE,
+            stacktrace: {
+              frames: [
+                { filename: firstPartyFrame, function: 'n' },
+                ...VERCEL_LIVE_FEEDBACK_PROD_FRAMES,
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+    'expected the Sentry gate to keep a first-party-framed event reporting',
+  );
+});
+
+test('does NOT suppress unrelated frames (over-match guard)', () => {
+  // No `_next-live/feedback/` frame → never matched, even with the exact
+  // `window.parent` message.
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      frames: [
+        { filename: 'app:///_next/static/immutable/chunks/3vyqedzurxshp.js', function: 'n' },
+      ],
+    }),
+    false,
+  );
+  assert.equal(isVercelLiveFeedbackNoise({ filename: '<anonymous>' }), false);
+  assert.equal(isVercelLiveFeedbackNoise({}), false);
+  // A same-origin `_next/static/` chunk is NOT a `_next-live/` frame.
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      filename: 'app:///_next/static/chunks/webpack-abc.js',
+    }),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // OneTrust cookie-consent SDK JSON-parse noise (Better Stack pattern
 // aa1efd3fb7a9f6840d4eb25b881d2b12ac2e6f3c8dfe3158fbd3e9fc753a0526, Kortix
 // Frontend prod, application_id 2346967). The OneTrust cookie-consent SDK's
@@ -9873,6 +10159,214 @@ test('classifies the Cannot redefine property: webdriver noise via the runtime g
     shouldIgnoreBrowserRuntimeNoise({
       message: REDEFINE_WEBDRIVER_MESSAGE,
       filename: '<anonymous>',
+    }),
+    true,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Injected EVM/Web3 wallet-provider `Cannot redefine property: <provider>`
+// noise (BS 3b46e257…, `browser-extension` class)
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event.
+const REDEFINE_WALLET_PROVIDER_MESSAGE = 'Cannot redefine property: ethereum';
+
+// The production-shaped frames: an injected wallet/userscript script (here a
+// browser-extension content script) with NO resolved first-party
+// `apps/web/src/…` source, so the negative guard does NOT fire.
+const REDEFINE_WALLET_PROVIDER_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/inpage.js', function: 'y' },
+  { filename: '<anonymous>', function: 'Object.defineProperty' },
+];
+
+// The canonical capture-path forms: raw, `TypeError:` prefix, and stacked
+// `Unhandled promise rejection: TypeError:` prefix. All strip to the same
+// underlying message via `stripErrorWrappers`.
+const REDEFINE_WALLET_PROVIDER_CAPTURE_FORMS = [
+  REDEFINE_WALLET_PROVIDER_MESSAGE,
+  `TypeError: ${REDEFINE_WALLET_PROVIDER_MESSAGE}`,
+  `Unhandled promise rejection: ${REDEFINE_WALLET_PROVIDER_MESSAGE}`,
+  `Unhandled promise rejection: TypeError: ${REDEFINE_WALLET_PROVIDER_MESSAGE}`,
+];
+
+test('classifies the Cannot redefine property: ethereum noise (injected wallet provider)', () => {
+  assert.equal(
+    isRedefineInjectedWalletNoise({
+      message: REDEFINE_WALLET_PROVIDER_MESSAGE,
+      frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: REDEFINE_WALLET_PROVIDER_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onerror',
+              handled: false,
+            },
+            stacktrace: { frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('classifies every injected-wallet provider sibling (ethereum/solana/web3/tronWeb)', () => {
+  // The property set MUST stay in sync with the `browser-extension` noise
+  // class definition in the software-factory-infra-sweep source
+  // (`Cannot redefine property: (ethereum|solana|web3|tronWeb)`).
+  for (const provider of ['ethereum', 'solana', 'web3', 'tronWeb']) {
+    const message = `Cannot redefine property: ${provider}`;
+    assert.equal(
+      isRedefineInjectedWalletNoise({ message, frames: [] }),
+      true,
+      `expected "${message}" to be noise`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    );
+  }
+});
+
+test('suppresses the Cannot redefine property: ethereum noise through all capture-path wrappers', () => {
+  for (const message of REDEFINE_WALLET_PROVIDER_CAPTURE_FORMS) {
+    assert.equal(
+      isRedefineInjectedWalletNoise({
+        message,
+        frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be noise`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: { frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    );
+  }
+});
+
+test('suppresses the Cannot redefine property: ethereum noise via the runtime (window.onerror) gate', () => {
+  for (const message of REDEFINE_WALLET_PROVIDER_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    );
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: '<anonymous>' }),
+      true,
+      `expected runtime gate to suppress "${message}" from an <anonymous> filename`,
+    );
+    // The class fixture's call site is the userscript-manager wrapper page;
+    // the userscript matcher already drops it, and the message matcher covers
+    // the frameless variant.
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: 'app:///userscript.html' }),
+      true,
+      `expected runtime gate to suppress "${message}" from a userscript frame`,
+    );
+  }
+});
+
+test('does NOT suppress Cannot redefine property: ethereum when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code called
+  // `Object.defineProperty` on a non-configurable property → a real first-party
+  // regression; the negative guard MUST preserve it.
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/wallet-provider.ts', function: 'installProvider' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/lib/wallet-provider.ts', function: 'installProvider' },
+    ],
+  ]) {
+    assert.equal(
+      isRedefineInjectedWalletNoise({
+        message: REDEFINE_WALLET_PROVIDER_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party defineProperty throw from ${JSON.stringify(frames)} to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: REDEFINE_WALLET_PROVIDER_MESSAGE, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party defineProperty throw from ${JSON.stringify(frames)}`,
+    );
+  }
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: REDEFINE_WALLET_PROVIDER_MESSAGE,
+      filename: 'apps/web/src/lib/wallet-provider.ts',
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress a near-worded Cannot redefine property message (over-match guard)', () => {
+  // Only the exact injected-wallet provider names are matched; any other
+  // `Cannot redefine property: <X>` keeps reporting so the matcher does not
+  // over-match a real first-party `defineProperty` regression. `webdriver` is
+  // handled by the sibling matcher, not this one.
+  for (const message of [
+    'Cannot redefine property: foo',
+    'Cannot redefine property: Money',
+    'Cannot redefine property: webdriver',
+    'Cannot redefine property: ethereum_extra',
+    'Cannot set property: ethereum',
+    'Cannot redefine ethereum',
+  ]) {
+    assert.equal(
+      isRedefineInjectedWalletNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    );
+  }
+});
+
+test('classifies the legacy safari-extension:// protocol as a browser-extension source', () => {
+  // The `browser-extension` class matches a `*-extension://` URL. The legacy
+  // Safari scheme is distinct from `safari-web-extension://`; `startsWith
+  // ('extension://')` does not match it, so it needs its own prefix entry.
+  assert.equal(
+    isExtensionSource('safari-extension://com.example.ext/content.js'),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: 'boom',
+            stacktrace: {
+              frames: [{ filename: 'safari-extension://com.example.ext/content.js' }],
+            },
+          },
+        ],
+      },
     }),
     true,
   );

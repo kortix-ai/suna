@@ -1,9 +1,9 @@
 import { sessionSandboxes } from '@kortix/db';
-import { and, eq, ne, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { and, eq, sql } from 'drizzle-orm';
 import { IN_PLACE_RESTART_CLEARED_KEYS, inPlaceRestartWakePatch } from './readiness-clocks';
 import { runtimeRestartClaimMetadata, type RuntimeRestartClaim } from './runtime-restart-fence';
-import { stripMetadataKeys } from './sandbox-metadata-sql';
+import { transitionSandbox } from './status-transitions';
+import { noLiveStopClaim } from './stop-claim';
 
 /**
  * Install an in-place restart claim on a session sandbox row.
@@ -27,27 +27,23 @@ export async function claimInPlaceRestart(input: {
 }): Promise<boolean> {
   const { sandboxId, externalId, claim } = input;
   const patch = runtimeRestartClaimMetadata(inPlaceRestartWakePatch(claim.startedAt), claim);
-  const [claimed] = await db
-    .update(sessionSandboxes)
-    .set({
-      status: 'provisioning',
-      metadata: sql`(${stripMetadataKeys(IN_PLACE_RESTART_CLEARED_KEYS)}) || ${JSON.stringify(patch)}::jsonb`,
-      updatedAt: claim.startedAt,
-    })
-    .where(
-      and(
-        eq(sessionSandboxes.sandboxId, sandboxId),
-        eq(sessionSandboxes.externalId, externalId),
-        // A deleted session's archived row is never restarted.
-        ne(sessionSandboxes.status, 'archived'),
-        sql`(
-          ${sessionSandboxes.metadata}->>'runtimeRestartId' IS NULL
-          OR ${sessionSandboxes.metadata}->>'runtimeRestartLeaseExpiresAt' IS NULL
-          OR ${sessionSandboxes.metadata}->>'runtimeRestartLeaseExpiresAt' !~ '^\\d{4}-\\d{2}-\\d{2}T'
-          OR ${sessionSandboxes.metadata}->>'runtimeRestartLeaseExpiresAt' <= ${claim.startedAt.toISOString()}
-        )`,
-      ),
-    )
-    .returning({ sandboxId: sessionSandboxes.sandboxId });
+  // A deleted session's archived row is never restarted: `provision` never
+  // leaves `archived`. A row under a live stop claim is not restarted either:
+  // the stop's provider call is in flight, and it would land on the box this
+  // restart starts.
+  const claimed = await transitionSandbox('provision', sandboxId, {
+    at: claim.startedAt,
+    metadata: { strip: IN_PLACE_RESTART_CLEARED_KEYS, merge: patch },
+    guard: and(
+      eq(sessionSandboxes.externalId, externalId),
+      noLiveStopClaim(claim.startedAt),
+      sql`(
+        ${sessionSandboxes.metadata}->>'runtimeRestartId' IS NULL
+        OR ${sessionSandboxes.metadata}->>'runtimeRestartLeaseExpiresAt' IS NULL
+        OR ${sessionSandboxes.metadata}->>'runtimeRestartLeaseExpiresAt' !~ '^\\d{4}-\\d{2}-\\d{2}T'
+        OR ${sessionSandboxes.metadata}->>'runtimeRestartLeaseExpiresAt' <= ${claim.startedAt.toISOString()}
+      )`,
+    ),
+  });
   return Boolean(claimed);
 }

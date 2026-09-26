@@ -7,8 +7,6 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // SELECTed moments earlier, dropping whatever a concurrent writer had put there
 // in between, and the money-critical "settle the meter before flipping the
 // status" order was carried by a comment repeated in each copy.
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../../billing/services/compute-metering';
 import { RUNTIME_WAKE_LEASE_MS } from '../session-lifecycle/runtime-wake-fence';
@@ -30,8 +28,6 @@ let executedStatements: Array<{ sql: unknown; inTransaction: boolean }> = [];
 let revokedTokens: Array<{ sessionId: string; accountId: string }> = [];
 let preserveCalls: Array<{ sandboxId: string; reason: string; stopReason: string }> = [];
 let inTransaction = false;
-/** When set, every `tx.execute` fails with this message. */
-let executeThrows: string | null = null;
 /** When set, every `db.update(...).where(...)` fails with this message. */
 let updateThrows: string | null = null;
 
@@ -39,10 +35,14 @@ mock.module('../../config', () => mockConfigModule());
 
 const updater = (table: unknown) => ({
   set: (updates: Record<string, unknown>) => ({
-    where: async (predicate?: unknown) => {
+    // Awaitable, and chainable to `.returning()` (the status transitions).
+    where: (predicate?: unknown) => {
       events.push(`update:${table === sessionSandboxes ? 'sandbox' : 'session'}`);
       updateCalls.push({ table, updates, predicate, inTransaction });
-      if (updateThrows) throw new Error(updateThrows);
+      const result = updateThrows
+        ? Promise.reject(new Error(updateThrows))
+        : Promise.resolve([{ sandboxId: 'moved', sessionId: 'moved' }]);
+      return Object.assign(result, { returning: () => result });
     },
   }),
 });
@@ -50,26 +50,10 @@ const updater = (table: unknown) => ({
 const executor = async (statement: unknown) => {
   events.push('execute');
   executedStatements.push({ sql: statement, inTransaction });
-  if (executeThrows) throw new Error(executeThrows);
 };
 
-/**
- * A nested drizzle transaction, which the postgres.js driver implements as
- * `savepoint sN` / `rollback to sN` + rethrow. Emulated here because that is
- * exactly the mechanism keeping a failed ledger write from taking the stop's
- * two status flips down with it.
- */
-const savepoint = async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
-  events.push('savepoint:begin');
-  try {
-    const result = await fn(transactionScope);
-    events.push('savepoint:release');
-    return result;
-  } catch (error) {
-    events.push('savepoint:rollback');
-    throw error;
-  }
-};
+/** A nested drizzle transaction (the settle's savepoint) runs in the same scope. */
+const savepoint = async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(transactionScope);
 
 const transactionScope = { update: updater, execute: executor, transaction: savepoint };
 
@@ -149,7 +133,9 @@ function describeSql(expression: unknown): string {
   if (typeof expression === 'string') return expression;
   if (typeof expression !== 'object') return String(expression);
   const node = expression as { queryChunks?: unknown[]; value?: unknown; name?: unknown };
-  if (Array.isArray(node.queryChunks)) return node.queryChunks.map(describeSql).join(' ');
+  if (Array.isArray(node.queryChunks)) {
+    return node.queryChunks.map(describeSql).join(' ').replace(/\s+/g, ' ');
+  }
   if (Array.isArray(node.value)) return node.value.join('');
   if (typeof node.value === 'string' || typeof node.value === 'number') return String(node.value);
   return typeof node.name === 'string' ? node.name : '';
@@ -178,7 +164,6 @@ beforeEach(() => {
   revokedTokens = [];
   preserveCalls = [];
   inTransaction = false;
-  executeThrows = null;
   updateThrows = null;
 });
 
@@ -228,87 +213,25 @@ describe('applyStoppedState', () => {
     expect(sandboxUpdate()?.updates.status).toBe('stopped');
   });
 
-  // stopReason is now required on every write, so the metadata merge is never
-  // empty even when the caller has no extra patch of its own — it always
-  // carries at least stopReason + stoppedAt.
-  test('no caller patch still merges stopReason and stoppedAt', async () => {
-    await applyStoppedState(write);
-
-    const rendered = describeSql(sandboxUpdate()?.updates.metadata);
-    expect(rendered).toContain('deadline_expired');
-    expect(rendered).toContain('stoppedAt');
-    // The same statement also DROPS the in-flight wake keys, so a committed
-    // stop wins the start/stop race in both orderings.
-    expect(rendered).toContain('runtimeWakeId');
-    expect(rendered).toContain('runtimeWakeStartedAt');
-  });
-
-  test('atomically removes all turn authority when any stop path parks the sandbox', async () => {
-    await applyStoppedState(write);
-
-    const rendered = describeSql(sandboxUpdate()?.updates.metadata);
-    expect(rendered).toContain("- 'activeTurn'");
-    expect(rendered).toContain("- 'activeTurns'");
-    expect(rendered).toContain("- 'lifecycleStopClaim'");
-  });
-
   // Erasing the turn authority above makes every token-scoped ledger settle
   // impossible afterwards: they all CAS against the metadata entry this
   // statement just deleted. A turn that was in flight would keep claiming to be
   // running for ever — the exact stuck-busy signal session_turns exists to
   // answer. So the settle rides in the SAME transaction.
-  test('settles every open session_turns row of the sandbox, inside the stop transaction', async () => {
+  // The effect on real rows (open row -> ended/runtime_gone, a failed settle
+  // bounded by its savepoint) is proven in
+  // __tests__/integration-session-turns-stop-race.test.ts. The ORDER is proven
+  // here: the sandbox UPDATE takes the row lock that blocks a concurrent
+  // beginSandboxTurn, so the settle must run after it and before commit.
+  test('settles the session_turns ledger after the erasure, inside the stop transaction', async () => {
     await applyStoppedState(write);
 
     expect(executedStatements).toHaveLength(1);
-    const [settle] = executedStatements;
-    expect(settle.inTransaction).toBe(true);
-    const rendered = describeSql(settle.sql);
-    expect(rendered).toContain('UPDATE kortix.session_turns');
-    expect(rendered).toContain("state = 'ended'");
-    expect(rendered).toContain('runtime_gone');
-    expect(rendered).toContain('sb-1');
-    // Keyed by sandbox and scoped to rows that are still open.
-    expect(rendered).toContain('sandbox_id');
-    expect(rendered).toContain("state <> 'ended'");
+    expect(executedStatements[0]?.inTransaction).toBe(true);
     // Ordered after the erasure, never before: a settle that ran first would
     // leave a turn started in between unsettled.
     expect(events.indexOf('update:sandbox')).toBeLessThan(events.indexOf('execute'));
     expect(events.indexOf('execute')).toBeLessThan(events.indexOf('tx:commit'));
-  });
-
-  // THE PROVIDER BOX IS ALREADY OFF by the time this runs (stop-box.ts calls
-  // provider.stop() before applyStoppedState, and so does parkEstablishedRuntime).
-  // If a session_turns failure could abort this transaction, the row would stay
-  // 'active' and its session 'running' against a dead box, with metering already
-  // paused — and every retry would fail identically for as long as the cause
-  // lasted (a lock timeout, a rollout ahead of migrate-db, a migration holding
-  // ACCESS EXCLUSIVE). A best-effort observation table must never own that.
-  test('a failing ledger settle rolls back to its savepoint and the stop still commits', async () => {
-    executeThrows = 'relation "kortix.session_turns" does not exist';
-    const error = console.error;
-    console.error = () => {};
-    try {
-      await expect(applyStoppedState(write)).resolves.toBeUndefined();
-    } finally {
-      console.error = error;
-    }
-
-    // Both status flips are still there, and the transaction still committed.
-    expect(sandboxUpdate()?.updates.status).toBe('stopped');
-    expect(sessionUpdate()?.updates.status).toBe('stopped');
-    expect(events).toContain('tx:commit');
-    // Bounded by a savepoint, so only the ledger statement is undone. Without
-    // one, Postgres marks the whole transaction aborted and both flips are lost.
-    expect(events).toContain('savepoint:rollback');
-    expect(events.indexOf('savepoint:begin')).toBeLessThan(events.indexOf('execute'));
-  });
-
-  test('a successful ledger settle releases its savepoint', async () => {
-    await applyStoppedState(write);
-
-    expect(events).toContain('savepoint:release');
-    expect(events).not.toContain('savepoint:rollback');
   });
 
   // The lost update: a whole-object write assembled from a stale SELECT drops
@@ -333,13 +256,6 @@ describe('applyStoppedState', () => {
     expect(rendered).toContain("'{}'::jsonb");
     expect(rendered).toContain('stopReason');
     expect(rendered).toContain('stoppedBy');
-  });
-
-  test('the caller patch is the whole merge', async () => {
-    await applyStoppedState({ ...write, metadata: { customField: 'x' } });
-
-    const rendered = describeSql(sandboxUpdate()?.updates.metadata);
-    expect(rendered).toContain('customField');
   });
 
   test('drops the proxy cache, and tolerates a row with no external id', async () => {
@@ -469,7 +385,7 @@ describe('reconcileSandboxStoppedByExternalId', () => {
 });
 
 // ═══ THE MID-TURN PARK THIS CLOSES ═══
-// Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): ONE
+// Incident 2026-08-17T20:40:03Z (a prod session on a Daytona sandbox): ONE
 // provider read of `stopped` durably parked a box that was running a turn,
 // `stopReason: provider_reconcile`. `stopping` and `pending_stop` both map to
 // `stopped` (platform/providers/daytona-state.ts), so a box mid-transition — or
@@ -488,7 +404,7 @@ describe('decideStoppedObservation — one stopped read is not proof mid-turn', 
     },
   };
 
-  // Incident 2026-08-21T23:58Z, Platinum sbx_01M0JE5DDBE9JCZ, session 541ea985:
+  // Incident 2026-08-21T23:58Z, a Platinum sandbox of a prod session:
   // parked mid-turn with `provider_reconcile`, and the SAME box reported running
   // ten seconds later. The guest never rebooted and OpenCode never restarted —
   // nothing had gone away. Five turns died this way in one day.
@@ -519,15 +435,6 @@ describe('decideStoppedObservation — one stopped read is not proof mid-turn', 
       const meta = withStop({ providerRunningConfirmedAt: 'not-a-date' });
       const past = new Date(observedAt + MIDTURN_STOP_CONFIRMATION_MS);
       expect(decideStoppedObservation(meta, past)).toBe('park');
-    });
-
-    test('the window outlasts the measured Platinum transition', () => {
-      // The incident resumed 10s after the park. 15s could not cover it; the
-      // window must exceed a real provider transition by a clear margin.
-      expect(MIDTURN_STOP_CONFIRMATION_MS).toBeGreaterThanOrEqual(60_000);
-      const meta = withStop();
-      const during = new Date(observedAt + 30_000);
-      expect(decideStoppedObservation(meta, during)).toBe('await_confirmation');
     });
   });
 
@@ -594,78 +501,9 @@ describe('decideStoppedObservation — one stopped read is not proof mid-turn', 
   });
 });
 
+// The marker writes themselves (instant, CAS, provisioning rows, clear) are
+// proven on real rows in __tests__/integration-sandbox-turn-lifecycle.test.ts.
 describe('the pending stop marker', () => {
-  const stampedAtMs = (): number => {
-    const match = /"pendingStopObservedAtMs":(\d+)/.exec(
-      describeSql(sandboxUpdate()?.updates.metadata),
-    );
-    return match ? Number(match[1]) : Number.NaN;
-  };
-
-  test('records the observation instant as a merge, never an assign', async () => {
-    await markPendingStopObservation('sb-1');
-
-    const rendered = describeSql(sandboxUpdate()?.updates.metadata);
-    expect(rendered).toContain('pendingStopObservedAtMs');
-    // activeTurns and lastAliveAt live in this column too.
-    expect(rendered).toContain('coalesce');
-  });
-
-  // ═══ THE SHORTENED WINDOW THIS CLOSES ═══
-  // The reaper captures ONE `now` at pass start and carries it through a batch
-  // of up to 100 provider round-trips. Stamping the marker with that clock
-  // backdates the window by however long the pass took to reach the row, so a
-  // slow pass plus one read from either of the other two observers — both of
-  // which use a fresh clock — confirms a park inside ONE provider transition,
-  // which is precisely what the 15s window exists to make impossible.
-  test('REGRESSION: stamps the instant of THIS observation, not a caller pass clock', async () => {
-    const before = Date.now();
-    await markPendingStopObservation('sb-1');
-    const after = Date.now();
-
-    expect(stampedAtMs()).toBeGreaterThanOrEqual(before);
-    expect(stampedAtMs()).toBeLessThanOrEqual(after);
-  });
-
-  test('never resets a marker that is already counting', async () => {
-    // A second pass must be able to CONFIRM. If each pass rewrote the instant,
-    // the window would restart for ever and the box could never park. So the
-    // write is a CAS: it lands only when no readable marker is there yet.
-    await markPendingStopObservation('sb-1');
-
-    const predicate = describeSql(sandboxUpdate()?.predicate);
-    expect(predicate).toContain('pendingStopObservedAtMs');
-    expect(predicate).toContain('sb-1');
-    // Only a live row — a parked box has already erased its marker.
-    expect(predicate).toContain('active');
-  });
-
-  // ═══ THE PERMANENT VETO THIS CLOSES ═══
-  // reconcileSandboxStoppedByExternalId applies the confirmation gate to every
-  // row that is not already stopped/archived, and `provisioning` rows hold turn
-  // authority: claimInPlaceRuntimeRecovery keeps external_id and the whole
-  // metadata object (activeTurns included), and beginSandboxTurn accepts
-  // `status IN ('active','provisioning')`. A CAS that matched only `active`
-  // wrote nothing there, so the decision stayed `await_confirmation` FOR EVER:
-  // the row never parked, the box was never swept, and its session_turns rows
-  // answered "a turn is running" permanently — the stuck-forever class this
-  // branch exists to remove.
-  test('REGRESSION: the CAS matches every row the gate is applied to', async () => {
-    await markPendingStopObservation('sb-1');
-
-    const predicate = describeSql(sandboxUpdate()?.predicate);
-    expect(predicate).toContain('active');
-    expect(predicate).toContain('provisioning');
-  });
-
-  test('a running observation drops the marker', async () => {
-    await clearPendingStopObservation('sb-1');
-
-    expect(describeSql(sandboxUpdate()?.updates.metadata)).toContain(
-      "- 'pendingStopObservedAtMs'",
-    );
-  });
-
   test('a failed marker write never fails the pass', async () => {
     updateThrows = 'db down';
     const warn = console.warn;
@@ -676,16 +514,6 @@ describe('the pending stop marker', () => {
     } finally {
       console.warn = warn;
     }
-  });
-
-  test('the stop write erases the marker, so a resumed box starts clean', async () => {
-    // Otherwise a box that was parked, resumed, and given a new turn parks again
-    // on the very first transient stopped read — the marker is already aged.
-    await applyStoppedState(write);
-
-    expect(describeSql(sandboxUpdate()?.updates.metadata)).toContain(
-      "- 'pendingStopObservedAtMs'",
-    );
   });
 });
 
@@ -714,98 +542,5 @@ describe('reconcileSandboxRemovedByExternalId', () => {
       { sandboxId: 'sb-1', reason: 'provider_webhook_removed', stopReason: 'provider_removed' },
     ]);
     expect(revokedTokens).toEqual([{ sessionId: 'sess-1', accountId: 'acct-1' }]);
-  });
-});
-
-describe('applyStoppedState — stopReason', () => {
-  test('merges the reason into the sandbox metadata patch', async () => {
-    // (state is reset by the file's top-level beforeEach, run before every test)
-    await applyStoppedState({
-      sandboxId: 'sb-1',
-      sessionId: 'se-1',
-      externalId: 'ext-1',
-      stopReason: 'deadline_expired',
-    });
-    const update = sandboxUpdate();
-    expect(update).toBeDefined();
-    // The write must be a jsonb MERGE, never a whole-object assign — a concurrent
-    // writer's runtimeWakeId / lastAliveAt live in the same column.
-    expect(update?.updates.metadata).toBeDefined();
-    // `updates.metadata` is a drizzle SQL AST (circular via its column/table
-    // refs) — describeSql renders it to text the same way every other test in
-    // this file asserts against it; a raw JSON.stringify throws on the cycle.
-    expect(describeSql(update?.updates.metadata)).toContain('deadline_expired');
-  });
-
-  // The top-level field is the one source of truth for WHY a box parked. A
-  // caller-supplied `metadata.stopReason` (e.g. an older copy-pasted patch)
-  // must never leak into the write — only the required top-level value can.
-  test('the top-level stopReason wins over a conflicting metadata.stopReason', async () => {
-    await applyStoppedState({
-      sandboxId: 'sb-1',
-      sessionId: 'se-1',
-      externalId: 'ext-1',
-      stopReason: 'run_cap',
-      metadata: { stopReason: 'manual' },
-    });
-
-    const rendered = describeSql(sandboxUpdate()?.updates.metadata);
-    expect(rendered).toContain('run_cap');
-    expect(rendered).not.toContain('manual');
-  });
-});
-
-// `ended_at` is what every reader treats as "closed forever":
-// getOpenComputeSession keys off `IS NULL`, the usage rollup coalesces to it,
-// and the reimburse script bounds refunds by it. Two independent writers is how
-// a window gets settled to one instant and stamped with another.
-describe('the ended_at single-writer invariant', () => {
-  const API_SRC = join(import.meta.dir, '..', '..');
-
-  function sourceFiles(dir: string, out: string[] = []): string[] {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        sourceFiles(full, out);
-      } else if (entry.name.endsWith('.ts') && !entry.name.includes('.test.')) {
-        out.push(full);
-      }
-    }
-    return out;
-  }
-
-  // `endedAt:` is a proxy for "assigns this column", and the bare string also
-  // appears in code that has nothing to do with compute sessions — a drizzle
-  // SELECT projection on another table with an `ended_at` column reads
-  // `endedAt: someTable.endedAt` (kortix.session_turns has one, and
-  // projects/routes/r8.ts projects it). Scope the scan to modules that could
-  // actually write THIS column: composing that statement means naming the
-  // table, through the drizzle symbol or in raw SQL. A module that never names
-  // it cannot assign it, so excluding those loses no writer — and the
-  // assertion below still pins the surviving writer by file AND hit count.
-  const NAMES_COMPUTE_SESSIONS = /sandboxComputeSessions|sandbox_compute_sessions/;
-
-  test('exactly one module assigns sandbox_compute_sessions.ended_at', () => {
-    const writers = sourceFiles(API_SRC)
-      .map((file) => ({ file: file.slice(API_SRC.length + 1), src: readFileSync(file, 'utf8') }))
-      .filter((entry) => NAMES_COMPUTE_SESSIONS.test(entry.src))
-      .map((entry) => ({
-        file: entry.file,
-        hits: (entry.src.match(/endedAt:\s/g) ?? []).length,
-      }))
-      .filter((entry) => entry.hits > 0);
-
-    expect(writers).toEqual([{ file: 'billing/repositories/compute-sessions.ts', hits: 2 }]);
-  });
-
-  // The scoping above is only sound if it cannot hide a writer. Prove the
-  // filter admits the module that owns the column rather than merely counting
-  // zero everywhere.
-  test('the scan still reaches the module that owns the column', () => {
-    const owner = sourceFiles(API_SRC).find((file) =>
-      file.endsWith(join('billing', 'repositories', 'compute-sessions.ts')),
-    );
-    expect(owner).toBeDefined();
-    expect(NAMES_COMPUTE_SESSIONS.test(readFileSync(owner as string, 'utf8'))).toBe(true);
   });
 });

@@ -6,8 +6,8 @@ let client: SupabaseClient | null = null;
 
 /**
  * Get singleton Supabase client with service role key.
- * Used for JWT auth verification (supabase.auth.getUser) and RPC calls
- * (atomic_use_credits, atomic_add_credits).
+ * Used for JWT auth verification (supabase.auth.getUser). Credit movements do
+ * not use it: billing/wallet calls the wallet SQL functions over DATABASE_URL.
  */
 export function getSupabase(): SupabaseClient {
   if (!client) {

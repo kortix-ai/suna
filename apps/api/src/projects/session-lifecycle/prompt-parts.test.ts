@@ -64,6 +64,13 @@ describe('sanitizeInboxPromptParts', () => {
     ).toEqual({ error: 'attachment_id must be a UUID' });
   });
 
+  test('accepts an attachment_id of any uuid version', () => {
+    const attachment_id = 'a7100000-0000-0000-0000-000000000001';
+    expect(sanitizeInboxPromptParts([{ type: 'file', attachment_id }])).toEqual({
+      parts: [{ type: 'file', attachment_id }],
+    });
+  });
+
   test('keeps the known fields of text and file parts, drops everything else', () => {
     const result = sanitizeInboxPromptParts([
       { type: 'text', text: 'hello', evil: 'dropped' },
@@ -246,7 +253,7 @@ test('a malformed staged native image is refused at the door', () => {
     { type: 'text', text: 'hi' },
     { type: 'file', mime: 'image/jpeg', filename: 'p.jpg', url: 'data:image/jpeg;base64,not*base64' },
   ]);
-  expect('error' in out).toBe(true);
+  expect(out).toEqual({ error: 'file "p.jpg" has malformed staged data' });
 });
 
 test('a native image that is a remote URL is still admitted', () => {

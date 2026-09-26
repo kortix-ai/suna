@@ -1,6 +1,7 @@
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import {
   emitJson,
+  missing,
   resolveAccountContext,
   resolveProjectContext,
   surfaceApiError,
@@ -703,9 +704,4 @@ async function revokeByAssignmentId(
     `${status.ok(`Revoked ${C.bold}${match.role_key}${C.reset} from ${C.bold}${principalLabel(match, labels)}${C.reset} (${scopeLabel(match)}${match.object_type ? `, ${objectLabel(match)}` : ''})`)}\n`,
   );
   return 0;
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }
