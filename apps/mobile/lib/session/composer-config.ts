@@ -76,14 +76,25 @@ export interface ComposerChip {
  * a low-key `ghost` chip. It opens the model sheet, which holds both. When the
  * project offers no model it reads "Connect model" as a `secondary` chip, a
  * clear prompt. With no agent resolved, the model name. Null hides the chip.
+ *
+ * While the agents still load (a new thread whose sandbox has not answered
+ * yet), the chip reads `pendingAgentName` — the agent project home just sent
+ * with — or hides. It never shows the model name then: that read as the agent
+ * flipping to the model on the way from home to the thread (Jay, 2026-09-27).
  */
 export function composerChip(i: {
   connectModel: boolean;
   agentName: string | null | undefined;
   modelName: string | null | undefined;
+  /** The agent the last send used, shown until `agentName` resolves. */
+  pendingAgentName?: string | null;
+  /** The agent list has not loaded yet. */
+  agentsLoading?: boolean;
 }): ComposerChip | null {
   if (i.connectModel) return { label: 'Connect model', variant: 'secondary' };
-  const label = i.agentName ? agentDisplayName(i.agentName) : i.modelName;
+  const agentName = i.agentName || (i.agentsLoading ? i.pendingAgentName : null);
+  if (!agentName && i.agentsLoading) return null;
+  const label = agentName ? agentDisplayName(agentName) : i.modelName;
   return label ? { label, variant: 'ghost' } : null;
 }
 

@@ -68,17 +68,39 @@ describe('staging secret synchronization', () => {
     expect(workflow).toContain('if [ "$staging_secret_exists" = true ]; then');
   });
 
-  it('sets the staging Composio key without inheriting the dev key on first creation', () => {
+  it('keeps the existing bundle canonical for the data plane and never writes it from CI', () => {
+    const workflow = readFileSync(
+      resolve(import.meta.dirname, '../../.github/workflows/deploy-staging.yml'),
+      'utf8',
+    );
+    const syncSecretJob = workflow.slice(
+      workflow.indexOf('  sync-secret:'),
+      workflow.indexOf('  migrate-db:'),
+    );
+
+    // An existing bundle is read back: the six data-plane values come from it.
+    expect(syncSecretJob).toContain('plane="$(jq -c \'{DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY,');
+    expect(syncSecretJob).toContain("'$base + $plane + {");
+    // CI values only bootstrap a bundle that does not exist yet.
+    expect(syncSecretJob).toContain('--arg database "${BOOTSTRAP_DATABASE_URL:-}"');
+    // The data-plane invariants still run on every sync.
+    expect(syncSecretJob).toContain('if [[ "$database" != *"$STAGING_SUPABASE_REF"* ]]; then');
+    expect(syncSecretJob).toContain('if [ "$supabase" != "https://${STAGING_SUPABASE_REF}.supabase.co" ]; then');
+    // No GitHub secret is read except the temporary first-creation fallback.
+    for (const line of syncSecretJob.split('\n')) {
+      if (line.includes('secrets.')) expect(line).toMatch(/\$\{\{ env\.STAGING_[A-Z_]+ \|\| secrets\.STAGING_[A-Z_]+ \}\}/);
+    }
+  });
+
+  it('keeps the staging Composio key and never inherits the dev key on first creation', () => {
     const workflow = readFileSync(
       resolve(import.meta.dirname, '../../.github/workflows/deploy-staging.yml'),
       'utf8',
     );
 
-    expect(workflow).toContain('STAGING_COMPOSIO_API_KEY: ${{ secrets.STAGING_COMPOSIO_API_KEY }}');
-    expect(workflow).toContain('--arg composio "$STAGING_COMPOSIO_API_KEY"');
+    expect(workflow).not.toContain('STAGING_COMPOSIO_API_KEY');
     expect(workflow).toContain('--argjson stagingSecretExists "$staging_secret_exists"');
     expect(workflow).toContain('if $stagingSecretExists then . else del(.COMPOSIO_API_KEY) end');
-    expect(workflow).toContain('.COMPOSIO_API_KEY = $composio');
   });
 
   it('caps the staging ECS API database pool below the 60-connection database limit', () => {

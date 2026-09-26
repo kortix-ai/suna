@@ -70,6 +70,21 @@ jobs:
           ref: prod
           fetch-depth: 0
 
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            VERCEL_TOKEN
+            VERCEL_PROJECT_ID
+            VERCEL_TEAM_ID
+
       - name: Validate + plan (per-surface availability)
         id: plan
         env:
@@ -77,7 +92,6 @@ jobs:
           IN_CONFIRM: ${{ inputs.confirm }}
           IN_REASON: ${{ inputs.reason }}
           IN_SURFACES: ${{ inputs.surfaces }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
           [ "$IN_CONFIRM" = "ROLLBACK PROD" ] || { echo "::error::confirm must be exactly: ROLLBACK PROD"; exit 1; }
@@ -195,9 +209,6 @@ jobs:
         if: steps.plan.outputs.roll_fe_vercel == 'yes'
         env:
           TARGET: ${{ steps.plan.outputs.target }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
         run: |
           set -euo pipefail
           API="https://api.vercel.com"
