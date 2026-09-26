@@ -5,8 +5,9 @@
  * gate, the session list and the account switcher each wait on the network,
  * so a slow backend shows a loading screen where the user's sessions were a
  * second earlier. With it, the last known answer renders in the first frame
- * and the query refetches it in place, because a restored entry keeps its
- * original `dataUpdatedAt` and is therefore stale on mount.
+ * and the query refetches it in place: a restored entry keeps its original
+ * `dataUpdatedAt`, and it is marked invalidated, so even one younger than its
+ * `staleTime` refetches the first time something reads it.
  *
  * Framework-free: it reads a TanStack `QueryClient` through the structural
  * {@link PersistableQueryClient} slice and never imports TanStack, so web and
@@ -41,6 +42,15 @@ export interface PersistableQueryClient {
   };
   getQueryState(queryKey: readonly unknown[]): { data?: unknown; dataUpdatedAt: number } | undefined;
   setQueryData(queryKey: readonly unknown[], data: unknown, options?: { updatedAt?: number }): unknown;
+  /**
+   * Marks a restored entry so it refetches the first time it is read. Optional
+   * in the type only: a TanStack `QueryClient` has it.
+   */
+  invalidateQueries?(filters: {
+    queryKey: readonly unknown[];
+    exact?: boolean;
+    refetchType?: 'none';
+  }): unknown;
 }
 
 export interface PersistedQueryCacheOptions {
@@ -72,7 +82,7 @@ export interface PersistedQueryCache {
   restore(client: PersistableQueryClient): number | Promise<number>;
   /** Keep the store in step with `client`. Returns the unsubscribe function. */
   persist(client: PersistableQueryClient): () => void;
-  /** Write now if a write is pending. */
+  /** Write now, if a kept query changed since the last write. */
   flush(): Promise<void>;
   /** Forget this user's stored cache. */
   clear(): Promise<void>;
@@ -147,6 +157,8 @@ export function createPersistedQueryCache(options: PersistedQueryCacheOptions): 
   const storageKey = `${namespace}:${userId}`;
 
   let attached: PersistableQueryClient | null = null;
+  /** A kept query changed since the last write (or the client was just attached). */
+  let dirty = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let writing: Promise<void> = Promise.resolve();
 
@@ -185,6 +197,9 @@ export function createPersistedQueryCache(options: PersistedQueryCacheOptions): 
       const current = client.getQueryState(entry.k);
       if (current && current.data !== undefined && current.dataUpdatedAt >= entry.t) continue;
       client.setQueryData(entry.k, entry.d, { updatedAt: entry.t });
+      // Its age alone does not make it stale: a gate cached for 5 minutes and
+      // restored 1 minute later would never refetch.
+      void client.invalidateQueries?.({ queryKey: entry.k, exact: true, refetchType: 'none' });
       restored += 1;
     }
     return restored;
@@ -237,12 +252,16 @@ export function createPersistedQueryCache(options: PersistedQueryCacheOptions): 
   const writeNow = (): Promise<void> => {
     cancelTimer();
     const client = attached;
-    if (!client) return writing;
+    // Nothing changed since the last write: a flush on every tab switch must
+    // not re-serialize the whole cache.
+    if (!client || !dirty) return writing;
+    dirty = false;
     writing = writing.then(() => write(client)).catch(() => undefined);
     return writing;
   };
 
   const schedule = () => {
+    dirty = true;
     if (timer !== null) return;
     timer = setTimeout(() => {
       timer = null;
@@ -268,6 +287,8 @@ export function createPersistedQueryCache(options: PersistedQueryCacheOptions): 
 
     persist(client) {
       attached = client;
+      // The first flush writes what the client holds now.
+      dirty = true;
       const unsubscribe = client.getQueryCache().subscribe((event) => {
         if (event.type !== 'updated' && event.type !== 'removed' && event.type !== 'added') return;
         if (!shouldPersist(event.query.queryKey)) return;
@@ -281,6 +302,7 @@ export function createPersistedQueryCache(options: PersistedQueryCacheOptions): 
       };
     },
 
+    /** Write now, if a kept query changed since the last write. */
     flush() {
       return writeNow();
     },
@@ -288,6 +310,7 @@ export function createPersistedQueryCache(options: PersistedQueryCacheOptions): 
     async clear() {
       cancelTimer();
       attached = null;
+      dirty = false;
       await writing;
       await forget();
     },

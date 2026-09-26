@@ -378,3 +378,42 @@ describe('isPersistableQueryKey', () => {
     expect(isPersistableQueryKey(key)).toBe(false);
   });
 });
+
+describe('a restored entry refetches once', () => {
+  test('restored entries are invalidated, so one younger than its staleTime still refetches', async () => {
+    const storage = memoryStorage();
+    const before = new QueryClient();
+    before.setQueryData(PROJECT_KEY, { name: 'x' }, { updatedAt: T0 - 1_000 });
+    const { cache } = persistNow(storage, before);
+    await cache.flush();
+
+    const after = new QueryClient();
+    createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, now: () => T0 }).restore(
+      after,
+    );
+
+    expect(after.getQueryState(PROJECT_KEY)?.isInvalidated).toBe(true);
+    // Only what was restored: an entry the client already had is left as it is.
+    const other = ['kx', 'project', 'p2', 'detail'] as const;
+    after.setQueryData(other, { name: 'fresh' });
+    expect(after.getQueryState(other)?.isInvalidated).toBe(false);
+  });
+});
+
+describe('flush', () => {
+  test('writes nothing when nothing changed since the last write', async () => {
+    const storage = memoryStorage();
+    const client = new QueryClient();
+    client.setQueryData(PROJECT_KEY, { name: 'x' }, { updatedAt: T0 });
+    const cache = createPersistedQueryCache({ storage, userId: USER, shouldPersist: isPersistableQueryKey, throttleMs: 50, now: () => T0 });
+    cache.persist(client);
+
+    await cache.flush();
+    await cache.flush();
+    expect(storage.writes).toBe(1);
+
+    client.setQueryData(PROJECT_KEY, { name: 'y' }, { updatedAt: T0 + 1 });
+    await cache.flush();
+    expect(storage.writes).toBe(2);
+  });
+});
