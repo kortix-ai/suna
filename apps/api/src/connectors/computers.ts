@@ -23,11 +23,6 @@ export function computerLabel(): string {
 /** Legacy aggregate slug. Kept for existing session bindings during migration. */
 export const COMPUTER_SLUG = 'computer';
 
-/** Legacy per-machine slug. Kept only for compatibility and migration. */
-export function computerConnectorSlug(tunnelId: string): string {
-  return `computer-${tunnelId.toLowerCase()}`;
-}
-
 /** One curated computer action — normalized into a `tunnel`-bound NormalizedAction. */
 interface ComputerActionDef {
   /** Connector-relative tool path (the connector namespace tail, e.g. `fs.read`). */
