@@ -630,8 +630,8 @@ export function deriveTurnErrorPresentation(input: {
           notice.usedPct === null ? '' : ` (${notice.usedPct}% used)`
         }.`,
         suggestion:
-          'The last command used almost all of the sandbox memory. Ask the agent to continue with a ' +
-          'lighter command, for example fewer parallel workers.' +
+          'A running process or RAM-backed file may still be using memory. Stop or reduce heavy background work, ' +
+          'then ask the agent to continue with a smaller workload.' +
           (notice.detail ? ` Details: ${notice.detail}.` : ''),
       };
     case 'cause':
