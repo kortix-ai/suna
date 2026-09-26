@@ -19,8 +19,22 @@
  * on the file never fixed it, because the write is a directory write.
  *
  * Handing the directory to `kortix` grants no new privilege: the image already
- * gives that user NOPASSWD:ALL sudo. The file is named explicitly as well so
- * the owner is right on the images that gunzip it as root.
+ * gives that user NOPASSWD:ALL sudo.
+ *
+ * THE DIRECTORY ONLY. Naming the file as well cost a full duplicate of the CLI
+ * in the image. On apps/sandbox/Dockerfile the CLI arrives in an earlier layer
+ * via `COPY --from=cli-builder --chown=kortix:kortix`, so it is ALREADY owned
+ * by `kortix` and the chown changes nothing — but chown writes an inode, and an
+ * inode write in a later layer forces overlayfs to copy the whole file up into
+ * that layer. Measured on `linux/arm64` with a 105,000,000-byte stand-in: the
+ * `RUN` layer is 105,000,000 bytes with the file named and 0 bytes without it,
+ * and the image is 307,221,347 vs 202,221,347 bytes.
+ *
+ * Dropping it loses nothing. Replacement is `rename(2)` into this directory,
+ * which takes its permission from the DIRECTORY; the file's own owner never
+ * entered into it. On the two images that `gunzip` the CLI as root in the same
+ * `RUN` the file simply stays root-owned at 0755 — replaceable, not writable in
+ * place, which is the weaker privilege and the one the platform actually wants.
  *
  * This change and the supervised gate in apps/cli ship together on purpose.
  * Measured on a real box: with this directory writable, kortix.com/install
@@ -32,8 +46,7 @@
  * Runs as root. Single line, no heredoc: E2B's Dockerfile parser cannot read
  * heredocs.
  */
-export const SANDBOX_CLI_OWNERSHIP_COMMAND =
-  'chown kortix:kortix /usr/local/bin /usr/local/bin/kortix';
+export const SANDBOX_CLI_OWNERSHIP_COMMAND = 'chown kortix:kortix /usr/local/bin';
 
 /** Where every `opencode` invocation reads its global config. */
 export const SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH =

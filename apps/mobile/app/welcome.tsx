@@ -40,6 +40,7 @@ import { ArrowUpRightIcon, CheckIcon } from '@/lib/icons';
 import { welcomeOffer } from '@/lib/onboarding/onboarding';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useOnboardingStore } from '@/stores/onboarding-store';
+import { useBootStore } from '@/stores/boot-store';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -63,6 +64,12 @@ export default function WelcomeScreen() {
   // A failed plan lookup still shows the offer: the screen is never a dead end.
   const loading = !!accountId && accountState.isLoading;
   const skip = !loading && !offer.show;
+  // At launch the native splash covers the plan lookup (KRTX-244): it hides
+  // when the offer is ready, and the loader draws only after it is gone.
+  const splashHidden = useBootStore((s) => s.splashHidden);
+  React.useEffect(() => {
+    if (!loading && !skip) useBootStore.getState().settleLanding();
+  }, [loading, skip]);
 
   React.useEffect(() => {
     if (loading || !userId) return;
@@ -96,7 +103,7 @@ export default function WelcomeScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <View className="flex-1 items-center justify-center bg-background">
-          <KortixLoader size="xlarge" />
+          {splashHidden ? <KortixLoader size="xlarge" /> : null}
         </View>
       </>
     );

@@ -40,7 +40,8 @@ export interface PendingQuestion {
  * Record a question the agent is blocked on.
  *
  * Returns the stored row. Idempotent: a replayed relay updates the payload in
- * place rather than inserting a second prompt.
+ * place rather than inserting a second prompt. `inserted` is true only for the
+ * first record of a (session_id, request_id) pair.
  */
 export async function recordPendingQuestion(input: {
   accountId: string;
@@ -49,7 +50,7 @@ export async function recordPendingQuestion(input: {
   requestId: string;
   opencodeSessionId?: string | null;
   questions: unknown;
-}): Promise<PendingQuestion | null> {
+}): Promise<(PendingQuestion & { inserted: boolean }) | null> {
   const [row] = await db
     .insert(sessionPendingQuestions)
     .values({
@@ -75,6 +76,10 @@ export async function recordPendingQuestion(input: {
       opencodeSessionId: sessionPendingQuestions.opencodeSessionId,
       questions: sessionPendingQuestions.questions,
       askedAt: sessionPendingQuestions.askedAt,
+      // PostgreSQL leaves xmax at 0 on a freshly inserted row version and sets
+      // it on the ON CONFLICT DO UPDATE path, so this separates a first ask
+      // from a replayed relay without a second query.
+      inserted: sql<boolean>`(xmax = 0)`,
     });
   if (!row) return null;
   return {
@@ -84,6 +89,7 @@ export async function recordPendingQuestion(input: {
     opencode_session_id: row.opencodeSessionId,
     questions: row.questions,
     asked_at: row.askedAt,
+    inserted: row.inserted === true,
   };
 }
 

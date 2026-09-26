@@ -373,7 +373,9 @@ export interface SessionPublicShare {
   share_id: string;
   session_id: string;
   project_id: string;
-  resource_type: 'preview' | 'file' | string;
+  /** `transcript` names the session conversation; its `public_url` is the
+   *  web viewer (`/share/session/<public_token>`). */
+  resource_type: 'preview' | 'file' | 'transcript' | string;
   label: string;
   port: number | null;
   path: string;
@@ -398,6 +400,15 @@ export interface SessionPublicShare {
 }
 
 export interface CreateSessionPublicShareInput {
+  /**
+   * `true` shares the session conversation as a read-only, sanitized
+   * transcript. A session has at most one live transcript share: minting
+   * again returns the live one as-is (HTTP 200) instead of a new link, and
+   * the `label` and `expires_at` of that second call are ignored. Revoke it
+   * first to mint a link with new values. Cannot be combined with `preview`,
+   * `preview_id`, or `file`. Deleting the session revokes it.
+   */
+  transcript?: boolean;
   preview_id?: string;
   preview?: {
     label?: string;
@@ -412,6 +423,24 @@ export interface CreateSessionPublicShareInput {
   mode?: 'view' | 'interactive';
   label?: string;
   expires_at?: string | null;
+}
+
+/**
+ * The live transcript share among a session's shares (newest first), or null.
+ * Live means not revoked and not expired at `now`. Pure: pass the `shares`
+ * from `listSessionPublicShares`.
+ */
+export function findActiveTranscriptShare(
+  shares: readonly SessionPublicShare[],
+  now: Date = new Date(),
+): SessionPublicShare | null {
+  let found: SessionPublicShare | null = null;
+  for (const share of shares) {
+    if (share.resource_type !== 'transcript' || share.revoked_at) continue;
+    if (share.expires_at && Date.parse(share.expires_at) <= now.getTime()) continue;
+    if (!found || Date.parse(share.created_at) > Date.parse(found.created_at)) found = share;
+  }
+  return found;
 }
 
 export async function getSessionPreviewCandidates(projectId: string, sessionId: string) {
@@ -431,6 +460,11 @@ export async function listSessionPublicShares(projectId: string, sessionId: stri
   );
 }
 
+/**
+ * Mint a public share link. With `{ transcript: true }` this is idempotent:
+ * an existing live transcript share is returned as-is (its label and expiry
+ * unchanged; the ones passed are ignored).
+ */
 export async function createSessionPublicShare(
   projectId: string,
   sessionId: string,

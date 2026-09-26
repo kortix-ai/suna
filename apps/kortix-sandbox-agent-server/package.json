@@ -21,6 +21,8 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.85.1",
     "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
     "hono": "^4.12.25",
     "node-forge": "^1.4.0",
     "tar": "^7.5.22",

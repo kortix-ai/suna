@@ -660,7 +660,21 @@ export class SessionSyncController {
         controller.abort(error);
       }, this.readTimeoutMs);
     });
-    return Promise.race([read(controller.signal), deadline]).finally(() => {
+    // A loader can throw SYNCHRONOUSLY — the registry's page loader evaluates
+    // `resolveClient(key)`, which throws `RuntimeNotReadyError` while the
+    // runtime is not bound. That throw must not unwind before `Promise.race`
+    // subscribes to `deadline`: the read-timeout timer is already armed, and an
+    // unobserved rejection 120 s later reaches the browser's
+    // `onunhandledrejection` as a `SessionSyncReadTimeoutError`. Bind a
+    // synchronous throw into a rejected promise so the race always observes it
+    // and `.finally` cancels the timer.
+    let readPromise: Promise<T>;
+    try {
+      readPromise = read(controller.signal);
+    } catch (error) {
+      readPromise = Promise.reject(error);
+    }
+    return Promise.race([readPromise, deadline]).finally(() => {
       this.cancelTimer(timer);
       lifetime.removeEventListener('abort', onLifetimeAbort);
     });

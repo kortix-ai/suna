@@ -114,7 +114,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Checkov
-        uses: bridgecrewio/checkov-action@1246d92f57abae29d5db5f9aeeed2a9813e52d7d # v12.3117.0
+        uses: bridgecrewio/checkov-action@59b9d7edfcad5b87fbe3f473a9a134a721ad03f8 # v12.3119.0
         with:
           directory: infra/terraform
           framework: terraform
@@ -122,7 +122,7 @@ jobs:
           output_file_path: checkov.sarif
           soft_fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           sarif_file: checkov.sarif/results_sarif.sarif
           category: checkov-terraform

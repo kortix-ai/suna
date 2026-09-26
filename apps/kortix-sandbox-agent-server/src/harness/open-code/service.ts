@@ -83,6 +83,10 @@ export function composeOpenCodeHarnessService(cfg: Config, lifecycle: Opencode):
       getInternalUrl: () => lifecycle.getInternalUrl(),
       restart: () => lifecycle.restart(),
       workspace: () => cfg.workspace,
+      // The rollback path's only way to know the restart actually brought
+      // opencode back. Without it a failed install leaves the box down with no
+      // retained previous version — the one hole the agent half does not have.
+      getState: () => lifecycle.getState(),
     }),
     // Keep the method owner: restart/reload/reconfigure call sibling methods
     // through `this`. Copying unbound methods into separate objects breaks it.

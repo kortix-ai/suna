@@ -169,6 +169,10 @@ export async function deleteResourceGrant(
   projectId: string,
   accountId: string,
 ): Promise<boolean> {
+  // Only the kinds this module stores. A `connection` grant narrows who may use
+  // a shared connector account and is written under the connections-manage
+  // capability; the members-manage route that calls this must not delete one
+  // (the last one would widen the account to the whole project).
   const [assignment] = (
     await listAssignments({
       accountId,
@@ -176,7 +180,9 @@ export async function deleteResourceGrant(
       scopeId: projectId,
       liveOnly: false,
     })
-  ).filter((r) => r.assignmentId === grantId && r.objectType !== null);
+  ).filter(
+    (r) => r.assignmentId === grantId && r.objectType !== null && isResourceType(r.objectType),
+  );
   if (!assignment) return false;
   await revokeAssignment(SYSTEM_ACTOR, accountId, grantId, { skipWriterAuthz: true });
   invalidateIamCacheForProjectResources(projectId);

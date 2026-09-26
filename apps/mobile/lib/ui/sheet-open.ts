@@ -8,8 +8,8 @@
  * early while the status is DISMISSING: the sheet never renders. The parent's
  * `open` stays true, so later taps change nothing either.
  *
- * A sheet that is mounted closed (the project switcher, New account, New
- * project) hits this on its first open. The same happens after the sheet
+ * A sheet that is mounted closed (the project switcher) hits this on its
+ * first open. The same happens after the sheet
  * dismissed itself (pan down, the X, a pick): gorhom resets the status to
  * INITIAL, and the parent then flips `open` to false. So a sheet tracks
  * whether it is on screen (set on present, cleared in `onDismiss`) and asks

@@ -111,6 +111,16 @@ symlink to it. Add a skill in `.agents/skills/`, then add the symlink. Third-par
 from `npx skills add` and are pinned in `skills-lock.json`. The PR procedure is the
 **contributing** skill. Browser work is the **agent-browser** skill.
 
+## Ponytail is on by default
+
+Every code change runs through the **ponytail** skill at level `full`. Load it before you
+write, fix, refactor, or review code, and before you add a dependency. Level switch:
+`/ponytail lite|full|ultra`. Off: "stop ponytail". **ponytail-review** audits a diff for
+over-engineering, **ponytail-audit** audits the whole repo, and **ponytail-debt** lists
+every `ponytail:` shortcut comment. Ponytail cuts code, never the verification,
+documentation, or ownership bar in this file. The skills come from
+`DietrichGebert/ponytail`, pinned to `v4.10.0` in `skills-lock.json`.
+
 ## Learnings: the episodic ledger in the `learnings` skill
 
 `.agents/skills/learnings/` is the append-only, timestamped ledger of rules paid

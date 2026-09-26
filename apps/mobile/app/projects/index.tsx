@@ -33,12 +33,16 @@ import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ProjectSwitcherSheet } from '@/components/projects/ProjectSwitcherSheet';
-import { NewProjectSheet } from '@/components/projects/NewProjectSheet';
+import { useWebCreateHandoff } from '@/components/projects/useWebCreateHandoff';
+import { WebHandoffSheet } from '@/components/session/WebHandoffSheet';
+import type { SheetRef } from '@/components/kortix/sheet';
 import { ProjectActions } from '@/components/projects/ProjectActions';
 import { PlatformButton } from '@/components/kortix/platform-button';
 import { SearchHeader } from '@/components/kortix/search-header';
 import { useAuthContext } from '@/contexts';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { useAccounts, useProjects } from '@/lib/projects/hooks';
+import { newProjectWebUrl } from '@/lib/projects/web-project-links';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 import { useAccountState, accountStateSelectors } from '@/lib/billing/hooks';
@@ -83,7 +87,7 @@ export default function ProjectsPage() {
     setSearchOpen(false);
   }, []);
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
-  const [newProjectOpen, setNewProjectOpen] = React.useState(false);
+  const newProjectHandoffRef = React.useRef<SheetRef>(null);
   const [refreshing, setRefreshing] = React.useState(false);
 
   const accountsQuery = useAccounts(!!user);
@@ -164,15 +168,23 @@ export default function ProjectsPage() {
   }, []);
   const closeRowMenu = React.useCallback(() => setMenuProject(null), []);
 
-  const handleCreated = React.useCallback(
-    (project: KortixProject) => {
-      setNewProjectOpen(false);
-      // The sheet can create in another account: the list follows the project.
-      if (project.account_id) setSelectedAccountId(project.account_id);
+  // New project: web `/new` on the active account (KRTX-246). A project that
+  // did not exist before opens; web can create in another account, so the
+  // list follows the project's account.
+  const webCreate = useWebCreateHandoff();
+  const runNewProjectHandoff = React.useCallback(async () => {
+    const { project, account } = await webCreate.open(newProjectWebUrl(KORTIX_WEB_URL, activeAccountId));
+    if (project) {
+      setSelectedAccountId(project.account_id);
       router.replace(`/projects/${project.project_id}`);
-    },
-    [router, setSelectedAccountId],
-  );
+    } else if (account) {
+      setSelectedAccountId(account.account_id);
+    }
+  }, [webCreate, activeAccountId, router, setSelectedAccountId]);
+  const openNewProject = React.useCallback(() => {
+    haptics.selection();
+    newProjectHandoffRef.current?.open();
+  }, []);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -288,10 +300,8 @@ export default function ProjectsPage() {
                 systemImage="plus"
                 icon={Plus}
                 accessibilityLabel="New project"
-                onPress={() => {
-                  haptics.selection();
-                  setNewProjectOpen(true);
-                }}
+                disabled={webCreate.pending}
+                onPress={openNewProject}
               />
             )}
           </View>
@@ -339,10 +349,8 @@ export default function ProjectsPage() {
               <Button
                 size="lg"
                 className="rounded-full"
-                onPress={() => {
-                  haptics.selection();
-                  setNewProjectOpen(true);
-                }}>
+                disabled={webCreate.pending}
+                onPress={openNewProject}>
                 <Text>Create project</Text>
               </Button>
             )}
@@ -383,15 +391,12 @@ export default function ProjectsPage() {
 
       <ProjectActions project={menuProject} onOpenProject={openProject} onClose={closeRowMenu} />
 
-      {newProjectOpen ? (
-        <NewProjectSheet
-          open
-          accountId={activeAccountId}
-          accounts={accountsQuery.data ?? []}
-          onClose={() => setNewProjectOpen(false)}
-          onCreated={handleCreated}
-        />
-      ) : null}
+      <WebHandoffSheet
+        ref={newProjectHandoffRef}
+        title="Create a project on the web"
+        line="Projects are created on kortix.com."
+        run={runNewProjectHandoff}
+      />
     </View>
   );
 }

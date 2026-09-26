@@ -224,7 +224,7 @@ const META_TOOLS = [
   {
     name: 'connect',
     description:
-      'Start the configured provider authorization for a connector — its first account, or an additional one beside the accounts `accounts` already lists — and SURFACE any returned url to the human in your reply. This works for Composio and explicit legacy Pipedream connectors. In the web UI the link opens a connect popup; in Slack it is tappable. No credential ever touches the sandbox. The connector must already exist in kortix.yaml.',
+      'Mint a link that adds a NEW account to a connector — its first, or another beside the accounts `accounts` already lists — and SURFACE the returned url to the human in your reply. In the web UI the link opens a dialog where the human names the account (prefilled from `label`), chooses who can use it (only them, everyone in the project, or chosen people or groups), and signs in with the provider. When it lands you are told the account\'s name: pass it as `account` on every call, because a connector with several accounts refuses an unnamed call. Works for Composio and explicit legacy Pipedream connectors. In Slack the link is tappable. No credential ever touches the sandbox. The connector must already exist in kortix.yaml.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -240,7 +240,12 @@ const META_TOOLS = [
           type: 'string',
           enum: ['me', 'project'],
           description:
-            'Who the new account belongs to: "me" (the human who opens the link, and only they can call with it — the default) or "project" (shared with every project member, which requires project.connector.write). Ask the human before choosing "project": it authorizes an identity the whole project can spend.',
+            'Who the new account belongs to: "me" (the human who opens the link, and only they can call with it — the default) or "project" (shared with every project member, which requires project.connector.write). In the web dialog this is only the preselected choice; the human decides. Ask the human before choosing "project": it authorizes an identity the whole project can spend.',
+        },
+        label: {
+          type: 'string',
+          description:
+            'A name for the new account that tells it apart from the others, e.g. "Dad\'s Gmail" or "Support inbox". The human sees it prefilled and may change it. Not "me", "project", or an id.',
         },
       },
       required: ['slug'],
@@ -693,11 +698,19 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
           isError: true,
         };
       }
+      if (args.label !== undefined && typeof args.label !== 'string') {
+        return {
+          content: content({ ok: false, error: 'label must be a string' }),
+          isError: true,
+        };
+      }
+      const label = typeof args.label === 'string' ? args.label.trim() : '';
       try {
         const link = await mintConnectLink({
           slug,
           expiresInMinutes: expires,
           ...(owner ? { owner } : {}),
+          ...(label ? { label } : {}),
         });
         return {
           content: content({

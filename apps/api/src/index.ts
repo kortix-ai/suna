@@ -53,6 +53,7 @@ import { authRouter } from './auth';
 import { headlessAuthRouter } from './auth/headless';
 import { authEmailHookApp } from './auth/send-email-hook';
 import { accountDeletionApp, billingApp } from './billing';
+import { notificationsApp } from './notifications/routes';
 import {
   emailWebhookApp,
   slackIdentityApp,
@@ -96,7 +97,12 @@ import {
   stopProjectTriggerScheduler,
 } from './projects';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
-import { GitOperationError, isGitOperationError, isTransientGitMirrorError } from './projects/git/mirror';
+import {
+  GIT_MIRROR_UNAVAILABLE_CODE,
+  isRemotePushPolicyRejection,
+  isTransientGitMirrorError,
+  pushPolicyWarning,
+} from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import {
   startProviderTransitionWorker,
@@ -934,6 +940,7 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
+app.route('/v1/notifications', notificationsApp); // POST/DELETE /v1/notifications/device-token — mobile push registration
 // Auth for the platform routes that need an identity. Scoped to these exact
 // paths, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
 // github-app setup callbacks are deliberately unauthenticated and would break.
@@ -1192,10 +1199,38 @@ app.onError((err, c) => {
     return c.json(
       {
         error: true,
+        // A stable code lets the SDK/frontend classify this transient 503 as
+        // an EXPECTED, retryable degradation (silent to Sentry) instead of an
+        // opaque `ApiError` — the API-side classification alone only de-noises
+        // the API's OWN Sentry; the 503 response crosses into the FRONTEND
+        // Sentry (a separate app) via `handleApiError`. See
+        // `projects/git/mirror.ts`'s `GIT_MIRROR_UNAVAILABLE_CODE`.
+        code: GIT_MIRROR_UNAVAILABLE_CODE,
         message: 'git mirror is temporarily unavailable',
         status: 503,
       },
       503,
+    );
+  }
+
+  // A push the REMOTE rejected by policy — branch protection, repository rules,
+  // a server-side hook — is a PERMANENT, user-actionable outcome: retrying the
+  // same commit is rejected again and the mirror retry cannot help. It must NOT
+  // page Sentry as an opaque server error (prod Better Stack pattern
+  // `5e505349…`: `push declined due to repository rule violations`). This is the
+  // single backstop for every commit path that lets the error propagate here;
+  // the agent-config route additionally maps it to a typed 409 at the call site.
+  if (isRemotePushPolicyRejection(err)) {
+    const warning = pushPolicyWarning(method, err);
+    appLogger.warn(warning.message, warning.fields);
+    return c.json(
+      {
+        error: true,
+        message: 'the repository rejected the push because of its branch protection or repository rules',
+        status: 409,
+        code: 'repository_push_rejected',
+      },
+      409,
     );
   }
 

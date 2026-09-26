@@ -76,6 +76,9 @@ Role assignments:
   assignments [--project <id>|--account|--all]   List role assignments.
   grant --user <id|email>|--group <id>|--service-account <id> --role <key|id>
                                     Grant a role. Prints the assignment id.
+  grant --user|--group|--everyone --agent <name>|--connection <id>
+                                    Grant one agent, or the use of one shared
+                                    connector account.
   revoke <assignment-id>            Revoke one assignment.
 
 Project members:
@@ -111,6 +114,11 @@ Options:
   --account          Scope to the whole account — every project in it.
   --all              List every assignment in the account, at any scope.
   --agent <name>     Narrow the grant to ONE agent. Implies --role ${OBJECT_GRANT_ROLE}.
+  --connection <id>  Narrow the grant to ONE shared connector account. The first
+                     grant limits the account to its grantees; revoking the last
+                     opens it to the whole project again. Implies --role ${OBJECT_GRANT_ROLE}.
+  --everyone         Grant to everyone with access to the project. Holds an
+                     agent or a connection, never a role.
   --principal <id>   Filter assignments by principal. Also
                      user:<id> | group:<id> | service_account:<id> | pending:<email>.
   --expires <iso>    Auto-revoke timestamp.
@@ -126,6 +134,8 @@ Examples:
   kortix access grant --user alice@corp.com --role admin --account
   kortix access grant --group 8f3c… --role member --project 1a2b…
   kortix access grant --user alice@corp.com --agent support-bot
+  kortix access grant --everyone --agent support-bot
+  kortix access grant --group 8f3c… --connection 2b7e…
   kortix access revoke 4d5e…
 `;
 
@@ -194,6 +204,8 @@ export async function runAccess(argv: string[]): Promise<number> {
     f.group = takeFlagValue(rest, ['--group']);
     f.sa = takeFlagValue(rest, ['--service-account', '--sa']);
     f.agent = takeFlagValue(rest, ['--agent']);
+    f.connection = takeFlagValue(rest, ['--connection']);
+    f.everyone = takeFlagBool(rest, ['--everyone']) ? 'yes' : undefined;
     f.principal = takeFlagValue(rest, ['--principal']);
     f.accountId = takeFlagValue(rest, ['--account-id']);
     json = takeFlagBool(rest, ['--json']);
@@ -215,7 +227,7 @@ export async function runAccess(argv: string[]): Promise<number> {
       case 'set':
         // Flag form = an assignment; positional form = the project read model.
         // Two shapes, never ambiguous, and the old one is untouched.
-        if (f.user || f.group || f.sa || f.agent) {
+        if (f.user || f.group || f.sa || f.agent || f.connection || f.everyone) {
           return await grantAssignment(f, { json, accountScope });
         }
         break;
@@ -585,22 +597,41 @@ async function grantAssignment(
   f: Record<string, string | undefined>,
   opts: { json: boolean; accountScope: boolean },
 ): Promise<number> {
-  const chosen = [f.user && '--user', f.group && '--group', f.sa && '--service-account'].filter(
-    Boolean,
-  ) as string[];
+  const chosen = [
+    f.user && '--user',
+    f.group && '--group',
+    f.sa && '--service-account',
+    f.everyone && '--everyone',
+  ].filter(Boolean) as string[];
   if (chosen.length > 1) {
     process.stderr.write(
       `${status.err(`Pass one principal — got ${chosen.join(' and ')}.`)}\n`,
     );
     return 2;
   }
-  if (f.agent && opts.accountScope) {
+  if (f.agent && f.connection) {
+    process.stderr.write(`${status.err('Pass one object — got --agent and --connection.')}\n`);
+    return 2;
+  }
+  const object = f.agent
+    ? { type: 'agent', id: f.agent }
+    : f.connection
+      ? { type: 'connection', id: f.connection }
+      : null;
+  if (object && opts.accountScope) {
     process.stderr.write(
       `${status.err('An object grant is project-scoped — drop --account, or name a project with --project.')}\n`,
     );
     return 2;
   }
-  const roleRef = f.role ?? (f.agent ? OBJECT_GRANT_ROLE : undefined);
+  if (f.everyone && !object) {
+    process.stderr.write(
+      `${status.err('--everyone holds an agent or a connection, never a role.')} ` +
+        `Add --agent <name> or --connection <id>.\n`,
+    );
+    return 2;
+  }
+  const roleRef = f.role ?? (object ? OBJECT_GRANT_ROLE : undefined);
   if (!roleRef) {
     process.stderr.write(
       `${status.err('Pass --role <key|id>.')} ${C.dim}See ${C.cyan}kortix roles ls${C.reset}${C.dim}.${C.reset}\n`,
@@ -615,9 +646,17 @@ async function grantAssignment(
   // key — never to refuse an unknown one. See `roleRefBody`.
   const roles = await fetchRoles(scope.client, scope.accountId).catch(() => [] as IamRole[]);
 
-  let principalType: 'user' | 'group' | 'service_account';
+  let principalType: 'user' | 'group' | 'service_account' | 'project';
   let principalId: string;
-  if (f.group) {
+  if (f.everyone) {
+    // Everyone with access to the project: the principal id is the project.
+    if (!scope.projectId) {
+      process.stderr.write(`${status.err('--everyone needs a project: link one or pass --project.')}\n`);
+      return 2;
+    }
+    principalType = 'project';
+    principalId = scope.projectId;
+  } else if (f.group) {
     principalType = 'group';
     principalId = f.group;
   } else if (f.sa) {
@@ -640,7 +679,7 @@ async function grantAssignment(
       ...roleRefBody(roles, roleRef),
       scope_type: scope.projectId ? 'project' : 'account',
       scope_id: scope.projectId,
-      ...(f.agent ? { object_type: 'agent', object_id: f.agent } : {}),
+      ...(object ? { object_type: object.type, object_id: object.id } : {}),
       ...(f.expires ? { expires_at: f.expires } : {}),
     },
   );
@@ -648,13 +687,15 @@ async function grantAssignment(
     emitJson(assignment);
     return 0;
   }
-  const who = f.group
-    ? `group ${f.group}`
-    : f.sa
-      ? `service account ${f.sa}`
-      : (f.user as string);
+  const who = f.everyone
+    ? 'everyone in project'
+    : f.group
+      ? `group ${f.group}`
+      : f.sa
+        ? `service account ${f.sa}`
+        : (f.user as string);
   const where = scope.projectId ? `project ${scope.projectId}` : 'the account';
-  const on = f.agent ? ` on agent ${C.bold}${f.agent}${C.reset}` : '';
+  const on = object ? ` on ${object.type} ${C.bold}${object.id}${C.reset}` : '';
   process.stdout.write(
     `${status.ok(`Granted ${C.bold}${assignment.role_key}${C.reset} to ${C.bold}${who}${C.reset} on ${where}${on}`)}\n`,
   );

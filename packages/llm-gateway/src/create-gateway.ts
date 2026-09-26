@@ -11,6 +11,7 @@ import {
   type HandlerRuntime,
   handleChatCompletions,
 } from './pipeline';
+import { parseUpstreamErrorBody } from './http/parse-upstream-error';
 import { gatewayErrorResponse } from './pipeline/error-response';
 
 // Anthropic Messages API error `type` values by HTTP status — used only to
@@ -139,13 +140,10 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
     });
 
     if (!upstream.ok) {
-      const data = await upstream.json().catch(() => null);
-      const message =
-        data &&
-        typeof data === 'object' &&
-        typeof (data as Record<string, unknown>).message === 'string'
-          ? ((data as Record<string, unknown>).message as string)
-          : 'Upstream request failed';
+      // The gateway's own errors carry a top-level `message`; a relayed
+      // provider error carries `{error:{message}}` or `{detail}`. Both reach
+      // the client, so it sees why the provider refused.
+      const message = parseUpstreamErrorBody(await upstream.text().catch(() => '')).message;
       return anthropicErrorResponse(upstream.status, message);
     }
 
