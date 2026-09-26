@@ -879,8 +879,8 @@ test.describe("23 — Composio managed connector", () => {
       }),
     );
     const landed = page.getByTestId("connector-connect-landed");
-    await expect(landed).toContainText("Saved as Dad's Gmail");
-    await expect(landed).toContainText("Specific people or groups");
+    // The summary names the audience the way the account's card will.
+    await expect(landed).toContainText(`Saved as Dad's Gmail · ${groupName}`);
     await expect(page.getByTestId("connector-intake-connected-as")).toHaveText(
       "Connected as dad@example.test",
     );
