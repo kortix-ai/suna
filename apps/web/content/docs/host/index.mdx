@@ -88,6 +88,19 @@ kortix self-host env set KORTIX_API_MEMORY_LIMIT=1024m
 
 Confirm the applied limit with `docker stats --no-stream`.
 
+## Serper.dev-compatible endpoints
+
+The web-search proxy supports any Serper.dev-compatible endpoint (for example
+litescrape.com or serpbase.dev), not only `google.serper.dev`. Point it at a
+Serper-compatible base URL and API key — not an incompatible native API.
+
+```sh
+kortix self-host env set SERPER_API_URL=https://api.litescrape.com SERPER_API_KEY=your-provider-api-key
+```
+
+For a source checkout, set both in the gitignored `apps/api/.env.local` file
+instead and restart the API. Never commit a real API key.
+
 ## Updates
 
 Every instance updates itself automatically. Pin an exact version instead:
