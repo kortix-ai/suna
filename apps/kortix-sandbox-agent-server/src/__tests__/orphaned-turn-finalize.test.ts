@@ -117,9 +117,11 @@ function turnInFlightWithPin(root: string | null): Promise<boolean | null> {
   return opencodeTurnInFlight(BASE, WORKSPACE);
 }
 
+const OPEN_ASSISTANT_ID = 'msg_assistant_open';
+
 const assistantTurn = (completed?: number) => [
   { info: { role: 'user', time: { completed: 1 } } },
-  { info: { role: 'assistant', time: completed === undefined ? {} : { completed } } },
+  { info: { id: OPEN_ASSISTANT_ID, role: 'assistant', time: completed === undefined ? {} : { completed } } },
 ];
 
 describe('finalizeOrphanedTurn', () => {
@@ -235,6 +237,9 @@ describe('inspectOpencodeRoot — could-not-tell is its own answer', () => {
       lastTurnIncomplete: true,
       turnInFlight: true,
       orphanedPrompt: false,
+      // The row a client is streaming. A verified reload reads it off the
+      // OUTGOING process before killing it, so the API can settle it.
+      openAssistantMessageId: OPEN_ASSISTANT_ID,
       known: true,
     });
   });
@@ -265,6 +270,7 @@ describe('inspectOpencodeRoot — could-not-tell is its own answer', () => {
       lastTurnIncomplete: false,
       turnInFlight: false,
       orphanedPrompt: true,
+      openAssistantMessageId: null,
       known: true,
     });
   });
@@ -287,6 +293,7 @@ describe('inspectOpencodeRoot — could-not-tell is its own answer', () => {
       turnInFlight: true,
       // Both are true at once: turn 1 is streaming AND turn 2 has no answer.
       orphanedPrompt: true,
+      openAssistantMessageId: null,
       known: true,
     });
   });
@@ -321,6 +328,7 @@ describe('inspectOpencodeRoot — could-not-tell is its own answer', () => {
       lastTurnIncomplete: false,
       turnInFlight: false,
       orphanedPrompt: false,
+      openAssistantMessageId: null,
       known: true,
     });
   });

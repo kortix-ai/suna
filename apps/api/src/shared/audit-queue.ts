@@ -24,9 +24,18 @@
  *    fail an entire batch.
  */
 import { type Database, auditEvents } from '@kortix/db';
+import { withAuditSessionLock } from './audit-session-serial';
 import { errorSqlstate, innermostMessage } from './error-cause';
 
 export type AuditRow = typeof auditEvents.$inferInsert;
+
+/**
+ * How the queue serializes one session's statements against the other
+ * in-process audit writer (the sandbox ingest route). Defaults to the shared
+ * per-session lock; injectable so a test can observe the grouping without the
+ * real mutex. See `audit-session-serial.ts` for why this exists.
+ */
+export type AuditSessionSerializer = (sessionId: string, fn: () => Promise<void>) => Promise<void>;
 
 /** The minimum surface the queue needs from Drizzle — keeps tests db-free. */
 export type AuditInsertClient = Pick<Database, 'insert'>;
@@ -43,6 +52,8 @@ export interface AuditQueueOptions {
   now?: () => number;
   onError?: (error: unknown, rowCount: number) => void;
   onDrop?: (droppedTotal: number, sinceLastLog: number) => void;
+  /** Serializes one session's statement against the in-process ingest writer. */
+  serialize?: AuditSessionSerializer;
 }
 
 export const AUDIT_FLUSH_MS_DEFAULT = 250;
@@ -144,6 +155,7 @@ export class AuditQueue {
   private readonly now: () => number;
   private readonly onError: (error: unknown, rowCount: number) => void;
   private readonly onDrop: (droppedTotal: number, sinceLastLog: number) => void;
+  private readonly serialize: AuditSessionSerializer;
 
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inFlight: Promise<void> | null = null;
@@ -181,6 +193,10 @@ export class AuditQueue {
           `[audit] Queue full — dropped ${sinceLastLog} oldest events (${droppedTotal} total). Audit writes are falling behind; raise KORTIX_AUDIT_QUEUE_MAX or investigate database latency.`,
         );
       });
+    // Off the request path: wait for our turn without a timeout. The wait is in
+    // memory, so `lock_timeout` cannot drop the batch the way it did when this
+    // row raced the sandbox ingest for the same session's sequence row lock.
+    this.serialize = options.serialize ?? ((sessionId, fn) => withAuditSessionLock(sessionId, fn));
   }
 
   /**
@@ -259,8 +275,16 @@ export class AuditQueue {
   private async write(snapshot: AuditRow[]): Promise<void> {
     for (const batch of statementBatches(snapshot, this.flushMax)) {
       this.flushes += 1;
-      try {
+      // `statementBatches` guarantees one session per statement, so the first
+      // row names the sequence row lock this insert will take. Session-less
+      // rows take no such lock, so they are written directly.
+      const sessionId = batch[0]?.sessionId ?? null;
+      const insert = async (): Promise<void> => {
         await this.client.insert(auditEvents).values(batch).onConflictDoNothing();
+      };
+      try {
+        if (sessionId) await this.serialize(sessionId, insert);
+        else await insert();
         this.written += batch.length;
       } catch (error) {
         // Re-queuing would amplify whatever stalled the database, and the audit
