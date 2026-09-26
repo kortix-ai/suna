@@ -32,6 +32,7 @@ import { resolveSetupLink } from './token';
 import { watchConnectorCompletion } from './connector-completion-watch';
 import { composioConfigured, composioToolkitLogo } from '../connectors/composio';
 import { connectorConnectedPrompt, notifyConnectorSession } from '../connectors/notify-session';
+import { readJsonObject } from '../shared/http-body';
 
 // The connector half of the notification moved to connectors/notify-session.ts so the
 // in-session Connect button's finalize can reuse it. Re-exported: this module is where
@@ -379,7 +380,7 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
 
   // The in-app dialog creates a NEW named account through the project's own
   // routes and then names it here, so the session is told about THAT account.
-  const body = (await c.req.json().catch(() => ({}))) as { connection_id?: unknown };
+  const body = await readJsonObject(c);
   if (body.connection_id !== undefined) {
     if (typeof body.connection_id !== 'string' || !body.connection_id) {
       return c.json({ error: 'connection_id must be a string' }, 400);

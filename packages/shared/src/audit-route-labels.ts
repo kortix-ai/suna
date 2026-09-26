@@ -477,6 +477,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/connections/:connectionId/oauth2/register': { action: 'connector.connection.oauth.client.register', title: 'Registered connector OAuth client' },
   'GET /v1/projects/:projectId/connections/:connectionId/oauth2/status': { action: 'connector.connection.oauth.status.read', title: 'Viewed connector OAuth status' },
   'PUT /v1/projects/:projectId/connections/:connectionId/revoke': { action: 'connector.connection.revoke', title: 'Revoked connector account' },
+  'POST /v1/projects/:projectId/connections/:connectionId/share': { action: 'connector.connection.share', title: 'Shared a private connector account' },
   'GET /v1/projects/:projectId/connections/all': { action: 'connector.connection.roster.list', title: 'Listed all connector accounts' },
   'POST /v1/projects/:projectId/connections/me': { action: 'connector.connection.personal.create', title: 'Created personal connector account' },
   'POST /v1/projects/:projectId/connectors/:slug/oauth2/connection': { action: 'connector.connection.shared.create', title: 'Created shared connector account' },
