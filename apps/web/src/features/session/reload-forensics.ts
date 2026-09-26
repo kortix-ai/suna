@@ -217,11 +217,12 @@ export function useReloadForensics(sessionId: string | null | undefined): void {
     } else if (cause === 'discarded') {
       // Expected browser behavior, not an app fault: keep the cause as a
       // breadcrumb so it still attaches to any later real error, but never page
-      // on the discard itself.
+      // on the discard itself. No `message` field — a `message:` literal reads as
+      // UI copy to the i18n audit, and this is developer-facing telemetry; the
+      // category and `data.cause` carry the meaning.
       Sentry.addBreadcrumb({
         category: 'session.reload',
         level: 'info',
-        message: 'session page restored after browser tab discard',
         data: { sessionId, cause, ...forensics },
       });
     }
