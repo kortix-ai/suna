@@ -266,6 +266,8 @@ function gitMergeFile(texts, { labels, markerSize, conflictStyle }) {
     const result = spawnSync(
       'git',
       [
+        '-c',
+        'merge.conflictStyle=merge',
         'merge-file',
         '-p',
         `--marker-size=${markerSize}`,
