@@ -4,12 +4,14 @@ import { join } from 'node:path';
 
 import { CONNECTOR_TABS, type ConnectorTab } from './connector-tabs';
 
-const source = readFileSync(join(import.meta.dir, 'connector-modal.tsx'), 'utf8');
+// The live mount site. `connector-modal.tsx` is the retired modal shell no
+// page mounts any more (the detail routes replaced it).
+const source = readFileSync(join(import.meta.dir, 'connected-connector-page.tsx'), 'utf8');
 
 /**
  * Guards the one defect no other gate catches: a tab component that is
  * imported, exported and independently tested — but never mounted in
- * `connector-modal.tsx`. `no-unused-vars` is off in this repo and
+ * `connected-connector-page.tsx`. `no-unused-vars` is off in this repo and
  * `noUnusedLocals` is unset, so deleting a JSX mount while leaving its
  * `import` in place trips neither eslint nor `tsc`. It has happened twice.
  *
@@ -18,12 +20,13 @@ const source = readFileSync(join(import.meta.dir, 'connector-modal.tsx'), 'utf8'
  * silently iterating zero times.
  */
 const TAB_COMPONENT: Record<ConnectorTab, string> = {
+  overview: 'ConnectorOverview',
   accounts: 'ConnectorAccounts',
   tools: 'ConnectorTools',
   settings: 'ConnectorSettings',
 };
 
-describe('every tab in CONNECTOR_TABS is mounted in connector-modal.tsx', () => {
+describe('every tab in CONNECTOR_TABS is mounted in connected-connector-page.tsx', () => {
   test('TAB_COMPONENT names exactly the tabs CONNECTOR_TABS declares', () => {
     expect(Object.keys(TAB_COMPONENT).sort()).toEqual([...CONNECTOR_TABS].sort());
   });

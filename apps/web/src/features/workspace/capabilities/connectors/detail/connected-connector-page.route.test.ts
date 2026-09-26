@@ -1,0 +1,160 @@
+import { describe, expect, test } from 'bun:test';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+const feature = import.meta.dir;
+const appRoute = resolve(
+  feature,
+  '../../../../../app/[locale]/(app)/projects/[id]/(capabilities)/connectors/[slug]/page.tsx',
+);
+
+describe('connected connector route', () => {
+  test('renders connector management as a route instead of a modal', () => {
+    const pagePath = join(feature, 'connected-connector-page.tsx');
+    expect(existsSync(appRoute)).toBe(true);
+    expect(existsSync(pagePath)).toBe(true);
+
+    const route = readFileSync(appRoute, 'utf8');
+    const page = readFileSync(pagePath, 'utf8');
+
+    // The single-segment route RESOLVES the slug — a project connector
+    // forwards into the app-split view when its catalogue app is known, and
+    // a slug that is not a connector renders the app's catalogue page
+    // (`/connectors/canva` IS the Canva page).
+    expect(route).toContain('<ConnectorSlugPage');
+    const resolver = readFileSync(join(feature, 'connector-slug-resolver.tsx'), 'utf8');
+    expect(resolver).toContain('<ConnectedConnectorPage');
+    expect(resolver).toContain('<CatalogConnectorPage');
+    expect(resolver).toContain('appConnectorHref(projectId, resolvedApp.slug, slug)');
+    // Managed OAuth connectors resolve against the Easy Connect catalogue and
+    // carry the `?src=apps` marker; Discover providers resolve against the
+    // Discover catalogue.
+    expect(resolver).toContain('listPipedreamApps(projectId, query)');
+    expect(resolver).toContain("params.set('src', 'apps')");
+    // The app-split route exists and composes the two pages as columns.
+    const splitRoute = resolve(
+      feature,
+      '../../../../../app/[locale]/(app)/projects/[id]/(capabilities)/connectors/[slug]/[connectorSlug]/page.tsx',
+    );
+    expect(existsSync(splitRoute)).toBe(true);
+    const split = readFileSync(join(feature, 'app-connector-split-page.tsx'), 'utf8');
+    expect(split).toContain('<SplitSheetMain');
+    expect(split).toContain('<CatalogConnectorPage');
+    expect(split).toContain('<ConnectedConnectorPage');
+    expect(split).toContain('backHref={appHref}');
+    expect(page).toContain('qk.project.connectors(projectId)');
+    expect(page).toContain('getConnectorConfig(projectId, connector.slug)');
+    expect(page).toContain('<ConnectorDetailLayout');
+    expect(page).toContain('type="underline"');
+    expect(page).toContain('Accounts');
+    expect(page).toContain('Tools');
+    expect(page).toContain('Settings');
+    expect(page).not.toContain('ModalContent');
+  });
+
+  test('a missing record during a fetch shows the skeleton, never "not found"', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // The add flows invalidate the connectors list and navigate here in the
+    // same tick — the warm cache predates the new slug. Only a SETTLED list
+    // may declare the connector missing.
+    expect(page).toContain('if (connectorsQuery.isFetching)');
+  });
+
+  test('Connect is never gated on a declared authSecret', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // An MCP connector whose auth auto-detect saw nothing has authSecret
+    // null and still needs a credential. Gating the CTA on authSecret left
+    // the panel saying "connection required" with NO button — a hard dead
+    // end (Jay, 2026-09-17). The dialog discovers what the server wants.
+    expect(page).toContain('canWrite && !connected && !isChannel && !isComputer && connectsHere');
+    expect(page).not.toContain('Boolean(connector.authSecret) &&');
+    expect(page).not.toContain('(isManagedProvider || Boolean(connector.authSecret))');
+    // …and never member-scope-blind: a non-managed member-scoped connector
+    // connects HERE (the dialog writes the member's own credential); only
+    // managed member-scope defers to the Accounts tab's per-member flows.
+    expect(page).toContain('const connectsHere = usesProjectAuthorization || !isManagedProvider;');
+  });
+
+  test('a mid-setup connector keeps its list LIVE; a settled one stops the poll', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // Connect completes on the SERVER (credential, then the tools sync flips
+    // needs_auth/0 tools → active + actions) with no client signal — without
+    // this poll the ready-state UI only appeared after a full reload.
+    expect(page).toContain('refetchInterval: (query) =>');
+    expect(page).toContain(
+      "row.status === 'needs_auth' || row.status === 'error' || row.actions.length === 0",
+    );
+    // `false` for a settled row is what STOPS the polling — never a constant.
+    expect(page).toContain('settling ? 4_000 : false');
+  });
+
+  test('Connect opens the split column, not an overlay', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // The credential dialog renders as an inline SplitSheet column beside the
+    // page (`shell="split"`); the page must never float it as a modal. In the
+    // app-split view (`connectCoversPage`) the same sheet covers the pane
+    // instead of adding a third column.
+    expect(page).toContain('open={credOpen}');
+    expect(page).toContain('cover={connectCoversPage}');
+    expect(page).toContain('<SplitSheetMain');
+    expect(page).toContain('shell="split"');
+  });
+
+  test('the "what now?" answer follows state — checklist, then the Overview tab', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // Not ready → the setup checklist above the tabs. Connected → the
+    // Overview tab (status strip + try-it prompts, Jay's R5 pick,
+    // 2026-09-26), which `connectorTabs` adds only once connected.
+    expect(page).toContain('<ConnectorSetupSteps');
+    expect(page).toContain('connectorTabs(connector, { canWrite })');
+    expect(page).toContain('setupSteps={');
+    expect(page).toContain('<ConnectorOverview');
+    expect(page).toContain(
+      "overviewState={connected ? 'connected' : failing ? 'failing' : 'setup'}",
+    );
+    // Connect lives in the header on every tab, Overview included.
+    expect(page).not.toContain("tab === 'overview' && primaryAction");
+    // Healthy + connected drops the primary panel; failing keeps it.
+    expect(page).toContain('primaryTitle={failing ? primaryTitle : undefined}');
+    const overview = readFileSync(join(feature, 'connector-overview.tsx'), 'utf8');
+    // The facts never claim "Active" outside the connected state.
+    expect(overview).toContain(
+      "state === 'connected'\n            ? tI18nComplete.raw('text92340695899b')",
+    );
+    const strip = readFileSync(join(feature, 'connector-status-strip.tsx'), 'utf8');
+    // Facts only, derived. The strip carries no second action button.
+    expect(strip).toContain("action.risk === 'read'");
+    expect(strip).not.toContain('<Button');
+  });
+
+  test('an add flow hands off into the connect dialog via ?connect=1', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // The param is consumed once, stripped from the URL, and only opens the
+    // dialog for connectors whose credential is entered on this page.
+    expect(page).toContain("search?.get('connect') === '1'");
+    expect(page).toContain('autoConnectRequested');
+    expect(page).toContain("params.delete('connect')");
+  });
+
+  test('a failing connector says WHY, not just ERROR', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // The primary panel owns the failure: a translated next step as its
+    // description, and the sync engine's stored reason verbatim below it.
+    // Without both, the page shows a red badge and a panel talking about
+    // member connections — two contradictory messages (Jay, 2026-09-14).
+    expect(page).toContain("const failing = connector.status === 'error'");
+    expect(page).toContain('connectorErrorExplanation(connector.lastError)');
+    expect(page).toContain('{connector.lastError}');
+  });
+
+  test('links the curated documentation', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // The two-way Secrets link: a connector whose credential is a bound
+    // project secret must say so on its page, not render the same state as a
+    // pasted value.
+    // The credential source moved with main's per-account rework: each
+    // account holds its own credential (Accounts tab), so Settings has no row.
+    // Docs come from the curated per-app map, not a single generic link.
+    expect(page).toContain('connectorDocLinks(connector, tI18nComplete)');
+  });
+});

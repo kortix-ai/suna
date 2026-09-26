@@ -51,6 +51,39 @@ describe('Custom connector OAuth2 onboarding', () => {
     }
   });
 
+  test('the credential dialog offers OAuth 2.0 only when the server requires it', () => {
+    // The tab strip is gated on discovery (`oauth2CredentialOffered`) — an
+    // API-key connector must open on its one real credential form, not a
+    // selector that includes a grant flow its server does not speak.
+    expect(connectorsSource).toContain('oauth2CredentialOffered(plan)');
+    expect(connectorsSource).toContain('{showOAuth2Tabs ? (');
+    // …and the hidden tab keeps a manual way in for servers that demand OAuth
+    // without advertising it.
+    expect(connectorsSource).toContain("tI18nHardcoded.raw('i18nComplete.textdee89ced3d79')");
+    expect(connectorsSource).toContain('setOauth2Requested(true)');
+  });
+
+  test('a flaky discovery never silently costs an MCP connector its Connect button', () => {
+    // The probe walks the server's whole metadata chain; `retry: false` meant
+    // one transient failure anywhere in it left the dialog on a bare token
+    // field with no trace of the one-click OAuth path — "sometimes there is
+    // no Connect button" (Jay, 2026-09-15).
+    const discoveryStart = connectorsSource.indexOf('connectorOAuth2Discovery');
+    const discoveryEnd = connectorsSource.indexOf('const discovery =', discoveryStart);
+    expect(discoveryStart).toBeGreaterThan(-1);
+    expect(discoveryEnd).toBeGreaterThan(discoveryStart);
+    const discoveryQuery = connectorsSource.slice(discoveryStart, discoveryEnd);
+    expect(discoveryQuery).toContain('retry: 1,');
+    expect(discoveryQuery).not.toContain('retry: false');
+    // And while the strip is absent on an MCP connector, the static tab says
+    // WHY: still checking (probe in flight) or failed, with the retry that
+    // brings the option back. Other providers keep only the escape hatch —
+    // for an API key, "no OAuth" is the designed answer, not a failure.
+    expect(connectorsSource).toContain("connector?.provider === 'mcp' && discoveryPending ? (");
+    expect(connectorsSource).toContain("connector?.provider === 'mcp' && discoveryError ? (");
+    expect(connectorsSource).toContain('void discoveryQuery.refetch()');
+  });
+
   test('does not contain provider-specific OAuth examples', () => {
     expect(fieldsSource).not.toContain('microsoftonline.com');
     expect(fieldsSource).not.toContain('graph.microsoft.com');

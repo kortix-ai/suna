@@ -320,6 +320,9 @@ export interface AdminConnector {
   /** Provider icon materialized during connector synchronization. */
   iconUrl?: string | null;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
+  /** Why the last synchronization failed, verbatim from the sync engine —
+   *  the reason behind `status: 'error'`. `null`/absent when healthy. */
+  lastError?: string | null;
   /** Credential storage model. Always `shared` — `per_user` (each member's
    *  own) was removed 2026-07-05 (docs/specs/2026-07-05-agent-first-config-
    *  unification.md §2.5). A `shared` connector with no credential set

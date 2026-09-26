@@ -109,8 +109,11 @@ test.describe("13 — Custom connector OAuth2", () => {
     await page
       .getByRole("menuitem", { name: /^Add a custom connector/i })
       .click();
+    // The form is a SplitSheet COLUMN now, not a modal (2026-09-14): the page
+    // narrows and the form opens beside it in an <aside aria-labelledby>, so
+    // its landmark role is "complementary" — there is no dialog to find.
     await expect(
-      page.getByRole("dialog", { name: /^Add a custom connector$/i }),
+      page.getByRole("complementary", { name: /^Add a custom connector$/i }),
     ).toBeVisible();
 
     const authSelect = page.getByRole("combobox", { name: /^Auth$/ });

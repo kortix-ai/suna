@@ -230,6 +230,7 @@ const deps: ConnectorRouterDeps = {
       name: conn.slug,
       provider: conn.provider,
       status: 'active',
+      lastError: null,
       credentialMode: conn.credentialMode,
       authorizationStrategy: 'project',
       requestAuthType: 'bearer',

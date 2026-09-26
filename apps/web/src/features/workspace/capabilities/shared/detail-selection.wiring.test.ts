@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -11,15 +11,21 @@ import { fileURLToPath } from 'node:url';
  *   -  open={detail.open}
  *   +  open={selected !== null}
  *
- * — and it silently hands the modal back to the query. Nothing type-checks
+ * — and it silently hands an entity modal back to the query. Nothing type-checks
  * differently, no test of the page's own logic fails, and the symptom
  * (a modal that opens by itself after an OAuth redirect, or vanishes when one
  * of four refetches errors) shows up as a timing-dependent bug report weeks
  * later. So the shape is asserted at its call sites.
  */
 
+// Both pages that used to be here have left it, each for the same reason and
+// on its own branch: an agent card is a link to `agentHref` (Customize is
+// agent-centric), and a connector card is a link to
+// `/projects/:id/connectors/:slug`. Neither opens a detail modal any more, so
+// neither has a selection to keep honest. That each stays a link is pinned —
+// agents by the `describe` at the bottom of this file, connectors by
+// `../connectors/connectors-page.routes.test.ts`.
 const PAGES = [
-  { name: 'connectors', file: '../connectors/connectors-page.tsx', clear: 'setDetailSlug(null)' },
   { name: 'skills', file: '../skills/skills-page.tsx', clear: 'setSelectedPath(null)' },
 ] as const;
 
@@ -95,24 +101,30 @@ describe('catalogue search keeps its results', () => {
   });
 
   test('the cold state and the refreshing state are reported separately', () => {
+    // Per source: a placeholder on either active catalogue reports refresh.
     expect(code).toContain('isRefreshing:');
-    expect(code).toContain('isRefreshing: opts.enabled && isPlaceholderData');
+    expect(code).toContain('(discoverActive && discoverPlaceholder)');
+    expect(code).toContain('(easyConnectActive && easyConnectPlaceholder)');
   });
 
   test('no paging path runs against placeholder data', () => {
-    // `loadedPages`/`hasNextPage` describe the PREVIOUS key while the
-    // placeholder shows, so paging off them fires a cursor request for a query
-    // whose first page has not landed.
-    //
-    // There is now exactly ONE way to reach `fetchNextPage` — `loadMore`,
-    // called by the scroll sentinel and by the "Load more" button. The
-    // automatic chain that also called it is gone, so this used to assert the
-    // guard at two entry points and now asserts it at the only one.
-    expect(code.match(/fetchNextPage\(\)/g)).toHaveLength(1);
-    expect(code).toContain('if (!hasNextPage || isFetchingNextPage || isPlaceholderData) return;');
+    // `hasNextPage` describes the PREVIOUS key while the placeholder shows,
+    // so paging off it fires a cursor request for a query whose first page
+    // has not landed. Each source's `*More` flag folds in `!*Placeholder`,
+    // and `loadMore` — the only way to reach either fetchNext — checks it.
+    expect(code).toContain(
+      'const discoverMore = discoverActive && discoverHasNext && !discoverPlaceholder;',
+    );
+    expect(code).toContain(
+      'const easyConnectMore = easyConnectActive && easyConnectHasNext && !easyConnectPlaceholder;',
+    );
+    expect(code).toContain('if (discoverMore && !discoverFetchingNext) void fetchNextDiscover();');
+    expect(code).toContain(
+      'if (easyConnectMore && !easyConnectFetchingNext) void fetchNextEasyConnect();',
+    );
     // `hasMore` is what the sentinel and the button both read, so withholding
     // it during the placeholder window disarms both at once.
-    expect(code).toContain('hasMore: opts.enabled && hasNextPage && !isPlaceholderData');
+    expect(code).toContain('hasMore: discoverMore || easyConnectMore');
   });
 
   test('the browse grid dims instead of blanking', () => {

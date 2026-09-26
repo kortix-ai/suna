@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 const page = readFileSync(join(import.meta.dir, 'connectors-page.tsx'), 'utf8');
@@ -42,7 +42,6 @@ describe('connectors page without a Connect provider', () => {
     expect(catalog).toContain('const connectStatus = useConnectProviderStatus(');
     expect(catalog).toContain('const easyConnectRunnable =');
     expect(catalog).toContain('enabled: opts.enabled && easyConnectRunnable,');
-    expect(catalog).toContain("easyConnectProvider === 'pipedream'");
     expect(catalog).not.toContain("enabled: opts.enabled && source === 'easy-connect'");
   });
 
@@ -51,7 +50,7 @@ describe('connectors page without a Connect provider', () => {
     // failed status probe must surface the Composio catalogue error rather than
     // quietly spending against the legacy Pipedream account.
     expect(catalog).toContain(
-      "(connectStatus.state === 'configured' || connectStatus.state === 'unknown')",
+      "connectStatus.state === 'configured' || connectStatus.state === 'unknown'",
     );
     expect(catalog).toContain("return { state: 'unknown', provider: 'composio' };");
     expect(catalog).not.toContain("provider: 'auto'");
@@ -78,20 +77,25 @@ describe('connectors page without a Connect provider', () => {
   });
 
   test('the probe outlives the tabs it closes', () => {
-    // The probe must NOT be gated on `opts.enabled`. The page turns Discovery
-    // and All off when it answers `absent`, which turns `enabled` off with
-    // them; a probe that then stopped answering would reopen the tabs, which
-    // would re-enable the probe — a strip that flickers forever.
-    expect(catalog).toContain("useConnectProviderStatus(source === 'easy-connect')");
+    // The probe must NOT be gated on `opts.enabled`. The page turns All off
+    // when it answers `absent`, which turns `enabled` off with it; a probe
+    // that then stopped answering would reopen the tab, which would
+    // re-enable the probe — a strip that flickers forever. Unconditional
+    // (`true`) since Easy Connect became the BASE catalogue (Marko,
+    // 2026-09-15): the probe answers whether the base exists at all.
+    expect(catalog).toContain('useConnectProviderStatus(true)');
     expect(catalog).not.toContain('useConnectProviderStatus(opts.enabled');
   });
 
   test('the tab strip goes only when the catalogue is CONFIRMED absent', () => {
-    // `discoverEnabled ||` is load-bearing twice over. `connectors_api_discover`
-    // is a different catalogue backend entirely, so a project with that flag on
-    // keeps Discovery and All whatever Pipedream's status is — and with the flag
-    // off, Pipedream is the only catalogue left, so its absence removes both.
-    expect(page).toContain('const connectStatus = useConnectProviderStatus(!discoverEnabled);');
+    // `discoverEnabled ||` is load-bearing: `connectors_api_discover` ADDS the
+    // Discover catalogue, so a project with the flag on keeps All whatever the
+    // Easy Connect provider's status is — and with the flag off, Easy Connect
+    // is the only catalogue left, so its absence removes the tab. The probe
+    // itself is unconditional: Easy Connect is the BASE catalogue on every
+    // project (Marko, 2026-09-15), so the probe always has a question to
+    // answer.
+    expect(page).toContain('const connectStatus = useConnectProviderStatus(true);');
     expect(page).toContain(
       "const catalogueAvailable = discoverEnabled || connectStatus.state !== 'absent';",
     );
@@ -114,32 +118,31 @@ describe('connectors page without a Connect provider', () => {
     expect(page).toContain('visibleScopes.length > 1 ? (');
     expect(page).toContain(') : undefined');
     expect(page).toContain(
-      "const visibleScopes = catalogueAvailable\n    ? SCOPES\n    : SCOPES.filter((s) => s !== 'discover' && s !== 'all');",
+      "const visibleScopes = catalogueAvailable ? SCOPES : SCOPES.filter((s) => s !== 'all');",
     );
     expect(page).not.toContain('disabled={!catalogueAvailable}');
   });
 
   test('scope is forced to Connected, not defaulted to it', () => {
     // The `?scope=` param outlives the answer it was read under: the user can
-    // click Discovery in the beat before the probe lands, and an OAuth return
+    // click All in the beat before the probe lands, and an OAuth return
     // brings them back to this page with that param still in the URL. Reading
     // it blindly would strand them on a tab the strip no longer renders — the
     // catalogue would mount, fire, and 501 with nothing to switch away to.
     // Connected and Channels never need the catalogue, so they are exempt
     // from the force.
     expect(page).toContain(
-      "const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'discover';",
+      "const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'all';",
     );
     expect(page).toContain(
       "catalogueAvailable || requestedScope === 'connected' || requestedScope === 'channels'",
     );
-    expect(page).not.toContain("const scope: ConnectorScope = scopeChoice ?? 'discover';");
+    expect(page).not.toContain("const scope: ConnectorScope = scopeChoice ?? 'all';");
     // `catalogActive` is what mounts `ConnectorBrowse`, and it is derived from
     // the forced `scope` — so the forcing above is also what keeps the
-    // catalogue unmounted. It names the two catalogue scopes explicitly now
-    // rather than `!== 'connected'`, since Channels is also not-connected but
-    // must not mount the catalogue either.
-    expect(page).toContain("const catalogActive = scope === 'discover' || scope === 'all';");
+    // catalogue unmounted. All is the only catalogue scope since Discovery
+    // was removed (2026-09-13).
+    expect(page).toContain("const catalogActive = scope === 'all';");
   });
 
   test('the Connected empty state offers no tab that is not there', () => {

@@ -64,6 +64,18 @@ describe('Discover integrations.sh catalogue', () => {
     expect(calls).toBe(1);
   });
 
+  test('searches by SLUG — the web detail route resolves entries with q=<slug>', async () => {
+    const catalog = createConnectorCatalog({
+      fetch: async () => new Response(JSON.stringify(INDEX)),
+      ttlMs: 60_000,
+    });
+    // "1forge-com" appears in neither name nor domain spelling ("1forge.com")
+    // — only the slug carries it. Without slug in the haystack this answered
+    // zero rows and /connectors/catalog/discover/1forge-com said "not found".
+    const bySlug = await catalog.list({ q: '1forge-com', limit: 10 });
+    expect(bySlug.items.map((item) => item.slug)).toEqual(['1forge-com']);
+  });
+
   test('normalizes every domain surface and only makes runnable variants connectable', async () => {
     const requested: string[] = [];
     const catalog = createConnectorCatalog({
@@ -337,6 +349,74 @@ describe('Discover browse sections', () => {
       items: [],
       hasMore: false,
     });
+  });
+});
+
+describe('Discover catalogue icons by domain', () => {
+  const ICON_INDEX = {
+    data: [
+      {
+        id: 'curated/stripe-com-openapi',
+        kind: 'openapi',
+        slug: 'stripe-com-openapi',
+        name: 'Stripe',
+        icon: 'https://icons.test/stripe-low',
+        domain: 'stripe.com',
+        popularity: 10,
+      },
+      {
+        id: 'curated/stripe-com-mcp',
+        kind: 'mcp',
+        slug: 'stripe-com-mcp',
+        name: 'Stripe MCP',
+        icon: 'https://icons.test/stripe-high',
+        domain: 'stripe.com',
+        popularity: 90,
+      },
+      {
+        id: 'cli/no-icon',
+        kind: 'cli',
+        slug: 'no-icon',
+        name: 'No Icon',
+        domain: 'no-icon.test',
+      },
+    ],
+  };
+
+  test('maps each domain to the icon its most popular card shows, from one index fetch', async () => {
+    let calls = 0;
+    const catalog = createConnectorCatalog({
+      fetch: async () => {
+        calls += 1;
+        return new Response(JSON.stringify(ICON_INDEX));
+      },
+    });
+
+    const icons = await catalog.iconsByDomain();
+    expect(Object.fromEntries(icons)).toEqual({ 'stripe.com': 'https://icons.test/stripe-high' });
+    expect(await catalog.iconsByDomain()).toBe(icons);
+    await catalog.list();
+    expect(calls).toBe(1);
+  });
+
+  test('an unreachable catalogue yields no icons and is not retried inside the back-off window', async () => {
+    let calls = 0;
+    let clock = 0;
+    const catalog = createConnectorCatalog({
+      fetch: async () => {
+        calls += 1;
+        throw new Error('offline');
+      },
+      now: () => clock,
+    });
+
+    expect((await catalog.iconsByDomain()).size).toBe(0);
+    clock += 60_000;
+    expect((await catalog.iconsByDomain()).size).toBe(0);
+    expect(calls).toBe(1);
+    clock += 5 * 60_000;
+    await catalog.iconsByDomain();
+    expect(calls).toBe(2);
   });
 });
 

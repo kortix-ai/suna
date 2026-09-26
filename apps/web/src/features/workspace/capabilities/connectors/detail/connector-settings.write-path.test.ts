@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 const source = readFileSync(join(import.meta.dir, 'connector-settings.tsx'), 'utf8');
@@ -38,10 +38,15 @@ describe('connector settings write path', () => {
   });
 
   test('the danger row never mutates directly — only ConfirmDialog does', () => {
-    // The visible Remove button only opens the dialog.
-    const removeButtonBlock = source.slice(source.indexOf('<Button'), source.indexOf('</Button>'));
-    expect(removeButtonBlock).toContain('onClick={() => setConfirmDelete(true)}');
-    expect(removeButtonBlock).not.toContain('remove.mutate()');
+    // The visible Remove button only opens the dialog. Anchored on the danger
+    // row itself, not the file's first <Button> — the Name form's Rename
+    // button now precedes it in source order.
+    const dangerRow = source.slice(
+      source.indexOf('{!isChannel ?'),
+      source.indexOf('<ConfirmDialog'),
+    );
+    expect(dangerRow).toContain('onClick={() => setConfirmDelete(true)}');
+    expect(dangerRow).not.toContain('remove.mutate()');
 
     // The mutation itself only fires from ConfirmDialog's onConfirm.
     const calls = [...source.matchAll(/remove\.mutate\(\)/g)];
@@ -56,7 +61,11 @@ describe('connector settings write path', () => {
     // destructive. Scoped to the Remove `<Button>` element itself, not the
     // surrounding prose, which legitimately names "destructive" in a comment
     // explaining this exact rule.
-    const removeButtonBlock = source.slice(source.indexOf('<Button'), source.indexOf('</Button>'));
+    // Anchored inside the danger row — the file's first <Button> is the Name
+    // form's Rename control now.
+    const removeStart = source.indexOf('<Button', source.indexOf('{!isChannel ?'));
+    const removeButtonBlock = source.slice(removeStart, source.indexOf('</Button>', removeStart));
+    expect(removeButtonBlock).toContain('setConfirmDelete(true)');
     expect(removeButtonBlock).not.toContain('variant="destructive"');
   });
 
