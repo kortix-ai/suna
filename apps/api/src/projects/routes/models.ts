@@ -11,7 +11,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { managedPricingRoutes } from '../../llm-gateway/models/managed-pricing-routes';
+import { cachedManagedPricingRoutes } from '../../llm-gateway/models/managed-pricing-routes';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
@@ -145,10 +145,11 @@ projectsApp.openapi(
       principalUserId: loaded.userId,
       personalUserId: await requestPersonalOwner(c, loaded),
     });
-    const quotes = managedPricingRoutes(
+    const quotes = await cachedManagedPricingRoutes(
       config.MORPH_MANAGED_MODELS,
       llmPriceMarkup(),
       Boolean(config.MORPH_API_KEY),
+      { baseUrl: config.OPENROUTER_API_URL, apiKey: config.OPENROUTER_API_KEY ?? '' },
     );
     return c.json({
       ...catalog,
