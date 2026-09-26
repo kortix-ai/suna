@@ -519,7 +519,7 @@ export function ProjectLeftDrawer({
   // next page as it nears its end, and a pull refetches the loaded pages.
   const {
     sessions: projectSessions,
-    isLoading: projectSessionsLoading,
+    isPending: projectSessionsPending,
     isError: projectSessionsErrored,
     hasNextPage,
     isFetchingNextPage,
@@ -555,10 +555,10 @@ export function ProjectLeftDrawer({
     [recent, needsYouBySession]
   );
   // loading / error / empty / rows — shared with the Sessions page
-  // (lib/session/session-pages) so a failed fetch never reads as "No
-  // sessions yet" (COR-146).
+  // (lib/session/session-pages) so a failed fetch, or a first load paused
+  // offline, never reads as "No sessions yet" (COR-146).
   const sessionsListState = sessionListState({
-    isLoading: projectSessionsLoading,
+    isPending: projectSessionsPending,
     isError: projectSessionsErrored,
     hasSessions: rows.length > 0 || needsYouSessions.length > 0,
   });

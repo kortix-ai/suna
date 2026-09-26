@@ -409,12 +409,12 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   }, [newSession]);
 
   // loading / error / empty / rows — shared with the project drawer
-  // (lib/session/session-pages) so a failed fetch never reads as "No
-  // sessions yet" (COR-146). "No matching sessions" (a search/filter with no
-  // hits over rows that did load) is this page's own case, not part of the
-  // shared decision.
+  // (lib/session/session-pages) so a failed fetch, or a first load paused
+  // offline, never reads as "No sessions yet" (COR-146). "No matching
+  // sessions" (a search/filter with no hits over rows that did load) is this
+  // page's own case, not part of the shared decision.
   const rawListState = sessionListState({
-    isLoading: sessionsQuery.isLoading,
+    isPending: sessionsQuery.isPending,
     isError: sessionsQuery.isError,
     hasSessions,
   });
@@ -427,7 +427,8 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
       : 'No matching sessions';
 
   // A project with no sessions shows no search field or chip: leave no hidden
-  // filter behind. Only a loaded, empty list counts — never the first load.
+  // filter behind. Only a loaded, empty list counts — never a first load,
+  // running or paused offline (`isPending`), which would clear a saved filter.
   const listEmpty = rawListState === 'empty';
   React.useEffect(() => {
     if (listEmpty && filterActive) useSessionFilterStore.getState().resetProject(projectId);
