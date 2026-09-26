@@ -1,5 +1,10 @@
-import { backendApi } from '../core/http/api-client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+/**
+ * Admin feedback hooks. The API removed every `/v1/admin/feedback/*` route.
+ * These hooks stay exported until the next major and fail with
+ * `ENDPOINT_RETIRED` without sending a request.
+ */
+import { useQueryClient } from '@tanstack/react-query';
+import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
 
 export interface FeedbackWithUser {
   feedback_id: string;
@@ -113,138 +118,52 @@ export interface LLMAnalysisRequest {
   max_feedback?: number;
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminFeedbackList(params: FeedbackListParams = {}) {
-  return useQuery({
-    queryKey: ['admin', 'feedback', 'list', params],
-    queryFn: async (): Promise<FeedbackListResponse> => {
-      const searchParams = new URLSearchParams();
-
-      if (params.page) searchParams.append('page', params.page.toString());
-      if (params.page_size) searchParams.append('page_size', params.page_size.toString());
-      if (params.rating_filter !== undefined) searchParams.append('rating_filter', params.rating_filter.toString());
-      if (params.has_text !== undefined) searchParams.append('has_text', params.has_text.toString());
-      if (params.sort_by) searchParams.append('sort_by', params.sort_by);
-      if (params.sort_order) searchParams.append('sort_order', params.sort_order);
-
-      const response = await backendApi.get(`/admin/feedback/list?${searchParams.toString()}`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    staleTime: 30000,
-  });
+  return useRetiredQuery<FeedbackListResponse>('useAdminFeedbackList', ['admin', 'feedback', 'list', params]);
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminFeedbackStats() {
-  return useQuery({
-    queryKey: ['admin', 'feedback', 'stats'],
-    queryFn: async (): Promise<FeedbackStats> => {
-      const response = await backendApi.get('/admin/feedback/stats');
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    staleTime: 300000,
-  });
+  return useRetiredQuery<FeedbackStats>('useAdminFeedbackStats', ['admin', 'feedback', 'stats']);
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminSentimentSummary() {
-  return useQuery({
-    queryKey: ['admin', 'feedback', 'sentiment'],
-    queryFn: async (): Promise<SentimentSummary> => {
-      const response = await backendApi.get('/admin/feedback/sentiment');
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    staleTime: 300000,
-  });
+  return useRetiredQuery<SentimentSummary>('useAdminSentimentSummary', ['admin', 'feedback', 'sentiment']);
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminFeedbackTimeSeries(days: number = 30, granularity: string = 'day') {
-  return useQuery({
-    queryKey: ['admin', 'feedback', 'time-series', days, granularity],
-    queryFn: async (): Promise<TimeSeriesPoint[]> => {
-      const response = await backendApi.get(`/admin/feedback/time-series?days=${days}&granularity=${granularity}`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    staleTime: 300000,
-  });
+  return useRetiredQuery<TimeSeriesPoint[]>('useAdminFeedbackTimeSeries', ['admin', 'feedback', 'time-series', days, granularity]);
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminRatingTrends(days: number = 30) {
-  return useQuery({
-    queryKey: ['admin', 'feedback', 'rating-trends', days],
-    queryFn: async (): Promise<RatingTrends> => {
-      const response = await backendApi.get(`/admin/feedback/rating-trends?days=${days}`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    staleTime: 300000,
-  });
+  return useRetiredQuery<RatingTrends>('useAdminRatingTrends', ['admin', 'feedback', 'rating-trends', days]);
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminCriticalFeedback(limit: number = 20) {
-  return useQuery({
-    queryKey: ['admin', 'feedback', 'critical', limit],
-    queryFn: async (): Promise<CriticalFeedback[]> => {
-      const response = await backendApi.get(`/admin/feedback/critical?limit=${limit}`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    staleTime: 60000,
-  });
+  return useRetiredQuery<CriticalFeedback[]>('useAdminCriticalFeedback', ['admin', 'feedback', 'critical', limit]);
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminFeedbackExport(params: {
   rating_filter?: number;
   has_text?: boolean;
   start_date?: string;
   end_date?: string;
 }) {
-  return useQuery({
-    queryKey: ['admin', 'feedback', 'export', params],
-    queryFn: async (): Promise<FeedbackWithUser[]> => {
-      const searchParams = new URLSearchParams();
-
-      if (params.rating_filter !== undefined) searchParams.append('rating_filter', params.rating_filter.toString());
-      if (params.has_text !== undefined) searchParams.append('has_text', params.has_text.toString());
-      if (params.start_date) searchParams.append('start_date', params.start_date);
-      if (params.end_date) searchParams.append('end_date', params.end_date);
-
-      const response = await backendApi.get(`/admin/feedback/export?${searchParams.toString()}`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    enabled: false,
-    staleTime: 0,
-  });
+  return useRetiredQuery<FeedbackWithUser[]>('useAdminFeedbackExport', ['admin', 'feedback', 'export', params], false);
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminFeedbackAnalysis() {
-  return useMutation({
-    mutationFn: async (request: LLMAnalysisRequest): Promise<LLMAnalysisResponse> => {
-      const response = await backendApi.post('/admin/feedback/analyze', request);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-  });
+  return useRetiredMutation<LLMAnalysisResponse, LLMAnalysisRequest>('useAdminFeedbackAnalysis');
 }
 
+/** @deprecated Invalidates the retired admin feedback queries only. Removed in the next major. */
 export function useRefreshFeedbackData() {
   const queryClient = useQueryClient();
 

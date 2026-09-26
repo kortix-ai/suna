@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { rewriteStorageOrigin } from './storage-url';
 
 const INTERNAL = 'http://supabase-kong:8000';
-const PUBLIC = 'https://essentia.kortix.cloud';
+const PUBLIC = 'https://sampleco.kortix.cloud';
 const SIGNED = `${INTERNAL}/storage/v1/object/upload/sign/app-artifacts/a/b/c?token=jwt.abc`;
 
 describe('rewriteStorageOrigin', () => {

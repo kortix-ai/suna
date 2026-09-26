@@ -8,7 +8,7 @@ import {
   sessionLifecycleCommands,
   sessionProviderSecretPools,
 } from '@kortix/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
@@ -16,7 +16,10 @@ import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
 import { consumeProjectSessionCreateBudget } from '../../shared/rate-limit';
-import { agentMayUseConnector } from '../../iam/agent-scope';
+import { RATE_LIMIT_EXCEEDED_ACTION } from '../../shared/rate-limit-audit';
+import { agentMayUseConnector, agentMayUseEnv } from '../../iam/agent-scope';
+import { usableProviderKeys } from '../../secrets/provider-key-selection';
+import { decideSessionOnBehalfOf } from './on-behalf-of';
 import {
   loadSessionGrants,
   resolveInheritedSessionSharing,
@@ -83,11 +86,11 @@ import {
   type ProjectRow,
   type ProjectSessionRow,
   type RequestAuditContext,
-  UUID_V4_REGEX,
   deriveKortixApiRoot,
-  normalizeJsonObject,
   normalizeString,
 } from './serializers';
+import { normalizeJsonObject } from '../../shared/json';
+import { isUuid } from '../../shared/validate';
 import {
   canonicalConnectorAlias,
   parseSessionConnectorBindings,
@@ -108,6 +111,7 @@ import {
   resolveSessionSandboxSlug,
 } from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
+import { transitionSession } from '../session-lifecycle/status-transitions';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,
@@ -120,6 +124,7 @@ import {
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
+import { resolveSessionPersonalOwner } from './personal-resources';
 import {
   resolveProjectSnapshotMode,
   resolveProjectSnapshotPinForSession,
@@ -239,7 +244,7 @@ export async function enforceConcurrentSessionCap(
   recordAuditEvent({
     accountId,
     actorUserId: userId,
-    action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+    action: RATE_LIMIT_EXCEEDED_ACTION,
     resourceType: 'project_session',
     resourceId: accountId,
     ip: request?.ip ?? null,
@@ -302,7 +307,7 @@ export async function checkConcurrentSessionCap(
       recordAuditEvent({
         accountId,
         actorUserId: userId,
-        action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'project_session',
         resourceId: projectId,
         ip: request?.ip ?? null,
@@ -351,7 +356,7 @@ export async function checkConcurrentSessionCap(
       recordAuditEvent({
         accountId,
         actorUserId: userId,
-        action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'project_session',
         resourceId: projectId,
         ip: request?.ip ?? null,
@@ -588,7 +593,16 @@ export async function buildSessionSandboxEnvVars(input: {
   // `input.userId` only if the row somehow isn't found (create races its own row
   // in some callers). The agent grant — not the human — remains the authority on
   // WHICH identifiers are eligible; this only picks the per-user override owner.
-  const secretsPrincipalUserId = sessionPolicyRow?.createdBy ?? input.userId;
+  //
+  // Spec 2026-09-22 §2.3 (agent-principal model, flag ON): the override owner
+  // is the session's on-behalf-of human, and only in a private session. A
+  // trigger/channel run or a shared session gets shared values only.
+  const secretsPrincipalUserId = await resolveSessionPersonalOwner({
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    accountId: input.accountId,
+    legacyUserId: sessionPolicyRow?.createdBy ?? input.userId,
+  });
 
   let runtimeSecrets: {
     env: Record<string, string>;
@@ -856,6 +870,8 @@ async function loadParentSessionSharing(
 
 export async function createProjectSession(input: {
   attachmentSourceCommandId?: string;
+  /** The `create_session` command to link the new session to, atomically. */
+  createCommandId?: string;
   project: ProjectRow;
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
@@ -1101,10 +1117,13 @@ export async function createProjectSession(input: {
 
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
   const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
-  if (body.provider_secret_pools !== undefined &&
-    (!resolveFeatureFlag(project.metadata, 'pooled_provider_secrets') || !llmGatewayEnabled)) {
+  const pooledProviderSecrets = resolveFeatureFlag(project.metadata, 'pooled_provider_secrets');
+  if (body.provider_secret_pools !== undefined && (!pooledProviderSecrets || !llmGatewayEnabled)) {
     return { error: { status: 403, body: { error: 'Provider secret pools are unavailable' } } };
   }
+  // The key selection this session starts with: the caller's, or the one
+  // chosen below for a model that runs only on pooled keys.
+  let providerSecretPools = body.provider_secret_pools as Record<string, string[]> | undefined;
 
   // Model: normalize + fail-fast at create. Two paths, forked on the project's
   // `llm_gateway` flag:
@@ -1150,14 +1169,54 @@ export async function createProjectSession(input: {
       opencodeModel = requestedModel;
       opencodeModelSource = 'explicit';
     } else {
-      const servable = await isModelServableForAccount({
+      let servable = await isModelServableForAccount({
         userId,
         accountId,
         projectId,
         freeModelsOnly,
         model: requestedModel,
-        providerSecretPools: body.provider_secret_pools as Record<string, string[]> | undefined,
+        providerSecretPools,
       });
+      // A model reached only through pooled keys needs a key selection, and a
+      // caller that names only the model (the CLI, the SDK, a chat channel)
+      // names none: it was refused here. Select every key the caller may use
+      // for its provider, so they rotate — the same keys the web offers.
+      // Personal keys only in a session private to them that acts on their
+      // behalf (spec 2026-09-22 §2.3); a child session's human is its
+      // parent's, unknown here, so it gets shared keys only.
+      if (!servable && providerSecretPools === undefined && pooledProviderSecrets) {
+        const personal =
+          visibility === 'private' && !input.callerSessionId
+            ? decideSessionOnBehalfOf({
+                userId,
+                origin,
+                // The metadata the session will carry: the request's, then the caller's.
+                metadata: { ...normalizeJsonObject(body.metadata), ...normalizeJsonObject(input.metadata) },
+                isAccountMember: true,
+                slackRequiresUserIdentity: config.SLACK_REQUIRE_USER_IDENTITY !== false,
+                teamsRequiresUserIdentity: config.TEAMS_REQUIRE_USER_IDENTITY !== false,
+              })
+            : null;
+        const selection = await usableProviderKeys({
+          accountId,
+          projectId,
+          userId,
+          grantUserId: personal,
+          model: requestedModel,
+        }).catch(() => null);
+        if (selection && agentMayUseEnv(grantFromLoadedAgents(agentName, loadedAgents), selection.envVar)) {
+          const selected = { [selection.providerId]: selection.secretIds };
+          servable = await isModelServableForAccount({
+            userId,
+            accountId,
+            projectId,
+            freeModelsOnly,
+            model: requestedModel,
+            providerSecretPools: selected,
+          });
+          if (servable) providerSecretPools = selected;
+        }
+      }
       if (!servable) {
         return {
           error: {
@@ -1181,7 +1240,7 @@ export async function createProjectSession(input: {
         agentName,
         explicit: null,
         freeModelsOnly,
-        providerSecretPools: body.provider_secret_pools as Record<string, string[]> | undefined,
+        providerSecretPools,
       });
       const concreteModel =
         resolved.model ??
@@ -1462,7 +1521,7 @@ export async function createProjectSession(input: {
   }
 
   const requestedSessionId = normalizeString(body.session_id ?? body.sessionId);
-  if (requestedSessionId && !UUID_V4_REGEX.test(requestedSessionId)) {
+  if (requestedSessionId && !isUuid(requestedSessionId)) {
     return { error: { status: 400, body: { error: 'Invalid session id' } } };
   }
   const sessionId = requestedSessionId ?? randomUUID();
@@ -1589,10 +1648,25 @@ export async function createProjectSession(input: {
       })
       .returning();
     if (!row) throw new Error('Session insert returned no row');
-    const requestedPools = body.provider_secret_pools as Record<string, string[]> | undefined;
-    if (requestedPools && Object.keys(requestedPools).length > 0) {
+    if (input.createCommandId) {
+      // Same transaction as the session row: a create command whose worker
+      // dies after this commit is reclaimed WITH its session id, and
+      // executeQueuedCreate returns this session instead of provisioning a
+      // second one.
+      await tx
+        .update(sessionLifecycleCommands)
+        .set({ sessionId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(sessionLifecycleCommands.commandId, input.createCommandId),
+            eq(sessionLifecycleCommands.commandType, 'create_session'),
+            isNull(sessionLifecycleCommands.sessionId),
+          ),
+        );
+    }
+    if (providerSecretPools && Object.keys(providerSecretPools).length > 0) {
       await tx.insert(sessionProviderSecretPools).values(
-        Object.entries(requestedPools).map(([providerId, secretIds]) => ({ sessionId, providerId, secretIds })),
+        Object.entries(providerSecretPools).map(([providerId, secretIds]) => ({ sessionId, providerId, secretIds })),
       );
     }
     if (parsedRuntimeContext.context !== undefined) {
@@ -1977,18 +2051,14 @@ export async function createProjectSession(input: {
       const message = (err as Error)?.message || 'Sandbox provisioning failed';
       console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
       try {
-        await db
-          .update(projectSessions)
-          .set({
-            status: 'failed',
-            error: message,
-            // Merge, never re-write the create-time snapshot: by the time
-            // provisioning fails the row may already carry a generated title,
-            // remote_branch or the start timeline.
-            metadata: projectSessionMetadataMerge({ provisioning_error: message }),
-            updatedAt: new Date(),
-          })
-          .where(eq(projectSessions.sessionId, sessionId));
+        // Merge, never re-write the create-time snapshot: by the time
+        // provisioning fails the row may already carry a generated title,
+        // remote_branch or the start timeline. A session deleted meanwhile
+        // keeps its tombstone.
+        await transitionSession('fail', sessionId, {
+          error: message,
+          metadata: { provisioning_error: message },
+        });
       } catch (markErr) {
         console.error(`[projects] Failed to mark session ${sessionId} failed:`, markErr);
       }

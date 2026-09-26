@@ -181,7 +181,7 @@ export async function clearOpenQuestions(sessionId: string): Promise<number> {
  * lived in an opencode process which has since been parked and restarted cold —
  * its request id no longer exists, and nothing is waiting on it. This is also
  * how the channel path has always worked: "the user's in-thread reply arrives
- * as a follow-up turn" (routes/r4.ts).
+ * as a follow-up turn" (routes/turn-questions.ts).
  *
  * So the answer arrives as a new turn, and it has to carry its own context: the
  * fresh opencode has no memory of asking. Quoting the question is what makes

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -81,6 +81,26 @@ describe('writeAgentEnvFile', () => {
     expect(body).not.toContain('LD_PRELOAD')
   })
 
+  test('a revoked boot name that is unsafe is never unset', () => {
+    // The unset loop has its own guard: a managed name like PATH that left the
+    // env must not become `unset PATH` in every shell.
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRET_NAMES: 'GOOD',
+      GOOD: 'ok',
+    } as NodeJS.ProcessEnv)
+    const sh = shPath()
+
+    writeAgentEnvFile(store, {
+      sh,
+      bootEnv: { KORTIX_PROJECT_SECRET_NAMES: 'PATH,LD_PRELOAD,GOOD,OLD' } as NodeJS.ProcessEnv,
+    })
+
+    const body = readFileSync(sh, 'utf8')
+    expect(body).toContain('unset OLD')
+    expect(body).not.toContain('unset PATH')
+    expect(body).not.toContain('unset LD_PRELOAD')
+  })
+
   test('rotation + revocation: exports new value, unsets a removed boot secret', () => {
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY,OLD',
@@ -143,8 +163,11 @@ describe('writeAgentEnvFile', () => {
         // session identity/context — MUST be emitted for git/CLI/CR-merge
         KORTIX_TOKEN: 'session-token',
         KORTIX_PROJECT_ID: 'proj_1',
-        KORTIX_API_URL: 'https://dev-api.kortix.com/v1',
+        KORTIX_API_URL: 'https://api.example.test/v1',
+        KORTIX_FRONTEND_URL: 'https://app.example.test',
+        KORTIX_DEFAULT_BRANCH: 'trunk',
         // daemon-internal — MUST NOT leak into the agent shell
+        KORTIX_LLM_API_KEY: 'internal-llm-key',
         KORTIX_WARM_SEED: '1',
         KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4319',
         KORTIX_LLM_HOTSWAP: '1',
@@ -155,7 +178,9 @@ describe('writeAgentEnvFile', () => {
     expect(body).toContain("export API_KEY='secret'") // user secret unchanged
     expect(body).toContain("export KORTIX_TOKEN='session-token'")
     expect(body).toContain("export KORTIX_PROJECT_ID='proj_1'")
-    expect(body).toContain("export KORTIX_API_URL='https://dev-api.kortix.com/v1'")
+    expect(body).toContain("export KORTIX_API_URL='https://api.example.test/v1'")
+    expect(body).toContain("export KORTIX_FRONTEND_URL='https://app.example.test'")
+    expect(body).toContain("export KORTIX_DEFAULT_BRANCH='trunk'")
     // daemon-internal stays filtered (not the agent's business)
     expect(body).not.toContain('KORTIX_WARM_SEED')
     expect(body).not.toContain('KORTIX_LLM_PROXY_URL')
@@ -174,5 +199,20 @@ describe('writeAgentEnvFile', () => {
 
     shredAgentEnvFile(sh)
     expect(existsSync(sh)).toBe(false)
+  })
+
+  test('shredAgentEnvFile also removes an orphaned write temp file', () => {
+    // A crash between write and rename leaves plaintext in a temp file beside
+    // the live one; shutdown must not leave it on an archived disk.
+    const sh = shPath()
+    const orphan = `${sh}.4242.0.tmp`
+    writeFileSync(orphan, "export API_KEY='secret'\n")
+    const unrelated = join(dir, 'other.tmp')
+    writeFileSync(unrelated, 'keep')
+
+    shredAgentEnvFile(sh)
+
+    expect(existsSync(orphan)).toBe(false)
+    expect(existsSync(unrelated)).toBe(true)
   })
 })

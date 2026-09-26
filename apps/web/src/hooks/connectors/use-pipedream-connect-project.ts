@@ -46,7 +46,7 @@ export const DEFAULT_PROJECT_CONNECTION_LABEL = 'Project connection';
  * Did the connection-scoped connect route refuse because this account is the
  * connector's EFFECTIVE project default?
  *
- * `apps/api/src/projects/routes/r4.ts` (INVARIANT, 2026-09-16 `account_required`
+ * `apps/api/src/projects/routes/connection-actions.ts` (INVARIANT, 2026-09-16 `account_required`
  * rule) blocks that route for the connector's sole active project-owned row
  * even when nothing is pinned, and names the route to use instead. That guard
  * is the ONLY 409 the handler returns, so the status alone identifies it — and

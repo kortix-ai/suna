@@ -15,6 +15,7 @@ import {
   setTriggerSessionAccess,
 } from '../projects/trigger-session-access';
 import { db } from '../shared/db';
+import { insertIntoView } from './helpers/compat-views';
 
 const context = {
   projectId: crypto.randomUUID(),
@@ -37,7 +38,7 @@ beforeAll(async () => {
     accountId: context.accountId,
     name: 'Trigger access test',
   });
-  await db.insert(accountMembers).values({
+  await insertIntoView(db, accountMembers, {
     accountId: context.accountId,
     userId: context.memberId,
     accountRole: 'owner',

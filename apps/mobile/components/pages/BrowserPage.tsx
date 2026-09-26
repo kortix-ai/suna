@@ -1,32 +1,38 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
+import { View } from 'react-native';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
 import {
-  ArrowLeft,
-  ArrowRight,
-  ExternalLink,
-  Globe,
-  RefreshCw,
-  X,
-} from 'lucide-react-native';
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+  ArrowClockwiseIcon as RefreshCw,
+  XIcon as X,
+  type AppIcon,
+} from '@/lib/icons';
+import { Button } from '@/components/ui/button';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
 import { API_URL, getAuthToken } from '@/api/config';
 import * as Linking from 'expo-linking';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { ViewStyle } from 'react-native';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { THEME } from '@/lib/utils/theme';
+import { allowBrowserNavigation } from '@/lib/utils/html-embed';
 
 interface BrowserPageProps {
   page: PageTab;
   onBack: () => void;
   onOpenDrawer: () => void;
-  onOpenRightDrawer: () => void;
+  onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
   isRightDrawerOpen?: boolean;
 }
@@ -36,7 +42,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const isDark = colorScheme === 'dark';
   const { sandboxId } = useSandboxContext();
 
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<React.ElementRef<typeof WebView>>(null);
 
   // Restore persisted state from tab store
   const savedState = useTabStore((s) => s.tabStateById[page.id]) as { savedUrl?: string; savedDisplay?: string } | undefined;
@@ -172,130 +178,160 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
     }
   }, []);
 
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#888' : '#999';
-  const barBg = isDark ? '#1E1E22' : '#F4F4F5';
-  const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
+  const background = isDark ? THEME.dark.background : THEME.light.background;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  // iOS: the site's last line can scroll up to rest 16pt over the controls.
+  const toolbarInset = usePinnedBarInset(TOOLBAR_CONTROL_HEIGHT);
 
-  // URL bar + inline nav buttons, passed into PageHeader's title slot so
-  // the browser toolbar inherits the standard `bg-muted` header chrome
-  // (matching Secrets / Memory / LLM Providers pages).
-  const titleNode = (
-    <View className="flex-1 flex-row items-center" style={{ gap: 2 }}>
-      <Pressable onPress={handleGoBack} disabled={!canGoBack} hitSlop={6} className="p-1">
-        <Icon as={ArrowLeft} size={16} style={{ color: canGoBack ? fgColor : mutedColor } as ViewStyle} strokeWidth={2.2} />
-      </Pressable>
-      <Pressable onPress={handleGoForward} disabled={!canGoForward} hitSlop={6} className="p-1 mr-1">
-        <Icon as={ArrowRight} size={16} style={{ color: canGoForward ? fgColor : mutedColor } as ViewStyle} strokeWidth={2.2} />
-      </Pressable>
-
-      <View
-        style={{
-          flex: 1,
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: inputBg,
-          height: 32,
-          maxHeight: 32,
-          borderRadius: 8,
-          paddingHorizontal: 10,
-          marginHorizontal: 4,
-          overflow: 'hidden',
-        }}
-      >
-        {!isLoading && <Icon as={Globe} size={12} style={{ color: mutedColor } as ViewStyle} strokeWidth={2} />}
-        {isLoading && <ActivityIndicator size={10} color={mutedColor} />}
-        <TextInput
-          value={urlInput}
-          onChangeText={setUrlInput}
-          onFocus={() => { setIsEditing(true); setUrlInput(currentUrl); }}
-          onBlur={() => setIsEditing(false)}
-          onSubmitEditing={handleUrlSubmit}
-          placeholder="Enter URL or port..."
-          placeholderTextColor={mutedColor}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          returnKeyType="go"
-          selectTextOnFocus
-          numberOfLines={1}
-          multiline={false}
-          style={{
-            flex: 1,
-            marginLeft: 6,
-            fontSize: 12,
-            fontFamily: 'Roobert',
-            color: fgColor,
-            paddingVertical: 0,
-            height: 32,
-            includeFontPadding: false,
-          }}
-        />
-      </View>
+  // Address field — the header's whole middle (`fillTitle`): hamburger ·
+  // address · `···`. Text only, no glyph (Jay, 2026-09-23).
+  const addressField = (
+    <View className="h-10 flex-1 flex-row items-center rounded-full bg-secondary px-4">
+      <Input
+        value={urlInput}
+        onChangeText={setUrlInput}
+        onFocus={() => { setIsEditing(true); setUrlInput(currentUrl); }}
+        onBlur={() => setIsEditing(false)}
+        onSubmitEditing={handleUrlSubmit}
+        placeholder="Search or enter URL or port"
+        placeholderTextColor={mutedColor}
+        accessibilityLabel="Address"
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="url"
+        returnKeyType="go"
+        selectTextOnFocus
+        numberOfLines={1}
+        multiline={false}
+        className="h-10 flex-1 rounded-none bg-transparent px-0 py-0"
+      />
     </View>
   );
 
-  const rightActions = (
-    <View className="flex-row items-center">
-      <Pressable onPress={isLoading ? handleStop : handleRefresh} hitSlop={6} className="p-1">
-        <Icon as={isLoading ? X : RefreshCw} size={15} style={{ color: fgColor } as ViewStyle} strokeWidth={2.2} />
-      </Pressable>
-      <Pressable onPress={handleOpenExternal} hitSlop={6} className="p-1 ml-1">
-        <Icon as={ExternalLink} size={15} style={{ color: mutedColor } as ViewStyle} strokeWidth={2.2} />
-      </Pressable>
-    </View>
-  );
+  const hasPage = !!(currentUrl && authToken);
 
   return (
     <View className="flex-1 bg-background">
       <PageHeader
-        title={titleNode}
+        title={addressField}
+        fillTitle
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
-        rightActions={rightActions}
       />
       <PageContent>
-        {currentUrl && authToken ? (
-          <WebView
-            ref={webViewRef}
-            source={{
-              uri: currentUrl,
-              headers: isTrustedProxyOrigin(currentUrl)
-                ? { Authorization: `Bearer ${authToken}` }
-                : undefined,
-            }}
-            onNavigationStateChange={handleNavigationChange}
-            onLoadStart={() => setIsLoading(true)}
-            onLoadEnd={() => setIsLoading(false)}
-            startInLoadingState
-            renderLoading={() => (
-              <View className="absolute inset-0 items-center justify-center bg-background">
-                <ActivityIndicator size="small" />
-              </View>
-            )}
-            javaScriptEnabled
-            domStorageEnabled
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            allowsFullscreenVideo
-            sharedCookiesEnabled
-            style={{ flex: 1 }}
-          />
+        {hasPage ? (
+          // The site fills the page to the screen's bottom edge; the toolbar
+          // floats over it (Jay, 2026-09-23). iOS also insets the scroll so the
+          // site's end can rise above the controls; Android WebView cannot.
+          <View className="flex-1">
+            <WebView
+              ref={webViewRef}
+              source={{
+                uri: currentUrl,
+                headers: isTrustedProxyOrigin(currentUrl)
+                  ? { Authorization: `Bearer ${authToken}` }
+                  : undefined,
+              }}
+              originWhitelist={['*']}
+              onShouldStartLoadWithRequest={allowBrowserNavigation}
+              onNavigationStateChange={handleNavigationChange}
+              onLoadStart={() => setIsLoading(true)}
+              onLoadEnd={() => setIsLoading(false)}
+              startInLoadingState
+              renderLoading={() => (
+                <View className="absolute inset-0 items-center justify-center bg-background">
+                  <KortixLoader size="large" />
+                </View>
+              )}
+              contentInset={{ bottom: toolbarInset }}
+              automaticallyAdjustContentInsets={false}
+              allowsBackForwardNavigationGestures
+              javaScriptEnabled
+              domStorageEnabled
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+              allowsFullscreenVideo
+              sharedCookiesEnabled
+              style={{ flex: 1, backgroundColor: background }}
+            />
+          </View>
         ) : (
-          <View className="flex-1 items-center justify-center px-8">
-            <Icon as={Globe} size={32} className="text-muted-foreground/40" strokeWidth={1.5} />
-            <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">Browser</Text>
-            <Text className="mt-1 text-center font-roobert text-xs text-muted-foreground">
+          <View className="flex-1 items-center justify-center gap-2 px-8" style={{ paddingBottom: toolbarInset }}>
+            <Icon as={Globe} size={32} className="text-muted-foreground" />
+            <Text variant="large">Browser</Text>
+            <Text variant="muted" className="text-center">
               {!sandboxId
-                ? 'Waiting for sandbox connection...'
-                : 'Enter a URL or port number in the address bar to preview a running service.'}
+                ? 'Waiting for the sandbox to connect.'
+                : 'Enter a URL or a port to preview a running service.'}
             </Text>
           </View>
         )}
       </PageContent>
+
+      {/* The project drawer's bottom bar layout (Jay, 2026-09-23): 44pt
+          controls at the two edges (`justify-between px-5`), 16pt above the
+          safe area — with NO fade: the opaque capsules float straight over the
+          site. Left: Back · Forward. Right: Reload/Stop · Open in browser. */}
+      <PinnedBar
+        controlHeight={TOOLBAR_CONTROL_HEIGHT}
+        background={background}
+        fade={false}
+        className="justify-between px-5">
+        <ToolbarPill>
+          <ToolbarButton icon={ArrowLeft} label="Back" disabled={!canGoBack} onPress={handleGoBack} />
+          <ToolbarButton icon={ArrowRight} label="Forward" disabled={!canGoForward} onPress={handleGoForward} />
+        </ToolbarPill>
+        <ToolbarPill>
+          <ToolbarButton
+            icon={isLoading ? X : RefreshCw}
+            label={isLoading ? 'Stop loading' : 'Reload'}
+            disabled={!hasPage}
+            onPress={isLoading ? handleStop : handleRefresh}
+          />
+          <ToolbarButton icon={ExternalLink} label="Open in browser" disabled={!currentUrl} onPress={handleOpenExternal} />
+        </ToolbarPill>
+      </PinnedBar>
     </View>
+  );
+}
+
+/** `Button size="lg"` (h-11): the drawer's New session pill and avatar. */
+const TOOLBAR_CONTROL_HEIGHT = 44;
+
+/** A 44pt `secondary` capsule holding two 40pt icon buttons, 2pt from its ends. */
+function ToolbarPill({ children }: { children: React.ReactNode }) {
+  return (
+    <View className="flex-row items-center rounded-full bg-secondary px-0.5" style={{ height: TOOLBAR_CONTROL_HEIGHT }}>
+      {children}
+    </View>
+  );
+}
+
+/** One control in a `ToolbarPill`: a 40pt ghost icon button, 20pt glyph. */
+function ToolbarButton({
+  icon,
+  label,
+  disabled,
+  onPress,
+}: {
+  icon: AppIcon;
+  label: string;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="rounded-full"
+      accessibilityLabel={label}
+      disabled={disabled}
+      hitSlop={{ top: 2, bottom: 2 }}
+      onPress={onPress}>
+      <Icon as={icon} size={20} className="text-foreground" />
+    </Button>
   );
 }
 

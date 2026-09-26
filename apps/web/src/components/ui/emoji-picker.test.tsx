@@ -214,7 +214,7 @@ describe('emoji picker conventions', () => {
  * without a project, an account, or a create-modal.
  */
 const designSystemPage = readFileSync(
-  join(import.meta.dir, '../../app/(public)/(marketing)/design-system/page.tsx'),
+  join(import.meta.dir, '../../app/[locale]/(public)/(marketing)/design-system/page.tsx'),
   'utf8',
 );
 

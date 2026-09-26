@@ -213,3 +213,135 @@ describe('parseChannelMessage — legacy header and non-channel text', () => {
     expect(parseChannelMessage('Tell me about the Slack integration\n\nMessage:\nnot a scaffold')).toBeUndefined();
   });
 });
+
+// ── Linear-time parsing ──────────────────────────────────────────────────────
+//
+// Two regexes here were quadratic in the prompt: the pre-2026 header and the
+// Teams `<at>` markup strip. Channel text comes from anyone who can post in the
+// channel, and every viewer of the session parses it. The regex version of
+// the parser is kept here ONLY as a parity oracle.
+const legacyParse = (() => {
+  const TAIL = [/^How to work:/m, /^Attached files \(download with/m, /^The user also attached files:/m, /^To reply, run:/m,
+    /^Agent CLIs are installed in/m, /^── (?:Slack|Teams|Telegram) instructions/m, /^Chat ID:/m];
+  const strip = (v: string) => v.replace(/<at[^>]*>.*?<\/at>/gi, ' ').replace(/&nbsp;/gi, ' ').replace(/[ \t]+/g, ' ').trim();
+  const cut = (text: string) => {
+    let end = text.length;
+    for (const marker of TAIL) {
+      const m = marker.exec(text);
+      if (m && m.index < end) end = m.index;
+    }
+    return strip(text.slice(0, end));
+  };
+  const field = (block: string, label: string) => new RegExp(`^${label}:\\s*(.*)$`, 'm').exec(block)?.[1]?.trim() ?? '';
+  const body = (block: string) => {
+    const m = /^Message:\r?\n/m.exec(block);
+    return m ? cut(block.slice(m.index + m[0].length)) : null;
+  };
+  const opens = (text: string, i: number) => {
+    const before = text.slice(0, i).trim();
+    return before === '' || before.startsWith('NOTE:');
+  };
+  const FIRST = [
+    { platform: 'Teams', header: /^You're answering a message on Microsoft Teams as a teammate\.$/m, context: 'Conversation', user: 'User' },
+    { platform: 'Slack', header: /^You're answering a message on Slack as a teammate\.$/m, context: 'Channel', user: 'User' },
+    { platform: 'Telegram', header: /^You received a message on Telegram\.$/m, context: 'Chat', user: 'From' },
+  ];
+  const FOLLOW = [
+    { platform: 'Teams', header: /^New message from (.+?) in the same Teams conversation:$/m },
+    { platform: 'Slack', header: /^New message from (.+?) in the same Slack thread:$/m },
+  ];
+  return (rawText: string) => {
+    const text = (rawText ?? '').trim();
+    if (!text) return undefined;
+    const legacy = /^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/.exec(text);
+    if (legacy) {
+      const platform = legacy[1] === 'Teams' ? 'Teams' : legacy[1] === 'Telegram' ? 'Telegram' : 'Slack';
+      return { platform, context: legacy[2]!.trim(), userName: legacy[3]!.trim(), messageText: cut(text.slice(legacy[0].length)), followUp: false };
+    }
+    for (const shape of FIRST) {
+      const m = shape.header.exec(text);
+      if (!m || !opens(text, m.index)) continue;
+      const block = text.slice(m.index + m[0].length);
+      const b = body(block);
+      if (b === null) continue;
+      return { platform: shape.platform, context: field(block, shape.context), userName: field(block, shape.user) || 'unknown', messageText: b, followUp: false };
+    }
+    for (const shape of FOLLOW) {
+      const m = shape.header.exec(text);
+      if (!m || !opens(text, m.index)) continue;
+      return { platform: shape.platform, context: '', userName: m[1]!.trim(), messageText: cut(text.slice(m.index + m[0].length)), followUp: true };
+    }
+    return undefined;
+  };
+})();
+
+/** Deterministic PRNG (mulberry32), so a failing case reproduces. */
+function random(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe('parseChannelMessage returns exactly what the regex version returned', () => {
+  test('on 3000 random channel-shaped prompts', () => {
+    const tokens = ['[Slack · #general · message from a]', '[Teams', '[Telegram·', '[', ']', 'Slack', '·', ' · ', ' ', '\t',
+      'message from', ' message from ', 'x', '\n', '\r', '<at>', '</at>', '<AT id="1">', '</At>', '<attachment>', '<at', '>',
+      '&nbsp;', "You're answering a message on Slack as a teammate.", '\nUser: b\n', '\nMessage:\n', 'How to work:',
+      'New message from c in the same Slack thread:', 'NOTE: revived\n'];
+    const next = random(47);
+    let parsed = 0;
+    for (let i = 0; i < 3000; i++) {
+      let text = next() < 0.5 ? '[Slack · #general · message from a]' : '';
+      const length = Math.floor(next() * 16);
+      for (let j = 0; j < length; j++) text += tokens[Math.floor(next() * tokens.length)];
+      const expected = legacyParse(text);
+      expect(parseChannelMessage(text)).toEqual(expected as never);
+      if (expected) parsed++;
+    }
+    expect(parsed).toBeGreaterThan(600);
+  });
+
+  test('on 3000 random pre-2026 headers', () => {
+    const next = random(53);
+    const pick = (options: readonly string[]) => options[Math.floor(next() * options.length)]!;
+    const some = (options: readonly string[], max: number) =>
+      Array.from({ length: Math.floor(next() * (max + 1)) }, () => pick(options)).join('');
+    let parsed = 0;
+    for (let i = 0; i < 3000; i++) {
+      // Mostly well-formed, with each part sometimes empty, doubled, or missing.
+      const text =
+        `[${pick(['Slack', 'Teams', 'Telegram', 'x1', ''])}${some([' ', '\t'], 2)}${pick(['·', '·', '·', ''])}` +
+        `${some(['a', 'a', ' ', '\t', '#g', '·'], 3)}${pick(['·', '·', '·', ''])}${some([' ', '\n'], 2)}message from` +
+        `${pick([' ', ' ', '\t', '', 'x'])}${some(['b', 'b', ' ', '\t', '\n', '·', ']'], 3)}${pick([']', ']', '] ', ']\n', ''])}` +
+        `${some(['hi', ' ', '<at>x</at>', '\n'], 3)}`;
+      const expected = legacyParse(text);
+      expect(parseChannelMessage(text)).toEqual(expected as never);
+      if (expected) parsed++;
+    }
+    expect(parsed).toBeGreaterThan(200);
+  });
+});
+
+describe('no channel message can freeze the tab that parses it', () => {
+  const within = (label: string, run: () => unknown) =>
+    test(label, () => {
+      const started = performance.now();
+      run();
+      expect(performance.now() - started).toBeLessThan(100);
+    });
+
+  // Each took ~1.4 s at 60k characters with Bun, and quadrupled per doubling.
+  within('a legacy header whose context holds 240k spaces', () => parseChannelMessage(`[Slack·a${' '.repeat(240_000)}x`));
+  within('a legacy header whose sender holds 240k spaces', () =>
+    parseChannelMessage(`[Slack·a·message from${' '.repeat(240_000)}x`));
+  // 0.4 s at 60k characters.
+  within('60k <at openers that never close', () => parseChannelMessage(`[Slack · c · message from a] ${'<at>'.repeat(60_000)}`));
+  within('80k <at openers and no >', () => parseChannelMessage(`[Slack · c · message from a] ${'<at'.repeat(80_000)}`));
+  within('60k <at> openers, each on its own line', () =>
+    parseChannelMessage(`[Slack · c · message from a] ${'<at>\n'.repeat(48_000)}</at>`));
+});

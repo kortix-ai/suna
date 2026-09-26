@@ -17,7 +17,14 @@
  *
  * The parser is pure and framework-free so `channel-message.test.ts` can pin
  * each shape against the real prompt text.
+ *
+ * Channel text comes from anyone who can post in the channel, and every viewer
+ * of the session parses it, so no pattern here may re-read the text per
+ * attempt. The pre-2026 header regex and the `<at>` strip did: 240k characters
+ * took 22 s and 7 s.
  */
+
+import { indexOfIgnoreCase, readLegacyChannelHeader } from '@kortix/shared';
 
 export type ChannelPlatform = 'Slack' | 'Teams' | 'Telegram';
 
@@ -44,7 +51,49 @@ const TAIL_MARKERS = [
 
 /** Teams wraps a channel @-mention of the bot in `<at>…</at>`; a person never typed that. */
 function stripMentionMarkup(value: string): string {
-  return value.replace(/<at[^>]*>.*?<\/at>/gi, ' ').replace(/&nbsp;/gi, ' ').replace(/[ \t]+/g, ' ').trim();
+  return replaceMentions(value).replace(/&nbsp;/gi, ' ').replace(/[ \t]+/g, ' ').trim();
+}
+
+/**
+ * `value.replace(/<at[^>]*>.*?<\/at>/gi, ' ')` in one pass. The regex re-read
+ * the rest of the text for each `<at` that lacked a `>`, and the rest of the
+ * line for each one that lacked a `</at>`.
+ */
+function replaceMentions(value: string): string {
+  let out = '';
+  let last = 0;
+  let from = 0;
+  // The next `>`, `</at>`, and line end at or after the last position each was searched from.
+  let gt = -2;
+  let close = -2;
+  let lineEnd = -2;
+  for (;;) {
+    const open = indexOfIgnoreCase(value, '<at', from);
+    if (open === -1) break;
+    if (gt < open + 3) gt = value.indexOf('>', open + 3);
+    // No `>` or `</at>` after this opener means none after any later opener either.
+    if (gt === -1) break;
+    if (close < gt + 1) close = indexOfIgnoreCase(value, '</at>', gt + 1);
+    if (close === -1) break;
+    if (lineEnd < gt + 1) lineEnd = nextLineEnd(value, gt + 1);
+    // `.*?` stops at a line terminator: the closing tag must come first.
+    if (lineEnd < close) {
+      from = open + 1;
+      continue;
+    }
+    out += value.slice(last, open) + ' ';
+    last = from = close + 5;
+  }
+  return out + value.slice(last);
+}
+
+/** The index of the first line terminator at or after `from`, or the length of the text. */
+function nextLineEnd(value: string, from: number): number {
+  for (let i = from; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code === 10 || code === 13 || code === 0x2028 || code === 0x2029) return i;
+  }
+  return value.length;
 }
 
 function cutAtTail(text: string): string {
@@ -94,8 +143,6 @@ const FOLLOW_UP_HEADERS: Array<{ platform: ChannelPlatform; header: RegExp }> = 
   { platform: 'Slack', header: /^New message from (.+?) in the same Slack thread:$/m },
 ];
 
-const LEGACY_HEADER = /^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/;
-
 /** A header only counts when it opens the prompt (a revived-thread NOTE may precede it). */
 function opensPrompt(text: string, headerIndex: number): boolean {
   const before = text.slice(0, headerIndex).trim();
@@ -106,14 +153,15 @@ export function parseChannelMessage(rawText: string | null | undefined): Channel
   const text = (rawText ?? '').trim();
   if (!text) return undefined;
 
-  const legacy = LEGACY_HEADER.exec(text);
+  // `[Slack · #general · message from <user>]`, read by `@kortix/shared/channel-header`.
+  const legacy = readLegacyChannelHeader(text);
   if (legacy) {
-    const platform = legacy[1] === 'Teams' ? 'Teams' : legacy[1] === 'Telegram' ? 'Telegram' : 'Slack';
+    const platform = legacy.platform === 'Teams' ? 'Teams' : legacy.platform === 'Telegram' ? 'Telegram' : 'Slack';
     return {
       platform,
-      context: legacy[2].trim(),
-      userName: legacy[3].trim(),
-      messageText: cutAtTail(text.slice(legacy[0].length)),
+      context: legacy.context,
+      userName: legacy.userName,
+      messageText: cutAtTail(text.slice(legacy.length)),
       followUp: false,
     };
   }

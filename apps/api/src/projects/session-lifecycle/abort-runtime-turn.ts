@@ -1,4 +1,4 @@
-import { resolveSessionOpencodeEndpoint } from './engine';
+import { resolveSessionOpencodeEndpoint } from './runtime-client';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 
 const WORKSPACE = '/workspace';
@@ -22,12 +22,34 @@ const WORKSPACE = '/workspace';
  * Best effort by design. The caller is a housekeeping sweep that has already
  * decided the turn is dead; a sandbox that is parked, gone, or simply slow is
  * not a reason to fail the sweep.
+ *
+ * `requestedStop`: a person pressed Stop (Slack, Teams, or the web Stop whose
+ * hold settle re-aborts the box). This call does not pass
+ * the sandbox proxy that stamps `UserStop` on web and CLI stops, so it stamps
+ * the open turn itself. Without the stamp the abort reads as a failure nobody
+ * explained. A stamp that fails never blocks the stop.
  */
-export async function abortRuntimeTurn(sessionId: string): Promise<boolean> {
+export async function abortRuntimeTurn(
+  sessionId: string,
+  opts: { requestedStop?: boolean } = {},
+): Promise<boolean> {
   if (!sessionId) return false;
   try {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
     if (!resolved) return false;
+    if (opts.requestedStop) {
+      try {
+        const { markTurnStopRequested } = await import('../sandbox-turn-lifecycle');
+        await markTurnStopRequested(sessionId, 'UserStop', {
+          opencodeSessionId: resolved.opencodeSessionId,
+        });
+      } catch (err) {
+        console.warn('[abort-runtime-turn] could not stamp the requested stop', {
+          sessionId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
     const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/abort?directory=${encodeURIComponent(WORKSPACE)}`;
     const res = await fetch(url, {
       method: 'POST',

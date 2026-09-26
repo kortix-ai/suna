@@ -86,44 +86,23 @@ export function ClickablePath({
     ? `${filePath}:${lineNumber}${column ? `:${column}` : ''} — Click to preview`
     : `${filePath} — Click to preview`;
 
-  if (variant === 'terminal') {
-    return (
-      <span
-        className={cn(
-          'underline decoration-dotted decoration-1 underline-offset-2',
-          'group/path inline-flex items-center gap-0.5 transition-colors',
-          'cursor-pointer text-blue-400 hover:text-blue-300 dark:text-blue-400 dark:hover:text-blue-300',
-          className,
-        )}
-        onClick={handleClick}
-        title={title}
-        role="button"
-        tabIndex={0}
-      >
-        {children || filePath}
-        {lineNumber && (
-          <span className="text-blue-400/60">
-            :{lineNumber}
-            {column ? `:${column}` : ''}
-          </span>
-        )}
-      </span>
-    );
-  }
-
-  // Inline variant (for markdown text, etc.)
+  // A real button, so Enter and Space open the file and assistive technology
+  // announces a control that works. It stays inline: no padding, no
+  // background, the text's own font and colour, so a path in running prose
+  // reads as prose.
   return (
-    <span
-      className={cn(
-        'group/path inline-flex items-center gap-0.5',
-        'text-foreground cursor-pointer hover:underline',
-        'transition-colors',
-        className,
-      )}
+    <button
+      type="button"
       onClick={handleClick}
       title={title}
-      role="button"
-      tabIndex={0}
+      className={cn(
+        'group/path inline-flex cursor-pointer items-center gap-0.5 rounded-sm text-left',
+        'focus-visible:ring-ring transition-colors focus-visible:ring-2 focus-visible:outline-none',
+        variant === 'terminal'
+          ? 'text-kortix-blue decoration-kortix-blue/40 hover:decoration-kortix-blue underline decoration-dotted decoration-1 underline-offset-2'
+          : 'text-foreground hover:underline',
+        className,
+      )}
     >
       {children || filePath}
       {lineNumber && (
@@ -132,7 +111,7 @@ export function ClickablePath({
           {column ? `:${column}` : ''}
         </span>
       )}
-    </span>
+    </button>
   );
 }
 
@@ -306,8 +285,7 @@ export function wrapChildrenWithPaths(
       // A path already made clickable is finished. `li` wraps its children and
       // then the nested `p`/`td` component wraps them AGAIN, so the second pass
       // walked into the span the first pass produced and wrapped its text in a
-      // second one — `role="button"` inside `role="button"`, two click handlers
-      // on one path.
+      // second one — a button inside a button, two click handlers on one path.
       if (el.type === ClickablePath) {
         return child;
       }

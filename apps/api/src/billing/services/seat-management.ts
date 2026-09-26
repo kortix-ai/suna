@@ -4,8 +4,9 @@
 // orchestrates THREE concerns:
 //   1. Per-member YOLO token (mint on add, revoke on remove).
 //   2. Stripe subscription quantity sync (count active members, push to Stripe).
-//   3. Pro-rated seat credit grant for net additions (handled by the Stripe
-//      webhook `customer.subscription.updated` so we don't double-grant).
+//   3. Pro-rated seat credit grant for net additions — granted only when the
+//      proration invoice for the added seats is PAID (`invoice.paid`, see
+//      seatProrationFor and proration-grants.ts).
 //
 // Hard guard: every call no-ops on legacy accounts. New seat behaviour only
 // engages when credit_accounts.billing_model = 'per_seat'.
@@ -85,9 +86,8 @@ async function resolveSeatSubscriptionItemId(
 
 /**
  * Push the current member count to Stripe and reconcile credit_accounts.
- * Stripe's billing engine handles proration on quantity change; the webhook
- * `customer.subscription.updated` is the source of truth for granting credits
- * to net additions.
+ * Added seats are charged now (see seatProrationFor); the allowance for them is
+ * granted from the paid proration invoice, never from the quantity change.
  *
  * Safe to call repeatedly: if Stripe already has the right quantity, the
  * update is a no-op.
@@ -110,6 +110,24 @@ export async function trialSeatLimitBlocksNewMember(
   if (isPerSeatAccount(account?.billingModel)) return null;
   const members = await countActiveMembers(accountId);
   return members >= limit ? { limit, members } : null;
+}
+
+/**
+ * How Stripe bills a seat-count change. This is the per-seat billing policy:
+ *
+ * - ADDED seats are invoiced and charged NOW, prorated for the rest of the
+ *   period (`always_invoice`). The wallet allowance for the added seats is
+ *   granted when that invoice is PAID (`invoice.paid`, billing_reason
+ *   `subscription_update` → proration-grants.ts), sized by the money collected.
+ * - REMOVED seats are not refunded mid-period (`none`). The lower quantity is
+ *   billed from the next renewal. Crediting unused time would let a team add
+ *   seats, collect their allowance, remove them, and get the charge back.
+ */
+function seatProrationFor(
+  currentSeats: number,
+  nextSeats: number,
+): { proration_behavior: 'always_invoice' | 'none' } {
+  return { proration_behavior: nextSeats > currentSeats ? 'always_invoice' : 'none' };
 }
 
 export async function syncSeatQuantity(accountId: string): Promise<{
@@ -147,11 +165,14 @@ export async function syncSeatQuantity(accountId: string): Promise<{
 
   const stripe = getStripe();
   try {
-    await stripe.subscriptionItems.update(seatItemId, {
-      quantity: seatCount,
-      // proration_behavior defaults to 'create_prorations' which is what we
-      // want — Stripe creates an invoice line item for the delta on next bill.
-    });
+    const current = await stripe.subscriptionItems.retrieve(seatItemId);
+    const currentSeats = current.quantity ?? 0;
+    if (currentSeats !== seatCount) {
+      await stripe.subscriptionItems.update(seatItemId, {
+        quantity: seatCount,
+        ...seatProrationFor(currentSeats, seatCount),
+      });
+    }
   } catch (err) {
     console.error(
       `[seat-management] failed to update Stripe sub item for ${accountId}:`,
@@ -160,12 +181,10 @@ export async function syncSeatQuantity(accountId: string): Promise<{
     throw err;
   }
 
-  // IMPORTANT: do NOT mirror seat_count locally here. The webhook handler
-  // (services/webhooks.ts:syncSubscriptionState) computes the per-seat delta
-  // as `newSeats - account.seatCount`. If we wrote seat_count first, the
-  // webhook would see delta=0 and skip the seat_grant. Letting the webhook
-  // be the sole writer of seat_count keeps the grant logic correct. The UI
-  // is briefly stale (≤1s) between the Stripe push and the webhook arriving,
+  // Do NOT mirror seat_count locally here. The subscription webhook
+  // (services/webhooks.ts:syncSubscriptionState) is the sole writer of
+  // seat_count, so the row always reflects what Stripe bills. The UI is
+  // briefly stale (≤1s) between the Stripe push and the webhook arriving,
   // which is acceptable.
   //
   // Auto-topup defaults DO scale with seats and don't affect the grant calc,
@@ -245,7 +264,8 @@ export async function onMemberAdded(accountId: string, userId: string): Promise<
 
 /**
  * Call when a member is removed. Revokes their YOLO token and drops the
- * Stripe quantity by one (Stripe credits the difference on next invoice).
+ * Stripe quantity by one from the next renewal (no mid-period refund; see
+ * seatProrationFor).
  */
 export async function onMemberRemoved(accountId: string, userId: string): Promise<void> {
   const account = await getCreditAccount(accountId);

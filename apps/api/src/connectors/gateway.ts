@@ -1,5 +1,11 @@
 import { logger } from '../lib/logger';
 import { buildArgsPreviewDetails, summarizeArgsPreview } from './args-preview';
+import {
+  emailChannelAttachmentArgs,
+  findAttachmentRefs,
+  redactInlineBytes,
+  resolveAttachmentRefs,
+} from './attachment-inline';
 import type { ConnectorAttachmentStore } from './attachments';
 import { executeComposio } from './composio';
 import {
@@ -127,6 +133,18 @@ export interface EmailConnectorContext {
 
 export interface GatewayDeps {
   loadConnectorBySlug(projectId: string, slug: string): Promise<GatewayConnector | null>;
+  /**
+   * Spec 2026-09-22 §2.5: the `X-Kortix-App-Authorization` value for a call
+   * whose base URL is a Kortix App of THIS deployment in the caller's OWN
+   * project — a ≤ 60 s signed assertion naming the calling session token.
+   * Null for any other host. Optional: absent = never attach.
+   */
+  appAuthorizationFor?(input: {
+    projectId: string;
+    baseUrl: string;
+    sessionId: string;
+    tokenId: string;
+  }): Promise<string | null>;
   /**
    * WHY `loadConnectorBySlug` answered null. That function collapses three
    * states into one null — no such row, a disabled row, and a row with no
@@ -273,6 +291,10 @@ export interface CallInput {
   accountId: string;
   subject: ShareSubject;
   sessionId?: string | null;
+  /** The presented account token's id (`account_tokens.token_id`), when the
+   *  caller authenticated with one. With `sessionId` it identifies an agent
+   *  session — the only caller that gets a Kortix App assertion. */
+  actingTokenId?: string | null;
   connectorSlug: string;
   /** Connector-relative action path (e.g. `charges.create`). */
   actionPath: string;
@@ -475,6 +497,42 @@ async function resolveEmailExecutionContext(
 }
 
 /** Run one connector call through the full gateway path. */
+/**
+ * The App gate credential for this call, or null. Only an agent session (a
+ * session id AND the token it presented) calling an openapi/http connector is
+ * considered, and `deps.appAuthorizationFor` decides whether the base URL is an
+ * App of the same project. A lookup failure never fails the call: the request
+ * goes out exactly as it did before this existed.
+ */
+async function appAuthorizationForCall(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  binding: ActionBinding,
+): Promise<string | null> {
+  if (!deps.appAuthorizationFor || !input.sessionId || !input.actingTokenId) return null;
+  const baseUrl =
+    binding.kind === 'openapi'
+      ? (connector.baseUrl ?? binding.server)
+      : binding.kind === 'http'
+        ? connector.baseUrl
+        : null;
+  if (!baseUrl) return null;
+  try {
+    return await deps.appAuthorizationFor({
+      projectId: input.projectId,
+      baseUrl,
+      sessionId: input.sessionId,
+      tokenId: input.actingTokenId,
+    });
+  } catch (error) {
+    logger.warn('[connector] App assertion lookup failed; calling without it', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<CallResult> {
   const resolved = await resolveConnectorForCall(deps, input);
   const fullPath = `${resolved.slug}.${input.actionPath}`;
@@ -501,6 +559,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
   let usable: Awaited<ReturnType<typeof connectorUsable>>;
   let attachmentClaim: Awaited<ReturnType<ConnectorAttachmentStore['claimForEmail']>> | null = null;
+  let attachmentRefs: ReturnType<typeof findAttachmentRefs> = [];
   try {
     usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
   } catch (error) {
@@ -683,6 +742,23 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   }
 
   try {
+    // `{ "$kortix_attachment": id }` references. The bytes are resolved only
+    // into the provider-bound copy of the arguments, below.
+    const isEmailChannel = connector.provider === 'channel' && connector.platform === 'email';
+    attachmentRefs = findAttachmentRefs(executionArgs);
+    if (
+      attachmentRefs.length > 0 &&
+      (connector.provider === 'pipedream' ||
+        connector.provider === 'composio' ||
+        connector.provider === 'computer')
+    ) {
+      // These runners take provider-native file inputs. Forwarding the
+      // reference would deliver the message without its file.
+      throw new Error(
+        `connector_attachments_unsupported: ${connector.provider} connectors do not accept Kortix attachments`,
+      );
+    }
+
     // Computers (Agent Computer Tunnel): relay through the shared tunnel RPC
     // core. The connector profile owns the machine allowlist.
     if (connector.provider === 'computer') {
@@ -799,22 +875,45 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       });
     } else {
       let providerArgs = executionArgs;
-      if (connector.provider === 'channel' && connector.platform === 'email') {
-        if (!deps.attachmentStore && hasAttachmentHandles(executionArgs)) {
+      const scope = {
+        accountId: input.accountId,
+        projectId: input.projectId,
+        sessionId: input.sessionId ?? null,
+        userId: input.subject.userId,
+      };
+      if (isEmailChannel) {
+        // The Email channel sends files by signed URL: references become the
+        // channel's own `{ attachment_id }` handles, then the URL claim runs.
+        const emailArgs =
+          attachmentRefs.length > 0
+            ? emailChannelAttachmentArgs(executionArgs, attachmentRefs)
+            : executionArgs;
+        if (!deps.attachmentStore && hasAttachmentHandles(emailArgs)) {
           throw new Error('connector_attachment_transport_unavailable');
         }
         if (deps.attachmentStore) {
-          attachmentClaim = await deps.attachmentStore.claimForEmail(
-            {
-              accountId: input.accountId,
-              projectId: input.projectId,
-              sessionId: input.sessionId ?? null,
-              userId: input.subject.userId,
-            },
-            executionArgs,
-          );
+          attachmentClaim = await deps.attachmentStore.claimForEmail(scope, emailArgs);
           providerArgs = attachmentClaim.args;
         }
+      } else if (attachmentRefs.length > 0) {
+        if (!deps.attachmentStore?.claimInline) {
+          throw new Error('connector_attachment_transport_unavailable');
+        }
+        const claim = await deps.attachmentStore.claimInline(scope, [
+          ...new Set(attachmentRefs.map((ref) => ref.attachmentId)),
+        ]);
+        // Record the claim before resolving, so a shape refusal releases it.
+        attachmentClaim = {
+          args: executionArgs,
+          claimToken: claim.claimToken,
+          attachmentIds: claim.attachmentIds,
+        };
+        providerArgs = resolveAttachmentRefs(
+          executionArgs,
+          action.inputSchema,
+          attachmentRefs,
+          claim.files,
+        );
       }
       result = await executeCall({
         binding: action.binding,
@@ -824,6 +923,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         secret: executionSecret,
         args: providerArgs,
         paramHints: paramHintsFromSchema(action.inputSchema),
+        appAuthorization: await appAuthorizationForCall(deps, input, connector, action.binding),
         fetchImpl: deps.fetchImpl,
       });
       // Channel platforms (Slack) reply HTTP 200 with an `{ ok:false, error }`
@@ -844,6 +944,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       }
       await audit(deps, input, connector, 'ok', action.risk, {
         http_status: result.status,
+        ...(attachmentClaim?.attachmentIds.length
+          ? { attachment_count: attachmentClaim.attachmentIds.length }
+          : {}),
       });
       return { status: 'ok', data: result.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
     }
@@ -852,7 +955,11 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
         .catch(() => {});
     }
-    const reason = upstreamReason(result) + fallbackHint(connector, action.binding);
+    // An upstream that echoes the rejected body would echo the file's base64.
+    const upstream = upstreamReason(result);
+    const reason =
+      (attachmentRefs.length > 0 ? redactInlineBytes(upstream) : upstream) +
+      fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
       http_status: result.status,
       reason: reason.slice(0, 500),

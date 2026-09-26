@@ -2,9 +2,15 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { TeamsActivity } from '../channels/teams/types';
 
 let apiCalls: Array<{ fn: string; args: unknown[] }> = [];
+/** When set, Teams refuses any activity carrying an inline data: image — as it
+ *  does when the base64 payload pushes the activity past its size cap. */
+let refuseInlineImages = false;
 mock.module('../channels/teams-api', () => ({
   sendActivity: async (...a: unknown[]) => {
     apiCalls.push({ fn: 'sendActivity', args: a });
+    const activity = a[1] as { attachments?: Array<{ contentUrl?: string }> } | undefined;
+    const inline = activity?.attachments?.some((x) => x.contentUrl?.startsWith('data:'));
+    if (refuseInlineImages && inline) return null;
     return 'posted-1';
   },
   sendCard: async (...a: unknown[]) => {
@@ -30,6 +36,13 @@ mock.module('../channels/install-store', () => ({
   loadTeamsBotCredentials: async () => ({ appId: 'app-1', appPassword: 'secret' }),
   loadTeamsTenantForProject: async () => 'tenant-1',
   saveTeamsServiceUrl: async () => {},
+}));
+
+// The tenants the project's install proved (chat_installs), which the proxy
+// mints Graph tokens for — never the admin-writable MS_TEAMS_TENANT_ID secret.
+let provenTenants: string[] = ['tenant-1'];
+mock.module('../channels/teams/inbound', () => ({
+  provenTeamsTenants: async () => provenTenants,
 }));
 
 let dbResults: unknown[][] = [];
@@ -77,12 +90,14 @@ let nextFetchOk = true;
 const realFetch = globalThis.fetch;
 beforeEach(() => {
   apiCalls = [];
+  refuseInlineImages = false;
   dbWrites = [];
   dbResults = [];
   fetchCalls = [];
   nextFetchOk = true;
   graphStatus = 200;
   channelOwnershipOk = true;
+  provenTenants = ['tenant-1'];
   globalThis.fetch = (async (url: string, init: { method?: string; headers?: Record<string, string> }) => {
     fetchCalls.push({ url: String(url), method: init?.method ?? 'GET', headers: init?.headers });
     const u = String(url);
@@ -371,3 +386,139 @@ describe('file proxy — token and drive authorization', () => {
     if (!r.ok) expect(r.status).toBe(403);
   });
 });
+
+
+// An agent's image in a PERSONAL chat used to go through the consent card —
+// "Kortix wants to send you chart.png — Accept / Decline", then OneDrive — the
+// worst image experience of the three scopes, in the most common one. A group
+// chat or channel posted inline with NO fallback: a refused post was a 502.
+describe('initiateTeamsUpload — an image is shown inline first, in every scope', () => {
+  const png = Buffer.from('fake-png-bytes').toString('base64');
+  const base = {
+    serviceUrl: 'https://smba.trafficmanager.net/teams/',
+    conversationId: 'conv-1',
+    filename: 'chart.png',
+    contentBase64: png,
+  };
+  const inlinePosts = () =>
+    apiCalls.filter((c) =>
+      (c.args[1] as { attachments?: Array<{ contentUrl?: string }> })?.attachments?.some((x) =>
+        x.contentUrl?.startsWith('data:image/png;base64,'),
+      ),
+    );
+  const consentPosts = () =>
+    apiCalls.filter((c) =>
+      (c.args[1] as { attachments?: Array<{ contentType?: string }> })?.attachments?.some(
+        (x) => x.contentType === 'application/vnd.microsoft.teams.card.file.consent',
+      ),
+    );
+
+  test('a personal-chat image is shown inline, with no consent card and no pending upload', async () => {
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'personal' });
+
+    expect(r).toEqual({ ok: true, delivered: 'inline' });
+    expect(inlinePosts()).toHaveLength(1);
+    expect(consentPosts()).toHaveLength(0);
+    expect(dbWrites.some((w) => w.op === 'insert.values')).toBe(false);
+  });
+
+  test('a personal-chat image Teams refuses inline falls back to the consent card', async () => {
+    refuseInlineImages = true;
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'personal' });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.delivered).toBe('consent_card');
+    expect(inlinePosts()).toHaveLength(1);
+    expect(consentPosts()).toHaveLength(1);
+  });
+
+  test('a group-chat image Teams refuses says WHY, instead of a bare 502', async () => {
+    // A group chat cannot take a file transfer, so there is no fallback left —
+    // but "send it inline" would be circular: that is what just failed.
+    refuseInlineImages = true;
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'groupChat' });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(400);
+      expect(r.error).toContain('too large for Teams to show inline');
+      expect(r.error).not.toContain('send images inline');
+    }
+  });
+
+  test('a group-chat image that fits is still shown inline', async () => {
+    const r = await initiateTeamsUpload('proj-1', { ...base, conversationType: 'groupChat' });
+    expect(r).toEqual({ ok: true, delivered: 'inline' });
+  });
+
+  test('a NON-image file in a personal chat goes straight to the consent card', async () => {
+    const r = await initiateTeamsUpload('proj-1', {
+      ...base,
+      filename: 'report.pdf',
+      conversationType: 'personal',
+    });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.delivered).toBe('consent_card');
+    expect(inlinePosts()).toHaveLength(0);
+  });
+});
+
+/**
+ * The download proxy attaches an app-only Graph token for the tenant, so a
+ * caller-chosen Graph path would read whatever the app's permissions reach.
+ * Only the message hosted-content (inline image) paths an activity carries are
+ * accepted. And the bot connector token goes only to the Teams connector's own
+ * Traffic Manager profile — any Azure customer can name another one.
+ */
+describe('download proxy — Graph paths and attachment hosts', () => {
+  const HOSTED_CHAT =
+    'https://graph.microsoft.com/v1.0/chats/19:abc@thread.v2/messages/1712345678901/hostedContents/aWQ9eF8wLXd1cy1kMTAt/$value';
+  const HOSTED_CHANNEL =
+    'https://graph.microsoft.com/v1.0/teams/group-1/channels/19:chan@thread.tacv2/messages/171/replies/172/hostedContents/aWQ9/$value';
+
+  test('a message hosted-content URL is fetched with the Graph token', async () => {
+    for (const url of [HOSTED_CHAT, HOSTED_CHANNEL]) {
+      fetchCalls = [];
+      await downloadTeamsFile('proj-1', url).catch(() => null);
+      // The fetch mock answers `/channels/` GETs as the ownership probe, so
+      // assert on the outgoing request, not the parsed body.
+      expect(fetchCalls).toHaveLength(1);
+      expect(fetchCalls[0].url).toBe(url);
+      expect(fetchCalls[0].headers?.Authorization).toBe('Bearer graph-tok');
+    }
+  });
+
+  test('any other Graph path is refused 400 and never fetched', async () => {
+    for (const url of [
+      'https://graph.microsoft.com/v1.0/users',
+      'https://graph.microsoft.com/v1.0/sites/root/drive/root/children',
+      'https://graph.microsoft.com/v1.0/drives/d1/items/i1/content',
+      `${HOSTED_CHAT}?$select=id`,
+      'https://graph.microsoft.com/v1.0/chats/19:abc/messages/1/hostedContents/x%2F..%2F..%2Fusers/$value',
+      'https://graph.microsoft.com/v1.0/chats/a/messages/b/hostedContents/c/$value/extra',
+    ]) {
+      fetchCalls = [];
+      const r = await downloadTeamsFile('proj-1', url);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.status).toBe(400);
+      expect(fetchCalls).toHaveLength(0);
+    }
+  });
+
+  test('a hosted-content URL with no proven tenant is 404, with no token minted', async () => {
+    provenTenants = [];
+    const r = await downloadTeamsFile('proj-1', HOSTED_CHAT);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(404);
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test('another Traffic Manager profile is refused outright — never fetched, never tokened', async () => {
+    const r = await downloadTeamsFile('proj-1', 'https://attacker-profile.trafficmanager.net/v3/attachments/1/views/original');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(400);
+    expect(fetchCalls).toHaveLength(0);
+  });
+});
+

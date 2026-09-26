@@ -31,6 +31,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { iamRoles, roleAssignments } from '@kortix/db';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import type { ScopeType } from './catalog';
 
 // ─── Vocabulary ─────────────────────────────────────────────────────────────
@@ -267,7 +268,8 @@ export async function projectRoleGrants(filter: {
  *
  * The single-row form of `projectRoleGrants`, kept separate because it runs on
  * EVERY project-scoped request (`loadProjectForUser`) and must stay one indexed
- * lookup. No account id: a project id is globally unique.
+ * lookup. The account is the project's own: a project-scoped row written in
+ * another account grants nothing (a primary-key subquery, so still one lookup).
  */
 export async function projectRoleForUser(
   projectId: string,
@@ -277,6 +279,7 @@ export async function projectRoleForUser(
     and(
       eq(roleAssignments.scopeType, 'project'),
       eq(roleAssignments.scopeId, projectId),
+      sql`${qualifiedColumn(roleAssignments.accountId)} = (select p.account_id from kortix.projects p where p.project_id = ${projectId}::uuid)`,
       eq(roleAssignments.principalType, 'user'),
       eq(roleAssignments.principalId, userId),
       isNull(roleAssignments.objectType),

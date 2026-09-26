@@ -8,13 +8,14 @@ import { approvalPageUrl } from '../../setup-links/token';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { auditDb, auditErrorSqlstate, isAuditContentionError } from '../../shared/audit-db';
+import { isAuditSessionLockTimeout, withAuditSessionLock } from '../../shared/audit-session-serial';
 import { logger as appLogger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
-import { auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
+import { accountTokens, auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import { buildFilters } from '../../accounts/audit-filters';
@@ -27,13 +28,40 @@ import {
   serializeAuditEvent,
 } from '../../shared/audit-query';
 import { flushAuditEvents } from '../../shared/audit';
-import { AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
+import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
 import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
 import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
 import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
+import { agentAuditInitiator } from '../../shared/agent-audit-attribution';
+
+/**
+ * The human a session acts on behalf of, for OpenCode audit ingestion. A
+ * session PAT carries it (auth middleware); a legacy sandbox key does not, so
+ * the session's live agent token is read. Any failure → null.
+ */
+async function ingestionOnBehalfOf(c: any, sessionId: string, accountId: string): Promise<string | null> {
+  if (c.get('authType') === 'pat') return (c.get('onBehalfOfUserId') as string | null | undefined) ?? null;
+  try {
+    const [token] = await db
+      .select({ onBehalfOfUserId: accountTokens.onBehalfOfUserId })
+      .from(accountTokens)
+      .where(
+        and(
+          eq(accountTokens.sessionId, sessionId),
+          eq(accountTokens.accountId, accountId),
+          eq(accountTokens.status, 'active'),
+          isNull(accountTokens.revokedAt),
+        ),
+      )
+      .limit(1);
+    return token?.onBehalfOfUserId ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Rows per audit-ingest INSERT statement. Each statement holds this session's
@@ -48,6 +76,20 @@ const AUDIT_INGEST_CHUNK = (() => {
 
 /** Advertised backoff when the session's sequence lock is contended. */
 const AUDIT_INGEST_RETRY_AFTER_SECONDS = 5;
+
+/**
+ * How long one chunk waits for the in-process per-session audit lock before it
+ * reports contention (`shared/audit-session-serial.ts`). The holder is another
+ * audit INSERT for the same session in this process — the request's own inbound
+ * audit row the queue flushes, or a concurrent batch for the session. Waiting
+ * in memory cannot be cut short by the pool's `lock_timeout`, so this budget
+ * covers the holder's own statement budget (10 s) plus margin, while staying
+ * under the 25 s request deadline.
+ */
+const AUDIT_INGEST_LOCK_WAIT_MS = (() => {
+  const raw = Number.parseInt(process.env.KORTIX_AUDIT_INGEST_LOCK_WAIT_MS ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 12_000;
+})();
 
 /** The PostgreSQL SQLSTATE behind a contention error, following `cause`. */
 function auditErrorSqlState(error: unknown): string | null {
@@ -79,7 +121,7 @@ projectsApp.openapi(
       query: z.object({
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
-        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
         phase: z.string().optional(),
@@ -207,6 +249,8 @@ projectsApp.openapi(
         opencodeSessionId: projectSessions.opencodeSessionId,
         agentName: projectSessions.agentName,
         createdBy: projectSessions.createdBy,
+        origin: projectSessions.origin,
+        metadata: projectSessions.metadata,
       })
       .from(sessionSandboxes)
       .innerJoin(
@@ -257,6 +301,20 @@ projectsApp.openapi(
     const initiatorIdentity = scope.createdBy
       ? identities.find((identity) => identity.serviceAccountId === scope.createdBy)
       : null;
+    // Spec 2026-09-22 §2: the same initiator rule every other agent-session
+    // audit row uses (shared/agent-audit-attribution.ts), plus the human the
+    // session acts on behalf of — read from the credential when it is the
+    // session token, else from the session's live agent token.
+    const onBehalfOfUserId = await ingestionOnBehalfOf(c, sessionId, accountId);
+    const initiator = agentAuditInitiator({
+      onBehalfOfUserId,
+      session: {
+        origin: scope.origin ?? null,
+        metadata: (scope.metadata ?? {}) as Record<string, unknown>,
+        createdBy: scope.createdBy ?? null,
+        createdByIsServiceAccount: Boolean(initiatorIdentity),
+      },
+    });
 
     let parsed: ReturnType<typeof parseOpenCodeAuditBatch>;
     try {
@@ -268,12 +326,9 @@ projectsApp.openapi(
           opencodeSessionId: scope.opencodeSessionId,
           agentId: agentIdentity?.serviceAccountId ?? null,
           agentName: scope.agentName,
-          initiatorActorType: initiatorIdentity
-            ? 'service_account'
-            : scope.createdBy
-              ? 'human'
-              : 'system',
-          initiatorActorId: scope.createdBy,
+          initiatorActorType: initiator.type,
+          initiatorActorId: initiator.id,
+          onBehalfOfUserId,
           correlationId: sessionId,
           causationId: null,
           delegationDepth: 0,
@@ -327,7 +382,7 @@ projectsApp.openapi(
     // `audit_session_sequences` row, and PostgreSQL holds that lock until the
     // statement's transaction COMMITs. One 200-row statement therefore pinned
     // the session for its entire duration (measured 137 ms on a warm 5.09M-row
-    // audit_events; the Essentia box runs an order of magnitude slower), and a
+    // audit_events; the SampleCo box runs an order of magnitude slower), and a
     // rollback discarded all 200 rows' work, which the relay then re-sent in
     // full. Chunking bounds both: the lock is held per chunk, and chunks that
     // already committed stay committed.
@@ -337,15 +392,25 @@ projectsApp.openapi(
     for (let offset = 0; offset < toInsert.length; offset += AUDIT_INGEST_CHUNK) {
       const chunk = toInsert.slice(offset, offset + AUDIT_INGEST_CHUNK);
       try {
-        const inserted = await auditDb()
-          .insert(auditEvents)
-          .values(chunk)
-          .onConflictDoNothing()
-          .returning({ eventId: auditEvents.eventId });
+        // Hold the process-local session lock for the chunk's INSERT. The
+        // request's OWN inbound audit row is enqueued for this same session and
+        // would otherwise race this insert for the same
+        // `audit_session_sequences` row lock — the second writer lost at the
+        // pool's 2.5 s `lock_timeout` (55P03) and the queue dropped the row.
+        const inserted = await withAuditSessionLock(
+          sessionId,
+          () =>
+            auditDb()
+              .insert(auditEvents)
+              .values(chunk)
+              .onConflictDoNothing()
+              .returning({ eventId: auditEvents.eventId }),
+          { timeoutMs: AUDIT_INGEST_LOCK_WAIT_MS },
+        );
         attempted += chunk.length;
         insertedCount += inserted.length;
       } catch (error) {
-        if (!isAuditContentionError(error)) {
+        if (!isAuditContentionError(error) && !isAuditSessionLockTimeout(error)) {
           // A write that is NOT backpressure is a defect, and until now the
           // only trace of it was Drizzle's wrapper: `DrizzleQueryError: Failed
           // query: insert into "kortix"."audit_events" …` with the whole
@@ -378,7 +443,10 @@ projectsApp.openapi(
         appLogger.warn('[audit] ingest contended', {
           projectId,
           sessionId,
-          sqlstate: auditErrorSqlState(error),
+          // `57xxx`/`55P03` came back from Postgres; a null SQLSTATE on a
+          // bounded in-process wait means the writer never reached the DB.
+          sqlstate: auditErrorSqlstate(error),
+          contention_source: isAuditSessionLockTimeout(error) ? 'in_process' : 'postgres',
           accepted: parsed.accepted,
           attempted,
           inserted: insertedCount,
@@ -400,7 +468,7 @@ projectsApp.openapi(
     if (contended) {
       // 503, never 500. A 500 told the relay "your batch is broken" for what is
       // in fact backpressure, and its flat 1s retry then rebuilt the convoy
-      // that caused it (Essentia 2026-08-26: 445 x 500 [57014] in 3h).
+      // that caused it (SampleCo 2026-08-26: 445 x 500 [57014] in 3h).
       c.header('Retry-After', String(AUDIT_INGEST_RETRY_AFTER_SECONDS));
       return c.json(
         {
@@ -457,7 +525,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     let limit: number;
     let cursor: ReturnType<typeof parseAuditSessionCursor>;
@@ -518,7 +586,7 @@ projectsApp.openapi(
     // those polls waited on a bulk INSERT into `audit_events`. On a self-host
     // with 3.9 M rows that insert hit the statement timeout (57014), the
     // request hit the 25 s server deadline, and the badge answered 503 twice
-    // per session open, forever (essentia, 2026-08-24). A count of pending
+    // per session open, forever (sampleco, 2026-08-24). A count of pending
     // connector calls does not depend on the audit queue at all.
     if (audited && includeEvents) await flushAuditEvents();
     const fetchedEvents = audited && includeEvents

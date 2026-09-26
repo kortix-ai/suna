@@ -87,6 +87,8 @@ interface TranscriptStash {
 
 const entries = new Map<string, BundleEntry>();
 const transcripts = new Map<string, TranscriptStash>();
+/** When an open's bundle answered its transcript leg with NO saved copy. */
+const absentTranscripts = new Map<string, number>();
 
 function scopeKey(projectId: string, sessionId: string): string {
   return `${projectId}/${sessionId}`;
@@ -97,6 +99,7 @@ function scopeKey(projectId: string, sessionId: string): string {
 export function resetSessionOpenBundles(): void {
   entries.clear();
   transcripts.clear();
+  absentTranscripts.clear();
 }
 
 export interface OpenSessionBundleOptions {
@@ -214,8 +217,13 @@ function stashTranscript(key: string, bundle: SessionOpenBundle, nowMs: number):
   const transcript = bundle.transcript;
   if (!transcript || transcript.known !== true || transcript.requested !== true) return;
   // An unavailable mirror is not a transcript. Stashing it would let a hydrate
-  // paint an empty thread as a complete one.
-  if (!transcript.available || transcript.messages.length === 0) return;
+  // paint an empty thread as a complete one. It IS an answer, though: the
+  // server holds no saved copy. Recorded separately, so the mirror read does
+  // not spend a second round trip asking the transcript route the same thing.
+  if (!transcript.available || transcript.messages.length === 0) {
+    absentTranscripts.set(key, nowMs);
+    return;
+  }
   const { known: _known, requested: _requested, ...envelope } = transcript;
   transcripts.set(key, { envelope, stashedAtMs: nowMs });
 }
@@ -227,6 +235,23 @@ function stashTranscript(key: string, bundle: SessionOpenBundle, nowMs: number):
  * paint a snapshot, and a second paint over a store the runtime has already
  * filled is how a transcript grows ghosts.
  */
+/**
+ * Did this open's bundle answer "the server holds no saved copy"? ONCE, like
+ * the stash: a later read asks the server again, since a turn may have ended
+ * and written one since.
+ */
+export function takeOpenBundleTranscriptAbsence(
+  projectId: string,
+  sessionId: string,
+  nowMs: number = Date.now(),
+): boolean {
+  const key = scopeKey(projectId, sessionId);
+  const answeredAtMs = absentTranscripts.get(key);
+  if (answeredAtMs === undefined) return false;
+  absentTranscripts.delete(key);
+  return nowMs - answeredAtMs <= OPEN_BUNDLE_TRANSCRIPT_TTL_MS;
+}
+
 export function takeOpenBundleTranscript(
   projectId: string,
   sessionId: string,

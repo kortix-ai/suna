@@ -26,7 +26,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *    `package.json` OpenCode `bun install`s at startup.
  *  - THE GRANT COVERS MORE THAN TOOLS. `AgentBlockV2` (`index.v2.ts`):
  *    `sandbox` (which machine it boots), `connectors` + `connectors_required`,
- *    `secrets`, `skills`, `kortix_cli`, `workspace`, `enabled`. Channels fall
+ *    `secrets`, `skills`, `kortix_permissions`, `workspace`, `enabled`. Channels fall
  *    under `connectors` because a connected channel IS a connector with
  *    `provider: 'channel'` (`apps/api/src/projects/connectors.ts:61`).
  *  - Depth is not a harness menu. OpenCode is the only shipped runtime; ACP and
@@ -46,7 +46,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *    skills injected into every session at boot (`kortix-cli` is in both lists,
  *    so 19 distinct). 2 agents ship: `kortix` and `memory-reflector`.
  *  - MARKETPLACE: ships, labelled beta, ON by default. But the deterministic
- *    installer WAS REMOVED (`apps/api/src/projects/routes/r10.ts`): "The
+ *    installer WAS REMOVED (`apps/api/src/projects/routes/marketplace-install-session.ts`): "The
  *    deterministic install/lock/update/remove engine … has been removed …
  *    Adding a marketplace item to an existing project is now always an agent
  *    import." So: one click to ADD, and what happens next is an agent session
@@ -125,13 +125,13 @@ export const agent = {
       '    connectors: all',
       '    secrets: all',
       '    skills: all',
-      '    kortix_cli: all',
+      '    kortix_permissions: all',
       '',
       '  release-bot:',
       '    # this one gets almost nothing, on purpose',
       '    connectors: [github]',
       '    secrets: [GITHUB_AGENT_TOKEN]',
-      '    kortix_cli: [project.cr.open]',
+      '    kortix_permissions: [project.cr.open]',
       '',
       '# a grant you leave out resolves to none.',
       '# there is no implicit access. grant explicitly.',

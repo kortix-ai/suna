@@ -118,3 +118,33 @@ describe('isInviteEmail', () => {
     expect(isInviteEmail('')).toBe(false);
   });
 });
+
+describe('togglePrincipal — agents (service accounts as principals)', () => {
+  test('multi: an agent lands in its own bucket and counts toward the selection', () => {
+    let value = selection({ memberIds: ['u_1'] });
+    value = togglePrincipal(value, { kind: 'agent', id: 'sa_1' }, 'multi');
+    expect(value.agentIds).toEqual(['sa_1']);
+    expect(value.memberIds).toEqual(['u_1']);
+    expect(principalSelectionCount(value)).toBe(2);
+    value = togglePrincipal(value, { kind: 'agent', id: 'sa_1' }, 'multi');
+    expect(value.agentIds).toEqual([]);
+  });
+
+  test('single: picking an agent clears every other bucket, and singlePrincipal returns it', () => {
+    const value = togglePrincipal(
+      selection({ memberIds: ['u_1'], groupIds: ['g_1'] }),
+      { kind: 'agent', id: 'sa_2' },
+      'single',
+    );
+    expect(value).toEqual(selection({ agentIds: ['sa_2'] }));
+    expect(singlePrincipal(value)).toEqual({ kind: 'agent', id: 'sa_2' });
+  });
+
+  test('a literal without agentIds (pre-agent callers) still counts and toggles', () => {
+    const legacy: PrincipalSelection = { memberIds: [], groupIds: [], inviteEmails: [] };
+    expect(isPrincipalSelectionEmpty(legacy)).toBe(true);
+    expect(togglePrincipal(legacy, { kind: 'agent', id: 'sa_3' }, 'multi').agentIds).toEqual([
+      'sa_3',
+    ]);
+  });
+});

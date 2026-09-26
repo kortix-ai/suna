@@ -1,4 +1,5 @@
-// The overdraft guard inside atomic_use_credits, executed by a REAL PostgreSQL.
+// The overdraft guard inside the wallet's debit function, executed by a REAL
+// PostgreSQL.
 //
 // This function is the only thing standing between a metering tick and a
 // negative wallet. It was hardened twice and tested zero times:
@@ -12,8 +13,12 @@
 //     bound by an ordinary four-argument positional call.
 //
 // So the guard has silently regressed once already, by being bypassed rather
-// than by being edited. Every case below runs the SHIPPED migration text — not a
-// TypeScript re-description of it — against a disposable server.
+// than by being edited. 20260925013304428_wallet_private_schema moved the body
+// to kortix_wallet.debit_credits, where the floor is an argument, and left
+// public.atomic_use_credits as a wrapper that passes `p_enforce_floor => true`.
+// Every case below runs the SHIPPED migration text — not a TypeScript
+// re-description of it — against a disposable server, through the wrapper the
+// pre-rollout API still calls.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { resolve } from 'node:path';
 import { dockerAvailable } from './docker-available';
@@ -164,26 +169,24 @@ describe.skipIf(!dockerAvailable)('atomic_use_credits overdraft guard — real P
       );
       CREATE INDEX idx_credit_ledger_idempotency ON kortix.credit_ledger(idempotency_key)
         WHERE idempotency_key IS NOT NULL;
+      -- What 20260924194804787_client_role_lockdown leaves behind: new public
+      -- functions are not born client-executable. The migration below asserts it.
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
     `);
 
-    // The CURRENT shipped definition, verbatim. Reading it from the migration
-    // file is the point: a future migration that replaces the function without
-    // carrying the guard forward fails these tests instead of passing them.
+    // The CURRENT shipped definition, verbatim: the whole migration file.
+    // Reading it from the migration file is the point: a future migration that
+    // replaces the function without carrying the guard forward fails these
+    // tests instead of passing them.
     const migration = await Bun.file(
-      resolve(
-        import.meta.dir,
-        '..',
-        'migrations',
-        '20260805175409752_credit_use_credits_idempotency.sql',
-      ),
+      resolve(import.meta.dir, '..', 'migrations', '20260925013304428_wallet_private_schema.sql'),
     ).text();
-    const functionText = migration.slice(migration.indexOf('DROP FUNCTION IF EXISTS'));
-    if (!functionText.includes("IF v_total < p_amount THEN")) {
+    if (!migration.includes('IF v_floor AND v_total < p_amount THEN')) {
       throw new Error(
-        'the shipped atomic_use_credits no longer contains the balance guard — this test is the alarm',
+        'the shipped kortix_wallet.debit_credits no longer contains the balance guard — this test is the alarm',
       );
     }
-    psql(functionText);
+    psql(migration);
   });
 
   afterAll(() => {
@@ -286,6 +289,41 @@ describe.skipIf(!dockerAvailable)('atomic_use_credits overdraft guard — real P
     expect(second.transaction_id).toBe(first.transaction_id);
     expect(balance()).toBe(6);
     expect(ledgerRowCount()).toBe(1);
+  });
+
+  test('a NULL floor argument enforces the floor', () => {
+    reseed('0', '10', '0');
+    const result = JSON.parse(
+      scalar(
+        `SELECT kortix_wallet.debit_credits(p_account_id => '${ACCOUNT}'::uuid, p_amount => 25,
+           p_enforce_floor => NULL, p_description => 'x', p_ledger_type => 'usage', p_idempotency_key => NULL);`,
+      ),
+    );
+    expect(result.error).toBe('Insufficient credits');
+    expect(balance()).toBe(10);
+    expect(ledgerRowCount()).toBe(0);
+  });
+
+  test('a settlement is the same function without the floor, and flags the overdraft', () => {
+    reseed('0', '10', '0');
+    const result = JSON.parse(
+      scalar(`SELECT public.atomic_settle_credits('${ACCOUNT}'::uuid, 25::numeric, 'Work done', 'compute_debit');`),
+    );
+    expect(result.success).toBe(true);
+    expect(result.overdraft).toBe(true);
+    expect(balance()).toBe(-15);
+    expect(
+      scalar(`SELECT metadata ->> 'overdraft' FROM kortix.credit_ledger WHERE account_id = '${ACCOUNT}';`),
+    ).toBe('true');
+  });
+
+  test('an admission row and result carry no overdraft flag', () => {
+    reseed('0', '10', '0');
+    const result = useCredits(`'${ACCOUNT}'::uuid, 4::numeric, 'Admission', 'llm_debit'`);
+    expect('overdraft' in result).toBe(false);
+    expect(
+      scalar(`SELECT metadata ? 'overdraft' FROM kortix.credit_ledger WHERE account_id = '${ACCOUNT}';`),
+    ).toBe('f');
   });
 
   test('every written debit row stamps its granular kind into metadata', () => {

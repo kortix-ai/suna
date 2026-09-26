@@ -61,13 +61,19 @@ Each flag has two gates. They answer different questions.
 AND-gated by `available`. `enabled` therefore always implies `available`.
 
 `available` is an operator decision, made by the environment the API runs in.
-Three flags read it from configuration; every other flag is always available:
+Four flags read it from configuration; every other flag is always available:
 
 | Flag | Available when |
 |---|---|
 | `agent_tunnel` | `TUNNEL_ENABLED` is on |
 | `llm_gateway` | `LLM_GATEWAY_ENABLED` is on |
 | `monitors` | `PLATINUM_API_KEY` is set |
+| `config_releases` | `CONFIG_RELEASES_ENABLED` is on (default: on) |
+
+`CONFIG_RELEASES_ENABLED=false` is a kill switch: it turns config releases off
+for every project at once, whatever each project chose, and the row disappears
+from Settings. Every session then reads its workspace config directory at its
+next boot or start.
 
 ## Stability badges
 
@@ -168,11 +174,18 @@ refs). An explicit project choice always wins.
   decides — `runtime: pi` still boots pi, anything else boots OpenCode. Same
   repo layout, agents and skills either way; a running session keeps its
   harness until it is restarted or resumed.
-
 ### Graduated flags
 
 A graduated feature is on for every project and has no switch.
 
+- **Agents as principals** is standard behavior. An agent session acts as the
+  agent itself — its Kortix permissions within its ceiling role, minus the
+  human-only permissions, whoever runs it. It is not listed on
+  **Settings → Feature flags** and there is nothing to turn on. See
+  [Agent permissions](/docs/project/permissions). One project can be put back
+  on the old launcher-role model for a single release; ask support, who set it
+  with `PATCH /v1/projects/:id/features`. That switch is removed in the release
+  after this one.
 - **Review Center** graduated out of the flag system. The Review tab, the
   sidebar Review row, and the command-palette row show for every project; the
   `project.review.read` and `project.review.act` permissions still apply.

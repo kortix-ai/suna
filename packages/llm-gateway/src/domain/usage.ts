@@ -31,4 +31,14 @@ export interface UsageEvent extends TokenCounts {
   // The host's recordUsage hook reconciles this against `finalCost` (top up
   // the remainder, or refund the unused portion) instead of a flat deduct.
   billingHoldUsd?: number;
+  // The upstream that served the request, when `provider`/`model` carry the
+  // public identity instead (UpstreamDescriptor.publicProvider). Staff-only:
+  // hosts must never show it to customers.
+  upstream?: { provider: string; model: string };
+  /**
+   * True when the stream ended before the provider sent its usage frame (the
+   * client stopped, the provider failed or went silent) and the counts are the
+   * gateway's estimate from the prompt and the streamed output.
+   */
+  usageEstimated?: boolean;
 }

@@ -23,7 +23,7 @@ const PROJECT_ACTIONS = {
 mock.module('../iam', () => ({ PROJECT_ACTIONS }));
 
 let agentGrant: Record<string, unknown> | null = null;
-let authType: 'service_account' | 'supabase' = 'supabase';
+let authType: 'service_account' | 'supabase' | 'pat' = 'supabase';
 
 let row: ReturnType<typeof secretRow> | null = secretRow();
 const updates: Array<Record<string, unknown>> = [];
@@ -243,14 +243,18 @@ mock.module('../shared/audit', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/r3');
+// The secret and provider-OAuth routes, in production registration order.
+// secrets.ts registers the `/secrets/*` write rate limit ahead of them.
+await import('../projects/routes/secrets');
+await import('../projects/routes/secret-delivery');
+await import('../projects/routes/provider-oauth');
 
 function buildApp() {
   const app = new Hono<{
     Variables: {
       userId: string;
       agentGrant: Record<string, unknown>;
-      authType: 'service_account' | 'supabase';
+      authType: 'service_account' | 'supabase' | 'pat';
     };
   }>();
   app.use('*', async (c, next) => {
@@ -771,6 +775,9 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
   });
 
   test('rejects an agent principal', async () => {
+    // A session credential is a PAT (`authType: 'pat'`); the guard keys on the
+    // session principal, not on the grant alone.
+    authType = 'pat';
     agentGrant = { env: ['SERVICE_API_KEY'] };
 
     const response = await buildApp().request(
@@ -1390,6 +1397,8 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider audit', () => {
         metadata: {
           identifier: 'CODEX_AUTH_JSON',
           consumer: 'llm_gateway',
+          // effectiveRole 'owner' is not manager-tier: own private rows only.
+          scope: 'own_private',
         },
       }),
     ]);

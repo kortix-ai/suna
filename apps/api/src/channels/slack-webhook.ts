@@ -1,7 +1,7 @@
 // Barrel: the Slack webhook app split into ./slack/* modules. Importing
 // './slack/routes' for its side effect registers the 4 OpenAPI routes on
 // slackWebhookApp (in original order). Public exports are preserved exactly so
-// existing importers (projects/routes/r4.ts, channels/index.ts) keep working
+// existing importers (projects/routes/turn-questions.ts, channels/index.ts) keep working
 // with no import-path change.
 import './slack/routes';
 

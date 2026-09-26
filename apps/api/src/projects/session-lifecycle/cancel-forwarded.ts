@@ -25,7 +25,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
-import { resolveSessionOpencodeEndpoint } from './engine';
+import { resolveSessionOpencodeEndpoint } from './runtime-client';
 import { reachedPlacement, strandedPlacement } from './forwarded-placement';
 import { deleteInboxRowsWithAttachmentGrace, inboxScope } from './inbox-rows';
 import { wireMessageIdMatches } from './wire-id-match';

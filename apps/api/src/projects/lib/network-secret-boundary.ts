@@ -6,6 +6,7 @@ import { db } from '../../shared/db';
 import { resolveNetworkBoundaryBindings } from '../../secrets/network-boundary';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { listResolvedProjectSecrets } from '../secrets';
+import { resolveSessionPersonalOwner } from './personal-resources';
 import { resolveSessionSecretGrant } from './secret-grant';
 
 export async function resolveSessionNetworkBoundary(
@@ -47,7 +48,14 @@ export async function resolveSessionNetworkBoundary(
     sessionAgent,
     requestedAgent,
   });
-  const rows = await listResolvedProjectSecrets(projectId, session.createdBy ?? null);
+  // Spec 2026-09-22 §2.3: personal overrides follow the session's on-behalf-of
+  // human under the agent-principal model; the creator otherwise (legacy).
+  const personalUserId = await resolveSessionPersonalOwner({
+    projectId,
+    sessionId,
+    legacyUserId: session.createdBy ?? null,
+  });
+  const rows = await listResolvedProjectSecrets(projectId, personalUserId);
   return resolveNetworkBoundaryBindings(rows, {
     sessionId,
     agentGrantEnv: agentGrantEnv ?? null,

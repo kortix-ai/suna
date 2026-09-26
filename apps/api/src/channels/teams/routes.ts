@@ -9,8 +9,13 @@ import { handleTeamsActivity } from './dispatch';
 import { handleFileConsentInvoke } from './file-proxy';
 import { handleAdaptiveCardAction } from './interactivity';
 import type { TeamsActivity } from './types';
+import { MANAGED_TEAMS_INBOUND, scopeProjectTeamsActivity, type TeamsInbound } from './inbound';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
-async function processActivity(c: Context, expectedAppId?: string | null): Promise<Response> {
+async function processActivity(
+  c: Context,
+  byo?: { projectId: string; appId: string },
+): Promise<Response> {
   let activity: TeamsActivity;
   try {
     activity = (await c.req.json()) as TeamsActivity;
@@ -19,13 +24,25 @@ async function processActivity(c: Context, expectedAppId?: string | null): Promi
   }
 
   const authHeader = c.req.header('Authorization');
-  const valid = await validateInboundActivityJwt(authHeader, activity.serviceUrl, expectedAppId);
+  const valid = await validateInboundActivityJwt(authHeader, activity.serviceUrl, byo?.appId);
   if (!valid) return c.json({ error: 'unauthorized' }, 401);
+
+  // The token proves the audience (the app id), not the body. For a
+  // bring-your-own bot the project admin registered that app, so the body's
+  // tenant is accepted only when it is one the project's install proved, and
+  // everything downstream stays inside this project.
+  let inbound: TeamsInbound = MANAGED_TEAMS_INBOUND;
+  if (byo) {
+    const scoped = await scopeProjectTeamsActivity(byo.projectId, activity);
+    if (!scoped) return c.json({ error: 'This Teams tenant is not connected to this project' }, 403);
+    inbound = scoped;
+  }
+  bindIntegrationPrincipal('microsoft_teams', byo ? { projectId: byo.projectId } : undefined);
 
   if (activity.type === 'invoke') {
     if (activity.name === 'adaptiveCard/action') {
       try {
-        return c.json(await handleAdaptiveCardAction(activity), 200);
+        return c.json(await handleAdaptiveCardAction(activity, inbound), 200);
       } catch (err) {
         console.error('[teams-webhook] adaptive card action failed', err);
         return c.json({ statusCode: 500, type: 'application/vnd.microsoft.error', value: {} }, 200);
@@ -45,7 +62,7 @@ async function processActivity(c: Context, expectedAppId?: string | null): Promi
   // order and holds the next one until this response arrives; the dispatch
   // below can wait 10–20 s on a sandbox start or resume, and that wait used to
   // delay the NEXT message's live card by the same amount.
-  void handleTeamsActivity(activity).catch((err) => {
+  void handleTeamsActivity(activity, inbound).catch((err) => {
     console.error('[teams-webhook] dispatch failed', err);
   });
 
@@ -71,5 +88,5 @@ teamsWebhookApp.post('/:projectId/messages', async (c) => {
   }
   const appId = await loadTeamsAppIdForProject(projectId);
   if (!appId) return c.json({ error: 'teams not configured for this project' }, 503);
-  return processActivity(c, appId);
+  return processActivity(c, { projectId, appId });
 });

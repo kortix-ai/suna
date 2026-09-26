@@ -45,7 +45,7 @@ export const INITIAL_FORM_STATE: NewWorkspaceFormState = {
  * Accounts the signed-in user may actually create a workspace in — owner or
  * admin. `POST /provision` requires `ACCOUNT_ACTIONS.PROJECT_CREATE` and
  * returns 403 "Owner or admin role required" for anyone else
- * (`apps/api/src/projects/routes/r1.ts:462`), so offering any other account
+ * (`apps/api/src/projects/routes/projects.ts`), so offering any other account
  * would be a choice that can only fail: the user fills in a name, presses
  * Create, and gets a 403 with no warning.
  *

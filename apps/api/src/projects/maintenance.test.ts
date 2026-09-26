@@ -1,6 +1,8 @@
 import { describe, expect, mock, test } from 'bun:test';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realSandboxReaper from './sandbox-reaper';
+import * as realArchivedBoxRemoval from './reaping/archived-box-removal';
+import * as realStuckProvisioning from './reaping/stuck-provisioning';
 import * as realAttachments from '../connectors/attachments';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 
@@ -87,6 +89,23 @@ mock.module('./session-lifecycle/undelivered-prompts', () => ({
 
 mock.module('./session-lifecycle/runtime-wake-maintenance', () => ({
   reconcileRuntimeWakeFences: async () => ({ checked: 0, stopped: 0, removed: 0, errors: 0 }),
+}));
+
+mock.module('./reaping/archived-box-removal', () => ({
+  ...realArchivedBoxRemoval,
+  removeArchivedProviderBoxes: async () => ({ examined: 0, removed: 0, failed: 0 }),
+}));
+
+mock.module('./reaping/stuck-provisioning', () => ({
+  ...realStuckProvisioning,
+  convergeStuckProvisioningRuntimes: async () => ({
+    examined: 0,
+    activated: 0,
+    parked: 0,
+    lost: 0,
+    archived: 0,
+    errors: 0,
+  }),
 }));
 
 mock.module('./sandbox-reaper', () => ({

@@ -50,9 +50,17 @@ await connectors.search('send email');
 await connectors.describe('gmail.send_email');
 await connectors.call('gmail.send_email', { to, subject, body });
 await connectors.accounts('gmail');
-await connectors.uploadAttachment(bytes, {
+const { ref } = await connectors.uploadAttachment(bytes, {
   filename: 'invoice.pdf',
   contentType: 'application/pdf',
+  connector: 'microsoft-graph', // the connector the file is for
+});
+// `ref` is { $kortix_attachment: '<id>' }. The gateway swaps in the file:
+// as an attachments[] element it becomes the provider's attachment item,
+// in a string field it becomes the base64. The bytes never enter call args.
+await connectors.call('microsoft-graph.sendmail', {
+  user: 'sender@example.com',
+  body: { message: { subject: 'Invoice', attachments: [ref] } },
 });
 ```
 
@@ -370,6 +378,11 @@ The flag is off by default. Missing or rejected history falls back to the existi
 See [the testing runbook](../../docs/runbooks/session-transcript-history.md) for capture limits
 and local verification.
 
+`useSession().savedTranscript` says whether that saved conversation can show before the
+computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
+`messages`, and `none` when nothing can show until the runtime answers. A host renders
+placeholder rows on `loading` and its boot screen only on `none`.
+
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
 ```tsx
@@ -385,16 +398,21 @@ OpenCode query and synchronization controllers to the sandbox runtime. Two
 sandboxes cannot share browser cache state when a snapshot exposes the same
 OpenCode id during adoption.
 
-After a project replaces its repository, `/start` rejects sessions from the
-previous repository by default. A recovery screen can resume an existing
-preserved workspace explicitly:
+After a project replaces its repository, a session created before the
+replacement still starts. It runs the project's CURRENT config release and
+converges like any other session. What stays true of it is physical: its
+`/workspace` clone came from the old repository while `origin` now resolves to
+the new one. The two histories are unrelated, so a push from that clone needs a
+rebase first.
+
+`repositoryMode: 'previous'` is accepted and changes nothing:
 
 ```tsx
 useSession(projectId, sessionId, { repositoryMode: 'previous' });
 ```
 
-This option cannot create a replacement workspace. Project Git access remains
-disabled because the session keeps its previous repository generation.
+The server reads it as telemetry. Keep it only for callers built against the
+older behaviour.
 
 Message retries keep the originating sandbox URL after navigation. A `404` or
 `410` message read stops automatic retries and preserves the cached transcript.
@@ -625,8 +643,8 @@ chat UI actually dispatches on.
 ## Errors
 
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the
-platform client's `platformFetch`, `authenticatedFetch`, the files client, the
-opencode client, and `ensureReady()` all throw/return the same classes (from
+`authenticatedFetch`, the files client, the opencode client, and
+`ensureReady()` all throw/return the same classes (from
 the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes: `instanceof` works across every host, and
 `name`/shape are preserved for legacy `error.name === 'ApiError'` sniffers.
 
@@ -635,9 +653,10 @@ the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes:
   `.url` / `.endpoint` / `.timeout`.
 - `HeadlessAuthError extends ApiError` — `getToken()` returned null; the request was
   never sent (`code: 'NO_SESSION'`).
-- `BillingError` — HTTP 402, with the backend's payload on `.detail`.
-- `RequestTooLargeError` — HTTP 431 (usually a too-large upload batch), with a
-  `.detail.suggestion`.
+- `BillingError extends ApiError` — HTTP 402, with the backend's payload on
+  `.detail` and its machine code on `.code`.
+- `RequestTooLargeError extends ApiError` — HTTP 431 (usually a too-large
+  upload batch), with a `.detail.suggestion`.
 - `SessionNotReadyError` (root barrel) — a session handle's runtime-scoped
   member (`.runtime`, `.previewUrl()`, `.proxyUrl()`) was touched before
   `ensureReady()` resolved this session's own sandbox.

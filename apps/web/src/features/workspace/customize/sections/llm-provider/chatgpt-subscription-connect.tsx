@@ -21,7 +21,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import { subscriptionIsConnected, subscriptionPrimaryAction } from './subscription-control';
+import {
+  forgetSubscriptionCredentials,
+  subscriptionIsConnected,
+  subscriptionPrimaryAction,
+} from './subscription-control';
 import type { ChatGptChallenge, ChatGptPhase } from './types';
 import { sleep } from './utils';
 
@@ -135,11 +139,14 @@ export function ChatGptSubscriptionConnect({
     // the credential, audits it, and refreshes the model catalog. Nothing in
     // the product called it.
     mutationFn: () => deleteProjectProviderOAuth(projectId, 'openai'),
-    onSuccess: () => {
+    // Returning the promise keeps the button in its pending state until the
+    // cache says "disconnected", so the card never shows a live Disconnect
+    // button over a credential the server already removed.
+    onSuccess: async () => {
+      await forgetSubscriptionCredentials(queryClient, projectId);
       successToast(tHardcodedUi.raw('i18nComplete.text555cd401b3c3'));
       setPhase('idle');
       setError(null);
-      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
       refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) =>

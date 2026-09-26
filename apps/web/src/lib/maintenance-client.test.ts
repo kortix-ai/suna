@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { isMaintenanceProductRoute, unknownMaintenanceConfig } from './maintenance-client';
+import {
+  isMaintenanceProductRoute,
+  MAINTENANCE_PUBLIC_CACHE_CONTROL,
+  unknownMaintenanceConfig,
+} from './maintenance-client';
 
 describe('maintenance client fallback', () => {
   test('stays out of maintenance after a status request failure', () => {
@@ -28,5 +32,17 @@ describe('maintenance client fallback', () => {
     expect(isMaintenanceProductRoute('/pricing')).toBe(false);
     expect(isMaintenanceProductRoute('/admin/utils')).toBe(false);
     expect(isMaintenanceProductRoute('/maintenance')).toBe(false);
+  });
+
+  test('the public poll is served from a short shared cache, never the browser cache', () => {
+    // Every open tab polls GET /api/maintenance. The CDN absorbs the fleet;
+    // `max-age=0` keeps a tab from reusing its own copy past the CDN window,
+    // so an admin change reaches tabs within ~10-40 s.
+    const directives = MAINTENANCE_PUBLIC_CACHE_CONTROL.split(',').map((d) => d.trim());
+    expect(directives).toContain('public');
+    expect(directives).toContain('max-age=0');
+    expect(directives).toContain('s-maxage=10');
+    expect(directives.some((d) => d.startsWith('stale-while-revalidate='))).toBe(true);
+    expect(directives).not.toContain('no-store');
   });
 });

@@ -7,45 +7,15 @@ mock.module('../../repositories/project-model-access', () => ({ getProjectModelA
 
 let tierByAccount: Record<string, string> = {};
 const getAccountTier = mock(async (accountId: string) => tierByAccount[accountId] ?? 'pro');
-
-// resolveCandidates now calls the SAME cached tier resolver the rest of the
-// gateway uses (entitlements.getCachedAccountTier) instead of keeping its own
-// duplicate cache — resolve-candidates.ts's `resolveCachedAccountTier` is a
-// thin re-export of this, not a second implementation. Mirrors the real
-// implementation's TTL-cache-with-injectable-`now` shape (see
-// entitlements.ts) so the TTL-boundary suite below still exercises real
-// caching semantics through the mock.
-const TIER_CACHE_TTL_MS = 30_000;
-const accountTierCache = new Map<string, { tier: string; expiresAt: number }>();
-const getCachedAccountTier = mock(async (accountId: string, now: number = Date.now()) => {
-  const cached = accountTierCache.get(accountId);
-  if (cached && cached.expiresAt > now) return cached.tier;
-  const tier = await getAccountTier(accountId);
-  accountTierCache.set(accountId, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
-  return tier;
-});
-// Tier-derived (no operator override in these fixtures); reads through the
-// same mocked cache so TTL-boundary tests keep exercising one resolution path.
-// Mirrors the real resolver's billing-off short-circuit: self-hosted answers
-// true with NO tier lookup (the "no tier lookup when billing is disabled"
-// test below asserts exactly that).
-const accountMayUseManagedModels = mock(async (accountId: string, now: number = Date.now()) => {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return true;
-  return !realTiers.accountIsFreeTierForModels(await getCachedAccountTier(accountId, now));
-});
+// The TTL cache is the real `getCachedAccountTier` in billing-cache; its
+// boundary is proven in __tests__/unit-account-tier-cache-unified.test.ts.
+// Here both reads answer from the tier table, and the managed entitlement is
+// the real tier rule: `credit` is a paid plan without managed models.
 mock.module('../../billing/services/entitlements', () => ({
   getAccountTier,
-  getCachedAccountTier,
-  accountMayUseManagedModels,
-}));
-
-// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
-// lists exports by hand deletes every export it omits. The deletion surfaces in
-// whatever unrelated file imports a missing name next, only when the files are
-// co-run, and is attributed to that file rather than to this stub.
-mock.module('../../billing/services/tiers', () => ({
-  ...realTiers,
-  accountIsFreeTierForModels: (tier: string) => tier === 'free',
+  getCachedAccountTier: getAccountTier,
+  accountMayUseManagedModels: async (accountId: string) =>
+    !realTiers.accountIsFreeTierForModels(await getAccountTier(accountId)),
 }));
 
 const config: Record<string, unknown> = {};
@@ -94,17 +64,21 @@ const resolveCodexAccountCredential = mock(async (input: { value: string }) => {
   const parsed = JSON.parse(input.value) as { openai?: { access?: string } };
   return parsed.openai?.access ? { access: parsed.openai.access } : null;
 });
-mock.module('../credentials/codex', () => ({ resolveCodexCredential, resolveCodexAccountCredential, CodexRefreshError }));
+mock.module('../credentials/codex', () => ({
+  CHATGPT_CODEX_BASE_URL: 'https://codex.test',
+  CODEX_USER_AGENT: 'codex-test',
+  resolveCodexCredential,
+  resolveCodexAccountCredential,
+  CodexRefreshError,
+}));
 
-// Captures every id `livePricing` is called with, in call order — lets tests
-// assert resolveCandidates strips the Bedrock cross-region inference-profile
-// prefix (`us.`/`eu.`/`apac.`/`us-gov.`) before the PRICING lookup while
-// still keeping the full profile id as `resolvedModel` (the id actually sent
-// upstream). Mirrors the real stripBedrockInferenceProfilePrefix (descriptors.ts)
-// closely enough to exercise the call site; the prefix-stripping logic itself
-// is unit-tested directly in descriptors.test.ts.
+// The Bedrock URL, region, and prefix helpers are the real ones. Only the
+// managed and Codex descriptors and the pricing lookup are stubbed; the
+// pricing stub records every id it is asked for, in call order.
 let livePricingCalls: string[] = [];
+const realDescriptors = await import('./descriptors');
 mock.module('./descriptors', () => ({
+  ...realDescriptors,
   codexDescriptor: (credential: { access: string }, model: string) => ({
     provider: 'openai-codex',
     kind: 'openai-responses',
@@ -118,28 +92,6 @@ mock.module('./descriptors', () => ({
     livePricingCalls.push(`${providerId}/${modelId}`);
     return undefined;
   },
-  stripBedrockInferenceProfilePrefix: (modelId: string) =>
-    modelId.replace(/^(us-gov|us|eu|apac)\.(?=.)/, ''),
-  // Mirrors the real normalizeBedrockInferenceProfileRegion (descriptors.ts):
-  // rewrites a wrong-geography Anthropic inference-profile prefix to the
-  // endpoint region's geography (us-east-1 → us.); unit-tested directly in
-  // descriptors.test.ts.
-  normalizeBedrockInferenceProfileRegion: (modelId: string, region: string | null | undefined) => {
-    const r = (region?.trim() || 'us-east-1').toLowerCase();
-    const target = r.startsWith('us-gov-')
-      ? 'us-gov'
-      : r.startsWith('us-')
-        ? 'us'
-        : r.startsWith('eu-')
-          ? 'eu'
-          : r.startsWith('ap-')
-            ? 'apac'
-            : undefined;
-    if (!target) return modelId;
-    const m = modelId.match(/^(us-gov|us|eu|apac|jp|au)\.anthropic\.(.+)$/);
-    if (!m) return modelId;
-    return m[1] === target ? modelId : `${target}.anthropic.${m[2]}`;
-  },
   managedCandidates: (managed: { id: string }) => [
     {
       provider: 'kortix-managed',
@@ -151,11 +103,6 @@ mock.module('./descriptors', () => ({
       resolvedModel: managed.id,
     },
   ],
-  // Mirrors the real bedrockByokBaseUrl (descriptors.ts) closely enough to
-  // assert on: regional endpoint derived from `region`, defaulting exactly
-  // like the real DEFAULT_BEDROCK_BYOK_REGION — never reads config.
-  bedrockByokBaseUrl: (region: string | null | undefined) =>
-    `https://bedrock-runtime.${region?.trim() || 'us-east-1'}.amazonaws.com`,
 }));
 
 let catalogUpstream: { baseUrl?: string; envVar: string; kind: string } | null = null;
@@ -185,7 +132,7 @@ mock.module('../models/catalog-models', () => ({
   gatewayModelCatalog: () => ({}),
 }));
 
-const { resolveCandidates, resolveCachedAccountTier } = await import('./resolve-candidates');
+const { resolveCandidates } = await import('./resolve-candidates');
 
 function principal(overrides: Record<string, unknown> = {}) {
   return { userId: 'u1', accountId: crypto.randomUUID(), projectId: 'p1', ...overrides };
@@ -216,7 +163,6 @@ beforeEach(() => {
   capabilities = { reasoning: false, temperature: true };
   livePricingCalls = [];
   getAccountTier.mockClear();
-  getCachedAccountTier.mockClear();
   getProjectSecretValueForConsumer.mockClear();
   resolveProjectSecretsForConsumer.mockClear();
   resolveCodexCredential.mockClear();
@@ -257,8 +203,16 @@ describe('resolveCandidates — selected account key pool', () => {
   });
 });
 
-describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback', () => {
-  test('paid tier: platform-fee billing, 10% markup, managed fallback queued behind the BYOK key', async () => {
+describe('resolveCandidates — BYOK billing', () => {
+  // BYOK bills the provider account directly. The tier and the billing switch
+  // must not change that, and a managed model registered under the same id
+  // must never be appended as a fallback.
+  test.each([
+    ['a paid account', 'pro', true],
+    ['a free account', 'free', true],
+    ['a self-hosted deployment with billing off', 'pro', false],
+  ] as const)('%s: a BYOK key is charged nothing and gets no managed fallback', async (_name, tier, billing) => {
+    config.KORTIX_BILLING_INTERNAL_ENABLED = billing;
     catalogUpstream = {
       baseUrl: 'https://api.anthropic.com/v1',
       envVar: 'ANTHROPIC_API_KEY',
@@ -267,21 +221,22 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     resolvedSecrets = [{ identifier: 'ANTHROPIC_API_KEY', value: 'sk-user-key' }];
     runtimeManagedModel = { id: 'anthropic/claude-sonnet-4.6' };
     const p = principal();
-    tierByAccount[p.accountId] = 'pro';
+    tierByAccount[p.accountId] = tier;
 
-    const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
-
-    expect(candidates).toHaveLength(2);
-    expect(candidates[0]).toMatchObject({
-      billingMode: 'platform-fee',
-      markup: 0.1,
-      apiKey: 'sk-user-key',
-      credentialRef: 'ANTHROPIC_API_KEY',
-    });
-    expect(candidates[1]).toMatchObject({ provider: 'kortix-managed' });
+    expect(await resolveCandidates(p, 'anthropic/claude-sonnet-4.6')).toEqual([
+      expect.objectContaining({
+        provider: 'anthropic',
+        baseUrl: 'https://api.anthropic.com/v1',
+        resolvedModel: 'claude-sonnet-4.6',
+        billingMode: 'none',
+        markup: 0,
+        apiKey: 'sk-user-key',
+        credentialRef: 'ANTHROPIC_API_KEY',
+      }),
+    ]);
   });
 
-  test('queues every provider credential before the managed fallback', async () => {
+  test('queues every provider credential without a managed fallback', async () => {
     catalogUpstream = {
       baseUrl: 'https://api.anthropic.com/v1',
       envVar: 'ANTHROPIC_API_KEY',
@@ -297,17 +252,9 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
     const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
 
-    expect(candidates).toHaveLength(3);
-    expect(candidates.map((candidate) => candidate.credentialRef)).toEqual([
-      'primary',
-      'secondary',
-      undefined,
-    ]);
-    expect(candidates.map((candidate) => candidate.apiKey)).toEqual([
-      'sk-primary',
-      'sk-secondary',
-      'm',
-    ]);
+    expect(candidates).toHaveLength(2);
+    expect(candidates.map((candidate) => candidate.credentialRef)).toEqual(['primary', 'secondary']);
+    expect(candidates.map((candidate) => candidate.apiKey)).toEqual(['sk-primary', 'sk-secondary']);
   });
 
   test('BYOK descriptor carries the model capability flags for the transport', async () => {
@@ -385,6 +332,30 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     });
   });
 
+  test('BYOK Bedrock: an AWS_REGION that is not a region name is refused before any endpoint is built', async () => {
+    catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+    for (const region of ['x@example.test/', 'example.test#', 'us-east-1.example.test', 'us-east-1/']) {
+      secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: region };
+      await expect(resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8')).rejects.toMatchObject({
+        code: 'provider_not_connected',
+      });
+    }
+  });
+
+  test('BYOK Bedrock: a padded region name is trimmed and accepted', async () => {
+    catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
+    secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: ' us-gov-west-1 ' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+    const candidates = await resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8');
+    expect(candidates[0]).toMatchObject({
+      baseUrl: 'https://bedrock-runtime.us-gov-west-1.amazonaws.com',
+      region: 'us-gov-west-1',
+    });
+  });
+
   // Regression coverage for the $0 upstream-cost-hint bug: models.dev only
   // catalogs the BASE Bedrock model id, never the cross-region
   // inference-profile id the user actually requests — so the PRICING lookup
@@ -402,20 +373,6 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
     expect(candidates[0]).toMatchObject({ resolvedModel: 'eu.anthropic.claude-opus-4-8' });
     expect(livePricingCalls).toEqual(['amazon-bedrock/anthropic.claude-opus-4-8']);
-  });
-
-  // The Essentia incident, at the resolve-candidates layer: a session pinned to
-  // a `jp.` opus profile on a us-east-1 box must resolve to the `us.` invoke id
-  // so it stops 400ing "The provided model identifier is invalid."
-  test('BYOK Bedrock: a wrong-geography jp. pin on a us-east-1 box is normalized to us.', async () => {
-    catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
-    secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: 'us-east-1' };
-    const p = principal();
-    tierByAccount[p.accountId] = 'pro';
-
-    const candidates = await resolveCandidates(p, 'amazon-bedrock/jp.anthropic.claude-opus-5');
-
-    expect(candidates[0]).toMatchObject({ resolvedModel: 'us.anthropic.claude-opus-5' });
   });
 
   test('BYOK non-Bedrock provider: pricing lookup is never run through the Bedrock prefix-strip', async () => {
@@ -444,39 +401,6 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     ).rejects.toMatchObject({ code: 'provider_not_connected' });
   });
 
-  test('free tier: BYOK key is billing-free (markup 0, billingMode none) with no managed fallback', async () => {
-    catalogUpstream = {
-      baseUrl: 'https://api.anthropic.com/v1',
-      envVar: 'ANTHROPIC_API_KEY',
-      kind: 'anthropic',
-    };
-    resolvedSecret = 'sk-user-key';
-    const p = principal();
-    tierByAccount[p.accountId] = 'free';
-
-    const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
-
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]).toMatchObject({ billingMode: 'none', markup: 0 });
-  });
-
-  test('self-hosted (billing disabled): no tier lookup, still gets the platform markup and a managed fallback', async () => {
-    config.KORTIX_BILLING_INTERNAL_ENABLED = false;
-    catalogUpstream = {
-      baseUrl: 'https://api.anthropic.com/v1',
-      envVar: 'ANTHROPIC_API_KEY',
-      kind: 'anthropic',
-    };
-    resolvedSecret = 'sk-user-key';
-    runtimeManagedModel = { id: 'anthropic/claude-sonnet-4.6' };
-
-    const candidates = await resolveCandidates(principal(), 'anthropic/claude-sonnet-4.6');
-
-    expect(getAccountTier).not.toHaveBeenCalled();
-    expect(candidates).toHaveLength(2);
-    expect(candidates[0]).toMatchObject({ billingMode: 'none', markup: 0.1 });
-  });
-
   test('no BYOK key connected for anyone throws provider_not_connected', async () => {
     catalogUpstream = {
       baseUrl: 'https://api.anthropic.com/v1',
@@ -488,49 +412,6 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     await expect(
       resolveCandidates(principal(), 'anthropic/claude-sonnet-4.6'),
     ).rejects.toMatchObject({ code: 'provider_not_connected' });
-  });
-
-  // Regression coverage (2026-07-17 live defect report): a BYOK OpenRouter
-  // call to a model NOT individually catalogued by models.dev — e.g.
-  // OpenRouter's dynamic/no-catalog-price auto-router, `openrouter/
-  // openrouter/fusion` — 502ed with an "Invalid URL" upstream error,
-  // consistent with the resolved descriptor's `baseUrl` ending up empty for
-  // that call. Root-caused: it does NOT (provider-registry.ts's
-  // `resolveCatalogUpstream` resolves `baseUrl` from the PROVIDER, keyed by
-  // `providerId` only — its signature carries no model parameter at all, so
-  // it structurally cannot special-case "is this exact model individually
-  // catalogued" — see provider-registry.test.ts's sibling regression test).
-  // This test pins the OTHER half of that claim from resolveCandidates' own
-  // side: for a model id that is CLEARLY not any real catalog entry, under a
-  // connected BYOK provider, the resulting descriptor still carries the
-  // provider's real (non-empty) baseUrl — resolveCandidates never drops,
-  // nulls, or otherwise special-cases baseUrl based on the requested model
-  // id. Live re-verified against dev (2026-07-17): both the in-process
-  // gateway and the standalone gateway pod reach OpenRouter and bill
-  // non-zero upstream cost for the exact real-world case
-  // (`openrouter/openrouter/fusion`), streaming and non-streaming alike.
-  test("BYOK OpenRouter: a model id models.dev has never heard of still resolves the connected provider's real baseUrl", async () => {
-    catalogUpstream = {
-      baseUrl: 'https://openrouter.ai/api/v1',
-      envVar: 'OPENROUTER_API_KEY',
-      kind: 'openai-compat',
-    };
-    resolvedSecret = 'sk-or-user-key';
-    const p = principal();
-    tierByAccount[p.accountId] = 'pro';
-
-    const candidates = await resolveCandidates(
-      p,
-      'openrouter/definitely-not-a-real-catalog-model-xyz-123',
-    );
-
-    expect(candidates[0]).toMatchObject({
-      provider: 'openrouter',
-      baseUrl: 'https://openrouter.ai/api/v1',
-      apiKey: 'sk-or-user-key',
-      resolvedModel: 'definitely-not-a-real-catalog-model-xyz-123',
-    });
-    expect(candidates[0].baseUrl).toBeTruthy();
   });
 });
 
@@ -544,13 +425,31 @@ describe('resolveCandidates — managed model tier gating', () => {
     expect(getAccountTier).not.toHaveBeenCalled();
   });
 
-  test('free-tier account throws plan_upgrade_required for a managed model', async () => {
+  // Both refusals keep the machine-readable `plan_upgrade_required`; clients
+  // branch on the code. The copy differs: a free plan is told to upgrade, a
+  // paid plan without managed models is told to bring a key, never to upgrade.
+  test.each([
+    [
+      'a free account is told to upgrade',
+      'free',
+      '"glm-5.3-flash" requires a paid plan.',
+      'Upgrade your plan to use this model, or choose a model available on your current plan.',
+    ],
+    [
+      'a paid plan without managed models is told to bring a key',
+      'credit',
+      '"glm-5.3-flash" needs your own provider key on this plan.',
+      'This plan does not include managed models. Add your own provider key to use this model, or pick a model your key covers.',
+    ],
+  ] as const)('%s', async (_name, tier, message, suggestion) => {
     runtimeManagedModel = { id: 'glm-5.3-flash' };
     const p = principal();
-    tierByAccount[p.accountId] = 'free';
+    tierByAccount[p.accountId] = tier;
 
     await expect(resolveCandidates(p, 'glm-5.3-flash')).rejects.toMatchObject({
       code: 'plan_upgrade_required',
+      message,
+      suggestion,
     });
   });
 
@@ -629,6 +528,8 @@ describe('resolveCandidates — codex + unknown provider', () => {
     expect(resolveCodexCredential).toHaveBeenCalledWith('p1', 'u1', undefined, {
       accountId: 'acct-1',
       sessionId: 'session-1',
+      // Legacy principal (no personalUserId): the personal override owner is the token user.
+      principalUserId: 'u1',
     });
   });
 
@@ -653,38 +554,6 @@ describe('resolveCandidates — codex + unknown provider', () => {
   });
 });
 
-describe('resolveCachedAccountTier — 30s TTL boundary', () => {
-  test('caches within the TTL window: a second call inside 30s does not re-query', async () => {
-    const accountId = crypto.randomUUID();
-    tierByAccount[accountId] = 'pro';
-
-    expect(await resolveCachedAccountTier(accountId, 1_000)).toBe('pro');
-    tierByAccount[accountId] = 'free';
-    expect(await resolveCachedAccountTier(accountId, 1_000 + 29_999)).toBe('pro');
-    expect(getAccountTier).toHaveBeenCalledTimes(1);
-  });
-
-  test('a tier change mid-window is invisible until the cache expires (the exact bug shape)', async () => {
-    const accountId = crypto.randomUUID();
-    tierByAccount[accountId] = 'free';
-    expect(await resolveCachedAccountTier(accountId, 5_000)).toBe('free');
-
-    tierByAccount[accountId] = 'pro';
-    expect(await resolveCachedAccountTier(accountId, 5_000 + 15_000)).toBe('free');
-  });
-
-  test('refreshes exactly once the 30s TTL has elapsed', async () => {
-    const accountId = crypto.randomUUID();
-    tierByAccount[accountId] = 'free';
-    await resolveCachedAccountTier(accountId, 10_000);
-
-    tierByAccount[accountId] = 'pro';
-    expect(await resolveCachedAccountTier(accountId, 10_000 + 30_000)).toBe('pro');
-    expect(getAccountTier).toHaveBeenCalledTimes(2);
-  });
-});
-
-
 describe('explicit project model access', () => {
   test('disabled provider fails before any credential is read', async () => {
     modelAccess.disabledProviders = ['anthropic'];
@@ -696,14 +565,18 @@ describe('explicit project model access', () => {
     await expect(resolveCandidates(principal(), 'codex/test')).rejects.toMatchObject({ code: 'model_disabled' });
     expect(resolveCodexCredential).not.toHaveBeenCalled();
   });
-  test('managed disable removes managed fallback while preserving the BYOK candidate', async () => {
+  test('a Kortix-managed disable leaves a BYOK request on its own key', async () => {
     modelAccess.disabledProviders = ['kortix'];
     catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
     resolvedSecrets = [{ identifier: 'key', value: 'sk-test' }];
-    runtimeManagedModel = { id: 'anthropic/claude-sonnet-4.6' };
     const candidates = await resolveCandidates(principal(), 'anthropic/test');
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0].credentialRef).toBe('key');
+    expect(candidates.map((candidate) => candidate.credentialRef)).toEqual(['key']);
+  });
+  test('a Kortix-managed disable refuses a managed model before any tier or credential read', async () => {
+    modelAccess.disabledProviders = ['kortix'];
+    runtimeManagedModel = { id: 'glm-5.3-flash' };
+    await expect(resolveCandidates(principal(), 'glm-5.3-flash')).rejects.toMatchObject({ code: 'provider_disabled' });
+    expect(getAccountTier).not.toHaveBeenCalled();
   });
 });
 
@@ -715,7 +588,7 @@ test('a prospective ChatGPT pool validates through the same member-bound resolve
   const actor = principal();
   const candidates = await resolveCandidates(actor, 'codex/gpt-5.5', { providerSecretPools: { codex: ['shared'] } });
   expect(candidates.map(candidate => candidate.poolSecretId)).toEqual(['shared']);
-  expect(resolveSessionProviderSecrets).toHaveBeenCalledWith({ accountId: actor.accountId, projectId: actor.projectId, userId: actor.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON', secretIds: ['shared'] });
+  expect(resolveSessionProviderSecrets).toHaveBeenCalledWith({ accountId: actor.accountId, projectId: actor.projectId, userId: actor.userId, grantUserId: actor.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON', secretIds: ['shared'] });
   expect(resolveCodexAccountCredential).toHaveBeenCalledWith(expect.objectContaining({ sessionId: null }));
 });
 

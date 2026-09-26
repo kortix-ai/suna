@@ -4,14 +4,14 @@
 // rejected by the billing gate ("team wallet is out of credits") went through
 // `markTriggerExecutionFailed` with NO way to say "permanent" — so the execution
 // was retried five times over ~30s, each attempt re-running `createSession` →
-// `checkBillingActive` → the atomic-hold `deductCredits` only to fail identically.
+// `checkBillingActive` → the atomic-hold `wallet.debit` only to fail identically.
 // The failure only became visible (and distinguishable) after the full retry
 // ladder. Passing `terminal: true` dead-letters on the FIRST failure so the
 // trigger runtime row shows `failed` + the machine-readable reason immediately.
 //
 // Mocks `../../shared/db` via `mock.module` — process-global in bun:test, so run
-// this file in its own `bun test <file>` invocation, same caveat as
-// ../session-lifecycle/__tests__/dead-letter-marks-session-failed.test.ts.
+// this file in its own `bun test <file>` invocation (the repo runner's
+// `--isolate` already does).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectTriggerExecutions } from '@kortix/db';
 import type { TriggerExecutionRow } from '../trigger-execution-store';

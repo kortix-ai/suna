@@ -27,7 +27,7 @@ const CLIENT_READ_METADATA = {
   trigger_type: 'cron',
   trigger_slug: 'nightly-watch',
   // Read off the SINGLE-session response.
-  sandbox_slug: 'essentia',
+  sandbox_slug: 'sampleco',
   opencode_model: 'kortix/codex/gpt-5.6-sol',
   warm: true,
 };

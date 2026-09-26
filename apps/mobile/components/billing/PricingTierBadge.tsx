@@ -1,19 +1,16 @@
 /**
- * Pricing Tier Badge Component
- * 
- * Matches frontend TierBadge component exactly
- * Shows icon badges for pricing cards (24px height for lg size)
+ * PricingTierBadge — the plan name in a pill: "Free", "Team", "Enterprise",
+ * the API's plan families (`plan.label`). The legacy Basic / Plus / Pro / Ultra
+ * artwork is gone (Jay, 2026-09-23): no account shows those names any more.
  */
 
 import * as React from 'react';
 import { View } from 'react-native';
-import PlusSvg from '@/assets/brand/tiers/plus.svg';
-import ProSvg from '@/assets/brand/tiers/pro.svg';
-import UltraSvg from '@/assets/brand/tiers/ultra.svg';
-import BasicSvg from '@/assets/brand/tiers/basic.svg';
+import { Text } from '@/components/ui/text';
+import { THEME } from '@/lib/utils/theme';
 
 interface PricingTierBadgeProps {
-  /** Plan name (e.g., 'Basic', 'Plus', 'Pro', 'Ultra') */
+  /** The plan family label: 'Free', 'Team' or 'Enterprise'. */
   planName: string;
   /** Size variant - matches frontend: xxs, xs, sm, md, lg, xl */
   size?: 'xxs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl';
@@ -29,46 +26,38 @@ const sizeConfig = {
 };
 
 /**
- * PricingTierBadge Component
- * 
- * Displays tier icon badge for pricing cards.
- * Matches frontend TierBadge behavior exactly.
+ * A full-radius light grey pill with dark text in both themes. The text size
+ * is derived from `height` instead of a Text variant — one badge renders at
+ * 12–32pt.
  */
-export function PricingTierBadge({
-  planName,
-  size = 'lg',
-}: PricingTierBadgeProps) {
-  const plan = planName?.toLowerCase();
-  const config = sizeConfig[size];
-
-  // Select appropriate SVG component - matches frontend plan-utils.ts logic
-  let TierIcon: React.ComponentType<{ width: number; height: number }> | null = null;
-  
-  if (plan?.includes('ultra')) {
-    TierIcon = UltraSvg;
-  } else if (plan?.includes('pro') || plan?.includes('business') || plan?.includes('enterprise') || plan?.includes('scale') || plan?.includes('max')) {
-    TierIcon = ProSvg;
-  } else if (plan?.includes('plus')) {
-    TierIcon = PlusSvg;
-  } else if (plan?.includes('free') || plan?.includes('basic')) {
-    TierIcon = BasicSvg;
-  }
-
-  if (!TierIcon) {
-    return null;
-  }
-
-  // Frontend uses height for both width and height, maintaining aspect ratio
-  // SVGs have different widths (50, 55, 59, 63) but same height (24)
-  // For React Native, we need to calculate width based on aspect ratio
-  // Typical SVG aspect ratio is ~2.5:1 (width:height), so we'll use a multiplier
-  const aspectRatio = 2.5; // Approximate aspect ratio for tier badges
-  const calculatedWidth = config.height * aspectRatio;
-  
+function PlanNameBadge({ planName, height }: { planName: string; height: number }) {
   return (
-    <View style={{ height: config.height, width: calculatedWidth }}>
-      <TierIcon width={calculatedWidth} height={config.height} />
+    <View
+      accessibilityLabel={planName}
+      style={{
+        height,
+        borderRadius: height / 2,
+        paddingHorizontal: Math.round(height * 0.45),
+        justifyContent: 'center',
+        alignItems: 'center',
+        // `--border` light, L 89.8%, in both themes.
+        backgroundColor: THEME.light.border,
+      }}>
+      <Text
+        numberOfLines={1}
+        className="font-roobert-medium"
+        style={{
+          fontSize: Math.round(height * 0.55),
+          lineHeight: height,
+          color: THEME.light.foreground,
+        }}>
+        {planName}
+      </Text>
     </View>
   );
 }
 
+export function PricingTierBadge({ planName, size = 'lg' }: PricingTierBadgeProps) {
+  if (!planName?.trim()) return null;
+  return <PlanNameBadge planName={planName.trim()} height={sizeConfig[size].height} />;
+}

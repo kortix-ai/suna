@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { applyAgentScopeV2, grantSecretToAgentV2 } from './agent-config-v2';
+import { applyAgentBlockV2, applyAgentScopeV2, grantSecretToAgentV2, readAgentBlockV2 } from './agent-config-v2';
 
 const manifest = (agents: Record<string, unknown>) => ({
   schemaVersion: 2,
@@ -93,7 +93,35 @@ describe('applyAgentScopeV2 — connectors_required', () => {
     );
     expect(res.ok).toBe(true);
     expect(blockOf(res).support.secrets).toBe('all');
-    expect(blockOf(res).support.kortix_cli).toEqual(['project.read']);
+    // The deprecated `kortix_cli` key is written back under its canonical
+    // name, value unchanged — same canonicalization as connectors_personal.
+    expect(blockOf(res).support.kortix_permissions).toEqual(['project.read']);
+    expect(blockOf(res).support).not.toHaveProperty('kortix_cli');
+  });
+});
+
+describe('kortix_permissions / kortix_cli alias', () => {
+  test('readAgentBlockV2 presents a legacy kortix_cli block under kortix_permissions', () => {
+    const read = readAgentBlockV2(manifest({ support: { kortix_cli: ['project.read'] } }), 'support');
+    expect(read.ok).toBe(true);
+    const block = (read as unknown as { block: Record<string, unknown> }).block;
+    expect(block.kortix_permissions).toEqual(['project.read']);
+    expect(block).not.toHaveProperty('kortix_cli');
+  });
+
+  test('applyAgentBlockV2 accepts a kortix_cli request and writes kortix_permissions', () => {
+    const res = applyAgentBlockV2(manifest({ support: {} }), 'support', { kortix_cli: 'all' });
+    expect(res.ok).toBe(true);
+    expect(blockOf(res).support.kortix_permissions).toBe('all');
+    expect(blockOf(res).support).not.toHaveProperty('kortix_cli');
+  });
+
+  test('applyAgentBlockV2 rejects kortix_cli that disagrees with kortix_permissions', () => {
+    const res = applyAgentBlockV2(manifest({ support: {} }), 'support', {
+      kortix_permissions: ['project.read'],
+      kortix_cli: ['project.write'],
+    });
+    expect(res.ok).toBe(false);
   });
 });
 

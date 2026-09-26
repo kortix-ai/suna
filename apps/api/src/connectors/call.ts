@@ -374,6 +374,9 @@ function methodAllowsBody(method: string): boolean {
   return m === 'POST' || m === 'PUT' || m === 'PATCH' || m === 'DELETE';
 }
 
+/** The App gate's credential header (apps/public-proxy.ts), lowercase. */
+const APP_AUTHORIZATION_HEADER = 'x-kortix-app-authorization';
+
 function joinUrl(base: string, path: string): string {
   return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
@@ -394,6 +397,8 @@ function buildHttpRequest(opts: {
   secret?: string | null;
   args?: Record<string, unknown>;
   paramHints?: Record<string, ParamLoc>;
+  /** The operation's declared request media type. Defaults to JSON. */
+  bodyMediaType?: string;
 }): BuiltRequest {
   const args = opts.args ?? {};
   const hints = opts.paramHints ?? {};
@@ -409,6 +414,7 @@ function buildHttpRequest(opts: {
   });
 
   const bodyObj: Record<string, unknown> = {};
+  let callerContentType: string | null = null;
   let explicitBody: unknown;
   let hasExplicitBody = false;
 
@@ -422,7 +428,12 @@ function buildHttpRequest(opts: {
     const hint = hints[key];
     if (hint === 'path') continue; // already templated (or absent)
     if (hint === 'query') { appendQuery(query, key, value); continue; }
-    if (hint === 'header') { headers[key] = String(value); continue; }
+    if (hint === 'header') {
+      // The body encoding owns Content-Type (see encodeBody below).
+      if (key.toLowerCase() === 'content-type') callerContentType = String(value);
+      else setHeader(headers, key, String(value));
+      continue;
+    }
     // no hint
     if (methodAllowsBody(opts.method)) bodyObj[key] = value;
     else appendQuery(query, key, value);
@@ -457,11 +468,77 @@ function buildHttpRequest(opts: {
   let body: string | undefined;
   const finalBody = hasExplicitBody ? explicitBody : (Object.keys(bodyObj).length ? bodyObj : undefined);
   if (finalBody !== undefined) {
-    headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
-    body = JSON.stringify(finalBody);
+    const encoded = encodeBody(
+      finalBody,
+      callerContentType ?? headerValue(headers, 'content-type') ?? opts.bodyMediaType ?? null,
+    );
+    setHeader(headers, 'Content-Type', encoded.contentType);
+    body = encoded.body;
   }
 
   return { url, method: opts.method.toUpperCase(), headers, body };
+}
+
+function headerValue(headers: Record<string, string>, name: string): string | null {
+  const lower = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lower) return value;
+  }
+  return null;
+}
+
+/** Set a header, removing every other spelling of the same name. */
+function setHeader(headers: Record<string, string>, name: string, value: string): void {
+  const lower = name.toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === lower) delete headers[key];
+  }
+  headers[name] = value;
+}
+
+function isJsonMediaType(mediaType: string): boolean {
+  const essence = mediaType.split(';', 1)[0]!.trim().toLowerCase();
+  return essence === 'application/json' || essence.endsWith('+json');
+}
+
+/** A string that already holds a JSON object or array document. */
+function jsonDocumentString(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return false;
+  try {
+    JSON.parse(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Encode the request body for the declared media type. JSON is the default
+ * and the fallback: a media type the gateway cannot encode (multipart, binary)
+ * never relabels a JSON payload, because a wrong label is exactly what makes
+ * an upstream such as Microsoft Graph reject the request with HTTP 400.
+ */
+function encodeBody(value: unknown, declared: string | null): { contentType: string; body: string } {
+  const mediaType = declared?.trim() || 'application/json';
+  const essence = mediaType.split(';', 1)[0]!.trim().toLowerCase();
+  if (essence === 'application/x-www-form-urlencoded' && value && typeof value === 'object' && !Array.isArray(value)) {
+    const form = new URLSearchParams();
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      appendQuery(form, key, item != null && typeof item === 'object' && !Array.isArray(item) ? JSON.stringify(item) : item);
+    }
+    return { contentType: mediaType, body: form.toString() };
+  }
+  if (typeof value === 'string' && essence.startsWith('text/')) {
+    return { contentType: mediaType, body: value };
+  }
+  const contentType = isJsonMediaType(mediaType) ? mediaType : 'application/json';
+  // A JSON document passed as a string is already encoded. Stringifying it
+  // again sends a JSON string literal, which JSON APIs reject.
+  if (typeof value === 'string' && jsonDocumentString(value)) {
+    return { contentType, body: value };
+  }
+  return { contentType, body: JSON.stringify(value) };
 }
 
 function appendQuery(query: URLSearchParams, key: string, value: unknown): void {
@@ -972,10 +1049,26 @@ export async function executeCall(opts: {
   secret?: string | null;
   args?: Record<string, unknown>;
   paramHints?: Record<string, ParamLoc>;
+  /**
+   * The Kortix App gate credential (`Bearer <assertion>`) for a connector
+   * whose base URL is an App of this deployment in the caller's project — see
+   * gateway.ts `appAuthorizationFor`. Sent as `X-Kortix-App-Authorization` on
+   * openapi/http requests only, so the App keeps `Authorization` for its own
+   * key. Wins over a static connector header of the same name.
+   */
+  appAuthorization?: string | null;
   now?: () => Date;
   fetchImpl: FetchImpl;
 }): Promise<ExecResult> {
   const { binding } = opts;
+  const withAppAuthorization = (req: BuiltRequest): BuiltRequest => {
+    if (!opts.appAuthorization) return req;
+    const headers = Object.fromEntries(
+      Object.entries(req.headers).filter(([name]) => name.toLowerCase() !== APP_AUTHORIZATION_HEADER),
+    );
+    headers['X-Kortix-App-Authorization'] = opts.appAuthorization;
+    return { ...req, headers };
+  };
 
   if (binding.kind === 'postman') {
     return performRequest(buildPostmanRequest({
@@ -999,8 +1092,9 @@ export async function executeCall(opts: {
       secret: opts.secret,
       args: opts.args,
       paramHints: opts.paramHints,
+      bodyMediaType: binding.bodyMediaType,
     });
-    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
+    return performRequest(withAppAuthorization(req), opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'http') {
@@ -1014,8 +1108,9 @@ export async function executeCall(opts: {
       secret: opts.secret,
       args: opts.args,
       paramHints: opts.paramHints,
+      bodyMediaType: binding.bodyMediaType,
     });
-    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
+    return performRequest(withAppAuthorization(req), opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'mcp') {

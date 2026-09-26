@@ -26,10 +26,7 @@ import {
 } from '../../connectors/credentials';
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
-import {
-  connectionIsReachable,
-  isTrustedManagedChannelAuthorization,
-} from './connection-access';
+import { type ConnectionReachabilityActor, connectionRowIsReachable } from './connection-access';
 import { projectSecretIsConfiguredForConsumer } from '../secrets';
 
 export interface ValidatedSessionConnectorBinding {
@@ -150,17 +147,21 @@ export async function connectorConnectionIsConnected(input: {
     : false;
 }
 
-function trustedManagedAuthorization(
+function sessionConnectionIsReachable(
   connector: ConnectorRequirementRow,
   connection: ConnectorConnectionRow,
+  actor: ConnectionReachabilityActor,
 ): boolean {
-  return isTrustedManagedChannelAuthorization({
-    providerType: connector.providerType,
-    platform: connectorPlatform(connector.config),
-    ownerType: connection.ownerType,
-    ownerId: connection.ownerId,
-    metadata: connection.metadata,
-  });
+  return connectionRowIsReachable(
+    {
+      ownerType: connection.ownerType,
+      ownerId: connection.ownerId,
+      metadata: connection.metadata,
+      providerType: connector.providerType,
+      connectorConfig: connector.config,
+    },
+    actor,
+  );
 }
 
 /**
@@ -367,12 +368,10 @@ export async function validateSessionConnectorBindings(input: {
       metadata: row.metadata,
     };
     if (
-      !connectionIsReachable({
-        ownerType: connection.ownerType,
-        ownerId: connection.ownerId,
-        actingUserId: input.actingUserId,
-        actingPrincipalIsServiceAccount: input.actingPrincipalIsServiceAccount,
-        trustedManagedSystem: trustedManagedAuthorization(connector, connection),
+      !sessionConnectionIsReachable(connector, connection, {
+        userId: input.actingUserId,
+        isServiceAccount: input.actingPrincipalIsServiceAccount,
+        agentPrincipal: null,
       })
     ) {
       return {
@@ -472,6 +471,12 @@ export async function sessionHasMemberConnectorBinding(input: {
   return Boolean(row);
 }
 
+/** The personal-resource scope of an agent-principal caller (spec §2.3). */
+export interface AgentPrincipalPersonalScope {
+  /** The human the session acts on behalf of; null = unattended or cleared. */
+  onBehalfOfUserId: string | null;
+}
+
 /**
  * Resolve the effective connection on every connector request. A present but
  * revoked/error binding never falls through to a project default.
@@ -495,6 +500,13 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
   alias: string;
   actingUserId?: string;
   actingPrincipalIsServiceAccount?: boolean;
+  /**
+   * Present when the caller is an agent session under the agent-principal
+   * model (spec docs/specs/2026-09-22-agents-as-principals.md §2.3). A
+   * member-owned account then keys on `onBehalfOfUserId` AND a private
+   * session — never on the session creator or the token user.
+   */
+  agentPrincipal?: AgentPrincipalPersonalScope | null;
   /**
    * Name or id of the account to run this call as, when the caller named one.
    * Omitted resolves exactly as before: the session's binding if it holds one,
@@ -610,12 +622,12 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
         connector.status !== 'active' ||
         connection.status !== 'active' ||
         (connection.ownerType === 'member' && visibility !== 'private') ||
-        !connectionIsReachable({
-          ownerType: connection.ownerType,
-          ownerId: connection.ownerId,
-          actingUserId,
-          actingPrincipalIsServiceAccount,
-          trustedManagedSystem: trustedManagedAuthorization(connector, connection),
+        !sessionConnectionIsReachable(connector, connection, {
+          userId: actingUserId,
+          isServiceAccount: actingPrincipalIsServiceAccount,
+          agentPrincipal: input.agentPrincipal
+            ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
+            : null,
         }) ||
         !(await connectorConnectionIsConnected({ connector, connection }))
       ) {
@@ -661,6 +673,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
       : input.actingPrincipalIsServiceAccount,
     visibility,
     account: input.account,
+    agentPrincipal: input.agentPrincipal ?? null,
   });
 }
 
@@ -688,7 +701,7 @@ export async function resolveSessionConnectorConnection(
  * an unselected call takes the first entry exactly as before.
  *
  * Entitlement is three filters: the row's reachability for this principal
- * (`connectionIsReachable`), the session's visibility (a member-owned account
+ * (`connectionRowIsReachable`), the session's visibility (a member-owned account
  * never leaks into a shared session), and whether the account is genuinely
  * connected.
  *
@@ -716,13 +729,16 @@ export async function listEntitledConnectorConnections(input: {
   actingUserId?: string;
   actingPrincipalIsServiceAccount?: boolean;
   visibility?: 'private' | 'project' | 'restricted';
+  /** See `resolveSessionConnectorConnectionOutcome`. With it, the
+   *  service-account probe below is skipped: the rule keys on on_behalf_of. */
+  agentPrincipal?: AgentPrincipalPersonalScope | null;
 }): Promise<EntitledConnectorConnection[]> {
   const alias = canonicalConnectorAlias(input.alias);
   const actingUserId = input.actingUserId ?? '';
   let actingPrincipalIsServiceAccount = input.actingPrincipalIsServiceAccount ?? false;
   const visibility: 'private' | 'project' | 'restricted' = input.visibility ?? 'private';
 
-  if (input.actingPrincipalIsServiceAccount === undefined && actingUserId.length > 0) {
+  if (!input.agentPrincipal && input.actingPrincipalIsServiceAccount === undefined && actingUserId.length > 0) {
     const [serviceAccount] = await db
       .select({ id: serviceAccounts.serviceAccountId })
       .from(serviceAccounts)
@@ -791,12 +807,12 @@ export async function listEntitledConnectorConnections(input: {
       metadata: row.metadata,
     };
     if (
-      !connectionIsReachable({
-        ownerType: connection.ownerType,
-        ownerId: connection.ownerId,
-        actingUserId,
-        actingPrincipalIsServiceAccount,
-        trustedManagedSystem: trustedManagedAuthorization(connector, connection),
+      !sessionConnectionIsReachable(connector, connection, {
+        userId: actingUserId,
+        isServiceAccount: actingPrincipalIsServiceAccount,
+        agentPrincipal: input.agentPrincipal
+          ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
+          : null,
       })
     ) {
       continue;
@@ -923,6 +939,7 @@ export async function resolveProjectDefaultConnectorConnectionOutcome(input: {
   visibility?: 'private' | 'project' | 'restricted';
   /** Name or id of the account to run as. Omitted = the default. */
   account?: string | null;
+  agentPrincipal?: AgentPrincipalPersonalScope | null;
 }): Promise<ResolvedConnectorConnectionOutcome> {
   const entitled = await listEntitledConnectorConnections(input);
   const selection = selectEntitledConnectorConnection(entitled, input.account);
