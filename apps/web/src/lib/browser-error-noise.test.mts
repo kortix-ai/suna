@@ -23,6 +23,7 @@ import {
   isInjectedScriptSendMessageNoise,
   isInpageJsNoErrorMessageNoise,
   isInpageWalletStreamNoise,
+  isIosWebViewInjectedStackOverflowNoise,
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
   isLikelyDomMutationNoise,
@@ -6199,6 +6200,198 @@ test('does NOT suppress a real first-party RangeError recursion with a resolved 
     shouldIgnoreBrowserRuntimeNoise({
       message: 'Maximum call stack size exceeded.',
       filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+    }),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// iOS-WebView in-document inline-script stack overflow
+// (Better Stack patterns
+// 101e1671b389e89e5e2a0f555ea7626e4c83a8ed8495e90fc1a2ac0cfa389f87 and
+// d842945607c935d2d4c85dddf54ffc596f9120137f59257cd293a961908a403b,
+// Kortix Frontend prod, application_id 2346967). `RangeError: Maximum call
+// stack size exceeded.`, 1 occurrence each / 0 identified users, last
+// 2026-09-25 20:01:22 UTC / 20:00:30 UTC, release `a9378b74…`, one anonymous
+// Google Search App 436 session on iOS (iPhone) 27.0.0 with Google Translate
+// active. The stack is a tight mutual recursion of Closure-minified functions
+// (`Ok`/`Qk`) at one document line; EVERY frame's filename is the in-page
+// document source `app:///projects/<project_id>/sessions/<session_id>` — no
+// `_next` chunk frame and no resolved `apps/web/src/…` frame. The sibling
+// shape of the frameless iOS-WebKit stack overflow above.
+// ---------------------------------------------------------------------------
+
+// The exact production frame shape, with synthetic ids (never real prod ids).
+const IOS_WEBVIEW_INLINE_SOURCE = 'app:///projects/test-project-id/sessions/test-session-id';
+const IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES = [
+  { function: 'Ok', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 226, colno: 63, in_app: true },
+  { function: 'Qk', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 226, colno: 408, in_app: true },
+  { function: '?', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 198, colno: 237, in_app: true },
+  { function: '?', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 190, colno: 41, in_app: true },
+];
+
+test('classifies the iOS-WebView in-document inline-script stack overflow as noise', () => {
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message,
+        frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+      }),
+      true,
+      `expected "${message}" with in-document inline frames to be noise`,
+    );
+  }
+});
+
+test('suppresses the iOS-WebView in-document stack overflow via the Sentry beforeSend gate', () => {
+  // The exact production event shape: `auto.browser.global_handlers.onerror`
+  // with every frame on the in-page document source, and the request url path
+  // equal to the frame path.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/test-project-id/sessions/test-session-id' },
+      exception: {
+        values: [
+          {
+            value: 'RangeError: Maximum call stack size exceeded.',
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+            stacktrace: { frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('keeps reporting an asset frame or an in-document frame from a different page path', () => {
+  // A loaded `.js` asset on the `app:///` origin is a real script, not inline
+  // code executed in the document.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack size exceeded.',
+      frames: [
+        { function: 'boot', filename: 'app:///assets/index-abc123.js', lineno: 1, colno: 2 },
+      ],
+    }),
+    false,
+  );
+  // An in-document frame whose path is NOT the page path is another document
+  // context (embed, iframe), not this page's injected script.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack size exceeded.',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+      requestUrl: 'https://kortix.com/projects/other-project/sessions/other-session',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/other-project/sessions/other-session' },
+      exception: {
+        values: [
+          {
+            value: 'Maximum call stack size exceeded.',
+            stacktrace: { frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES },
+          },
+        ],
+      },
+    }),
+    false,
+  );
+});
+
+test('suppresses the iOS-WebView in-document stack overflow via the runtime (window.onerror) gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: IOS_WEBVIEW_INLINE_SOURCE,
+    }),
+    true,
+  );
+});
+
+test('keeps reporting a stack overflow that carries a bundle or first-party frame', () => {
+  const bundleFrame = {
+    function: 'e',
+    filename: 'app:///_next/static/chunks/main-abc123.js',
+    lineno: 1,
+    colno: 2,
+  };
+  const nextLiveFrame = {
+    function: 'te',
+    filename: 'app:///_next-live/feedback/913.f924585152f5e22503e7.js',
+    lineno: 1,
+    colno: 2,
+  };
+  const firstPartyFrame = {
+    function: 'deepRecurse',
+    filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+    lineno: 3,
+    colno: 4,
+  };
+  for (const frames of [
+    [bundleFrame],
+    [nextLiveFrame],
+    [firstPartyFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, bundleFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, nextLiveFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, firstPartyFrame],
+  ]) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message: 'Maximum call stack size exceeded.',
+        frames,
+      }),
+      false,
+      `expected real recursion with frames ${JSON.stringify(frames)} to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: 'Maximum call stack size exceeded.',
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting real recursion with frames ${JSON.stringify(frames)}`,
+    );
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'app:///_next/static/chunks/main-abc123.js',
+    }),
+    false,
+  );
+});
+
+test('does NOT treat an unrelated message from the same in-document source as stack-overflow noise', () => {
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Minified React error #418',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+    }),
+    false,
+  );
+  // Prefix-only, not the canonical message.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
     }),
     false,
   );
