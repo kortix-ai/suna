@@ -2,6 +2,7 @@ import { type QueryClient } from '@tanstack/react-query';
 import { STREAM_OBSERVATION_MAX_MS } from '../../core/session/working';
 import { opencodeKeys, type Session } from '../use-opencode-sessions';
 import { qk } from '../query-keys';
+import { updateCachedProjectSessions } from '../session-cache-write';
 import type { OpenCodeEvent } from './types';
 
 /**
@@ -194,6 +195,13 @@ export function refetchKortixSessionMirrors(
     queryKey: [...qk.project.sessionsScope(projectId), 'list'],
     type: 'active',
   });
+  // The PAGED family is what the sidebar and the Sessions page read. A refetch
+  // aimed only at `'list'` never reached them, so a new session or a new title
+  // appeared there only on the next poll, up to 60 s later.
+  void queryClient.refetchQueries({
+    queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'],
+    type: 'active',
+  });
 }
 
 // Same placeholder predicate the API serializer applies (`lib/opencode-title.ts`)
@@ -229,24 +237,18 @@ export function patchKortixSessionTitleMirrors(
   title: string | null,
 ): void {
   if (!projectId || !title) return;
-  const patchRow = (row: unknown): unknown => {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
-    const rec = row as Record<string, unknown>;
-    if (rec.opencode_session_id !== nativeSessionId) return row;
-    if (typeof rec.custom_name === 'string' && rec.custom_name.trim()) return row;
-    if (rec.name === title) return row;
-    return { ...rec, name: title };
-  };
-  queryClient.setQueriesData({ queryKey: qk.project.sessionsScope(projectId) }, (data: unknown) => {
-    if (Array.isArray(data)) {
-      let changed = false;
-      const next = data.map((row) => {
-        const patched = patchRow(row);
-        if (patched !== row) changed = true;
-        return patched;
-      });
-      return changed ? next : data;
-    }
-    return patchRow(data);
+  // Through the shape-aware writer: the sidebar and the Sessions page hold the
+  // PAGED list (`{ pages, pageParams }`), which a flat-array patch skipped, so
+  // the title reached the header and the tab but not the list beside them.
+  updateCachedProjectSessions(queryClient, projectId, (rows) => {
+    let changed = false;
+    const next = rows.map((row) => {
+      if (row.opencode_session_id !== nativeSessionId) return row;
+      if (typeof row.custom_name === 'string' && row.custom_name.trim()) return row;
+      if (row.name === title) return row;
+      changed = true;
+      return { ...row, name: title };
+    });
+    return changed ? next : rows;
   });
 }

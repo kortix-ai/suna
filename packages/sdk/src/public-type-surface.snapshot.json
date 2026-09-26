@@ -3810,6 +3810,7 @@
     "refreshProjectProviderState",
     "refreshRuntimeConfiguration",
     "rejectQuestion",
+    "removeCachedProjectSession",
     "removeOptimisticPrompt",
     "renderParts",
     "replayStartStash",

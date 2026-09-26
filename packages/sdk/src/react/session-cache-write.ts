@@ -78,10 +78,17 @@ export function applyToCachedSessionShape(cached: unknown, update: ProjectSessio
   if (Array.isArray(cached)) return update(cached as ProjectSession[]);
 
   if (isPagedSessionCache(cached)) {
-    return {
-      ...cached,
-      pages: cached.pages.map((page) => ({ ...page, items: update(page.items) })),
-    };
+    // A page whose rows the updater returned unchanged keeps its identity, and
+    // so does the whole cache when no page changed: a title event reaches every
+    // cached list, and most of them do not hold that session.
+    let changed = false;
+    const pages = cached.pages.map((page) => {
+      const items = update(page.items);
+      if (items === page.items) return page;
+      changed = true;
+      return { ...page, items };
+    });
+    return changed ? { ...cached, pages } : cached;
   }
 
   if (isSessionRow(cached)) {
@@ -164,6 +171,33 @@ export function upsertIntoCachedSessionShape(cached: unknown, session: ProjectSe
   }
 
   return cached;
+}
+
+/**
+ * Remove a session from every cached list for this project and forget its
+ * single-row entry. The optimistic counterpart of a delete.
+ *
+ * Returns a function that puts every entry back exactly as it was, for the
+ * delete that the server refuses.
+ */
+export function removeCachedProjectSession(
+  queryClient: QueryClient,
+  projectId: string,
+  sessionId: string,
+): () => void {
+  const filter = {
+    queryKey: qk.project.sessionsScope(projectId),
+    predicate: (query: Query) => isSessionCacheKey(projectId, query),
+  };
+  const previous = queryClient.getQueriesData(filter);
+  updateCachedProjectSessions(queryClient, projectId, (rows) => {
+    const kept = rows.filter((row) => row.session_id !== sessionId);
+    return kept.length === rows.length ? rows : kept;
+  });
+  queryClient.removeQueries({ queryKey: qk.project.session(projectId, sessionId), exact: true });
+  return () => {
+    for (const [queryKey, data] of previous) queryClient.setQueryData(queryKey, data);
+  };
 }
 
 /**

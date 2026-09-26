@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
 import {
   applyToCachedSessionShape,
+  removeCachedProjectSession,
   updateCachedProjectSessions,
   upsertCachedProjectSession,
   upsertIntoCachedSessionShape,
@@ -180,5 +181,47 @@ describe('session cache writers reach session caches only', () => {
     expect(client.getQueryData<ProjectSession>(qk.project.session(PID, OPEN))!.session_id).toBe(
       OPEN,
     );
+  });
+});
+
+describe('removeCachedProjectSession', () => {
+  test('drops the session from the flat and the paged lists, and forgets its row', () => {
+    const client = new QueryClient();
+    client.setQueryData(qk.project.sessions('p1'), [row('a'), row('b')]);
+    client.setQueryData(qk.project.sessionsPaged('p1'), {
+      pages: [{ items: [row('a')], next_cursor: 'x' }, { items: [row('b')], next_cursor: null }],
+      pageParams: [null, 'x'],
+    });
+    client.setQueryData(qk.project.session('p1', 'b'), row('b'));
+
+    removeCachedProjectSession(client, 'p1', 'b');
+
+    expect((client.getQueryData(qk.project.sessions('p1')) as ProjectSession[]).map((r) => r.session_id)).toEqual(['a']);
+    const paged = client.getQueryData(qk.project.sessionsPaged('p1')) as { pages: Array<{ items: ProjectSession[] }> };
+    expect(paged.pages.map((page) => page.items.map((r) => r.session_id))).toEqual([['a'], []]);
+    expect(client.getQueryData(qk.project.session('p1', 'b')) as unknown).toBeUndefined();
+  });
+
+  test('returns a restore function that puts every entry back', () => {
+    const client = new QueryClient();
+    const flat = [row('a'), row('b')];
+    client.setQueryData(qk.project.sessions('p1'), flat);
+    client.setQueryData(qk.project.session('p1', 'b'), row('b'));
+
+    const restore = removeCachedProjectSession(client, 'p1', 'b');
+    restore();
+
+    expect(client.getQueryData(qk.project.sessions('p1')) as unknown).toEqual(flat);
+    expect(client.getQueryData(qk.project.session('p1', 'b')) as unknown).toEqual(row('b'));
+  });
+});
+
+describe('an update that changes nothing keeps the cache by reference', () => {
+  test('a paged cache whose rows did not change is returned as is', () => {
+    const paged = {
+      pages: [{ items: [row('a')], next_cursor: null }],
+      pageParams: [null],
+    };
+    expect(applyToCachedSessionShape(paged, (rows) => rows)).toBe(paged);
   });
 });
