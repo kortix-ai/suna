@@ -53,6 +53,7 @@ export interface QueryCacheBinder {
 
 interface Binding {
   userId: string;
+  client: BindableQueryClient;
   cache: PersistedQueryCache;
   /** Ends the writes. A no-op until the restore has finished. */
   stop: () => void;
@@ -80,23 +81,36 @@ export function createQueryCacheBinder(options: QueryCacheBinderOptions): QueryC
     },
 
     bind(client, userId) {
-      if (bound && bound.userId === userId) return bound.ready;
+      if (bound && bound.userId === userId) {
+        if (bound.client === client) return bound.ready;
+        // The same user on another client (the root layout remounted, as a
+        // Fast Refresh can): move the writes to it and keep the store.
+        bound.stop();
+        bound = null;
+      }
       const released = unbind();
       if (!userId) return released;
 
       if (memoryOwner !== null && memoryOwner !== userId) client.clear();
       memoryOwner = userId;
 
+      // An option left undefined takes the SDK's default.
       const cache = createPersistedQueryCache({
         storage,
         userId,
         shouldPersist,
-        ...(version !== undefined ? { version } : {}),
-        ...(maxBytes !== undefined ? { maxBytes } : {}),
-        ...(throttleMs !== undefined ? { throttleMs } : {}),
-        ...(now !== undefined ? { now } : {}),
+        version,
+        maxBytes,
+        throttleMs,
+        now,
       });
-      const binding: Binding = { userId, cache, stop: () => {}, ready: Promise.resolve() };
+      const binding: Binding = {
+        userId,
+        client,
+        cache,
+        stop: () => {},
+        ready: Promise.resolve(),
+      };
       binding.ready = released
         .then(() => cache.restore(client))
         .then(() => {

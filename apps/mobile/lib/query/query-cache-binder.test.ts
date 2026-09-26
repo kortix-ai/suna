@@ -186,6 +186,30 @@ describe('a cold start renders the last known lists', () => {
     expect([...data.values()]).toEqual(stored);
     await ready;
   });
+
+  test('the same user on a new client (a remount): the store is kept, the writes move', async () => {
+    const { storage, data } = asyncStorage();
+    const binder = binderOver(storage);
+    const before = newClient();
+    await binder.bind(before, 'user-a');
+    before.setQueryData(PROJECT, { name: 'kept' }, { updatedAt: T0 });
+    await binder.flush();
+
+    const after = newClient();
+    await binder.bind(after, 'user-a');
+    expect(dataOf(after, PROJECT)).toEqual({ name: 'kept' });
+
+    before.setQueryData(PROJECT, { name: 'old client' }, { updatedAt: T0 + 1 });
+    await tick();
+    expect([...data.values()].join()).not.toContain('old client');
+    after.setQueryData(PROJECT, { name: 'new client' }, { updatedAt: T0 + 2 });
+    await binder.flush();
+
+    const restored = newClient();
+    await binderOver(storage).bind(restored, 'user-a');
+    expect(dataOf(restored, PROJECT)).toEqual({ name: 'new client' });
+    expect(data.size).toBe(1);
+  });
 });
 
 describe('one user’s lists never reach another user', () => {
