@@ -20273,6 +20273,8 @@
     "noAccountsTitle": "Aún no hay ninguna cuenta",
     "noAccountsDescription": "Añade una cuenta para usar {connector} en las sesiones.",
     "visibilityEveryone": "Todo el proyecto",
-    "visibilityNamedMore": "{names} +{count}"
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "Guardada como {label}",
+    "connectFailed": "No se pudo conectar la cuenta. Inténtalo de nuevo."
   }
 }

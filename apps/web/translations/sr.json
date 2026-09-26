@@ -20273,6 +20273,8 @@
     "noAccountsTitle": "Још нема налога",
     "noAccountsDescription": "Додајте налог да бисте користили {connector} у сесијама.",
     "visibilityEveryone": "Цео пројекат",
-    "visibilityNamedMore": "{names} +{count}"
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "Сачувано као {label}",
+    "connectFailed": "Налог није могао да се повеже. Покушајте поново."
   }
 }

@@ -20273,6 +20273,8 @@
     "noAccountsTitle": "Noch kein Konto",
     "noAccountsDescription": "Fügen Sie ein Konto hinzu, um {connector} in Sitzungen zu verwenden.",
     "visibilityEveryone": "Alle im Projekt",
-    "visibilityNamedMore": "{names} +{count}"
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "Gespeichert als {label}",
+    "connectFailed": "Das Konto konnte nicht verbunden werden. Versuchen Sie es erneut."
   }
 }

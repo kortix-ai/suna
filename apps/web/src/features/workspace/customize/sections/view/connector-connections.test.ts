@@ -1,6 +1,66 @@
 import { describe, expect, test } from 'bun:test';
 import type { Connection } from '@kortix/sdk';
-import { accountVisibility, connectorConnectionRows } from './connector-connections';
+import {
+  accountVisibility,
+  connectorConnectionRows,
+  newAccountAudienceFor,
+  newAccountGrantees,
+  newAccountLabelTaken,
+  newAccountReady,
+  type NewAccountDraft,
+} from './connector-connections';
+
+describe('the Add account draft', () => {
+  const draft = (overrides: Partial<NewAccountDraft> = {}): NewAccountDraft => ({
+    label: 'Work',
+    audience: 'private',
+    picked: { memberIds: [], groupIds: [] },
+    ...overrides,
+  });
+  const rows = [
+    { label: 'Work', owner_type: 'member' },
+    { label: 'Team inbox', owner_type: 'project' },
+  ];
+
+  test('a name the same owner already uses is taken, case- and space-insensitively', () => {
+    expect(newAccountLabelTaken(draft({ label: ' work ' }), rows)).toBe(true);
+    // A shared account and a private one are different rows: no clash.
+    expect(newAccountLabelTaken(draft({ label: 'Work', audience: 'project' }), rows)).toBe(false);
+    expect(newAccountLabelTaken(draft({ label: 'team INBOX', audience: 'members' }), rows)).toBe(true);
+    expect(newAccountLabelTaken(draft({ label: '' }), rows)).toBe(false);
+  });
+
+  test('ready needs a free name, and sharing needs the manage right and someone picked', () => {
+    const can = { canManageConnections: true, accountId: 'acct' };
+    expect(newAccountReady(draft({ label: 'Personal' }), rows, can)).toBe(true);
+    expect(newAccountReady(draft({ label: '  ' }), rows, can)).toBe(false);
+    expect(newAccountReady(draft({ label: 'work' }), rows, can)).toBe(false);
+    expect(newAccountReady(draft({ label: 'Shared', audience: 'project' }), rows, can)).toBe(true);
+    expect(
+      newAccountReady(draft({ label: 'Shared', audience: 'project' }), rows, { ...can, canManageConnections: false }),
+    ).toBe(false);
+    expect(newAccountReady(draft({ label: 'Sales', audience: 'members' }), rows, can)).toBe(false);
+    const picked = { memberIds: [], groupIds: ['g-1'] };
+    expect(newAccountReady(draft({ label: 'Sales', audience: 'members', picked }), rows, can)).toBe(true);
+    expect(
+      newAccountReady(draft({ label: 'Sales', audience: 'members', picked }), rows, { ...can, accountId: null }),
+    ).toBe(false);
+  });
+
+  test('the picked people and groups become user and group grantees', () => {
+    expect(newAccountGrantees({ memberIds: ['u-1'], groupIds: ['g-1'] })).toEqual([
+      { type: 'user', id: 'u-1' },
+      { type: 'group', id: 'g-1' },
+    ]);
+  });
+
+  test('the link owner preselects the audience, and only a manager can start on everyone', () => {
+    expect(newAccountAudienceFor('project', true)).toBe('project');
+    expect(newAccountAudienceFor('project', false)).toBe('private');
+    expect(newAccountAudienceFor('me', true)).toBe('private');
+    expect(newAccountAudienceFor(undefined, true)).toBe('private');
+  });
+});
 
 const connection = (connector_alias: string, owner_type: string, connection_id: string) => ({
   connector_alias,

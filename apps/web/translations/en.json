@@ -20273,6 +20273,8 @@
     "noAccountsTitle": "No account yet",
     "noAccountsDescription": "Add an account to use {connector} in sessions.",
     "visibilityEveryone": "Everyone in project",
-    "visibilityNamedMore": "{names} +{count}"
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "Saved as {label}",
+    "connectFailed": "Could not connect the account. Try again."
   }
 }

@@ -20273,6 +20273,8 @@
     "noAccountsTitle": "アカウントはまだありません",
     "noAccountsDescription": "セッションで {connector} を使用するには、アカウントを追加してください。",
     "visibilityEveryone": "プロジェクト全員",
-    "visibilityNamedMore": "{names} +{count}"
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "{label} として保存しました",
+    "connectFailed": "アカウントを接続できませんでした。もう一度お試しください。"
   }
 }

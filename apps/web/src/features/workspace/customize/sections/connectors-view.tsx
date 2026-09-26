@@ -58,7 +58,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -81,8 +80,7 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
-import { usePipedreamConnectMember } from '@/hooks/connectors/use-pipedream-connect-member';
-import { usePipedreamConnectProject } from '@/hooks/connectors/use-pipedream-connect-project';
+import { useAddManagedAccount } from '@/hooks/connectors/use-add-managed-account';
 import { useCopy } from '@/hooks/use-copy';
 import { isConnectorsEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
@@ -126,11 +124,6 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import { grantConnectionAccess } from '@/features/workspace/shared/access/access-dialog-share';
 import {
-  EMPTY_PRINCIPAL_SELECTION,
-  PrincipalPicker,
-  type PrincipalSelection,
-} from '@/features/workspace/shared/access/principal-picker';
-import {
   buildEasyConnectConnectorDraft,
   buildEmailConnectorConnectionSlug,
   connectorSyncErrorForSlug,
@@ -164,7 +157,15 @@ import {
 } from './connector-oauth2-auto';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { DiscoverCatalogue } from './discover-catalogue';
-import { accountVisibility, connectorConnectionRows } from './view/connector-connections';
+import { AddAccountFields } from './add-account-fields';
+import {
+  accountVisibility,
+  connectorConnectionRows,
+  newAccountGrantees,
+  newAccountLabelTaken,
+  newAccountReady,
+  type NewAccountDraft,
+} from './view/connector-connections';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
@@ -416,8 +417,11 @@ function ConnectionRow({
   );
 }
 
-/** Who a new account is for: the caller alone, the whole project, or picked people. */
-type NewAccountAudience = 'private' | 'project' | 'members';
+const EMPTY_NEW_ACCOUNT: NewAccountDraft = {
+  label: '',
+  audience: 'private',
+  picked: { memberIds: [], groupIds: [] },
+};
 
 /**
  * Every account this connector can run as, in one list. Each card states who
@@ -461,14 +465,12 @@ export function ConnectionsList({
   // A direct provider (openapi/http/mcp/graphql/...) has no hosted OAuth: "Add"
   // creates the account and this then opens `SetCredentialModal` for it. A
   // managed provider (Composio/Pipedream) runs hosted OAuth through
-  // `usePipedreamConnectProject`/`usePipedreamConnectMember`.
+  // `useAddManagedAccount`.
   const isDirectProvider = !isManagedConnectorProvider(connector.provider);
   const { user } = useAuth();
   const viewerId = user?.id ?? null;
   const [addOpen, setAddOpen] = useState(false);
-  const [labelDraft, setLabelDraft] = useState('');
-  const [audience, setAudience] = useState<NewAccountAudience>('private');
-  const [picked, setPicked] = useState<PrincipalSelection>(EMPTY_PRINCIPAL_SELECTION);
+  const [draft, setDraft] = useState<NewAccountDraft>(EMPTY_NEW_ACCOUNT);
   const [confirmDisconnect, setConfirmDisconnect] = useState<Connection | null>(null);
   const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -503,9 +505,7 @@ export function ConnectionsList({
   const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
 
   const openAdd = () => {
-    setLabelDraft('');
-    setAudience('private');
-    setPicked(EMPTY_PRINCIPAL_SELECTION);
+    setDraft(EMPTY_NEW_ACCOUNT);
     setAddOpen(true);
   };
   const closeAdd = () => setAddOpen(false);
@@ -516,24 +516,15 @@ export function ConnectionsList({
     if (addRequest > 0) openAdd();
   }
 
-  const addProject = usePipedreamConnectProject(projectId, connector.slug, () => {
+  const addManaged = useAddManagedAccount(projectId, connector.slug, accountId, () => {
     closeAdd();
     refresh();
   });
-  const addMine = usePipedreamConnectMember(projectId, connector.slug, () => {
-    closeAdd();
-    refresh();
-  });
-  // The grants that narrow a new shared account to the picked people. Written
-  // before the account holds a credential, so it is never open to everyone.
-  const narrowToPicked = (connectionId: string) =>
-    grantConnectionAccess(accountId ?? '', projectId, connectionId, [
-      ...picked.memberIds.map((id) => ({ type: 'user' as const, id })),
-      ...picked.groupIds.map((id) => ({ type: 'group' as const, id })),
-    ]);
+  // Direct providers: create the account, narrow it before it holds a
+  // credential (so it is never open to everyone), then collect the credential.
   const createAccount = useMutation({
     mutationFn: async (label: string) => {
-      if (audience === 'private') {
+      if (draft.audience === 'private') {
         return reconcileMemberConnection(projectId, { connector_alias: connector.slug, label });
       }
       const connection = await reconcileConnection(projectId, {
@@ -541,7 +532,14 @@ export function ConnectionsList({
         owner_type: 'project',
         label,
       });
-      if (audience === 'members') await narrowToPicked(connection.connection_id);
+      if (draft.audience === 'members') {
+        await grantConnectionAccess(
+          accountId ?? '',
+          projectId,
+          connection.connection_id,
+          newAccountGrantees(draft.picked),
+        );
+      }
       return connection;
     },
     onSuccess: (connection) => {
@@ -553,7 +551,7 @@ export function ConnectionsList({
       }
       setCredentialTarget({
         connectionId: connection.connection_id,
-        owner: audience === 'private' ? 'me' : 'project',
+        owner: draft.audience === 'private' ? 'me' : 'project',
       });
     },
     onError: (e: Error) => {
@@ -606,33 +604,15 @@ export function ConnectionsList({
     rename.mutate({ connectionId: renameTarget.connection_id, label });
   };
 
-  const adding = createAccount.isPending || addProject.isPending || addMine.isPending;
-  const label = labelDraft.trim();
-  // `POST /connections` with an existing name updates that account instead of
-  // adding one, so a new account needs a name no account of its owner has.
-  const labelTaken =
-    label.length > 0 &&
-    rows.some(
-      (row) =>
-        row.label.trim().toLowerCase() === label.toLowerCase() &&
-        (row.owner_type === 'member') === (audience === 'private'),
-    );
-  const audienceReady =
-    audience === 'private' ||
-    (canManageConnections &&
-      (audience === 'project' ||
-        (Boolean(accountId) && picked.memberIds.length + picked.groupIds.length > 0)));
-  const canSubmitAdd = !disabled && !adding && label.length > 0 && !labelTaken && audienceReady;
+  const adding = createAccount.isPending || addManaged.isPending;
+  const labelTaken = newAccountLabelTaken(draft, rows);
+  const canSubmitAdd =
+    !disabled && !adding && newAccountReady(draft, rows, { canManageConnections, accountId });
   const submitAdd = () => {
     if (!canSubmitAdd) return;
-    if (isDirectProvider) createAccount.mutate(label);
-    else if (audience === 'private') addMine.mutate({ label });
-    else {
-      addProject.mutate({
-        label,
-        beforeAuthorize: audience === 'members' ? narrowToPicked : undefined,
-      });
-    }
+    if (isDirectProvider) createAccount.mutate(draft.label.trim());
+    // The hooks toast their own errors.
+    else void addManaged.add(draft).catch(() => undefined);
   };
   const pendingConnectionId =
     setDefault.isPending && typeof setDefault.variables === 'string'
@@ -742,80 +722,18 @@ export function ConnectionsList({
             }}
           >
             <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-              <Field>
-                <FieldLabel htmlFor="connection-label">
-                  {tI18nComplete.raw('textdcd1d5223f73')}
-                </FieldLabel>
-                <Input
-                  id="connection-label"
-                  value={labelDraft}
-                  onChange={(e) => setLabelDraft(e.target.value)}
-                  placeholder={tI18nComplete.raw('text945ce03ec79f')}
-                  maxLength={255}
-                  autoFocus
-                  aria-invalid={labelTaken || undefined}
-                  disabled={adding || disabled}
-                />
-                {labelTaken ? (
-                  <FieldDescription className="text-destructive" role="alert">
-                    {tSharing('nameTaken', { label })}
-                  </FieldDescription>
-                ) : (
-                  <FieldDescription>{tI18nComplete.raw('text99953938d987')}</FieldDescription>
-                )}
-              </Field>
-              <div className="space-y-2">
-                <FieldLabel>{tSharing('whoCanUse')}</FieldLabel>
-                <RadioGroup
-                  value={audience}
-                  onValueChange={(next) => setAudience(next as NewAccountAudience)}
-                  className="space-y-2"
-                >
-                  <RadioGroupItem
-                    value="private"
-                    id="new-account-private"
-                    label={tSharing('onlyYou')}
-                    description={tSharing('onlyYouDescription')}
-                    size="lg"
-                    variant="outline"
-                    disabled={adding}
-                  />
-                  <RadioGroupItem
-                    value="project"
-                    id="new-account-project"
-                    label={everyoneLabel}
-                    description={tSharing('everyoneMeta')}
-                    size="lg"
-                    variant="outline"
-                    disabled={adding || !canManageConnections}
-                  />
-                  <RadioGroupItem
-                    value="members"
-                    id="new-account-members"
-                    label={tSharing('specificPeople')}
-                    description={tSharing('specificPeopleDescription')}
-                    size="lg"
-                    variant="outline"
-                    disabled={adding || !canManageConnections || !accountId}
-                  />
-                </RadioGroup>
-                {canManageConnections ? null : (
-                  <p className="text-muted-foreground text-xs">{tSharing('shareRequiresManage')}</p>
-                )}
-                {audience === 'members' ? (
-                  <PrincipalPicker
-                    scope={{ kind: 'project', projectId }}
-                    selection="multi"
-                    kinds={['member', 'group']}
-                    value={picked}
-                    onChange={setPicked}
-                    disabled={adding}
-                    autoFocus={false}
-                    emptyLabel={tI18nComplete.raw('textd2600c68a9ff')}
-                    allExcludedLabel={tI18nComplete.raw('textf68d7561db3d')}
-                  />
-                ) : null}
-              </div>
+              <AddAccountFields
+                projectId={projectId}
+                value={draft}
+                onChange={setDraft}
+                labelTaken={labelTaken}
+                canManageConnections={canManageConnections}
+                accountId={accountId}
+                everyoneLabel={everyoneLabel}
+                hint={tI18nComplete.raw('text99953938d987')}
+                disabled={adding || disabled}
+                autoFocus
+              />
             </ModalBody>
             <ModalFooter className="sm:justify-between">
               <Button type="button" variant="outline-ghost" onClick={closeAdd} disabled={adding}>

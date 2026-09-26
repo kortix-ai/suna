@@ -28,6 +28,64 @@ export function accountVisibility(
   return { kind: 'named', names: labels.slice(0, limit), more: Math.max(0, labels.length - limit) };
 }
 
+/** Who a new account is for: the caller alone, the whole project, or picked people. */
+export type NewAccountAudience = 'private' | 'project' | 'members';
+
+/** What the Add account form holds, in Customize and in the chat connect dialog. */
+export interface NewAccountDraft {
+  label: string;
+  audience: NewAccountAudience;
+  picked: { memberIds: string[]; groupIds: string[] };
+}
+
+/**
+ * `POST /connections` with a name an account of the same owner already uses
+ * updates that account instead of adding one, so the form refuses the name.
+ */
+export function newAccountLabelTaken(
+  draft: NewAccountDraft,
+  rows: ReadonlyArray<{ label: string; owner_type: string }>,
+): boolean {
+  const label = draft.label.trim().toLowerCase();
+  if (!label) return false;
+  const privateAccount = draft.audience === 'private';
+  return rows.some(
+    (row) =>
+      row.label.trim().toLowerCase() === label && (row.owner_type === 'member') === privateAccount,
+  );
+}
+
+/** A free name, and for a shared account the manage right (and, narrowed, someone picked). */
+export function newAccountReady(
+  draft: NewAccountDraft,
+  rows: ReadonlyArray<{ label: string; owner_type: string }>,
+  access: { canManageConnections: boolean; accountId: string | null | undefined },
+): boolean {
+  if (!draft.label.trim() || newAccountLabelTaken(draft, rows)) return false;
+  if (draft.audience === 'private') return true;
+  if (!access.canManageConnections) return false;
+  if (draft.audience === 'project') return true;
+  return Boolean(access.accountId) && draft.picked.memberIds.length + draft.picked.groupIds.length > 0;
+}
+
+/** The grants that narrow a new shared account to the picked people and groups. */
+export function newAccountGrantees(
+  picked: NewAccountDraft['picked'],
+): Array<{ type: 'user' | 'group'; id: string }> {
+  return [
+    ...picked.memberIds.map((id) => ({ type: 'user' as const, id })),
+    ...picked.groupIds.map((id) => ({ type: 'group' as const, id })),
+  ];
+}
+
+/** The audience a connect link preselects: the agent's `project` only for someone who may share. */
+export function newAccountAudienceFor(
+  owner: 'me' | 'project' | undefined,
+  canManageConnections: boolean,
+): NewAccountAudience {
+  return owner === 'project' && canManageConnections ? 'project' : 'private';
+}
+
 /**
  * Which connections belong to one connector's detail view.
  *

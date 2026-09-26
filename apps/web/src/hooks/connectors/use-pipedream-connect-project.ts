@@ -81,6 +81,8 @@ export function projectConnectSteps(
 ): {
   start: () => Promise<ConnectorConnectResult>;
   finalize: () => Promise<ConnectorFinalizeResult>;
+  /** The account `start` created, or `null` before it ran. */
+  connectionId: () => string | null;
 } {
   let connectionId: string | null = null;
   let route: ProjectConnectRoute = 'connection';
@@ -123,6 +125,7 @@ export function projectConnectSteps(
       }
       return deps.finalizeConnection(projectId, connectionId);
     },
+    connectionId: () => connectionId,
   };
 }
 
@@ -155,7 +158,8 @@ export function usePipedreamConnectProject(
         sdkProjectConnectDeps,
         input?.beforeAuthorize,
       );
-      return runConnectLinkFlow(steps.start, steps.finalize);
+      const result = await runConnectLinkFlow(steps.start, steps.finalize);
+      return { ...result, connectionId: steps.connectionId() };
     },
     onSuccess: (result) => {
       if (!result.connected) return;

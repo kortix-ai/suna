@@ -187,6 +187,14 @@ describe('projectConnectSteps — an account shared with chosen people', () => {
     ]);
   });
 
+  test('names the account it created, so a caller can finalize exactly that one', async () => {
+    const { deps } = recordingDeps('ok', 'conn-5');
+    const steps = projectConnectSteps('project-1', 'notion-product', 'Sales', deps);
+    expect(steps.connectionId()).toBeNull();
+    await steps.start();
+    expect(steps.connectionId()).toBe('conn-5');
+  });
+
   test('a failed narrowing stops the flow before any authorization link', async () => {
     const { calls, deps } = recordingDeps('ok', 'conn-4');
     const steps = projectConnectSteps('project-1', 'notion-product', 'Sales', deps, async () => {

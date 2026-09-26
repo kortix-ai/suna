@@ -20273,6 +20273,8 @@
     "noAccountsTitle": "还没有账户",
     "noAccountsDescription": "添加账户后即可在会话中使用 {connector}。",
     "visibilityEveryone": "整个项目",
-    "visibilityNamedMore": "{names} +{count}"
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "已保存为 {label}",
+    "connectFailed": "无法连接账户，请重试。"
   }
 }
