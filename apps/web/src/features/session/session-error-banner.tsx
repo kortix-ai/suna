@@ -19,7 +19,7 @@ import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { accountSettingsTarget } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { isAbortError, type GatewayErrorDetails } from '@kortix/sdk';
+import { isAbortError, turnRetryLabel, type GatewayErrorDetails } from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
@@ -585,7 +585,7 @@ export function SessionRetryDisplay({
 }: SessionRetryDisplayProps) {
   if (!message) return null;
 
-  const title = secondsLeft > 0 ? `Retrying in ${secondsLeft}s` : 'Retrying now';
+  const title = turnRetryLabel(secondsLeft);
 
   // Three registers, one idea each. Title: what is happening and when. Description:
   // why (the gateway's sentence). Meta: which attempt, which upstream, which

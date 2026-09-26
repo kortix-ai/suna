@@ -1,6 +1,13 @@
 import type { UiTranslator } from '@/i18n/translator';
 
-import type { ProjectRuntimeSession, ProjectSession } from '@kortix/sdk';
+import {
+  isLegacyMigratedSession,
+  SESSION_LIST_STATUS,
+  sessionListStatus,
+  type ProjectRuntimeSession,
+  type ProjectSession,
+  type SessionListStatus,
+} from '@kortix/sdk';
 
 /**
  * Canonical, framework-free helpers for reading a project session the way the
@@ -147,80 +154,51 @@ export function stripChatMentionMarkup(value: string): string {
 }
 
 /**
- * What the user sees, as opposed to what the sandbox is doing.
- *
- * `ProjectSessionStatus` is a seven-value SANDBOX lifecycle. Users get five
- * states plus one override. The collapse is deliberate: `queued`, `branching`
- * and `provisioning` are one idea ("starting") to anyone who is not debugging
- * the provisioner.
+ * What the user sees, as opposed to what the sandbox is doing. The words and
+ * the resolution live in the SDK (`sessionListStatus`, `SESSION_LIST_STATUS`),
+ * so mobile shows the same state with the same word; these names stay as the
+ * web's aliases.
  *
  * The governing rule is that green means live or actionable and nothing else,
  * so `completed` maps to `done` and is rendered muted — never green.
  */
-export type SessionDisplayStatus =
-  'needs-you' | 'starting' | 'running' | 'done' | 'stopped' | 'failed' | 'legacy';
+export type SessionDisplayStatus = SessionListStatus;
 
 /** Tooltip + section copy. Never "Active": `running` means the sandbox is up,
  *  not that the agent is working, and the payload carries no signal for that. */
 export const SESSION_DISPLAY_STATUS_LABELS: Record<SessionDisplayStatus, string> = {
-  'needs-you': 'Needs you',
-  starting: 'Starting',
-  running: 'Running',
-  done: 'Done',
-  stopped: 'Stopped',
-  failed: 'Failed',
-  legacy: 'Legacy import — open to restore',
+  'needs-you': SESSION_LIST_STATUS['needs-you'].label,
+  starting: SESSION_LIST_STATUS.starting.label,
+  running: SESSION_LIST_STATUS.running.label,
+  done: SESSION_LIST_STATUS.done.label,
+  stopped: SESSION_LIST_STATUS.stopped.label,
+  failed: SESSION_LIST_STATUS.failed.label,
+  legacy: SESSION_LIST_STATUS.legacy.label,
 };
 
-/**
- * A session created by the Suna account migration. Its chat history lives in
- * the migrated archive and is loaded into the sandbox when the session is
- * restored; the workspace files are already in the repo under `legacy/`.
- * Stamped by the migration's db phase as `metadata.legacy_migration`.
- */
-export function isLegacyMigratedSession(session: ProjectSession): boolean {
-  const meta = (session.metadata ?? {}) as Record<string, unknown>;
-  return Boolean(meta.legacy_migration);
-}
+/** The `sidebar.sessionList.status.*` catalog key of each status, for every
+ *  surface that names one. */
+export const SESSION_STATUS_TRANSLATION_KEY = {
+  'needs-you': 'needsYou',
+  starting: 'starting',
+  running: 'running',
+  done: 'done',
+  stopped: 'stopped',
+  failed: 'failed',
+  legacy: 'legacy',
+} as const satisfies Record<SessionDisplayStatus, string>;
+
+export { isLegacyMigratedSession };
 
 /**
- * Resolve a session to its display status.
- *
- * A pending review wins outright: a finished session with items awaiting the
- * human is ACTIONABLE, and actionable outranks finished.
- *
- * The `default` is load-bearing, not defensive noise. `ProjectSessionStatus`
- * is a published SDK union, so an API that grows an eighth member ships a
- * value this build has never seen. Without the default the function returns
- * `undefined`, `STATUS_DOT_STYLE[undefined]` throws, and the whole sidebar
- * unmounts. `stopped` is the safe answer: muted (never green, per the
- * governing rule) and honest — "not live" is true of any value that is not
- * one of the four live ones, whereas `failed` would invent a failure.
+ * Resolve a session to its display status. A pending review wins outright; a
+ * status this build has never seen reads `stopped`. See `sessionListStatus`.
  */
 export function sessionDisplayStatus(
   session: ProjectSession,
   reviewCount = 0,
 ): SessionDisplayStatus {
-  if (reviewCount > 0) return 'needs-you';
-  switch (session.status) {
-    case 'queued':
-    case 'branching':
-    case 'provisioning':
-      return 'starting';
-    case 'running':
-      return 'running';
-    case 'completed':
-    case 'stopped':
-      // A dormant migrated session is not "done" — nothing ran and nothing
-      // finished; its chat is waiting to be restored. Live states above keep
-      // their normal paint once the session has actually been restored.
-      if (isLegacyMigratedSession(session)) return 'legacy';
-      return session.status === 'completed' ? 'done' : 'stopped';
-    case 'failed':
-      return 'failed';
-    default:
-      return 'stopped';
-  }
+  return sessionListStatus(session, reviewCount);
 }
 
 /**

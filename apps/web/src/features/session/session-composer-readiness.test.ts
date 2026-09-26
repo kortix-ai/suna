@@ -1,3 +1,4 @@
+import { SESSION_NOTICE } from '@kortix/sdk';
 import { projectWorking, type SessionTurn } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
@@ -15,7 +16,7 @@ describe('sessionComposerReadiness', () => {
       pendingPrompt: true,
     })).toEqual({
       ready: false,
-      notice: 'Starting your computer… your message will send automatically.',
+      notice: SESSION_NOTICE.starting,
       retryable: false,
     });
   });
