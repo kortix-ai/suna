@@ -11,6 +11,8 @@
  * cannot load native modules.
  */
 
+import { sessionParentId } from '@kortix/sdk';
+
 import type { ProjectSession } from '@/lib/projects/projects-client';
 
 // ── Display title ────────────────────────────────────────────────────────
@@ -21,7 +23,7 @@ export const UNTITLED_SESSION_LABEL = 'New session';
 /** The session's real name, or null while the server has not written one.
  *  Precedence: user rename (`custom_name`) → server name → legacy
  *  `metadata.session_name`. Mirrors `resolveSessionTitle` on web. */
-function resolveSessionTitle(session: ProjectSession): string | null {
+export function resolveSessionTitle(session: ProjectSession): string | null {
   const metadata = session.metadata as Record<string, unknown> | null | undefined;
   const legacyMetadataName = typeof metadata?.session_name === 'string' ? metadata.session_name : null;
   return session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim() || null;
@@ -310,13 +312,18 @@ export const SESSION_STATUS_FILTERS: SessionDisplayStatus[] = [
 /**
  * Keeps only sessions whose display status is in `statuses`. An empty set
  * means "no filter": every session passes, same as an untouched filter sheet.
+ * `needsYou` (session id → pending inbox items, `needsYouBySession`) resolves
+ * the sessions that wait on the user to `needs-you`.
  */
 export function filterSessionsByStatus(
   sessions: ProjectSession[],
   statuses: ReadonlySet<SessionDisplayStatus>,
+  needsYou?: ReadonlyMap<string, { count: number }>,
 ): ProjectSession[] {
   if (statuses.size === 0) return sessions;
-  return sessions.filter((session) => statuses.has(sessionDisplayStatus(session)));
+  return sessions.filter((session) =>
+    statuses.has(sessionDisplayStatus(session, needsYou?.get(session.session_id)?.count ?? 0)),
+  );
 }
 
 // ── Recent sessions ───────────────────────────────────────────────────────
@@ -332,4 +339,103 @@ export function recentSessions(sessions: ProjectSession[], limit: number): Proje
     .sort((a, b) => b.at - a.at)
     .slice(0, limit)
     .map((entry) => entry.session);
+}
+
+// ── Sub-agent (coordinator) grouping ────────────────────────────────────────
+
+/** A coordinator (parent agent) session plus the sub-agent sessions it spawned. */
+export interface SessionGroup {
+  session: ProjectSession;
+  children: ProjectSession[];
+}
+
+/**
+ * Fold a flat, already-ordered session list into coordinator groups: a
+ * session spawned by another session in `sessions`
+ * (`metadata.spawned_by_session`, read through `sessionParentId` from
+ * `@kortix/sdk`) nests under it as a sub-agent session — the drawer and the
+ * Sessions page render the coordinator as a parent row and its children
+ * indented beneath it.
+ *
+ * Ported from web's `groupSessionsByCoordinator`
+ * (`apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts`),
+ * with one deliberate improvement: web's version only nests ONE level —
+ * `groups` is built solely from top-level (parentless) sessions, so a
+ * grandchild (a session spawned by a session that is itself a child) has no
+ * entry to nest under and silently vanishes from the list. This port instead
+ * resolves every session to its topmost ancestor STILL PRESENT in `sessions`
+ * (`rootIdOf`, cycle-safe) and nests it there, so a deeper chain flattens
+ * under its real root instead of disappearing. Behaviour is identical to web
+ * for the common one-level case (a coordinator with direct children).
+ *
+ * A child whose coordinator is absent from `sessions` — deleted, a different
+ * project, or simply not loaded onto this page yet, since the Sessions page
+ * and the drawer both load sessions a page at a time and a parent can land on
+ * a LATER page than its child — stays top-level rather than disappearing.
+ * Membership is recomputed fresh from `sessions` on every call, so a session
+ * that was an orphan on one render re-nests automatically once its
+ * coordinator's page has loaded.
+ *
+ * Order is preserved: top-level groups appear in the order their session
+ * first appears in `sessions`; a group's children appear in that same overall
+ * order too. Never mutates `sessions`.
+ */
+export function groupSessionsByCoordinator(sessions: ProjectSession[]): SessionGroup[] {
+  const present = new Set(sessions.map((session) => session.session_id));
+  const parentBySessionId = new Map<string, string | null>();
+  for (const session of sessions) {
+    const parent = sessionParentId(session);
+    parentBySessionId.set(session.session_id, parent && present.has(parent) ? parent : null);
+  }
+
+  // Walk the parent chain to the topmost ancestor still present in
+  // `sessions`. `seen` stops a cycle (metadata pointing back into its own
+  // chain) at the first repeat instead of looping forever.
+  const rootIdOf = (sessionId: string): string => {
+    let current = sessionId;
+    const seen = new Set<string>([current]);
+    for (;;) {
+      const parent = parentBySessionId.get(current) ?? null;
+      if (!parent || seen.has(parent)) return current;
+      seen.add(parent);
+      current = parent;
+    }
+  };
+
+  const groups = new Map<string, SessionGroup>();
+  const order: SessionGroup[] = [];
+  for (const session of sessions) {
+    if (parentBySessionId.get(session.session_id)) continue;
+    const group: SessionGroup = { session, children: [] };
+    groups.set(session.session_id, group);
+    order.push(group);
+  }
+  for (const session of sessions) {
+    if (!parentBySessionId.get(session.session_id)) continue;
+    groups.get(rootIdOf(session.session_id))?.children.push(session);
+  }
+  return order;
+}
+
+/** One row of a flattened coordinator tree: a session plus whether it renders
+ *  indented under its coordinator, with the sub-agent mark. */
+export interface SessionListRow {
+  session: ProjectSession;
+  /** True for a sub-agent session rendered under its coordinator. */
+  nested: boolean;
+}
+
+/**
+ * Flattens `groupSessionsByCoordinator`'s tree into one linear list — a
+ * coordinator row immediately followed by its sub-agent sessions' rows — for
+ * a flat-list UI with no tree renderer (the project drawer's `FlatList`).
+ * Preserves `groupSessionsByCoordinator`'s order.
+ */
+export function flattenSessionGroups(sessions: ProjectSession[]): SessionListRow[] {
+  const rows: SessionListRow[] = [];
+  for (const group of groupSessionsByCoordinator(sessions)) {
+    rows.push({ session: group.session, nested: false });
+    for (const child of group.children) rows.push({ session: child, nested: true });
+  }
+  return rows;
 }

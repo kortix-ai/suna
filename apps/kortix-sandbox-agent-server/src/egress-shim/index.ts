@@ -216,14 +216,6 @@ export function egressShimPort(env: NodeJS.ProcessEnv = process.env): number {
 let sessionCa: ReturnType<typeof createEphemeralCa> | null = null
 let sessionCaSeed: string | null = null
 
-/** Test seam: reset the module singletons. */
-export function __resetEgressShimForTests(): void {
-  started = null
-  armedSignature = null
-  sessionCa = null
-  sessionCaSeed = null
-}
-
 /** Stop the listener and drop the in-memory CA key. Safe to call with no shim. */
 export function stopEgressShim(): void {
   started?.stop()

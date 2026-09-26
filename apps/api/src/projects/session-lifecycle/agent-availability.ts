@@ -11,7 +11,7 @@
  * on a project whose workspace never materialised that agent — and the
  * divergence used to DESTROY the message:
  *
- *   MEASURED, local stack 2026-08-26, session 65216cc6 (runtime roster:
+ *   MEASURED, local stack 2026-08-26, one local session (runtime roster:
  *   build, compaction, explore, general, plan, summary, title):
  *     POST .../prompts {overrides:{agent:"kortix"}}  → 202 queued
  *     … 400ms later                                   → delivering, attempts 1
@@ -102,11 +102,6 @@ interface CacheEntry {
 }
 
 const rosterCache = new Map<string, CacheEntry>();
-
-/** Test seam + restart hygiene: forget every cached roster. */
-export function clearRuntimeAgentRosterCache(): void {
-  rosterCache.clear();
-}
 
 /**
  * Read (and cache) the agent names a session's runtime reports.

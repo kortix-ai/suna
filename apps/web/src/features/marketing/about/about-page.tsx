@@ -7,7 +7,7 @@ import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
 import Image from 'next/image';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import { getLocalizedAboutContent } from './content';
 

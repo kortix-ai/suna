@@ -194,13 +194,13 @@ describe('resolveAuthRedirectBaseUrl', () => {
   test('falls back to APP_URL when the origin is a 0.0.0.0 wildcard bind (self-host behind proxy)', () => {
     // The exact live symptom: SSO on self-host landing on https://0.0.0.0:3000.
     expect(
-      resolveAuthRedirectBaseUrl('https://0.0.0.0:3000', 'https://essentia.kortix.cloud'),
-    ).toBe('https://essentia.kortix.cloud');
+      resolveAuthRedirectBaseUrl('https://0.0.0.0:3000', 'https://sampleco.kortix.cloud'),
+    ).toBe('https://sampleco.kortix.cloud');
     expect(
-      resolveAuthRedirectBaseUrl('http://0.0.0.0:3000', 'https://essentia.kortix.cloud/'),
-    ).toBe('https://essentia.kortix.cloud');
-    expect(resolveAuthRedirectBaseUrl('https://[::]:3000', 'https://essentia.kortix.cloud')).toBe(
-      'https://essentia.kortix.cloud',
+      resolveAuthRedirectBaseUrl('http://0.0.0.0:3000', 'https://sampleco.kortix.cloud/'),
+    ).toBe('https://sampleco.kortix.cloud');
+    expect(resolveAuthRedirectBaseUrl('https://[::]:3000', 'https://sampleco.kortix.cloud')).toBe(
+      'https://sampleco.kortix.cloud',
     );
   });
 

@@ -264,6 +264,33 @@ test('attachment upload sends raw bytes through the shared token seam', async ()
   expect(calls[0]?.body).toBe(bytes);
 });
 
+test('attachment upload names the target connector and returns a call-args reference', async () => {
+  responseBody = {
+    attachment_id: 'attachment-two',
+    filename: 'report.pdf',
+    content_type: 'application/pdf',
+    content_disposition: 'attachment',
+    size: 1,
+    expires_at: '2026-09-25T00:00:00.000Z',
+    ref: { $kortix_attachment: 'attachment-two' },
+  };
+
+  const uploaded = await uploadConnectorAttachment('project-one', new Uint8Array([1]), {
+    filename: 'report.pdf',
+    contentType: 'application/pdf',
+    connector: 'microsoft-graph',
+  });
+  expect(calls[0]?.headers.get('x-kortix-attachment-connector')).toBe('microsoft-graph');
+  const reference: { $kortix_attachment: string } | undefined = uploaded.ref;
+  expect(reference).toEqual({ $kortix_attachment: 'attachment-two' });
+
+  await uploadConnectorAttachment('project-one', new Uint8Array([1]), {
+    filename: 'report.pdf',
+    contentType: 'application/pdf',
+  });
+  expect(calls[1]?.headers.get('x-kortix-attachment-connector')).toBeNull();
+});
+
 test('attachment upload handles an uncontrolled slash-heavy backend URL in linear time', async () => {
   responseBody = {
     attachment_id: 'attachment-one',

@@ -5,7 +5,7 @@ import { connectorDenialBody, principalMayUseConnector } from './principal-acces
 const narrow: AgentGrant = {
   agent: 'release-bot',
   connectors: ['github'],
-  kortixCli: [],
+  permissions: [],
   env: [],
   manifestRevision: 'd'.repeat(40),
   manifestCommit: 'b'.repeat(40),

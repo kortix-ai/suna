@@ -4,7 +4,7 @@
  *
  * A tile closes the sheet, and the source opens when the sheet has gone
  * (`onDismiss`) — never two overlays at once, and no native chooser in
- * between. `children` render under the tiles (the thread's AutoContinue row);
+ * between. `children` render under the tiles (the thread's Recent files row);
  * they close the sheet the same way through `closeThen`.
  *
  * Layout is `PickerSheet`'s: 16pt sides, 4pt under the handle, 16pt between
@@ -155,7 +155,7 @@ function SourceTile({ source, onPress }: { source: AttachSource; onPress: () => 
         accessibilityHint={source.hint}
         className="min-h-24 items-center justify-center gap-2 rounded-2xl bg-secondary px-2 py-4">
         <Icon as={SOURCE_ICONS[source.id]} size={24} className="text-foreground" />
-        <Text variant="small" numberOfLines={1}>
+        <Text variant="small" className="leading-5" numberOfLines={1}>
           {source.label}
         </Text>
       </Pressable>

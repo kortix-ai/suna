@@ -10,7 +10,7 @@
  * gap was deleted because its freshness test could not observe a turn ENDING.
  *
  * WHERE IT IS WRITTEN, AND WHY THERE. Capture runs at TURN END — the
- * `turn-stream` `end`/`turn_end` relay in `routes/r4.ts`, fire-and-forget,
+ * `turn-stream` `end`/`turn_end` relay in `routes/turn-stream.ts`, fire-and-forget,
  * beside the `reconcileForwardedTurnsAtEnd` box read that already happens in
  * that branch. That instant is precisely the one the deleted client mirror
  * could not see, so writing the mirror BECAUSE a turn ended inverts its failure
@@ -47,7 +47,8 @@
  *
  * ATTACHMENT BYTES NEVER ENTER TRANSCRIPT ROWS. `sanitizeParts` strips a file part's
  * `url` (base64 data URLs are what made those bodies 7-19 MB) and a tool part's
- * `state.input`/`state.output`.
+ * `state.input`/`state.output` — except the bounded input of a `show` card,
+ * which is what that card is drawn from. A `data:` URL is refused there too.
  *
  * THIS MODULE IS THE READ SIDE plus the pure projections. The WRITE side lives
  * in `session-transcript-capture.ts`, because it needs the session-lifecycle
@@ -82,7 +83,8 @@ export const MIRROR_MAX_MESSAGE_CHARS = 1_000_000;
 export interface MirrorMessage {
   /** OpenCode's message envelope, verbatim (`Message` in @opencode-ai/sdk). */
   info: Record<string, unknown>;
-  /** The part array, minus tool inputs/outputs and file urls. */
+  /** The part array, minus tool inputs/outputs and file urls (a `show`
+   *  card keeps its bounded input — see INPUT_RENDERED_TOOLS). */
   parts: Array<Record<string, unknown>>;
 }
 
@@ -113,14 +115,120 @@ export interface MirrorSnapshot {
 const TOOL_STATE_KEEP = new Set(['status', 'title', 'time', 'metadata']);
 
 /**
+ * Tools whose card is DRAWN FROM ITS INPUT.
+ *
+ * The rule above holds for almost every tool: a `bash` or `read` input/output
+ * is a payload the transcript never draws. `show` is the exception, and it is
+ * the tool that matters most in saved history — it is how an agent hands the
+ * user a result (an image, a file, a chart, a page). Its renderer reads
+ * `state.input` and nothing else, and the SDK's `isEmptyShowPart` DROPS a
+ * completed `show` whose input is empty. Stripping it made every result an
+ * agent had shown vanish from the saved transcript — present live, silently
+ * gone while the sandbox was off.
+ *
+ * Same normalization as the SDK's `normalizeActivityToolName`, so the mirror
+ * keeps exactly the parts the renderer treats as `show`.
+ */
+const INPUT_RENDERED_TOOLS = new Set(['show', 'show_user']);
+const normalizeToolName = (name: unknown) =>
+  (typeof name === 'string' ? name : '').replace(/^oc-/, '').replace(/-/g, '_');
+
+/** `show` fields that are small by construction and needed to draw the card.
+ *  `content` and `items` are handled separately because they are not. */
+const SHOW_SCALAR_FIELDS = [
+  'type',
+  'title',
+  'description',
+  'variant',
+  'aspect_ratio',
+  'theme',
+  'language',
+] as const;
+/** References, not prose: a truncated path or URL is a WRONG one, so an
+ *  over-long value is dropped rather than cut. */
+const SHOW_REFERENCE_FIELDS = ['path', 'url', 'attachment'] as const;
+const SHOW_SCALAR_MAX_CHARS = 4_000;
+const SHOW_REFERENCE_MAX_CHARS = 4_096;
+/** A carousel is a handful of results, never an archive. */
+const SHOW_MAX_ITEMS = 50;
+
+/** A base64 `data:` URL is the 7-19 MB incident, wherever it turns up. */
+const isDataUrl = (value: string) => /^\s*data:/i.test(value);
+
+/**
+ * Pure: the part of a `show` input the card is drawn from, bounded.
+ *
+ * `spend` debits the message's shared character budget for `content`, the one
+ * field that can legitimately be large (a markdown report, a code listing).
+ * Returns null when nothing drawable survives, so an empty object never stands
+ * in for "had an input".
+ */
+function sanitizeShowPayload(
+  raw: unknown,
+  spend: (text: string) => string,
+): Record<string, unknown> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const input = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of SHOW_SCALAR_FIELDS) {
+    const value = input[key];
+    if (typeof value === 'string' && !isDataUrl(value)) {
+      out[key] = value.slice(0, SHOW_SCALAR_MAX_CHARS);
+    }
+  }
+  for (const key of SHOW_REFERENCE_FIELDS) {
+    const value = input[key];
+    if (
+      typeof value === 'string' &&
+      value.length <= SHOW_REFERENCE_MAX_CHARS &&
+      !isDataUrl(value)
+    ) {
+      out[key] = value;
+    }
+  }
+  if (typeof input.content === 'string' && !isDataUrl(input.content)) {
+    const content = spend(input.content);
+    if (content.length > 0) out.content = content;
+  }
+  // `items` reaches the runtime as EITHER an array or a JSON string (see the
+  // SDK's `parseShowItemsPayload`). It is parsed here — not stored verbatim —
+  // because a string would carry any `data:` URL inside it past every check
+  // above. A malformed string is dropped: there is nothing safe to keep.
+  let items: unknown = input.items;
+  if (typeof items === 'string') {
+    try {
+      items = JSON.parse(items);
+    } catch {
+      items = undefined;
+    }
+  }
+  if (Array.isArray(items)) {
+    const kept = items
+      .slice(0, SHOW_MAX_ITEMS)
+      .map((item) => sanitizeShowPayload(item, spend))
+      .filter((item): item is Record<string, unknown> => item !== null);
+    if (kept.length > 0) out.items = kept;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
  * Pure: strip the unbounded fields out of a part array and bound what is left.
  *
  * Everything a transcript needs to render survives — text, reasoning, tool
- * names and statuses, file names and types, step boundaries.
+ * names and statuses, file names and types, step boundaries, and the bounded
+ * input a `show` card is drawn from (see INPUT_RENDERED_TOOLS).
  */
 export function sanitizeParts(raw: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(raw)) return [];
   let budget = MIRROR_MAX_MESSAGE_CHARS;
+  /** Cut `text` to what the message may still spend, and debit it. */
+  const spend = (text: string): string => {
+    const cap = Math.max(0, Math.min(MIRROR_MAX_PART_CHARS, budget));
+    const kept = text.length > cap ? text.slice(0, cap) : text;
+    budget -= kept.length;
+    return kept;
+  };
   const out: Array<Record<string, unknown>> = [];
   for (const item of raw) {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) continue;
@@ -142,16 +250,17 @@ export function sanitizeParts(raw: unknown): Array<Record<string, unknown>> {
         }
         // `input`/`output` are the tool's whole payload — a file read, a build
         // log, a page of HTML. The compact projection never showed them and the
-        // renderer does not need them.
+        // renderer does not need them. EXCEPT for a tool drawn from its input:
+        // see INPUT_RENDERED_TOOLS. Its `output` is still dropped.
+        if (INPUT_RENDERED_TOOLS.has(normalizeToolName(part.tool))) {
+          const input = sanitizeShowPayload((state as Record<string, unknown>).input, spend);
+          if (input) kept.input = input;
+        }
         part.state = kept;
       }
     }
 
-    if (typeof part.text === 'string') {
-      const cap = Math.max(0, Math.min(MIRROR_MAX_PART_CHARS, budget));
-      if (part.text.length > cap) part.text = part.text.slice(0, cap);
-      budget -= (part.text as string).length;
-    }
+    if (typeof part.text === 'string') part.text = spend(part.text);
 
     out.push(part);
   }

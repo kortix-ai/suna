@@ -82,9 +82,35 @@ export function isOptimistic(id: string): boolean {
   return optimisticIds.has(id);
 }
 
-/** Forget optimistic ids whose messages a real message has replaced. */
+/**
+ * Part ids an optimistic message carried (COR-185). A real part drops only
+ * these: real OpenCode part ids also start with `prt_`, so a prefix check
+ * let a message's second real file part remove its first.
+ */
+const optimisticPartIds = new Set<string>();
+/** Each optimistic message's part ids, so forgetting the message forgets them too. */
+const optimisticPartIdsByMessage = new Map<string, string[]>();
+
+export function isOptimisticPart(id: string): boolean {
+  return optimisticPartIds.has(id);
+}
+
+/** Forget one optimistic message: its id and the part ids it carried. */
+function forgetOptimistic(messageId: string) {
+  optimisticIds.delete(messageId);
+  for (const partId of optimisticPartIdsByMessage.get(messageId) ?? []) {
+    optimisticPartIds.delete(partId);
+  }
+  optimisticPartIdsByMessage.delete(messageId);
+}
+
+/**
+ * Forget optimistic ids whose messages a real message has replaced, with
+ * their part ids. A bridged message (the real id carrying the optimistic
+ * parts) does not need them: `bridgedPartIds` clears its parts outright.
+ */
 export function clearOptimistic(ids: Iterable<string>) {
-  for (const id of ids) optimisticIds.delete(id);
+  for (const id of ids) forgetOptimistic(id);
 }
 
 // Track part IDs that have received at least one delta.
@@ -360,7 +386,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   removeMessage: (sessionId, messageId) =>
     set((state) => {
-      optimisticIds.delete(messageId);
+      forgetOptimistic(messageId);
       const existing = state.messages[sessionId] || [];
       return {
         messages: {
@@ -444,11 +470,14 @@ export const useSyncStore = create<SyncState>((set, get) => ({
             }
           }
 
-          // When a real part arrives, remove any optimistic fallback parts
-          // of the same type to prevent duplicates (e.g. double user text)
-          const baseParts = msg.parts.filter(
-            (p) => !(p.type === part.type && p.id.startsWith('prt_')),
-          );
+          // When a real part arrives, remove the optimistic fallback parts
+          // of the same type to prevent duplicates (e.g. double user text).
+          // Only ids an optimistic message carried: real ids share `prt_`.
+          const baseParts = msg.parts.filter((p) => {
+            if (p.type !== part.type || !optimisticPartIds.has(p.id)) return true;
+            optimisticPartIds.delete(p.id);
+            return false;
+          });
           updatedParts = [...baseParts, part];
         }
         const updatedMsg = { ...msg, parts: updatedParts };
@@ -535,6 +564,11 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   addOptimisticMessage: (sessionId, msg) => {
     optimisticIds.add(msg.info.id);
+    for (const part of msg.parts) optimisticPartIds.add(part.id);
+    optimisticPartIdsByMessage.set(
+      msg.info.id,
+      msg.parts.map((part) => part.id),
+    );
     set((state) => {
       const existing = state.messages[sessionId] || [];
       return {
@@ -544,12 +578,18 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   },
 
   addPermission: (sessionId, permission) =>
-    set((state) => ({
-      permissions: {
-        ...state.permissions,
-        [sessionId]: [...(state.permissions[sessionId] || []), permission],
-      },
-    })),
+    set((state) => {
+      const existing = state.permissions[sessionId] || [];
+      // Skip a permission whose id is already pending for this session — a
+      // duplicate SSE delivery must not double the prompt card.
+      if (existing.some((p) => p.id === permission.id)) return state;
+      return {
+        permissions: {
+          ...state.permissions,
+          [sessionId]: [...existing, permission],
+        },
+      };
+    }),
 
   removePermission: (sessionId, permissionId) =>
     set((state) => ({
@@ -589,7 +629,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       for (const sessionId of sessionIds) {
         for (const message of state.messages[sessionId] ?? []) {
           bridgedPartIds.delete(message.info.id);
-          optimisticIds.delete(message.info.id);
+          forgetOptimistic(message.info.id);
           for (const part of message.parts) deltaActiveParts.delete(part.id);
         }
       }
@@ -610,6 +650,8 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   reset: () => {
     bridgedPartIds.clear();
+    optimisticPartIds.clear();
+    optimisticPartIdsByMessage.clear();
     set({ messages: {}, sessionStatus: {}, permissions: {}, questions: {} });
   },
 }));

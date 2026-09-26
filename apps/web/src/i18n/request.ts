@@ -1,70 +1,34 @@
-import { getServerPublicEnv } from '@/lib/public-env-server';
-import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
-import { createServerClient } from '@supabase/ssr';
 import { getRequestConfig } from 'next-intl/server';
-import { cookies, headers } from 'next/headers';
+import { locale as rootLocale } from 'next/root-params';
 import { defaultLocale, type Locale } from './config';
-import { getRouteLocale, getUserLocale } from './locale';
+import { normalizeLocale } from './locale';
+import { loadMessages } from './messages';
 
-export default getRequestConfig(async ({ requestLocale }) => {
-  let locale: Locale = defaultLocale;
-  const cookieStore = await cookies();
-  const headersList = await headers();
-
-  // Priority 1: Check user profile preference (if authenticated).
-  // This is the only persisted source that can switch the app away from English.
+/**
+ * The locale comes from the URL, never from the request.
+ *
+ * Every page lives under `app/[locale]`. The middleware rewrites the public
+ * URL onto that segment: an explicit `/de/...` prefix, else the profile locale
+ * of the signed-in user, else English. `next/root-params` reads the segment
+ * without `headers()` or `cookies()`, so marketing pages render statically,
+ * once per locale.
+ *
+ * Server Actions and Route Handlers have no root params. They fall back to the
+ * `X-NEXT-INTL-LOCALE` request header that the middleware sets on the rewrite.
+ * Those surfaces are request-bound already, so the header read costs nothing.
+ */
+async function readRootLocale(): Promise<Locale | null> {
   try {
-    const runtimeEnv = getServerPublicEnv();
-    const supabase = createServerClient(
-      process.env.SUPABASE_SERVER_URL || process.env.SUPABASE_URL || runtimeEnv.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY || runtimeEnv.SUPABASE_ANON_KEY,
-      {
-        cookieOptions: {
-          name: KORTIX_SUPABASE_AUTH_COOKIE,
-          path: '/',
-          sameSite: 'lax',
-        },
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll() {
-            // No-op for server-side
-          },
-        },
-      },
-    );
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const userLocale = getUserLocale(user);
-    if (userLocale) {
-      locale = userLocale;
-      return {
-        locale,
-        messages: (await import(`../../translations/${locale}.json`)).default,
-      };
-    }
-  } catch (error) {
-    // User might not be authenticated, continue with explicit route locale or default.
+    return normalizeLocale(await rootLocale());
+  } catch {
+    return null;
   }
+}
 
-  // Priority 2: If locale is provided in the URL path (e.g., /de, /it), use it for marketing pages
-  // This allows SEO-friendly URLs like /de, /it for marketing content
-  const urlLocale = getRouteLocale(await requestLocale, headersList.get('x-locale'));
-  if (urlLocale) {
-    locale = urlLocale;
-    return {
-      locale,
-      messages: (await import(`../../translations/${locale}.json`)).default,
-    };
-  }
-
-  // Priority 3: Default to English. Browser headers, timezones, cookies, and
-  // localStorage never change the language automatically.
-  return {
-    locale,
-    messages: (await import(`../../translations/${locale}.json`)).default,
-  };
+export default getRequestConfig(async (params) => {
+  // Do NOT destructure `requestLocale`: it is a getter that reads headers(),
+  // and touching it opts every page into dynamic rendering.
+  const locale =
+    (await readRootLocale()) ?? normalizeLocale(await params.requestLocale) ?? defaultLocale;
+  return { locale, messages: await loadMessages(locale) };
 });

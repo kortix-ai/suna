@@ -69,6 +69,7 @@ export function SearchListHeader({
           size="icon"
           onPress={onAdd}
           className="rounded-full"
+          accessibilityLabel="Add"
         >
           <Icon as={Plus} size={20} className="text-primary-foreground" />
         </Button>

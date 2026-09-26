@@ -67,7 +67,7 @@ export const LogoPaletteSheet = React.forwardRef<SheetRef>((_props, ref) => {
           paddingBottom: Math.max(insets.bottom, 16) + 8,
           gap: 16,
         }}>
-        <SettingsGroup title="Style" className="bg-secondary">
+        <SettingsGroup title="Style">
           {LOGO_STYLES.map((style) => (
             <SettingsRow
               key={style.id}
@@ -81,7 +81,7 @@ export const LogoPaletteSheet = React.forwardRef<SheetRef>((_props, ref) => {
             />
           ))}
         </SettingsGroup>
-        <SettingsGroup title="Colour" className="bg-secondary">
+        <SettingsGroup title="Colour">
           {LOGO_PALETTES.map((palette) => (
             <SettingsRow
               key={palette.id}

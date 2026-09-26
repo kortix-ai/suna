@@ -482,7 +482,7 @@ function BackLink({ href }: { href: string }) {
     <Link
       href={href}
       prefetch
-      className="text-muted-foreground/35 hover:text-foreground/70 fixed top-5 left-5 inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
+      className="text-muted-foreground/35 hover:text-foreground/70 fixed top-[calc(1.25rem+var(--kx-titlebar-inset,0px))] left-5 inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
     >
       <ArrowLeft className="h-3 w-3" />
       {tI18nComplete.raw('text76900f1bfd16')}

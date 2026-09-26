@@ -6,8 +6,8 @@ let client: SupabaseClient | null = null;
 
 /**
  * Get singleton Supabase client with service role key.
- * Used for JWT auth verification (supabase.auth.getUser) and RPC calls
- * (atomic_use_credits, atomic_add_credits).
+ * Used for JWT auth verification (supabase.auth.getUser). Credit movements do
+ * not use it: billing/wallet calls the wallet SQL functions over DATABASE_URL.
  */
 export function getSupabase(): SupabaseClient {
   if (!client) {
@@ -34,7 +34,7 @@ export function getSupabase(): SupabaseClient {
  * URL it returns — and no external client (nor a remote E2B sandbox) can
  * resolve `supabase-kong`, so uploads and attachment/image fetches silently
  * fail. `SUPABASE_PUBLIC_URL` is the box's public origin
- * (e.g. `https://essentia.kortix.cloud`, which Caddy proxies `/storage/v1*` ->
+ * (e.g. `https://sampleco.kortix.cloud`, which Caddy proxies `/storage/v1*` ->
  * Kong), so we swap the internal base for the public one on the way out.
  *
  * No-op (returns the URL unchanged) when `SUPABASE_PUBLIC_URL` is unset or equal

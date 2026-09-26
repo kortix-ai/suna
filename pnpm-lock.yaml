@@ -62,6 +62,9 @@ patchedDependencies:
   e2b@2.37.0:
     hash: yvfhnsbredtxqzv5fhmwxaetam
     path: patches/e2b@2.37.0.patch
+  shaders@2.5.135:
+    hash: eaej5q3lhsnrsoz6e7zxio5l2e
+    path: patches/shaders@2.5.135.patch
 
 importers:
 
@@ -601,6 +604,9 @@ importers:
       expo-sharing:
         specifier: ~56.0.26
         version: 56.0.26(expo@56.0.22)(react-native@0.85.3)(react@19.2.3)(typescript@5.9.3)
+      expo-speech-recognition:
+        specifier: 56.0.4
+        version: 56.0.4(expo@56.0.22)(react-native@0.85.3)(react@19.2.3)
       expo-splash-screen:
         specifier: ~56.0.15
         version: 56.0.15(expo@56.0.22)(typescript@5.9.3)
@@ -718,6 +724,9 @@ importers:
       shiki:
         specifier: 4.4.3
         version: 4.4.3
+      sonner-native:
+        specifier: ^0.27.0
+        version: 0.27.0(react-native-gesture-handler@2.31.2)(react-native-reanimated@4.3.1)(react-native-safe-area-context@5.7.0)(react-native-screens@4.26.2)(react-native-svg@15.15.4)(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3)
       tailwind-merge:
         specifier: ^3.3.1
         version: 3.7.0
@@ -906,9 +915,6 @@ importers:
       '@glideapps/glide-data-grid':
         specifier: 6.0.4-alpha24
         version: 6.0.4-alpha24(lodash@4.18.1)(marked@15.0.12)(react-dom@19.3.0)(react-responsive-carousel@3.2.23)(react@19.3.0)
-      '@hookform/resolvers':
-        specifier: ^5.2.1
-        version: 5.9.1(ajv@8.18.0)(react-hook-form@7.88.0)(zod@3.25.76)
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../../packages/llm-catalog
@@ -1266,9 +1272,6 @@ importers:
       react-dom:
         specifier: ^19.2.0
         version: 19.3.0(react@19.3.0)
-      react-hook-form:
-        specifier: ^7.62.0
-        version: 7.88.0(react@19.3.0)
       react-i18next:
         specifier: ^17.0.9
         version: 17.0.14(i18next@26.4.2)(react-dom@19.3.0)(react@19.3.0)(typescript@5.9.3)
@@ -1296,15 +1299,24 @@ importers:
       rehype-sanitize:
         specifier: ^6.0.0
         version: 6.0.0
+      rehype-stringify:
+        specifier: ^10.0.1
+        version: 10.0.1
       remark-math:
         specifier: ^6.0.0
         version: 6.0.0
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0
+      remark-rehype:
+        specifier: ^11.1.2
+        version: 11.1.2
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
       shaders:
         specifier: ^2.5.94
-        version: 2.5.135(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.0)(vue@3.5.42)
+        version: 2.5.135(patch_hash=eaej5q3lhsnrsoz6e7zxio5l2e)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.0)(vue@3.5.42)
       sonner:
         specifier: ^2.0.3
         version: 2.0.8(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
@@ -1587,9 +1599,6 @@ importers:
       '@ai-sdk/openai':
         specifier: 4.0.16
         version: 4.0.16(zod@3.25.76)
-      '@ai-sdk/openai-compatible':
-        specifier: 3.0.12
-        version: 3.0.12(zod@3.25.76)
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../llm-catalog
@@ -1801,17 +1810,6 @@ packages:
       '@ai-sdk/provider-utils': 5.0.41(zod@4.6.5)
       '@vercel/oidc': 3.2.0
       zod: 4.6.5
-    dev: false
-
-  /@ai-sdk/openai-compatible@3.0.12(zod@3.25.76):
-    resolution: {integrity: sha512-tN9BUb4jUGjqtbRPUsziLxASfogLNICcq/Qrwr55vpnzKvprV6Ukl8ynED2lZaNrAHU5U4zlGnyU/iuYrjQK6g==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-    dependencies:
-      '@ai-sdk/provider': 4.0.3
-      '@ai-sdk/provider-utils': 5.0.11(zod@3.25.76)
-      zod: 3.25.76
     dev: false
 
   /@ai-sdk/openai@4.0.16(zod@3.25.76):
@@ -6235,90 +6233,6 @@ packages:
       zod: ^3.25.0 || ^4.0.0
     dependencies:
       hono: 4.12.34
-      zod: 3.25.76
-    dev: false
-
-  /@hookform/resolvers@5.9.1(ajv@8.18.0)(react-hook-form@7.88.0)(zod@3.25.76):
-    resolution: {integrity: sha512-7b7vsbraJxKgjVSA1Nur9tLwj539WGJUBLA7QNvXnFoT2pM5Z7G+6rlukk4B2/QrTZy6huRtH6wKeESPKuIr6w==}
-    peerDependencies:
-      '@sinclair/typebox': '>=0.25.24'
-      '@standard-schema/spec': ^1.0.0
-      '@typeschema/main': '>=0.13.7'
-      '@vinejs/vine': ^2.0.0 || ^3.0.0 || ^4.0.0
-      ajv: 8.18.0
-      ajv-errors: ^3.0.0
-      ajv-formats: ^2.1.1
-      arktype: ^2.0.0
-      ata-validator: ^1.2.0
-      class-transformer: '>=0.4.0'
-      class-validator: '>=0.12.0'
-      computed-types: ^1.0.0
-      effect: ^3.10.3
-      fluentvalidation-ts: ^3.0.0
-      fp-ts: ^2.7.0
-      io-ts: ^2.0.0
-      joi: ^17.0.0 || ^18.0.0
-      nope-validator: '>=0.12.0'
-      react-hook-form: ^7.55.0
-      superstruct: '>=0.12.0'
-      typanion: ^3.3.2
-      valibot: '>=0.31.0 || ^1.0.0-beta.4 || ^1.0.0-rc'
-      vest: '>=6.0.0'
-      yup: ^1.0.0
-      zod: ^3.25.0 || ^4.0.0
-    peerDependenciesMeta:
-      '@sinclair/typebox':
-        optional: true
-      '@standard-schema/spec':
-        optional: true
-      '@typeschema/main':
-        optional: true
-      '@vinejs/vine':
-        optional: true
-      ajv:
-        optional: true
-      ajv-errors:
-        optional: true
-      ajv-formats:
-        optional: true
-      arktype:
-        optional: true
-      ata-validator:
-        optional: true
-      class-transformer:
-        optional: true
-      class-validator:
-        optional: true
-      computed-types:
-        optional: true
-      effect:
-        optional: true
-      fluentvalidation-ts:
-        optional: true
-      fp-ts:
-        optional: true
-      io-ts:
-        optional: true
-      joi:
-        optional: true
-      nope-validator:
-        optional: true
-      superstruct:
-        optional: true
-      typanion:
-        optional: true
-      valibot:
-        optional: true
-      vest:
-        optional: true
-      yup:
-        optional: true
-      zod:
-        optional: true
-    dependencies:
-      '@standard-schema/utils': 0.3.0
-      ajv: 8.18.0
-      react-hook-form: 7.88.0(react@19.3.0)
       zod: 3.25.76
     dev: false
 
@@ -20418,6 +20332,18 @@ packages:
       - typescript
     dev: false
 
+  /expo-speech-recognition@56.0.4(expo@56.0.22)(react-native@0.85.3)(react@19.2.3):
+    resolution: {integrity: sha512-6Sh6aeKSG4W81TYfHUL8sgOxO++YrUi5Zhpmu5tiWurm6NP5hFL1SHd6+GbtV7Fyo4Cc35AofR9QxiSROZMJcQ==}
+    peerDependencies:
+      expo: '*'
+      react: '*'
+      react-native: '*'
+    dependencies:
+      expo: 56.0.22(@babel/core@7.29.7)(@expo/dom-webview@56.0.6)(@expo/metro-runtime@56.0.21)(expo-router@56.2.21)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-webview@13.16.1)(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3)(typescript@5.9.3)
+      react: 19.2.3
+      react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
+    dev: false
+
   /expo-splash-screen@56.0.15(expo@56.0.22)(typescript@5.9.3):
     resolution: {integrity: sha512-z2fmhPFx/ZYxWo7Roy8+uKr+Y+R6o11Ejd6zGgI4JWyXYN2A6P3+Hp3nKlGkip/hBT4TXiIw+54JCQNC3D3oKQ==}
     peerDependencies:
@@ -27345,15 +27271,6 @@ packages:
     dependencies:
       react: 19.2.3
 
-  /react-hook-form@7.88.0(react@19.3.0):
-    resolution: {integrity: sha512-QRaLOWhX93YCnMiRfnOFRSwWXZNt8qhm2JTZwypoDvKpSffTJHmpzMXt8U6PV5UThvL3IiiLDUWe2nHMtz6Mmw==}
-    engines: {node: '>=18.0.0'}
-    peerDependencies:
-      react: ^16.8.0 || ^17 || ^18 || ^19
-    dependencies:
-      react: 19.3.0
-    dev: false
-
   /react-html-attributes@1.4.6:
     resolution: {integrity: sha512-uS3MmThNKFH2EZUQQw4k5pIcU7XIr208UE5dktrj/GOH1CMagqxDl4DCLpt3o2l9x+IB5nVYBeN3Cr4IutBXAg==}
     dependencies:
@@ -29066,7 +28983,7 @@ packages:
     resolution: {integrity: sha512-TPbeg0b7ylrswdGCji8FRGFAKuqbpQlLbL8SOle3j1iHSs5Ob5mhvMAxWN2UItOjgALAB5Zp3fmMfj8mbWvXKw==}
     engines: {node: '>=10'}
 
-  /shaders@2.5.135(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.0)(vue@3.5.42):
+  /shaders@2.5.135(patch_hash=eaej5q3lhsnrsoz6e7zxio5l2e)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.0)(vue@3.5.42):
     resolution: {integrity: sha512-1Fb68wq9I5yJMkpfeiestXNbb1NT0tgcXIuiQCEUzyTgNR/kVq5mzw25BmK5MTHZGjye6o5O8W9iprjPDHphwg==}
     hasBin: true
     peerDependencies:
@@ -29097,6 +29014,7 @@ packages:
       three: 0.185.1
       vue: 3.5.42(typescript@5.9.3)
     dev: false
+    patched: true
 
   /shallowequal@1.1.0:
     resolution: {integrity: sha512-y0m1JoUZSlPAjXVtPPW70aZWfIL/dSP7AFkRnniLCrK/8MDKog3TySTBmckD+RObVxH0v4Tox67+F14PdED2oQ==}
@@ -29383,6 +29301,28 @@ packages:
       '@solid-primitives/refs': 1.1.4(solid-js@1.9.15)
       '@solid-primitives/transition-group': 1.1.2(solid-js@1.9.15)
       solid-js: 1.9.15
+    dev: false
+
+  /sonner-native@0.27.0(react-native-gesture-handler@2.31.2)(react-native-reanimated@4.3.1)(react-native-safe-area-context@5.7.0)(react-native-screens@4.26.2)(react-native-svg@15.15.4)(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3):
+    resolution: {integrity: sha512-TKX4mXoMnwx3m51bSTqrbmiImIjs18g9L6t0sv4XemR+s6XsKf1+l3yn3C4/psOHj3E+sdc2Bh5P/7+AG/41eA==}
+    peerDependencies:
+      react: '*'
+      react-native: '*'
+      react-native-gesture-handler: '>=2.28.0'
+      react-native-reanimated: ^4.1.1
+      react-native-safe-area-context: ^5.6.0
+      react-native-screens: ^4.16.0
+      react-native-svg: ^15.12.1
+      react-native-worklets: '>=0.6.1'
+    dependencies:
+      react: 19.2.3
+      react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
+      react-native-gesture-handler: 2.31.2(react-native@0.85.3)(react@19.2.3)
+      react-native-reanimated: 4.3.1(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3)
+      react-native-safe-area-context: 5.7.0(react-native@0.85.3)(react@19.2.3)
+      react-native-screens: 4.26.2(react-native@0.85.3)(react@19.2.3)
+      react-native-svg: 15.15.4(react-native@0.85.3)(react@19.2.3)
+      react-native-worklets: 0.8.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(react-native@0.85.3)(react@19.2.3)
     dev: false
 
   /sonner@2.0.8(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0):

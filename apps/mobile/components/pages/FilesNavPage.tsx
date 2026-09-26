@@ -10,8 +10,11 @@
  * - Search, then the breadcrumb (chips, never clipped). Inside a folder the
  *   hamburger stays (Jay, 2026-09-22: no Go back in its place, on any page);
  *   a crumb, or Android back, goes up one folder, never to home.
- * - List: `SettingsGroup`s titled "Folders" and "Files", rows of `SettingsRow`.
- *   Grid: 2-up tiles.
+ * - List: sections titled "Folders" and "Files", rows of `SettingsRow` in
+ *   `SettingsGroupItem`s. Grid: 2-up tiles. Both are one virtualised
+ *   `FlatList` (`buildFilesListItems`, COR-155).
+ * - Search covers the whole tree, not the open folder (`searchFileTree`,
+ *   COR-155); each result shows its folder under its name.
  * - The pinned bar (`PinnedBar`, the project drawer's bottom bar): version ·
  *   sort · list/grid `Tabs` · download, floating over a fade of the page.
  *   Refresh is a pull on the list; there is no button.
@@ -25,7 +28,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { BackHandler, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { BackHandler, Platform, Pressable, RefreshControl, ScrollView, View, type ListRenderItem } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
@@ -43,7 +46,7 @@ import { PageHeader } from '@/components/kortix/page-header';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { TopFade, useScrollFade } from '@/components/kortix/scroll-fade';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
-import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { SettingsGroup, SettingsGroupItem, SettingsRow } from '@/components/kortix/settings-list';
 import { CopyContentButton, KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { useToast } from '@/components/kortix/toast-provider';
@@ -53,7 +56,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { FileGlyph } from '@/components/files/file-icons';
-import { displayNames } from '@/lib/files/file-icon';
+import { downloadFailureMessage } from '@/lib/files/download-status';
+import { buildFilesListItems, type FilesListItem } from '@/lib/files/files-list-items';
+import { searchFileTree, searchResultLocation } from '@/lib/files/tree-search';
 import { folderTone } from '@/lib/files/folder-tone';
 import { haptics } from '@/lib/haptics';
 import {
@@ -103,6 +108,13 @@ type SortBy = 'name' | 'type';
 type SortOrder = 'asc' | 'desc';
 type ViewMode = 'list' | 'grid';
 
+/** A row or tile of the list. `parent` is set on a search result: its folder. */
+type FileRow = SandboxFile & { parent?: string };
+
+/** Space between the Folders and Files sections. */
+const SECTION_GAP = 18;
+const EMPTY_ITEMS: FilesListItem<FileRow>[] = [];
+
 /** The pinned bar's controls are 40pt `icon` buttons. */
 const BAR_CONTROL_HEIGHT = 40;
 const SHEET_SNAP_POINTS = ['100%'];
@@ -123,13 +135,29 @@ function childrenOf(entries: ProjectFileEntry[], dir: string): { dirs: string[];
   return { dirs: [...dirSet], files };
 }
 
+/**
+ * `downloadAsync` writes the body whatever the status: a 401 or 404 body used
+ * to be shared as `name.zip` (COR-155). A non-2xx status deletes the temp
+ * file and throws the message; the caller toasts it.
+ */
 async function downloadAndShare(url: string, filename: string, withAuth: boolean) {
   const target = `${FileSystem.cacheDirectory}${filename}`;
-  if (withAuth) {
-    const token = await getAuthToken();
-    await FileSystem.downloadAsync(url, target, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-  } else {
-    await FileSystem.downloadAsync(url, target);
+  let status: number | undefined;
+  try {
+    const headers: Record<string, string> = {};
+    if (withAuth) {
+      const token = await getAuthToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+    }
+    status = (await FileSystem.downloadAsync(url, target, { headers })).status;
+  } catch (error) {
+    await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => {});
+    throw error;
+  }
+  const failure = downloadFailureMessage(status);
+  if (failure) {
+    await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => {});
+    throw new Error(failure);
   }
   if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target);
 }
@@ -198,7 +226,7 @@ function VersionSheet({
           No versions yet
         </Text>
       ) : (
-        <SettingsGroup className="bg-secondary">
+        <SettingsGroup>
           {sorted.map((b) => (
             <SettingsRow
               key={b.name}
@@ -315,7 +343,7 @@ function FileSheetBody({
               No checkpoints for this file yet
             </Text>
           ) : (
-            <SettingsGroup className="bg-secondary">
+            <SettingsGroup>
               {commits.map((c) => (
                 <SettingsRow
                   key={c.hash}
@@ -383,7 +411,19 @@ function CommitDiff({ projectId, sha, path, isDark }: { projectId: string; sha: 
 
 // ─── Grid tile ────────────────────────────────────────────────────────────────
 
-function FileTile({ file, label, onPress }: { file: SandboxFile; label: string; onPress: (file: SandboxFile) => void }) {
+function FileTile({
+  file,
+  label,
+  detail,
+  onPress,
+}: {
+  file: SandboxFile;
+  label: string;
+  /** The second line: a search result's folder; else a file's size. */
+  detail?: string;
+  onPress: (file: SandboxFile) => void;
+}) {
+  const second = detail ?? (file.type === 'file' ? fileSizeLabel(file.size) : undefined);
   return (
     <Pressable
       onPress={() => onPress(file)}
@@ -396,12 +436,14 @@ function FileTile({ file, label, onPress }: { file: SandboxFile; label: string; 
         <EntryIcon file={file} size={36} />
       </View>
       <View className="gap-0.5">
-        <Text variant="small" numberOfLines={1}>
+        {/* `small` is `leading-none`: a 14pt line clips g/p/y once
+            `numberOfLines` clips to the line box. `leading-5` = text-sm's 20pt. */}
+        <Text variant="small" className="leading-5" numberOfLines={1}>
           {label}
         </Text>
-        {file.type === 'file' && fileSizeLabel(file.size) ? (
+        {second ? (
           <Text variant="muted" className="text-xs" numberOfLines={1}>
-            {fileSizeLabel(file.size)}
+            {second}
           </Text>
         ) : null}
       </View>
@@ -474,14 +516,22 @@ export function FilesNavPage({
     ];
   }, [entries, path, sortBy, sortOrder]);
 
-  const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
-  }, [rows, search]);
+  // Search covers the whole tree, not only this folder (COR-155): the files
+  // query already holds every path. A result shows its folder.
+  const searching = search.trim().length > 0;
+  const visible = useMemo<FileRow[]>(() => {
+    if (!searching) return rows;
+    return searchFileTree(entries, search).map((r) => ({
+      name: r.name,
+      path: r.path,
+      type: r.type,
+      size: r.size,
+      parent: r.parent,
+    }));
+  }, [entries, rows, search, searching]);
   const folders = useMemo(() => visible.filter((r) => r.type === 'directory'), [visible]);
-  // Extensions dropped, unless two names in this folder would then collide.
-  const labels = useMemo(() => displayNames(visible.map((r) => r.name)), [visible]);
   const files = useMemo(() => visible.filter((r) => r.type === 'file'), [visible]);
+  const listItems = useMemo(() => buildFilesListItems(folders, files, viewMode), [folders, files, viewMode]);
   const segments = path ? path.split('/').filter(Boolean) : [];
 
   const listLoading = filesQuery.isLoading || (!ref_ && branchesQuery.isLoading);
@@ -502,7 +552,7 @@ export function FilesNavPage({
     return () => subscription.remove();
   }, [path, goUp]);
 
-  const onRowPress = (file: SandboxFile) => {
+  const onRowPress = useCallback((file: SandboxFile) => {
     haptics.tap();
     if (file.type === 'directory') {
       setPath(file.path);
@@ -511,7 +561,54 @@ export function FilesNavPage({
     }
     setOpenFile({ name: file.name, path: file.path });
     fileSheetRef.current?.present();
-  };
+  }, []);
+
+  // One FlatList item: a section title, a list row, or a grid line of tiles
+  // (`buildFilesListItems`). Virtualised, so a folder of thousands of files
+  // mounts only what is on screen (COR-155).
+  const renderItem = useCallback<ListRenderItem<FilesListItem<FileRow>>>(
+    ({ item }) => {
+      const gap = item.first ? { marginTop: SECTION_GAP } : undefined;
+      if (item.kind === 'title') {
+        return (
+          <Text variant="muted" className="mb-2 px-4" style={gap}>
+            {item.label}
+          </Text>
+        );
+      }
+      if (item.kind === 'row') {
+        const file = item.entry;
+        return (
+          <View style={gap}>
+            <SettingsGroupItem index={item.index} count={item.count}>
+              <SettingsRow
+                leading={<EntryIcon file={file} size={22} />}
+                label={file.name}
+                description={searching ? searchResultLocation(file) : undefined}
+                value={file.type === 'file' ? fileSizeLabel(file.size) : undefined}
+                onPress={() => onRowPress(file)}
+              />
+            </SettingsGroupItem>
+          </View>
+        );
+      }
+      return (
+        <View className="flex-row" style={[{ marginHorizontal: -4 }, gap]}>
+          {item.entries.map((file) => (
+            <View key={file.path} style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}>
+              <FileTile
+                file={file}
+                label={file.name}
+                detail={searching ? searchResultLocation(file) : undefined}
+                onPress={onRowPress}
+              />
+            </View>
+          ))}
+        </View>
+      );
+    },
+    [onRowPress, searching],
+  );
 
   const cycleSort = () => {
     haptics.selection();
@@ -615,11 +712,16 @@ export function FilesNavPage({
         ) : null}
 
         <View className="flex-1">
-          <Animated.ScrollView
-            className="flex-1"
+          <Animated.FlatList
+            style={{ flex: 1 }}
+            data={listLoading || emptyLabel ? EMPTY_ITEMS : listItems}
+            keyExtractor={(item) => item.key}
+            renderItem={renderItem}
+            initialNumToRender={16}
+            windowSize={11}
             onScroll={scrollFade.onScroll}
             scrollEventThrottle={16}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: contentInset, gap: 18 }}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: contentInset }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             refreshControl={
@@ -628,76 +730,28 @@ export function FilesNavPage({
                 onRefresh={refresh}
                 tintColor={THEME[isDark ? 'dark' : 'light'].mutedForeground}
               />
-            }>
-            {listLoading ? (
-              <View className="gap-3 pt-3">
-                <Skeleton className="h-12 w-full rounded-2xl" />
-                <Skeleton className="h-12 w-full rounded-2xl" />
-                <Skeleton className="h-12 w-full rounded-2xl" />
-              </View>
-            ) : emptyLabel ? (
-              <View className="items-center gap-4 px-6 pt-16">
-                <Text variant="muted" className="text-center">
-                  {emptyLabel}
-                </Text>
-                {filesQuery.isError ? (
-                  <Button variant="secondary" size="lg" className="rounded-full" onPress={refresh}>
-                    <Text>Try again</Text>
-                  </Button>
-                ) : null}
-              </View>
-            ) : viewMode === 'grid' ? (
-              <>
-                {folders.length > 0 ? (
-                  <View className="gap-2">
-                    <Text variant="muted" className="px-4">
-                      Folders
-                    </Text>
-                    <View className="flex-row flex-wrap" style={{ marginHorizontal: -4 }}>
-                      {folders.map((file) => (
-                        <View key={file.path} style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}>
-                          <FileTile file={file} label={labels[file.name]} onPress={onRowPress} />
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                ) : null}
-                {files.length > 0 ? (
-                  <View className="gap-2">
-                    <Text variant="muted" className="px-4">
-                      Files
-                    </Text>
-                    <View className="flex-row flex-wrap" style={{ marginHorizontal: -4 }}>
-                      {files.map((file) => (
-                        <View key={file.path} style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}>
-                          <FileTile file={file} label={labels[file.name]} onPress={onRowPress} />
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <SettingsGroup title={files.length > 0 ? 'Folders' : undefined}>
-                  {folders.map((file) => (
-                    <SettingsRow key={file.path} leading={<EntryIcon file={file} size={22} />} label={labels[file.name]} onPress={() => onRowPress(file)} />
-                  ))}
-                </SettingsGroup>
-                <SettingsGroup title={folders.length > 0 ? 'Files' : undefined}>
-                  {files.map((file) => (
-                    <SettingsRow
-                      key={file.path}
-                      leading={<EntryIcon file={file} size={22} />}
-                      label={labels[file.name]}
-                      value={fileSizeLabel(file.size)}
-                      onPress={() => onRowPress(file)}
-                    />
-                  ))}
-                </SettingsGroup>
-              </>
-            )}
-          </Animated.ScrollView>
+            }
+            ListHeaderComponent={
+              listLoading ? (
+                <View className="gap-3 pt-3">
+                  <Skeleton className="h-12 w-full rounded-2xl" />
+                  <Skeleton className="h-12 w-full rounded-2xl" />
+                  <Skeleton className="h-12 w-full rounded-2xl" />
+                </View>
+              ) : emptyLabel ? (
+                <View className="items-center gap-4 px-6 pt-16">
+                  <Text variant="muted" className="text-center">
+                    {emptyLabel}
+                  </Text>
+                  {filesQuery.isError ? (
+                    <Button variant="secondary" size="lg" className="rounded-full" onPress={refresh}>
+                      <Text>Try again</Text>
+                    </Button>
+                  ) : null}
+                </View>
+              ) : null
+            }
+          />
           <TopFade style={scrollFade.topFadeStyle} />
 
           {/* The project drawer's pinned bar: version · sort · view · refresh ·

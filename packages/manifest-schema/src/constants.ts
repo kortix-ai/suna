@@ -192,8 +192,9 @@ export const SANDBOX_MEMORY_BOUNDS = { min: 1, max: 128 } as const;
 export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
 
 /**
- * The actions an agent's `[[agents]].kortix_cli` may grant — the project-scoped
- * surface. MUST stay in sync with apps/api/src/iam/actions.ts PROJECT_ACTIONS —
+ * The permissions an agent's `kortix_permissions` grant may list — the
+ * project-scoped surface (`kortix_cli` is the deprecated manifest alias).
+ * MUST stay in sync with apps/api/src/iam/actions.ts PROJECT_ACTIONS —
  * every project-scoped action, including the manager-tier leaves
  * (`project.delete`, `project.members.manage`, `project.gateway.keys.manage`):
  * these are still reachable via a project's `manager` role, so an agent can be
@@ -205,9 +206,9 @@ export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
  * agent-session token is project-scoped (`account_tokens.project_id`):
  * apps/api's IAM v2 engine (`iam/engine-v2.ts`'s `computeTokenScope`) refuses
  * ANY account-scope action outright for a project-bound token — BEFORE the
- * agent's `kortix_cli` grant is even loaded or consulted. This list is a
+ * agent's `kortix_permissions` grant is even loaded or consulted. This list is a
  * curation/UX surface (what the CLI/dashboard editor OFFER as grantable, and
- * what `validateGrantList` flags as a bad `kortix_cli` entry), not the
+ * what `validateGrantList` flags as a bad `kortix_permissions` entry), not the
  * security boundary itself — grant-omission alone would not stop a
  * hypothetical non-project-scoped token from calling an account action.
  *
@@ -217,10 +218,10 @@ export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
  * audit, 2026-07): none of them were ever asserted on any route, so granting
  * or omitting them was a silent no-op.
  */
-// MUST stay in sync with apps/api iam/actions.ts GRANTABLE_KORTIX_CLI (=
+// MUST stay in sync with apps/api projects/agents.ts GRANTABLE_KORTIX_PERMISSIONS (=
 // Object.values(PROJECT_ACTIONS)). The unit-agents-parse drift-guard test
 // fails loudly if these diverge (this package can't import apps/api).
-export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
+export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.read',
   'project.write',
   'project.delete',
@@ -268,7 +269,7 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.review.act',
   // Minting a project credential. Grantable so a manifest CAN hand it to an
   // agent explicitly, but note the two credential routes refuse an
-  // agent-session token outright (projects/routes/r3.ts) — an agent that could
+  // agent-session token outright (projects/routes/secret-delivery.ts) — an agent that could
   // mint a fresh, grant-less project token would escape its own ceiling. The
   // leaf exists so a CUSTOM ROLE can withhold it from humans.
   'project.credentials.issue',
@@ -277,15 +278,15 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
 /**
  * Actions removed from the enforcement catalog (IAM dead-catalog cleanup,
  * 2026-07) but that older project manifests may still list under
- * `kortix_cli`. None of them were ever asserted on any route, so granting or
+ * `kortix_permissions`. None of them were ever asserted on any route, so granting or
  * omitting them was always a no-op — but a manifest merge/ship must not start
  * hard-failing for projects that happen to still mention one. Kept out of
- * `GRANTABLE_KORTIX_CLI_ACTIONS` (they must never appear in the role editor
+ * `GRANTABLE_KORTIX_PERMISSIONS` (they must never appear in the role editor
  * or be recommended for new manifests) and instead surfaced as a
  * deprecation warning by `validateGrantList`.
  */
 /**
- * `kortix_cli` spellings that are still ACCEPTED but are the pre-cutover name
+ * `kortix_permissions` entries that are still ACCEPTED but are the pre-cutover name
  * for another leaf. Spec §2.4 collapsed `project.cr.*` into the gitops leaves
  * because they were the same capability named twice; a manifest that still
  * lists one keeps validating and is rewritten to the value here when the grant
@@ -295,12 +296,12 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
  * than keeping a second copy, and the CLI's `validate --scopes` annotates from
  * it. Two hand-written copies of a key table is how they drift.
  */
-export const DEPRECATED_KORTIX_CLI_ALIASES: Readonly<Record<string, string>> = {
+export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, string>> = {
   'project.cr.open': 'project.gitops.push',
   'project.cr.merge': 'project.gitops.merge',
 };
 
-export const LEGACY_TOLERATED_KORTIX_CLI_ACTIONS: readonly string[] = [
+export const LEGACY_TOLERATED_KORTIX_PERMISSIONS: readonly string[] = [
   'project.session.exec',
   'project.gateway.routing.edit',
   'project.schedule.read',

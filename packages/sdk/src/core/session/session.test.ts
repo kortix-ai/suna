@@ -346,10 +346,19 @@ describe('session/url', () => {
 });
 
 describe('session/preview', () => {
-  it('buildPreviewAuthEndpoint derives the /p/auth endpoint', () => {
+  it('buildPreviewAuthEndpoint derives the /p/auth endpoint for the named server', () => {
     expect(
-      buildPreviewAuthEndpoint('http://localhost:8008/v1/p/sbx1/3000/index.html'),
+      buildPreviewAuthEndpoint('http://localhost:8008/v1/p/sbx1/3000/index.html', 'http://localhost:8008/v1'),
     ).toBe('http://localhost:8008/v1/p/auth');
+  });
+
+  it('buildPreviewAuthEndpoint trusts no origin when none is known', () => {
+    // No serverUrl and no window: the bearer would go to whatever origin the
+    // URL names, so no endpoint is returned.
+    expect(buildPreviewAuthEndpoint('http://localhost:8008/v1/p/sbx1/3000/index.html')).toBeNull();
+    expect(
+      buildPreviewAuthEndpoint('https://collector.example/v1/p/sbx1/3000/', 'http://localhost:8008/v1'),
+    ).toBeNull();
   });
 
   it('buildStaticFilePreviewUrl owns the static-file service route', () => {

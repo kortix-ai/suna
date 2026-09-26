@@ -105,6 +105,14 @@ export const SsoProviderSchema = z
     group_claim_name: z.string().nullable().optional(),
     auto_create_members: z.boolean().optional(),
     enforce_sso: z.boolean().optional(),
+    /** True once the account proved control of `primary_domain`. */
+    domain_verified: z.boolean().optional(),
+    domain_verified_at: z.string().nullable().optional(),
+    /** The DNS TXT record that proves control of `primary_domain`. */
+    domain_verification: z
+      .object({ record_type: z.literal('TXT'), record_name: z.string(), record_value: z.string() })
+      .nullable()
+      .optional(),
     created_at: z.string(),
     updated_at: z.string(),
   })

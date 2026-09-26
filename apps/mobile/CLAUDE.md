@@ -11,12 +11,12 @@ styling inline. If a primitive is missing a capability, extend the primitive
 — do not work around it in a screen.
 
 `components/ui/` is unmodified React Native Reusables (RNR) registry output —
-32 files, no barrel, no capitalized filenames. `components/kortix/` is
-Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
+18 files, no barrel, no capitalized filenames. `components/kortix/` is
+Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
 `@/components/ui` barrel.** Import direct paths only, e.g.
 `@/components/ui/button`, `@/components/kortix/avatar`.
 
-## Canonical UI primitives — `components/ui/` (RNR registry, 32 files)
+## Canonical UI primitives — `components/ui/` (RNR registry, 18 files)
 
 | Need | Use ONLY | Never |
 | --- | --- | --- |
@@ -27,42 +27,27 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | Field label | `@/components/ui/label` → `<Label>` | ad-hoc label `<Text>` with custom size/weight |
 | Icons | `@/components/ui/icon` → `<Icon as={XIcon} />`, or `<XIcon />`, with icons from `@/lib/icons` — see **Icons** below | importing `phosphor-react-native`, `lucide-react-native`, or `@expo/vector-icons`; ad-hoc svg in screens |
 | Dialog (centered overlay) | `@/components/ui/dialog` → `<Dialog>` + parts | custom centered overlay, raw `Modal` |
-| Alert dialog (confirm/cancel) | `@/components/ui/alert-dialog` → `<AlertDialog>` + parts | `Alert.alert`, custom confirm overlays |
-| Inline alert | `@/components/ui/alert` → `<Alert>` + `AlertTitle` / `AlertDescription` | custom banner boxes |
+| Alert dialog (confirm/cancel) | `@/components/ui/alert-dialog` → `<AlertDialog>` + parts; a plain title · description · Cancel · action confirm is `useConfirmDialog()` from `@/components/kortix/confirm-dialog` | `Alert.alert`, custom confirm overlays |
 | Badge | `@/components/ui/badge` → `<Badge variant="…">` | ad-hoc pill `View` |
 | Skeleton loading state | `@/components/ui/skeleton` → `<Skeleton>` | ad-hoc `animate-pulse` boxes — see also **Loading** rule below |
-| Card surface | `@/components/ui/card` → `<Card>` + `CardHeader` / `CardTitle` / `CardContent` / `CardFooter` | ad-hoc bordered/rounded `View` cards |
-| Accordion | `@/components/ui/accordion` → `<Accordion>` + parts | custom expand/collapse |
-| Collapsible | `@/components/ui/collapsible` → `<Collapsible>` + parts | custom show/hide |
-| Checkbox | `@/components/ui/checkbox` → `<Checkbox>` | custom check `Pressable` |
 | Switch | `@/components/ui/switch` → `<Switch>` | raw RN `Switch` styled ad-hoc |
-| Radio group | `@/components/ui/radio-group` → `<RadioGroup>` + `RadioGroupItem` | custom radio rows |
-| Toggle | `@/components/ui/toggle` → `<Toggle>` | custom pressed chip |
-| Toggle group | `@/components/ui/toggle-group` → `<ToggleGroup>` + `ToggleGroupItem` | custom segmented control |
 | Tabs | `@/components/ui/tabs` → `<Tabs>` + `TabsList` / `TabsTrigger` / `TabsContent` | custom tab bars |
-| Menu bar | `@/components/ui/menubar` → `<Menubar>` + parts | custom top-level app menu |
 | Select | `@/components/ui/select` → `<Select>` + parts | custom picker menus |
-| Dropdown menu | `@/components/ui/dropdown-menu` → `<DropdownMenu>` + parts | custom action menus |
-| Context menu | `@/components/ui/context-menu` → `<ContextMenu>` + parts | custom long-press menus |
 | Popover | `@/components/ui/popover` → `<Popover>` + parts | custom anchored overlays |
-| Hover card | `@/components/ui/hover-card` → `<HoverCard>` + parts | custom hover/preview overlays |
-| Tooltip | `@/components/ui/tooltip` → `<Tooltip>` + parts | custom tooltip overlays |
 | Progress | `@/components/ui/progress` → `<Progress>` | custom progress bars |
 | Separator | `@/components/ui/separator` → `<Separator>` | ad-hoc `border-b` / hairline `View`s |
-| Aspect ratio | `@/components/ui/aspect-ratio` → `<AspectRatio>` | manual width/height ratio math |
 | Avatar (3-part composition) | `@/components/ui/avatar` → `<Avatar>` + `AvatarImage` / `AvatarFallback` | see **Avatar** section — most screens want `@/components/kortix/avatar` instead |
 | Native-only animated wrapper | `@/components/ui/native-only-animated-view` → `<NativeOnlyAnimatedView>` | animating a view that must also render inertly on web |
 
-## Kortix-specific components — `components/kortix/` (23 files)
+## Kortix-specific components — `components/kortix/` (34 files)
 
 | File | Purpose |
 | --- | --- |
 | `avatar.tsx` | The single-prop avatar most screens use (agent/model/thread/trigger/custom). See **Avatar** section. |
-| `ThreadAvatar.tsx` | Thin wrapper around `kortix/avatar` for thread rows. |
 | `sheet.tsx` | `<Sheet>` bottom-sheet wrapper + `SheetHeader`/`SheetBody`/`SheetFooter`, and the shared gorhom chrome — `SheetBackdrop`, `sheetHandleIndicatorStyle(isDark)`, `useSheetBackground()`. See **Bottom sheets** invariant below. |
 | `SheetInput.tsx` | Canonical pill text field for inside a bottom sheet (wraps gorhom's `BottomSheetTextInput`). |
 | `pill-input.tsx` | `PillInput` — the same pill on a plain `TextInput`, for full screens outside a sheet (the auth forms). Forwards its ref. Exports `usePillInputStyle`, the one source of the pill's look for both fields. |
-| `settings-list.tsx` | `SettingsHeader` / `SettingsPage` / `SettingsGroup` / `SettingsRow` / `AppearanceToggle` — the only layout for settings-style screens ((settings) stack, Account tab, Accounts, Billing): back-button header (optional centred + transparent variant), page with an optional full-bleed `hero` above a rounded sheet, sentence-case group title, borderless `rounded-2xl` card, full-width separators, icon · label · trailing rows, `AppearanceRow` (opens a System/Light/Dark dialog with a check on the active mode). See `design.md` → Settings screens. |
+| `settings-list.tsx` | `SettingsHeader` / `SettingsPage` / `SettingsGroup` / `SettingsRow` / `AppearanceToggle` — the only layout for settings-style screens ((settings) stack, Account page, Accounts, Billing): back-button header (optional centred + transparent variant), page with an optional full-bleed `hero` above a rounded sheet, sentence-case group title, borderless `rounded-2xl` card, full-width separators, icon · label · trailing rows, `AppearanceRow` (opens a System/Light/Dark dialog with a check on the active mode). Inside a sheet, a group's rows take `SHEET_ROW_SURFACE` (`bg-secondary dark:bg-background`) from `SurfaceContext` (`surface-context.ts`) automatically — never pass a row fill there. See `design.md` → Settings screens. |
 | `search-header.tsx` | `SearchHeader` — iOS-style search mode for a screen header: filled 40pt pill (magnifier, auto-focused field, round clear button) + Cancel. A screen swaps its header row for it (projects header search). |
 | `platform-button.tsx` | `PlatformButton` — native SwiftUI button (`@expo/ui`, plain style on the `secondary` fill; no Liquid Glass, its shadow clips) on iOS, design-system `Button` with `rounded-full` on Android. Used for the projects "New" button and the settings Go back button. Same file: `PlatformFullWidthButton` — a full-width pill (label centred, `leading` React Native element pinned to the left edge) drawn natively on iOS in the design-system variant's tokens (`default` / `outline`, `size` `lg` / `xl`), design-system `Button` elsewhere; used by the auth welcome screen's three sign-in pills. Both fall back to the design-system button when the running binary lacks the `ExpoUI` native module (OTA-safe). |
 | `KortixLogo.tsx` | Brand mark / wordmark, light and dark SVG variants. |
@@ -70,16 +55,19 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | `search-list-header.tsx` | "Search input + add button" row under `PageHeader` on list pages. |
 | `page-header.tsx` | Unified top header (hamburger / title / "···" more button) for every page. |
 | `page-content.tsx` | Content area under `PageHeader` — no card framing, consistent top spacing. |
-| `list-row.tsx` | Standard settings-style row (`title` / `subtitle` / `left` / `right` / divider). |
 | `composer.tsx` | The chat input of the project home and of a thread (`SessionChatInput` wraps it): one card with the text field on top and a 36pt row of add · model · send `Button`s below (`icon-md` icon buttons, `sm` model pill). Page colour (`bg-background`) in both themes, hairline `border-border` in both themes, no shadow. No animated placeholder. Thread-only slots: `header` (queue, staged command), `accessory` (AutoContinue), `busy` (Stop). See design.md → Project home. |
+| `dictation-waveform.tsx` | `DictationWaveform` — the composer's listening indicator: one bar per recogniser volume sample, newest on the right. Runs on the UI thread from a shared value. See `design.md` → Dictation. |
 | `pinned-bar.tsx` | `PinnedBar` + `usePinnedBarInset`. Inside a bottom sheet, wrap the body in `SheetFill` (`sheet.tsx`) first: gorhom's content box is taller than the visible sheet, so `bottom: 0` alone lands off-screen.  — controls pinned to the bottom of a scrolling region, floating over a fade of the surface (clear → 85% at 45% → solid), 16pt above the safe area; the content scrolls under it and pads its end by the inset. The project drawer's bottom bar as a component (Jay, 2026-09-22); used by the session file preview sheet (Download · Add to chat). Never a solid footer under a separate fade strip. **A new control added to any header or chrome row prefers this gradient-fade backdrop over a flat one** (Jay, 2026-09-22) — see design.md's "New header controls" row. |
 | `animated-toggle-icon.tsx` | Cross-fade + rotate between an icon and its "X" close state, used by `PageHeader`. |
 | `kortix-loader.tsx` | Lottie brand loading spinner. |
-| `ShimmerText.tsx` | Gradient-sweep shimmer text for "AI is working" status lines. |
+| `text-shimmer.tsx` | `TextShimmer` — gradient-sweep shimmer text for "AI is working" status lines. |
 | `StopIcon.tsx` | Stop-square SVG icon used on the composer's stop button. |
+| `PixelDeadFlower.tsx` | 16×16 pixel-art wilted flower, one `color` prop at 6 opacities (one `Path` per tone, no seams). One petal falls in a loop: whole-cell steps on the UI thread (Reanimated), off under Reduce Motion and while `animate={false}`. The empty session list in the project drawer (`DrawerEmptyFlower` runs the loop only while the drawer is open) and on the Sessions page (loop only while focused; errors and empty filter results keep their text) (Jay, 2026-09-24). The wrapper carries the "No sessions yet" `accessibilityLabel`. |
 | `OfflineBanner.tsx` | Global connectivity banner (slides in on disconnect / brief "Back online" flash). |
+| `SessionEndedDialog.tsx` | The one "Your session has ended" dialog (COR-144), mounted once in `app/_layout.tsx`; opens when `lib/auth/session-expiry.ts` confirms the login is gone. A new code path that signs out calls `sessionExpiry.disarm()` before `supabase.auth.signOut`, or the user sees this dialog. |
 | `selectable-markdown.tsx` | Selectable markdown text via `@expensify/react-native-live-markdown`. |
-| `toast.tsx` / `toast-provider.tsx` | Toast primitive + provider/context. `useToast()` returns the toast functions: `const toast = useToast(); toast.error(...)`. |
+| `confirm-dialog.tsx` | `useConfirmDialog()` → `{ confirm, dialog }`: the app's one confirm (COR-151), an `AlertDialog` with a secondary Cancel pill and a `default`/`destructive` action pill, portalled above open sheets. Replaces `Alert.alert(title, msg, [cancel, action])` 1:1. External web links go through `openLink` (`lib/utils/open-link.ts`): kortix.com in the in-app browser, other hosts in the system browser. |
+| `toast.tsx` / `toast-provider.tsx` | The toast seam. `sonner-native` renders toasts (Jay, 2026-09-22); `toast-provider.tsx` owns `useToast()` and mounts `<Toaster>`, `toast.tsx` owns the Kortix look, `lib/ui/toast-model.ts` owns durations/haptics. `const toast = useToast(); toast.error(...)`. Never import `sonner-native` in a screen. See design.md §11 |
 
 Plurality rule: if you find yourself writing the same `className` string on more
 than one `<Text>`, you are doing it wrong — that styling already exists as a
@@ -109,6 +97,7 @@ ships exactly these 12 — there is **no** `label` variant:
 - ✅ `<Text variant="muted">Forgot your password?</Text>`
 - ❌ `<Text className="font-roobert text-[13px] text-muted-foreground">…`
 - Inside a `<Button>`, just render `<Text>…</Text>` — the button styles it via `TextClassContext`.
+- `small` is `leading-none` (14pt line for 14pt text). With `numberOfLines` it clips the descenders of g, p, y on Android. Give a one-line `small` `className="leading-5"` (text-sm's 20pt; Jay, 2026-09-23).
 - Only add a `className` to `Text` for **layout** (`mt-3`, `text-center`) or a genuinely one-off color on a fixed-palette surface (e.g. always-dark hero). Never for size/weight that a variant already encodes.
 - Need an eyebrow / field-label style? There is no `label` variant. Use
   `@/components/ui/label` for form labels, or an explicit one-off className
@@ -131,6 +120,11 @@ children.
   message (Copy, Edit, turn details). Always pair it with `hitSlop` so the touch target
   stays 44pt tall (`TURN_ACTION_HIT_SLOP`). Every icon button outside the composer row and
   the message actions stays `icon` (40pt).
+  A `Button` with no `hitSlop` prop grows its touch target to 44pt by itself
+  (`defaultButtonHitSlop` in `lib/ui/hit-target.ts`: `icon` 2pt, `icon-md` 4pt,
+  `icon-sm` 8pt tall / 4pt wide, `default` / `sm` vertical only; COR-153).
+  Pass `hitSlop` only to differ, or when a `className` overrides the box.
+  Every icon-only button needs an `accessibilityLabel`.
   `xl` is added to the registry output. Only the auth welcome screen's
   three sign-in pills use it (Jay, 2026-09-17). Every other pill stays `lg`.
 
@@ -212,7 +206,9 @@ that balances the button. `hideClose` drops the button. `titleTrailing` puts one
 40pt icon `Button` (`variant="ghost" size="icon" rounded-full`) at the far right in
 place of that spacer — the file preview's Copy (`SessionFilesSheet`); the slot
 mirrors the close button's, so the title stays centred. One control only: a second
-action belongs in the sheet's content. Do not hand-roll a title
+action belongs in the sheet's content. `titleLeading` replaces the close button with a Back
+chevron (`SheetBackButton`) while a pushed view shows — the session actions
+sheet's Rename and Share (Jay, 2026-09-23). Do not hand-roll a title
 row inside a sheet's content.
 
 `components/kortix/sheet.tsx` also gives:
@@ -332,19 +328,18 @@ that drops props silently breaks the screens that still pass them.
 
 ## Known unmigrated state (not a TODO — don't convert without owning it)
 
-- **Raw `Modal` from `react-native`** still ships in several screens
-  (session, billing, files, menu, threads, updates). Converting one to
+- **Raw `Modal` from `react-native`** still ships in a few screens
+  (billing, files, menu). Converting one to
   `<Dialog>` is a structural change with no gate behind it. New code uses
   `<Dialog>` / `<AlertDialog>`; existing `Modal` sites stay until someone
   owns that conversion end to end.
 - **Raw `Text` from `react-native`** still ships in a handful of files with
-  dense custom typography — notably `components/pages/ApiKeysPage.tsx` and
-  `components/session/SessionChatInput.tsx`. New code uses
+  dense custom typography — notably `components/session/SessionPage.tsx`. New code uses
   `<Text variant="…">`.
 
 ## Invariants (mechanically checked)
 
-1. `components/ui/` contains ONLY RNR registry output — 32 files, no barrel,
+1. `components/ui/` contains ONLY RNR registry output — 18 files, no barrel,
    no capitalized filenames. A file here that differs from
    `https://reactnativereusables.com/r/nativewind/<name>.json` is a bug.
    Never edit one; extend it in `components/kortix/` and record the reason in
@@ -352,7 +347,7 @@ that drops props silently breaks the screens that still pass them.
 
    Check it against the captured upstream sources. **Normalize the import path
    first** — the RNR installer rewrites `'@/lib/utils'` to `'@/lib/utils/index'`
-   in every file it emits, so a naive `diff` reports all 30 `cn`-importing files
+   in every file it emits, so a naive `diff` reports all 17 `cn`-importing files
    as forked and tells you nothing:
 
    ```bash
@@ -370,8 +365,7 @@ that drops props silently breaks the screens that still pass them.
    which IS tracked — that file, not the captures, is the source of truth.
 
    Stock RNR imports its icons from `lucide-react-native`. This app imports the
-   same glyphs from `@/lib/icons` (Phosphor). In 8 files (`accordion`, `alert`,
-   `checkbox`, `context-menu`, `dialog`, `dropdown-menu`, `menubar`, `select`)
+   same glyphs from `@/lib/icons` (Phosphor). In 2 files (`dialog`, `select`)
    that import line is the icon delta, and `icon.tsx` is rewritten for Phosphor.
    These are recorded in `rnr-fork-delta.md` → Icon library, and are not forks.
 

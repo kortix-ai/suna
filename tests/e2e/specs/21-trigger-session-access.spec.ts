@@ -374,6 +374,7 @@ test.describe('21 — Session access UI', () => {
         await selectAccountForUi(adminPage, accountId);
         const inventory = adminPage.waitForResponse(
           (response) =>
+            response.request().method() === 'GET' &&
             response.url().includes(`/v1/projects/${projectId}/sessions`) &&
             response.url().includes('scope=project'),
         );

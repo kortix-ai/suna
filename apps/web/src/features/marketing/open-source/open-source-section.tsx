@@ -4,7 +4,7 @@ import { Reveal } from '@/components/home/reveal';
 import { Github } from '@/features/icon/icons/github';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import { openSource } from './content';
 import { StarChart } from './star-chart';

@@ -1,12 +1,25 @@
 /**
- * ModelPickerSheet — the sheet behind the composer's model pill, on the
- * project home and in a thread.
+ * ModelPickerSheet — the agent and model sheet behind the composer's model
+ * pill, on the project home and in a thread.
  *
- * A `PickerSheet` of models (grouped by provider when the options carry one).
- * Choosing a model applies and the sheet stays open. `thinking` adds one stepped slider
- * above the list for the active model's thinking levels: Default, then each
- * level. A level applies on release and the sheet stays open. The project home
- * passes no `thinking`: its catalog has no levels.
+ * One sheet, two tabs, the project/account switcher's UX (Jay, 2026-09-23):
+ * an Agent · Model tab bar pinned at the bottom (`PickerSheet tabs`). It
+ * opens on Model. Picking an agent applies it and moves to Model, the way
+ * picking an account moves to Projects. The header's agent pill is gone.
+ * The Agent tab's `+` (title row, far right) closes the sheet and starts a
+ * new session on the shared "configure a new agent" prompt
+ * (`newConfigPrompt('agent')`) — web's Agents page "New" does the same.
+ * With fewer than two pickable agents (`pickableAgents`) and no `+` there is
+ * nothing to do on the Agent tab: no tab bar, the sheet is the model list
+ * alone. With a `+`, the tab shows even for one agent — a new one is made there.
+ *
+ * Model tab: a `PickerSheet` of models (grouped by provider when the options
+ * carry one). Choosing a model applies and the sheet stays open. `thinking`
+ * adds one stepped slider above the list for the active model's thinking
+ * levels: Default, then each level. A level applies on release and the sheet
+ * stays open. The project home passes no `thinking`: its catalog has no levels.
+ * `autoContinue` adds one row under Thinking in a thread: AutoContinue is a
+ * per-run autonomy setting, so it lives beside Thinking, not in the `+` sheet.
  */
 import * as React from 'react';
 import { View } from 'react-native';
@@ -20,11 +33,18 @@ import Reanimated, {
 } from 'react-native-reanimated';
 
 import type { SheetRef } from '@/components/kortix/sheet';
+import type { FloatingTabItem } from '@/components/navigation/FloatingTabBar';
 import { PickerSheet } from '@/components/session/PickerSheet';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
+import { CubeIcon, InfinityIcon, PlusIcon, RobotIcon } from '@/lib/icons';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import {
+  agentDisplayName,
   nearestStop,
+  pickableAgents,
   stopOffset,
   variantDisplayName,
   type PickerOption,
@@ -33,11 +53,35 @@ import {
 /** React key of the "no level" (`null`) stop. */
 const DEFAULT_LEVEL = '__default__';
 
+/** Agent left, Model right — the switcher's order (Account, Projects). */
+const TABS: FloatingTabItem[] = [
+  { key: 'agent', label: 'Agent', icon: <Icon as={RobotIcon} size={20} className="text-foreground" /> },
+  { key: 'model', label: 'Model', icon: <Icon as={CubeIcon} size={20} className="text-foreground" /> },
+];
+const AGENT_TAB = 0;
+const MODEL_TAB = 1;
+
 export interface ModelThinking {
   /** The active model's levels. Empty hides the control. */
   levels: string[];
   selected: string | null;
   onSelect: (level: string | null) => void;
+}
+
+export interface AgentChoice {
+  agents: Array<{ name: string; mode?: string | null; hidden?: boolean; enabled?: boolean }>;
+  /** The agent the next message runs on; its row carries the check. */
+  activeName: string | null;
+  onSelect: (name: string) => void;
+  /** The `+`: start a new session that creates an agent. Omit to hide it. */
+  onCreate?: () => void;
+}
+
+export interface ModelAutoContinue {
+  /** The current mode's name, or "Off". */
+  value: string;
+  /** Opens the AutoContinue sheet. */
+  onPress: () => void;
 }
 
 interface ModelPickerSheetProps {
@@ -48,27 +92,105 @@ interface ModelPickerSheetProps {
   thinking?: ModelThinking;
   /** "Connect provider" in the empty state: the project offers no model. */
   onConnect?: () => void;
+  /** The Agent tab. The thread passes the sandbox's agents; project home the project config's. */
+  agent?: AgentChoice;
+  /** The thread's AutoContinue row, under Thinking. */
+  autoContinue?: ModelAutoContinue;
 }
 
 export const ModelPickerSheet = React.forwardRef<SheetRef, ModelPickerSheetProps>(
-  ({ options, activeKey, onSelect, thinking, onConnect }, ref) => (
-    <PickerSheet
-      ref={ref}
-      title="Model"
-      options={options}
-      activeKey={activeKey}
-      onSelect={onSelect}
-      searchLabel="Search models"
-      emptyLabel="No matching models"
-      // Stays open after a pick (Jay, 2026-09-21): the check moves, the
-      // Thinking slider switches to the new model's levels, and the user
-      // closes the sheet with a swipe or a tap outside when done.
-      closeOnSelect={false}
-      // Web's copy (model-selector.tsx, the truly-empty state).
-      empty={onConnect ? { title: 'No models available', actionLabel: 'Connect provider', onAction: onConnect } : undefined}>
-      {thinking && thinking.levels.length > 0 ? <ThinkingControl {...thinking} /> : null}
-    </PickerSheet>
-  ),
+  ({ options, activeKey, onSelect, thinking, onConnect, agent, autoContinue }, ref) => {
+    const pickerRef = React.useRef<SheetRef>(null);
+    const [tab, setTab] = React.useState(MODEL_TAB);
+
+    const agentOptions = React.useMemo<PickerOption[]>(
+      () => pickableAgents(agent?.agents ?? []).map((a) => ({ key: a.name, label: agentDisplayName(a.name) })),
+      [agent?.agents],
+    );
+    const hasAgentTab = !!agent && (agentOptions.length >= 2 || !!agent.onCreate);
+    const onAgentTab = hasAgentTab && tab === AGENT_TAB;
+
+    // Every open starts on Model: the pill the user tapped names the model.
+    React.useImperativeHandle(ref, () => ({
+      open: () => {
+        setTab(MODEL_TAB);
+        pickerRef.current?.open();
+      },
+      close: () => pickerRef.current?.close(),
+    }));
+
+    const tabs = React.useMemo(
+      () => (hasAgentTab ? { items: TABS, activeIndex: tab, onSelect: setTab } : undefined),
+      [hasAgentTab, tab],
+    );
+
+    if (onAgentTab && agent) {
+      return (
+        <PickerSheet
+          ref={pickerRef}
+          title="Agent"
+          options={agentOptions}
+          activeKey={agent.activeName}
+          onSelect={(name) => {
+            agent.onSelect(name);
+            // An agent is picked on the way to a model: go straight there.
+            setTab(MODEL_TAB);
+          }}
+          searchLabel="Search agents"
+          emptyLabel="No matching agents"
+          closeOnSelect={false}
+          tabs={tabs}
+          titleTrailing={
+            agent.onCreate ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full"
+                onPress={() => {
+                  haptics.tap();
+                  pickerRef.current?.close();
+                  agent.onCreate?.();
+                }}
+                accessibilityLabel="New agent"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon as={PlusIcon} size={20} className="text-foreground" />
+              </Button>
+            ) : undefined
+          }
+        />
+      );
+    }
+
+    return (
+      <PickerSheet
+        ref={pickerRef}
+        title="Model"
+        options={options}
+        activeKey={activeKey}
+        onSelect={onSelect}
+        searchLabel="Search models"
+        emptyLabel="No matching models"
+        // Stays open after a pick (Jay, 2026-09-21): the check moves, the
+        // Thinking slider switches to the new model's levels, and the user
+        // closes the sheet with a swipe or a tap outside when done.
+        closeOnSelect={false}
+        // Web's copy (model-selector.tsx, the truly-empty state).
+        empty={onConnect ? { title: 'No models available', actionLabel: 'Connect provider', onAction: onConnect } : undefined}
+        tabs={tabs}>
+        {thinking && thinking.levels.length > 0 ? <ThinkingControl {...thinking} /> : null}
+        {autoContinue ? (
+          <SettingsGroup>
+            <SettingsRow
+              icon={InfinityIcon}
+              label="AutoContinue"
+              value={autoContinue.value}
+              onPress={autoContinue.onPress}
+            />
+          </SettingsGroup>
+        ) : null}
+      </PickerSheet>
+    );
+  },
 );
 ModelPickerSheet.displayName = 'ModelPickerSheet';
 

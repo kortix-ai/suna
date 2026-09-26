@@ -1,13 +1,16 @@
-import { backendApi } from '../../http/api-client';
-import { unwrap } from './shared';
+/**
+ * Google Slides export. The API removed `/v1/google/auth-url` and
+ * `/v1/presentation-tools/*`; these exports remain for import compatibility
+ * until the next major. Export a deck as PDF or PPTX instead
+ * (`convertRuntimePresentation`).
+ */
+import { retiredEndpointError } from '../../http/api/errors';
 
-export async function getGoogleAuthUrl(returnUrl: string): Promise<{ auth_url?: string }> {
-  return unwrap(
-    await backendApi.get<{ auth_url?: string }>(
-      `/google/auth-url?return_url=${encodeURIComponent(returnUrl)}`,
-    ),
-    'Failed to get Google auth URL',
-  );
+const INSTEAD = 'Export the deck as PDF or PPTX with convertRuntimePresentation().';
+
+/** @deprecated Google Slides export was removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
+export async function getGoogleAuthUrl(_returnUrl: string): Promise<{ auth_url?: string }> {
+  throw retiredEndpointError('getGoogleAuthUrl', INSTEAD);
 }
 
 export interface GoogleSlidesUploadResult {
@@ -18,16 +21,10 @@ export interface GoogleSlidesUploadResult {
   [key: string]: unknown;
 }
 
+/** @deprecated Google Slides export was removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
 export async function convertPresentationToGoogleSlides(
-  presentationPath: string,
-  sandboxUrl: string,
+  _presentationPath: string,
+  _sandboxUrl: string,
 ): Promise<GoogleSlidesUploadResult> {
-  return unwrap(
-    await backendApi.post<GoogleSlidesUploadResult>(
-      '/presentation-tools/convert-and-upload-to-slides',
-      { presentation_path: presentationPath, sandbox_url: sandboxUrl },
-      { timeout: 180000 },
-    ),
-    'Failed to upload to Google Slides',
-  );
+  throw retiredEndpointError('convertPresentationToGoogleSlides', INSTEAD);
 }

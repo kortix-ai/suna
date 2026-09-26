@@ -101,7 +101,7 @@ describe('credential accessors', () => {
   });
 
   test('only an agent session carries a grant', () => {
-    const grant = { agent: 'a', kortixCli: ['project.read'], connectors: 'all' as const };
+    const grant = { agent: 'a', permissions: ['project.read'], connectors: 'all' as const };
     expect(credentialAgentGrant(actor({ kind: 'jwt' }))).toBeNull();
     expect(
       credentialAgentGrant(

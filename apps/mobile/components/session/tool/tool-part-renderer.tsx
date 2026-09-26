@@ -21,7 +21,6 @@ import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { getToolInfo, partOutcome, stripAnsi, type ToolPart as SdkToolPart } from '@kortix/sdk';
-import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import type { PermissionRequest, ToolPart } from '@/lib/opencode/types';
 import { useSyncStore } from '@/lib/opencode/sync-store';
@@ -29,7 +28,6 @@ import { getDiffStats } from '@/lib/opencode/diff-utils';
 import {
   isStalePending,
   isToolRunning,
-  permissionLabel,
   toolDisplayName,
   toolDurationMs,
 } from '@/lib/session/activity';
@@ -45,7 +43,7 @@ import {
   ToolRunningContext,
   TurnLiveContext,
 } from './shared/infrastructure';
-import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, useTurnPalette } from './shared/styles';
+import { TURN_SPACE, TURN_TYPE, useTurnPalette } from './shared/styles';
 import { ToolCardFrame } from './shared/surface';
 import { getToolIconByName } from './shared/tool-icons';
 import { getToolInput } from './shared/tool-part';
@@ -61,7 +59,6 @@ import { GlobGrepExpandedContent } from './tools/glob-tool';
 import { QuestionExpandedContent } from './tools/question-tool';
 import { GetMemExpandedContent } from './tools/get-mem-tool';
 import { LtmSearchExpandedContent } from './tools/memory-search-tool';
-import { ShowExpandedContent } from './tools/show-tool';
 import { SessionGetExpandedContent } from './tools/session-get-tool';
 
 export type PermissionReply = 'once' | 'always' | 'reject';
@@ -108,9 +105,6 @@ export function getExpandedContent(tool: ToolPart, isDark: boolean): React.React
     case 'oc-mem_search':
     case 'oc-mem-search':
       return <LtmSearchExpandedContent tool={tool} isDark={isDark} />;
-    case 'show':
-    case 'show-user':
-      return <ShowExpandedContent tool={tool} isDark={isDark} />;
     case 'session_get':
     case 'session-get':
     case 'oc-session_get':
@@ -135,7 +129,6 @@ export function toolHasExpandableContent(tool: ToolPart): boolean {
     (input.content || input.oldString || input.newString)
   )
     return true;
-  if ((tool.tool === 'show' || tool.tool === 'show-user') && (input.content || input.path)) return true;
   if (tool.tool === 'question') return true;
   if (state.status === 'completed' && 'output' in state && state.output?.trim()) return true;
   if (state.status === 'error' && 'error' in state && state.error) return true;
@@ -145,67 +138,31 @@ export function toolHasExpandableContent(tool: ToolPart): boolean {
 // ─── Permission prompt ───────────────────────────────────────────────────────
 
 /**
- * Web `PermissionPromptInline`: `px-2.5 py-2 gap-2`, "Permission: <label>"
- * (`text-xs text-foreground`, label medium), then Deny / Allow always /
- * Allow once. Appears 50ms after mount; one reply per prompt.
+ * The blocked tool row's marker for a pending permission. Deny / Allow
+ * always / Allow once now live on `PermissionPromptCard`, pinned above the
+ * composer (COR-137 Task 7) so the ask is never missed off-screen; this row
+ * keeps only a quiet line so the reader can see which call is waiting.
+ * Appears 50ms after mount, matching the previous inline prompt's timing.
  */
-function PermissionPromptInline({
-  permission,
-  onReply,
-}: {
-  permission: PermissionRequest;
-  onReply: (requestId: string, reply: PermissionReply) => void | Promise<void>;
-}) {
+function PermissionPromptInline({ permission }: { permission: PermissionRequest }) {
   const palette = useTurnPalette();
   const [visible, setVisible] = useState(false);
-  const [replying, setReplying] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setVisible(true), 50);
     return () => clearTimeout(timer);
   }, []);
 
-  const reply = useCallback(
-    (value: PermissionReply) => {
-      if (replying) return;
-      setReplying(true);
-      // The caller removes the prompt once the runtime accepts the reply. When the
-      // reply fails, the prompt stays, so re-enable its buttons for a retry.
-      void Promise.resolve(onReply(permission.id, value)).finally(() => setReplying(false));
-    },
-    [replying, permission.id, onReply],
-  );
-
   if (!visible) return null;
 
   return (
     <View
       style={{
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: TURN_SPACE.gap2,
         paddingHorizontal: webSpace(2.5),
         paddingVertical: TURN_SPACE.gap2,
       }}
     >
-      <Text style={[TURN_TYPE.xs, { flex: 1, minWidth: 120, color: palette.foreground }]}>
-        Permission:{' '}
-        <Text variant="small" style={[TURN_TYPE.xs, { fontFamily: FONT_MEDIUM, color: palette.foreground }]}>
-          {permissionLabel(permission.permission)}
-        </Text>
-      </Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap1_5 }}>
-        <Button variant="ghost" size="sm" disabled={replying} onPress={() => reply('reject')}>
-          <Text>Deny</Text>
-        </Button>
-        <Button variant="outline" size="sm" disabled={replying} onPress={() => reply('always')}>
-          <Text>Allow always</Text>
-        </Button>
-        <Button variant="default" size="sm" disabled={replying} onPress={() => reply('once')}>
-          <Text>Allow once</Text>
-        </Button>
-      </View>
+      <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>Waiting for your permission</Text>
     </View>
   );
 }
@@ -271,16 +228,12 @@ function ToolPartRendererImpl({
     const idMatch = output.match(/proj-[a-z0-9-]+/);
     const projectId = idMatch ? idMatch[0] : (input.name as string) || (input.project as string) || '';
     if (!projectId) return null;
-    const displayName =
-      (normalized === 'project_select' ? (input.project as string) : (input.name as string)) || projectId;
-    return { projectId, displayName };
+    return { projectId };
   }, [part.tool, part.state, input]);
 
   const openProject = useCallback(() => {
     if (!projectTarget) return;
-    const tabs = useTabStore.getState();
-    tabs.setTabState(`page:project:${projectTarget.projectId}`, { projectName: projectTarget.displayName });
-    tabs.navigateToPage(`page:project:${projectTarget.projectId}`);
+    useTabStore.getState().navigateToPage(`page:project:${projectTarget.projectId}`);
   }, [projectTarget]);
 
   if (part.tool === 'todoread') return null;
@@ -323,7 +276,7 @@ function ToolPartRendererImpl({
                 />
                 {permission && onPermissionReply ? (
                   <View style={{ marginTop: TURN_SPACE.gap1_5 }}>
-                    <PermissionPromptInline permission={permission} onReply={onPermissionReply} />
+                    <PermissionPromptInline permission={permission} />
                   </View>
                 ) : null}
               </View>
@@ -365,7 +318,7 @@ function ToolPartRendererImpl({
               </BasicTool>
               {permission && onPermissionReply ? (
                 <View style={{ marginTop: TURN_SPACE.gap1_5 }}>
-                  <PermissionPromptInline permission={permission} onReply={onPermissionReply} />
+                  <PermissionPromptInline permission={permission} />
                 </View>
               ) : null}
             </View>

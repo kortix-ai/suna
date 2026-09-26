@@ -2,8 +2,8 @@
 
 import { Badge } from '@/components/ui/badge';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { UnifiedMarkdown } from './unified-markdown';
 
@@ -181,7 +181,7 @@ export function MarkdownWithFrontmatter({
   return (
     <div className={className}>
       {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-      <UnifiedMarkdown content={body} allowHtml={false} />
+      <UnifiedMarkdown content={body} trust="agent" variant="document" />
     </div>
   );
 }

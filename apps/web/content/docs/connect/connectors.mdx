@@ -41,6 +41,55 @@ Each account's `owner_type` decides who may run a call as it:
 Multiple connectors can reference the same provider app. Use separate
 connectors when one app needs different policies.
 
+### Which identity an account acts as
+
+An account's `label` is a name chosen before authorization. It does not say
+which login was used. `connected_as` does: the email, login, or display name
+the provider reports for the authorized account.
+
+- Kortix reads it when a Composio authorization finalizes: first the connected
+  account's display name, then the toolkit's "who am I" tool (Gmail, Google
+  Calendar, Google Drive, Linear, GitHub, Slack, Notion, Outlook, Microsoft
+  Teams, HubSpot, Jira, Asana, Figma, Airtable, Salesforce, Trello, Dropbox,
+  Calendly). Google Docs and Google Sheets expose no such tool, so their
+  `connected_as` stays `null`.
+- An account still carrying a default label (`Private connection`,
+  `Project connection`, or the connector name) is relabelled to that identity.
+  A label someone chose is never replaced.
+- The connect page shows "Connected as …" the moment the account lands, so a
+  shared account authorized with a personal login is visible right away.
+- `connected_as` is on every connection (`GET /projects/{projectId}/connections`),
+  on the accounts list, in `kortix connectors accounts <slug>` and
+  `kortix connectors connections ls` (the `CONNECTED AS` column), and on the
+  account rows in **Customize → Connectors**.
+
+### Rename an account
+
+Rename an account without re-authorizing it:
+
+```text
+PUT /projects/{projectId}/connections/{connectionId}/label   {"label": "Support inbox"}
+kortix connectors connections rename <connection-id> Support inbox
+```
+
+In the dashboard, open the connector, then **⋯ → Rename** on the account row.
+Only the label changes. The authorized account, its owner, its default flag,
+and the provider state stay as they are. The same gate applies as for
+disconnect: your own private account, or `project.connector.connections.manage`
+for a shared one.
+
+A rename is refused with `400` for `me`, `project`, or a UUID-shaped label,
+because `--account` resolves those before labels. It is refused with `409` when
+another account of the same owner already has that label, compared
+case-insensitively.
+
+### Connect a different account
+
+A connect link for a slot that already holds an active account does not
+re-authorize it. The provider reuses the account, and the connect page shows
+**Already connected**. To use a different login, add a new account on the
+connector, make it the default, then disconnect the old one.
+
 A call that names no account resolves to the caller's own default private
 account first, then the project's default shared account. Every call result
 echoes which account it ran as (`account: { connection_id, label,
@@ -63,7 +112,8 @@ rule now.
 
 A connector uses one provider type:
 
-- **pipedream** — managed OAuth for supported SaaS apps
+- **composio** — managed OAuth for supported SaaS apps
+- **pipedream** — legacy managed OAuth, kept for rollback only
 - **openapi**, **postman**, **graphql**, **http** — direct API connectors
 - **mcp** — a remote MCP server over HTTP or SSE
 - **channel** — a chat platform connection
@@ -72,11 +122,34 @@ A connector uses one provider type:
 See [Slack and channels](/docs/connect/slack) and
 [Computers](/docs/connect/computers) for the managed provider flows.
 
+### Apps that need your own OAuth app
+
+Composio holds its own OAuth app for most toolkits. For some it holds none:
+X (`twitter`) since February 2026, and OAuth-only toolkits such as `xero`,
+`spotify`, `google_chat`, `googleforms`, and `zoom_chat`. On 2026-09-26 there
+were 47. Composio cannot connect them until the Composio project holds an
+auth config with your own OAuth app.
+
+- Until that auth config exists, the Connectors catalogue does not list the
+  toolkit. A connector already declared for it fails to sync with `422`
+  `composio_auth_config_required`, and the message names the toolkit.
+- To enable one, register an OAuth app with the provider. In the Composio
+  dashboard, open **Auth Configs**, create an auth config for the toolkit, and
+  enter the app's client ID and secret. Add the redirect URI the dashboard
+  shows to the provider app.
+- Kortix finds the enabled auth config itself. You do not restart or redeploy.
+  The catalogue lists the toolkit within 60 seconds. The next sync and connect
+  use the auth config immediately.
+- When more than one enabled auth config exists for a toolkit, Kortix uses the
+  newest. Disable the old one to rotate an OAuth app.
+- Toolkits that Composio connects with its own app keep using it. Kortix never
+  selects an auth config for them.
+
 ## Authentication and policy
 
 A connection authenticates with:
 
-- OAuth through Pipedream, a channel install, or a native OAuth2 grant
+- OAuth through Composio, a channel install, or a native OAuth2 grant
 - an API key or token entered through the dashboard or SDK
 
 Kortix encrypts connection data and resolves it server-side for each tool
@@ -374,8 +447,8 @@ GET /connectors/projects/{projectId}/connectors/{slug}/accounts
 {
   "connector": "stripe-read",
   "accounts": [
-    { "connection_id": "...", "label": "Shared workspace", "owner_type": "project", "is_default": true },
-    { "connection_id": "...", "label": "My Stripe", "owner_type": "member", "is_default": false }
+    { "connection_id": "...", "label": "Shared workspace", "owner_type": "project", "is_default": true, "connected_as": "billing@example.com" },
+    { "connection_id": "...", "label": "My Stripe", "owner_type": "member", "is_default": false, "connected_as": null }
   ]
 }
 ```
@@ -412,6 +485,59 @@ caller may call `stripe-read` as — default first, shared before private within
 each group. `call` runs one action, as the named `--account` or, when omitted,
 the same default resolution used before a connector could hold more than one
 account.
+
+### Attach files
+
+A call never carries file bytes in its arguments. Stage the file, then put its
+reference in the arguments. The gateway reads the bytes server-side and writes
+them into the request.
+
+```text
+kortix connectors call microsoft-graph.sendmail @mail.json \
+  --attach /workspace/artifacts/report.pdf
+```
+
+`--attach` stages the file and appends a reference to the action's attachments
+array. The array is found in the action's input schema: `attachments` for the
+Email channel, `body.message.attachments` for Microsoft Graph `sendMail`. Name
+it with `--attach-path body.message.attachments` when the schema is unusual.
+Large JSON arguments go in a file (`@mail.json`) or on stdin (`-`).
+
+To place a file yourself, stage it first:
+
+```text
+kortix connectors upload /workspace/artifacts/report.pdf --connector microsoft-graph
+# → { "attachment_id": "…", "ref": { "$kortix_attachment": "…" }, … }
+```
+
+Put `ref` anywhere in the arguments. The gateway replaces it by position:
+
+| Position of `ref` | Replaced with |
+| --- | --- |
+| An element of an attachments array whose items are objects | The provider's attachment item. The item schema selects the shape: Microsoft Graph `fileAttachment` (`name` + `contentBytes` or `@odata.type`), Postmark (`Name` + `Content`), Mailjet (`Filename` + `Base64Content`), SendGrid and Resend (`filename` + `content`), Brevo (`name` + `content`). Any other item shape is refused with `attachment_item_shape_unknown`. |
+| A string field, e.g. `contentBytes` or a GitHub file `content` | The file's base64. |
+| The Email channel's `attachments[]` | A signed download URL for the Email provider. |
+
+Rules:
+
+- Files come from `/workspace/output`, `/workspace/artifacts`,
+  `/workspace/reports`, or `/workspace/deliverables`. Symbolic links and hard
+  links are refused. Copy a file there first.
+- One call carries up to 20 files and 25 MiB in total. The upstream API can
+  set a lower limit: Microsoft Graph documents 3 MB as the largest file one
+  `sendMail` request can attach.
+- A staged file is private to the session that staged it, used once, and
+  deleted after 24 hours. A failed call releases it for a retry.
+- The audit record, the approval preview, and the model see only the
+  reference, never the bytes. An upstream error that echoes the file has the
+  base64 removed.
+- Pipedream and Composio connectors do not accept staged files
+  (`connector_attachments_unsupported`).
+
+The MCP server offers the same flow: `call` takes `attachment_files` (and an
+optional `attachment_path`), and `upload_attachment` returns a `ref`. The SDK
+equivalent is `connectors.uploadAttachment(bytes, { filename, contentType,
+connector })`, which returns `ref`.
 
 ### When a call is denied
 

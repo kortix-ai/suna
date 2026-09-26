@@ -86,6 +86,7 @@ import { cn } from '@/lib/utils';
 import {
   type AdminConnector,
   type Connection,
+  type ConnectionCredentialInput,
   type ConnectorAuthDiscovery,
   type ConnectorConfig,
   type ConnectorDraftInput,
@@ -100,6 +101,7 @@ import {
   getConnectStatus,
   listAllConnections,
   listConnections,
+  renameConnection,
   listPipedreamApps,
   listProjectAccess,
   type OAuth2DeviceAuthorizationStartResult,
@@ -126,6 +128,10 @@ import {
   proposeConnectorConnectionSlug,
 } from './connector-connection-form';
 import { ConnectorConnectionModal } from './connector-connection-modal';
+import {
+  credentialWriteTarget,
+  oauth2DiscoveryConnectionKey,
+} from './connector-credential-target';
 import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
@@ -223,6 +229,7 @@ function ConnectionRow({
   canManage,
   onSetDefault,
   onDisconnect,
+  onRename,
   onStartSession,
   onSetCredential,
   pending,
@@ -233,6 +240,8 @@ function ConnectionRow({
   canManage: boolean;
   onSetDefault: () => void;
   onDisconnect: () => void;
+  /** Change the label only. The account stays authorized. */
+  onRename: () => void;
   onStartSession?: () => void;
   /** Re-open the credential entry for THIS account. Direct providers
    *  (openapi/http/mcp/graphql/…) hold their own static credential per
@@ -279,6 +288,11 @@ function ConnectionRow({
             ? tI18nComplete.raw('text1c22fac2a9fd')
             : tI18nComplete.raw('text1e1353702c42')}
           {active ? null : connection.status === 'revoked' ? 'Disconnected' : 'Error'}
+          {/* WHO the account was authorized as. Hidden when the label already
+              says it (finalize names a default-labelled account after it). */}
+          {connection.connected_as && connection.connected_as !== connection.label
+            ? tI18nComplete('texte9e0b20cf289', { value0: connection.connected_as })
+            : null}
           {/* Every connection carries its own id — this is what a backend passes
               in connector_bindings to run as THIS account. Truncated to keep the
               row readable; the row menu copies the full value. */}
@@ -307,6 +321,11 @@ function ConnectionRow({
           <DropdownMenuItem onClick={() => copy(connection.connection_id)}>
             {tI18nComplete.raw('text99775327d988')}
           </DropdownMenuItem>
+          {mayMutate && (
+            <DropdownMenuItem onClick={onRename}>
+              {tI18nComplete.raw('text3064d79a295c')}
+            </DropdownMenuItem>
+          )}
           {mayMutate && isMine && active && onStartSession && (
             <DropdownMenuItem onClick={onStartSession}>
               {tI18nComplete.raw('textfae237eed0c5')}
@@ -356,6 +375,7 @@ function ConnectionOwnerGroup({
   pendingConnectionId,
   onSetDefault,
   onDisconnect,
+  onRename,
   onStartSession,
   onSetCredential,
 }: {
@@ -370,6 +390,7 @@ function ConnectionOwnerGroup({
   pendingConnectionId: string | null;
   onSetDefault: (connection: Connection) => void;
   onDisconnect: (connection: Connection) => void;
+  onRename: (connection: Connection) => void;
   onStartSession?: (connection: Connection) => void;
   onSetCredential?: (connection: Connection) => void;
 }) {
@@ -398,6 +419,7 @@ function ConnectionOwnerGroup({
               disabled={disabled}
               onSetDefault={() => onSetDefault(connection)}
               onDisconnect={() => onDisconnect(connection)}
+              onRename={() => onRename(connection)}
               onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
               onSetCredential={onSetCredential ? () => onSetCredential(connection) : undefined}
             />
@@ -456,6 +478,8 @@ export function ConnectionsList({
   const [addOwner, setAddOwner] = useState<ConnectionOwner | null>(null);
   const [labelDraft, setLabelDraft] = useState('');
   const [confirmDisconnect, setConfirmDisconnect] = useState<Connection | null>(null);
+  const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
   const [credentialTarget, setCredentialTarget] = useState<{
     connectionId: string;
     owner: ConnectionOwner;
@@ -527,6 +551,32 @@ export function ConnectionsList({
     onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('textb7668a581f59')),
   });
 
+  const rename = useMutation({
+    mutationFn: (input: { connectionId: string; label: string }) =>
+      renameConnection(projectId, input.connectionId, input.label),
+    onSuccess: () => {
+      successToast(tI18nComplete.raw('text499d7f6dfdfc'));
+      setRenameTarget(null);
+      refresh();
+    },
+    // The API names the refusal (a clash with another account, a reserved
+    // word), so show its message rather than a generic one.
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text11ef24ea6e15')),
+  });
+  const openRename = (connection: Connection) => {
+    setRenameDraft(connection.label);
+    setRenameTarget(connection);
+  };
+  const submitRename = () => {
+    const label = renameDraft.trim();
+    if (disabled || !renameTarget || !label) return;
+    if (label === renameTarget.label) {
+      setRenameTarget(null);
+      return;
+    }
+    rename.mutate({ connectionId: renameTarget.connection_id, label });
+  };
+
   const adding = isDirectProvider
     ? createSharedAccount.isPending || createOwnAccount.isPending
     : addProject.isPending || addMine.isPending;
@@ -546,7 +596,9 @@ export function ConnectionsList({
       ? setDefault.variables
       : disconnect.isPending && typeof disconnect.variables === 'string'
         ? disconnect.variables
-        : null;
+        : rename.isPending && rename.variables
+          ? rename.variables.connectionId
+          : null;
   // Re-open the credential entry for an existing direct-provider account —
   // wired from the row menu ("Set credential") and reused right after
   // `createSharedAccount`/`createOwnAccount` creates a brand new one.
@@ -591,6 +643,7 @@ export function ConnectionsList({
         onSetCredential={setCredential}
         onSetDefault={(connection) => setDefault.mutate(connection.connection_id)}
         onDisconnect={setConfirmDisconnect}
+        onRename={openRename}
         onStartSession={onStartSession}
       />
 
@@ -612,6 +665,7 @@ export function ConnectionsList({
         onSetCredential={setCredential}
         onSetDefault={(connection) => setDefault.mutate(connection.connection_id)}
         onDisconnect={setConfirmDisconnect}
+        onRename={openRename}
         onStartSession={onStartSession}
       />
 
@@ -666,6 +720,63 @@ export function ConnectionsList({
               <Button type="submit" disabled={adding || disabled || !labelDraft.trim()}>
                 {adding ? <Loading className="size-4 shrink-0" /> : null}
                 {tI18nComplete.raw('text31fbef162594')}
+              </Button>
+            </ModalFooter>
+          </form>
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        open={renameTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !rename.isPending) setRenameTarget(null);
+        }}
+      >
+        <ModalContent className="lg:max-w-md">
+          <ModalHeader>
+            <ModalTitle>
+              {tI18nComplete('textbb7a240d3660', { value0: renameTarget?.label ?? '' })}
+            </ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('text64f07c825803')}</ModalDescription>
+          </ModalHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitRename();
+            }}
+          >
+            <ModalBody>
+              <Field>
+                <FieldLabel htmlFor="connection-rename-label">
+                  {tI18nComplete.raw('textdcd1d5223f73')}
+                </FieldLabel>
+                <Input
+                  id="connection-rename-label"
+                  value={renameDraft}
+                  onChange={(e) => setRenameDraft(e.target.value)}
+                  maxLength={255}
+                  autoFocus
+                  disabled={rename.isPending || disabled}
+                />
+                {renameTarget?.connected_as ? (
+                  <FieldDescription>
+                    {tI18nComplete('texte9e0b20cf289', { value0: renameTarget.connected_as })}
+                  </FieldDescription>
+                ) : null}
+              </Field>
+            </ModalBody>
+            <ModalFooter className="sm:justify-between">
+              <Button
+                type="button"
+                variant="outline-ghost"
+                onClick={() => setRenameTarget(null)}
+                disabled={rename.isPending}
+              >
+                {tI18nComplete.raw('text19766ed6ccb2')}
+              </Button>
+              <Button type="submit" disabled={rename.isPending || disabled || !renameDraft.trim()}>
+                {rename.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                {tI18nComplete.raw('text1509f561f241')}
               </Button>
             </ModalFooter>
           </form>
@@ -3306,7 +3417,11 @@ export function SetCredentialModal({
    * resolves (or creates) the connection first.
    */
   const discoveryQuery = useQuery({
-    queryKey: qk.project.connectorOAuth2Discovery(projectId, connector?.slug ?? ''),
+    queryKey: qk.project.connectorOAuth2Discovery(
+      projectId,
+      connector?.slug ?? '',
+      oauth2DiscoveryConnectionKey(owner, connectionId),
+    ),
     queryFn: async () => {
       const activeConnectionId = await resolveConnectionId();
       const result = await discoverConnectionOAuth2Resource(projectId, activeConnectionId);
@@ -3385,22 +3500,24 @@ export function SetCredentialModal({
       errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text46c9f3b7520f')),
   });
 
+  /** Write a static or `client_credentials` credential to the selected account. */
+  const writeCredential = async (input: ConnectionCredentialInput) => {
+    const target = credentialWriteTarget(owner, connectionId);
+    if (target.kind === 'connector-default') {
+      return setConnectorCredential(projectId, connector!.slug, input);
+    }
+    const targetConnectionId =
+      target.kind === 'connection' ? target.connectionId : await resolveConnectionId();
+    return updateConnectionCredential(projectId, targetConnectionId, input);
+  };
+
   const save = useMutation({
     mutationFn: async () => {
       if (credentialType === 'static') {
-        if (owner === 'me') {
-          return updateConnectionCredential(projectId, await resolveConnectionId(), {
-            value,
-          });
-        }
-        return setConnectorCredential(projectId, connector!.slug, value);
+        return writeCredential({ value });
       }
       if (application.grant === 'client_credentials') {
-        const oauth2Input = buildOAuth2CredentialInput(oauth2);
-        if (owner === 'me') {
-          return updateConnectionCredential(projectId, await resolveConnectionId(), oauth2Input);
-        }
-        return setConnectorCredential(projectId, connector!.slug, oauth2Input);
+        return writeCredential(buildOAuth2CredentialInput(oauth2));
       }
       const activeConnectionId = await resolveConnectionId();
       const resolvedApplication = effectiveApplication.discoveryUrl

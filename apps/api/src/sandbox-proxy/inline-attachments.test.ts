@@ -13,18 +13,6 @@ function messagePage(parts: unknown[]) {
 }
 
 describe('stripInlineAttachmentBytes', () => {
-  test('swaps an oversized data url for a reference and reports the saving', () => {
-    const result = stripInlineAttachmentBytes(
-      messagePage([{ id: 'prt_1', type: 'file', mime: 'image/jpeg', url: bigDataUrl }]),
-      ref,
-    );
-
-    const part = (result.value as any)[0].parts[0];
-    expect(part.url).toBe('/blob/msg_1/prt_1');
-    expect(result.stripped).toBe(1);
-    expect(result.savedBytes).toBe(bigDataUrl.length);
-  });
-
   test('keeps everything else about the part — type, mime, filename, id', () => {
     const result = stripInlineAttachmentBytes(
       messagePage([

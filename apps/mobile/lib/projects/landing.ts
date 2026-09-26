@@ -1,12 +1,13 @@
 /**
  * Where the app opens: the project the user had open last, else the first
- * project. Never the Projects list — the list is a place the user chooses from
- * the project menu (All projects), not a place the app drops them.
+ * project. Never the Projects list — the app does not drop the user there;
+ * the project drawer's switcher is how they move between projects.
  *
  * Mirror of web's `/projects/start` resolver
  * (apps/web/src/lib/onboarding/resolve-landing-destination.ts) without
  * auto-provisioning: with no project in any account the caller opens the
- * Projects list, the one mobile surface that creates a project.
+ * first-run upgrade screen or `/new` (`startDestination`,
+ * lib/onboarding/onboarding.ts).
  *
  * Pure: the project lists come in through `listProjects`, so tests pass plain
  * fakes instead of module-mocking the SDK.
@@ -53,7 +54,7 @@ export function orderLandingAccounts(
  * archived, or lost access falls through to the first project.
  *
  * Throws only when every account's project list failed, so the caller retries
- * instead of opening the list on a network error.
+ * instead of opening `/new` on a network error.
  */
 export async function resolveLandingProject(input: {
   accounts: KortixAccount[];

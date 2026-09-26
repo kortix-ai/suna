@@ -67,6 +67,12 @@ describe('isPrivateIp', () => {
     ['::ffff:127.0.0.1', true],
     ['::ffff:169.254.169.254', true],
     ['::ffff:8.8.8.8', false],
+    // The hex form WHATWG URL produces for a mapped v4, and IPv4-compatible v6
+    ['::ffff:7f00:1', true],
+    ['::ffff:a9fe:a9fe', true],
+    ['::7f00:1', true],
+    ['::ffff:808:808', false],
+    ['0:0:0:0:0:ffff:7f00:1', true],
     ['not-an-ip', true], // non-IP → unsafe (defensive)
     ['', true],
   ];
@@ -181,5 +187,71 @@ describe('safeEgressFetch', () => {
     fetchResponses = [{ status: 200, body: 'ok' }];
     await safeEgressFetch('https://example.com/x', { signal: ac.signal });
     expect((fetchCalls[0].init?.signal as AbortSignal).aborted).toBe(false);
+  });
+});
+
+describe('safeEgressFetch — operator allowlist', () => {
+  test('an allowlisted host may resolve to a private address', async () => {
+    fetchResponses = [{ status: 200, body: 'internal' }];
+    const res = await safeEgressFetch('http://127.0.0.1:4010/v1', {
+      allowHttp: true,
+      allowPrivateHosts: ['127.0.0.1'],
+    });
+    expect(await res.text()).toBe('internal');
+    expect(fetchCalls.map((c) => c.url)).toEqual(['http://127.0.0.1:4010/v1']);
+  });
+  test('the allowlist does not cover a redirect to another private host', async () => {
+    fetchResponses = [{ status: 302, headers: { location: 'http://169.254.169.254/latest/meta-data/' } }];
+    await expect(
+      safeEgressFetch('http://127.0.0.1:4010/v1', { allowHttp: true, allowPrivateHosts: ['127.0.0.1'] }),
+    ).rejects.toBeInstanceOf(UnsafeEgressError);
+    expect(fetchCalls).toHaveLength(1);
+  });
+  test('without the allowlist a loopback literal is refused before any fetch', async () => {
+    await expect(safeEgressFetch('http://127.0.0.1:4010/v1', { allowHttp: true })).rejects.toBeInstanceOf(
+      UnsafeEgressError,
+    );
+    expect(fetchCalls).toHaveLength(0);
+  });
+  test('a bracketed IPv6 loopback literal is refused', async () => {
+    await expect(assertSafeEgressUrl('https://[::1]/x')).rejects.toBeInstanceOf(UnsafeEgressError);
+    await expect(assertSafeEgressUrl('https://[::ffff:7f00:1]/x')).rejects.toBeInstanceOf(UnsafeEgressError);
+  });
+});
+
+describe('safeEgressFetch — redirect method and credential rules', () => {
+  test('a 303 answering a POST continues as a body-less GET', async () => {
+    dnsResults['a.example'] = [{ address: '93.184.216.34', family: 4 }];
+    fetchResponses = [{ status: 303, headers: { location: '/done' } }, { status: 200, body: 'ok' }];
+    await safeEgressFetch('https://a.example/submit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+      body: '{"a":1}',
+    });
+    expect(fetchCalls[1].init?.method).toBe('GET');
+    expect(fetchCalls[1].init?.body).toBeUndefined();
+    const headers = new Headers(fetchCalls[1].init?.headers);
+    expect(headers.get('content-type')).toBeNull();
+    // Same origin: the credential stays.
+    expect(headers.get('authorization')).toBe('Bearer t');
+  });
+  test('a 307 keeps the method and body', async () => {
+    dnsResults['a.example'] = [{ address: '93.184.216.34', family: 4 }];
+    fetchResponses = [{ status: 307, headers: { location: '/again' } }, { status: 200, body: 'ok' }];
+    await safeEgressFetch('https://a.example/submit', { method: 'PUT', body: 'x' });
+    expect(fetchCalls[1].init?.method).toBe('PUT');
+    expect(fetchCalls[1].init?.body).toBe('x');
+  });
+  test('a redirect to another origin drops Authorization and Cookie', async () => {
+    dnsResults['a.example'] = [{ address: '93.184.216.34', family: 4 }];
+    dnsResults['b.example'] = [{ address: '93.184.216.35', family: 4 }];
+    fetchResponses = [{ status: 302, headers: { location: 'https://b.example/x' } }, { status: 200, body: 'ok' }];
+    await safeEgressFetch('https://a.example/x', {
+      headers: { authorization: 'Bearer secret', cookie: 'c=1', 'x-api-version': '2' },
+    });
+    const headers = new Headers(fetchCalls[1].init?.headers);
+    expect(headers.get('authorization')).toBeNull();
+    expect(headers.get('cookie')).toBeNull();
+    expect(headers.get('x-api-version')).toBe('2');
   });
 });

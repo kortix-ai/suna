@@ -30,6 +30,7 @@
  * It reads NONE of project_members, project_group_grants, iam_policies,
  * iam_resource_grants or account_members.account_role.
  */
+import { timeStage } from '../lib/server-timing';
 import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
@@ -41,10 +42,12 @@ import {
   serviceAccounts,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { retryTransientDatabaseRead } from '../shared/database-errors';
 import { isImpersonatingAccount, isImpersonationBlockedAccount } from '../shared/impersonation';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
+import { AGENT_DEFAULT_CEILING, agentPrincipalDecision } from './agent-principal';
 import {
   loadPermissionCatalog,
   loadSystemRoles,
@@ -91,7 +94,13 @@ export type Reason =
   | 'project_role_insufficient'
   | 'service_account_scope_insufficient'
   | 'resource_scope_insufficient'
-  | 'agent_scope_insufficient';
+  | 'agent_scope_insufficient'
+  /** Agent-principal model: the action is in the agent's kortix_permissions
+   *  but outside the role(s) an admin bound to the agent's service account. */
+  | 'agent_ceiling_insufficient'
+  /** Agent-principal model: a HUMAN_ONLY action (members.manage, delete,
+   *  credentials.issue). No grant or role can hand it to an agent. */
+  | 'agent_human_only_action';
 
 export interface Verdict {
   allowed: boolean;
@@ -131,7 +140,7 @@ const deny = (reason: Reason): Verdict => ({ allowed: false, reason });
  * The coarse project actions `loadProjectForUser` maps onto. An agent session's
  * kortix.yaml grant must NOT gate them: a route doing
  * `loadProjectForUser('write')` is asking a membership-tier question, and a
- * leaf-scoped agent (e.g. kortixCli=['project.gitops.push']) still has to pass
+ * leaf-scoped agent (e.g. permissions=['project.gitops.push']) still has to pass
  * it — the route's own leaf assertion is what the grant gates. Every OTHER
  * project action is a specific capability the agent must hold.
  */
@@ -157,7 +166,12 @@ const AGENT_GRANT_EXEMPT_ACTIONS: ReadonlySet<string> = new Set([
  *   9  object grants
  *  10  the agent-session grant intersection
  */
-export async function authorize(actor: Actor, action: string, obj: Obj = { type: 'account' }): Promise<Verdict> {
+export function authorize(actor: Actor, action: string, obj: Obj = { type: 'account' }): Promise<Verdict> {
+  // `Server-Timing: iam` — every capability decision on the request path.
+  return timeStage('iam', () => authorizeDecision(actor, action, obj));
+}
+
+async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promise<Verdict> {
   // 1. ACT-AS. Above everything, and above the principal memo in particular:
   // `resolvePrincipal` is a TTL memo shared across requests, so widening the
   // actor inside it would cache "owner" and serve it to this operator's own
@@ -191,6 +205,34 @@ export async function authorize(actor: Actor, action: string, obj: Obj = { type:
   // never be able to lock an account out permanently.
   if (rec.isSuperAdmin) return allow('super_admin');
 
+  // 5a. AGENT PRINCIPAL (project flag `agent_principal`, governed grant). The
+  // session IS the agent: grant ∩ ceiling − HUMAN_ONLY. The launcher's role and
+  // super-admin bit never reach this point — the principal is the agent's
+  // service account (actingPrincipal), so step 5 above cannot fire for it.
+  // Spec docs/specs/2026-09-22-agents-as-principals.md §2.1.
+  if (actor.credential.kind === 'agent_session' && actor.credential.agentPrincipal && binding?.agentGrant) {
+    const grant = binding.agentGrant;
+    const target = obj.type === 'project' ? obj.id : null;
+    // Bound roles are the ceiling as soon as ANY live role is bound (activated),
+    // including a zero-action custom role that pins the agent to deny. With
+    // none bound, the built-in default ceiling applies.
+    const bound = actor.credential.activated;
+    const roles = bound && target ? await loadSystemRoles() : null;
+    const systemRole = roles && target ? effectiveProjectRole(roles, rec, target) : null;
+    const verdict = agentPrincipalDecision({
+      action,
+      scope,
+      targetProjectId: target,
+      tokenProjectId: binding.projectId,
+      grant,
+      ceilingAllows: (a) =>
+        bound
+          ? (systemRole !== null && systemRole.actions.has(a)) || customRoleAllows(rec, scope, a, obj)
+          : AGENT_DEFAULT_CEILING.has(a),
+    });
+    return verdict.allowed ? allow('role') : deny(verdict.reason);
+  }
+
   // 6. Account-wide MFA. Browser sessions only — a token's scope was just
   // verified in step 4, and a PAT has no second factor to step up with.
   if (mfaGateBlocks(rec, tokenId, actor.ctx.mfaAal)) {
@@ -208,10 +250,13 @@ export async function authorize(actor: Actor, action: string, obj: Obj = { type:
 
   // A custom role can grant project access with NO system project role at all
   // (the department case), so the system role is one source in the union, not a
-  // gate. A service account has no membership and therefore no system project
-  // role — its project access comes only from its own assignments.
+  // gate. A service account has no membership, so no IMPLICIT project role, but
+  // a system project role (`manager`/`member`) an admin binds to it counts
+  // exactly like a custom one. Before 2026-09-22 only members read system
+  // roles here: binding `member` to an agent's service account activated it and
+  // granted nothing, bricking the agent (spec §1.5).
   const roles = await loadSystemRoles();
-  const systemRole = rec.kind === 'member' ? effectiveProjectRole(roles, rec, obj.id) : null;
+  const systemRole = effectiveProjectRole(roles, rec, obj.id);
   const granted =
     (systemRole !== null && systemRole.actions.has(action)) || customRoleAllows(rec, scope, action, obj);
 
@@ -244,7 +289,7 @@ export async function authorize(actor: Actor, action: string, obj: Obj = { type:
 
   // 10. role ∩ agent grant. Enforced HERE, centrally, so a new route cannot
   // forget it — the 23 per-route `assertAgentScope` calls are the duplicate.
-  // No-op for non-agent tokens (null grant) and for `kortixCli: all`.
+  // No-op for non-agent tokens (null grant) and for `permissions: all`.
   if (tokenId && !AGENT_GRANT_EXEMPT_ACTIONS.has(action)) {
     if (!agentMayPerform(binding?.agentGrant ?? null, action)) {
       return deny('agent_scope_insufficient');
@@ -252,6 +297,30 @@ export async function authorize(actor: Actor, action: string, obj: Obj = { type:
   }
 
   return allow('role');
+}
+
+/**
+ * effective(agent, action) for a surface that does not go through a route gate
+ * — the App gate (apps/access.ts), the connector gateway. Spec 2026-09-22 §2.1:
+ * `action ∈ kortix_permissions ∧ action ∈ ceiling ∧ action ∉ HUMAN_ONLY`, asked
+ * of the session's own project (or `projectId`).
+ *
+ * Returns false for any actor that is NOT an agent session under the
+ * agent-principal model (flag off, ungoverned grant, human, PAT): those callers
+ * keep their existing decision path. Check `isAgentPrincipalActor(actor)`
+ * (iam/actor.ts) first to choose the path.
+ */
+export async function agentEffectiveAllows(actor: Actor, action: string, projectId?: string): Promise<boolean> {
+  return (await agentEffectiveVerdict(actor, action, projectId)).allowed;
+}
+
+/** `agentEffectiveAllows` with the verdict reason, for a coded denial. */
+export async function agentEffectiveVerdict(actor: Actor, action: string, projectId?: string): Promise<Verdict> {
+  const c = actor.credential;
+  if (c.kind !== 'agent_session' || !c.agentPrincipal) return deny('agent_scope_insufficient');
+  const target = projectId ?? c.projectId;
+  if (!target) return deny('project_target_required');
+  return authorize(actor, action, { type: 'project', id: target });
 }
 
 /** `authorize`, but a denial throws the 403 the route layer surfaces. */
@@ -283,7 +352,11 @@ export async function listAccessible(
   return listAccessibleProjects(actor, action);
 }
 
-async function listAccessibleProjects(actor: Actor, action: string): Promise<Accessible> {
+function listAccessibleProjects(actor: Actor, action: string): Promise<Accessible> {
+  return timeStage('iam', () => listAccessibleProjectsUntimed(actor, action));
+}
+
+async function listAccessibleProjectsUntimed(actor: Actor, action: string): Promise<Accessible> {
   // Same short-circuit as authorize, for the same cache reason. Without it the
   // operator sees an empty project list inside an account whose every project
   // they can already open by id — a confusing half-state, not a narrower one.
@@ -749,6 +822,16 @@ interface ObjectGrantPrincipal {
  * grant taking effect on every replica at once — the same rule the legacy
  * `loadProjectResourceGrants` memo already applies (#6535).
  */
+/**
+ * `role_assignments.account_id` equals the account that owns `projectId`. A
+ * project-scoped row written in another account grants nothing here; new ones
+ * are refused at write time (`assertProjectInAccount`, and the
+ * `role_assignments_project_account_guard` trigger).
+ */
+function projectAccountMatches(projectId: string) {
+  return sql`${qualifiedColumn(roleAssignments.accountId)} = (select p.account_id from kortix.projects p where p.project_id = ${projectId}::uuid)`;
+}
+
 const loadObjectGrants = ttlMemo({
   ttlMs: TTL_MS,
   keyFn: (projectId: string, objectType: string) => `${projectId}|${objectType}`,
@@ -764,6 +847,8 @@ const loadObjectGrants = ttlMemo({
         and(
           eq(roleAssignments.scopeType, 'project'),
           eq(roleAssignments.scopeId, projectId),
+          // Only rows written in the project's own account count.
+          projectAccountMatches(projectId),
           eq(roleAssignments.objectType, objectType),
           or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, sql`now()`)),
         ),

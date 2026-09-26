@@ -56,6 +56,7 @@ import {
   type ConnectorCallResult,
   type ConnectorConnectOptions,
   type ConnectorConnectOwner,
+  renameConnection,
 } from './connectors';
 
 const canonicalConnectionType: import('./connectors').Connection = {
@@ -281,6 +282,26 @@ test('connection methods use the canonical connection route contract', async () 
   expect(last().url).toContain('/connections/connection-1/activate');
   await setDefaultConnection('P1', 'connection-1');
   expect(last().url).toContain('/connections/connection-1/default');
+
+  nextResponse = {
+    status: 200,
+    body: {
+      connection_id: 'connection-1',
+      connector_alias: 'gmail',
+      owner_type: 'project',
+      owner_id: null,
+      label: 'Support inbox',
+      status: 'active',
+      is_default: true,
+      metadata: {},
+      connected_as: 'support@example.test',
+    },
+  };
+  const renamed = await renameConnection('P1', 'connection-1', 'Support inbox');
+  expect(last()).toMatchObject({ method: 'PUT', body: { label: 'Support inbox' } });
+  expect(last().url).toContain('/projects/P1/connections/connection-1/label');
+  expect(renamed.label).toBe('Support inbox');
+  expect(renamed.connected_as).toBe('support@example.test');
 
   nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
   await ensureProjectConnectorConnection('P1', 'gmail');
