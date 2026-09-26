@@ -440,7 +440,8 @@ export interface ProjectLeftDrawerProps {
   reviewNeedsYouCount?: number;
   /**
    * Session id → what it waits on (`needsYouBySession` over the review inbox).
-   * Those sessions leave the list for a "Needs you · N" group above it.
+   * Those sessions leave the list for a "Needs you" group above it (no count:
+   * Jay, 2026-09-27).
    */
   needsYouBySession?: ReadonlyMap<string, SessionNeedsYou>;
   /** New session: open project home, whose composer starts the session. */
@@ -743,7 +744,7 @@ export function ProjectLeftDrawer({
       {needsYouSessions.length > 0 && (
         <View className="px-2 -mx-1">
           <Text variant="muted" className="px-4 pb-1 pt-3">
-            {`Needs you · ${needsYouSessions.length}`}
+            Needs you
           </Text>
           {needsYouSessions.map((session) => (
             <DrawerSessionNode

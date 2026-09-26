@@ -57,6 +57,7 @@ import type { SubAgentRelation } from '@/lib/session/sub-agents';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { playSound } from '@/lib/sounds';
+import { SessionChangeRequests } from '@/components/session/SessionChangeRequests';
 import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
@@ -811,7 +812,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
 
   // Agent/model/variant config
-  const { data: agents = EMPTY_AGENTS } = useOpenCodeAgents(sandboxUrl);
+  const agentsQuery = useOpenCodeAgents(sandboxUrl);
+  const agents = agentsQuery.data ?? EMPTY_AGENTS;
+  // No list yet (sandbox still starting, or its first fetch in flight).
+  const agentsLoading = !agentsQuery.data;
   // Models are derived here from the providers query (the same query
   // useOpenCodeModels reads) so the arrays keep their identity between
   // renders and the memoized composer can skip stream renders.
@@ -881,12 +885,18 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // request): sent as the composer sends it — at once when idle, with the
   // composer's agent/model/variant; into the queue while the agent works or a
   // question waits.
+  // Keyed by the OpenCode id (the actions sheet, on the open thread) or by the
+  // project session id (Review's Resolve conflicts, sent before this thread
+  // has connected, when only that id is known).
   const promptRequest = useSessionPromptRequestStore((s) =>
-    s.request?.sessionId === sessionId ? s.request : null,
+    s.request && (s.request.sessionId === sessionId || (!!projectSessionId && s.request.sessionId === projectSessionId))
+      ? s.request
+      : null,
   );
   useEffect(() => {
     if (!promptRequest) return;
-    const request = useSessionPromptRequestStore.getState().take(sessionId);
+    const store = useSessionPromptRequestStore.getState();
+    const request = store.take(sessionId) ?? (projectSessionId ? store.take(projectSessionId) : null);
     if (!request) return;
     if (isBusy || hasQuestion) {
       queueEnqueue(sessionId, request.text);
@@ -898,7 +908,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     if (modelKey) options.model = modelKey;
     if (variant) options.variant = variant;
     void handleSend(request.text, options);
-  }, [promptRequest, sessionId, isBusy, hasQuestion, queueEnqueue, handleSend]);
+  }, [promptRequest, sessionId, projectSessionId, isBusy, hasQuestion, queueEnqueue, handleSend]);
   const resolvedAgents = useShallowStableArray(resolved.agents);
   const resolvedVariants = useShallowStableArray(resolved.variants);
   const resolvedModel = resolved.model;
@@ -1968,6 +1978,15 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             <View>
               {/* Footer content above the spacer — part of the anchor span. */}
               <View onLayout={handleFooterContentLayout} className="px-4">
+                {/* Web: the change requests this session opened, as cards.
+                    A tap opens the Review page's sheet. */}
+                {projectId && projectSessionId ? (
+                  <SessionChangeRequests
+                    projectId={projectId}
+                    projectSessionId={projectSessionId}
+                    style={turns.length > 0 ? { marginTop: webSpace(6) } : undefined}
+                  />
+                ) : null}
                 {/* Web: the optimistic compaction marker, where the real
                     compaction turn will mount, until that turn exists. */}
                 {isCompacting && !hasCompactionTurn ? (
@@ -2045,6 +2064,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             model={resolvedModel}
             models={visibleModels}
             modelsLoading={modelsLoading}
+            agentsLoading={agentsLoading}
             modelUnavailable={modelUnavailable}
             onConnectModel={handleConnectModel}
             modelKey={resolvedModelKey}
