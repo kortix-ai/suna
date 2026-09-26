@@ -84,8 +84,8 @@ There are **four environments**, each a separate encrypted file with its **own k
   deliberate change with a rollout (`aws secretsmanager put-secret-value`).
 - Each profile owns its internal secrets (`INTERNAL_SERVICE_KEY`,
   `API_KEY_SECRET`, `GATEWAY_INTERNAL_TOKEN`, `TUNNEL_SIGNING_SECRET`).
-  `INTERNAL_SERVICE_KEY` is injected into sandboxes at creation
-  (`apps/api/src/platform/sandbox-env.ts`), so the `.env.dev`/`.env.staging`
+  `INTERNAL_SERVICE_KEY` authenticates internal service calls such as the
+  billing cron (`apps/api/src/billing/index.ts`), so the `.env.dev`/`.env.staging`
   value must equal the deployed env's AWS SM value; rotate both together.
 
 - `pnpm dev` runs the **full local stack** (web + API + local Supabase + tunnel) via `scripts/dev-local.sh`.
