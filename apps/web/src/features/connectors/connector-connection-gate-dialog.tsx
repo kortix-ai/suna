@@ -187,18 +187,16 @@ export function ConnectorConnectionGateDialog() {
     setPendingId(null);
   }, [isOpen, connectionKey]);
 
-  const handleConnected = useCallback((id: string) => {
-    setConnectedIds((current) => {
-      const next = new Set(current);
-      next.add(id);
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen || connectorConnections.length === 0) return;
-    if (!connectorConnections.every((connection) => connectedIds.has(connection.id))) return;
-    if (projectId) {
+  // Every connect refreshes the lists, not only the last one: an open
+  // Connectors page and the session catalogue show each account as it lands.
+  const handleConnected = useCallback(
+    (id: string) => {
+      setConnectedIds((current) => {
+        const next = new Set(current);
+        next.add(id);
+        return next;
+      });
+      if (!projectId) return;
       void queryClient.invalidateQueries({
         queryKey: ['connections', projectId],
       });
@@ -208,19 +206,17 @@ export function ConnectorConnectionGateDialog() {
       void queryClient.invalidateQueries({
         queryKey: ['session-scope-catalog', projectId],
       });
-    }
+    },
+    [projectId, queryClient],
+  );
+
+  useEffect(() => {
+    if (!isOpen || connectorConnections.length === 0) return;
+    if (!connectorConnections.every((connection) => connectedIds.has(connection.id))) return;
     const run = retry;
     closeConnectorGate();
     run?.();
-  }, [
-    closeConnectorGate,
-    connectedIds,
-    connectorConnections,
-    isOpen,
-    projectId,
-    queryClient,
-    retry,
-  ]);
+  }, [closeConnectorGate, connectedIds, connectorConnections, isOpen, retry]);
 
   return (
     <Modal open={isOpen} onOpenChange={(open) => !open && closeConnectorGate()}>

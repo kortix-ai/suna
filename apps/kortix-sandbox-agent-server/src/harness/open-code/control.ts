@@ -12,6 +12,7 @@ import { requiresRespawn, type Opencode } from './lifecycle'
 import { reconcileProjectEnv } from '../../project-env'
 import { readRepoInfo, refreshRepo, syncWorkspaceToBase } from '../../git'
 import { scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
+import { opencodeTurnInFlight } from './opencode-turn-state'
 import { readOpenCodeSessionPin } from './runtime-state'
 import type { QuickQueueInterrupt } from './quick-queue-interrupt'
 
@@ -375,7 +376,19 @@ export function createOpenCodeControlService(
         },
         // Config releases (docs/specs/config-releases.md). The descriptor is
         // always fetched from the API; nothing here takes one as input.
-        convergeConfig: () => convergeConfigRelease({ cfg, opencode }),
+        convergeConfig: (options) =>
+          convergeConfigRelease({
+            cfg,
+            opencode,
+            delayBeforeSwapMs: options?.delayBeforeSwapMs,
+            // The API reaches a box only through POST /kortix/config/converge,
+            // so this is the production convergence path. Without the probe,
+            // `mayPromote` is undefined and the last-moment swap cancel never
+            // arms — the only turn check left is the API's pre-download read,
+            // which is the TOCTOU the cancel exists to close. boot.ts:222
+            // supplies the same probe for the boot-scheduled convergence.
+            turnInFlight: () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace),
+          }),
         async abort() {
           const sessionId = readOpenCodeSessionPin()
           if (!sessionId) {
