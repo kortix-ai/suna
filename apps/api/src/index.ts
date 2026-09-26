@@ -97,7 +97,12 @@ import {
   stopProjectTriggerScheduler,
 } from './projects';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
-import { isRemotePushPolicyRejection, isTransientGitMirrorError, pushPolicyWarning } from './projects/git/mirror';
+import {
+  GIT_MIRROR_UNAVAILABLE_CODE,
+  isRemotePushPolicyRejection,
+  isTransientGitMirrorError,
+  pushPolicyWarning,
+} from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import {
   startProviderTransitionWorker,
@@ -1194,6 +1199,13 @@ app.onError((err, c) => {
     return c.json(
       {
         error: true,
+        // A stable code lets the SDK/frontend classify this transient 503 as
+        // an EXPECTED, retryable degradation (silent to Sentry) instead of an
+        // opaque `ApiError` — the API-side classification alone only de-noises
+        // the API's OWN Sentry; the 503 response crosses into the FRONTEND
+        // Sentry (a separate app) via `handleApiError`. See
+        // `projects/git/mirror.ts`'s `GIT_MIRROR_UNAVAILABLE_CODE`.
+        code: GIT_MIRROR_UNAVAILABLE_CODE,
         message: 'git mirror is temporarily unavailable',
         status: 503,
       },
