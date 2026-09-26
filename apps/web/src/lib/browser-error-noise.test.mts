@@ -14,6 +14,7 @@ import {
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isExpectedBillingGateMessage,
   isExpectedCompactionNoModelMessage,
+  isExpectedNextRecoveryBailoutNoise,
   isExtensionRejectedObjectNoise,
   isExtensionSource,
   isFailedToSendMessageNoise,
@@ -55,6 +56,7 @@ import {
   isVercelLiveFeedbackNoise,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
+  shouldIgnoreSentryNoiseEvent,
 } from './browser-error-noise.ts';
 
 test('matches the Safari runtime.sendMessage tab-not-found noise', () => {
@@ -11572,4 +11574,117 @@ test('cross-matcher isolation: the WebGL-unsupported matcher does NOT match the 
     }),
     false,
   );
+});
+
+// React error #419 ("The server could not finish this Suspense boundary") is
+// React's recoverable-client-render report. Next.js sets the abandoned
+// boundary's reason on `error.digest`; a 404 / HTTP-error or redirect digest is
+// an expected user state, a hash digest is a real server-render failure.
+const REACT_419_MESSAGE =
+  'Minified React error #419; visit https://react.dev/errors/419 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.';
+
+test('classifies React #419 with a Next.js 404 digest as expected recovery noise', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest: 'NEXT_HTTP_ERROR_FALLBACK;404' }),
+    true,
+  );
+});
+
+test('reports React #419 for a server error boundary', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest: 'NEXT_HTTP_ERROR_FALLBACK;500' }),
+    false,
+  );
+  const error = Object.assign(new Error(REACT_419_MESSAGE), {
+    digest: 'NEXT_HTTP_ERROR_FALLBACK;500',
+  });
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ error }), false);
+  assert.equal(
+    shouldIgnoreSentryNoiseEvent(
+      { exception: { values: [{ value: REACT_419_MESSAGE }] } },
+      { originalException: error },
+    ),
+    false,
+  );
+});
+
+test('classifies React #419 with an unminified server-render message as expected recovery noise', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({
+      message:
+        'The server could not finish this Suspense boundary, likely due to an error during server rendering.',
+      digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+    }),
+    true,
+  );
+});
+
+test('classifies React #419 with a Next.js redirect digest as expected recovery noise', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({
+      message: REACT_419_MESSAGE,
+      digest: 'NEXT_REDIRECT;replace;/projects;307;',
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress React #419 without a digest (a real server-render failure)', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest: undefined }),
+    false,
+  );
+});
+
+test('does NOT suppress React #419 with a hash digest (a real server-render failure)', () => {
+  for (const digest of ['1a2b3c4d', 'NEXT_DYNAMIC_NO_SSR_CODE', 'BAILOUT_TO_CLIENT_SIDE_RENDERING']) {
+    assert.equal(
+      isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest }),
+      false,
+      `expected digest ${digest} to keep reporting`,
+    );
+  }
+});
+
+test('does NOT suppress a non-#419 error that happens to carry a 404 digest', () => {
+  for (const message of [
+    'TypeError: Cannot read properties of undefined (reading "x")',
+    'Minified React error #418; visit https://react.dev/errors/418',
+  ]) {
+    assert.equal(
+      isExpectedNextRecoveryBailoutNoise({ message, digest: 'NEXT_HTTP_ERROR_FALLBACK;404' }),
+      false,
+      `expected "${message}" to keep reporting`,
+    );
+  }
+});
+
+test('suppresses a 404-boundary React #419 from the window.onerror runtime guard', () => {
+  const notFoundError = Object.assign(new Error(REACT_419_MESSAGE), {
+    digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+  });
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ error: notFoundError }), true);
+});
+
+test('does NOT suppress a hash-digest React #419 from the window.onerror runtime guard', () => {
+  const realError = Object.assign(new Error(REACT_419_MESSAGE), { digest: 'deadbeef01' });
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ error: realError }), false);
+});
+
+test('suppresses a 404-boundary React #419 through the Sentry beforeSend hint', () => {
+  const event = {
+    exception: { values: [{ value: REACT_419_MESSAGE }] },
+    request: { url: 'https://kortix.com/dashboard' },
+  };
+  assert.equal(
+    shouldIgnoreSentryNoiseEvent(event, {
+      originalException: Object.assign(new Error(REACT_419_MESSAGE), {
+        digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+      }),
+    }),
+    true,
+  );
+  // Same event without the hint (the digest is not in the serialised event) must
+  // keep reporting so a real server-render failure is never hidden.
+  assert.equal(shouldIgnoreSentryNoiseEvent(event), false);
 });
