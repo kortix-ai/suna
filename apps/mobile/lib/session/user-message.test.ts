@@ -11,7 +11,7 @@ import {
   queuedPromptStatusLabel,
   quoteMarginBottom,
   rewindHiddenMessageIds,
-  userMessageMetaItems,
+  userMessageSentLabel,
   webSpace,
 } from './user-message';
 
@@ -192,24 +192,34 @@ describe('isUserMessageEdited', () => {
   });
 });
 
-describe('userMessageMetaItems', () => {
-  const now = Date.UTC(2026, 8, 17, 12, 0, 0);
+describe('userMessageSentLabel', () => {
+  // Local-time dates: the label reads the device's clock.
+  const now = new Date(2026, 8, 27, 18, 5).getTime();
 
-  test('relative time, then "edited"', () => {
-    expect(userMessageMetaItems({ timestamp: now - 5 * 60_000, edited: true, now })).toEqual([
-      '5 minutes ago',
-      'edited',
-    ]);
+  test('today, yesterday, this year, another year', () => {
+    expect(userMessageSentLabel({ timestamp: new Date(2026, 8, 27, 15, 42).getTime(), edited: false, now })).toBe(
+      'Today, 3:42 PM',
+    );
+    expect(userMessageSentLabel({ timestamp: new Date(2026, 8, 26, 9, 5).getTime(), edited: false, now })).toBe(
+      'Yesterday, 9:05 AM',
+    );
+    expect(userMessageSentLabel({ timestamp: new Date(2026, 8, 3, 0, 15).getTime(), edited: false, now })).toBe(
+      'Sep 3, 12:15 AM',
+    );
+    expect(userMessageSentLabel({ timestamp: new Date(2025, 11, 31, 12, 0).getTime(), edited: false, now })).toBe(
+      'Dec 31, 2025, 12:00 PM',
+    );
   });
 
-  test('under a minute reads "just now"', () => {
-    expect(userMessageMetaItems({ timestamp: now - 10_000, edited: false, now })).toEqual([
-      'just now',
-    ]);
+  test('an edited message says so', () => {
+    expect(userMessageSentLabel({ timestamp: new Date(2026, 8, 27, 15, 42).getTime(), edited: true, now })).toBe(
+      'Today, 3:42 PM · Edited',
+    );
   });
 
-  test('no timestamp and not edited is empty', () => {
-    expect(userMessageMetaItems({ timestamp: null, edited: false, now })).toEqual([]);
+  test('no timestamp: only "Edited", or nothing', () => {
+    expect(userMessageSentLabel({ timestamp: null, edited: true, now })).toBe('Edited');
+    expect(userMessageSentLabel({ timestamp: null, edited: false, now })).toBe('');
   });
 });
 

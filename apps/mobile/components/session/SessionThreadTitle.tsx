@@ -29,8 +29,9 @@ interface SessionThreadTitleProps {
 
 /**
  * A `PressableSurface`, not a `Button`: the title is a text tap target, not a
- * button shape, and a Button takes no size or padding classes. It fills the
- * header's title column (`FloatingMenuButton`) and dims while pressed.
+ * button shape, and a Button takes no size or padding classes. It is as wide
+ * as its text (`FloatingMenuButton` centres and shrinks it) and dims while
+ * pressed.
  */
 export function SessionThreadTitle({ title, onPress, status }: SessionThreadTitleProps) {
   return (
@@ -41,7 +42,9 @@ export function SessionThreadTitle({ title, onPress, status }: SessionThreadTitl
       accessibilityRole={onPress ? 'button' : 'header'}
       accessibilityLabel={status ? `${title}, ${status}` : title}
       accessibilityHint={onPress ? 'Opens rename' : undefined}
-      className="flex-1 items-center justify-center"
+      // Content width, not `flex-1`: `FloatingMenuButton` sizes and centres
+      // it, and shrinks it so the title truncates. 40pt tall: the header row.
+      className="min-h-10 items-center justify-center"
       style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
       <Text
         className={`max-w-full font-roobert-medium text-base text-foreground${status ? ' leading-5' : ''}`}
