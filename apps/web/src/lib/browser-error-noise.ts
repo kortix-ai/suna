@@ -4345,6 +4345,60 @@ export function isSignalTimeoutNoise(input: {
   return true;
 }
 
+// React's production wording for error #419 — the recoverable-client-render
+// report React makes when the server did not finish a Suspense boundary. React's
+// `formatProdErrorMessage` minifies it; the unminified wording is the sibling we
+// also accept (dev builds and any capture path that received the raw text).
+const REACT_SERVER_SUSPENSE_BAILOUT_MESSAGES = [
+  'Minified React error #419',
+  'The server could not finish this Suspense boundary',
+] as const;
+
+// The `data-dgst` Next.js writes onto a Suspense fallback it handed to the
+// client, for the two reasons that are ordinary user states rather than defects:
+//   `NEXT_HTTP_ERROR_FALLBACK;<status>` — `notFound()` / an HTTP error boundary
+//     (the server rendered its 404); and
+//   `NEXT_REDIRECT;<type>;<url>` — `redirect()` that deferred to the client.
+// React surfaces that reason as `error.digest` when it hydrates the boundary and
+// synthesises error #419. Next.js's own `onRecoverableError` filters ONLY
+// `BAILOUT_TO_CLIENT_SIDE_RENDERING`, so these two reach `window.onerror` and
+// page Sentry with no actionable stack.
+const EXPECTED_NEXT_RECOVERY_DIGEST = /^(?:NEXT_HTTP_ERROR_FALLBACK|NEXT_REDIRECT);/;
+
+// Read the `digest` Next.js/React attaches to a recovered Suspense error. It is a
+// plain property on the Error object, so it survives the `window.onerror` and
+// Sentry `hint.originalException` transport paths.
+function extractDigest(value: unknown): string {
+  if (value && typeof value === 'object' && 'digest' in value) {
+    return normalizeString((value as { digest?: unknown }).digest);
+  }
+  return '';
+}
+
+/**
+ * `Minified React error #419` ("The server could not finish this Suspense
+ * boundary …") is React's report that it abandoned a server-rendered Suspense
+ * boundary and client-rendered it instead. The message alone is NOT safe to
+ * drop: a genuine server-render failure produces the same message. The
+ * discriminator is the error's `digest` — Next.js sets it to the reason the
+ * boundary was abandoned. A `NEXT_HTTP_ERROR_FALLBACK;…` (404 / HTTP error) or
+ * `NEXT_REDIRECT;…` digest is an expected user state: the not-found or redirect
+ * boundary rendered correctly and React recovered. A real server-render error
+ * carries a hash digest (or none), never these prefixes, so it keeps reporting.
+ */
+export function isExpectedNextRecoveryBailoutNoise(input: {
+  message?: unknown;
+  digest?: unknown;
+}): boolean {
+  if (!EXPECTED_NEXT_RECOVERY_DIGEST.test(normalizeString(input.digest))) {
+    return false;
+  }
+  return containsKnownPattern(
+    stripErrorWrappers(normalizeString(input.message)),
+    REACT_SERVER_SUSPENSE_BAILOUT_MESSAGES,
+  );
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -4355,6 +4409,18 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     [input.message, extractMessage(input.error), extractMessage(input.reason)].find((value) =>
       Boolean(value),
     ) ?? '';
+
+  // React's recovered #419 report for a Next.js 404 / redirect boundary — an
+  // expected user state, not an app defect. See
+  // `isExpectedNextRecoveryBailoutNoise`.
+  if (
+    isExpectedNextRecoveryBailoutNoise({
+      message,
+      digest: extractDigest(input.error ?? input.reason),
+    })
+  ) {
+    return true;
+  }
 
   if (isKnownBrowserNoiseMessage(message)) {
     return true;
@@ -5537,17 +5603,35 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   return requestUrl.includes('/auth') && normalizeString(message).includes('runtime.sendMessage');
 }
 
-export function shouldIgnoreSentryNoiseEvent(event: {
-  message?: unknown;
-  extra?: unknown;
-  environment?: unknown;
-  request?: { url?: unknown };
-  exception?: {
-    values?: Array<{
-      value?: unknown;
-      stacktrace?: { frames?: Array<{ filename?: unknown }> };
-    }>;
-  };
-}): boolean {
+export function shouldIgnoreSentryNoiseEvent(
+  event: {
+    message?: unknown;
+    extra?: unknown;
+    environment?: unknown;
+    request?: { url?: unknown };
+    exception?: {
+      values?: Array<{
+        value?: unknown;
+        stacktrace?: { frames?: Array<{ filename?: unknown }> };
+      }>;
+    };
+  },
+  hint?: { originalException?: unknown },
+): boolean {
+  // React's recovered #419 report for a Next.js 404 / redirect boundary. The
+  // digest is not part of the serialised Sentry event, but Sentry passes the
+  // thrown object through as `hint.originalException` for the global `onerror`
+  // and `onunhandledrejection` handlers, and React/Next.js put `digest` on it.
+  // See `isExpectedNextRecoveryBailoutNoise`.
+  const primaryException = event.exception?.values?.find(Boolean);
+  if (
+    isExpectedNextRecoveryBailoutNoise({
+      message: primaryException?.value ?? event.message,
+      digest: extractDigest(hint?.originalException),
+    })
+  ) {
+    return true;
+  }
+
   return shouldIgnoreSentryBrowserNoise(event);
 }
