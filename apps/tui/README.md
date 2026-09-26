@@ -120,6 +120,7 @@ except `KORTIX_TOKEN`, which the CLI reads too (see Troubleshooting).
 | `KORTIX_SESSION_ID` | Open this session at boot. |
 | `KORTIX_CONFIG_FILE` | Read hosts from this file instead of `~/.config/kortix/config.json`. |
 | `KORTIX_TUI_THEME` | `dark` or `light`. Otherwise `COLORFGBG` decides, defaulting to dark. |
+| `KORTIX_TUI_AUTO_FORWARD` | `0` disables auto-forwarding a sandbox port the moment it's noticed (see [Ports](#ports)). Default: on. |
 
 ## Screens
 
@@ -133,6 +134,39 @@ except `KORTIX_TOKEN`, which the CLI reads too (see Troubleshooting).
 | Account | `Alt+U` | Members, invites, roles, and the billing readout. |
 | Help | `?` | Every binding below, generated from the keymap. |
 | Switcher | `Ctrl+P` | Filter over every session and project. |
+| Ports | `Alt+P` | Sandbox ports noticed in the transcript/terminal, and every local forward. See [Ports](#ports). |
+
+## Ports
+
+VS Code-style local port forwarding: a sandbox port a session's agent
+mentions (`http://localhost:3000`, a bare `127.0.0.1:5173`, a `0.0.0.0:PORT`
+banner) is auto-forwarded to the same local port — or the next free one — the
+moment it's noticed in the transcript or the terminal panel's output. A toast
+confirms it: `Forwarded localhost:3000 → sandbox:3000`. Set
+`KORTIX_TUI_AUTO_FORWARD=0` to turn this off and forward only by hand.
+
+Detection ignores ports 1-1023 except 80 and 443 (a sandboxed dev server
+essentially never binds a privileged port; treating a `host:port`-shaped match
+there as a false positive is safer than flooding the panel with noise) and the
+sandbox's own SSH (22) and OpenCode control (8000) ports.
+
+`Alt+P` opens the panel — one row per port, its state (forwarding / stopped /
+error), and its local URL when forwarding:
+
+| Key | Action |
+| --- | --- |
+| `j`/`k`, `g`/`G` | Move the selection. |
+| `Enter` | Forward the selected port, or stop forwarding it. |
+| `o` | Open `http://localhost:<port>` in the browser. |
+| `y` | Copy the local forwarded URL to the clipboard. |
+| `a` | Add a sandbox port to forward, by number — regardless of auto-forward. |
+| `Esc` | Close the panel. Open forwards keep running. |
+
+The status bar shows `⇄ 3000, 5173` while any port is forwarding. Forwards are
+per session: they close when the session view unmounts or the session changes,
+same as the CLI's `kortix sessions forward <session-id> --port <sandbox>[:<local>]`
+(see `apps/cli/README.md`) — the panel reuses that exact engine
+(`@kortix/cli/src/port-forward.ts`) rather than a second implementation.
 
 ## Keys
 
@@ -151,6 +185,7 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `Ctrl+p` | Open the session switcher. |
 | `Ctrl+n` | Create a session in this project and open it. |
 | `Alt+t` | Toggle the terminal panel. |
+| `Alt+p` | Open the Ports panel: sandbox ports detected in output, and every local forward. |
 | `Alt+f` | Open the files screen. |
 | `Alt+r` | Open the review screen. |
 | `Alt+a` | Open the apps screen. |
@@ -211,7 +246,7 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `Alt+y` | Copy `kortix sessions connect <id>` to the clipboard. |
 | `Alt+x` | Close the terminal panel. |
 | `Alt+Enter` | Reconnect the terminal now. |
-| `any other key` | Every other key goes to the remote shell, Ctrl+C included. Quit the TUI with Ctrl+Q; Tab and Alt+T still move focus and toggle the panel. |
+| `any other key` | Every other key goes to the remote shell, Ctrl+C included. Quit the TUI with Ctrl+Q; Tab, Alt+T and Alt+P still move focus, toggle the panel, and open the Ports panel. |
 
 ### Files
 
@@ -330,6 +365,17 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `Shift+Tab` | Previous form field. |
 | `Enter` | Submit the form. |
 | `Esc` | Leave the form, the confirm, or the screen. |
+| `Ctrl+c / Ctrl+q` | Quit from the login screen at once. There is no app behind it to arm. |
+
+### Ports panel
+
+| Keys | Action |
+| --- | --- |
+| `Enter` | Forward the selected port, or stop forwarding it. |
+| `o` | Open `http://localhost:<port>` in the browser. |
+| `y` | Copy the local forwarded URL to the clipboard. |
+| `a` | Add a sandbox port to forward, by number. |
+| `Esc` | Close the Ports panel. Open forwards keep running. |
 
 ### Lists, pickers and dialogs
 
@@ -343,7 +389,7 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `PgUp` | Page up. |
 | `Enter` | Open the row. |
 
-_143 bindings._
+_150 bindings._
 
 ## Tests
 
@@ -475,8 +521,9 @@ boot and drops to the login screen with this line; the fix is
   `arm64`/`x64` Bun is the usual cause.
 - **`Ctrl+C` does nothing inside the terminal panel.** That is deliberate: the
   shell owns `Ctrl+C`, and a shell without it is not a shell. Leave the TUI with
-  `Ctrl+Q`, or `Alt+X` to close the panel first. `Tab`, `Shift+Tab`, `Alt+T` and
-  `Ctrl+Q` are the only four chords the app keeps while the shell has focus.
+  `Ctrl+Q`, or `Alt+X` to close the panel first. `Tab`, `Shift+Tab`, `Alt+T`,
+  `Alt+P` and `Ctrl+Q` are the only five chords the app keeps while the shell
+  has focus.
 - **A session sits on `provisioning` for minutes.** A cold sandbox boot is
   minutes, not seconds. The header prints the live `/start` stage; the terminal
   panel and the files screen wait for `ready` rather than failing.

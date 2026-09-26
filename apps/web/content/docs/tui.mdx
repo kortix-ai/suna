@@ -87,6 +87,7 @@ and a stale one left exported in a shell outranks `kortix login` for both.
 | `KORTIX_SESSION_ID` | Open this session at boot. |
 | `KORTIX_CONFIG_FILE` | Read hosts from this file instead of `~/.config/kortix/config.json`. |
 | `KORTIX_TUI_THEME` | `dark` or `light`. Otherwise `COLORFGBG` decides, defaulting to dark. |
+| `KORTIX_TUI_AUTO_FORWARD` | `0` disables auto-forwarding a sandbox port the moment it's noticed (see [Ports](#ports)). Default: on. |
 | `KORTIX_TUI_BIN` | Run this `kortix-tui` binary instead of a managed one. Nothing is downloaded and no version is checked. |
 | `KORTIX_TUI_HOST` | The configured host to open, by name. `kortix tui --host <name>` sets it, and it outranks `KORTIX_API_KEY` / `KORTIX_TOKEN`. |
 
@@ -124,14 +125,15 @@ variable at all.
 | Customize | `Alt+C` | Agents · Skills · Secrets · Triggers · Connectors. |
 | Account | `Alt+U` | Members, invites, roles, and the billing readout. |
 | Terminal | `Alt+T` | A real shell in the session's sandbox, beside the transcript. |
+| Ports | `Alt+P` | Sandbox ports noticed in the transcript/terminal, and every local forward. See [Ports](#ports). |
 | Switcher | `Ctrl+P` | One filter over every session and project. |
 | Help | `?` | Every binding, generated from the keymap. |
 
 ## Keys
 
-`?` prints the full table — 143 bindings across twelve scopes — generated from
-the app's own keymap, so a binding that is not in the overlay does not exist.
-These are the ones that work anywhere:
+`?` prints the full table — 150 bindings across thirteen scopes — generated
+from the app's own keymap, so a binding that is not in the overlay does not
+exist. These are the ones that work anywhere:
 
 
 | Keys | Action |
@@ -143,6 +145,7 @@ These are the ones that work anywhere:
 | `Ctrl+p` | Open the session switcher. |
 | `Ctrl+n` | Create a session in this project and open it. |
 | `Alt+t` | Toggle the terminal panel. |
+| `Alt+p` | Open the Ports panel: sandbox ports detected in output, and every local forward. |
 | `Alt+f` | Open the files screen. |
 | `Alt+r` | Open the review screen. |
 | `Alt+a` | Open the apps screen. |
@@ -163,7 +166,31 @@ Two terminal facts shape that table:
   is the portable newline and always works.
 
 Inside the terminal panel the shell keeps every key, `Ctrl+C` included. Only
-`Tab`, `Shift+Tab`, `Alt+T` and `Ctrl+Q` stay the app's.
+`Tab`, `Shift+Tab`, `Alt+T`, `Alt+P` and `Ctrl+Q` stay the app's.
+
+## Ports
+
+VS Code-style local port forwarding: a sandbox port a session's agent mentions
+(`http://localhost:3000`, a bare `127.0.0.1:5173`, a `0.0.0.0:PORT` banner) is
+auto-forwarded to the same local port — or the next free one — the moment it's
+noticed in the transcript or the terminal panel's output. A toast confirms it:
+`Forwarded localhost:3000 → sandbox:3000`. Set `KORTIX_TUI_AUTO_FORWARD=0` to
+turn this off and forward only by hand.
+
+Detection ignores ports 1-1023 except 80 and 443, and the sandbox's own SSH
+(22) and OpenCode control (8000) ports.
+
+`Alt+P` opens the panel: one row per port, its state (forwarding / stopped /
+error), and its local URL when forwarding. `Enter` toggles the selected port,
+`o` opens `http://localhost:<port>` in the browser, `y` copies the local URL,
+`a` adds a port by number regardless of auto-forward, and `Esc` closes the
+panel without stopping anything. The status bar shows `⇄ 3000, 5173` while any
+port is forwarding.
+
+Forwards are per session: they close when the session view unmounts or the
+session changes. The panel reuses the exact same engine as
+[`kortix sessions forward`](/docs/cli#reference) — one implementation, two
+front ends.
 
 ## Attach mode
 
