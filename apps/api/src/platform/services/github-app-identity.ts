@@ -158,10 +158,6 @@ export function refreshAppIdentity(): Promise<void> {
   return setting.refresh();
 }
 
-export function invalidateAppIdentity(): void {
-  setting.invalidate();
-}
-
 /** Overwrite the stored identity whole. Partial writes are not a thing here. */
 export async function writeAppIdentity(identity: StoredAppIdentity): Promise<void> {
   await setting.write(identity);
