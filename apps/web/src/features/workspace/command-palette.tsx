@@ -109,6 +109,7 @@ import {
   type KortixProject,
   type ProjectDetail,
   type ProjectSession,
+  type ProjectSessionPage,
   featureFlags,
   getProject,
   getProjectDetail,
@@ -122,6 +123,7 @@ import {
 import {
   agentScopedModelSelectionKey,
   contract,
+  flattenProjectSessionPages,
   invalidateProject,
   modelProviderMode,
   qk,
@@ -866,10 +868,21 @@ export function CommandPalette() {
   const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
   const workspacesLoading =
     workspaceQueries.length === 0 || workspaceQueries.some((q) => q.isLoading);
-  const { data: projectSessionsList } = useQuery({
+  // The sidebar's pages are usually cached already. Their rows stand in while
+  // this lookup-sized list loads, so recent sessions show the moment the
+  // palette opens instead of "No sessions yet". Stable, so TanStack reuses the
+  // placeholder instead of flattening the pages on every render.
+  const sidebarSessions = useCallback(() => {
+    const pages = queryClient.getQueryData<{ pages: ProjectSessionPage[]; pageParams: unknown[] }>(
+      qk.project.sessionsPaged(projectId ?? ''),
+    );
+    return pages ? flattenProjectSessionPages(pages) : undefined;
+  }, [queryClient, projectId]);
+  const { data: projectSessionsList, isPending: projectSessionsPending } = useQuery({
     queryKey: qk.project.sessions(projectId ?? ''),
     queryFn: () => listProjectSessions(projectId!, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
     enabled: open && !!projectId,
+    placeholderData: sidebarSessions,
     ...contract('inventory'),
   });
   // Same query key every other project surface fetches (page.tsx,
@@ -3000,6 +3013,12 @@ export function CommandPalette() {
                     </CommandItem>
                   ))}
                 </CommandGroup>
+              ) : projectSessionsPending ? (
+                // No list and no sidebar pages to stand in: loading, not
+                // "No sessions yet". Same frame as the workspaces page.
+                <div className="flex justify-center py-8">
+                  <Loading className="text-muted-foreground size-4" />
+                </div>
               ) : (
                 <PaletteEmpty>
                   {query
