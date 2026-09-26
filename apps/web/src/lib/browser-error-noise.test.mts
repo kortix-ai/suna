@@ -8827,6 +8827,157 @@ test('does NOT suppress the "Connection closed by server." wording (over-match g
 });
 
 // ---------------------------------------------------------------------------
+// React error #412 — "Connection closed." (RSC / Flight stream close)
+//
+// KRTX-240, Better Stack pattern
+// 3d9e3dd115f302ff96fa4bee9b54beed839db71851ea5b0ad7660778023ec6a7, Kortix
+// Frontend prod (application_id 2346967). React's minified prod error #412 is
+// `Connection closed.` (see React's error-codes map) — the SAME canonical close
+// string a client-side transport library throws, emitted by React's Flight
+// client in `close()` when an RSC stream ends with chunks still pending
+// (ReactFlightClient: `reportGlobalError(weakResponse, new Error('Connection
+// closed.'))`). In a Next.js App Router client this is the RSC/flight response
+// stream closing early — an aborted navigation/prefetch, a network blip, or the
+// server ending the stream. It is a transient, self-healing browser/transport
+// condition, never an app defect. 6 occurrences over 6 days (first
+// 2026-09-17, last 2026-09-23), 0 identified users (anonymous), all Firefox,
+// across the marketing/`/auth`/`/projects/start` routes, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT). The single
+// stack frame is the minified React chunk
+// `app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js` function `n` — NO
+// resolved first-party `apps/web/src/…` frame. React's formatted prod message
+// is canonical (only the deep-link URL varies), so anchoring on the
+// `Minified React error #412;` prefix is specific; the negative guard preserves
+// a real first-party `throw new Error('Connection closed.')` regression.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event: React's formatted prod
+// error #412 (`Connection closed.`). Only the deep-link URL is React's own.
+const REACT_412_CONNECTION_CLOSED_MESSAGE =
+  'Minified React error #412; visit https://react.dev/errors/412 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.';
+
+// The single production stack frame: the minified React chunk that React's
+// Flight client throws from. Sentry's sourcemap resolution did NOT rewrite this
+// to a first-party `apps/web/src/…` path, so the negative guard does not fire.
+const REACT_412_PROD_FRAMES = [
+  {
+    filename: 'app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js',
+    function: 'n',
+    lineno: 1,
+    colno: 1,
+    in_app: true,
+  },
+];
+
+test('classifies the React error #412 "Connection closed." RSC-stream noise (exact prod shape)', () => {
+  assert.equal(
+    isConnectionClosedNoise({
+      message: REACT_412_CONNECTION_CLOSED_MESSAGE,
+      frames: REACT_412_PROD_FRAMES,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth' },
+      exception: {
+        values: [
+          {
+            value: REACT_412_CONNECTION_CLOSED_MESSAGE,
+            stacktrace: { frames: REACT_412_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses React error #412 through all three capture-path wrappers', () => {
+  // `stripErrorWrappers` + the bare-`Error: ` strip must classify the SAME
+  // underlying message regardless of which capture path delivered it.
+  for (const message of [
+    REACT_412_CONNECTION_CLOSED_MESSAGE,
+    `Error: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+    `Unhandled promise rejection: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+    `Unhandled promise rejection: Error: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+  ]) {
+    assert.equal(
+      isConnectionClosedNoise({ message, frames: REACT_412_PROD_FRAMES }),
+      true,
+      `expected "${message}" to be noise`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: REACT_412_PROD_FRAMES } }],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    );
+  }
+});
+
+test('classifies the frameless React error #412 variant as noise (message alone is specific)', () => {
+  assert.equal(
+    isConnectionClosedNoise({ message: REACT_412_CONNECTION_CLOSED_MESSAGE, frames: [] }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [{ value: REACT_412_CONNECTION_CLOSED_MESSAGE }],
+      },
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress React error #412 when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw the close →
+  // actionable; the negative guard MUST preserve it.
+  const frames = [
+    { filename: 'app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js', function: 'n' },
+    { filename: 'apps/web/src/lib/rsc/stream.ts', function: 'onClose' },
+  ];
+  assert.equal(
+    isConnectionClosedNoise({ message: REACT_412_CONNECTION_CLOSED_MESSAGE, frames }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: REACT_412_CONNECTION_CLOSED_MESSAGE, stacktrace: { frames } }],
+      },
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress a near-worded React error number (over-match guard)', () => {
+  // `\b` after `#412` means `#4120` (and any other number) must keep reporting.
+  for (const message of [
+    'Minified React error #4120; visit https://react.dev/errors/4120 for the full message.',
+    'Minified React error #41; visit https://react.dev/errors/41 for the full message.',
+  ]) {
+    assert.equal(
+      isConnectionClosedNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Canvas `getImageData` out-of-memory noise (BS b4b43847…)
 // ---------------------------------------------------------------------------
 
