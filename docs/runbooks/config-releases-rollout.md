@@ -28,6 +28,21 @@ today's behavior, unchanged.
 
 ## Rollout order
 
+**Precondition, before step 1: CFG-11 and CFG-12 must pass against deployed
+staging in a release gate run.** Every other config-releases flow (CFG-1
+through CFG-10) is API-only and can pass with no sandbox ever booting.
+CFG-11 and CFG-12 are the only two flows that `requires: funded, daytona` —
+the only ones that boot a real sandbox and prove the daemon side of this
+feature (descriptor fetch, archive download, apply, and the proven check)
+actually works end to end. The local test profile skips both, so this is
+also the only place they run. As of the v0.13.33 release gate, CFG-1..CFG-10
+pass and CFG-11/CFG-12 both fail at their first assertion with
+`"source":"image-default"` and a `fallback_reason` naming a failed release —
+i.e. the box never applies the release it was assigned and falls all the way
+back to the image default. Do not flip the prod switch (step 1) until both
+flows are green on a deployed staging release gate run. Root cause is being
+worked on a separate branch.
+
 1. **Merge the switch, prerequisites already proven.** Adding
    `"CONFIG_RELEASES_ENABLED":"true"` to `deploy-prod.yml`'s
    `KORTIX_ECS_ENV_OVERRIDES` makes the flag *available*. Confirm before
