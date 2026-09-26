@@ -1886,5 +1886,7 @@
 {"input":{"exception":{"values":[{"value":"Synthetic toolbar failure","stacktrace":{"frames":[{"filename":"app:///_next-live/feedback/instrument.synthetic.js"}]}}]}},"runtime":false,"sentry":true},
 {"input":{"exception":{"values":[{"value":"Instance dropped in popErrorScope","stacktrace":{"frames":[{"filename":"app:///_next/static/chunks/synthetic.js","function":"gpu.createRenderPipeline"}]}}]}},"runtime":false,"sentry":true},
 {"input":{"error":{"message":"Minified React error #419","digest":"NEXT_HTTP_ERROR_FALLBACK;404"}},"runtime":true,"sentry":false},
-{"input":{"exception":{"values":[{"value":"Minified React error #419","digest":"NEXT_HTTP_ERROR_FALLBACK;404"}]}},"runtime":false,"sentry":true}
+{"input":{"exception":{"values":[{"value":"Minified React error #419","digest":"NEXT_HTTP_ERROR_FALLBACK;404"}]}},"runtime":false,"sentry":true},
+{"input":{"message":"Unhandled promise rejection: ApiError: git mirror is temporarily unavailable"},"runtime":true,"sentry":true},
+{"input":{"exception":{"values":[{"value":"ApiError: git mirror is temporarily unavailable","stacktrace":{"frames":[{"filename":"app:///_next/static/chunks/synthetic.js"}]}}]}},"runtime":false,"sentry":true}
 ]
