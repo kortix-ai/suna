@@ -13,9 +13,6 @@
  * spelling of today's behavior, NOT a redefinition of it.
  * `src/__tests__/unit-plan-catalog-parity.test.ts` asserts the two agree for all
  * 16 keys and fails the build if they ever drift.
- *
- * NOTHING CONSUMES THIS YET. The catalog and `resolve-billing.ts` land first so
- * the parity test can prove them equivalent before any consumer is switched.
  */
 
 /**

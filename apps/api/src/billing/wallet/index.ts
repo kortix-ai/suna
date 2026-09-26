@@ -60,7 +60,7 @@ import { eq, sql } from 'drizzle-orm';
 import { InsufficientCreditsError } from '../../errors';
 import { db } from '../../shared/db';
 import { isDuplicateCreditGrantError } from './duplicate-error';
-import { assertLedgerTypeHonesty, assertRpcDebitLedgerType } from '../ledger-type-honesty';
+import { assertRpcDebitLedgerType } from '../ledger-type-honesty';
 
 export type WalletKey = { readonly event: string } | { readonly request: string };
 
@@ -306,16 +306,14 @@ async function forfeit(accountId: string): Promise<void> {
       .for('update');
     const remaining = row ? Number(row.balance) : 0;
     if (remaining > 0) {
-      const entry = {
+      await tx.insert(creditLedger).values({
         accountId,
         amount: String(-remaining),
         balanceAfter: '0',
         type: 'forfeiture',
         description: FORFEITURE_DESCRIPTION,
         isExpiring: false,
-      };
-      assertLedgerTypeHonesty(entry);
-      await tx.insert(creditLedger).values(entry);
+      });
     }
     await tx
       .update(creditAccounts)

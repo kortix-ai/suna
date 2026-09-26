@@ -563,6 +563,56 @@ export const projectSnapshotArchives = kortixSchema.table(
   ],
 );
 
+/**
+ * Config releases the API assigned to a session, and whether any session
+ * proved one (docs/specs/config-releases.md, "Quarantine across the
+ * project"). One row per `(project, release, variant)`. Written when the
+ * descriptor route assigns a release; `proven_at` is set once, when a daemon
+ * first reports that release as proven. The project fallback for a
+ * quarantined release is the newest proven row of the same variant.
+ */
+export const configReleases = kortixSchema.table(
+  'config_releases',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** 64 hex. */
+    releaseId: varchar('release_id', { length: 64 }).notNull(),
+    /** `project` or `agent:<name>`. */
+    variant: varchar('variant', { length: 255 }).notNull(),
+    /** The base commit the release was built from. Rebuilds the fallback descriptor. */
+    sourceCommit: varchar('source_commit', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    provenAt: timestamp('proven_at', { withTimezone: true }),
+    provenSessionId: uuid('proven_session_id'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.releaseId, table.variant] }),
+    index('idx_config_releases_project_variant_created').on(table.projectId, table.variant, table.createdAt),
+  ],
+);
+
+/**
+ * A daemon reported this release as failed (`failed_release_id`). After
+ * failures from 2 distinct sessions the project stops assigning the release.
+ * One row per `(project, release, session)`: repeated reports of one failure
+ * are idempotent.
+ */
+export const configReleaseFailures = kortixSchema.table(
+  'config_release_failures',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    releaseId: varchar('release_id', { length: 64 }).notNull(),
+    sessionId: uuid('session_id').notNull(),
+    reason: text('reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.releaseId, table.sessionId] })],
+);
+
 export const projectGitCredentials = kortixSchema.table(
   'project_git_credentials',
   {
@@ -3177,6 +3227,21 @@ export const auditEvents = kortixSchema.table(
       table.accountId,
       table.sessionId,
       table.sessionSequence,
+    ),
+    // The per-session audit read (GET /v1/projects/:id/sessions/:id/audit)
+    // filters on `session_id` ALONE and orders by (session_sequence, event_id)
+    // — deliberately without an account predicate, because chain rows written
+    // before account resolution (auth.login.success) or from project-neutral
+    // endpoints would vanish from the middle of the integrity chain. Every
+    // other index on this table leads with account_id/actor/resource, so that
+    // query seq-scanned the whole ledger and died on the 25 s statement
+    // timeout (57014) on the request path (prod, 2026-09-25). This index leads
+    // with session_id and carries the ordering tuple in query order, so
+    // Postgres walks it and stops at LIMIT.
+    index('idx_audit_events_session_sequence').on(
+      table.sessionId,
+      table.sessionSequence,
+      table.eventId,
     ),
     // `idx_audit_events_account_source_phase_time` was dropped 2026-09-09
     // (migration 20260909083000000): 8.6 GB, zero scans in 2.5 months, one

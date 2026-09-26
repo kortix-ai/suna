@@ -204,6 +204,13 @@ export interface ConnectorSetupLinkInfo {
   project_name: string;
   slug: string;
   app: string | null;
+  /**
+   * The connector's display name ("Google Calendar"), so a card can name the
+   * app before it is opened. Optional: servers older than this field omit it.
+   */
+  name?: string | null;
+  /** The app's logo. `null` when the catalog has none; absent on older servers. */
+  icon_url?: string | null;
   expires_at: string;
 }
 
@@ -282,11 +289,41 @@ export function getSecretSetupLink(
   return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options);
 }
 
+/**
+ * Why a saved secret never reaches the session that requested it:
+ * `agent_grant` — outside the session agent's `secrets` grant (a person with
+ * project access can widen it); `session_allowlist` — outside the session's
+ * create-time allowlist (fixed; start a new session).
+ */
+export type SecretWithheldReason = 'agent_grant' | 'session_allowlist';
+
+export interface SecretSetupLinkWithheld {
+  name: string;
+  reason: SecretWithheldReason;
+}
+
+/** What `POST /setup-links/secret/:token` answers. */
+export interface SecretSetupLinkSubmitResult {
+  ok: boolean;
+  /** Names whose values were saved. */
+  saved: string[];
+  /**
+   * The requesting session's agent. Present only with `withheld`, and absent
+   * on servers older than this field.
+   */
+  agent?: string;
+  /**
+   * Saved names the requesting session will not receive. The value IS saved;
+   * a person must widen the grant before the agent can read it.
+   */
+  withheld?: SecretSetupLinkWithheld[];
+}
+
 export function submitSecretSetupLink(
   token: string,
   values: Record<string, string>,
   options: HostRequestOptions,
-): Promise<unknown> {
+): Promise<SecretSetupLinkSubmitResult> {
   return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options, {
     method: 'POST',
     body: { values },

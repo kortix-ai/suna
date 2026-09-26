@@ -21,7 +21,6 @@ import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
 import type { HarnessState } from '../lifecycle-contract'
-import type { ProjectEnvStore } from '../../project-env'
 import { kortixEventBus } from '../../kortix-event-bus'
 import { logger } from '../../logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '../../secret-capabilities'
@@ -159,12 +158,8 @@ export interface PiRuntimeHooks {
 export interface PiRuntimeOptions {
   cfg: PiConfig
   sessionId: string
-  projectEnv?: ProjectEnvStore
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
-  now?: () => number
-  /** In-process pi extensions to load; the first-party set (subagents) when absent. */
-  extensions?: readonly InlineExtension[]
 }
 
 /** A child session a system extension spawned (a subagent). Lives beside the root, never in its transcript. */
@@ -241,7 +236,6 @@ export class PiRuntime {
   private workspaceTools: AgentTool<any, any>[] = []
   /** Workspace tools + `question`: the root's tools before extensions add theirs. */
   private baseTools: AgentTool<any, any>[] = []
-  private readonly extensionList: readonly InlineExtension[] | undefined
   /** pi's AgentSession around `agent`: extensions, prompt expansion, tool registry. */
   private pi: PiSession | null = null
   /** The current ExtensionRunner; pi swaps it on reload, hooks read it at call time. */
@@ -269,9 +263,8 @@ export class PiRuntime {
   constructor(opts: PiRuntimeOptions) {
     this.cfg = opts.cfg
     this.env = opts.env ?? process.env
-    this.now = opts.now ?? (() => Date.now())
+    this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
-    this.extensionList = opts.extensions
     this.rootId = mintRootId(opts.sessionId)
     this.createdAt = this.now()
     this.updatedAt = this.createdAt
@@ -369,8 +362,6 @@ export class PiRuntime {
       this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
       this.agentName = this.resolveAgentName()
       this.models = await createPiModels({
-        mode: this.cfg.piModelMode,
-        fauxScript: this.cfg.piFauxScript,
         env: this.env,
         defaultModelRef: this.env.KORTIX_OPENCODE_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
       })
@@ -422,7 +413,7 @@ export class PiRuntime {
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
-        extensions: [this.turnExtension(), ...(this.extensionList ?? [subagents(this.kortixHost())]), ...project.extensions],
+        extensions: [this.turnExtension(), subagents(this.kortixHost()), ...project.extensions],
         systemPrompt: () => this.systemPrompt(core.formatSkillsForSystemPrompt),
         provider: this.models.models.getProvider(this.selected.providerID),
       })
@@ -479,8 +470,6 @@ export class PiRuntime {
     this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
     this.agentName = this.resolveAgentName()
     this.models = await createPiModels({
-      mode: this.cfg.piModelMode,
-      fauxScript: this.cfg.piFauxScript,
       env: this.env,
       defaultModelRef: this.env.KORTIX_OPENCODE_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
     })
@@ -1119,7 +1108,7 @@ export class PiRuntime {
         variants: Object.fromEntries(Object.keys(entry.variants ?? {}).map((v) => [v, {}])),
       }
     }
-    const provider = { id: providerID, name: providerID === 'faux' ? 'Faux' : 'Kortix', source: 'config', env: [], options: {}, models }
+    const provider = { id: providerID, name: 'Kortix', source: 'config', env: [], options: {}, models }
     return {
       all: [provider],
       default: selected ? { [providerID]: selected.modelID } : {},

@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
+import { splitHelp } from '../command-argv.ts';
 import {
   resolveProjectContext,
   surfaceApiError,
@@ -8,6 +9,7 @@ import {
   takeFlagBool,
   emitJson,
   missing,
+  fail,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
@@ -97,21 +99,11 @@ cannot be filtered mid-stream — so archive a narrower --path in that case.
 `;
 
 export async function runFiles(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   let ref: string | undefined;
@@ -130,8 +122,7 @@ export async function runFiles(argv: string[]): Promise<number> {
     content = takeFlagBool(rest, ['--content']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
   const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });

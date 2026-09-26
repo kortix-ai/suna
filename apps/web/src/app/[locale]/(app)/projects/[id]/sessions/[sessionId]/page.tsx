@@ -19,8 +19,6 @@ import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
 import {
   PreviousRepositoryNoticeProvider,
-  isPreviousRepositoryRuntimeUnavailableError,
-  isPreviousRepositorySessionError,
   sessionUsesPreviousRepository,
 } from '@/features/session/previous-repository-session';
 import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
@@ -173,7 +171,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const queryClient = useQueryClient();
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [repositoryMode, setRepositoryMode] = useState<'previous' | undefined>();
 
   // Billing gate. An account that cannot run should not KEEP polling to start a
   // session — the backend would never provision a sandbox, so the poll spins
@@ -231,37 +228,20 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialOpenCodeSessionId,
-    repositoryMode,
     // This view renders lifecycle UI around the transcript. `SessionChat`
     // reads the live rows itself (`useSessionMessages`), so a streamed delta
     // re-renders the transcript only, not this whole page.
     subscribeMessages: false,
   });
-  const previousRepositorySession = isPreviousRepositorySessionError(session.startError);
-  const previousRepositoryRuntimeUnavailable = isPreviousRepositoryRuntimeUnavailableError(
-    session.startError,
-  );
+  // `/start` no longer refuses a session created before a repository
+  // replacement, so there is no error to detect and no mode to flip into: the
+  // session starts, gets the project's current config release, and converges
+  // like any other. What is still true is that its clone came from the old
+  // repository — which is what the notice below is for.
   const usesPreviousRepository = sessionUsesPreviousRepository(
     projectDetail?.project.metadata,
     currentProjectSession?.metadata,
   );
-  useEffect(() => {
-    if (!previousRepositorySession || repositoryMode === 'previous') return;
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (!cancelled) setRepositoryMode('previous');
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [previousRepositorySession, repositoryMode]);
-  useEffect(() => {
-    if (repositoryMode !== 'previous') return;
-    void queryClient.resetQueries({
-      queryKey: sessionStartKey(projectId, sessionId),
-      exact: true,
-    });
-  }, [projectId, queryClient, repositoryMode, sessionId]);
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
   // The immutable agent this session was created with — known BEFORE the
@@ -583,12 +563,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (session.messages.length > 0) setSawTranscript(true);
   }, [session.messages.length]);
   const hasTranscript = session.messages.length > 0 || sawTranscript;
-  const previousRepositoryHistoryAvailable =
-    hasTranscript &&
-    (usesPreviousRepository ||
-      repositoryMode === 'previous' ||
-      previousRepositorySession ||
-      previousRepositoryRuntimeUnavailable);
+  // A session whose clone predates a repository replacement still has its
+  // transcript. Do not replace a readable conversation with a failure card.
+  const previousRepositoryHistoryAvailable = hasTranscript && usesPreviousRepository;
   const surface = { newSessionHint: handoff.newSessionHint, hasTranscript, hasPendingFirstPrompt };
   const overlay = resolveSessionOverlay({ ...surface, shellShowsFirstPrompt });
   // WHICH overlay is settled above; this decides whether it may COVER the chat.
@@ -804,11 +781,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (unmaterializedFailure) {
       return provisioningFailurePresentation({}, sandboxLabel ?? 'session', tI18nComplete);
     }
-    if (
-      session.startError &&
-      !previousRepositorySession &&
-      !previousRepositoryRuntimeUnavailable
-    ) {
+    if (session.startError) {
       return provisioningFailurePresentation(
         {
           failureCategory: 'sandbox-provider',
@@ -829,6 +802,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             stage={switchingToSessionId === sessionId ? startStage : 'starting'}
             projectId={projectId}
             sessionId={switchingToSessionId ?? sessionId}
+            reason={switchingToSessionId === sessionId ? session.reason : null}
+            failure={switchingToSessionId === sessionId ? session.failure : null}
           />
         </HeaderlessSessionSurface>
       );
@@ -890,14 +865,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       );
     }
 
-    if (previousRepositorySession && !hasTranscript) {
-      return (
-        <HeaderlessSessionSurface>
-          <SessionStartingLoader stage="starting" projectId={projectId} sessionId={sessionId} />
-        </HeaderlessSessionSurface>
-      );
-    }
-
     // The wake ladder is still working: a session with rungs left is not a dead
     // end, and painting one is the exact defect this replaces — the card fired
     // while the box was seconds from ready. The transcript mirror keeps
@@ -912,6 +879,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               projectId={projectId}
               sessionId={sessionId}
               note={wake.note}
+              reason={session.reason}
+              failure={session.failure}
             />
           </HeaderlessSessionSurface>
         );
@@ -1021,6 +990,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               projectId={projectId}
               sessionId={sessionId}
               note={wake.note}
+              reason={session.reason}
+              failure={session.failure}
             />
           </HeaderlessSessionSurface>
         );
@@ -1132,6 +1103,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                   projectId={projectId}
                   sessionId={sessionId}
                   note={wake.note}
+                  reason={session.reason}
+                  failure={session.failure}
                 />
               </HeaderlessSessionSurface>
             )}
@@ -1151,6 +1124,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             projectId={projectId}
             sessionId={sessionId}
             note={wake.note}
+            reason={session.reason}
+            failure={session.failure}
           />
         )}
       </div>
@@ -1162,11 +1137,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       <SandboxLoadingBoundary>
         {/* The notice itself mounts in the session header, which owns its
             position; the route only decides whether this session needs it. */}
-        <PreviousRepositoryNoticeProvider
-          value={
-            usesPreviousRepository || repositoryMode === 'previous' || previousRepositorySession
-          }
-        >
+        <PreviousRepositoryNoticeProvider value={usesPreviousRepository}>
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{inner}</div>
         </PreviousRepositoryNoticeProvider>
       </SandboxLoadingBoundary>

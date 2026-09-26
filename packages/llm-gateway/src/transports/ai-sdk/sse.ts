@@ -1,4 +1,4 @@
-import type { FinishReason, LanguageModelUsage, ProviderMetadata } from 'ai';
+import type { FinishReason, LanguageModelUsage } from 'ai';
 import { looksLikeTerminalAuthFailure } from '../../errors';
 import {
   extractUpstreamErrorDetail,
@@ -23,39 +23,14 @@ export interface OpenAiUsage {
     cache_write_tokens?: number;
   };
   completion_tokens_details?: { reasoning_tokens: number };
-  cost?: number;
-}
-
-// Best-effort scan of AI-SDK provider metadata for a `cost` field under any
-// provider namespace (currently only OpenRouter's — see model.ts's
-// openRouterCostMetadataExtractor — written generically so a future
-// provider-specific cost source needs no change here). `providerMetadata` is
-// keyed by provider name (e.g. `{openrouterCost: {cost: 0.00012}}`); scan all
-// namespaces rather than hardcoding the key so this keeps working if the
-// namespace name ever changes on the model.ts side.
-function costFromProviderMetadata(metadata: ProviderMetadata | undefined): number | undefined {
-  if (!metadata) return undefined;
-  for (const namespace of Object.values(metadata)) {
-    const cost = (namespace as { cost?: unknown } | undefined)?.cost;
-    if (typeof cost === 'number' && cost > 0) return cost;
-  }
-  return undefined;
 }
 
 // LanguageModelUsage → OpenAI `usage`. `inputTokens` is the full prompt count
 // (cache reads and writes included), matching OpenAI's `prompt_tokens`; both
 // subsets are broken out under `prompt_tokens_details` exactly as the native
 // path forwards them, so the gateway's usage extractor + pricing table produce
-// the same cost on both engines. `cost`, when present, is the real upstream-billed
-// dollar figure (e.g. OpenRouter's `usage.cost`) — the gateway's cost-hint
-// extractor (usage/extract.ts normalizeUsageChunk) reads it as
-// `upstreamCostHint` and pricing.ts prefers it whenever no catalog price is
-// available, so a managed model with no models.dev price still bills real
-// cost instead of $0 (defect 3, 2026-07-17).
-export function mapUsage(
-  usage: LanguageModelUsage | undefined,
-  providerMetadata?: ProviderMetadata,
-): OpenAiUsage {
+// the same cost on both engines.
+export function mapUsage(usage: LanguageModelUsage | undefined): OpenAiUsage {
   const prompt = usage?.inputTokens ?? 0;
   const completion = usage?.outputTokens ?? 0;
   const cached = usage?.inputTokenDetails?.cacheReadTokens ?? 0;
@@ -74,8 +49,6 @@ export function mapUsage(
     };
   }
   if (reasoning > 0) out.completion_tokens_details = { reasoning_tokens: reasoning };
-  const cost = costFromProviderMetadata(providerMetadata);
-  if (cost !== undefined) out.cost = cost;
   return out;
 }
 
@@ -189,13 +162,6 @@ export function openAiSseFromFullStream(
     };
     let usage: LanguageModelUsage | undefined;
     let finishReason: FinishReason | undefined;
-    // Cost (when present) only ever arrives on `finish-step` — the `finish`
-    // part carries totalUsage but no providerMetadata of its own. The
-    // gateway's tool loop is always single-step per call (see model.ts's
-    // `toToolSet` — no `execute`, so the SDK stops after the tool call
-    // instead of continuing to a second step), so the last `finish-step`
-    // seen is the authoritative one, same as `usage`/`finishReason` above.
-    let providerMetadata: ProviderMetadata | undefined;
     try {
       for (;;) {
         await awaitDemand();
@@ -297,7 +263,6 @@ export function openAiSseFromFullStream(
           case 'finish-step': {
             if (!usage) usage = part.usage as LanguageModelUsage;
             if (!finishReason) finishReason = part.finishReason as FinishReason;
-            providerMetadata = part.providerMetadata as ProviderMetadata | undefined;
             break;
           }
           case 'error': {
@@ -305,7 +270,7 @@ export function openAiSseFromFullStream(
             // Emit the OpenAI-shaped error frame the gateway probe detects so it
             // fails over / surfaces the real cause instead of a blank stop.
             const err = part.error;
-            // `@ai-sdk/openai`/`@ai-sdk/openai-compatible`'s OWN in-band
+            // `@ai-sdk/openai`'s OWN in-band
             // streaming error frame (OpenAI's `data: {"error":{"message":...,
             // "type":...,"code":...}}` convention) is enqueued as a PLAIN
             // OBJECT, never an `Error` instance — `{message, type, param,
@@ -374,7 +339,7 @@ export function openAiSseFromFullStream(
             }
             // `@ai-sdk/*`'s APICallError also stashes the actionable fields
             // (`.responseBody` raw, `.data` parsed, `.url`) here — keep them
-            // on the emitted frame's `detail` so `sseErrorFrame` carries them
+            // on the emitted frame's `detail` so the stream scanner carries them
             // to the logs. Bounded so a huge upstream body can't blow up a log
             // line.
             const detail: Record<string, unknown> = {};
@@ -431,7 +396,7 @@ export function openAiSseFromFullStream(
       sse({
         ...base,
         choices: [],
-        usage: mapUsage(usage, providerMetadata),
+        usage: mapUsage(usage),
       }),
     );
     emit(enc.encode('data: [DONE]\n\n'));
@@ -476,7 +441,6 @@ export function openAiJsonFromResult(
     toolCalls?: Array<{ toolCallId: string; toolName: string; input: unknown }>;
     finishReason: FinishReason;
     usage: LanguageModelUsage;
-    providerMetadata?: ProviderMetadata;
   },
   ctx: StreamCtx,
 ): Record<string, unknown> {
@@ -502,6 +466,6 @@ export function openAiJsonFromResult(
         finish_reason: mapFinishReason(result.finishReason),
       },
     ],
-    usage: mapUsage(result.usage, result.providerMetadata),
+    usage: mapUsage(result.usage),
   };
 }

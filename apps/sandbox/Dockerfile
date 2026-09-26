@@ -272,10 +272,17 @@ COPY apps/sandbox/MACHINE.md /MACHINE.md
 # Channel shims delegate Connector calls to the compiled `kortix` CLI.
 COPY --chown=kortix:kortix --chmod=755 apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
 # The daemon converges the CLI in place at /usr/local/bin/kortix (runtime-assets.ts
-# DEFAULT_CLI_PATH) and runs as kortix: the file must belong to that user or every
-# box reports `cli: failed` (EACCES) on its first convergence pass.
+# DEFAULT_CLI_PATH) and runs as kortix. It writes a temp file next to the target
+# and renames it, so the permission it needs comes from the DIRECTORY — owning
+# only the file left every digest mismatch failing EACCES with `cli: failed`.
+# The second command pins OpenCode's own autoupdate off for every caller in the
+# box, not just the daemon's OPENCODE_CONFIG child. Both live in
+# packages/shared/src/sandbox/platform-binaries.ts, which asserts them on all
+# three image definitions.
 RUN bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
     && kortix --version \
+    && chown kortix:kortix /usr/local/bin /usr/local/bin/kortix \
+    && mkdir -p /home/kortix/.config/opencode && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \
     && chown -R kortix:kortix /workspace /ephemeral
 
 # Platform-owned secret delivery. The daemon writes live project secrets to

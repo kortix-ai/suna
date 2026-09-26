@@ -23,6 +23,7 @@ import {
   TrashIcon as Trash2,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { parseTriggerLines } from '@kortix/shared/tool-output';
 import { useMemo } from 'react';
 
 export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
@@ -123,28 +124,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
     }
   }, [action, input.name, input.source_type, input.trigger_id, output, tI18nComplete]);
 
-  const triggerLines = useMemo(() => {
-    if (!output) return [];
-    return output
-      .split('\n')
-      .filter((l) => l.trim().startsWith('['))
-      .map((line) => {
-        const m = line
-          .trim()
-          .match(
-            /^\[(\w+)]\s+(\S+)\s*\|\s*(webhook|cron):\s*(.+?)\s*\|\s*(\w+)\s*→\s*(\w+)\s*\|\s*last_run:\s*(.+)$/,
-          );
-        if (!m) return { raw: line.trim() };
-        return {
-          status: m[1],
-          name: m[2],
-          sourceType: m[3] as 'webhook' | 'cron',
-          sourceDetail: m[4].trim(),
-          agent: m[6],
-          lastRun: m[7].trim(),
-        };
-      });
-  }, [output]);
+  const triggerLines = useMemo(() => parseTriggerLines(output), [output]);
 
   // `isErrorOutput` trims the whole output and attempts a `JSON.parse` over it,
   // and the fallback preview copies up to 3 KB. Both sat unmemoised in the render

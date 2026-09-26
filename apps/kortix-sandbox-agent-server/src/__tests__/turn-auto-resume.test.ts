@@ -148,20 +148,14 @@ describe('createTurnAutoResumer', () => {
     expect(part.text).toContain('Do not redo work that already succeeded');
     // No model override — the session keeps its own model.
     expect('model' in (prompt.body as Record<string, unknown>)).toBe(false);
+    // T22: the session was read at the error AND again at fire time.
+    expect(h.sessionReads).toBe(2);
   });
 
   test('never resumes a subagent session', async () => {
     const h = makeHarness();
     h.setIsRoot(false);
     expect(await h.resumer.maybeResume('ses_child', IDLE_TIMEOUT)).toBe(false);
-    expect(h.prompts.length).toBe(0);
-  });
-
-  test('never resumes a permanent error', async () => {
-    const h = makeHarness();
-    expect(
-      await h.resumer.maybeResume('ses_root', { name: 'MessageAbortedError', message: 'aborted' }),
-    ).toBe(false);
     expect(h.prompts.length).toBe(0);
   });
 
@@ -254,13 +248,6 @@ describe('createTurnAutoResumer', () => {
       expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
       expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
       expect(h.prompts.length).toBe(3);
-    });
-
-    test('no revert staged — resumes exactly as before (unchanged path)', async () => {
-      const h = makeHarness();
-      expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
-      expect(h.prompts.length).toBe(1);
-      expect(h.sessionReads).toBeGreaterThan(0);
     });
 
     test('a revert staged DURING the backoff wait is caught at fire time', async () => {

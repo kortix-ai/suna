@@ -86,6 +86,9 @@ export interface ProjectSecretsResponse {
   manifest_status: 'loaded' | 'missing' | 'error';
   manifest_path: string | null;
   manifest_error?: string;
+  /** The calling agent's own secrets grant; null for a non-agent caller,
+   *  absent on older servers. `items` is filtered by it. */
+  agent_scope?: { agent: string; secrets: 'all' | string[] } | null;
 }
 
 // ── Provider OAuth ───────────────────────────────────────────────────────

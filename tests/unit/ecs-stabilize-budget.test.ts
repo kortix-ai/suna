@@ -185,7 +185,10 @@ function runDeploy(
 }
 
 describe('ECS rollout stabilization budget', () => {
-  it('exits 0 when the rollout reports COMPLETED with running == desired', () => {
+  // 20 s, not vitest's 5 s default: each case spawns the real stabilize
+  // script as a child process. Measured 4.46-4.59 s on an idle laptop, so
+  // the default budget flips whenever another suite shares the machine.
+  it('exits 0 when the rollout reports COMPLETED with running == desired', { timeout: 20_000 }, () => {
     const run = runDeploy('completed', {
       ECS_STABILIZE_TIMEOUT_SECONDS: '10',
       ECS_STABILIZE_POLL_SECONDS: '1',
@@ -201,7 +204,7 @@ describe('ECS rollout stabilization budget', () => {
     expect(run.awsCalls.some((call) => call.includes('list-tasks'))).toBe(false);
   });
 
-  it('exits non-zero on a FAILED rollout without burning the whole budget', () => {
+  it('exits non-zero on a FAILED rollout without burning the whole budget', { timeout: 20_000 }, () => {
     const run = runDeploy('failed', {
       // 60s budget: a fail-fast must return in a small fraction of it.
       ECS_STABILIZE_TIMEOUT_SECONDS: '60',
@@ -217,7 +220,7 @@ describe('ECS rollout stabilization budget', () => {
     expect(run.stdout).not.toContain('now on kortix/kortix-web:dev-ec6cbdb7');
   });
 
-  it('exits non-zero after the configured budget and prints the diagnostics a human needs', () => {
+  it('exits non-zero after the configured budget and prints the diagnostics a human needs', { timeout: 20_000 }, () => {
     const run = runDeploy('stuck', {
       ECS_STABILIZE_TIMEOUT_SECONDS: '4',
       ECS_STABILIZE_POLL_SECONDS: '1',
@@ -276,7 +279,7 @@ describe('ECS rollout stabilization budget', () => {
     }
   });
 
-  it('reports no-stopped-tasks as an observation and never concludes the roll is merely slow', () => {
+  it('reports no-stopped-tasks as an observation and never concludes the roll is merely slow', { timeout: 20_000 }, () => {
     // The wedge the old wording got backwards: nothing STOPPED, yet the rollout
     // is stuck because every new task is blocked in PENDING on an image pull.
     const run = runDeploy('stuck', {
@@ -305,7 +308,7 @@ describe('ECS rollout stabilization budget', () => {
     expect(run.stderr).toContain('pending=1');
   });
 
-  it('defaults the total budget to 900s and declares it exactly once', () => {
+  it('defaults the total budget to 900s and declares it exactly once', { timeout: 20_000 }, () => {
     const source = readFileSync(script, 'utf8');
 
     // The bare waiter is what failed run 35388160843 at its fixed 40x15s=600s.

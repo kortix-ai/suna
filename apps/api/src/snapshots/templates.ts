@@ -233,7 +233,7 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // (kortixShellProfileRun). Debian's /etc/profile resets PATH in the web
 // terminal's `bash -l`, so pnpm/uv/bun tools (opencode) were not found on
 // Debian-based custom templates; terminals also never loaded project secrets.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v45';
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v47';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

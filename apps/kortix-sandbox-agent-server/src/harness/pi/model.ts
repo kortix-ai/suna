@@ -19,10 +19,6 @@ import {
   createModels,
   createProvider,
   envApiKeyAuth,
-  fauxAssistantMessage,
-  fauxProvider,
-  fauxToolCall,
-  type FauxProviderHandle,
   type MutableModels,
 } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
@@ -99,9 +95,8 @@ export interface PiModels {
   models: MutableModels
   /** Resolve a gateway model id (already stripped of `kortix/`), or the default. */
   select(modelId: string | null): SelectedModel
-  /** The catalog the picker lists; empty in faux mode. */
+  /** The catalog the picker lists. */
   catalog: Record<string, CatalogModel>
-  faux: FauxProviderHandle | null
 }
 
 function gatewayModel(id: string, entry: CatalogModel | undefined, target: GatewayTarget): Model<'openai-completions'> {
@@ -120,43 +115,13 @@ function gatewayModel(id: string, entry: CatalogModel | undefined, target: Gatew
   }
 }
 
-export function createFauxScriptResponses(script: readonly unknown[]) {
-  return script.map((rawStep) => {
-    const step = rawStep && typeof rawStep === 'object' && !Array.isArray(rawStep) ? (rawStep as { tool?: unknown; args?: unknown; text?: unknown; tools?: unknown }) : {}
-    // `{ tools: [{ tool, args }, …] }`: one assistant message with several tool calls.
-    const calls = Array.isArray(step.tools) ? (step.tools as Array<{ tool: string; args?: Record<string, unknown> }>) : typeof step.tool === 'string' ? [{ tool: step.tool, args: step.args as Record<string, unknown> }] : []
-    return calls.length > 0
-      ? fauxAssistantMessage(calls.map((call) => fauxToolCall(call.tool, call.args ?? {})), { stopReason: 'toolUse' })
-      : fauxAssistantMessage(String(step.text ?? ''), { stopReason: 'stop' })
-  })
-}
-
 export async function createPiModels(input: {
-  mode: 'real' | 'faux'
-  fauxScript?: string
   env?: NodeJS.ProcessEnv
   defaultModelRef?: string | null
 }): Promise<PiModels> {
   const env = input.env ?? process.env
   const credentials = new InMemoryCredentialStore()
   const models = createModels({ credentials })
-
-  if (input.mode === 'faux') {
-    const faux = fauxProvider({ provider: 'faux', models: [{ id: 'faux-1', name: 'Faux' }] })
-    models.setProvider(faux.provider)
-    if (input.fauxScript) {
-      const script = JSON.parse(input.fauxScript) as unknown
-      if (!Array.isArray(script)) throw new Error('KORTIX_PI_FAUX_SCRIPT must be a JSON array')
-      faux.setResponses(createFauxScriptResponses(script))
-    }
-    const model = faux.getModel()
-    return {
-      models,
-      catalog: {},
-      faux,
-      select: () => ({ model, providerID: 'faux', modelID: model.id, variants: [], images: false, contextWindow: model.contextWindow }),
-    }
-  }
 
   const target = resolveGatewayTarget(env)
   if (!target) throw new Error('pi harness needs KORTIX_LLM_BASE_URL and KORTIX_TOKEN (the Kortix LLM gateway)')
@@ -178,7 +143,6 @@ export async function createPiModels(input: {
   return {
     models,
     catalog,
-    faux: null,
     select(modelId) {
       const id = modelId ?? fallback
       const entry = catalog[id]

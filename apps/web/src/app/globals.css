@@ -1380,46 +1380,6 @@ html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] {
   --kx-titlebar-content-left: 44px;
 }
 
-/* AppHeader (the breadcrumb bar on standalone pages like /projects, /accounts):
-   Only macOS needs a web-content band; the Win/Linux native frame already
-   keeps its controls outside the page. */
-html[data-desktop='true'] .kx-app-header {
-  padding-top: calc(var(--kx-titlebar-inset) + 1rem);
-}
-/* macOS: no reserved strip — the header row IS the title-bar band, shared
-   with the traffic lights (same Linear-style approach as the workspace tab
-   bar). Height is the band itself, with `py-4` zeroed and content
-   flex-centered, so the row's midline is the lights' midline by
-   construction. It used to be a hand-picked 52px against lights centered at
-   30 — 4px out, and silently wrong again after any change to either number.
-
-   The left indent clears the light gutter only while the centered max-w-6xl
-   container would underlap it; on wide windows it falls back to the web's
-   px-mobile values (1.5rem below xl, 0 at xl+) so the header stays aligned
-   with the page. It lands on --kx-titlebar-control-left, the same x as the
-   shell's sidebar toggle, so everything the app draws in the band starts on
-   one vertical line. */
-html[data-desktop-platform='macos'] .kx-app-header {
-  min-height: var(--kx-titlebar-inset);
-  padding-top: 0;
-  padding-bottom: 0;
-  padding-left: max(1.5rem, calc(var(--kx-titlebar-control-left) - max(0px, (100vw - 72rem) / 2)));
-  -webkit-app-region: drag;
-  app-region: drag;
-}
-@media (min-width: 1280px) {
-  html[data-desktop-platform='macos'] .kx-app-header {
-    padding-left: max(0px, calc(var(--kx-titlebar-control-left) - (100vw - 72rem) / 2));
-  }
-}
-html[data-desktop-platform='macos'] .kx-app-header button,
-html[data-desktop-platform='macos'] .kx-app-header a,
-html[data-desktop-platform='macos'] .kx-app-header input,
-html[data-desktop-platform='macos'] .kx-app-header [role='button'] {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
-
 /* The window's one Back (root layout, `DesktopBackButton`). The desktop shell
    has no browser toolbar, so any screen without an in-page exit is a dead end
    there. The web keeps the browser's own Back, so the control stays hidden
@@ -1539,7 +1499,7 @@ html[data-desktop-platform='macos']
 }
 html[data-desktop-platform='macos']
   :is(
-    .kx-titlebar-row, .kx-titlebar-tabs, .kx-app-header, .kx-project-sidebar-header,
+    .kx-titlebar-row, .kx-titlebar-tabs, .kx-project-sidebar-header,
     [role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox'],
     [data-radix-popper-content-wrapper], [data-sonner-toaster]
   )

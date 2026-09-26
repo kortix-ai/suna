@@ -42,7 +42,8 @@ You never see the value. For a connector, no key ever touches chat or the repo.
 
 You name the secret(s); the platform mints a link the human opens to type the
 value in. **You never receive the value** — once they submit it, a `runtime`
-secret simply appears in your session env (and in `KORTIX_PROJECT_SECRET_NAMES`).
+secret simply appears in your session env — when your agent is granted it (see
+"Set, but I can't see it" below).
 
 **Preferred — the `request_secret` tool on the `kortix-connectors` MCP:**
 
@@ -94,17 +95,55 @@ Pipedream is legacy rollback only. Never select it automatically. If Composio
 cannot satisfy the request, stop and ask the human before any explicit
 `allow_legacy_pipedream` / `--allow-legacy-pipedream` retry.
 
+### Choosing `owner: project` vs `owner: me` — get this right UP FRONT
+
+Every connect link creates an account whose **owner is fixed at
+authorization** — there is no in-place re-scope later. So decide the owner
+BEFORE you mint the link:
+
+- **`owner: "project"`** — the account is shared: every member's and every
+  agent session's calls run as it. Use this for any shared company tool
+  (company inbox, calendar, Linear, Docs…). **The identity that completes the
+  OAuth is the identity the whole project then acts as** — so when you surface
+  a shared link, say explicitly: *"authorize this signed in as the project's
+  shared identity (a team or service account the project owns, not a
+  person's login)."* A personal login authorized into the shared slot makes
+  every agent session silently act AS that person.
+- **`owner: "me"`** (default) — the account is private to the human you're
+  talking to; only their sessions can call as it. Use this for a person's own
+  login.
+
+Heuristic: shared company tool → `project`; a person's own account → `me`.
+**If it's ambiguous, ask — never silently default a personal login into the
+shared slot.** If you mint a shared link for a tool the team will share, make
+sure the project has (or first creates) the shared identity to authorize with.
+
+Ownership is a property of the CONNECTION (the account row), not of the
+connector — the connector itself is a project-wide tool. A member-private
+account is reachable only by its owner inside a private session: unattended
+automations (triggers, cron, service accounts) can never run as it, which is
+exactly why the shared slot must hold the project identity.
+
+**Re-scoping a mis-owned account** (no in-place fix exists):
+
+1. `kortix connectors connect <slug> --owner project` (or `me`) → human
+   authorizes with the CORRECT identity.
+2. `kortix connectors accounts <slug> --default <label>` → pin the correct
+   account as the default unnamed calls use.
+3. `kortix connectors connections revoke <connection-id>` → revoke the stray
+   binding (`connections ls --all` to find it).
+
 **Preferred — the `connect` tool on the `kortix-connectors` MCP:**
 
 ```
-connect({ slug: "smartlead" })
-→ { url: "https://<app>/connect/ksl_…", app: "smartlead", expires_at }
+connect({ slug: "gmail", owner: "project" })   # shared — authorize as the project's own service account, not a personal login
+→ { url: "https://<app>/connect/ksl_…", app: "gmail", expires_at }
 ```
 
 **Or from a shell:**
 
 ```sh
-kortix connectors connect smartlead  # matches the MCP `connect` tool
+kortix connectors connect gmail --owner project   # matches the MCP `connect` tool
 ```
 
 Then **surface the `url`**. The human clicks and authorizes the app on Composio's
@@ -117,12 +156,36 @@ Use `kortix connectors connect-finalize <slug>` when the flow requires an
 explicit completion check.
 
 **A connector can hold more than one account.** `connect` doesn't replace an
-existing account, it adds one — `owner: "me"` (default) authorizes the human
-you're talking to as a NEW private account beside any that already exist;
-`owner: "project"` shares it with everyone. If the connector already has
-accounts and the human just wants to USE one of them (not add another), do
-not mint a new `connect` link — list them with `accounts` instead and pass
-`account` on the call.
+existing account, it adds one — `owner: "me"` authorizes the human you're
+talking to as a NEW private account beside any that already exist;
+`owner: "project"` shares it with everyone (see the ownership rules above —
+shared accounts must be authorized as the project identity). If the connector
+already has accounts and the human just wants to USE one of them (not add
+another), do not mint a new `connect` link — list them with `accounts`
+instead and pass `account` on the call.
+
+---
+
+## How to write the links in your reply
+
+The web app turns every setup link into a card that already shows the app's
+logo, its name, the project, and a Connect button. Give each link its own line
+and let the card do the talking:
+
+```
+I need two apps connected for the report:
+
+https://<app>/connect/ksl_…
+https://<app>/connect/ksl_…
+```
+
+- **Never put setup links in a table.** An `App | Link` table repeats what the
+  card already says. The web app lifts such links out of a table or list, but a
+  table with extra columns stays a table and the link shrinks to an inline chip.
+- One line of "what this is for" above the links is enough. Do not restate the
+  app name next to each link.
+- In Slack or Telegram the same lines are tappable URLs, so this format works
+  everywhere.
 
 ---
 
@@ -136,14 +199,35 @@ The smooth flow is:
    sends you a follow-up message naming the saved keys — treat it as your cue to
    verify and continue. If your session was asleep, or the human just says
    "done", **verify and continue**:
-   - **Secret:** check the name is now present — `kortix secrets ls` (or look for
-     it in `KORTIX_PROJECT_SECRET_NAMES`). A fresh `runtime` value is live in the
-     session env immediately (it's hot-synced; no restart needed).
+   - **Secret:** check the variable itself in a new shell (`[ -n "$NAME" ]`) or
+     run `kortix secrets ls`. A fresh `runtime` value is live in the session env
+     immediately (it's hot-synced; no restart needed). Do not use
+     `KORTIX_PROJECT_SECRET_NAMES` for this: it is the list from session start
+     and does not change when a value is hot-synced.
    - **Connector:** check it now appears in your usable catalog —
      `kortix connectors ls` (the `connectors` MCP tool). Unconnected connectors are
      filtered out, so its presence means the credential landed.
 
 If it isn't there yet, the human may not have finished — say so and wait.
+
+### "Set, but I can't see it" — the secret is not granted to you
+
+Your session receives only the secrets in **your agent's `secrets` grant**. A
+value outside it is saved and never delivered — no env var, no row in
+`kortix secrets ls`. Never tell the human such a secret is unset. Kortix names
+this case on every surface:
+
+- `request_secret` / `kortix secrets request` return `withheld` (names you will
+  not receive) and a ready-to-relay fix when you mint the link.
+- The follow-up message after submission says which saved names are withheld.
+- `kortix secrets ls` shows a declared key outside your grant as
+  **`not granted`**, not `missing`, and says the list is limited to your grant.
+
+You cannot widen your own grant. Tell the human the exact fix: **Customize →
+Agents → `<your agent>` → Secrets → enable the secret** (or, from their own CLI,
+`kortix secrets grant <NAME> --agent <your agent>`). Kortix pushes the change
+to this session when it is saved. Run `kortix secrets sync` to pull it into
+this session right away, then continue.
 
 ---
 
@@ -174,7 +258,7 @@ This beats the alternatives you might be tempted by:
 | --- | --- | --- |
 | Ask the human for a secret value | `request_secret` | `kortix secrets request <NAME…>` |
 | Get an app connected (Composio) | `connect` | `kortix connectors connect <slug> [--owner me\|project]` |
-| Verify a secret arrived | — | `kortix secrets ls` |
+| Verify a secret arrived | — | `kortix secrets ls` (`not granted` = ask the human to enable it for your agent) |
 | Verify a connector connected | `connectors` | `kortix connectors ls` |
 | Which/how many accounts are connected | `accounts` | `kortix connectors accounts <slug>` |
 | Pin the default account for unnamed calls | — | `kortix connectors accounts <slug> --default <label>` |

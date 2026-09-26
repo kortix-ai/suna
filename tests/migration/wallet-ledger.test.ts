@@ -101,6 +101,7 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
   let database: ReturnType<typeof createDb> | undefined;
   let router: typeof import('../../apps/api/src/router/services/billing');
   let errors: typeof import('../../apps/api/src/errors');
+  let honesty: typeof import('../../apps/api/src/billing/ledger-type-honesty');
 
   beforeAll(async () => {
     sh(['docker', 'rm', '-f', CONTAINER]);
@@ -151,6 +152,7 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
     ({ wallet } = await import('../../apps/api/src/billing/wallet'));
     router = await import('../../apps/api/src/router/services/billing');
     errors = await import('../../apps/api/src/errors');
+    honesty = await import('../../apps/api/src/billing/ledger-type-honesty');
   }, 300_000);
 
   afterAll(async () => {
@@ -418,9 +420,10 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
     test('rejects a non-usage ledger kind before any write', async () => {
       const id = newAccount({ nonExpiring: 10 });
       const write = { accountId: id, amount: 1, description: 'x', kind: 'admin_debit' as never, key: null };
-      await expect(wallet.debit(write)).rejects.toThrow();
-      await expect(wallet.settle(write)).rejects.toThrow();
+      await expect(wallet.debit(write)).rejects.toBeInstanceOf(honesty.LedgerTypeMismatchError);
+      await expect(wallet.settle(write)).rejects.toBeInstanceOf(honesty.LedgerTypeMismatchError);
       expect(ledger(id)).toEqual([]);
+      expect(account(id)).toMatchObject({ balance: 10, non_expiring: 10 });
     });
 
     test('the router debit reports a refusal as a result, not a throw', async () => {
@@ -604,6 +607,25 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       const renewal = { accountId: id, amount: 20, description: 'Monthly renewal', key: { event: 'in_2' } };
       await wallet.reset(renewal);
       await wallet.reset(renewal);
+      expect(ledger(id)).toHaveLength(1);
+      expect(account(id)).toMatchObject({ balance: 20, expiring: 20 });
+    });
+
+    // A renewal webhook and a grant can name one Stripe event. The grant's
+    // event pre-check sees the reset's row, so the period is paid once.
+    test('a grant after a reset under one event key writes nothing', async () => {
+      const id = newAccount();
+      await wallet.reset({ accountId: id, amount: 20, description: 'Monthly renewal', key: { event: 'in_4' } });
+      expect(
+        await wallet.grant({
+          accountId: id,
+          amount: 20,
+          kind: 'tier_grant',
+          description: 'Monthly renewal',
+          expiring: true,
+          key: { event: 'in_4' },
+        }),
+      ).toEqual({ replayed: true, ledgerId: null });
       expect(ledger(id)).toHaveLength(1);
       expect(account(id)).toMatchObject({ balance: 20, expiring: 20 });
     });

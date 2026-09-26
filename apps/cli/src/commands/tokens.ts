@@ -1,3 +1,4 @@
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   missing,
@@ -5,6 +6,7 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
 } from '../command-helpers.ts';
 import { iamBase } from '../iam.ts';
 import { confirm } from '../prompts.ts';
@@ -131,21 +133,11 @@ Examples:
 `;
 
 export async function runTokens(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   let mine = false;
@@ -160,20 +152,14 @@ export async function runTokens(argv: string[]): Promise<number> {
     mine = takeFlagBool(rest, ['--mine']);
     yes = takeFlagBool(rest, ['-y', '--yes']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
   let expiresAt: string | undefined;
   if (f.expires !== undefined) {
     const iso = resolveExpiry(f.expires);
-    if (!iso) {
-      process.stderr.write(
-        `${status.err(`--expires "${f.expires}" is not an ISO-8601 instant or a span like 30d/12h/6w/1y.`)}\n`,
-      );
-      return 2;
-    }
+    if (!iso) return fail(`--expires "${f.expires}" is not an ISO-8601 instant or a span like 30d/12h/6w/1y.`);
     expiresAt = iso;
   }
 
@@ -396,9 +382,6 @@ async function serviceAccounts(
     }
 
     default:
-      process.stderr.write(
-        `${status.err(`unknown service-accounts verb "${verb}" — use ls|new|disable|rm`)}\n`,
-      );
-      return 2;
+      return fail(`unknown service-accounts verb "${verb}" — use ls|new|disable|rm`);
   }
 }

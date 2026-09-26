@@ -10,7 +10,7 @@
  * Jay's call (2026-08-10): two tiers, one rule.
  *
  *   FORMS  `max-w-2xl` — single-column settings, the width the design system
- *          already prescribes (`.claude/skills/kortix-design-system/SKILL.md`,
+ *          already prescribes (`.agents/skills/kortix-design-system/SKILL.md`,
  *          "Container: mx-auto w-full max-w-2xl").
  *   TABLES `max-w-4xl` — surfaces with a real table, which genuinely need the
  *          horizontal room.

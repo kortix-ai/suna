@@ -233,6 +233,10 @@ projectsApp.openapi(
       .returning();
 
     invalidateProjectMirror(projectId);
+    // The merge moved the CR's base branch. Sessions on it converge.
+    void import('../lib/config-convergence-triggers')
+      .then((triggers) => triggers.notifyBaseBranchMoved(projectId, cr.baseRef, 'change-request-merge'))
+      .catch(() => {});
 
     // A merged CR may have edited a `sandbox.templates` Dockerfile or spec.
     // Reconcile this project's own templates and pre-build any whose identity

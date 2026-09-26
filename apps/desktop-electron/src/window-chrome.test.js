@@ -46,8 +46,8 @@ describe('desktop window chrome', () => {
 });
 
 /* The band used to be described by four disagreeing numbers (60 here, 52 for
-   .kx-app-header, 40 for the tab bar, and a 26px centre line in two React
-   files), so a control drawn "on the traffic-light line" was 4px off it. These
+   the breadcrumb header, 40 for the tab bar, and a 26px centre line in two
+   React files), so a control drawn "on the traffic-light line" was 4px off it. These
    pin the derivation. */
 describe('macOS title-bar band geometry', () => {
   test('native light origin accounts for the measured macOS visual offset', () => {

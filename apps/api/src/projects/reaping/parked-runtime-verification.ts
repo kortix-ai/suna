@@ -12,14 +12,16 @@
  *     only looks at rows carrying a live wake fence.
  *
  * So a session that was parked and then left alone was never asked about again.
- * When Platinum lost one (incident 2026-08-12: the reconciler deleted
- * `sbx_01KZP370WDB8DGYNAQM1B875VR` while it held a completed 4.87 GB backup),
+ * When Platinum lost one (incident 2026-08-12: the reconciler deleted a
+ * parked sandbox while it held a completed 4.87 GB backup),
  * Kortix kept advertising it as resumable, and the truth only surfaced when a
  * human opened the session 30 hours later. Measured the same day: 16,243 parked
  * prod rows had never been re-verified and 16 were already dead.
  *
  * The sweep runs BOTH directions on purpose:
- *   - provider says `removed`  → preserve the identity now, and raise the loud
+ *   - provider says `removed`  → ask the in-place recovery gate first, exactly
+ *     as the `/start` open path does. A recoverable box is restarted; only a
+ *     provider `unavailable` preserves the identity and raises the loud
  *     `runtime.lost` error, instead of waiting for a user to trip over it;
  *   - provider says it is BACK → clear a stale `unavailable` flag. 25 sandboxes
  *     were restored by hand during the incident and every one of them had to
@@ -35,18 +37,27 @@
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 
-import { type SandboxProviderName, config } from '../../config';
 import { endComputeSession } from '../../billing/services/compute-metering';
-import { getProvider } from '../../platform/providers';
+import { type SandboxProviderName, config } from '../../config';
+import { type InPlaceRecoveryStatus, getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
-import { preserveEstablishedRuntime } from '../runtime-identity';
+import {
+  claimInPlaceRuntimeRecovery,
+  markInPlaceRuntimeRecoveryAccepted,
+  preserveEstablishedRuntime,
+} from '../runtime-identity';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 
 /** How many parked rows one pass may examine. */
 const PARKED_VERIFY_BATCH = 60;
 
 export type ParkedRuntimeAction =
-  'preserve-lost' | 'heal-restored' | 'stop-pending' | 'settle-stop-pending' | 'verified' | 'skip';
+  | 'attempt-recovery'
+  | 'heal-restored'
+  | 'stop-pending'
+  | 'settle-stop-pending'
+  | 'verified'
+  | 'skip';
 
 /**
  * Provider states that PROVE the sandbox object still exists and is settled.
@@ -71,9 +82,15 @@ export function decideParkedRuntime(input: {
 
   const alreadyLost = input.identityState === 'unavailable';
 
-  // `removed` is the provider's definitive "this object does not exist".
+  // `removed` is the provider's definitive "this object does not exist". It is
+  // NOT proof the data is gone: the same answer covers a `failed-start` box
+  // that booted before and a tombstoned box with a completed backup, and
+  // `recoverInPlace` is the one gate that tells those from a real loss. The
+  // `/start` open path already asks it before declaring a runtime lost; the
+  // sweep must too, or it condemns a restorable parked box before anyone opens
+  // it (the `parked_runtime_removed` pattern).
   if (input.providerStatus === 'removed') {
-    return alreadyLost ? 'skip' : 'preserve-lost';
+    return alreadyLost ? 'skip' : 'attempt-recovery';
   }
 
   if (alreadyLost) {
@@ -93,6 +110,39 @@ export function decideParkedRuntime(input: {
   return 'verified';
 }
 
+/** The outcome of asking the provider to recover a runtime the sweep saw removed. */
+export type ParkedRemovalOutcome = 'recovered' | 'preserve-lost' | 'recovery-in-flight';
+
+/**
+ * Resolve one `removed` parked row against the provider's in-place recovery
+ * gate, as injected dependencies so the decision is testable without a database
+ * or a provider.
+ *
+ * A provider without `recoverInPlace` cannot be asked, so the answer stays the
+ * historical one: preserve the identity. When another caller already owns a
+ * recovery for the row (`claim` false), the sweep leaves it alone rather than
+ * racing a restore that is in progress. Only an explicit `unavailable` from the
+ * provider authorizes the loss.
+ */
+export async function decideRemovedParkedOutcome(input: {
+  externalId: string;
+  recoverInPlace?: (externalId: string) => Promise<InPlaceRecoveryStatus>;
+  claim: () => Promise<boolean>;
+  markRecovered: (recovery: 'running' | 'recovering') => Promise<boolean>;
+}): Promise<ParkedRemovalOutcome> {
+  if (!input.recoverInPlace) return 'preserve-lost';
+  const claimed = await input.claim();
+  if (!claimed) return 'recovery-in-flight';
+  const recovery = await input.recoverInPlace(input.externalId).catch(() => 'unavailable' as const);
+  if (recovery === 'running' || recovery === 'recovering') {
+    // The mark is the write that ends the recovery. If another writer beat us to
+    // the row the provider still recovered, but this sweep no longer owns the
+    // transition — fall through and re-observe on the next pass.
+    return (await input.markRecovered(recovery)) ? 'recovered' : 'recovery-in-flight';
+  }
+  return 'preserve-lost';
+}
+
 /** Clear the loss flags from a row whose runtime is provably back. */
 function healMetadataPatch(): Record<string, unknown> {
   return { runtimeRestoredAt: new Date().toISOString() };
@@ -105,13 +155,7 @@ export async function verifyParkedRuntimes(now = new Date()): Promise<{
   errors: number;
 }> {
   const rows = await db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      sessionId: sessionSandboxes.sessionId,
-      externalId: sessionSandboxes.externalId,
-      provider: sessionSandboxes.provider,
-      metadata: sessionSandboxes.metadata,
-    })
+    .select()
     .from(sessionSandboxes)
     .where(
       and(
@@ -151,11 +195,42 @@ export async function verifyParkedRuntimes(now = new Date()): Promise<{
       });
       examined += 1;
 
-      if (action === 'preserve-lost') {
+      if (action === 'attempt-recovery') {
+        // A `removed` status is ambiguous: recoverable (failed-start / backup)
+        // or gone. Ask the same in-place recovery gate the `/start` open path
+        // uses before the sweep writes a permanent loss.
+        const provider = getProvider(row.provider as SandboxProviderName);
+        let claim: Awaited<ReturnType<typeof claimInPlaceRuntimeRecovery>> = null;
+        let lossRow = row;
+
+        const outcome = await decideRemovedParkedOutcome({
+          externalId,
+          recoverInPlace: provider.recoverInPlace?.bind(provider),
+          claim: async () => {
+            claim = await claimInPlaceRuntimeRecovery(row, now);
+            if (claim) lossRow = claim.row;
+            return claim !== null;
+          },
+          markRecovered: async (recovery) => {
+            if (!claim) return false;
+            const recovered = await markInPlaceRuntimeRecoveryAccepted(claim, recovery, now);
+            if (recovered) healed += 1;
+            return recovered !== null;
+          },
+        });
+
+        if (outcome === 'recovered' || outcome === 'recovery-in-flight') continue;
+
+        // Provider answered `unavailable` (or cannot be asked): a real removal.
         // Same classification the reaper and the wake fence write for the
         // identical observation, so the stop-reason query cannot tell the three
         // discovery paths apart. This also raises the `runtime.lost` error.
-        await preserveEstablishedRuntime(row, 'parked_runtime_removed', 'provider_removed', now);
+        await preserveEstablishedRuntime(
+          lossRow,
+          'parked_runtime_removed',
+          'provider_removed',
+          now,
+        );
         lost += 1;
         continue;
       }

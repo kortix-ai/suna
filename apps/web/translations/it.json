@@ -1142,6 +1142,10 @@
         "agent_principal": {
           "name": "Agenti come principali",
           "description": "Gli agenti agiscono come se stessi: con i loro permessi Kortix, limitati dal loro ruolo. Chi esegue un agente aggiunge solo i propri account."
+        },
+        "config_releases": {
+          "name": "Release di configurazione",
+          "description": "Esegue le sessioni con la configurazione agente corrente del branch di base, servita in sola lettura, così un agente, skill o strumento unito raggiunge ogni sessione attiva. Disattivato, una sessione legge la propria cartella di configurazione nel workspace."
         }
       }
     },
@@ -1638,11 +1642,6 @@
     "previousRepository": {
       "title": "Questa sessione non è aggiornata",
       "message": "Il progetto è cambiato dopo l’avvio di questa sessione. Aggiornala per continuare a lavorare sull’ultima versione.",
-      "unavailable": "L’area di lavoro precedente non è più disponibile. Avvia una nuova sessione nel repository corrente.",
-      "resume": "Riprendi area di lavoro precedente",
-      "resuming": "Ripresa in corso…",
-      "newSession": "Avvia nuova sessione",
-      "delete": "Elimina sessione",
       "update": "Aggiorna all’ultima versione",
       "updating": "Aggiornamento…",
       "dismiss": "Ignora",
@@ -18586,6 +18585,17 @@
       "textea5d0ffa0962": "Un responsabile del progetto collega l’account condiviso.",
       "text3d6627454174": "Imposta credenziale",
       "text929505ef815a": "Nessun account è ancora collegato. Aggiungi il tuo qui sotto, oppure chiedi a un responsabile del progetto di collegare un account condiviso.",
+      "text931cb67e2af7": "Impossibile caricare la nuova configurazione dell'agente. Questa sessione usa ancora una configurazione precedente.",
+      "textd9ff3a72833d": "Configurazione non caricata",
+      "textebfb07812fb4": "Impossibile caricare la nuova configurazione dell'agente",
+      "text4e62b29dd3b6": "Questa sessione usa una configurazione precedente. La configurazione non riuscita non viene ritentata finché il branch di base non cambia.",
+      "textf81ab834de5f": "Motivo",
+      "text44cdf35701cd": "In uso ora",
+      "text591f9f0f3259": "Release non riuscita",
+      "text00ed4c71dc2b": "Ultima release funzionante",
+      "textbd7a1a3b4141": "La configurazione predefinita della piattaforma",
+      "text643df05476ab": "Questa sessione usa la configurazione predefinita della piattaforma. La configurazione non riuscita non viene ritentata finché il branch di base non cambia.",
+      "text40652e008fc9": "Impossibile caricare la nuova configurazione dell'agente. Questa sessione usa la configurazione predefinita della piattaforma.",
       "text3312ddb06c1d": "Registra un bot in Azure, collegalo qui e poi carica il pacchetto dell'app su Teams.",
       "text7f1b55a356b0": "Registra il bot in Azure",
       "text91004edf8b30": "Collegalo a questo progetto",
@@ -19163,7 +19173,9 @@
       "text8cc0d84b66bb": "Anteprima del link di identità Slack",
       "text508b43cc4545": "Anteprima del link di identità Teams",
       "text467f597e95b0": "Dominio SSO verificato",
-      "text8295f9d4861b": "Verifica del dominio SSO dell’account impostata"
+      "text8295f9d4861b": "Verifica del dominio SSO dell’account impostata",
+      "text7beaff63a7d3": "Archivio di configurazione del progetto scaricato",
+      "text5176d59f25fd": "Release di configurazione della sessione risolta"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -19181,6 +19193,11 @@
       "expired": "Questo link di installazione non è valido o è scaduto. Riavvia l’installazione dal progetto.",
       "failed": "Non è stato possibile completare l’installazione. Riavviala dal progetto.",
       "backToProject": "Torna al progetto"
+    },
+    "secretIntakeWithheld": {
+      "title": "Salvato, ma {agent} non può ancora leggerlo",
+      "grant": "{names} non {count, plural, one {è} other {sono}} tra i segreti dell'agente {agent}. Apri Personalizza → Agenti → {agent} → Segreti e {count, plural, one {abilitalo} other {abilitali}}.",
+      "allowlist": "{names} {count, plural, one {è} other {sono}} fuori dai segreti di questa sessione. Avvia una nuova sessione per {count, plural, one {usarlo} other {usarli}}."
     }
   },
   "projectOnboarding": {
@@ -19295,7 +19312,17 @@
   },
   "commandPalette": {
     "title": "Tavolozza dei comandi",
-    "description": "Cerca un comando da eseguire..."
+    "description": "Cerca un comando da eseguire...",
+    "copyTitle": "Copia",
+    "copyEmail": "email",
+    "copyUserId": "ID utente",
+    "copyAccountId": "ID account",
+    "copyProjectId": "ID progetto",
+    "copySessionId": "ID sessione",
+    "copySessionLink": "link della sessione",
+    "copyAction": "Copia {label}",
+    "copied": "Copiato: {label}",
+    "copyFailed": "Impossibile copiare negli appunti"
   },
   "personalWelcome": {
     "dismiss": "Chiudi",
@@ -20062,6 +20089,9 @@
     "providerError": "Impossibile aggiornare l’accesso al fornitore.",
     "managedTitle": "Modelli gestiti da Kortix",
     "managedDescription": "Modelli gestiti addebitati in crediti Kortix. Non serve una chiave API.",
+    "pricingEstimate": "Prezzo stimato per il cliente. La rotta utilizzata determina il costo.",
+    "pricingRoute": "{route}: {input} input / {cacheRead} cache / {output} output per 1 milione di token",
+    "pricingPreferred": "Preferita",
     "textImage": "Testo + immagine",
     "textOnly": "Solo testo",
     "zdrTitle": "Conservazione zero dei dati",

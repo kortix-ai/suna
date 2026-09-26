@@ -3,13 +3,14 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   abortTargetOf,
   createInstanceGuard,
-  isLoopStartRequest,
+  loopStartTargetOf,
   noteOpencodeStopRequested,
   opencodeStopRequestedSince,
   resetStopRequestsForTests,
   type InstanceGuard,
 } from '../harness/open-code/instance-guard'
-import { createOpenCodeProxyService } from '../harness/open-code/proxy'
+import { composeOpenCodeHarnessService } from '../harness/open-code/service'
+import { testOpenCodeConfig } from './helpers/open-code-harness'
 import { unrequestedAbortCause } from '../harness/open-code/boot'
 import type { Opencode } from '../harness/open-code/lifecycle'
 
@@ -44,6 +45,13 @@ function startMockOpencode() {
   let build: { promise: Promise<void>; owner: 'request' | 'prompt'; cancel: () => void } | null = null
   const sessions = new Map<string, { rows: Row[]; busy: boolean; abort?: () => void }>()
   const stats = { disposes: 0, toolIdCalls: 0, prompts: 0 }
+  // Two failure modes of the registry endpoint: held open with no answer, or
+  // a single transient 503.
+  const modes = { holdToolIds: false, failToolIdsOnce: false }
+  let release: () => void = () => {}
+  const stopped = new Promise<void>((resolve) => {
+    release = resolve
+  })
   let seq = 0
   const id = (prefix: string) => `${prefix}_${String(++seq).padStart(6, '0')}`
 
@@ -129,6 +137,14 @@ function startMockOpencode() {
       const path = url.pathname
       if (req.method === 'GET' && path === '/experimental/tool/ids') {
         stats.toolIdCalls += 1
+        if (modes.holdToolIds) {
+          await stopped
+          return new Response('', { status: 503 })
+        }
+        if (modes.failToolIdsOnce) {
+          modes.failToolIdsOnce = false
+          return new Response('', { status: 503 })
+        }
         if (registry === 'poisoned') return new Response('', { status: 503 })
         if (registry === 'empty') startBuild('request')
         if (build) {
@@ -188,6 +204,7 @@ function startMockOpencode() {
   return {
     base,
     stats,
+    modes,
     registry: () => registry,
     busy: (sid: string) => session(sid).busy,
     lastAssistant: (sid: string) => [...session(sid).rows].reverse().find((r) => r.info.role === 'assistant'),
@@ -201,7 +218,10 @@ function startMockOpencode() {
     async abort(sid: string) {
       return fetch(`${base}/session/${sid}/abort?directory=%2Fworkspace`, { method: 'POST' })
     },
-    stop: () => server.stop(true),
+    stop: () => {
+      release()
+      server.stop(true)
+    },
   }
 }
 
@@ -245,6 +265,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // Module-level state: clear it on the way OUT too, or the next file in this
+  // bun process inherits it (see test-state-reset-tripwire.test.ts).
+  resetStopRequestsForTests()
   mock.stop()
 })
 
@@ -306,15 +329,29 @@ describe('settled', () => {
   })
 
   test('is bounded', async () => {
-    const hung = createInstanceGuard({
-      getInternalUrl: () => mock.base,
-      workspace: () => '/workspace',
-      fetchImpl: (() => new Promise<Response>(() => {})) as unknown as typeof fetch,
-    })
+    mock.modes.holdToolIds = true
+    void guard.warm('boot')
+    const started = Date.now()
+    await guard.settled(50)
+    expect(Date.now() - started).toBeLessThan(1_000)
+  })
+
+  test("a Stop releases its session's held prompt at once, and only that session's", async () => {
+    mock.modes.holdToolIds = true
+    const hung = guard
     void hung.warm('boot')
     const started = Date.now()
-    await hung.settled(50)
-    expect(Date.now() - started).toBeLessThan(1_000)
+    let releasedA = 0
+    let releasedB = 0
+    const heldA = hung.settled(5_000, 'ses_a').then(() => (releasedA = Date.now() - started))
+    void hung.settled(400, 'ses_b').then(() => (releasedB = Date.now() - started))
+    await Bun.sleep(50)
+    noteOpencodeStopRequested('ses_a', 'test')
+    await heldA
+    expect(releasedA).toBeLessThan(300)
+    expect(releasedB).toBe(0)
+    await Bun.sleep(450)
+    expect(releasedB).toBeGreaterThanOrEqual(400)
   })
 
   test('resolves at once with no warm-up in flight', async () => {
@@ -346,18 +383,9 @@ describe('healIfPoisoned', () => {
   })
 
   test('one 503 is not poison', async () => {
-    let calls = 0
-    const flaky = createInstanceGuard({
-      getInternalUrl: () => mock.base,
-      workspace: () => '/workspace',
-      sleep: async () => {},
-      fetchImpl: (async (input: string | URL | Request, init?: RequestInit) => {
-        const url = String(input)
-        if (url.includes('/experimental/tool/ids') && calls++ === 0) return new Response('', { status: 503 })
-        return fetch(url, init)
-      }) as typeof fetch,
-    })
-    const result = await flaky.healIfPoisoned('check')
+    mock.modes.failToolIdsOnce = true
+    const result = await guard.healIfPoisoned('check')
+    expect(mock.stats.toolIdCalls).toBeGreaterThanOrEqual(2)
     expect(result.poisoned).toBe(false)
     expect(mock.stats.disposes).toBe(0)
   })
@@ -493,28 +521,36 @@ describe('stop requests', () => {
     expect(abortTargetOf('post', '/session/ses_1/abort?directory=%2Fworkspace')).toBe('ses_1')
     expect(abortTargetOf('GET', '/session/ses_1/abort')).toBeNull()
     expect(abortTargetOf('POST', '/session/ses_1/message')).toBeNull()
-    expect(isLoopStartRequest('POST', '/session/ses_1/prompt_async')).toBe(true)
-    expect(isLoopStartRequest('POST', '/session/ses_1/message')).toBe(true)
-    expect(isLoopStartRequest('POST', '/session/ses_1/command')).toBe(true)
-    expect(isLoopStartRequest('POST', '/session/ses_1/shell')).toBe(true)
-    expect(isLoopStartRequest('GET', '/session/ses_1/message')).toBe(false)
-    expect(isLoopStartRequest('POST', '/session/ses_1/abort')).toBe(false)
+    expect(loopStartTargetOf('POST', '/session/ses_1/prompt_async')).toBe('ses_1')
+    expect(loopStartTargetOf('POST', '/session/ses_1/message')).toBe('ses_1')
+    expect(loopStartTargetOf('POST', '/session/ses_1/command')).toBe('ses_1')
+    expect(loopStartTargetOf('POST', '/session/ses_1/shell')).toBe('ses_1')
+    expect(loopStartTargetOf('GET', '/session/ses_1/message')).toBeNull()
+    expect(loopStartTargetOf('POST', '/session/ses_1/abort')).toBeNull()
   })
 })
 
+// Through the production composition: the proxy and the guard are the ones
+// composeOpenCodeHarnessService wires together, over a lifecycle that points
+// at the mock.
 describe('proxy', () => {
-  const fakeOpencode = () => ({ getInternalUrl: () => mock.base }) as unknown as Opencode
+  const composed = () =>
+    composeOpenCodeHarnessService(testOpenCodeConfig(), {
+      getInternalUrl: () => mock.base,
+      getState: () => 'ok',
+      getPid: () => null,
+    } as unknown as Opencode)
 
   test('a proxied abort is recorded as a requested stop before OpenCode sees it', async () => {
-    const proxy = createOpenCodeProxyService(fakeOpencode(), guard)
+    const { proxy } = composed()
     const before = Date.now()
     await proxy.forward({ method: 'POST', path: '/session/ses_a/abort', search: '', headers: new Headers() })
     expect(opencodeStopRequestedSince('ses_a', before)).toBe(true)
   })
 
   test('a prompt waits for the warm-up, so it can never be the first caller of a cache', async () => {
-    const proxy = createOpenCodeProxyService(fakeOpencode(), guard)
-    const warming = guard.warm('boot')
+    const { proxy, instanceGuard } = composed()
+    const warming = instanceGuard.warm('boot')
     const res = await proxy.forward({
       method: 'POST',
       path: '/session/ses_a/prompt_async',

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
+  GIT_MIRROR_UNAVAILABLE_CODE,
   classifyGitError,
   isTransientGitMirrorError,
 } from '../projects/git/mirror';
@@ -45,7 +46,12 @@ function makeClassifyingOnError() {
     if (isTransientGitMirrorError(err)) {
       c.header('Retry-After', '10');
       return c.json(
-        { error: true, message: 'git mirror is temporarily unavailable', status: 503 },
+        {
+          error: true,
+          code: GIT_MIRROR_UNAVAILABLE_CODE,
+          message: 'git mirror is temporarily unavailable',
+          status: 503,
+        },
         503,
       );
     }
@@ -71,9 +77,14 @@ describe('app.onError git-mirror transient classification', () => {
     const res = await app.request('/v1/probe');
     expect(res.status).toBe(503);
     expect(res.headers.get('retry-after')).toBe('10');
-    const body = (await res.json()) as { message: string; status: number };
+    const body = (await res.json()) as { message: string; status: number; code: string };
     expect(body.status).toBe(503);
     expect(body.message).toBe('git mirror is temporarily unavailable');
+    // The stable code is what the frontend SDK classifies as an EXPECTED,
+    // retryable degradation (silent to the FRONTEND Sentry) — without it the
+    // 503 body is opaque and `handleApiError` pages Better Stack (pattern
+    // `b4d05df2…`). See `packages/sdk/src/core/http/api-client.ts`.
+    expect(body.code).toBe(GIT_MIRROR_UNAVAILABLE_CODE);
     // The whole point: this transient failure did NOT page Sentry/Better Stack.
     expect(captured()).toHaveLength(0);
   });

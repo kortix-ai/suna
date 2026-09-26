@@ -346,11 +346,6 @@ export function boxClockSkewMs(sessionId: string, nowMs = Date.now()): number | 
   return entry.skewMs;
 }
 
-/** Test seam. */
-export function resetBoxClockSkewForTests(): void {
-  skewBySession.clear();
-}
-
 /**
  * A learned skew larger than this is not trusted for placement: it would put
  * the id far from anything the box is writing, which on the high side means a

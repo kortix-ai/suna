@@ -1142,6 +1142,10 @@
         "agent_principal": {
           "name": "Agenten als Prinzipale",
           "description": "Agenten handeln als sie selbst: mit ihren Kortix-Berechtigungen, begrenzt durch ihre Rolle. Wer einen Agenten ausführt, bringt nur die eigenen Konten ein."
+        },
+        "config_releases": {
+          "name": "Config-Releases",
+          "description": "Sitzungen mit der aktuellen Agent-Konfiguration des Basis-Branch ausführen, schreibgeschützt bereitgestellt, damit ein gemergter Agent, Skill oder Tool jede laufende Sitzung erreicht. Bei Aus liest eine Sitzung ihren eigenen Workspace-Konfigurationsordner."
         }
       }
     },
@@ -1638,11 +1642,6 @@
     "previousRepository": {
       "title": "Diese Sitzung ist veraltet",
       "message": "Das Projekt hat sich seit dem Start dieser Sitzung geändert. Aktualisiere sie, um mit der neuesten Version weiterzuarbeiten.",
-      "unavailable": "Der vorherige Arbeitsbereich ist nicht mehr verfügbar. Starte eine neue Sitzung im aktuellen Repository.",
-      "resume": "Vorherigen Arbeitsbereich fortsetzen",
-      "resuming": "Wird fortgesetzt…",
-      "newSession": "Neue Sitzung starten",
-      "delete": "Sitzung löschen",
       "update": "Auf neuesten Stand bringen",
       "updating": "Wird aktualisiert…",
       "dismiss": "Schließen",
@@ -18586,6 +18585,17 @@
       "textea5d0ffa0962": "Ein Projektmanager verbindet das gemeinsame Konto.",
       "text3d6627454174": "Anmeldedaten festlegen",
       "text929505ef815a": "Es ist noch kein Konto verbunden. Fügen Sie unten Ihr eigenes hinzu, oder bitten Sie einen Projektmanager, ein gemeinsames Konto zu verbinden.",
+      "text931cb67e2af7": "Die neue Agent-Konfiguration konnte nicht geladen werden. Diese Sitzung läuft weiter mit einer früheren Konfiguration.",
+      "textd9ff3a72833d": "Konfiguration nicht geladen",
+      "textebfb07812fb4": "Die neue Agent-Konfiguration konnte nicht geladen werden",
+      "text4e62b29dd3b6": "Eine frühere Konfiguration läuft in dieser Sitzung. Die fehlerhafte Konfiguration wird erst nach einer Änderung am Basis-Branch erneut versucht.",
+      "textf81ab834de5f": "Grund",
+      "text44cdf35701cd": "Läuft jetzt",
+      "text591f9f0f3259": "Fehlgeschlagenes Release",
+      "text00ed4c71dc2b": "Letztes funktionierendes Release",
+      "textbd7a1a3b4141": "Die Standardkonfiguration der Plattform",
+      "text643df05476ab": "Die Standardkonfiguration der Plattform läuft in dieser Sitzung. Die fehlerhafte Konfiguration wird erst nach einer Änderung am Basis-Branch erneut versucht.",
+      "text40652e008fc9": "Die neue Agent-Konfiguration konnte nicht geladen werden. Diese Sitzung läuft mit der Standardkonfiguration der Plattform.",
       "text3312ddb06c1d": "Registriere einen Bot in Azure, verbinde ihn hier und lade dann das App-Paket in Teams hoch.",
       "text7f1b55a356b0": "Bot in Azure registrieren",
       "text91004edf8b30": "Mit diesem Projekt verbinden",
@@ -19163,7 +19173,9 @@
       "text8cc0d84b66bb": "Slack-Identitätslink angesehen",
       "text508b43cc4545": "Teams-Identitätslink angesehen",
       "text467f597e95b0": "SSO-Domain verifiziert",
-      "text8295f9d4861b": "SSO-Domain-Verifizierung des Kontos gesetzt"
+      "text8295f9d4861b": "SSO-Domain-Verifizierung des Kontos gesetzt",
+      "text7beaff63a7d3": "Projekt-Konfigurationsarchiv heruntergeladen",
+      "text5176d59f25fd": "Config-Release der Sitzung aufgelöst"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -19181,6 +19193,11 @@
       "expired": "Dieser Installationslink ist ungültig oder abgelaufen. Starte die Installation im Projekt erneut.",
       "failed": "Die Installation konnte nicht abgeschlossen werden. Starte sie im Projekt erneut.",
       "backToProject": "Zurück zum Projekt"
+    },
+    "secretIntakeWithheld": {
+      "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
+      "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
+      "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
     }
   },
   "projectOnboarding": {
@@ -19295,7 +19312,17 @@
   },
   "commandPalette": {
     "title": "Befehlspalette",
-    "description": "Nach einem auszuführenden Befehl suchen..."
+    "description": "Nach einem auszuführenden Befehl suchen...",
+    "copyTitle": "Kopieren",
+    "copyEmail": "E-Mail",
+    "copyUserId": "Benutzer-ID",
+    "copyAccountId": "Konto-ID",
+    "copyProjectId": "Projekt-ID",
+    "copySessionId": "Sitzungs-ID",
+    "copySessionLink": "Sitzungslink",
+    "copyAction": "{label} kopieren",
+    "copied": "{label} kopiert",
+    "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
   },
   "personalWelcome": {
     "dismiss": "Schließen",
@@ -20062,6 +20089,9 @@
     "providerError": "Der Anbieterzugriff konnte nicht aktualisiert werden.",
     "managedTitle": "Von Kortix verwaltete Modelle",
     "managedDescription": "Verwaltete Modelle, abgerechnet über Kortix-Guthaben. Kein API-Schlüssel erforderlich.",
+    "pricingEstimate": "Geschätzter Kundenpreis. Die genutzte Route bestimmt die Kosten.",
+    "pricingRoute": "{route}: {input} Eingabe / {cacheRead} Cache / {output} Ausgabe pro 1 Mio. Token",
+    "pricingPreferred": "Bevorzugt",
     "textImage": "Text + Bild",
     "textOnly": "Nur Text",
     "zdrTitle": "Keine Datenspeicherung",

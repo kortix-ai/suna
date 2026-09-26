@@ -55,7 +55,6 @@ import {
   MinusCircleIcon as CircleMinus,
   PlusCircleIcon as CirclePlus,
   DotsThreeIcon as Ellipsis,
-  SidebarSimpleIcon as PanelLeft,
   ArrowClockwiseIcon as RotateCw,
   MagnifyingGlassIcon as Search,
   UploadIcon as Upload,
@@ -97,6 +96,7 @@ import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
 import { downloadBlob } from '@/lib/utils/download';
 import { loadSharedPdfEngine } from './pdf-thumbnail-utils';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 export type PDFViewerPageOverlayProps = {
   pageNumber: number;
@@ -1371,6 +1371,24 @@ function isEditableCopyTarget(target: EventTarget | null) {
   return Boolean(target.closest("input, textarea, [contenteditable='true']"));
 }
 
+/**
+ * True when a keydown is the copy shortcut for the PDF selection.
+ *
+ * `KeyboardEvent.key` is typed `string`, but Safari can deliver a `keydown`
+ * whose `key` is `undefined`. This listener is on `document`, so it sees every
+ * keystroke on the page — the unguarded `event.key.toLowerCase()` threw a
+ * `TypeError` on those events. A copy shortcut needs a real key, so a missing
+ * key is never the shortcut.
+ */
+export function isPdfCopyShortcut(event: {
+  key: string | undefined;
+  metaKey: boolean;
+  ctrlKey: boolean;
+}): boolean {
+  if (typeof event.key !== 'string' || event.key.toLowerCase() !== 'c') return false;
+  return event.metaKey || event.ctrlKey;
+}
+
 function PDFViewerSelectionCopyShortcut({ documentId }: { documentId: string }) {
   const { provides: selection } = useSelectionCapability();
 
@@ -1386,8 +1404,7 @@ function PDFViewerSelectionCopyShortcut({ documentId }: { documentId: string }) 
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== 'c') return;
-      if (!event.metaKey && !event.ctrlKey) return;
+      if (!isPdfCopyShortcut(event)) return;
 
       copySelectedPdfText(event);
     };

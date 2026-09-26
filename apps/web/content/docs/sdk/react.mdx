@@ -79,7 +79,7 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 | `replayStartStash` | `true` | Replay a prompt saved before the session existed, once the session is ready. |
 | `enabled` | `true` | Set `false` to delay the hook, for example until a billing check passes. |
 | `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
-| `repositoryMode` | — | Set `'previous'` only after the user confirms they want to resume a preserved pre-replacement workspace. Git access remains disabled. |
+| `repositoryMode` | — | Telemetry only. A session created before a repository replacement starts and runs the project's current config without it. Only its `/workspace` clone still comes from the old repository, so a push from it needs a rebase first. |
 
 Sending is optimistic. `send` shows your message right away, then stream
 events fill in the agent's reply.
@@ -97,7 +97,7 @@ need a running session. Each mirrors a method on the
 | Hook | Reads |
 |---|---|
 | `useProjectModels(projectId)` | Selectable models for the project. |
-| `useProjectModelPickerCatalog(projectId)` | The raw `/model-picker` record per wire model (`reasoning_options`, `temperature`, `limit`) for capability-gated controls. |
+| `useProjectModelPickerCatalog(projectId)` | The raw `/model-picker` record per wire model (`reasoning_options`, `temperature`, `limit`) and `managedPricingRoutes` customer price estimates for each eligible managed route. The server includes its configured markup; the serving route determines the final charge. |
 | `useVisibleAgents({ projectId })` | The project's visible agents. |
 | `useProjectConfig(projectId)` | The project's runtime config: default agent, commands. |
 | `useProjectSecrets(projectId)` | Secrets: list, add, remove, and personal overrides. |

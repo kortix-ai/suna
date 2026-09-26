@@ -15,7 +15,6 @@ import type { PiBootState } from './boot-state'
 import { loadPiEnvironment, requirePiConfig, resolvePiSkillDirectories, type PiConfig } from './config'
 import { createPiControlService } from './control'
 import { createPiDiagnosticsService } from './diagnostics'
-import type { InlineExtension } from './extensions/host'
 import { createPiQueryService } from './queries'
 import { schedulePiProjectionPush } from './relay'
 import { PiRuntime, type PiRuntimeHooks } from './runtime'
@@ -30,11 +29,11 @@ export interface PiHarnessService extends HarnessService {
 export function createPiHarnessService(
   cfg: PiConfig,
   projectEnv?: ProjectEnvStore,
-  options: HarnessStartupOptions & { hooks?: PiRuntimeHooks; sessionId?: string; env?: NodeJS.ProcessEnv; extensions?: readonly InlineExtension[] } = {},
+  options: HarnessStartupOptions & { hooks?: PiRuntimeHooks; sessionId?: string; env?: NodeJS.ProcessEnv } = {},
 ): PiHarnessService {
   const env = options.env ?? process.env
   const sessionId = (options.sessionId ?? env.KORTIX_SESSION_ID ?? '').trim() || 'session-local'
-  const runtime = new PiRuntime({ cfg, sessionId, projectEnv, hooks: options.hooks, env, extensions: options.extensions })
+  const runtime = new PiRuntime({ cfg, sessionId, hooks: options.hooks, env })
   let started = false
   const live = () => (started ? runtime : null)
   const surface = createPiSurface(live)
@@ -117,7 +116,7 @@ export const piDefinition: HarnessDefinition = {
   }),
   bootDetails: (cfg) => {
     const native = requirePiConfig(cfg)
-    return { harness: 'pi', piModelMode: native.piModelMode, piStateDir: native.piStateDir }
+    return { harness: 'pi', piStateDir: native.piStateDir }
   },
   createService: (cfg, projectEnv, options) => createPiHarnessService(requirePiConfig(cfg), projectEnv, options),
   run: async (context) => (await import('./boot')).runPi({ ...context, cfg: requirePiConfig(context.cfg) }),
