@@ -1288,17 +1288,17 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   'deepseek-v4.1-flash': {
     name: 'DeepSeek V4.1 Flash', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.15, output: 0.6, cache_read: 0.0359375 },
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.2, output: 0.65, cache_read: 0.03 },
   },
   'glm-5.3-flash': {
     name: 'GLM 5.3 Flash', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.1, output: 0.35, cache_read: 0.02 },
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.15, output: 0.5, cache_read: 0.05 },
   },
   'kimi-k3': {
     name: 'Kimi K3 2.8T', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 2.5, output: 14, cache_read: 0.29 },
+    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 3.3, output: 16.5, cache_read: 0.33 },
   },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
