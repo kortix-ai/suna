@@ -6,8 +6,6 @@ import {
   type Connection,
   listConnections,
   listPipedreamApps,
-  reconcileConnection,
-  reconcileMemberConnection,
   setConnectorName,
 } from '@kortix/sdk';
 import { useProjectAccountId } from '@kortix/sdk/react';
@@ -189,6 +187,9 @@ function ConnectorModalBody({
 
   const tabs = connectorTabs(connector, { canWrite });
   const [selectedTab, setSelectedTab] = useState<ConnectorTab>('accounts');
+  // Bumped by the header's Connect: the Accounts tab opens its Add account
+  // dialog, where the caller names the account and picks who may use it.
+  const [addAccountRequest, setAddAccountRequest] = useState(0);
   const tab = tabs.includes(selectedTab) ? selectedTab : (tabs[0] ?? 'accounts');
 
   const [credentialTarget, setCredentialTarget] = useState<{
@@ -225,27 +226,6 @@ function ConnectorModalBody({
   };
   const connectShared = usePipedreamConnectProject(projectId, connector.slug, refreshAccounts);
   const connectMine = usePipedreamConnectMember(projectId, connector.slug, refreshAccounts);
-  // Direct providers: create the account first, then collect its credential —
-  // the same two-step sequence the Accounts tab runs.
-  const createSharedAccount = useMutation({
-    mutationFn: (label: string) =>
-      reconcileConnection(projectId, {
-        connector_alias: connector.slug,
-        owner_type: 'project',
-        label,
-      }),
-    onSuccess: (connection) =>
-      setCredentialTarget({ connectionId: connection.connection_id, owner: 'project' }),
-    onError: (e: Error) => errorToast(e.message),
-  });
-  const createOwnAccount = useMutation({
-    mutationFn: (label: string) =>
-      reconcileMemberConnection(projectId, { connector_alias: connector.slug, label }),
-    onSuccess: (connection) =>
-      setCredentialTarget({ connectionId: connection.connection_id, owner: 'me' }),
-    onError: (e: Error) => errorToast(e.message),
-  });
-
   // Best-effort catalogue description. Never blocks first paint — the header
   // renders without it, then fills in. That is the main open-latency fix:
   // previously this query sat in the critical path of feeling "ready".
@@ -318,20 +298,10 @@ function ConnectorModalBody({
         : soleAccount
           ? 'replace'
           : null;
-  const ownerForNewAccount: 'project' | 'me' = canManageConnections ? 'project' : 'me';
-  const connectPending =
-    connectShared.isPending ||
-    connectMine.isPending ||
-    createSharedAccount.isPending ||
-    createOwnAccount.isPending;
+  const connectPending = connectShared.isPending || connectMine.isPending;
   const quickConnect = () => {
-    if (isManagedProvider) {
-      if (ownerForNewAccount === 'project') connectShared.mutate({ label: displayName });
-      else connectMine.mutate({ label: displayName });
-      return;
-    }
-    if (ownerForNewAccount === 'project') createSharedAccount.mutate(displayName);
-    else createOwnAccount.mutate(displayName);
+    setSelectedTab('accounts');
+    setAddAccountRequest((n) => n + 1);
   };
   const replaceSoleAccount = () => {
     if (!soleAccount) return;
@@ -537,6 +507,7 @@ function ConnectorModalBody({
                   onChanged={onChanged}
                   onRemoved={onRemoved}
                   onStartSession={startPrivateSession}
+                  addRequest={addAccountRequest}
                 />
               )}
             </TabsContent>

@@ -9,10 +9,11 @@
 //
 // The write routes deliberately assert NOTHING themselves. `assignRole` /
 // `revokeAssignment` choose the required permission from WHAT is being granted
-// (project.members.manage for a project role or an object grant, member.update
-// for an account role, policy.create for a custom role), so the ceiling cannot
-// be side-stepped by picking a different route — which is exactly what five
-// parallel endpoints made possible.
+// (project.members.manage for a project role or an object grant,
+// project.connector.connections.manage for a `connection` object grant,
+// member.update for an account role, policy.create for a custom role), so the
+// ceiling cannot be side-stepped by picking a different route — which is
+// exactly what five parallel endpoints made possible.
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { iamRoles } from '@kortix/db';
@@ -33,9 +34,9 @@ import { requireEntitlement } from './helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 
-const PRINCIPAL_TYPES = ['user', 'group', 'service_account', 'pending'] as const;
+const PRINCIPAL_TYPES = ['user', 'group', 'service_account', 'pending', 'project'] as const;
 const SCOPE_TYPES = ['account', 'project'] as const;
-const OBJECT_TYPES = ['agent', 'skill', 'secret', 'app', 'trigger'] as const;
+const OBJECT_TYPES = ['agent', 'skill', 'secret', 'app', 'trigger', 'connection'] as const;
 
 const AssignmentSchema = z
   .object({
