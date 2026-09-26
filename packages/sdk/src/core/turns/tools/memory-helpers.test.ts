@@ -20,6 +20,15 @@ describe('memory helpers', () => {
     expect(memoryRelPath(undefined)).toBe('');
   });
 
+  test('memoryRelPath accepts the root-layout memory/ folder too', () => {
+    expect(memoryRelPath('memory/notes/a.md')).toBe('notes/a.md');
+    expect(memoryRelPath('memory/')).toBe('memory');
+    expect(memoryRelPath('memory')).toBe('memory');
+    expect(memoryRelPath('./memory/MEMORY.md')).toBe('MEMORY.md');
+    // Only the memory root is stripped, never a folder that merely starts with it.
+    expect(memoryRelPath('memory-notes/a.md')).toBe('memory-notes/a.md');
+  });
+
   test('a file view strips line numbers, including a bare trailing one', () => {
     const output =
       "Here's the content of .kortix/memory/a.md with line numbers:\n     1\tHello\n     2\tWorld\n     3";

@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../../..');
 const STARTER_CONFIG_PKG = resolve(
   REPO_ROOT,
-  'packages/starter/templates/base/.kortix/opencode/package.json',
+  'packages/starter/templates/base/harnesses/opencode/package.json',
 );
 
 describe('opencode config dependencies', () => {

@@ -417,7 +417,9 @@ export function useSlides(): SlideDef[] {
                     )}
                   </>,
                   <>
-                    <Mono>{tI18nHardcoded.raw('i18nComplete.text46c0b3f64f0d')}</Mono>{' '}
+                    <Mono>{tI18nHardcoded.raw('i18nComplete.text21025012cda7')}</Mono>{' '}
+                    <Mono>{tI18nHardcoded.raw('i18nComplete.textf1e8d760c12c')}</Mono>{' '}
+                    <Mono>{tI18nHardcoded.raw('i18nComplete.textac29bffc7691')}</Mono>{' '}
                     {tI18nHardcoded.raw(
                       'autoAppPresentationSlidesPlatformJsxTextTheRuntimeAgentsSkillscceeb26a',
                     )}

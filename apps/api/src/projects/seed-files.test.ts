@@ -79,8 +79,8 @@ describe('buildProjectSeedFilesFromItem', () => {
     // The pack's own README wins over the minimal scaffold's.
     expect(seed.files.find((f) => f.path === 'README.md')?.content).toContain('Use-case pack');
     // Runbook skills + persona agents land where the runtime loads them.
-    expect(paths.some((p) => p.startsWith('.kortix/opencode/skills/') && p.endsWith('/SKILL.md'))).toBe(true);
-    expect(paths.some((p) => p.startsWith('.kortix/opencode/agents/') && p.endsWith('.md'))).toBe(true);
+    expect(paths.some((p) => p.startsWith('skills/') && p.endsWith('/SKILL.md'))).toBe(true);
+    expect(paths.some((p) => p.startsWith('agents/') && p.endsWith('.md'))).toBe(true);
     // No template-internal `runtime/` paths leak into a cloned repo.
     expect(paths.every((p) => !p.startsWith('runtime/'))).toBe(true);
     // The scaffold still provides the manifest with a declared default agent.

@@ -26,7 +26,7 @@ scratch — there is no report state carried over from the prior week.
 ## Step 1 — Confirm the metric definitions
 
 Metric definitions, the source tables/columns, and what counts as a notable
-move live in project memory (`.kortix/memory/weekly-report.md` if present) or
+move live in project memory (`memory/weekly-report.md` if present) or
 this skill's defaults below. Treat that as the source of truth for exactly
 which metrics to report — no more, no less. If a definition is missing or
 ambiguous, query the obvious candidate table and note the assumption in the

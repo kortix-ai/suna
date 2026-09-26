@@ -25,12 +25,12 @@
  * OWN primitives — they are the first group below, and they are first on
  * purpose:
  *
- *   - **agents** live in `.kortix/opencode/agents/<name>.md` with a governance
- *     entry in `kortix.yaml`;
- *   - **skills** live in `.kortix/opencode/skills/` and are served live by
+ *   - **agents** live in `agents/<name>.md` with a governance entry in
+ *     `kortix.yaml`;
+ *   - **skills** live in `skills/` and are served live by
  *     `kortix skills get`;
  *   - **triggers** are cron and signed-webhook entries in `kortix.yaml`;
- *   - **memory** is `.kortix/memory/`;
+ *   - **memory** is `memory/`;
  *   - work lands through a **change request**, never a direct merge.
  *
  * None of that is aspirational. The shipped `base` template already carries a
@@ -191,9 +191,9 @@ const GUESS =
  * being the right tool.
  *
  * Everything here operates on a Kortix primitive that exists in the shipped
- * `base` template: agents in `.kortix/opencode/agents/`, skills in
- * `.kortix/opencode/skills/`, cron and webhook triggers in `kortix.yaml`,
- * memory in `.kortix/memory/`, and work landing through `kortix cr`.
+ * `base` template: agents in `agents/`, skills in `skills/`, cron and webhook
+ * triggers in `kortix.yaml`, memory in `memory/`, and work landing through
+ * `kortix cr`.
  */
 export const WORKFORCE_STARTER_PROMPTS: StarterPrompt[] = [
   // ── Build the workforce ───────────────────────────────────────────────
@@ -205,7 +205,7 @@ export const WORKFORCE_STARTER_PROMPTS: StarterPrompt[] = [
     icon: RobotIcon,
     label: 'Create an agent',
     prompt:
-      'Create a specialist agent for a job my company does often. Write its prompt into `.kortix/opencode/agents/`, give it only the grants it actually needs in `kortix.yaml`, and open a change request so I can read it before it goes live. Pick the job that would save me the most time and tell me why you picked it.',
+      'Create a specialist agent for a job my company does often. Write its prompt into `agents/`, give it only the grants it actually needs in `kortix.yaml`, and open a change request so I can read it before it goes live. Pick the job that would save me the most time and tell me why you picked it.',
   },
   {
     id: 'agent-team',
@@ -219,7 +219,7 @@ export const WORKFORCE_STARTER_PROMPTS: StarterPrompt[] = [
     icon: SparkleIcon,
     label: 'Write a skill',
     prompt:
-      'Turn something my company does the same way every time into a skill under `.kortix/opencode/skills/`, so every future session already knows how. Pick the highest-value one, write it properly with the steps and the gotchas, and open a change request.',
+      'Turn something my company does the same way every time into a skill under `skills/`, so every future session already knows how. Pick the highest-value one, write it properly with the steps and the gotchas, and open a change request.',
   },
   {
     id: 'skill-from-runbook',
@@ -636,7 +636,7 @@ export const GENERAL_STARTER_PROMPTS: StarterPrompt[] = [
 
   // ── Research on the live web ─────────────────────────────────────────
   // The `agent-browser` skill plus the `web_search` / `scrape_webpage` tools in
-  // `.kortix/opencode/tools/`.
+  // `harnesses/opencode/tools/`.
   {
     id: 'competitor-teardown',
     icon: MagnifyingGlassIcon,

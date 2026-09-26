@@ -623,16 +623,16 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // The requested marketplace skills are NOT deterministically installed —
     // only the committed kortix-cli skill (part of the base minimal
     // scaffold) is present.
-    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/deep-research/SKILL.md');
-    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
-    expect(seedFilePaths).toContain('.kortix/opencode/skills/kortix-cli/SKILL.md');
+    expect(seedFilePaths).not.toContain('skills/agent-browser/SKILL.md');
+    expect(seedFilePaths).not.toContain('skills/deep-research/SKILL.md');
+    expect(seedFilePaths).not.toContain('skills/pdf/SKILL.md');
+    expect(seedFilePaths).toContain('skills/kortix-cli/SKILL.md');
     expect(seedFilePaths).toContain('kortix.yaml');
 
-    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/show.ts');
-    expect(seedBaseFilePaths).toContain('.kortix/opencode/plugins/pty.ts');
-    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/web_search.ts');
-    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/lib/get-env.ts');
+    expect(seedBaseFilePaths).toContain('harnesses/opencode/tools/show.ts');
+    expect(seedBaseFilePaths).toContain('harnesses/opencode/plugins/pty.ts');
+    expect(seedBaseFilePaths).toContain('harnesses/opencode/tools/web_search.ts');
+    expect(seedBaseFilePaths).toContain('harnesses/opencode/tools/lib/get-env.ts');
     expect(seedBaseFilePaths).not.toContain('registry-lock.json');
 
     // The bug this route fix closes: the base template's kortix.yaml declares

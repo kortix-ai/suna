@@ -31,34 +31,34 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 // marketplace installable instead.
 const BASE_STARTER_PATHS = [
   '.gitignore',
-  '.kortix/memory/MEMORY.md',
-  '.kortix/opencode/agents/harness-reflector.md',
-  '.kortix/opencode/agents/kortix.md',
-  '.kortix/opencode/agents/session-reviewer.md',
-  '.kortix/opencode/bun.lock',
-  '.kortix/opencode/opencode.jsonc',
-  '.kortix/opencode/package.json',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/constants.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/buffer.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/formatters.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/permissions.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/session-lifecycle.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/types.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/wildcard.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/types.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/shared/constants.ts',
-  '.kortix/opencode/plugins/pty.ts',
-  '.kortix/opencode/skills/kortix-cli/SKILL.md',
-  '.kortix/opencode/tools/image_search.ts',
-  '.kortix/opencode/tools/lib/get-env.ts',
-  '.kortix/opencode/tools/lib/tool.ts',
-  '.kortix/opencode/tools/memory.ts',
-  '.kortix/opencode/tools/scrape_webpage.ts',
-  '.kortix/opencode/tools/show.ts',
-  '.kortix/opencode/tools/web_search.ts',
+  'agents/harness-reflector.md',
+  'agents/kortix.md',
+  'agents/session-reviewer.md',
+  'harnesses/opencode/bun.lock',
+  'harnesses/opencode/opencode.jsonc',
+  'harnesses/opencode/package.json',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/constants.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/buffer.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/formatters.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/permissions.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/session-lifecycle.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/types.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/wildcard.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/types.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/shared/constants.ts',
+  'harnesses/opencode/plugins/pty.ts',
+  'harnesses/opencode/tools/image_search.ts',
+  'harnesses/opencode/tools/lib/get-env.ts',
+  'harnesses/opencode/tools/lib/tool.ts',
+  'harnesses/opencode/tools/memory.ts',
+  'harnesses/opencode/tools/scrape_webpage.ts',
+  'harnesses/opencode/tools/show.ts',
+  'harnesses/opencode/tools/web_search.ts',
   'kortix.yaml',
+  'memory/MEMORY.md',
   'README.md',
+  'skills/kortix-cli/SKILL.md',
 ];
 
 let repoCreateCalls: any[];
@@ -659,14 +659,14 @@ describe('create-repo starter scaffold contract', () => {
 
     // The repository ships runtime tools, project skills, and agents. Managed
     // system skills are injected at session boot.
-    expect(files.find((file) => file.path === '.kortix/opencode/tools/show.ts')).toBeDefined();
+    expect(files.find((file) => file.path === 'harnesses/opencode/tools/show.ts')).toBeDefined();
     expect(
-      files.find((file) => file.path === '.kortix/opencode/skills/kortix-cli/SKILL.md'),
+      files.find((file) => file.path === 'skills/kortix-cli/SKILL.md'),
     ).toBeDefined();
     expect(
-      files.find((file) => file.path === '.kortix/opencode/skills/kortix-system/SKILL.md'),
+      files.find((file) => file.path === 'skills/kortix-system/SKILL.md'),
     ).toBeUndefined();
-    expect(files.find((file) => file.path === '.kortix/opencode/agents/kortix.md')).toBeDefined();
+    expect(files.find((file) => file.path === 'agents/kortix.md')).toBeDefined();
     // The manifest IS shipped and names the project.
     const manifest = files.find((file) => file.path === 'kortix.yaml');
     expect(manifest?.content).toContain('name: "Company OS"');
@@ -694,8 +694,8 @@ describe('create-repo starter scaffold contract', () => {
 
     expect(paths).toEqual(explicitPaths);
     for (const path of BASE_STARTER_PATHS) expect(paths).toContain(path);
-    expect(paths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(paths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(paths).toContain('skills/agent-browser/SKILL.md');
+    expect(paths).toContain('skills/pdf/SKILL.md');
     expect(new Set(paths).size).toBe(paths.length);
     expect(paths.some((path) => path.includes('/agent-tunnel/'))).toBe(false);
   });
@@ -709,8 +709,8 @@ describe('create-repo starter scaffold contract', () => {
     const paths = files.map((file) => file.path);
 
     expect(paths).toEqual(BASE_STARTER_PATHS);
-    expect(paths).not.toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(paths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(paths).not.toContain('skills/agent-browser/SKILL.md');
+    expect(paths).not.toContain('skills/pdf/SKILL.md');
     expect(new Set(paths).size).toBe(paths.length);
   });
 
@@ -1080,8 +1080,8 @@ describe('create-repo starter scaffold contract', () => {
 
     const committedPaths = commitCalls.map((call) => call.path);
     for (const path of BASE_STARTER_PATHS) expect(committedPaths).toContain(path);
-    expect(committedPaths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(committedPaths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(committedPaths).toContain('skills/agent-browser/SKILL.md');
+    expect(committedPaths).toContain('skills/pdf/SKILL.md');
     expect(commitCalls.every((call) => call.auth?.token === 'installation-token')).toBe(true);
     expect(commitCalls.every((call) => call.branch === 'main')).toBe(true);
     expect(commitCalls.every((call) => call.message === `chore: scaffold ${call.path}`)).toBe(true);
@@ -1151,7 +1151,7 @@ describe('create-repo starter scaffold contract', () => {
 
     expect(res.status).toBe(201);
     expect(commitCalls.map((call) => call.path)).toContain(
-      '.kortix/opencode/skills/agent-browser/SKILL.md',
+      'skills/agent-browser/SKILL.md',
     );
     expect(commitCalls.find((call) => call.path === 'kortix.yaml')?.content).toContain(
       'name: "Company OS"',

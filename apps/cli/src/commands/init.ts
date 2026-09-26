@@ -1,6 +1,7 @@
 import { existsSync, statSync, mkdirSync, readdirSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema/layout';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   STARTER_TEMPLATE_IDS,
@@ -23,11 +24,11 @@ import { appendGitExcludeEntries } from '../git-exclude.ts';
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
     case 'opencode':
-      return 'symlink .opencode → .kortix/opencode';
+      return 'symlink .opencode → harnesses/opencode, .agents/skills → skills';
     case 'claude':
       return 'link .claude skills, agents, and commands';
     case 'codex':
-      return 'symlink .agents → .kortix/opencode + AGENTS.md';
+      return 'symlink .agents/skills → skills + AGENTS.md';
     case 'pi':
       return 'link .pi/skills + AGENTS.md';
     case 'cursor':
@@ -64,7 +65,8 @@ Options:
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
   --force              Configure the current cloned Kortix repository in place.
-                       Requires kortix.yaml (or kortix.toml) and .kortix/opencode.
+                       Requires kortix.yaml (or kortix.toml) and an OpenCode
+                       config dir (harnesses/opencode, or .kortix/opencode).
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -289,11 +291,13 @@ export async function runInit(argv: string[]): Promise<number> {
     const hasManifest =
       existsSync(resolve(cwd, "kortix.yaml")) ||
       existsSync(resolve(cwd, "kortix.toml"));
-    const hasRuntime = existsSync(resolve(cwd, ".kortix", "opencode"));
+    const hasRuntime = [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR].some((dir) =>
+      existsSync(resolve(cwd, dir)),
+    );
     if (!hasManifest || !hasRuntime) {
       process.stderr.write(
         "kortix init --force: this directory is not a cloned Kortix project.\n" +
-          "Expected kortix.yaml (or kortix.toml) and .kortix/opencode.\n",
+          "Expected kortix.yaml (or kortix.toml) and harnesses/opencode (or .kortix/opencode).\n",
       );
       return 1;
     }
@@ -340,11 +344,11 @@ export async function runInit(argv: string[]): Promise<number> {
     chosenAgents = picked;
   }
 
-  // ── Detect existing .kortix/ ─────────────────────────────────────────
-  const kortixExists = existsSync(resolve(cwd, '.kortix'));
+  // ── Detect existing Kortix files ─────────────────────────────────────
+  const kortixExists = ['kortix.yaml', 'kortix.toml', '.kortix'].some((path) => existsSync(resolve(cwd, path)));
   if (kortixExists && !configureExisting && !flags.overwrite && !flags.yes) {
     const reuse = await confirm(
-      `Detected an existing .kortix/ folder. Keep your files and only add what's missing?`,
+      `Detected existing Kortix files. Keep your files and only add what's missing?`,
       true,
     );
     if (!reuse) {

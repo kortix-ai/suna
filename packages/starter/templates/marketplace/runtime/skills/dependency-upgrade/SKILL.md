@@ -29,7 +29,7 @@ with full verification and explicit breaking-change handling.
 ```sh
 # Read the durable ledger first — last-run state, open PRs, known broken
 # upgrades, and pinned packages to skip.
-cat .kortix/memory/dependency-upgrade-log.md 2>/dev/null || echo "(no ledger yet)"
+cat memory/dependency-upgrade-log.md 2>/dev/null || echo "(no ledger yet)"
 
 # Check any open upgrade PRs from a prior run.
 gh pr list --repo {{target_repo}} --state open \
@@ -159,14 +159,14 @@ unit/integration/audit all ✓. A human owns the merge."
 
 ## Step 8 — Update the ledger
 
-Append a dated entry to `.kortix/memory/dependency-upgrade-log.md` (see
+Append a dated entry to `memory/dependency-upgrade-log.md` (see
 `<ledger-format>`), then open + self-merge a scoped change request for the ledger
 update only.
 
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/dependency-upgrade-log.md`. Every run appends/updates the
+Lives at `memory/dependency-upgrade-log.md`. Every run appends/updates the
 current week's entry with: run timestamp, branch, PR link (or "not opened — why"),
 an **Applied upgrades** table (package / from / to / tier), breaking-change
 migrations, a **Verification** table, **Dropped / deferred** (package / reason /

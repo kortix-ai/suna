@@ -10,6 +10,11 @@
  * where things live and how their metadata is read.
  */
 
+/**
+ * The OpenCode config dir of a manifest that names none: the pre-2026-09
+ * layout. New projects state `opencode.config_dir: harnesses/opencode`, so
+ * this text-only reader never has to guess between the two.
+ */
 export const DEFAULT_OPENCODE_CONFIG_DIR = '.kortix/opencode';
 
 /**

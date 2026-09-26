@@ -2,6 +2,16 @@
 
 This project runs OpenCode through its REST API.
 
+## Layout
+
+| Path | What it holds |
+| --- | --- |
+| `kortix.yaml` | Agents and what each may access, triggers, env. |
+| `agents/<name>.md` | One file per agent: frontmatter + prompt. `kortix.yaml` names it as `agents.<name>.file`. |
+| `skills/<name>/SKILL.md` | Skills. Every agent harness loads them. |
+| `memory/` | The project brain. Load the `kortix-memory` skill to work with it. |
+| `harnesses/opencode/` | Files only OpenCode reads: `opencode.jsonc`, `plugins/`, `tools/`. |
+
 ## Authentication
 
 OpenCode can use Kortix-managed models or project provider credentials.

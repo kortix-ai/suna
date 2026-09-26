@@ -17,7 +17,8 @@ import { reloadSessionConfig, type SessionReloadResult } from './session-reload'
  *
  * `scheduleSandboxRuntimeRefresh` already does this for the platform's half (the
  * `kortix` CLI, the daemon, the managed-skill overlay). This is the project's
- * half: `.kortix/opencode` from the base ref, plus the compiled agent config.
+ * half: the OpenCode config dir and root `skills/` from the base ref, plus the
+ * compiled agent config.
  *
  * WHAT IT RUNS. `reloadSessionConfig` — the same operation as the reload button,
  * so there is one definition of "converged" — with two differences:

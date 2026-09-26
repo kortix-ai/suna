@@ -10,7 +10,7 @@ const helperPath = join(
   "..",
   "templates",
   "base",
-  ".kortix",
+  "harnesses",
   "opencode",
   "tools",
   "lib",

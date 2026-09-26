@@ -17,7 +17,7 @@ import { loadConfig } from '../config'
 import { resetKortixEventBusForTests } from '../kortix-event-bus'
 import { buildDaemonApp } from '../proxy'
 import { requirePiConfig } from '../harness/pi/config'
-import { createPiHarnessService, type PiHarnessService } from '../harness/pi/service'
+import { createPiHarnessService, piDefinition, type PiHarnessService } from '../harness/pi/service'
 import type { PiBootState } from '../harness/pi/boot-state'
 import { signTestUserContext } from './helpers/open-code-harness'
 
@@ -588,19 +588,56 @@ describe('pi harness', () => {
     for (const m of after.slice(before.length)) expect(m.info.id > newest).toBe(true)
   })
 
-  test('project skills are listed, and the harness-neutral copy wins a name clash', async () => {
+  test('a managed-skill overlay that lands after start reaches the running pi', async () => {
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-'))
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
+      const r = await boot({ script: [{ text: 'ok' }], start: false })
+      const write = (root: string, name: string, description: string) => {
+        mkdirSync(join(root, name), { recursive: true })
+        writeFileSync(join(root, name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
+      }
+      write(join(r.workspace, 'skills'), 'kortix-cli', 'Committed copy')
+      await r.service.lifecycle.start()
+      const list = async () =>
+        ((await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>)
+          .map((s) => [s.name, s.description])
+          .sort()
+      expect(await list()).toEqual([['kortix-cli', 'Committed copy']])
+
+      // runtime-assets writes the overlay after the harness started, then calls injectSkills.
+      write(managed, 'kortix-cli', 'Managed copy')
+      write(managed, 'kortix-system', 'Platform reference')
+      await piDefinition.assets.injectSkills(r.workspace, managed)
+
+      expect(await list()).toEqual([
+        ['kortix-cli', 'Managed copy'],
+        ['kortix-system', 'Platform reference'],
+      ])
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+    }
+  })
+
+  test('skills in the project are loaded into the system prompt: root skills/, then the legacy dir', async () => {
     const r = await boot({ script: [{ text: 'ok' }], start: false })
-    const neutral = join(r.workspace, '.kortix', 'skills', 'deploy')
-    const opencode = join(r.workspace, '.kortix', 'opencode', 'skills', 'deploy')
-    const other = join(r.workspace, '.kortix', 'opencode', 'skills', 'review')
-    for (const dir of [neutral, opencode, other]) mkdirSync(dir, { recursive: true })
-    writeFileSync(join(neutral, 'SKILL.md'), '---\nname: deploy\ndescription: Ship to prod\n---\nRun the deploy script.\n')
-    writeFileSync(join(opencode, 'SKILL.md'), '---\nname: deploy\ndescription: The OpenCode copy\n---\nOld.\n')
-    writeFileSync(join(other, 'SKILL.md'), '---\nname: review\ndescription: Review a PR\n---\nReview it.\n')
+    const skill = (root: string, name: string, description: string) => {
+      const dir = join(r.workspace, root, name)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
+    }
+    skill('skills', 'deploy', 'Ship to prod')
+    skill('.kortix/opencode/skills', 'review', 'Review a change')
+    // Same name in both roots: the root layout wins.
+    skill('.kortix/opencode/skills', 'deploy', 'Stale legacy copy')
     await r.service.lifecycle.start()
-    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description?: string }>
-    expect(skills.map((s) => s.name).sort()).toEqual(['deploy', 'review'])
-    expect(skills.find((s) => s.name === 'deploy')?.description).toBe('Ship to prod')
+    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>
+    expect(skills.map((s) => [s.name, s.description]).sort()).toEqual([
+      ['deploy', 'Ship to prod'],
+      ['review', 'Review a change'],
+    ])
   })
 
   test.each([

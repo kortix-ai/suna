@@ -156,7 +156,7 @@ const CLI_GROUPS: { label: string; icon: typeof TerminalIcon; cmds: [string, str
     label: 'Scaffold & ship',
     icon: TerminalIcon,
     cmds: [
-      ['kortix init', 'Scaffold kortix.yaml + .kortix/'],
+      ['kortix init', 'Scaffold kortix.yaml, agents/ and skills/'],
       ['kortix ship', 'Commit, push, link & go live'],
       ['kortix validate', 'Type-check your manifest'],
     ],
@@ -232,7 +232,7 @@ project:
 
 # the OpenCode runtime config dir
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: harnesses/opencode
 
 # a trigger runs itself, on a schedule
 triggers:
@@ -332,7 +332,7 @@ project:
   name: acme-ops
 
 sandbox:
-  image: .kortix/Dockerfile
+  image: Dockerfile
 
 agents:
   support-triage:
@@ -691,7 +691,10 @@ export default function DevelopersPage() {
                 )}
               </Cmd>
               <Done>{tI18nHardcoded.raw('i18nComplete.text1965f383021e')}</Done>
-              <Done>{tI18nHardcoded.raw('i18nComplete.text46c0b3f64f0d')}</Done>
+              <Done>{tI18nHardcoded.raw('i18nComplete.text21025012cda7')}</Done>
+              <Done>{tI18nHardcoded.raw('i18nComplete.textf1e8d760c12c')}</Done>
+              <Done>{tI18nHardcoded.raw('i18nComplete.textae3f53994b15')}</Done>
+              <Done>{tI18nHardcoded.raw('i18nComplete.textac29bffc7691')}</Done>
             </Terminal>
           </Step>
 
@@ -704,7 +707,7 @@ export default function DevelopersPage() {
             flip
           >
             <CodeFile
-              name=".kortix/opencode/agents/support.md"
+              name="agents/support.md"
               code={AGENT_MD}
               language="markdown"
             />

@@ -268,7 +268,8 @@ describe('ensureOpencodeConfigDeps working-tree cleanliness', () => {
     // The baked tree is image state at /opt/kortix — never inside the repo.
     const bakedDir = join(root, 'baked')
     const repo = join(root, 'repo')
-    const configDir = join(repo, '.kortix', 'opencode')
+    // The config dir the starter template scaffolds (`opencode.config_dir`).
+    const configDir = join(repo, 'harnesses', 'opencode')
     await mkdir(configDir, { recursive: true })
     // The starter template's own ignore rules: they must cover the sentinel
     // and the dependency tree, so a template change that drops either rule
@@ -340,7 +341,7 @@ describe('ensureOpencodeConfigDeps working-tree cleanliness', () => {
       // pinned OpenCode — tracked as a follow-up). Model that write here, and
       // only here, so the staged rows above prove the template alone.
       await writeFile(join(configDir, '.gitignore'), 'node_modules\n')
-      await git(repo, 'add', '.kortix/opencode/.gitignore')
+      await git(repo, 'add', 'harnesses/opencode/.gitignore')
       await git(repo, 'commit', '-qm', 'opencode config gitignore')
 
       expect(await readlink(join(configDir, 'node_modules'))).toBe(join(bakedDir, 'node_modules'))

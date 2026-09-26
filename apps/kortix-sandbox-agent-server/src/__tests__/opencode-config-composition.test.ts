@@ -54,6 +54,28 @@ describe('buildOpencodeConfigContent — injected managed skills', () => {
     expect(parsed.skills.paths).toEqual(['/repo/skills', dir])
   })
 
+  test('declares the project root skills/ after the injected dir, without duplicates', async () => {
+    const { mkdirSync } = await import('node:fs')
+    const injected = join(tmpdir(), `kortix-skills-injected-${process.pid}`)
+    const project = join(tmpdir(), `kortix-skills-project-${process.pid}`)
+    mkdirSync(injected, { recursive: true })
+    mkdirSync(project, { recursive: true })
+    const parsed = JSON.parse(
+      (await buildOpencodeConfigContent(
+        { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ skills: { paths: [project] } }) },
+        { injectedSkillsDir: injected, projectSkillsDir: project },
+      ))!,
+    )
+    expect(parsed.skills.paths).toEqual([project, injected])
+  })
+
+  test('a missing project skills dir contributes nothing', async () => {
+    const parsed = JSON.parse(
+      (await buildOpencodeConfigContent({}, { projectSkillsDir: '/nonexistent-project-skills' }))!,
+    )
+    expect(parsed.skills).toBeUndefined()
+  })
+
   test('a missing injected dir contributes nothing', async () => {
     const parsed = JSON.parse(
       (await buildOpencodeConfigContent({}, { injectedSkillsDir: '/nonexistent-skills-dir' }))!,

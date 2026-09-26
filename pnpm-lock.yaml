@@ -1639,6 +1639,10 @@ importers:
         version: 5.9.3
 
   packages/registry:
+    dependencies:
+      '@kortix/manifest-schema':
+        specifier: workspace:*
+        version: link:../manifest-schema
     devDependencies:
       '@types/bun':
         specifier: ^1.1.0

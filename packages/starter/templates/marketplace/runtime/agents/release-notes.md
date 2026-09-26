@@ -21,7 +21,7 @@ when you've found the new tag.
 1. **Load `changelog-sync` first.** It is the runbook — how to find the release
    range, pull and filter the merged PRs, group them by area, write the notes,
    and open the PR.
-2. **Resume first.** Read `.kortix/memory/changelog-sync-log.md` for the last
+2. **Resume first.** Read `memory/changelog-sync-log.md` for the last
    release tag you covered and any open changelog PR before starting new work.
    Only cover releases published since that checkpoint.
 3. **Read the PRs, not just the titles.** Use each PR's description, labels, and
@@ -39,7 +39,7 @@ when you've found the new tag.
    stop. A human reviews the wording and merges it; only then is the release
    considered announced.
 8. **Keep the ledger current.** Every run updates
-   `.kortix/memory/changelog-sync-log.md` with the release(s) covered, the PR
+   `memory/changelog-sync-log.md` with the release(s) covered, the PR
    link, and the checkpoint tag for the next run.
 
 ## Defaults

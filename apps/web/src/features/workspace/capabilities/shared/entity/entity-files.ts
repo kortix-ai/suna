@@ -10,7 +10,7 @@ export interface FileNode {
 /**
  * The directory a skill/command's own files live under, derived from the
  * entity's own `path` — never assume a fixed prefix. Real project data uses
- * `.kortix/opencode/skills/<name>/SKILL.md`; some fixtures/tests use
+ * `skills/<name>/SKILL.md` (legacy `.kortix/opencode/skills/...`); some fixtures/tests use
  * `.opencode/skill/<name>/SKILL.md`. Both work because this only looks at
  * the last `/`, after stripping a manifest anchor (`kortix.yaml#agents.x`)
  * via `configEntitySourcePath`.

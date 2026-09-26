@@ -28,7 +28,7 @@ Slack channel as the only output.
 ## Step 0 — Orient and resume
 
 ```sh
-cat .kortix/memory/competitor-watch-log.md 2>/dev/null || echo "(no ledger yet — first run)"
+cat memory/competitor-watch-log.md 2>/dev/null || echo "(no ledger yet — first run)"
 ```
 
 Read the last snapshot recorded for each tracked page. If this is the first
@@ -63,7 +63,7 @@ before computing a diff or hash.
 ## Step 4 — Diff against the last snapshot
 
 Compare the normalized content to the snapshot stored in
-`.kortix/memory/competitor-watch-log.md` for that URL. A byte-identical
+`memory/competitor-watch-log.md` for that URL. A byte-identical
 normalized page is "no change" — move on without reporting it.
 
 ## Step 5 — Filter cosmetic from meaningful
@@ -96,14 +96,14 @@ One message to {{slack_channel}} per run:
 
 ## Step 7 — Update the ledger
 
-Update `.kortix/memory/competitor-watch-log.md` with today's normalized
+Update `memory/competitor-watch-log.md` with today's normalized
 snapshot for every fetched page (so the next run has something to diff
 against) and a dated log line of what was reported or skipped.
 
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/competitor-watch-log.md`. Every run updates, per
+Lives at `memory/competitor-watch-log.md`. Every run updates, per
 tracked URL: the competitor name, the URL, the normalized snapshot (or a hash
 of it) from this run, and the timestamp it was fetched. Below that, dated
 **Run log** entries with what was reported to {{slack_channel}} (or "quiet —

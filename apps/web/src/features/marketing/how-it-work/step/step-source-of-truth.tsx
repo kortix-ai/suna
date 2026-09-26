@@ -40,7 +40,7 @@ import { useStepShowcaseStart } from '../use-step-showcase';
  *   - Connectors, Triggers and Machine are all declared in `kortix.yaml` —
  *     that is the manifest's whole job (machine image, connectors, triggers).
  *   - Agent BEHAVIOUR (model, mode, prompt, permission) is a hard error in
- *     `kortix.yaml` — it lives in `.kortix/opencode/agents/<name>.md`. The
+ *     `kortix.yaml` — it lives in `agents/<name>.md`. The
  *     manifest grants; it does not configure the agent. The "Rules" node says
  *     "what each agent may touch" for exactly this reason.
  *   - `channels:` is rejected outright in version 2 — channel routing is live
@@ -51,8 +51,8 @@ import { useStepShowcaseStart } from '../use-step-showcase';
  *   - `secrets:` grants secret NAMES, and a granted secret IS a real env
  *     value inside the session. Never write that it is hidden from the model.
  * Paths are the shipped starter template (`packages/starter/templates/base`),
- * checked file by file: `kortix.yaml` at the repo ROOT, everything else under
- * `.kortix/`. `acme-co` is a placeholder, not a customer.
+ * checked file by file: `kortix.yaml`, `agents/`, `skills/` and `memory/` all
+ * sit at the repo ROOT. `acme-co` is a placeholder, not a customer.
  */
 
 type NodeId = 'agents' | 'skills' | 'memory' | 'rules' | 'connectors' | 'triggers' | 'machine';
@@ -73,7 +73,7 @@ const NODES: {
     icon: RobotIcon,
     label: 'Agents',
     note: 'who does the work',
-    path: '.kortix/opencode/agents/',
+    path: 'agents/',
     x: 34,
     side: 'up',
   },
@@ -82,7 +82,7 @@ const NODES: {
     icon: SparkleIcon,
     label: 'Skills',
     note: 'how your company does a job',
-    path: '.kortix/opencode/skills/',
+    path: 'skills/',
     x: 46,
     side: 'down',
   },
@@ -91,7 +91,7 @@ const NODES: {
     icon: BrainIcon,
     label: 'Memory',
     note: 'what it has learned so far',
-    path: '.kortix/memory/',
+    path: 'memory/',
     x: 58,
     side: 'up',
   },

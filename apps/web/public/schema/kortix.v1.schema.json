@@ -51,7 +51,8 @@
           "minLength": 1,
           "not": {
             "pattern": "^/|(^|/)\\.\\.($|/)"
-          }
+          },
+          "description": "Directory with the OpenCode-only files (opencode.jsonc, plugins/, tools/). Defaults to harnesses/opencode, then the legacy .kortix/opencode."
         }
       },
       "additionalProperties": true

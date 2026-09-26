@@ -18,7 +18,7 @@ import { managedSkillsDir } from './managed-skills'
  * Spec: docs/specs/config-releases.md, "Daemon".
  *
  * WHY IT EXISTS. OpenCode reads its agents, skills, tools and plugins from
- * `OPENCODE_CONFIG_DIR`. That used to be `/workspace/.kortix/opencode`: the
+ * `OPENCODE_CONFIG_DIR`. That used to be the working tree's config dir: the
  * project's tracked source, the session's scratch space, and the runtime's
  * config, in one directory. A config reload then wrote the base branch's files
  * into the session's tracked tree. An agent's `git add -A` swept them into a

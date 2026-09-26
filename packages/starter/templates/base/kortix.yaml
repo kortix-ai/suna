@@ -4,14 +4,16 @@
 # lives in git alongside the code. `kortix_version` pins the schema so
 # the platform can evolve safely. v2 manifests are YAML-only, with one
 # `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
-# kortix_permissions/skills/workspace/enabled). OpenCode BEHAVIOR (description,
-# model, mode, temperature, permission, the prompt itself, …) lives
-# entirely in each agent's own native `.kortix/opencode/agents/<name>.md`
-# frontmatter + body — a stock OpenCode agent file, no Kortix-specific
-# split. The agent's NAME is the join between this map's keys and that
-# `.md`'s filename. See
-# docs/specs/2026-07-05-agent-first-config-unification.md (decision
-# 2026-07-05: "one home per concern").
+# kortix_permissions/skills/workspace/enabled), plus `file`, the path of the
+# agent's `.md`. Agent BEHAVIOR (description, model, mode, temperature,
+# permission, the prompt itself, …) lives entirely in that `.md`'s
+# frontmatter + body — a stock OpenCode agent file works as-is.
+#
+# Project layout — harness-neutral content at the root:
+#   agents/<name>.md          one file per agent (`agents.<name>.file`)
+#   skills/<name>/SKILL.md    skills, loaded by every harness
+#   memory/                   the project brain (the `kortix-memory` skill)
+#   harnesses/opencode/       files only OpenCode reads (`opencode.config_dir`)
 kortix_version: 2
 
 # The agent a session/trigger boots when it names no concrete agent (the
@@ -45,7 +47,7 @@ env:
 #   templates:
 #     - slug: ml
 #       name: ML Development
-#       dockerfile: .kortix/Dockerfile.ml
+#       dockerfile: Dockerfile.ml
 #       cpu: 4
 #       memory: 16
 #       disk: 50
@@ -64,28 +66,27 @@ env:
 # sandbox:
 #   default: python
 
-# OpenCode runtime config dir. The agent daemon launches opencode with
-# OPENCODE_CONFIG_DIR pointed here, so agents/skills/commands/tools live
-# under this folder. `opencode.jsonc` remains OpenCode's native registry
-# for plugins, MCP servers, providers, models, and runtime defaults.
-# Defaults to `.kortix/opencode` — relocate if you want to share a
-# single opencode config across multiple Kortix repos.
+# Files only OpenCode reads: `opencode.jsonc` (plugins, MCP servers,
+# providers, runtime defaults), `plugins/`, `tools/`, `commands/`. The agent
+# daemon launches opencode with OPENCODE_CONFIG_DIR pointed here. Agents and
+# skills do NOT live here — they sit at the root and serve every harness.
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: harnesses/opencode
 
 # ─── Agents ──────────────────────────────────────────────────────────────
 # One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_permissions/
 # skills grants the runtime itself can't express, plus workspace (the git
-# boundary) and enabled. Everything else (description, mode, permission,
-# temperature, the prompt itself, …) lives in the matching
-# `.kortix/opencode/agents/<name>.md` — open those files to see/change what
-# each agent actually does. v2 is deny-by-default: an omitted connectors/
-# secrets/kortix_permissions/skills grant resolves to "none", so a scoped specialist
-# starts locked down. The starter's own `kortix` agent is deliberately
+# boundary) and enabled. `file` names the agent's `.md`; everything else
+# (description, mode, permission, temperature, the prompt itself, …) lives
+# in that file — open it to see/change what the agent actually does.
+# v2 is deny-by-default: an omitted connectors/secrets/kortix_permissions/
+# skills grant resolves to "none", so a scoped specialist starts locked down.
+# The starter's own `kortix` agent is deliberately
 # granted "all" across the board so a fresh project is capable out of the
 # box — narrow it once you know what this project actually needs.
 agents:
   kortix:
+    file: agents/kortix.md
     connectors: all
     secrets: all
     kortix_permissions: all
@@ -93,6 +94,7 @@ agents:
     # sandbox: python # Must name an available project template, or "default".
 
   harness-reflector:
+    file: agents/harness-reflector.md
     # Continual-harness reflector: refines the shared harness (prompts,
     # sub-agents, skills/tools, memory — memory curation is its fourth
     # pass) from session evidence. Fans out session-reviewer sub-agents,
@@ -105,6 +107,7 @@ agents:
     skills: all
 
   session-reviewer:
+    file: agents/session-reviewer.md
     # Sub-agent of the harness-reflector: deep-reviews ONE session's full
     # history and reports failure-signature findings. "Read-only" (never
     # edits, never opens CRs) is its prompt discipline; it runs inside the

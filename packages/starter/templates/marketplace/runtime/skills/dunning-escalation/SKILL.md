@@ -23,7 +23,7 @@ not a loop — without it, every run would just resend rung one forever.
 
 ## Step 1 — Resume the ledger
 
-Read `.kortix/memory/payment-recovery-ledger.md`. For every subscription
+Read `memory/payment-recovery-ledger.md`. For every subscription
 already tracked, note its current rung, the timestamp of its last action, and
 its next-eligible-escalation time. Anything not yet on the ledger is a
 candidate for Step 2.
@@ -83,13 +83,13 @@ change.
 
 ## Step 8 — Update the ledger
 
-Write the full current state back to `.kortix/memory/payment-recovery-ledger.md`
+Write the full current state back to `memory/payment-recovery-ledger.md`
 (see `<ledger-format>`) before ending the turn.
 
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/payment-recovery-ledger.md`. One row per subscription
+Lives at `memory/payment-recovery-ledger.md`. One row per subscription
 currently or recently on the ladder: subscription ID, customer, current rung
 (1–4, or `recovered` / `awaiting-human`), last action + timestamp, next-eligible
 escalation time, and outcome once resolved (`recovered` with the rung it paid

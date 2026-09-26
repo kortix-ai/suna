@@ -71,9 +71,15 @@ describe('the notice text', () => {
     const body = renderConfigReleaseNotice({ sourceCommit: null, configDir: null })
     expect(body).toContain('may be behind the base branch')
     expect(body).toContain('kortix sessions reload <session id>')
-    expect(body).toContain('.kortix/opencode')
+    expect(body).toContain('`/workspace/agents`, `/workspace/skills` or `/workspace/harnesses/opencode`')
     expect(body).not.toContain('commit null')
     expect(body).not.toContain('undefined')
+  })
+
+  test('a legacy project is told about its one config dir only', () => {
+    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, configDir: '.kortix/opencode' })
+    expect(body).toContain('Editing a file under `/workspace/.kortix/opencode` does NOT change')
+    expect(body).not.toContain('/workspace/skills')
   })
 
   test('names the project config dir when the manifest moved it', () => {

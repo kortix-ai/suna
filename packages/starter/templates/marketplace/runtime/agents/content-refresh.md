@@ -21,7 +21,7 @@ an edit.
 
 1. **Load `content-decay-refresh` first.** It is the runbook — how to read
    decay signals, rotate coverage, refresh a page, and open the PR.
-2. **Resume first.** Read `.kortix/memory/content-refresh-log.md` for which
+2. **Resume first.** Read `memory/content-refresh-log.md` for which
    pages were refreshed and when, and any open refresh PR, before picking this
    week's batch.
 3. **Rotate, don't repeat.** Weight candidates by both decay severity and how
@@ -40,7 +40,7 @@ an edit.
 7. **Never publish, never merge.** You open the PR against an isolated branch
    and stop. A human reviews and merges. Never push to the live content branch.
 8. **Keep the ledger current.** Every run updates
-   `.kortix/memory/content-refresh-log.md` with the pages refreshed, their
+   `memory/content-refresh-log.md` with the pages refreshed, their
    decay signal, what changed, and the rotation state for next run.
 
 ## Defaults

@@ -12,8 +12,9 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { config } from '../config';
-import { execFileAsync, refreshMirror, runGitCapture } from '../projects/git/mirror';
-import { resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';
+import { SKILLS_DIR } from '@kortix/manifest-schema';
+import { execFileAsync, refreshMirror, runGitCapture, spawn } from '../projects/git/mirror';
+import { readManifestAtSha, resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';
 import type { GitBackedProject } from '../projects/git/types';
 import {
   agentConfigEtag,
@@ -128,8 +129,14 @@ export function configReleaseId(configTreeId: string | null, compiledGovernanceE
     .digest('hex');
 }
 
-export function configArchiveRoute(projectId: string, configTreeId: string): string {
-  return `/v1/projects/${projectId}/config-archives/${configTreeId}`;
+/**
+ * The archive's API path. A composed release tree (see `composeReleaseTree`)
+ * exists in no mirror, so its path carries the commit it was composed from and
+ * the route rebuilds it from there. The daemon accepts a query string.
+ */
+export function configArchiveRoute(projectId: string, configTreeId: string, composedFrom?: string): string {
+  const path = `/v1/projects/${projectId}/config-archives/${configTreeId}`;
+  return composedFrom ? `${path}?commit=${composedFrom}` : path;
 }
 
 /** Resolve `git rev-parse <commit>:<config dir>` to a tree ID, or null. */
@@ -157,8 +164,12 @@ export async function isTreeObject(mirror: string, treeId: string): Promise<bool
  * `git ls-tree -r -z <tree>`: every file with its mode and blob ID. A tree
  * entry of type `commit` (a submodule) is skipped. Symlinks keep mode 120000.
  */
-export async function listConfigFiles(mirror: string, treeId: string): Promise<ConfigReleaseFile[]> {
-  const result = await runGitCapture(['ls-tree', '-r', '-z', treeId], mirror);
+export async function listConfigFiles(
+  mirror: string,
+  treeId: string,
+  env?: Record<string, string>,
+): Promise<ConfigReleaseFile[]> {
+  const result = await runGitCapture(['ls-tree', '-r', '-z', treeId], mirror, null, env);
   if (result.exitCode !== 0) {
     throw new Error(`git ls-tree ${treeId} failed: ${result.stderr.trim()}`);
   }
@@ -224,14 +235,153 @@ export async function buildConfigArchive(
   limit = MAX_CONFIG_ARCHIVE_BYTES,
 ): Promise<Buffer> {
   if (!HEX40.test(treeId)) throw new Error(`invalid config tree id: ${treeId}`);
-  return withScratchRepo(mirror, async (repo, env) => {
-    const wrapped = await runGitCapture(['commit-tree', treeId, '-m', 'config'], repo, null, env);
-    const commit = wrapped.stdout.trim();
-    if (wrapped.exitCode !== 0 || !HEX40.test(commit)) {
-      throw new Error(`git commit-tree ${treeId} failed: ${wrapped.stderr.trim()}`);
-    }
-    return archiveThroughGzip(repo, commit, env, limit);
+  return withScratchRepo(mirror, (repo, env) => archiveTree(repo, env, treeId, limit));
+}
+
+async function archiveTree(
+  repo: string,
+  env: Record<string, string>,
+  treeId: string,
+  limit: number,
+): Promise<Buffer> {
+  const wrapped = await runGitCapture(['commit-tree', treeId, '-m', 'config'], repo, null, env);
+  const commit = wrapped.stdout.trim();
+  if (wrapped.exitCode !== 0 || !HEX40.test(commit)) {
+    throw new Error(`git commit-tree ${treeId} failed: ${wrapped.stderr.trim()}`);
+  }
+  return archiveThroughGzip(repo, commit, env, limit);
+}
+
+/**
+ * What a config release tree is made of at one commit.
+ *
+ * The OpenCode config dir, plus the skills of the root `skills/` dir (the
+ * harness-neutral project layout, docs/specs/config-releases.md "Project
+ * layout"). A root skill replaces a config-dir skill of the same name. Only a
+ * root entry that holds a `SKILL.md` counts, so an unrelated `skills/` folder
+ * in a code repository adds nothing.
+ */
+export interface ReleaseTreeSource {
+  configDir: string;
+  /** The config dir's own tree ID in the mirror. */
+  configTree: string;
+  /** Root `skills/` entries, as `git ls-tree -z` records, that hold a SKILL.md. */
+  rootSkills: string[];
+}
+
+/** `git ls-tree -z <tree>`: the tree's records, keyed by entry name. */
+async function treeRecords(
+  repo: string,
+  treeId: string,
+  env?: Record<string, string>,
+): Promise<Map<string, string>> {
+  const result = await runGitCapture(['ls-tree', '-z', treeId], repo, null, env);
+  if (result.exitCode !== 0) throw new Error(`git ls-tree ${treeId} failed: ${result.stderr.trim()}`);
+  const records = new Map<string, string>();
+  for (const record of result.stdout.split('\0')) {
+    if (record) records.set(record.slice(record.indexOf('\t') + 1), record);
+  }
+  return records;
+}
+
+/** The root `skills/` entries of `commit` that hold a SKILL.md, sorted by name. */
+export async function rootSkillRecords(mirror: string, commit: string): Promise<string[]> {
+  const tree = await resolveConfigTreeId(mirror, commit, SKILLS_DIR);
+  if (!tree) return [];
+  const listed = await runGitCapture(['ls-tree', '-r', '-z', '--name-only', tree], mirror);
+  if (listed.exitCode !== 0) throw new Error(`git ls-tree ${tree} failed: ${listed.stderr.trim()}`);
+  const withSkill = new Set(
+    listed.stdout
+      .split('\0')
+      .filter((path) => path.endsWith('/SKILL.md'))
+      .map((path) => path.slice(0, path.indexOf('/'))),
+  );
+  return [...(await treeRecords(mirror, tree)).entries()]
+    .filter(([name, record]) => withSkill.has(name) && record.split(' ')[1] === 'tree')
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([, record]) => record);
+}
+
+/** `git mktree -z` in `repo` (never the mirror). mktree sorts the entries itself. */
+async function mktree(repo: string, env: Record<string, string>, records: string[]): Promise<string> {
+  const child = spawn('git', ['mktree', '-z'], {
+    cwd: repo,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...env },
+    stdio: ['pipe', 'pipe', 'pipe'],
   });
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+  child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+  const exit = new Promise<number | null>((resolveExit, reject) => {
+    child.once('error', reject);
+    child.once('close', resolveExit);
+  });
+  child.stdin.end(records.map((record) => `${record}\0`).join(''));
+  const code = await exit;
+  const tree = Buffer.concat(stdout).toString('utf8').trim();
+  if (code !== 0 || !HEX40.test(tree)) {
+    throw new Error(`git mktree failed: ${Buffer.concat(stderr).toString('utf8').trim()}`);
+  }
+  return tree;
+}
+
+/**
+ * The release tree ID of `source`, written into `repo` (a scratch repository
+ * that reads the mirror through alternates). With no root skills it is the
+ * config dir's own tree, so a project on the legacy layout keeps its tree ID,
+ * its release ID and its archive bytes exactly.
+ */
+export async function composeReleaseTree(
+  repo: string,
+  env: Record<string, string>,
+  source: ReleaseTreeSource,
+): Promise<string> {
+  if (source.rootSkills.length === 0) return source.configTree;
+  const top = await treeRecords(repo, source.configTree, env);
+  const skills = new Map<string, string>();
+  const configSkills = top.get(SKILLS_DIR);
+  if (configSkills && configSkills.split(' ')[1] === 'tree') {
+    const configSkillsTree = configSkills.slice(0, configSkills.indexOf('\t')).split(' ')[2]!;
+    for (const [name, record] of await treeRecords(repo, configSkillsTree, env)) skills.set(name, record);
+  }
+  for (const record of source.rootSkills) skills.set(record.slice(record.indexOf('\t') + 1), record);
+  top.set(SKILLS_DIR, `040000 tree ${await mktree(repo, env, [...skills.values()])}\t${SKILLS_DIR}`);
+  return mktree(repo, env, [...top.values()]);
+}
+
+/** Compose the release tree of `source` in a scratch repository and read it there. */
+export async function readComposedRelease(
+  mirror: string,
+  source: ReleaseTreeSource,
+  options: { archive: boolean; limit?: number },
+): Promise<{ treeId: string; files: ConfigReleaseFile[]; archive: Buffer | null }> {
+  return withScratchRepo(mirror, async (repo, env) => {
+    const treeId = await composeReleaseTree(repo, env, source);
+    const files = await listConfigFiles(repo, treeId, env);
+    const archive = options.archive
+      ? await archiveTree(repo, env, treeId, options.limit ?? MAX_CONFIG_ARCHIVE_BYTES)
+      : null;
+    return { treeId, files, archive };
+  });
+}
+
+/**
+ * The release tree source of `commit`, or a reason there is none. Shared by
+ * the builder and the archive route, which rebuilds a composed tree from the
+ * commit in its path.
+ */
+export async function resolveReleaseTreeSource(
+  mirror: string,
+  project: Pick<GitBackedProject, 'manifestPath'>,
+  commit: string,
+): Promise<{ source: ReleaseTreeSource } | { configDir: string | null; reason: string }> {
+  const manifest = await readManifestAtSha(mirror, project, commit);
+  const configDir = await resolveOpencodeConfigDirAtSha(mirror, project, commit, manifest);
+  if (!configDir) return { configDir: null, reason: 'the commit has no OpenCode config dir' };
+  const configTree = await resolveConfigTreeId(mirror, commit, configDir);
+  if (!configTree) return { configDir, reason: `config dir ${configDir} is not a tree at ${commit}` };
+  return { source: { configDir, configTree, rootSkills: await rootSkillRecords(mirror, commit) } };
 }
 
 /**
@@ -383,46 +533,56 @@ async function build(
     compiled_governance_etag: etag,
   };
 
-  const configDir = await resolveOpencodeConfigDirAtSha(mirror, project, commit);
   // No config dir: a governance-only release. The daemon runs the image
   // default config dir with this governance.
   const governanceOnly = configReleaseId(null, etag);
-  if (!configDir) {
-    return { ...withGovernance, release_id: governanceOnly, reason: 'the commit has no OpenCode config dir' };
+  const resolved = await resolveReleaseTreeSource(mirror, project, commit);
+  if (!('source' in resolved)) {
+    return { ...withGovernance, release_id: governanceOnly, config_dir: resolved.configDir, reason: resolved.reason };
   }
-  const treeId = await resolveConfigTreeId(mirror, commit, configDir);
-  if (!treeId) {
-    return {
-      ...withGovernance,
-      release_id: governanceOnly,
-      config_dir: configDir,
-      reason: `config dir ${configDir} is not a tree at ${commit}`,
-    };
+  const { source } = resolved;
+  const configDir = source.configDir;
+  const composed = source.rootSkills.length > 0;
+
+  let treeId = source.configTree;
+  let files: ConfigReleaseFile[] | null = null;
+  let freshArchive: Buffer | null = null;
+  try {
+    if (composed) {
+      // The tree is only known once composed; build the archive in the same
+      // scratch repository unless its size is already cached.
+      const read = await readComposedRelease(mirror, source, { archive: true });
+      treeId = read.treeId;
+      files = read.files;
+      if (!archiveBytes.has(configArchiveKey(project.projectId, treeId))) freshArchive = read.archive;
+    } else if (!archiveBytes.has(configArchiveKey(project.projectId, treeId))) {
+      freshArchive = await buildConfigArchive(mirror, treeId);
+    }
+  } catch (error) {
+    if (error instanceof ConfigArchiveTooLargeError) {
+      return {
+        ...withGovernance,
+        config_dir: configDir,
+        config_tree_id: composed ? null : treeId,
+        reason: `config dir ${configDir}${composed ? ` with ${SKILLS_DIR}/` : ''} exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte archive limit`,
+      };
+    }
+    throw error;
   }
   const located: ConfigRelease = { ...withGovernance, config_dir: configDir, config_tree_id: treeId };
 
   const key = configArchiveKey(project.projectId, treeId);
-  let bytes = archiveBytes.get(key);
-  if (bytes === undefined) {
-    let archive: Buffer;
-    try {
-      archive = await buildConfigArchive(mirror, treeId);
-    } catch (error) {
-      if (error instanceof ConfigArchiveTooLargeError) {
-        return { ...located, reason: `config dir ${configDir} exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte archive limit` };
-      }
-      throw error;
-    }
-    await storeConfigArchive(store, project.projectId, key, archive);
-    bytes = archive.length;
-    remember(archiveBytes, key, bytes, MAX_CACHED_ARCHIVE_SIZES);
+  if (freshArchive) {
+    await storeConfigArchive(store, project.projectId, key, freshArchive);
+    remember(archiveBytes, key, freshArchive.length, MAX_CACHED_ARCHIVE_SIZES);
   }
+  const bytes = archiveBytes.get(key)!;
 
   return {
     ...located,
     release_id: configReleaseId(treeId, etag),
-    archive: { url: configArchiveRoute(project.projectId, treeId), bytes },
-    files: await listConfigFiles(mirror, treeId),
+    archive: { url: configArchiveRoute(project.projectId, treeId, composed ? commit : undefined), bytes },
+    files: files ?? (await listConfigFiles(mirror, treeId)),
   };
 }
 

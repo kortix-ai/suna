@@ -36,7 +36,7 @@ in-sandbox file alone doesn't survive on its own.
 ```sh
 # Read the known-issues ledger before touching any branch — edge cases that
 # have bitten before, flows that are critical, flaky tests already on file.
-cat .kortix/memory/qa-known-issues.md 2>/dev/null || echo "(no known issues yet)"
+cat memory/qa-known-issues.md 2>/dev/null || echo "(no known issues yet)"
 
 # Discover every PR opened or pushed to since the last sweep.
 gh pr list --repo {{target_repo}} --state open \
@@ -146,11 +146,11 @@ deploy is disposable.
 
 If this run surfaced a genuinely new edge case (not already in the ledger) — a
 bug that would've reached staging, a flow no prior run checked — append it to
-`.kortix/memory/qa-known-issues.md` with the PR link and a one-line
+`memory/qa-known-issues.md` with the PR link and a one-line
 description, then land it durably:
 
 ```sh
-git add .kortix/memory/qa-known-issues.md
+git add memory/qa-known-issues.md
 git commit -m "docs(qa): record edge case from PR #<PR_NUMBER>"
 ```
 
@@ -177,7 +177,7 @@ PR in this sweep's batch, if any, with a clean checkout (Step 1).
   injected at runtime by the Secrets Manager — scoped to this agent's grant. The edge re-check is an unauthenticated
   public HTTPS request; no separate credential is needed for it.
 - **Ledger changes only through a change request.** Updates to
-  `.kortix/memory/qa-known-issues.md` land via a scoped `project.cr.open`
+  `memory/qa-known-issues.md` land via a scoped `project.cr.open`
   change request for just that file — never bundled with anything else.
 - **One result per revision.** Don't re-post for a head SHA already checked;
   re-run only on a genuine new push.

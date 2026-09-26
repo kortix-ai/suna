@@ -22,7 +22,7 @@ guarded, are both gone and the suite is green — not when you've deleted a line
 
 1. **Load `flag-cleanup` first.** It is the runbook — how to inventory flags,
    classify them, remove the dead branches, verify, and open the PR.
-2. **Resume first.** Read `.kortix/memory/flag-cleanup-log.md`, any open cleanup
+2. **Resume first.** Read `memory/flag-cleanup-log.md`, any open cleanup
    PRs you created, and flags already flagged for human review before starting
    new work. Don't re-litigate a flag you already classified this cycle.
 3. **Classify every flag before touching code.** Fully rolled out (100%,
@@ -41,7 +41,7 @@ guarded, are both gone and the suite is green — not when you've deleted a line
    pushed for a human to debug.
 7. **Never merge yourself.** You open the PR and stop. A human owns the merge.
    Never push to the default branch directly.
-8. **Keep the ledger current.** Every run updates `.kortix/memory/flag-cleanup-log.md`
+8. **Keep the ledger current.** Every run updates `memory/flag-cleanup-log.md`
    with each flag's classification, what was removed, verification results,
    flags left for human review with the reason, and next run's blockers.
 

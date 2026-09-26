@@ -42,6 +42,7 @@ import {
   WORKSPACE_MODES_V2,
 } from './constants';
 import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList, validateKortixPermissionFields } from './index';
+import { safeAgentFile } from './layout';
 
 // ─── kortix_version 2 types ───────────────────────────────────────────────
 //
@@ -105,12 +106,13 @@ export type GrantSetV2 = 'all' | 'none' | string[];
 
 /**
  * One entry of the v2 `agents:` map — GOVERNANCE ONLY (decision 2026-07-05,
- * "one home per concern"). OpenCode behavior (mode, model, temperature,
- * top_p, steps, variant, color, hidden, permission, and the prompt itself)
- * lives entirely in the agent's native `.kortix/opencode/agents/<name>.md`
- * frontmatter + body — a stock OpenCode agent `.md` is valid as-is, with no
- * Kortix-specific split. The agent NAME is the join between this map key and
- * that `.md` filename; there is no `prompt:`/file-ref field here anymore.
+ * "one home per concern"). Agent behavior (mode, model, temperature, top_p,
+ * steps, variant, color, hidden, permission, and the prompt itself) lives
+ * entirely in the agent's own `.md` frontmatter + body — a stock OpenCode
+ * agent `.md` is valid as-is. `file` names that `.md`; without it the agent
+ * NAME is the join (`agents/<name>.md`, then the legacy
+ * `.kortix/opencode/agents/<name>.md` — see `agentFileCandidates` in
+ * layout.ts).
  *
  * Kortix governance (this type) is enforced platform-side (IAM grants,
  * secret scoping) and has no OpenCode representation, except `skills`, which
@@ -118,6 +120,10 @@ export type GrantSetV2 = 'all' | 'none' | string[];
  * compile-agent-config.ts.
  */
 export interface AgentBlockV2 {
+  /** Repo-relative path of this agent's `.md` (e.g. `agents/support.md`).
+   *  Writers always set it; readers fall back to the conventional paths when
+   *  it is omitted. */
+  file?: string;
   /** Kortix governance: can this agent start a session at all? Default true
    *  when omitted. Compiles to the runtime's `disable` field (inverted,
    *  and only ever forces it ON — a hand-authored `disable: true` in the
@@ -142,7 +148,7 @@ export interface AgentBlockV2 {
    *  configuration error (ambiguous) — see resolveGrantedSecretEnv. This is the
    *  SOLE authorization gate on agent secret access. */
   secrets?: GrantSetV2;
-  /** Which of the project's `.kortix/opencode/skills/*` this agent may invoke —
+  /** Which of the project's skills (`skills/*`, legacy `.kortix/opencode/skills/*`) this agent may invoke —
    *  same grant-set shape as connectors/secrets (names | "all" | "none"), v2
    *  deny-by-default when omitted. Unlike connectors/secrets/kortix_permissions (pure
    *  Kortix governance with no runtime representation), `skills` DOES compile
@@ -563,10 +569,19 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
     if ((entry as Record<string, unknown>)[key] !== undefined) {
       issues.push({
         path: `${where}.${key}`,
-        message: `"${key}" is OpenCode behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the agent's \`.kortix/opencode/agents/<name>.md\` frontmatter instead.`,
+        message: `"${key}" is agent behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the frontmatter of the agent's \`.md\` (\`${where}.file\`, default \`agents/<name>.md\`) instead.`,
         severity: 'error',
       });
     }
+  }
+
+  if (entry.file !== undefined && !safeAgentFile(entry.file)) {
+    issues.push({
+      path: `${where}.file`,
+      message:
+        'must be a repo-relative path to a `.md` file (e.g. `agents/<name>.md`): no leading "/" or "-", no "." or ".." segments, only letters, digits, spaces and `_ . -`.',
+      severity: 'error',
+    });
   }
 
   // Kortix governance — same grant-set shape/action rules as v1, reused as-is.

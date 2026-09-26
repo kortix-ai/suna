@@ -20,7 +20,7 @@ is the correct output, not a missed run.
 1. **Load `competitor-diff` first.** It is the runbook — the watch list
    format, the fetch-and-normalize steps, the diff and noise-filtering rules,
    and the summary format.
-2. **Resume first.** Read `.kortix/memory/competitor-watch-log.md` for the
+2. **Resume first.** Read `memory/competitor-watch-log.md` for the
    last snapshot of each tracked page before fetching anything new — you diff
    against that, not against nothing.
 3. **Fetch only what's on the watch list.** Public competitor sites,
@@ -36,7 +36,7 @@ is the correct output, not a missed run.
    Anything that isn't "read a public page" or "post a summary" is out of
    scope — flag it for a human instead of acting.
 7. **Keep the ledger current.** Every run updates
-   `.kortix/memory/competitor-watch-log.md` with today's snapshot (so the next
+   `memory/competitor-watch-log.md` with today's snapshot (so the next
    run has something to diff against) and a log of what was reported.
 
 ## Defaults

@@ -1181,8 +1181,8 @@ const memoryViewOutput = (path: string, content: string) =>
     ...content.split('\n').map((line, i) => `${i + 1}\t${line}`),
   ].join('\n');
 
-const MEMORY_NOTE_PATH = '.kortix/memory/notes/pricing.md';
-const MEMORY_NOTE_RENAMED = '.kortix/memory/notes/pricing-findings.md';
+const MEMORY_NOTE_PATH = 'memory/notes/pricing.md';
+const MEMORY_NOTE_RENAMED = 'memory/notes/pricing-findings.md';
 
 /**
  * A real memory note: frontmatter, headings, a list, and one fenced block whose
@@ -1307,7 +1307,7 @@ const PANEL_SKILL_PARTS = [
     'skill',
     done(
       { name: 'kortix-design-system' },
-      skillOutput('.kortix/opencode/skills/kortix-design-system', DESIGN_SKILL_MD, [
+      skillOutput('skills/kortix-design-system', DESIGN_SKILL_MD, [
         'SKILL.md',
         'references/tokens.md',
         'references/primitives.md',
@@ -1318,7 +1318,7 @@ const PANEL_SKILL_PARTS = [
     'skill',
     done(
       { name: 'testing' },
-      skillOutput('.kortix/opencode/skills/testing', TESTING_SKILL_MD, [
+      skillOutput('skills/testing', TESTING_SKILL_MD, [
         'SKILL.md',
         'references/flows.md',
       ]),

@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { Config as HostConfig } from '../../config'
+import { managedSkillsDir } from '../../managed-skills'
+import { projectSkillDirs } from '../../project-layout'
 import { resolveKortixRuntimeStateDirectory } from '../../runtime-state-dir'
 
 /**
@@ -44,16 +46,13 @@ export function requirePiConfig(cfg: HostConfig): PiConfig {
 }
 
 /**
- * Skill directories, most specific first. pi reads the SAME project skills a
- * project authored for OpenCode (`.kortix/opencode/skills`) so switching
- * `runtime:` never loses them, plus the harness-neutral `.kortix/skills`.
+ * Skill directories, most specific first; pi keeps the first skill of a name.
+ * The baked managed `kortix-*` overlay comes first, so the platform's latest
+ * copy wins over one a project tracks, with nothing written into the working
+ * tree. Then the project's `skills/`, then the legacy `.kortix/opencode/skills`
+ * a project authored for OpenCode, so switching `runtime:` never loses them.
  */
 export function resolvePiSkillDirectories(cfg: HostConfig): string[] {
   const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
-  return [join(workspace, '.kortix', 'skills'), join(workspace, '.kortix', 'opencode', 'skills')]
-}
-
-/** Where the managed skill overlay lands (runtime-assets.ts `injectSkills`). */
-export function resolvePiConfigDir(cfg: HostConfig): string {
-  return join(cfg.projectTarget || cfg.workspace || '/workspace', '.kortix', 'opencode')
+  return [managedSkillsDir(), ...projectSkillDirs(workspace)]
 }

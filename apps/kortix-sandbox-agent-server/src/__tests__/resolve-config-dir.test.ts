@@ -98,6 +98,21 @@ describe('resolveOpencodeConfigDir', () => {
     expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'yaml/oc'))
   })
 
+  test('root layout: harnesses/opencode wins over the legacy dir when the manifest names none', async () => {
+    for (const dir of ['harnesses/opencode', '.kortix/opencode']) {
+      mkdirSync(join(workspace, dir), { recursive: true })
+      writeFileSync(join(workspace, dir, 'opencode.jsonc'), '{}')
+    }
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'harnesses/opencode'))
+  })
+
+  test('an explicit config_dir is the only candidate: no fallback to the defaults', async () => {
+    writeFileSync(join(workspace, 'kortix.yaml'), 'opencode:\n  config_dir: config/oc\n')
+    mkdirSync(join(workspace, 'harnesses/opencode'), { recursive: true })
+    writeFileSync(join(workspace, 'harnesses/opencode/opencode.jsonc'), '{}')
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(DEFAULT_DIR)
+  })
+
   test('falls back when the manifest points at a dir lacking an opencode config file', async () => {
     writeFileSync(join(workspace, 'kortix.yaml'), 'opencode:\n  config_dir: .kortix/opencode\n')
     mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true })

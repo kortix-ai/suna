@@ -306,8 +306,8 @@ a change request. It never merges: a human reviews the diff.
 ### Project scaffold
 
 `kortix init [project-name] [options]` creates a new project directory. The
-starter writes a v2 `kortix.yaml` and the canonical `.kortix/opencode`
-system-skill source. The command can wire local coding-tool discovery without
+starter writes a v2 `kortix.yaml`, `agents/`, `skills/`, `memory/`, and
+`harnesses/opencode/`. The command can wire local coding-tool discovery without
 changing the cloud OpenCode runtime. The command does not write
 `.kortix/link.json`. `kortix ship` or `kortix projects link` create that file.
 

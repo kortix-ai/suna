@@ -316,7 +316,7 @@ function defaultPrepare(input: BootConfigPathInput): (dir: string, platformOwned
   return (dir, platformOwned) =>
     platformOwned
       ? preparePlatformConfigDir(dir, input.managedSkillsDir)
-      : prepareConfigDir(dir, input.managedSkillsDir)
+      : prepareConfigDir(dir, input.managedSkillsDir, {}, input.cfg.projectTarget)
 }
 
 export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<BootConfigPathResult> {

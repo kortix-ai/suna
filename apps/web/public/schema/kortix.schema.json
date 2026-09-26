@@ -74,7 +74,8 @@
                 "minLength": 1,
                 "not": {
                   "pattern": "^/|(^|/)\\.\\.($|/)"
-                }
+                },
+                "description": "Directory with the OpenCode-only files (opencode.jsonc, plugins/, tools/). Defaults to harnesses/opencode, then the legacy .kortix/opencode."
               }
             },
             "additionalProperties": true
@@ -1088,6 +1089,11 @@
             "additionalProperties": {
               "type": "object",
               "properties": {
+                "file": {
+                  "type": "string",
+                  "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.md$",
+                  "description": "Repo-relative path of this agent's .md (frontmatter + prompt). Defaults to agents/<name>.md."
+                },
                 "enabled": {
                   "type": "boolean"
                 },
@@ -1425,7 +1431,8 @@
                 "minLength": 1,
                 "not": {
                   "pattern": "^/|(^|/)\\.\\.($|/)"
-                }
+                },
+                "description": "Directory with the OpenCode-only files (opencode.jsonc, plugins/, tools/). Defaults to harnesses/opencode, then the legacy .kortix/opencode."
               }
             },
             "additionalProperties": true
@@ -2296,7 +2303,7 @@
         "$defs": {
           "agentMdFrontmatter": {
             "type": "object",
-            "description": "OpenCode behavior for one agent — lives in .kortix/opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
+            "description": "Behavior for one agent — lives in its .md frontmatter (agents.<name>.file, default agents/<name>.md), never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
             "properties": {
               "description": {
                 "type": "string"

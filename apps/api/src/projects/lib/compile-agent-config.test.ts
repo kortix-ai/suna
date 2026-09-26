@@ -130,14 +130,20 @@ describe('KNOWN_BEHAVIOR_KEYS / OpencodeAgentConfigSchema coordination', () => {
   });
 });
 
-describe('agentMarkdownPath', () => {
-  test('defaults to .kortix/opencode/agents/<name>.md', () => {
-    expect(agentMarkdownPath({}, 'support')).toBe('.kortix/opencode/agents/support.md');
+describe('agentMarkdownPath (where a new or edited .md is written)', () => {
+  test('defaults to agents/<name>.md', () => {
+    expect(agentMarkdownPath({}, 'support')).toBe('agents/support.md');
   });
 
-  test('honors a custom top-level [opencode] config_dir', () => {
+  test('an OpenCode config_dir no longer moves agents', () => {
     expect(agentMarkdownPath({ opencode: { config_dir: 'custom/dir' } }, 'support')).toBe(
-      'custom/dir/agents/support.md',
+      'agents/support.md',
+    );
+  });
+
+  test('agents.<name>.file wins', () => {
+    expect(agentMarkdownPath({ agents: { support: { file: 'team/support.md' } } }, 'support')).toBe(
+      'team/support.md',
     );
   });
 });
@@ -712,7 +718,39 @@ describe('resolveSelectedAgentConfigForSession', () => {
     expect(Object.keys(parsed.agent)).toEqual(['support']);
     expect(parsed.agent.support.prompt).toBe('Support body.');
     expect(parsed.model).toBe('anthropic/claude-sonnet-4-5');
-    expect(readRepoFileCalls).toEqual(['.kortix/opencode/agents/support.md']);
+    // Root layout first, then the legacy layout that holds the file.
+    expect(readRepoFileCalls).toEqual(['agents/support.md', '.kortix/opencode/agents/support.md']);
+  });
+
+  test('reads the root-layout agents/<name>.md without touching the legacy path', async () => {
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = {
+      'agents/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Root body.'),
+      '.kortix/opencode/agents/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Legacy body.'),
+    };
+    readRepoFileCalls = [];
+
+    const parsed = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')) as OpencodeConfig;
+
+    expect(parsed.agent.support.prompt).toBe('Root body.');
+    expect(readRepoFileCalls).toEqual(['agents/support.md']);
+  });
+
+  test('an explicit agents.<name>.file is the only path read', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: GOVERNANCE_FIXTURE.replace('  support:\n', '  support:\n    file: team/support.md\n'),
+    };
+    mdFileContent = {
+      'team/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Team body.'),
+      'agents/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Root body.'),
+    };
+    readRepoFileCalls = [];
+
+    const parsed = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')) as OpencodeConfig;
+
+    expect(parsed.agent.support.prompt).toBe('Team body.');
+    expect(readRepoFileCalls).toEqual(['team/support.md']);
   });
 
   test('fails closed when the selected agent configuration cannot be read', async () => {

@@ -6,7 +6,8 @@ describe("newConfigPrompt", () => {
   test("the agent prompt asks what to build, names the config path, and asks for a change request", () => {
     const prompt = newConfigPrompt("agent");
     expect(prompt.startsWith("I want to configure a new agent for this project.")).toBe(true);
-    expect(prompt).toContain("`.kortix/opencode/agents/<name>.md`");
+    expect(prompt).toContain("`agents/<name>.md`");
+    expect(prompt).toContain("`file: agents/<name>.md`");
     expect(prompt).toContain("open a change request");
   });
 

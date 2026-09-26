@@ -31,7 +31,7 @@ anywhere — a suggested response is always a draft for a human to send.
 ## Step 0 — Orient and resume
 
 ```sh
-cat .kortix/memory/brand-monitor-log.md 2>/dev/null || echo "(no ledger yet — first run)"
+cat memory/brand-monitor-log.md 2>/dev/null || echo "(no ledger yet — first run)"
 ```
 
 Read every mention already reported before searching. If this is the first run
@@ -62,7 +62,7 @@ that mentions the brand.
 
 Compute a stable fingerprint per mention (the URL, or a hash of URL plus the
 first few hundred characters). Compare against
-`.kortix/memory/brand-monitor-log.md`. Anything already logged is skipped —
+`memory/brand-monitor-log.md`. Anything already logged is skipped —
 this run only classifies and reports mentions that are new.
 
 ## Step 5 — Classify sentiment and notability
@@ -99,14 +99,14 @@ One message to {{slack_channel}} per run:
 
 ## Step 8 — Update the ledger
 
-Append today's mentions to `.kortix/memory/brand-monitor-log.md` — fingerprint,
+Append today's mentions to `memory/brand-monitor-log.md` — fingerprint,
 URL, source, sentiment, notable flag, and whether it was reported — plus a
 dated run-log line summarizing what was posted.
 
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/brand-monitor-log.md`. Per mention: fingerprint (URL or
+Lives at `memory/brand-monitor-log.md`. Per mention: fingerprint (URL or
 URL+content hash), source/platform, date first seen, sentiment classification,
 notable flag (y/n), and whether it was reported in the digest. Below that,
 dated **Run log** entries: how many new mentions were found, the sentiment

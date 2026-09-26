@@ -75,3 +75,46 @@ describe('managed-skill overlay target', () => {
     expect(await assets.resolveConfigDir(cfg)).toBe(imageDefaultDir)
   })
 })
+
+describe('managed-skill overlay target on the root layout', () => {
+  test('a working-tree config dir without skills/ hands the overlay to the project root skills/', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'overlay-root-layout-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    const configDir = join(workspace, 'harnesses', 'opencode')
+    await mkdir(configDir, { recursive: true })
+    await mkdir(join(workspace, 'skills', 'kortix-cli'), { recursive: true })
+    const { managedOverlayRoot } = await import('../project-layout')
+    expect(managedOverlayRoot(configDir, workspace)).toBe(workspace)
+    // The legacy dir keeps its own skills/.
+    const legacy = join(workspace, '.kortix', 'opencode')
+    await mkdir(join(legacy, 'skills'), { recursive: true })
+    expect(managedOverlayRoot(legacy, workspace)).toBe(legacy)
+    // A project that keeps no skills anywhere: the overlay stays with the config dir.
+    const bare = join(root, 'bare')
+    await mkdir(join(bare, 'harnesses', 'opencode'), { recursive: true })
+    expect(managedOverlayRoot(join(bare, 'harnesses', 'opencode'), bare)).toBe(join(bare, 'harnesses', 'opencode'))
+    // A dir outside the working tree (a release, the image default) is never redirected.
+    expect(managedOverlayRoot(join(root, 'release'), workspace)).toBe(join(root, 'release'))
+  })
+
+  test('the assets service answers the project root for a served root-layout config dir', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'overlay-root-served-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    const configDir = join(workspace, 'harnesses', 'opencode')
+    await mkdir(configDir, { recursive: true })
+    await mkdir(join(workspace, 'skills'), { recursive: true })
+    await writeFile(join(configDir, 'opencode.jsonc'), '{}\n')
+    roots.push(await serveTestConfigDir(configDir))
+    const cfg = {
+      projectTarget: workspace,
+      workspace,
+      opencodeInternalPort: 4096,
+      opencodeStandbyPort: 4097,
+      defaultOpencodeConfigDir: join(root, 'image-default'),
+    } as unknown as Config
+    const assets = createOpenCodeAssetsService()
+    expect(await assets.resolveConfigDir(cfg)).toBe(workspace)
+  })
+})

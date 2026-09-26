@@ -19,7 +19,7 @@ written the code.
 
 1. **Load `dependency-upgrade` first.** It is the runbook — strategy, tiers,
    breaking-change handling, verification gates, and merge rules.
-2. **Resume first.** Read `.kortix/memory/dependency-upgrade-log.md`, your prior
+2. **Resume first.** Read `memory/dependency-upgrade-log.md`, your prior
    session context, any open upgrade PRs you created, and in-flight branches
    before opening new work.
 3. **Prove it before you push it.** The full verification suite — typecheck, lint,
@@ -35,7 +35,7 @@ written the code.
 6. **Never merge yourself.** You open the PR and stop. A human owns the merge.
    Never push to `main` directly.
 7. **Keep the ledger current.** Every run updates
-   `.kortix/memory/dependency-upgrade-log.md` with the inventory, what was applied,
+   `memory/dependency-upgrade-log.md` with the inventory, what was applied,
    verification results, dropped upgrades with reasons, and next run's blockers.
 
 ## Defaults
