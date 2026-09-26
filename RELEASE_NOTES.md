@@ -1,34 +1,23 @@
-Your own keys in Slack, Teams and the CLI, and sessions that open instantly
+Everything from v0.13.32, plus steadier sessions and grouped outputs
 
-Your own model keys and ChatGPT subscription now work in Slack, Teams and the CLI, saved sessions open instantly, and a single Stop can no longer break a session.
+This release restores everything from v0.13.32, which was rolled back, and adds fixes for live transcripts, sleeping sessions, the file viewer and connectors.
 
 ## New
 
-- **Your own keys and ChatGPT everywhere.** Models you reach through your own API keys, keys shared with you, project keys, and ChatGPT subscriptions are available in Teams, Slack and the CLI, not only the web picker.
-- **Members bring their own ChatGPT subscription**, without needing permission to manage project secrets.
-- **Saved sessions open on their conversation.** Opening an existing session shows skeleton rows shaped like that session while it loads, instead of the full-screen boot screen.
-- **Command palette.** ⌘K opens instantly at a fixed position, and search can copy your account, project and session IDs.
-- **Connect cards name the app** they connect, and render as cards even when an agent writes them in a table.
-- **Mobile**: dictation in the composer, labelled queue controls with undo, and + only attaches.
-- **SSO domain verification.** An enterprise account verifies its email domain with a DNS TXT record before SSO is enforced for it. Existing SSO setups keep working.
+- **Grouped outputs.** When the agent shows several results in a row, such as two screenshots, the session renders one tabbed card instead of a card per result.
+- **Managed model routes.** Each Kortix-managed model routes through its own provider route, and the model picker shows the price for each route.
+- **Wake failures are explained.** When a sandbox fails to wake, the session page shows the failure and when it retries.
 
 ## Fixed
 
-- One Stop during a session's first turn no longer makes every later turn end immediately, and a Stop during start-up releases the held prompt.
-- A healthy Slack run is no longer closed as idle after 30 minutes of quiet work.
-- A saved secret that is not granted to the session's agent is now reported as "not granted to this agent" instead of silently missing, and an agent session can sync its own secrets.
-- In web terminals on custom Debian templates, Kortix tools stay on PATH and secrets load in login shells.
-- An open file viewer refreshes when the agent edits the file.
-- A turn that fails mid-stream shows one readable line naming the model, with details folded away.
-- Streaming from OpenAI-compatible models that omit event separators no longer fails to parse.
-- The web app detects the end of a turn reliably.
-
-## Security
-
-- Markdown, embedded frames, credential routing, share links and analytics are hardened.
-- SDK token, transport, preview-credential and file-write paths are hardened.
-- Connector requests are checked against private-network egress rules, and connector sync is atomic.
-- Gateway usage settles exactly once per request.
-- SSO emails are trusted only on verified domains, and access-control writes are scoped to their account.
-- Billing wallet functions move to a private database schema.
+- A live session's transcript recovers when a turn ends even if the working signal was missed.
+- A session idle for more than a day wakes again, and a failed start is recovered instead of reported lost.
+- A config update never interrupts the turn it finds running.
+- Kortix owns the `kortix` and `opencode` binaries inside a managed sandbox, so a box cannot end up on a version Kortix cannot heal.
+- The file viewer reloads when the explorer switches between the live workspace and the saved copy.
+- X and other Composio toolkits with their own OAuth connect again, and the Connected tab stays current.
+- Git pushes on branch commits retry a transient failure.
+- Audit writes for one session no longer queue behind each other.
+- A requested Stop keeps its reason in the turn history.
+- Several browser errors from extensions, GPU drivers, closed parent windows and tab discards no longer surface as app errors.
 

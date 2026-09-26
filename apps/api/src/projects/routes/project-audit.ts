@@ -8,6 +8,7 @@ import { approvalPageUrl } from '../../setup-links/token';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { auditDb, auditErrorSqlstate, isAuditContentionError } from '../../shared/audit-db';
+import { isAuditSessionLockTimeout, withAuditSessionLock } from '../../shared/audit-session-serial';
 import { logger as appLogger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountTokens, auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
@@ -75,6 +76,20 @@ const AUDIT_INGEST_CHUNK = (() => {
 
 /** Advertised backoff when the session's sequence lock is contended. */
 const AUDIT_INGEST_RETRY_AFTER_SECONDS = 5;
+
+/**
+ * How long one chunk waits for the in-process per-session audit lock before it
+ * reports contention (`shared/audit-session-serial.ts`). The holder is another
+ * audit INSERT for the same session in this process — the request's own inbound
+ * audit row the queue flushes, or a concurrent batch for the session. Waiting
+ * in memory cannot be cut short by the pool's `lock_timeout`, so this budget
+ * covers the holder's own statement budget (10 s) plus margin, while staying
+ * under the 25 s request deadline.
+ */
+const AUDIT_INGEST_LOCK_WAIT_MS = (() => {
+  const raw = Number.parseInt(process.env.KORTIX_AUDIT_INGEST_LOCK_WAIT_MS ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 12_000;
+})();
 
 /** The PostgreSQL SQLSTATE behind a contention error, following `cause`. */
 function auditErrorSqlState(error: unknown): string | null {
@@ -377,15 +392,25 @@ projectsApp.openapi(
     for (let offset = 0; offset < toInsert.length; offset += AUDIT_INGEST_CHUNK) {
       const chunk = toInsert.slice(offset, offset + AUDIT_INGEST_CHUNK);
       try {
-        const inserted = await auditDb()
-          .insert(auditEvents)
-          .values(chunk)
-          .onConflictDoNothing()
-          .returning({ eventId: auditEvents.eventId });
+        // Hold the process-local session lock for the chunk's INSERT. The
+        // request's OWN inbound audit row is enqueued for this same session and
+        // would otherwise race this insert for the same
+        // `audit_session_sequences` row lock — the second writer lost at the
+        // pool's 2.5 s `lock_timeout` (55P03) and the queue dropped the row.
+        const inserted = await withAuditSessionLock(
+          sessionId,
+          () =>
+            auditDb()
+              .insert(auditEvents)
+              .values(chunk)
+              .onConflictDoNothing()
+              .returning({ eventId: auditEvents.eventId }),
+          { timeoutMs: AUDIT_INGEST_LOCK_WAIT_MS },
+        );
         attempted += chunk.length;
         insertedCount += inserted.length;
       } catch (error) {
-        if (!isAuditContentionError(error)) {
+        if (!isAuditContentionError(error) && !isAuditSessionLockTimeout(error)) {
           // A write that is NOT backpressure is a defect, and until now the
           // only trace of it was Drizzle's wrapper: `DrizzleQueryError: Failed
           // query: insert into "kortix"."audit_events" …` with the whole
@@ -418,7 +443,10 @@ projectsApp.openapi(
         appLogger.warn('[audit] ingest contended', {
           projectId,
           sessionId,
-          sqlstate: auditErrorSqlState(error),
+          // `57xxx`/`55P03` came back from Postgres; a null SQLSTATE on a
+          // bounded in-process wait means the writer never reached the DB.
+          sqlstate: auditErrorSqlstate(error),
+          contention_source: isAuditSessionLockTimeout(error) ? 'in_process' : 'postgres',
           accepted: parsed.accepted,
           attempted,
           inserted: insertedCount,

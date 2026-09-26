@@ -36,6 +36,9 @@ async function flush() {
 }
 
 afterEach(() => {
+  // Module-level state: clear it on the way OUT too, or the next file in this
+  // bun process inherits it (see test-state-reset-tripwire.test.ts).
+  __resetBootTimelineRelayForTests()
   globalThis.fetch = realFetch
   process.env = { ...realEnv }
 })

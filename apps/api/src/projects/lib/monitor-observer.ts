@@ -13,7 +13,7 @@
  * exactly one winner.
  */
 import { projectMonitorEvents, projectTriggerRuntime, projects } from '@kortix/db';
-import { and, asc, eq, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, lt } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import type { GitTriggerSpec } from '../triggers';
@@ -256,13 +256,4 @@ export async function drainMonitorEvents(now = new Date()): Promise<MonitorDrain
   } finally {
     monitorDrainRunning = false;
   }
-}
-
-/** Count of pending monitor events — health/observability only. */
-export async function pendingMonitorEventCount(): Promise<number> {
-  const [row] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(projectMonitorEvents)
-    .where(eq(projectMonitorEvents.status, 'pending'));
-  return Number(row?.count ?? 0);
 }

@@ -71,6 +71,7 @@ import {
   runtimeStartRetryAtMs,
   runtimeWakeInProgress,
   runtimeWakeProgressPatch,
+  runtimeWakeRestoreProgressPatch,
   stampedRuntimeFailureState,
 } from '../session-lifecycle/runtime-wake-fence';
 
@@ -235,7 +236,24 @@ export async function resumeStoppedSandbox(
           );
       },
     },
-    start: () => provider.start(externalId),
+    start: () =>
+      provider.start(externalId, {
+        // A restore from cold storage runs inside start() and can outlast the
+        // lease; keep it, fenced to this wake.
+        onProgress: async () => {
+          await db
+            .update(sessionSandboxes)
+            .set({
+              metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify(runtimeWakeRestoreProgressPatch())}::jsonb`,
+            })
+            .where(
+              and(
+                eq(sessionSandboxes.sandboxId, row.sandboxId),
+                sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
+              ),
+            );
+        },
+      }),
     stop: () => provider.stop(externalId),
     isMissingError: isMissingRuntimeError,
     finalize: async () => {

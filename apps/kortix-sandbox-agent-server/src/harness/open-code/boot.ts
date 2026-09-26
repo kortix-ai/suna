@@ -75,7 +75,7 @@ import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { installShutdownHandlers } from '../../shutdown'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { startStaticWebServer } from '../../static-web'
-import { observeOpencodeDelivery, opencodeTurnInFlight } from './opencode-turn-state'
+import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
 import type { HarnessBootContext } from '../harness'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
@@ -194,6 +194,17 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
         return finalized
       })
     },
+    // Read on the OUTGOING opencode, an instant before a verified reload kills
+    // it. Nothing else can answer for the turn it was writing afterwards: the
+    // replacement was never handed that turn's stream, so its own finalize
+    // finds nothing to close. The id travels up in the converge response and
+    // the API settles the row and redelivers the prompt.
+    readOpenTurn: (baseUrl) =>
+      openAssistantMessageIdOnRoot(
+        baseUrl,
+        process.env.KORTIX_WORKSPACE || '/workspace',
+        readOpenCodeSessionPin(),
+      ),
   })
   const opencode = harness.native
   const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
@@ -1107,6 +1118,17 @@ async function runWarmSeedMode(
         return finalized
       })
     },
+    // Read on the OUTGOING opencode, an instant before a verified reload kills
+    // it. Nothing else can answer for the turn it was writing afterwards: the
+    // replacement was never handed that turn's stream, so its own finalize
+    // finds nothing to close. The id travels up in the converge response and
+    // the API settles the row and redelivers the prompt.
+    readOpenTurn: (baseUrl) =>
+      openAssistantMessageIdOnRoot(
+        baseUrl,
+        process.env.KORTIX_WORKSPACE || '/workspace',
+        readOpenCodeSessionPin(),
+      ),
   })
   const opencode = harness.native
   // The warm-seed BUILDER has no session and no API to ask, so the one boot

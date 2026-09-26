@@ -21,6 +21,7 @@ import {
   clearSandboxTurn,
   clearTurnStopRequest,
   completeSandboxTurn,
+  isProtectedEndError,
   markTurnStopRequested,
   recordUnidentifiedTurnCause,
   reconcileSandboxTurnDelivery,
@@ -1396,6 +1397,35 @@ describe('recordUnidentifiedTurnCause: a cause frame that does not name its turn
     expect((await readTurn(old))?.end_error).toEqual(ABORT);
     expect((await readTurn(stopped))?.end_error).toEqual({ name: 'UserStop', message: null });
     expect((await readTurn(other))?.end_error).toEqual({ name: 'APIError', message: 'upstream 500' });
+  });
+
+  // A stop can be stamped on the OPEN turn before the guard's cause arrives:
+  // the hold settle stamps UserStop, and the pre-guard daemon's cause frame
+  // lands while the turn is still open. The cause must not claim a stop the
+  // user asked for.
+  test('a requested stop on the open turn is never rewritten by an unidentified cause', async () => {
+    const token = await openTurn(t('u-stop-open'), 'msg_u9');
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { messageId: 'msg_u9' });
+
+    expect(await cause()).toBe('none');
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+
+    // The abort the stop caused keeps it, exactly like the ended-turn path.
+    await end('msg_u9', ABORT);
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
+  // The predicate the recorder and the ledger CASE both read. An abort is the
+  // EFFECT of a stop, so it is replaceable; a requested stop and every other
+  // named cause are protected.
+  test('isProtectedEndError protects a requested stop and any named cause, not a bare abort', () => {
+    expect(isProtectedEndError('UserStop')).toBe(true);
+    expect(isProtectedEndError('QueueInterrupt')).toBe(true);
+    expect(isProtectedEndError('SandboxMemoryGuard')).toBe(true);
+    expect(isProtectedEndError('MessageAbortedError')).toBe(false);
+    expect(isProtectedEndError('AbortError')).toBe(false);
+    expect(isProtectedEndError(null)).toBe(false);
+    expect(isProtectedEndError(undefined)).toBe(false);
   });
 });
 
