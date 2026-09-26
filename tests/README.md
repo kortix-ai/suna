@@ -2,6 +2,14 @@
 
 `pnpm test` is the only repository-level test command.
 
+The API package's direct `scripts/test.sh` command selects one to four Bun
+workers from available memory. It reserves 2 GiB for the agent and OS and
+budgets 4 GiB per worker. It restarts workers every 80 test files because a
+single long-lived Bun worker retained 8.9 GiB during a full suite. Set
+`KORTIX_API_TEST_WORKERS` only on a dedicated
+runner with measured headroom. A detached suite continues after an agent turn
+ends; check and stop that process before retrying a memory-guarded turn.
+
 The default run executes six lanes concurrently:
 
 1. Black-box REST and CLI flows against local Supabase, API, and gateway.
@@ -59,8 +67,7 @@ code.
 
 Desktop UI parity is part of the browser lane in `27-desktop-parity.spec.ts`.
 Run the same journey in native Electron with `E2E_DESKTOP_NATIVE=1` and
-`E2E_GREP='27 — desktop parity'`. See
-[`desktop-verification.md`](../docs/runbooks/desktop-verification.md).
+`E2E_GREP='27 — desktop parity'`.
 
 GitHub Actions uses `.github/workflows/tests.yml` for every local-profile run.
 It runs on every push to `main`, on a pull request into `staging`, on a pull
@@ -75,7 +82,7 @@ run means a newer commit superseded it. Deployed-target runs are separate:
 `full suite + quality gates` job is the only required check in the repository).
 
 The run is six lanes in parallel, each natively on one Blacksmith runner
-(`CI_RUNNER_L`, 8 vCPU / 32 GB — see `docs/runbooks/ci-runners.md`). Core and
+(`CI_RUNNER_L`, 8 vCPU / 32 GB). Core and
 package lanes run `pnpm test` and `pnpm test -- --packages-only`. Four browser
 lanes run shards `1/4` through `4/4` via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`, which maps straight

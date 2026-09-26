@@ -1,5 +1,7 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -71,7 +73,7 @@ describe('local test runner contract', () => {
     expect(source).toContain("verifyPublishablePackage('agent-tunnel')");
     expect(source).toContain('packed agent-tunnel CLI cannot load its WebSocket fallback');
     expect(source).toContain("'--no-sort'");
-    expect(source).toContain("KORTIX_API_TEST_WORKERS: '3'");
+    expect(source).not.toContain('KORTIX_API_TEST_WORKERS:');
     expect(source).toContain("KORTIX_TEST_TIMEOUT_MS: '30000'");
     expect(source).toContain("KORTIX_ATTACHMENT_OFFLOAD: '0'");
     expect(source).toContain("await runWorkspaceTests(['@kortix/cli'], 1)");
@@ -88,8 +90,36 @@ describe('local test runner contract', () => {
   it('runs isolated API test files through a bounded parallel worker pool', () => {
     const source = readFileSync(resolve(root, 'apps/api/scripts/test.sh'), 'utf8');
 
-    expect(source).toContain('api_test_workers="${KORTIX_API_TEST_WORKERS:-4}"');
+    expect(source).toContain('api_test_workers="${KORTIX_API_TEST_WORKERS:-$(detect_api_test_workers)}"');
     expect(source).toContain('--parallel="$api_test_workers"');
+    const choose = (availableMb: number) => Number(execFileSync('bash', [
+      '-c', `source apps/api/scripts/test-workers.sh; select_api_test_workers ${availableMb}`,
+    ], { cwd: root, encoding: 'utf8' }).trim());
+    expect([choose(2048), choose(8192), choose(10600), choose(32768)]).toEqual([1, 1, 2, 4]);
+  });
+
+  it('restarts Bun after 80 files and still runs later batches after a failure', () => {
+    const temp = mkdtempSync(resolve(tmpdir(), 'kortix-api-batches-'));
+    try {
+      const executable = resolve(temp, 'bun');
+      const calls = resolve(temp, 'calls');
+      writeFileSync(executable, '#!/usr/bin/env bash\nprintf "%s\\n" "$@" >> "$BATCH_CAPTURE"\nprintf "END\\n" >> "$BATCH_CAPTURE"\ncount=$(grep -c "^END$" "$BATCH_CAPTURE")\nif [ "$count" = 2 ]; then exit 1; fi\n');
+      chmodSync(executable, 0o755);
+      const run = spawnSync('bash', ['scripts/test.sh'], {
+        cwd: resolve(root, 'apps/api'),
+        env: { ...process.env, PATH: `${temp}:${process.env.PATH}`, BATCH_CAPTURE: calls, KORTIX_API_TEST_WORKERS: '2' },
+        encoding: 'utf8',
+      });
+      expect(run.status).toBe(1);
+      const count = Number(run.stderr.match(/API unit suite: (\d+) files/)?.[1]);
+      const batches = readFileSync(calls, 'utf8').split('END\n').filter(Boolean).map((batch) => batch.split('\n').filter(Boolean));
+      expect(batches.length).toBe(Math.ceil(count / 80));
+      expect(batches.every((batch) => batch.includes('--parallel=2'))).toBe(true);
+      expect(batches.every((batch) => batch.filter((arg) => arg.endsWith('.test.ts')).length <= 80)).toBe(true);
+      expect(batches.reduce((total, batch) => total + batch.filter((arg) => arg.endsWith('.test.ts')).length, 0)).toBe(count);
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
   });
 
   it('keeps process-heavy package tests on their proven concurrency settings', () => {

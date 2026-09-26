@@ -351,8 +351,16 @@ resolve per request.
 Each connection has an `owner_type`: `project` (shared — reachable by anyone
 the connector is granted to, human or service account) or `member` (private —
 reachable only by its own owner, and only in a private session; never by a
-service account). `p.connectors.accounts(slug)` lists every account this
-caller may reach, default first:
+service account). A shared account can be narrowed to groups and people:
+`connections.list()` returns its grants in `shared_with`, and
+`connectionSharedWithEveryone(connection)` answers whether everyone in the
+project may use it. A narrowed account follows the private rules for the
+people it names, and `usable: false` marks one the caller sees only to manage
+it. Grant or revoke with `createAssignment` / `revokeAssignment`
+(`object: { type: 'connection', id }`) — see
+[Choose who can use a shared account](/docs/connect/connectors#choose-who-can-use-a-shared-account).
+`p.connectors.accounts(slug)` lists every account this caller may reach,
+default first:
 
 ```ts
 const accounts = await kortix.project(projectId).connectors.accounts('stripe-read');

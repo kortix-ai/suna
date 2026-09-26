@@ -96,6 +96,7 @@ Three more read methods round out the handle:
 
 - `s.previews()` — candidate preview ports the runtime exposes.
 - `s.publicShares.list()` / `.create(input)` / `.revoke(shareId)` — public share links.
+  `.create({ transcript: true })` makes a read-only link to the conversation (one live link per session; a second call returns the same link). Read it anonymously with `getPublicSessionShareMessages(token)`; `findActiveTranscriptShare(shares)` picks the live one from `.list()`.
 - `s.audit(limit?)` — the session's audit trail of agent actions.
 - `s.attachments.upload(file, options?)` — save a private file before startup when `session_transcript_history` is enabled. Maximum 50 MiB. Returns a stable URL for a prompt file part.
 - `s.attachments.read(attachmentId, signal?)` — read saved bytes as a `Blob` without starting the sandbox.
@@ -623,8 +624,8 @@ try {
 | ---------------------- | ---------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
 | `ApiError`             | `Error`    | Default for any failed request: bad status, network failure, timeout, or abort | `status`, `code`, `detail`, `response`, `url`, `endpoint`, `timeout` |
 | `AuthError`            | `ApiError` | `getToken` returned `null`. Kortix never sent the request                      | `code` is always `'NO_SESSION'`                                      |
-| `BillingError`         | `Error`    | HTTP `402`. The only billing error class                                       | `status` (`402`), `detail.message`                                   |
-| `RequestTooLargeError` | `Error`    | HTTP `431`. Usually too many files in one request                              | `detail.suggestion`                                                  |
+| `BillingError`         | `ApiError` | HTTP `402`. The only billing error class                                       | `status` (`402`), `code`, `detail.message`                           |
+| `RequestTooLargeError` | `ApiError` | HTTP `431`. Usually too many files in one request                              | `detail.suggestion`                                                  |
 | `SessionNotReadyError` | `Error`    | A runtime accessor ran before `ensureReady()`                                  | `name` is `'SessionNotReadyError'`                                   |
 
 `ApiError.name` is `'ApiError'` by default. Two cases override it:
@@ -634,11 +635,13 @@ try {
 
 For any other failure, `status` holds the HTTP status code. `code` comes from the backend's `error_code`, or falls back to the status as a string. `message` is an enumerable own property on `ApiError`, so it survives `JSON.stringify` and object spread.
 
+Kortix sends a request that receives `401` once more with a fresh token from `getToken()`, when that token differs from the one it sent. A request with a one-shot stream body is not resent.
+
 Kortix retries some requests before your code sees an error. If a `GET` or `HEAD` request returns `502`, `503`, or `504`, Kortix retries it up to 2 times, with a 250ms then 500ms delay. A transient transport failure on a `GET` or `HEAD` — a network error, not a status code — is retried the same way. A retry that succeeds never reaches `onError`. Kortix never retries `POST`, `PUT`, `PATCH`, or `DELETE` requests, or a `500` response.
 
 Kortix throws `AuthError` on the client, before it sends a request, when `getToken()` returns `null`. `AuthError` extends `ApiError`, so `err instanceof ApiError` still matches. Check `err instanceof AuthError`, or `err.code === 'NO_SESSION'`, to treat "not signed in" as a separate case from a backend failure.
 
-Kortix throws `BillingError` for every HTTP `402` response: out of credits, over a plan limit, or another billing gate. `detail.message` holds the reason from the backend.
+Kortix throws `BillingError` for every HTTP `402` response: out of credits, over a plan limit, or another billing gate. `detail.message` holds the reason from the backend, and `code` holds the backend's machine code (for example `app_budget_exceeded`). `BillingError` extends `ApiError`, so check `BillingError` first when you handle both.
 
 Kortix throws `RequestTooLargeError` for HTTP `431`. This usually means the request carried too many files. `detail.suggestion` holds a ready-to-show hint for the user.
 

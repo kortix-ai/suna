@@ -8,6 +8,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
+import { revokeAllPublicSharesForSession } from '../../shared/session-public-shares';
 import {
   legacyRehydrateSpec,
   rehydrateSessionChat,
@@ -32,7 +33,9 @@ import { invalidateProviderCache } from '../../sandbox-proxy';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
+  parkEstablishedRuntime,
   preserveEstablishedRuntime,
+  runtimeLossVerdict,
   retireUnmaterializedRuntime,
   RUNTIME_IDENTITY_ERROR,
   RUNTIME_IDENTITY_UNAVAILABLE,
@@ -102,6 +105,14 @@ export async function deleteSession(input: {
   await Promise.resolve().then(() => sessionAttachmentStore().removeSession(projectId, sessionId)).catch((error) => {
     console.error('[session-attachments] cleanup failed', { projectId, sessionId, error });
   });
+
+  // Public links end with the session. `resolvePublicShare` already refuses a
+  // tombstoned session (410); this makes the owner's share list say so too.
+  await Promise.resolve()
+    .then(() => revokeAllPublicSharesForSession(sessionId, deletedAt))
+    .catch((error) => {
+      console.error('[public-shares] revoke on session delete failed', { sessionId, error });
+    });
 
   if (sandbox) {
     const removable =
@@ -463,7 +474,24 @@ export async function restartSession(input: {
               sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
             ),
           );
-        await provider.start(externalId);
+        await provider.start(externalId, {
+          // A restore from cold storage runs inside start() and can outlast
+          // the restart lease; keep it, fenced to this restart.
+          onProgress: async () => {
+            const leaseExpiresAt = new Date(Date.now() + RUNTIME_RESTART_LEASE_MS);
+            await db
+              .update(sessionSandboxes)
+              .set({
+                metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ runtimeRestartLeaseExpiresAt: leaseExpiresAt.toISOString() })}::jsonb`,
+              })
+              .where(
+                and(
+                  eq(sessionSandboxes.sandboxId, sessionId),
+                  sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
+                ),
+              );
+          },
+        });
         if (!(await ownsRestart('after_start'))) return;
         // Provider ingress credentials can change on every stop/start cycle.
         // Remove any link resolved while the sandbox was stopped.
@@ -597,11 +625,40 @@ export async function restartSession(input: {
               () => null,
             );
           } else {
-            await preserveEstablishedRuntime(
-              claim.row,
-              'restart_missing_runtime',
-              'restart_failed',
-            ).catch(() => null);
+            // Incident 2026-08-14: a loss verdict requires a fresh, definitive
+            // provider `removed` — nothing else may reach the terminal "computer
+            // was lost" state. Neither condition that got us here is evidence of
+            // one. `isMissingRuntimeError` is a message heuristic that matches
+            // any error whose text merely contains "not found", and
+            // `recoverInPlace` is OPTIONAL: `?.` yields `undefined` for a
+            // provider that does not implement it, which is indistinguishable
+            // here from a provider that tried and failed. The sibling restart
+            // paths above both gate on `getStatus() === 'removed'` before they
+            // preserve; this one is reached from a catch block and did not, so
+            // an unrelated "not found" thrown mid-restart reported a live box as
+            // lost — unrecoverable and non-retriable to the user, a false
+            // `runtime.lost` page, and the box left running because only a park
+            // stops it. Ask the provider, then let the shared gate decide.
+            const status = await (async () => {
+              try {
+                return await provider.getStatus(externalId);
+              } catch {
+                return 'unknown' as const;
+              }
+            })();
+            if (runtimeLossVerdict(status) === 'preserve') {
+              await preserveEstablishedRuntime(
+                claim.row,
+                'restart_missing_runtime',
+                'restart_failed',
+              ).catch(() => null);
+            } else {
+              await parkEstablishedRuntime(
+                claim.row,
+                'restart_missing_runtime',
+                'restart_failed',
+              ).catch(() => null);
+            }
           }
           return;
         }

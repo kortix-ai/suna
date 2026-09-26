@@ -31,6 +31,33 @@ describe('runtime catalog provider resolution', () => {
     });
   });
 
+  // Regression (kortix-ai/suna self-host report, 2026-09-17): the baseUrl
+  // override keyed off `kind === 'anthropic'`, so EVERY provider with an
+  // Anthropic-shaped transport (npm: @ai-sdk/anthropic) — not just Anthropic
+  // itself — had its catalog `api` base discarded and its users' keys sent to
+  // api.anthropic.com, which correctly 401s them ("API key is invalid.").
+  // The catalog's `anthropic` entry publishes no `api` field (hence the
+  // ANTHROPIC_BASE_URL fallback, asserted above); these third-party
+  // Anthropic-compatible providers DO, and it must win.
+  test('resolves kimi-for-coding to its own Anthropic-compatible endpoint, not api.anthropic.com', () => {
+    expect(resolveCatalogUpstream('kimi-for-coding')).toMatchObject({
+      kind: 'anthropic',
+      envVar: 'KIMI_API_KEY',
+      baseUrl: 'https://api.kimi.com/coding/v1',
+    });
+  });
+
+  test('resolves MiniMax coding-plan providers to their own endpoints', () => {
+    expect(resolveCatalogUpstream('minimax-coding-plan')).toMatchObject({
+      kind: 'anthropic',
+      baseUrl: 'https://api.minimax.io/anthropic/v1',
+    });
+    expect(resolveCatalogUpstream('minimax-cn')).toMatchObject({
+      kind: 'anthropic',
+      baseUrl: 'https://api.minimaxi.com/anthropic/v1',
+    });
+  });
+
   test('resolves Google Gemini through its OpenAI-compatible API with the primary UI key', () => {
     expect(resolveCatalogUpstream('google')).toEqual({
       kind: 'openai-compat',

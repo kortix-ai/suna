@@ -75,9 +75,14 @@ export function projectConnectSteps(
   slug: string,
   label: string | undefined,
   deps: ProjectConnectDeps,
+  /** Runs once the account row exists and before the authorization link opens:
+   *  where the Add account flow writes the grants that narrow it. */
+  beforeAuthorize?: (connectionId: string) => Promise<void>,
 ): {
   start: () => Promise<ConnectorConnectResult>;
   finalize: () => Promise<ConnectorFinalizeResult>;
+  /** The account `start` created, or `null` before it ran. */
+  connectionId: () => string | null;
 } {
   let connectionId: string | null = null;
   let route: ProjectConnectRoute = 'connection';
@@ -94,6 +99,7 @@ export function projectConnectSteps(
         label: label?.trim() || DEFAULT_PROJECT_CONNECTION_LABEL,
       });
       connectionId = connection.connection_id;
+      await beforeAuthorize?.(connection.connection_id);
       try {
         return await deps.connectConnection(projectId, connection.connection_id);
       } catch (error) {
@@ -119,6 +125,7 @@ export function projectConnectSteps(
       }
       return deps.finalizeConnection(projectId, connectionId);
     },
+    connectionId: () => connectionId,
   };
 }
 
@@ -140,9 +147,19 @@ export function usePipedreamConnectProject(
 ) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return useMutation({
-    mutationFn: async (input?: { label?: string }) => {
-      const steps = projectConnectSteps(projectId, slug, input?.label, sdkProjectConnectDeps);
-      return runConnectLinkFlow(steps.start, steps.finalize);
+    mutationFn: async (input?: {
+      label?: string;
+      beforeAuthorize?: (connectionId: string) => Promise<void>;
+    }) => {
+      const steps = projectConnectSteps(
+        projectId,
+        slug,
+        input?.label,
+        sdkProjectConnectDeps,
+        input?.beforeAuthorize,
+      );
+      const result = await runConnectLinkFlow(steps.start, steps.finalize);
+      return { ...result, connectionId: steps.connectionId() };
     },
     onSuccess: (result) => {
       if (!result.connected) return;

@@ -3,6 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import {
   CONNECTORS_DONE_URI,
   CONNECTORS_RETURN_URL,
+  WEB_CREATE_RETURN_URL,
+  newAccountWebUrl,
+  newProjectWebUrl,
   projectConnectorsWebUrl,
   projectCustomizeWebUrl,
 } from './web-project-links';
@@ -55,5 +58,31 @@ describe('connectors return urls', () => {
 
   test('the done uri is a browser return path, so Android never routes it', () => {
     expect(isBrowserReturnPath(CONNECTORS_DONE_URI)).toBe(true);
+  });
+});
+
+describe('newProjectWebUrl', () => {
+  test('builds web /new', () => {
+    expect(newProjectWebUrl('https://kortix.com')).toBe('https://kortix.com/new');
+  });
+
+  test('scopes /new to the account when given, id encoded', () => {
+    expect(newProjectWebUrl('https://kortix.com/', 'acc 1')).toBe('https://kortix.com/new?account=acc%201');
+  });
+
+  test('omits the account param for a null account', () => {
+    expect(newProjectWebUrl('https://kortix.com', null)).toBe('https://kortix.com/new');
+  });
+});
+
+describe('newAccountWebUrl', () => {
+  test('opens the account hub list (empty accountId) over the project door', () => {
+    expect(newAccountWebUrl('https://kortix.com/')).toBe('https://kortix.com/projects/start?accountId=');
+  });
+});
+
+describe('web create return url', () => {
+  test('is a browser return path, so Android never routes it', () => {
+    expect(isBrowserReturnPath(WEB_CREATE_RETURN_URL)).toBe(true);
   });
 });

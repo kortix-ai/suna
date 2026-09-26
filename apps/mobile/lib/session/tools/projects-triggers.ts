@@ -89,39 +89,7 @@ export function triggersRow(action: string, input: Record<string, unknown>, outp
   }
 }
 
-export type TriggerLine =
-  | { raw: string }
-  | {
-      status: string;
-      name: string;
-      sourceType: 'webhook' | 'cron';
-      sourceDetail: string;
-      agent: string;
-      lastRun: string;
-    };
-
-const TRIGGER_LINE =
-  /^\[(\w+)]\s+(\S+)\s*\|\s*(webhook|cron):\s*(.+?)\s*\|\s*(\w+)\s*→\s*(\w+)\s*\|\s*last_run:\s*(.+)$/;
-
-/** Every output line starting with `[`, parsed when it matches the listing shape. */
-export function parseTriggerLines(output: string): TriggerLine[] {
-  if (!output) return [];
-  return output
-    .split('\n')
-    .filter((l) => l.trim().startsWith('['))
-    .map((line) => {
-      const m = line.trim().match(TRIGGER_LINE);
-      if (!m) return { raw: line.trim() };
-      return {
-        status: m[1],
-        name: m[2],
-        sourceType: m[3] as 'webhook' | 'cron',
-        sourceDetail: m[4].trim(),
-        agent: m[6],
-        lastRun: m[7].trim(),
-      };
-    });
-}
+export { type TriggerLine, parseTriggerLines } from '@kortix/shared/tool-output';
 
 /** Web badge variant: `active` success, `paused` warning, else muted. */
 export function triggerStatusTone(status: string): 'success' | 'warning' | 'muted' {

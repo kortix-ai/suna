@@ -34,9 +34,38 @@ export interface ConnectionAgentPrincipalReach {
 }
 
 /**
+ * A SHARED (`project`-owned) account's audience, resolved for the ONE person a
+ * call acts for (`agentPrincipal.onBehalfOfUserId` under an agent principal,
+ * else the acting user):
+ *
+ *   `open` nobody narrowed the account (no `connection` grant), or it is
+ *          shared with everyone in the project (a `project` principal grant)
+ *   `in`   it is narrowed, and a grant names this person or one of their groups
+ *   `out`  it is narrowed, and no grant names this person
+ *
+ * Every other owner type ignores it. `connection-audience.ts` resolves it.
+ */
+export type ConnectionAudienceReach = 'open' | 'in' | 'out';
+
+/**
+ * A narrowed shared account runs under the personal-account rules with its
+ * audience in place of the owner, so like a personal account it never enters a
+ * shared session: another member of that session could make the agent act as
+ * an account they are not in the audience of.
+ */
+export function connectionNeedsPrivateSession(
+  ownerType: ConnectionOwnerType,
+  audience: ConnectionAudienceReach,
+): boolean {
+  return ownerType === 'member' || (ownerType === 'project' && audience !== 'open');
+}
+
+/**
  * | owner_type | reachable by                                                    |
  * |------------|-----------------------------------------------------------------|
- * | `project`  | anyone who may use the connector — humans AND service accounts  |
+ * | `project`  | audience `open`: anyone who may use the connector — humans AND  |
+ * |            | service accounts. Audience `in`/`out`: the personal-account     |
+ * |            | rules below, with "the audience names them" for "is the owner"  |
  * | `member`   | only `ownerId === actingUserId`; NEVER a service account.       |
  * |            | Agent-principal session: only `ownerId === on_behalf_of` in a   |
  * |            | `private` session (see `agentPrincipal` below)                  |
@@ -62,9 +91,28 @@ export function connectionIsReachable(input: {
   actingPrincipalIsServiceAccount: boolean;
   trustedManagedSystem?: boolean;
   agentPrincipal?: ConnectionAgentPrincipalReach | null;
+  /**
+   * The row's audience for the person this call acts for. Required so a new
+   * call site cannot forget it: a path that MANAGES an account (rename,
+   * re-credential, revoke, finish an authorization) rather than USES it passes
+   * `'open'` and keeps its own manage-capability gate.
+   */
+  audience: ConnectionAudienceReach;
 }): boolean {
   if (input.trustedManagedSystem === true) return true;
-  if (input.ownerType === 'project') return true;
+  if (input.ownerType === 'project') {
+    if (input.audience === 'open') return true;
+    if (input.agentPrincipal) {
+      const human = input.agentPrincipal.onBehalfOfUserId;
+      return (
+        input.agentPrincipal.visibility === 'private' &&
+        typeof human === 'string' &&
+        human !== '' &&
+        input.audience === 'in'
+      );
+    }
+    return !input.actingPrincipalIsServiceAccount && input.audience === 'in';
+  }
   if (input.ownerType !== 'member') return false;
   if (input.agentPrincipal) {
     const human = input.agentPrincipal.onBehalfOfUserId;
@@ -127,10 +175,13 @@ export interface ConnectionReachabilityActor {
  * `connectionIsReachable` for a loaded connection row. It derives the
  * trusted-managed-channel exception from the row and its connector config, so
  * every caller that holds a row asks the same question the same way.
+ * `audience` is the row's audience for this actor (`'open'` on a path that
+ * manages the account rather than uses it).
  */
 export function connectionRowIsReachable(
   row: ConnectionReachabilityRow,
   actor: ConnectionReachabilityActor,
+  audience: ConnectionAudienceReach,
 ): boolean {
   return connectionIsReachable({
     ownerType: row.ownerType,
@@ -138,6 +189,7 @@ export function connectionRowIsReachable(
     actingUserId: actor.userId,
     actingPrincipalIsServiceAccount: actor.isServiceAccount,
     agentPrincipal: actor.agentPrincipal,
+    audience,
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
       providerType: row.providerType,
       platform:

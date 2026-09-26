@@ -177,6 +177,8 @@ RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
     && kortix --version \\
+    && chown kortix:kortix /usr/local/bin \\
+    && mkdir -p /home/kortix/.config/opencode && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \\
     && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
 
 RUN { \\
@@ -383,6 +385,8 @@ RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
     && kortix --version \\
+    && chown kortix:kortix /usr/local/bin \\
+    && mkdir -p /home/kortix/.config/opencode && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \\
     && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
 
 RUN { \\

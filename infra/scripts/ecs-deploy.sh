@@ -10,7 +10,8 @@
 #
 # Usage:
 #   ecs-deploy.sh <env> <image> [--service api|gateway|web] [--version X.Y.Z]
-#                 [--database-migrated] [--no-wait] [--dry-run]
+#                 [--database-migrated] [--no-wait] [--wait-for serving|stable]
+#                 [--dry-run]
 #
 #   env        dev | staging | prod | prod-use2-shadow
 #   image      full image ref to pin, e.g. kortix/kortix-api:dev-481dc551
@@ -24,6 +25,18 @@
 #              released version.
 #   --dry-run  render + print the task-def override, then exit WITHOUT
 #              registering or rolling anything.
+#   --wait-for stable (default) returns when the rollout is COMPLETED and the
+#              service runs exactly the desired count, i.e. after every old
+#              task has drained and stopped. serving returns as soon as every
+#              task ECS keeps running is on the NEW revision; the old tasks
+#              still drain (deregistration_delay) in the background. ECS only
+#              stops an old task after its replacement passes the target-group
+#              health check, so "no old task left with desired status RUNNING"
+#              means the new revision takes all new requests. Measured on dev
+#              2026-09-26: the API served only the new commit ~80 s before the
+#              stable wait returned. Deploy Dev uses serving; staging and prod
+#              keep stable, where a roll must be fully settled before the next
+#              gate runs.
 #   --database-migrated
 #              required for a live prod or prod-use2-shadow rollout. This is an
 #              explicit assertion that the environment's migration job passed.
@@ -282,13 +295,42 @@ print_rollout_diagnostics() {
   print_awslogs_hint
 }
 
-# Returns 0 only for a COMPLETED rollout whose running count caught up with the
-# desired count. A FAILED rolloutState returns immediately — it never burns the
-# remaining budget. Both failure paths print diagnostics before returning.
+# Returns 0 when every task ECS keeps running (desired status RUNNING) is on
+# task definition $1, is RUNNING, and there are exactly $2 of them. An old task
+# that is draining has desired status STOPPED, so it does not count.
+new_revision_serving() {
+  local task_def="$1" want="$2" task_arns tasks_json arn
+  local -a arns=()
+
+  task_arns="$(aws ecs list-tasks --region "$REGION" --cluster "$CLUSTER" \
+    --service-name "$SERVICE" --desired-status RUNNING \
+    --query 'taskArns' --output json 2>/dev/null || true)"
+  while IFS= read -r arn; do
+    [ -n "$arn" ] || continue
+    arns+=("$arn")
+  done < <(printf '%s' "$task_arns" \
+    | jq -r '(if type == "object" then (.taskArns // []) else . end)[]? | select(type == "string")' \
+      2>/dev/null || true)
+  [ "${#arns[@]}" -eq "$want" ] || return 1
+
+  tasks_json="$(aws ecs describe-tasks --region "$REGION" --cluster "$CLUSTER" \
+    --tasks "${arns[@]}" --output json 2>/dev/null || true)"
+  printf '%s' "$tasks_json" | jq -e --arg td "$task_def" --argjson want "$want" '
+    (.tasks // []) as $t
+    | ($t | length) == $want
+      and ($t | all(.taskDefinitionArn == $td and .lastStatus == "RUNNING"))' \
+    >/dev/null 2>&1
+}
+
+# Returns 0 for a COMPLETED rollout whose running count caught up with the
+# desired count. With mode `serving`, it also returns 0 as soon as
+# new_revision_serving holds. A FAILED rolloutState returns immediately — it
+# never burns the remaining budget. Both failure paths print diagnostics.
 wait_for_stable_rollout() {
-  local budget="$1" delay="$2"
+  local budget="$1" delay="$2" mode="${3:-stable}"
   local started deadline now remaining service_json summary
   local rollout="" running="" desired="" pending=""
+  local primary_td="" primary_running="" primary_desired="" primary_pending=""
   started="$(date +%s)"
   deadline=$(( started + budget ))
 
@@ -301,10 +343,15 @@ wait_for_stable_rollout() {
         | [$d.rolloutState // "UNKNOWN",
            ($s.runningCount // 0 | tostring),
            ($s.desiredCount // 0 | tostring),
-           ($s.pendingCount // 0 | tostring)]
+           ($s.pendingCount // 0 | tostring),
+           ($d.taskDefinition // "-"),
+           ($d.runningCount // 0 | tostring),
+           ($d.desiredCount // 0 | tostring),
+           ($d.pendingCount // 0 | tostring)]
         | @tsv' 2>/dev/null || true)"
       if [ -n "$summary" ]; then
-        IFS=$'\t' read -r rollout running desired pending <<<"$summary"
+        IFS=$'\t' read -r rollout running desired pending \
+          primary_td primary_running primary_desired primary_pending <<<"$summary"
       fi
 
       case "$rollout" in
@@ -320,6 +367,14 @@ wait_for_stable_rollout() {
           return 1
           ;;
       esac
+
+      if [ "$mode" = serving ] && [ "$primary_desired" = "$desired" ] \
+        && [ "${primary_desired:-0}" -gt 0 ] 2>/dev/null \
+        && [ "$primary_running" = "$primary_desired" ] && [ "$primary_pending" = "0" ] \
+        && new_revision_serving "$primary_td" "$primary_desired"; then
+        echo "✔ rollout SERVING in $(( $(date +%s) - started ))s: all $primary_desired tasks ECS keeps running are on $primary_td; old tasks drain in the background (service running=$running)"
+        return 0
+      fi
     fi
 
     now="$(date +%s)"
@@ -352,16 +407,22 @@ WAIT=1
 DRY_RUN=0
 DATABASE_MIGRATED=0
 VERSION_OVERRIDE=""
+WAIT_FOR="stable"
 while [ $# -gt 0 ]; do
   case "$1" in
     --service) SVC_KIND="$2"; shift 2 ;;
     --version) VERSION_OVERRIDE="$2"; shift 2 ;;
     --database-migrated) DATABASE_MIGRATED=1; shift ;;
     --no-wait) WAIT=0; shift ;;
+    --wait-for) WAIT_FOR="${2:-}"; shift 2 || shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+case "$WAIT_FOR" in
+  serving|stable) ;;
+  *) echo "--wait-for must be serving or stable (got: '${WAIT_FOR}')" >&2; exit 2 ;;
+esac
 
 [ -n "$VERSION_OVERRIDE" ] || VERSION_OVERRIDE="$(derive_version_from_image "$IMAGE")"
 
@@ -567,8 +628,8 @@ aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVI
 echo "✔ update-service issued (desired count unchanged)"
 
 if [ "$WAIT" = "1" ]; then
-  echo "⏳ waiting for the rollout to stabilize (budget ${ECS_STABILIZE_TIMEOUT_SECONDS}s, poll ${ECS_STABILIZE_POLL_SECONDS}s) …"
-  wait_for_stable_rollout "$ECS_STABILIZE_TIMEOUT_SECONDS" "$ECS_STABILIZE_POLL_SECONDS"
+  echo "⏳ waiting for the rollout (--wait-for ${WAIT_FOR}, budget ${ECS_STABILIZE_TIMEOUT_SECONDS}s, poll ${ECS_STABILIZE_POLL_SECONDS}s) …"
+  wait_for_stable_rollout "$ECS_STABILIZE_TIMEOUT_SECONDS" "$ECS_STABILIZE_POLL_SECONDS" "$WAIT_FOR"
   aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE" \
     --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
     --output table

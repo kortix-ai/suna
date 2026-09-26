@@ -15,6 +15,7 @@ import {
   type SandboxLifecycle,
   type SessionPrompt,
   type SessionPromptPart,
+  groupShowSegments,
   hasRetryingAssistantTurn,
   listSessionPrompts,
   projectSessionConnection,
@@ -66,6 +67,7 @@ import {
   QueuedPromptFailure,
   type QueuedPromptStatusState,
 } from './turn/queued-prompt-bubbles';
+import { ShowGroupRenderer } from './tool/show-group-renderer';
 import { segmentTurn } from './turn/segment-turn';
 import { stabilizeTurns } from './turn/stable-turns';
 import { statusElapsedFrame } from './turn/status-elapsed';
@@ -628,8 +630,8 @@ export function deriveTurnErrorPresentation(input: {
           notice.usedPct === null ? '' : ` (${notice.usedPct}% used)`
         }.`,
         suggestion:
-          'The last command used almost all of the sandbox memory. Ask the agent to continue with a ' +
-          'lighter command, for example fewer parallel workers.' +
+          'A running process or RAM-backed file may still be using memory. Stop or reduce heavy background work, ' +
+          'then ask the agent to continue with a smaller workload.' +
           (notice.detail ? ` Details: ${notice.detail}.` : ''),
       };
     case 'cause':
@@ -1304,6 +1306,9 @@ function SessionTurnImpl({
   const hasVisibleUserContent = useMemo(() => {
     // Session reports render as their own card — don't show as user bubble
     if (sessionReport) return false;
+    // The prompt is not loaded (a long run's tail): its stand-in has no parts
+    // and must not render as the empty bubble a loading prompt would.
+    if (turn.partial) return false;
     const parts = turn.userMessage.parts;
     // Parts not loaded yet (bridging / transient state) — assume visible
     // to prevent a flash where the bubble disappears momentarily.
@@ -1322,7 +1327,7 @@ function SessionTurnImpl({
     // Has any agent part?
     if (parts.some(isAgentPart)) return true;
     return false;
-  }, [turn.userMessage.parts, sessionReport]);
+  }, [turn.partial, turn.userMessage.parts, sessionReport]);
 
   // User message text — for copy action
   const userMessageText = useMemo(() => {
@@ -1535,7 +1540,8 @@ function SessionTurnImpl({
       }
       parts.push(part);
     }
-    return segmentTurn(parts, { standaloneCallIds });
+    // Consecutive `show` calls render as one carousel card (`show-group`).
+    return groupShowSegments(segmentTurn(parts, { standaloneCallIds }), { standaloneCallIds });
   }, [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds]);
 
   // ============================================================================
@@ -1757,6 +1763,31 @@ function SessionTurnImpl({
                     isTrailing={index === segments.length - 1}
                     disableNavigation={disableToolNavigation}
                     density={conversationDensity}
+                  />
+                );
+              }
+
+              if (segment.kind === 'show-group') {
+                const visible = segment.parts.filter(shouldShowToolPart);
+                if (visible.length === 0) return null;
+                // Same key as the lone `show` this group grew from, so the
+                // card is not re-mounted when the next call joins it.
+                if (visible.length === 1) {
+                  return (
+                    <ToolPartRenderer
+                      key={visible[0].id}
+                      part={visible[0]}
+                      sessionId={sessionId}
+                      disableNavigation={disableToolNavigation}
+                    />
+                  );
+                }
+                return (
+                  <ShowGroupRenderer
+                    key={visible[0].id}
+                    parts={visible}
+                    sessionId={sessionId}
+                    disableNavigation={disableToolNavigation}
                   />
                 );
               }
@@ -5446,9 +5477,10 @@ export function SessionChat({
   // failure counter every tick, so `unreachable` never fires no matter how
   // long it stays wedged. See `useRuntimeBootStalled`.
   const runtimeStalled = useRuntimeBootStalled();
-  // Label an involuntary page load (discarded tab, or a chunk 404 after a
+  // Classify an involuntary page load (discarded tab, or a chunk 404 after a
   // deploy) so the next "my session randomly disconnected" report arrives with
-  // its cause attached instead of a shrug.
+  // its cause attached instead of a shrug. An actionable cause reports to
+  // Sentry; a routine browser tab discard only leaves a breadcrumb.
   useReloadForensics(projectSessionId);
   // Nothing has answered yet and the mount is young: the difference between
   // "this session is asleep" and "we have not looked yet". Without it, every

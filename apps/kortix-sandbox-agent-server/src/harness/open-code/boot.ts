@@ -40,13 +40,23 @@ import { ensureInjectedManagedSkills } from '../../managed-skills'
 // `startSessionRuntime` — so every way a session comes up reconciles once.
 // Strictly AFTER `bootMark('opencode-ready')` and never awaited: it adds zero
 // milliseconds to the readiness the API and the frontend poll for.
-import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
+import {
+  configureRuntimeConvergence,
+  convergeRuntimeAssetsAtTurnEnd,
+  scheduleRuntimeAssetsReconcile,
+} from '../../runtime-assets'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
-import { flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './events'
+import {
+  flattenOpencodeError,
+  type PermissionRequest,
+  type QuestionRequest,
+  type OpencodeTurnError,
+} from './events'
 import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from '../../kortix-event-bus'
 import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, createAuditRelay } from './opencode-audit-relay'
+import { relayPermissionToApi } from './permission-relay'
 import { relayQuestionToApi } from './question-relay'
 import { readControlPlaneEnv, sandboxRelayContext } from '../../relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
@@ -75,7 +85,7 @@ import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { installShutdownHandlers } from '../../shutdown'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { startStaticWebServer } from '../../static-web'
-import { observeOpencodeDelivery, opencodeTurnInFlight } from './opencode-turn-state'
+import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
 import type { HarnessBootContext } from '../harness'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
@@ -194,6 +204,17 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
         return finalized
       })
     },
+    // Read on the OUTGOING opencode, an instant before a verified reload kills
+    // it. Nothing else can answer for the turn it was writing afterwards: the
+    // replacement was never handed that turn's stream, so its own finalize
+    // finds nothing to close. The id travels up in the converge response and
+    // the API settles the row and redelivers the prompt.
+    readOpenTurn: (baseUrl) =>
+      openAssistantMessageIdOnRoot(
+        baseUrl,
+        process.env.KORTIX_WORKSPACE || '/workspace',
+        readOpenCodeSessionPin(),
+      ),
   })
   const opencode = harness.native
   const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
@@ -764,6 +785,13 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
+  // Report only: apps/api pushes "needs your approval". The permission itself
+  // stays open for the user (permission-relay.ts).
+  const onPermissionAsked = (req: PermissionRequest) => {
+    void relayPermissionToApi(req).catch((err) =>
+      logger.warn('[opencode-events] permission relay failed', { err: (err as Error).message }),
+    )
+  }
   const onSessionIdle = (opencodeSessionId: string) => {
     void (async () => {
       // An aborted turn is checked first: it may have been healed and resumed,
@@ -776,6 +804,13 @@ async function startSessionRuntime(
         opencodeSessionId,
       )
       await relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg, unrequestedAbortCause(verdict))
+      // THE SAFE BOUNDARY. A turn has just finished, so this is the one moment
+      // the box knows nothing is running — the only moment a daemon swap costs a
+      // reconnect instead of a lost turn. Converge and apply here, not on a
+      // timer: a timer near a readiness decision is what the config-releases AST
+      // tripwires forbid. `applyStagedAssetsIfIdle` re-asks the turn oracle
+      // anyway, so a CHILD session going idle under a live root turn is refused.
+      convergeRuntimeAssetsAtTurnEnd(cfg)
     })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
@@ -889,6 +924,7 @@ async function startSessionRuntime(
   const eventHandlers = {
     onEvent,
     onQuestionAsked,
+    onPermissionAsked,
     onSessionIdle,
     onSessionError,
     onSessionStatus,
@@ -1107,6 +1143,17 @@ async function runWarmSeedMode(
         return finalized
       })
     },
+    // Read on the OUTGOING opencode, an instant before a verified reload kills
+    // it. Nothing else can answer for the turn it was writing afterwards: the
+    // replacement was never handed that turn's stream, so its own finalize
+    // finds nothing to close. The id travels up in the converge response and
+    // the API settles the row and redelivers the prompt.
+    readOpenTurn: (baseUrl) =>
+      openAssistantMessageIdOnRoot(
+        baseUrl,
+        process.env.KORTIX_WORKSPACE || '/workspace',
+        readOpenCodeSessionPin(),
+      ),
   })
   const opencode = harness.native
   // The warm-seed BUILDER has no session and no API to ask, so the one boot

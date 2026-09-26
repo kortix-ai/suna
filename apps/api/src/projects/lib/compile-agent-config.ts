@@ -473,21 +473,85 @@ export function manifestRuntime(raw: unknown): RuntimeV2 {
   return (raw as Record<string, unknown>).runtime === 'pi' ? 'pi' : 'opencode';
 }
 
-export async function resolveManifestRuntime(
-  project: GitBackedProject,
-  baseRef?: string | null,
-): Promise<RuntimeV2 | null> {
+type PiHarness = { pi?: { packages?: unknown; exclude?: unknown } } | undefined;
+
+function piList(harnesses: PiHarness, key: 'packages' | 'exclude'): unknown[] {
+  const value = harnesses?.pi?.[key];
+  return Array.isArray(value) ? value : [];
+}
+
+/** A package's identity across the two levels: its npm name, or its `./` path as written. */
+function piPackageKey(entry: unknown): string | null {
+  const source = typeof entry === 'string' ? entry : (entry as { source?: unknown } | null)?.source;
+  if (typeof source !== 'string') return null;
+  const npm = /^npm:((?:@[^/@]+\/)?[^/@]+)(?:@.*)?$/.exec(source);
+  return npm ? npm[1]! : source;
+}
+
+/**
+ * An agent's pi packages, entries as written (pi's own settings shape): the
+ * top-level `harnesses.pi.packages` minus the agent's `exclude`, then the
+ * agent's own `harnesses.pi.packages`; an agent entry for a package the top
+ * level also lists replaces it in place. No agent name (or `default`) means `default_agent`.
+ * The manifest validator gated every entry at merge; anything else reads as none.
+ */
+export function manifestPiPackages(raw: unknown, agentName?: string | null): unknown[] {
+  if (!raw || typeof raw !== 'object' || manifestSchemaVersion(raw as Record<string, unknown>) !== 2) return [];
+  const manifest = raw as Record<string, unknown>;
+  const requested = agentName?.trim();
+  // `default` is the session layer's "no agent chosen" (sessions.ts), like the runtime's.
+  const name = requested && requested !== 'default' ? requested : typeof manifest.default_agent === 'string' ? manifest.default_agent : '';
+  const agent = (manifest.agents as Record<string, { harnesses?: PiHarness } | undefined> | undefined)?.[name];
+  const excluded = new Set(piList(agent?.harnesses, 'exclude'));
+  const own = new Map(piList(agent?.harnesses, 'packages').map((entry) => [piPackageKey(entry), entry]));
+  const merged = piList(manifest.harnesses as PiHarness, 'packages')
+    .filter((entry) => !excluded.has(piPackageKey(entry)))
+    .map((entry) => {
+      const key = piPackageKey(entry);
+      if (!own.has(key)) return entry;
+      const replacement = own.get(key);
+      own.delete(key);
+      return replacement;
+    });
+  return [...merged, ...own.values()];
+}
+
+/** Every distinct non-empty package list the manifest's agents resolve to: what a merge builds. */
+export function manifestPiPackageLists(raw: unknown): unknown[][] {
+  if (!raw || typeof raw !== 'object') return [];
+  const agents = Object.keys(((raw as Record<string, unknown>).agents as Record<string, unknown> | undefined) ?? {});
+  const lists = new Map<string, unknown[]>();
+  for (const name of agents.length ? agents : [null]) {
+    const list = manifestPiPackages(raw, name);
+    if (list.length) lists.set(JSON.stringify(list), list);
+  }
+  return [...lists.values()];
+}
+
+/** The parsed v2 manifest at `baseRef` (default branch when absent); null for v1, none, or a read failure. */
+async function readManifestV2(project: GitBackedProject, baseRef?: string | null): Promise<Record<string, unknown> | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
     const found = await readManifestFromRepo(project, candidates, ref);
     if (!found) return null;
     const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
-    if (manifestSchemaVersion(raw) !== 2) return null;
-    return manifestRuntime(raw);
+    return manifestSchemaVersion(raw) === 2 ? raw : null;
   } catch {
     return null;
   }
+}
+
+export async function resolveManifestRuntime(
+  project: GitBackedProject,
+  baseRef?: string | null,
+): Promise<RuntimeV2 | null> {
+  const raw = await readManifestV2(project, baseRef);
+  return raw ? manifestRuntime(raw) : null;
+}
+
+export async function resolveManifestPiPackageLists(project: GitBackedProject, baseRef?: string | null): Promise<unknown[][]> {
+  return manifestPiPackageLists(await readManifestV2(project, baseRef));
 }
 
 /**

@@ -92,6 +92,18 @@ export async function cloudflareSafe(res: Response): Promise<Response> {
   return new Response(res.body, { status: 503, headers });
 }
 
+// Anthropic SDKs, and Claude Code with ANTHROPIC_API_KEY, send the key as
+// `x-api-key`. The Anthropic-shaped route accepts it when no Authorization
+// header is present.
+export function messagesAuthorization(
+  authorization: string | undefined,
+  apiKey: string | undefined,
+): string | undefined {
+  if (authorization) return authorization;
+  const key = apiKey?.trim();
+  return key ? `Bearer ${key}` : undefined;
+}
+
 export function buildServer(options: { inflight?: InflightBudget } = {}): GatewayServer {
   const inflight = options.inflight ?? defaultInflight;
   const api = createApiClient({ baseUrl: config.apiUrl, token: config.apiToken });
@@ -374,7 +386,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       }
       try {
         const request = {
-          authorization: c.req.header('authorization'),
+          authorization: messagesAuthorization(c.req.header('authorization'), c.req.header('x-api-key')),
           rawBody: body.body,
           // Without this a disconnected /v1/messages client left the provider
           // generating — and billing — to nobody.

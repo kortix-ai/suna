@@ -36,22 +36,6 @@ export function serializeSessionRuntimeContext(context: SessionRuntimeContext): 
   return JSON.stringify(SessionRuntimeContextSchema.parse(context));
 }
 
-export async function persistSessionRuntimeContext(
-  sessionId: string,
-  context: SessionRuntimeContext,
-): Promise<void> {
-  const serialized = serializeSessionRuntimeContext(context);
-  await db
-    .insert(projectSessionRuntimeContexts)
-    .values({
-      sessionId,
-      context,
-      byteSize: new TextEncoder().encode(serialized).byteLength,
-      updatedAt: new Date(),
-    })
-    .returning({ sessionId: projectSessionRuntimeContexts.sessionId });
-}
-
 export async function loadSessionRuntimeContext(
   sessionId: string,
 ): Promise<SessionRuntimeContext | null> {

@@ -7,6 +7,8 @@
  * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here).
  */
 import { flow } from '../core/flow';
+import { withDb } from '../fixtures/chat';
+import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixtures/database-project';
 
 // PROJ-2 — BYO repo create. A non-GitHub repo_url is rejected at the
 // normalizeRepoUrl boundary (400) before any GitHub round-trip; MEMBER /
@@ -309,6 +311,117 @@ flow(
   },
 );
 
+// PROJ-38 — turn-permission relay. The daemon reports OpenCode
+// `permission.asked`; the route pushes "needs your approval" once per request
+// id and never answers the permission. Only the session's own sandbox
+// credential may call it: a user token would let any member push another
+// member's devices. The sandbox credential is a project PAT bound to a
+// synthetic live session (bindDatabaseSessionCredential).
+flow(
+  'PROJ-38',
+  { domain: 'projects', routes: ['POST /v1/projects/:projectId/turn-permission'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const base = { projectId: p.id };
+    const target = '/v1/projects/:projectId/turn-permission';
+    const accountId = await withDb(ctx, async (db) =>
+      (await db.query('SELECT account_id FROM kortix.projects WHERE project_id = $1', [p.id])).rows[0]
+        .account_id as string,
+    );
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: p.id,
+      accountId,
+      userId: ctx.P.OWNER.userId!,
+    });
+    const otherSessionId = await createDatabaseSession(ctx.env, {
+      projectId: p.id,
+      accountId,
+      userId: ctx.P.OWNER.userId!,
+    });
+    let tokenId: string | null = null;
+    try {
+      await ctx.step('ANON → 401', async () => {
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .post(target, { session_id: sessionId, request_id: 'per_1' }, { params: base });
+        r.status(401);
+      });
+      await ctx.step('OWNER user token on its own session → 403 (sandbox credential only)', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(target, { session_id: sessionId, request_id: 'per_1' }, { params: base });
+        r.status(403);
+      });
+      await ctx.step('NONMEMBER → 403/404', async () => {
+        const r = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .post(target, { session_id: sessionId, request_id: 'per_1' }, { params: base });
+        r.status([403, 404]);
+      });
+
+      const minted = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/projects/:projectId/cli-token', { name: ctx.fixtures.name('proj37') }, { params: base });
+      minted.status(201);
+      const token = minted.json<{ token_id: string; secret_key: string }>();
+      tokenId = token.token_id;
+      await bindDatabaseSessionCredential(ctx.env, {
+        tokenId: token.token_id,
+        commandId: crypto.randomUUID(),
+        sessionId,
+        accountId,
+        projectId: p.id,
+      });
+      const sandbox = () => ctx.client.withBearer(token.secret_key, 'session sandbox credential');
+      const relay = (body: Record<string, unknown>) => sandbox().post(target, body, { params: base });
+
+      await ctx.step('sandbox credential without session_id → 400', async () => {
+        (await relay({ request_id: 'per_1' })).status(400);
+      });
+      await ctx.step('sandbox credential naming another session of the project → 403', async () => {
+        (await relay({ session_id: otherSessionId, request_id: 'per_1' })).status(403);
+      });
+      await ctx.step('sandbox credential without request_id → 400', async () => {
+        (await relay({ session_id: sessionId })).status(400);
+      });
+      await ctx.step('request_id longer than 256 characters → 400', async () => {
+        (await relay({ session_id: sessionId, request_id: 'p'.repeat(257) })).status(400);
+      });
+      await ctx.step('first relay of a request id with the daemon body → 200 notified:true', async () => {
+        const r = await relay({
+          session_id: sessionId,
+          request_id: 'per_1',
+          opencode_session_id: 'ses_synthetic',
+          permission: 'bash',
+          patterns: ['git push *'],
+        });
+        r.status(200).body().has('$.ok', true).has('$.notified', true);
+      });
+      await ctx.step('a repeat of the same request id → 200 notified:false (one push per request)', async () => {
+        (await relay({ session_id: sessionId, request_id: 'per_1' }))
+          .status(200)
+          .body()
+          .has('$.ok', true)
+          .has('$.notified', false);
+      });
+      await ctx.step('a new request id in the same session → 200 notified:true', async () => {
+        (await relay({ session_id: sessionId, request_id: 'per_2' })).status(200).body().has('$.notified', true);
+      });
+    } finally {
+      if (tokenId) {
+        await ctx.client
+          .as(ctx.P.OWNER)
+          .del('/v1/projects/:projectId/cli-token/:tokenId', { params: { ...base, tokenId } })
+          .catch(() => {});
+      }
+      await withDb(ctx, async (db) => {
+        await db.query('DELETE FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid', [sessionId]);
+        await db.query('DELETE FROM kortix.project_sessions WHERE session_id = ANY($1)', [[sessionId, otherSessionId]]);
+      }).catch(() => {});
+    }
+  },
+);
+
 // PROJ-17 — turn-stream relay. Same auth model as turn-question; the body gate
 // requires session_id first, then scopes it to the project before interpreting
 // the event payload. Asserting the negative
@@ -606,6 +719,81 @@ flow(
         .as(ctx.P.NONMEMBER)
         .get('/v1/projects/:projectId/model-defaults', { params: { projectId: p.id } });
       r.status([403, 404]);
+    });
+  },
+);
+
+// PROJ-37 — PUT and DELETE /model-defaults run one guard in one order:
+// project visible (404) → project.customize.write (403) → project LLM gateway
+// enabled (404 llm_gateway_disabled). Same caller + same project state → same
+// status on both verbs. Every denial fires before model servability is
+// checked. PROJ-27 covers the funded set/read/clear lifecycle; this local
+// flow proves an authorized writer reaches model validation and deletion.
+flow(
+  'PROJ-37',
+  {
+    domain: 'projects',
+    routes: [
+      'PATCH /v1/projects/:projectId/experimental',
+      'GET /v1/projects/:projectId/model-defaults',
+      'PUT /v1/projects/:projectId/model-defaults',
+      'DELETE /v1/projects/:projectId/model-defaults',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const gatewayOff = await team.project();
+    const gatewayOn = await team.project();
+    const user = await team.addMember('member');
+    const manager = await team.addMember('member');
+    for (const project of [gatewayOff, gatewayOn]) {
+      await team.grantProjectRole(project.id, user.userId!, 'user');
+      await team.grantProjectRole(project.id, manager.userId!, 'manager');
+    }
+    const path = '/v1/projects/:projectId/model-defaults';
+    const put = (actor: typeof user, projectId: string, model = 'guard-probe-model') =>
+      ctx.client.as(actor).put(path, { scope: 'project', model }, { params: { projectId } });
+    const del = (actor: typeof user, projectId: string) =>
+      ctx.client.as(actor).del(path, { params: { projectId }, query: { scope: 'project' } });
+
+    await ctx.step('OWNER turns the LLM gateway off on one project and on for the other', async () => {
+      for (const [project, enabled] of [[gatewayOff, false], [gatewayOn, true]] as const) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch(
+            '/v1/projects/:projectId/experimental',
+            { feature: 'llm_gateway', enabled },
+            { params: { projectId: project.id } },
+          );
+        r.status(200);
+      }
+    });
+    await ctx.step('project user without customize.write → PUT and DELETE both 403 while the gateway is off', async () => {
+      (await put(user, gatewayOff.id)).status(403);
+      (await del(user, gatewayOff.id)).status(403);
+    });
+    await ctx.step('project user without customize.write → PUT and DELETE both 403 while the gateway is on', async () => {
+      (await put(user, gatewayOn.id)).status(403);
+      (await del(user, gatewayOn.id)).status(403);
+    });
+    await ctx.step('project manager → PUT and DELETE both 404 llm_gateway_disabled while the gateway is off', async () => {
+      (await put(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
+      (await del(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
+    });
+    await ctx.step('NONMEMBER → PUT and DELETE both 403 on either project', async () => {
+      for (const project of [gatewayOff, gatewayOn]) {
+        (await put(ctx.P.NONMEMBER, project.id)).status(403);
+        (await del(ctx.P.NONMEMBER, project.id)).status(403);
+      }
+    });
+    await ctx.step('project manager reaches model validation and deletion while the gateway is on', async () => {
+      (await put(manager, gatewayOn.id)).status(409)
+        .body().has('$.code', 'model_not_servable');
+      const read = () =>
+        ctx.client.as(manager).get(path, { params: { projectId: gatewayOn.id } });
+      (await read()).status(200).body().has('$.projectDefault', null);
+      (await del(manager, gatewayOn.id)).status(200).body().has('$.ok', true).has('$.scope', 'project');
+      (await read()).status(200).body().has('$.projectDefault', null);
     });
   },
 );

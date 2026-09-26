@@ -6,13 +6,17 @@
  *   ids, project scope, and the grants of one `grantUserId`.
  * - `listUsableGatewaySecrets` adds the member gate: its `userId` must read
  *   the project and have an `account_members` row.
+ * - `resolveProjectSharedProviderSecrets` is the same member-gated read with
+ *   values: the ChatGPT accounts an unconfigured session falls back to.
  *
  * Fully isolated: a fresh account, two projects, members and keys seeded here.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accountMembers, accountSecretGrants, accountSecretResources, projectMembers } from '@kortix/db';
 import { db } from '../shared/db';
-import { listUsableGatewaySecrets, queryUsableGatewaySecrets } from '../secrets/account-resource';
+import {
+  encryptAccountSecret, listUsableGatewaySecrets, queryUsableGatewaySecrets, resolveProjectSharedProviderSecrets,
+} from '../secrets/account-resource';
 import { mayUseProviderKeys, providerEnvVarOf } from '../secrets/provider-key-selection';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
@@ -158,5 +162,80 @@ describe('listUsableGatewaySecrets: the member gate', () => {
     expect(ids(await listUsableGatewaySecrets({
       accountId, projectId, userId: GRANTEE, providerId: 'anthropic', name: NAME, ids: [key.granted!],
     }))).toEqual([key.granted!]);
+  });
+});
+
+describe('resolveProjectSharedProviderSecrets: the ChatGPT accounts an unconfigured session falls back to', () => {
+  const CODEX = 'CODEX_AUTH_JSON';
+  const codex: Record<string, string> = {};
+  let minute = 100;
+
+  async function seedCodex(label: string, over: Partial<typeof accountSecretResources.$inferInsert> = {}) {
+    const [row] = await db.insert(accountSecretResources).values({
+      accountId,
+      projectId,
+      label,
+      accessMode: 'project',
+      providerId: 'codex',
+      name: CODEX,
+      valueEnc: encryptAccountSecret(accountId, JSON.stringify({ openai: { access: `${label}-token` } })),
+      consumer: 'llm_gateway',
+      strategy: 'runtime',
+      // The CREATOR is GRANTEE: every read below is by someone else, or by nobody.
+      createdBy: GRANTEE,
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, minute++)),
+      ...over,
+    }).returning({ secretId: accountSecretResources.secretId });
+    codex[label] = row!.secretId;
+  }
+
+  beforeAll(async () => {
+    await seedCodex('team-oldest');
+    await seedCodex('team-account-wide', { projectId: null });
+    await seedCodex('team-cooling', { cooldownUntil: new Date(Date.now() + 60_000) });
+    await seedCodex('restricted-ungranted', { accessMode: 'members' });
+    await seedCodex('restricted-granted-reader', { accessMode: 'members' });
+    await seedCodex('other-project', { projectId: otherProject.project_id });
+    await seedCodex('inactive', { active: false });
+    await db.insert(accountSecretGrants).values({
+      secretId: codex['restricted-granted-reader']!, accountId, userId: READER, grantedBy: GRANTEE,
+    });
+  });
+
+  const shared = (userId: string, grantUserId: string | null) =>
+    resolveProjectSharedProviderSecrets({ accountId, projectId, userId, grantUserId, providerId: 'codex', name: CODEX });
+
+  test('an agent-principal session (no personal owner) gets the project-shared accounts, oldest first, decrypted', async () => {
+    const result = await shared(READER, null);
+    expect(labels(result.secrets)).toEqual(['team-oldest', 'team-account-wide']);
+    expect(result.secrets.map((s) => JSON.parse(s.value).openai.access)).toEqual(['team-oldest-token', 'team-account-wide-token']);
+    expect(result.coolingDown).toBe(false);
+  });
+
+  test('a member who did not create a shared account gets it, plus the restricted account granted to them', async () => {
+    expect(labels((await shared(READER, READER)).secrets)).toEqual(['team-oldest', 'team-account-wide', 'restricted-granted-reader']);
+  });
+
+  test('a member-restricted account is never usable by a principal it is not granted to', async () => {
+    for (const grantUserId of [null, GRANTEE, STRANGER]) {
+      expect(labels((await shared(READER, grantUserId)).secrets)).not.toContain('restricted-ungranted');
+      expect(labels((await shared(READER, grantUserId)).secrets)).not.toContain('restricted-granted-reader');
+    }
+  });
+
+  test('a principal that cannot read the project, or is not an account member, gets nothing', async () => {
+    expect(await shared(OUTSIDER, null)).toEqual({ coolingDown: false, secrets: [] });
+    expect(await shared(STRANGER, null)).toEqual({ coolingDown: false, secrets: [] });
+  });
+
+  test('an account cooling down is skipped; when every usable account cools down, the earliest retry is reported', async () => {
+    const onlyCooling = await resolveProjectSharedProviderSecrets({
+      accountId, projectId, userId: READER, grantUserId: null, providerId: 'codex', name: CODEX,
+      ids: [codex['team-cooling']!],
+    });
+    expect(onlyCooling.secrets).toEqual([]);
+    expect(onlyCooling.coolingDown).toBe(true);
+    expect(onlyCooling.retryAfterSeconds).toBeGreaterThan(0);
+    expect(onlyCooling.retryAfterSeconds).toBeLessThanOrEqual(60);
   });
 });

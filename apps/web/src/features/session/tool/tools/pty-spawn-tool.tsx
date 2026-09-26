@@ -14,6 +14,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { ptySpawnedBody } from '@kortix/shared/tool-output';
 import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
@@ -25,10 +26,10 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
   const status = partStatus(part);
 
   const parsed = useMemo(() => {
-    const match = output.match(/<pty_spawned>([\s\S]*?)<\/pty_spawned>/);
-    if (!match) return null;
+    const body = ptySpawnedBody(output);
+    if (body === null) return null;
     const fields: Record<string, string> = {};
-    for (const line of match[1].trim().split('\n')) {
+    for (const line of body.trim().split('\n')) {
       const colonIdx = line.indexOf(':');
       if (colonIdx > 0) {
         fields[line.slice(0, colonIdx).trim()] = line.slice(colonIdx + 1).trim();

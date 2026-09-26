@@ -1244,3 +1244,37 @@ describe('validateAgentMdFrontmatter', () => {
     expect(issues.find((i) => i.path === 'agents/w.md.maxSteps')?.message).toContain('steps');
   });
 });
+
+describe('v2 harnesses.pi.packages', () => {
+  const manifest = (packages: string) =>
+    `kortix_version: 2\ndefault_agent: w\nruntime: pi\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n${packages}`;
+
+  test('an author sees which entry is wrong and what to write instead', () => {
+    const result = validateManifest(manifest('      - npm:pi-web-access\n      - source: ./ok.ts\n        commands: []\n'), 'yaml');
+    expect(result.valid).toBe(false);
+    const errors = result.issues.filter((issue: ManifestIssue) => issue.severity === 'error');
+    expect(errors.map((issue: ManifestIssue) => issue.path)).toEqual(['harnesses.pi.packages[0]', 'harnesses.pi.packages[1].commands']);
+    expect(errors[0]!.message).toContain('npm:<name>@<x.y.z>');
+    expect(errors[1]!.message).toContain('extensions, skills, prompts, themes');
+  });
+
+  test('agent level: packages follow the same rules; exclude names packages, never versions', () => {
+    const result = validateManifest(
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    harnesses:\n      pi:\n        packages: [npm:x]\n        exclude: [npm:y@1.0.0, "Bad Name"]\n        extra: 1\n',
+      'yaml',
+    );
+    const errors = result.issues.filter((issue: ManifestIssue) => issue.severity === 'error');
+    expect(errors.map((issue: ManifestIssue) => issue.path)).toEqual([
+      'agents.w.harnesses.pi.extra',
+      'agents.w.harnesses.pi.exclude[0]',
+      'agents.w.harnesses.pi.exclude[1]',
+      'agents.w.harnesses.pi.packages[0]',
+    ]);
+    expect(errors[1]!.message).toContain('package name');
+  });
+
+  test('more than 20 packages is an error', () => {
+    const many = Array.from({ length: 21 }, (_, i) => `      - npm:pkg-${i}@1.0.0\n`).join('');
+    expect(validateManifest(manifest(many), 'yaml').valid).toBe(false);
+  });
+});

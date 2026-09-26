@@ -124,3 +124,26 @@ export function resolveAccessFacetOptions(
   }
   return options;
 }
+
+/**
+ * Whether the page offers the Owner and Access facets at all.
+ *
+ * Decided from EVERY listed session, never from the rows another facet left:
+ * the counts are faceted, the presence is not. Otherwise picking
+ * Access = Whole project can leave one owner, the Owner row leaves the OPEN
+ * menu, every row below it moves up under a still pointer, and the submenu the
+ * user is working in closes. One person or one access kind is not a filter
+ * worth offering; an active selection always keeps its facet.
+ */
+export function resolvePageFacetVisibility(
+  sessions: readonly ProjectSession[],
+  activeOwners: readonly string[],
+  activeAccess: readonly SessionAccessFilter[],
+): { owner: boolean; access: boolean } {
+  const owners = new Set(sessions.map(sessionOwnerKey));
+  const kinds = new Set(sessions.map(sessionAccessKind));
+  return {
+    owner: owners.size > 1 || activeOwners.length > 0,
+    access: kinds.size > 1 || activeAccess.length > 0,
+  };
+}

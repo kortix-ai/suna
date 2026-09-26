@@ -129,6 +129,56 @@ export interface RuntimeAssetsResult extends HarnessAssetsCompatibilityResult {
   agentSwapPending?: boolean
 }
 
+/**
+ * Run a downloaded artifact and report its exit code.
+ *
+ * THE PROOF A DIGEST CANNOT GIVE. A sha256 says the bytes arrived intact. It
+ * says nothing about whether they RUN on this kernel and this architecture — a
+ * wrong-arch or truncated-at-the-right-length artifact passes every digest check
+ * and then cannot exec. Before this, the first thing to execute a new daemon was
+ * the SUPERVISOR, after it had already replaced the running one, with
+ * `HEALTHY_AFTER_S=60` as the only safety net; and nothing ever executed a new
+ * CLI at all.
+ *
+ * EXIT CODE, NOT VERSION STRING, on purpose. `kortix --version` prints a
+ * decorated header (`header('Kortix CLI', VERSION)` in apps/cli/src/index.ts),
+ * so comparing its stdout to the manifest's `cli_version` would assert a
+ * formatting detail rather than a fact — and a false negative would freeze CLI
+ * updates fleet-wide while looking like a safety feature. `opencode --version`
+ * prints a bare version, which is why `installOpencodeVersion` can and does
+ * compare it. What is asserted here is the thing that actually differs between a
+ * good artifact and a bad one: it executes.
+ *
+ * It cannot prove the box BOOTS on the new daemon — that needs a second daemon,
+ * and a second daemon cannot bind the same ports. The supervisor's
+ * `HEALTHY_AFTER_S` / `MAX_EARLY_EXITS` budget remains the behavioural proof.
+ */
+export type ExecProbe = (path: string, args: string[]) => Promise<number>
+
+const EXEC_PROBE_TIMEOUT_MS = 30_000
+
+const defaultExecProbe: ExecProbe = async (path, args) => {
+  try {
+    const proc = Bun.spawn([path, ...args], {
+      stdout: 'ignore',
+      stderr: 'ignore',
+      stdin: 'ignore',
+    })
+    const timer = setTimeout(() => proc.kill(), EXEC_PROBE_TIMEOUT_MS)
+    try {
+      return await proc.exited
+    } finally {
+      clearTimeout(timer)
+    }
+  } catch (err) {
+    logger.warn('[runtime-assets] candidate binary could not be spawned', {
+      path,
+      err: String(err),
+    })
+    return -1
+  }
+}
+
 export interface RuntimeAssetsOptions {
   apiUrl?: string
   token?: string
@@ -144,6 +194,8 @@ export interface RuntimeAssetsOptions {
   agentBakedPath?: string
   /** Harness-owned installation and injection; live when registered at boot. */
   assets?: HarnessAssetsService
+  /** Runs a candidate binary before it replaces a working one. See {@link ExecProbe}. */
+  execProbe?: ExecProbe
 }
 
 /** One entry of the v2 `components` map. Every field is optional by contract. */
@@ -191,6 +243,13 @@ interface RuntimeAssetsState {
   agent_mtime_ms?: number
   /** Digest of the artifact currently staged at `agent.next`, if any. */
   staged_agent_sha256?: string
+  /**
+   * Written by the harness half through `Object.assign(nextState,
+   * harnessResult.state)` — declared here because `runningRuntimeAssets` reads
+   * it back, and an undeclared key that something reads is a key that gets
+   * renamed by accident.
+   */
+  opencode_version?: string
 }
 
 /**
@@ -363,42 +422,151 @@ function resolveArtifactUrl(apiRoot: string, path: unknown, fallback: string): s
   return `${origin}${path}`
 }
 
-async function replaceCli(
+/**
+ * Give the daemon write access to the directory that holds the CLI.
+ *
+ * The shipped image now bakes this (platform-binaries.ts
+ * SANDBOX_CLI_OWNERSHIP_COMMAND), but a box already running an older snapshot
+ * cannot wait for a rebuild, and it is exactly the box whose CLI has drifted
+ * from the manifest. The image grants `kortix` NOPASSWD:ALL sudo, so one
+ * non-interactive `chown` converges the live box to the state the new image
+ * bakes. `-n` means a box WITHOUT that sudo rule fails immediately instead of
+ * hanging on a password prompt.
+ */
+async function sudoOwnDir(dir: string): Promise<boolean> {
+  try {
+    const uid = process.getuid?.() ?? 0
+    const gid = process.getgid?.() ?? 0
+    const proc = Bun.spawn(['sudo', '-n', 'chown', `${uid}:${gid}`, dir], {
+      stdout: 'ignore',
+      stderr: 'ignore',
+      stdin: 'ignore',
+    })
+    return (await proc.exited) === 0
+  } catch {
+    return false
+  }
+}
+
+export interface ReplaceCliDeps {
+  /** Seam for the escalation. Returns true when it believes it changed something. */
+  unlockDir?: (dir: string) => Promise<boolean>
+  /** Seam for observing the first failure's reason. */
+  onUnlockAttempt?: (reason: string) => void
+  /**
+   * Runs the candidate before it replaces a working binary. See {@link ExecProbe}.
+   *
+   * Optional and defaulted to the REAL spawn on purpose: a caller that forgets
+   * it still gets the proof, and a test that wants a different answer has to say
+   * so out loud.
+   */
+  execProbe?: ExecProbe
+}
+
+/**
+ * Install a verified CLI binary at `cliPath`.
+ *
+ * Three properties, in this order, and each one is load-bearing:
+ *
+ *  1. VERIFY BEFORE TOUCHING THE FILESYSTEM. A digest mismatch must not even
+ *     create a temp file, and it must never be reported through the same path
+ *     as a permission failure.
+ *  2. RUN THE CANDIDATE BEFORE THE RENAME. The binary is executed from the temp
+ *     path, so a wrong-arch or truncated artifact never reaches
+ *     `/usr/local/bin/kortix` and the box keeps the CLI it had.
+ *  3. UNLOCK THE DIRECTORY ONCE AND RETRY. The temp-file create and the rename
+ *     both draw their permission from the DIRECTORY, which is root-owned on an
+ *     older snapshot while the daemon runs as `kortix`.
+ *
+ * A failed probe is NOT escalated. The temp file was already created and
+ * chmod'd by then, so the directory was writable; unlocking it again cannot
+ * make a binary that does not execute execute.
+ *
+ * Exported for `runtime-assets-cli-replace.test.ts`, which drives it against a
+ * REAL unwritable directory — the permission failure this function has to
+ * survive is a property of the filesystem, not of a mock.
+ */
+export async function replaceCli(
   cliPath: string,
   expectedSha: string,
   body: ArrayBuffer,
-): Promise<'updated' | 'failed'> {
-  // Same directory as the target: `rename` is only atomic within one filesystem,
-  // and a cross-device temp file would fail with EXDEV.
-  const tmpPath = join(
-    dirname(cliPath),
-    `.kortix.download.${process.pid}.${Math.random().toString(36).slice(2, 10)}`,
-  )
-  try {
-    // Buffered, not streamed. `Bun.write(path, response)` hangs on a streamed
-    // Response in this runtime (a known incident in this repo), and a
-    // hash-while-streaming pipeline is more machinery than the numbers justify:
-    // the binary is ~100 MB on a sandbox with at least 4 GB, the buffer is
-    // transient, and the reconcile runs at most once per session start.
-    const bytes = Buffer.from(body)
-    await writeFile(tmpPath, bytes)
-    if (!verifyArtifact(bytes, expectedSha)) {
-      logger.warn('[runtime-assets] CLI download digest mismatch — keeping the installed binary', {
-        expected: expectedSha,
-      })
-      return 'failed'
-    }
-    await chmod(tmpPath, 0o755)
-    // Atomic on Linux: a `kortix` already running keeps its open inode, and no
-    // caller can ever observe a half-written binary at this path.
-    await rename(tmpPath, cliPath)
-    return 'updated'
-  } catch (err) {
-    logger.warn('[runtime-assets] CLI replace failed', { err: String(err) })
+  deps: ReplaceCliDeps = {},
+): Promise<'updated' | 'failed' | 'unrunnable'> {
+  // Buffered, not streamed. `Bun.write(path, response)` hangs on a streamed
+  // Response in this runtime (a known incident in this repo), and a
+  // hash-while-streaming pipeline is more machinery than the numbers justify:
+  // the binary is ~100 MB on a sandbox with at least 4 GB, the buffer is
+  // transient, and the reconcile runs at most once per session start.
+  const bytes = Buffer.from(body)
+  // Verify BEFORE touching the filesystem: a digest mismatch must not even
+  // create a temp file, and it must not be mistaken for a permission problem.
+  if (!verifyArtifact(bytes, expectedSha)) {
+    logger.warn('[runtime-assets] CLI download digest mismatch — keeping the installed binary', {
+      expected: expectedSha,
+    })
     return 'failed'
-  } finally {
-    await rm(tmpPath, { force: true }).catch(() => {})
   }
+
+  const probe = deps.execProbe ?? defaultExecProbe
+  const dir = dirname(cliPath)
+  const attempt = async (): Promise<'updated' | 'unrunnable' | string> => {
+    // Same directory as the target: `rename` is only atomic within one
+    // filesystem, and a cross-device temp file would fail with EXDEV.
+    const tmpPath = join(
+      dir,
+      `.kortix.download.${process.pid}.${Math.random().toString(36).slice(2, 10)}`,
+    )
+    try {
+      await writeFile(tmpPath, bytes)
+      await chmod(tmpPath, 0o755)
+      // RUN IT FIRST. See {@link ExecProbe} for why this is an exit code and
+      // not a version-string comparison.
+      const code = await probe(tmpPath, ['--version'])
+      if (code !== 0) {
+        logger.warn('[runtime-assets] CLI candidate did not run — keeping the installed binary', {
+          exitCode: code,
+          expected: expectedSha.slice(0, 12),
+        })
+        return 'unrunnable'
+      }
+      // Atomic on Linux: a `kortix` already running keeps its open inode, and no
+      // caller can ever observe a half-written binary at this path.
+      await rename(tmpPath, cliPath)
+      return 'updated'
+    } catch (err) {
+      return String(err)
+    } finally {
+      await rm(tmpPath, { force: true }).catch(() => {})
+    }
+  }
+
+  const first = await attempt()
+  if (first === 'updated') return 'updated'
+  // The candidate reached the probe, so the directory was writable. Escalating
+  // would unlock a directory that is not the problem and then run the same
+  // unrunnable binary a second time.
+  if (first === 'unrunnable') return 'unrunnable'
+  deps.onUnlockAttempt?.(first)
+
+  // Both the temp-file create and the rename draw their permission from the
+  // DIRECTORY, so this is the only failure worth escalating for. Exactly one
+  // retry: if unlocking did not actually help, retrying again never will.
+  const unlock = deps.unlockDir ?? sudoOwnDir
+  if (!(await unlock(dir))) {
+    logger.warn('[runtime-assets] CLI replace failed and the directory could not be unlocked', {
+      dir,
+      err: first,
+    })
+    return 'failed'
+  }
+  const second = await attempt()
+  if (second === 'updated') {
+    logger.info('[runtime-assets] CLI replaced after unlocking its directory', { dir })
+    return 'updated'
+  }
+  if (second === 'unrunnable') return 'unrunnable'
+  logger.warn('[runtime-assets] CLI replace failed', { dir, err: second })
+  return 'failed'
 }
 
 // ── Agent staging ──────────────────────────────────────────────────────────
@@ -464,7 +632,8 @@ async function stageAgentBinary(
   stateDir: string,
   expectedSha: string,
   body: ArrayBuffer,
-): Promise<'staged' | 'failed'> {
+  execProbe: ExecProbe,
+): Promise<'staged' | 'failed' | 'unrunnable'> {
   const nextPath = join(stateDir, 'agent.next')
   // Same directory as the destination: `rename` is atomic only within one
   // filesystem, and a cross-device temp file fails with EXDEV.
@@ -484,6 +653,20 @@ async function stageAgentBinary(
       return 'failed'
     }
     await chmod(tmpPath, 0o755)
+    // RUN IT FIRST, from the temp path, before anything the supervisor reads
+    // exists. `version` is the daemon's own subcommand (cli.ts) and exits 0 on a
+    // binary that can start; a wrong-arch artifact cannot get that far. The
+    // supervisor re-verifies the digest independently and keeps its own
+    // `HEALTHY_AFTER_S` budget — this only removes the class of failure that
+    // budget pays for with a restart.
+    const code = await execProbe(tmpPath, ['version'])
+    if (code !== 0) {
+      logger.warn('[runtime-assets] agent candidate did not run — nothing staged', {
+        exitCode: code,
+        expected: expectedSha.slice(0, 12),
+      })
+      return 'unrunnable'
+    }
     await writeFile(tmpShaPath, `${expectedSha}\n`, 'utf8')
     await rename(tmpShaPath, `${nextPath}.sha256`)
     await rename(tmpPath, nextPath)
@@ -577,6 +760,7 @@ export async function reconcileRuntimeAssets(
   const skillsDir = options.managedSkillsDir ?? DEFAULT_MANAGED_SKILLS_DIR
   const statePath = options.statePath ?? DEFAULT_STATE_PATH
   const assets = options.assets ?? resolveHarness().assets
+  const execProbe = options.execProbe ?? defaultExecProbe
   const token = (
     options.token ??
     process.env.KORTIX_TOKEN ??
@@ -662,7 +846,15 @@ export async function reconcileRuntimeAssets(
           logger.warn('[runtime-assets] CLI download non-ok', { status: res.status })
           cli = 'failed'
         } else {
-          cli = await replaceCli(cliPath, cliSha, await res.arrayBuffer())
+          const replaced = await replaceCli(cliPath, cliSha, await res.arrayBuffer(), {
+            execProbe,
+          })
+          if (replaced === 'unrunnable') {
+            cli = 'failed'
+            reasons.cli = 'the downloaded CLI did not run on this box'
+          } else {
+            cli = replaced
+          }
           if (cli === 'updated') {
             const stats = await stat(cliPath).catch(() => null)
             nextState.cli_sha256 = cliSha
@@ -819,7 +1011,18 @@ export async function reconcileRuntimeAssets(
             agent = 'failed'
             reasons.agent = `agent download returned ${res.status}`
           } else {
-            agent = await stageAgentBinary(stateDir, expectedSha, await res.arrayBuffer())
+            const stagedOutcome = await stageAgentBinary(
+              stateDir,
+              expectedSha,
+              await res.arrayBuffer(),
+              execProbe,
+            )
+            if (stagedOutcome === 'unrunnable') {
+              agent = 'failed'
+              reasons.agent = 'the downloaded agent did not run on this box'
+            } else {
+              agent = stagedOutcome
+            }
             if (agent === 'staged') {
               agentSwapPending = true
               nextState.staged_agent_sha256 = expectedSha
@@ -828,7 +1031,7 @@ export async function reconcileRuntimeAssets(
                 sha256: expectedSha.slice(0, 12),
                 runningSha256: running?.sha.slice(0, 12) ?? null,
               })
-            } else {
+            } else if (stagedOutcome === 'failed') {
               reasons.agent = 'staged artifact failed verification'
             }
           }
@@ -911,6 +1114,31 @@ export function registerAgentSwapBlocker(name: string, isBusy: () => boolean): v
   swapBlockers.set(name, isBusy)
 }
 
+/**
+ * Must a daemon swap wait until nobody is WATCHING the box, not merely until no
+ * turn is running?
+ *
+ * THE TRADE, stated so the default is a decision and not an accident. A swap at
+ * `session.idle` costs roughly 6-9 s of unreachable box and severs every open
+ * SSE stream; the client reconnects and the event ring replays what it missed,
+ * so nothing is lost, but somebody sitting on the session page sees it. Blocking
+ * on subscribers removes that entirely — and re-creates the bug this whole lane
+ * exists to fix, because a session with one browser tab open would then NEVER
+ * swap its daemon, which is exactly how boxes ended up running months-old
+ * binaries.
+ *
+ * DEFAULT OFF, because the failure it prevents is cosmetic and the failure it
+ * causes is the original defect. `KORTIX_AGENT_SWAP_REQUIRE_UNATTENDED=1` turns
+ * it on for an operator who would rather a watched box stay stale. Read per call
+ * so flipping it needs no daemon release.
+ */
+export function agentSwapRequiresUnattendedBox(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const raw = env.KORTIX_AGENT_SWAP_REQUIRE_UNATTENDED?.trim().toLowerCase()
+  return raw === '1' || raw === 'true'
+}
+
 /** Test seam: drop every registered blocker. */
 export function resetAgentSwapBlockersForTests(): void {
   swapBlockers.clear()
@@ -951,6 +1179,15 @@ export interface AgentSwapOptions {
   exit?: (code: number) => void
   /** Seconds this process has been up. Injected by tests. */
   uptimeMs?: number
+  /**
+   * This request comes from the box's own `session.idle` frame.
+   *
+   * It WAIVES {@link AGENT_SWAP_MIN_UPTIME_MS} and nothing else — see
+   * {@link applyStagedAssetsIfIdle} for why that floor does not apply here.
+   * Every other refusal (the rollback latch, a turn in flight, an unreadable
+   * turn state, a registered blocker) is unchanged.
+   */
+  atIdleBoundary?: boolean
 }
 
 /**
@@ -981,8 +1218,15 @@ export async function requestAgentSwapIfIdle(
     if (!stagedPresent) return 'nothing-staged'
     if (await agentUpdatesPinned(stateDir)) return 'pinned'
 
+    // The floor is a BOOT-FLAP guard, not a general delay: it exists because the
+    // first reconcile fires moments after `opencode-ready`, which is exactly
+    // when a user is about to send their first prompt. A `session.idle` frame is
+    // the opposite situation — a turn has just FINISHED — so the floor is waived
+    // there and nowhere else. Without that waiver the boot pass answered
+    // `too-young` every time and no later pass existed, which is why a
+    // long-lived box staged a daemon and never installed it.
     const uptimeMs = options.uptimeMs ?? process.uptime() * 1000
-    if (uptimeMs < AGENT_SWAP_MIN_UPTIME_MS) return 'too-young'
+    if (!options.atIdleBoundary && uptimeMs < AGENT_SWAP_MIN_UPTIME_MS) return 'too-young'
 
     const probe = options.turnInFlight ?? swapConfig?.turnInFlight
     if (!probe) return 'not-configured'
@@ -1023,6 +1267,32 @@ export async function requestAgentSwapIfIdle(
 
 
 /**
+ * Apply whatever this box has staged, at the one moment it is provably safe.
+ *
+ * THE SAFE BOUNDARY is the box's own `session.idle` frame, observed in the event
+ * fan-out at `harness/open-code/boot.ts`. It is the only moment the box KNOWS no
+ * turn is running — not a timer, deliberately: the config-releases lane forbids
+ * a timer near a readiness decision and its AST tripwires enforce that. This
+ * function is called FROM that frame; it does not schedule itself.
+ *
+ * WHAT A DAEMON SWAP COSTS, stated plainly because the caller is choosing to pay
+ * it: this process exiting takes the reverse proxy, every PTY and OpenCode down
+ * with it, and the box is unreachable for roughly 6-9 s while the supervisor
+ * promotes the staged binary and the session runtime reboots. Open SSE streams
+ * are severed and the client must reconnect; the event ring replays what it
+ * missed. A prompt held by the API-side queue is unaffected — it is server-side,
+ * and the turn-start gate runs before `claimPromptDelivery`, so no prompt of the
+ * request in flight has been claimed or delivered at the moment of the swap.
+ *
+ * Every existing refusal still applies. Never throws.
+ */
+export async function applyStagedAssetsIfIdle(
+  options: AgentSwapOptions = {},
+): Promise<AgentSwapDecision> {
+  return requestAgentSwapIfIdle({ ...options, atIdleBoundary: true })
+}
+
+/**
  * Single-flight guard for the detached entry point below. Boot readiness and a
  * `POST /kortix/refresh` can land within milliseconds of each other; without
  * this they would both download a ~100 MB binary and race to rename over it.
@@ -1033,7 +1303,10 @@ let inFlight: Promise<RuntimeAssetsResult> | null = null
  * Fire-and-forget entry point for the boot/refresh/adopt call sites. Returns
  * immediately; the pass runs detached and swallows everything.
  */
-export function ensureLatestKortixAssets(configDir?: string): void {
+export function ensureLatestKortixAssets(
+  configDir?: string,
+  opts: { atIdleBoundary?: boolean } = {},
+): void {
   if (inFlight) return
   inFlight = reconcileRuntimeAssets({ configDir, assets: swapConfig?.assets })
   void inFlight
@@ -1054,7 +1327,7 @@ export function ensureLatestKortixAssets(configDir?: string): void {
       // actually waiting. A busy box simply keeps the staging: the supervisor
       // installs it at the next start.
       if (result.agentSwapPending) {
-        const decision = await requestAgentSwapIfIdle()
+        const decision = await requestAgentSwapIfIdle({ atIdleBoundary: opts.atIdleBoundary })
         if (decision !== 'exited') {
           logger.info('[runtime-assets] agent update staged; swap deferred', { decision })
         }
@@ -1068,12 +1341,50 @@ export function ensureLatestKortixAssets(configDir?: string): void {
  * detached pass. Returns synchronously — nothing here is ever on a readiness or
  * request-latency path.
  */
-export function scheduleRuntimeAssetsReconcile(cfg: Config): void {
+export function scheduleRuntimeAssetsReconcile(
+  cfg: Config,
+  opts: { atIdleBoundary?: boolean } = {},
+): void {
   void resolveHarness(cfg).assets.resolveConfigDir(cfg)
-    .then((configDir) => ensureLatestKortixAssets(configDir))
+    .then((configDir) => ensureLatestKortixAssets(configDir, opts))
     // A config dir we cannot resolve costs the overlay re-injection, not the
     // CLI update — still worth running.
-    .catch(() => ensureLatestKortixAssets())
+    .catch(() => ensureLatestKortixAssets(undefined, opts))
+}
+
+/**
+ * THE TRIGGER THAT WAS MISSING — a turn just ended, so converge and apply.
+ *
+ * Before this, `scheduleRuntimeAssetsReconcile` had exactly two non-test call
+ * sites: `runtimeReadyTail` (boot) and `POST /kortix/refresh`. The swap request
+ * lives in the tail of that same pass, and the boot pass fires seconds after
+ * `opencode-ready`, so it always answered `too-young` against the five-minute
+ * boot-flap floor. No later pass existed. The result: a long-lived box staged a
+ * daemon update and never installed it, for as long as the box lived.
+ *
+ * TWO INDEPENDENT STEPS, and the independence is the point:
+ *
+ *  1. a fresh reconcile pass — single-flighted, a no-op when one is running;
+ *  2. apply whatever is ALREADY staged, regardless of (1). The binary that needs
+ *     installing was staged by an EARLIER pass, so a box whose pass happens to be
+ *     in flight must still swap.
+ *
+ * NOT A TIMER. It is called from the box's own `session.idle` frame, which is
+ * the only moment the box knows for certain that no turn is running. A timer
+ * near a readiness decision is exactly what the config-releases AST tripwires
+ * forbid, and this must stay on the right side of that line.
+ *
+ * Returns synchronously and swallows everything: a turn end is never delayed or
+ * failed by this.
+ */
+export function convergeRuntimeAssetsAtTurnEnd(cfg: Config): void {
+  scheduleRuntimeAssetsReconcile(cfg, { atIdleBoundary: true })
+  void applyStagedAssetsIfIdle()
+    .then((decision) => {
+      if (decision === 'exited' || decision === 'nothing-staged') return
+      logger.info('[runtime-assets] staged update not applied at this turn boundary', { decision })
+    })
+    .catch((err) => logger.warn('[runtime-assets] turn-end apply threw', { err: String(err) }))
 }
 
 // ---------------------------------------------------------------------------
@@ -1109,6 +1420,79 @@ export interface RuntimeConvergenceReport {
    * supervisor rolled back. This box will not self-heal and needs a human.
    */
   pinned: boolean
+  /**
+   * WHICH BYTES ARE ON THIS BOX RIGHT NOW — not what the last pass DID.
+   *
+   * `build`, `components` and `agentSwapPending` above all describe a PASS.
+   * `build` is written even when a half failed (see the epoch comment in
+   * `reconcileRuntimeAssets`), `components` reports outcomes, and both are
+   * in-memory, so every daemon restart reports `build: null` until its first
+   * pass completes. None of that answers "is this box current", which is the
+   * only question the control plane can act on — so it had to send a refresh on
+   * every turn and hope.
+   *
+   * These come from `/opt/kortix/runtime-assets-state.json`, the digest
+   * bookkeeping the reconcile already persists, with the in-memory pass
+   * overlaid. Compare them sha-to-sha against the manifest, never version string
+   * to version string: a version string cannot prove which bytes are on disk.
+   *
+   * `entrypoint` is deliberately absent. The manifest advertises that component
+   * and NO box consumes it — the supervisor IS the entrypoint, so replacing it
+   * needs an `exec` on the next loop iteration rather than a file swap under a
+   * running shell. It is served for out-of-band repair only (see
+   * apps/api/src/runtime-assets/manifest.ts), and reporting a digest for
+   * something this box never converges would be a second false "current".
+   */
+  running: RunningRuntimeAssets
+}
+
+/** The persisted answer to "which runtime assets is this box running". */
+export interface RunningRuntimeAssets {
+  cli_sha256: string | null
+  managed_skills_hash: string | null
+  agent_sha256: string | null
+  /** Which file `agent_sha256` was taken from — the baked floor or an update. */
+  agent_path: string | null
+  /** Verified and waiting for the supervisor; the box is NOT running it yet. */
+  staged_agent_sha256: string | null
+  opencode_version: string | null
+  /** Highest manifest epoch this box has converged to, from DISK. */
+  build: number | null
+}
+
+const NO_RUNNING_ASSETS: RunningRuntimeAssets = {
+  cli_sha256: null,
+  managed_skills_hash: null,
+  agent_sha256: null,
+  agent_path: null,
+  staged_agent_sha256: null,
+  opencode_version: null,
+  build: null,
+}
+
+function str(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+/**
+ * Read the persisted digests. Never throws: a missing or corrupt state file
+ * answers all-null, which reads as "cannot prove this box is current" — the safe
+ * verdict, because it makes the control plane schedule a pass rather than skip
+ * one.
+ */
+export async function runningRuntimeAssets(
+  statePath: string = DEFAULT_STATE_PATH,
+): Promise<RunningRuntimeAssets> {
+  const state = (await readState(statePath)) as RuntimeAssetsState & Record<string, unknown>
+  return {
+    cli_sha256: str(state.cli_sha256),
+    managed_skills_hash: str(state.managed_skills_hash),
+    agent_sha256: str(state.agent_sha256),
+    agent_path: str(state.agent_path),
+    staged_agent_sha256: str(state.staged_agent_sha256),
+    opencode_version: str(state.opencode_version),
+    build: typeof state.build === 'number' && Number.isFinite(state.build) ? state.build : null,
+  }
 }
 
 let lastConvergence: RuntimeConvergenceReport = {
@@ -1117,6 +1501,7 @@ let lastConvergence: RuntimeConvergenceReport = {
   components: {},
   agentSwapPending: false,
   pinned: false,
+  running: NO_RUNNING_ASSETS,
 }
 
 /** Record a completed pass. Never throws — this is reporting, not control. */
@@ -1138,6 +1523,9 @@ export function noteRuntimeConvergence(result: RuntimeAssetsResult): void {
     ...(result.reasons ? { reasons: result.reasons } : {}),
     agentSwapPending: result.agentSwapPending === true,
     pinned: lastConvergence.pinned,
+    // Re-read from disk by `runtimeConvergenceReport`, not cached here: the
+    // state file is the persisted truth and it survives this process.
+    running: lastConvergence.running,
   }
 }
 
@@ -1151,10 +1539,44 @@ export function noteRuntimeConvergence(result: RuntimeAssetsResult): void {
  */
 export async function runtimeConvergenceReport(
   stateDir: string = process.env.KORTIX_AGENT_STATE_DIR ?? DEFAULT_AGENT_STATE_DIR,
+  statePath: string = DEFAULT_STATE_PATH,
 ): Promise<RuntimeConvergenceReport> {
-  return { ...lastConvergence, pinned: await agentUpdatesPinned(stateDir) }
+  // `running` is read from DISK on every call, for the same reason the rollback
+  // latch is: it must survive this process. A daemon that restarted seconds ago
+  // has an empty `lastConvergence` and would otherwise report `build: null` and
+  // no digests at all — "cannot tell" — on exactly the health read the control
+  // plane uses to decide whether to schedule a ~100 MB download.
+  //
+  // BOTH latches, not just the daemon's. `pinned` answers one question — will
+  // this box heal itself — and the harness has a rollback latch of its own
+  // (`/opt/kortix/opencode.pinned`). Reading only `agent.pinned` reported a box
+  // that had latched OpenCode updates off as a box that was fine.
+  //
+  // Never throws, all the way down: this is reporting, not control, and a
+  // health read that 500s is worse than one that says "not pinned".
+  const harnessPinned = (async () => {
+    try {
+      const assets = swapConfig?.assets ?? resolveHarness().assets
+      return (await assets.updatesPinned?.()) === true
+    } catch {
+      return false
+    }
+  })()
+  const [agentPinned, harnessLatched, running] = await Promise.all([
+    agentUpdatesPinned(stateDir),
+    harnessPinned,
+    runningRuntimeAssets(statePath),
+  ])
+  return { ...lastConvergence, pinned: agentPinned || harnessLatched, running }
 }
 
 export function resetRuntimeConvergenceReportForTests(): void {
-  lastConvergence = { build: null, at: null, components: {}, agentSwapPending: false, pinned: false }
+  lastConvergence = {
+    build: null,
+    at: null,
+    components: {},
+    agentSwapPending: false,
+    pinned: false,
+    running: NO_RUNNING_ASSETS,
+  }
 }

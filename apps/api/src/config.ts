@@ -408,6 +408,10 @@ const envSchema = z.object({
   OPENROUTER_API_KEY: optStr,
   MORPH_API_URL: optUrl('https://api.morphllm.com/v1'),
   MORPH_API_KEY: optStr,
+  // Managed model IDs that use Morph direct as their first candidate.
+  // An empty value disables Morph for every managed model.
+  MORPH_MANAGED_MODELS: z.string().default('deepseek-v4.1-flash,kimi-k3')
+    .transform((value) => value.split(',').map((id) => id.trim()).filter(Boolean)),
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -806,6 +810,17 @@ const envSchema = z.object({
   // domain is not yet claimed/verified in the Resend team. The intended from
   // address is preserved as Reply-To.
   RESEND_FROM_EMAIL: optStr,
+  // Mobile push notifications through the Expo Push API
+  // (notifications/expo-push.ts). The access token is optional: Expo accepts
+  // unauthenticated sends unless the project enables enhanced push security.
+  EXPO_ACCESS_TOKEN: optStr,
+  // Kill switch for session push notifications. On by default; `0` or `false`
+  // stops every send. Device-token registration keeps working.
+  PUSH_NOTIFICATIONS_ENABLED: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((v) => !['0', 'false'].includes(v.trim().toLowerCase())),
   // Local-only HTTP capture. The deterministic test profile points this at
   // Supabase Mailpit. Deployed environments leave it unset.
   MAILPIT_API_URL: optStr,
@@ -1269,6 +1284,7 @@ export const config = {
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   MORPH_API_URL: env.MORPH_API_URL,
   MORPH_API_KEY: env.MORPH_API_KEY,
+  MORPH_MANAGED_MODELS: env.MORPH_MANAGED_MODELS,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
@@ -1458,6 +1474,8 @@ export const config = {
   AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
+  EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
+  PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,

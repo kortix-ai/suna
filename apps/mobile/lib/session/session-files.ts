@@ -26,6 +26,7 @@ import {
 } from '@kortix/sdk';
 
 import type { MessageWithParts } from '@/lib/opencode/types';
+import { withoutTrailingSlashes } from '@kortix/shared/tool-output';
 import { partInput, partMetadata } from './tool-part-accessors';
 import { parseImageOutput, parseVideoOutput } from './tools/web-media';
 import { parseShowItems } from './tools/web-show';
@@ -78,7 +79,7 @@ function extensionOf(name: string): string {
 }
 
 function basename(path: string): string {
-  const cleaned = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  const cleaned = withoutTrailingSlashes(path.replace(/\\/g, '/'));
   const index = cleaned.lastIndexOf('/');
   return index >= 0 ? cleaned.slice(index + 1) : cleaned;
 }
