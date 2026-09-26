@@ -1,12 +1,24 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, writeFileSync } from 'node:fs'
-import { chmod, mkdir, mkdtemp, readFile, readdir, readlink, rm, stat, symlink } from 'node:fs/promises'
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  readlink,
+  rm,
+  stat,
+  symlink,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   AGENT_SWAP_EXIT_CODE,
   applyStagedAssetsIfIdle,
+  configureRuntimeConvergence,
   reconcileRuntimeAssets,
   registerAgentSwapBlocker,
   requestAgentSwapIfIdle,
@@ -161,7 +173,7 @@ async function run(
     opencodeDepsDir,
     installPluginDeps,
     opencodeCurrentLinkPath,
-    opencodePrevLinkPath,
+    opencodePrevPath,
     opencodePinnedPath,
     ...shared
   } = extra
@@ -191,7 +203,7 @@ async function run(
       // them, and a unit test must not depend on (or touch) a machine's own box
       // layout.
       opencodeCurrentLinkPath: opencodeCurrentLinkPath ?? ws.opencodeCurrent,
-      opencodePrevLinkPath: opencodePrevLinkPath ?? ws.opencodePrev,
+      opencodePrevPath: opencodePrevPath ?? ws.opencodePrev,
       opencodePinnedPath: opencodePinnedPath ?? ws.opencodePinned,
     }),
   })
@@ -901,6 +913,23 @@ describe('runtime convergence report', () => {
     writeFileSync(join(dir, 'agent.pinned'), '')
     expect((await runtimeConvergenceReport(dir)).pinned).toBe(true)
   })
+
+  test('an OPENCODE rollback latch reaches the same `pinned` field', async () => {
+    // `pinned` is the control plane's one answer to "will this box heal
+    // itself". It was built from `agent.pinned` alone, so an OpenCode rollback
+    // latched the box locally and reported `pinned: false` — a box that needs a
+    // human, reported as a box that is fine.
+    const dir = reportDir()
+    const latch = join(dir, 'opencode.pinned')
+    configureRuntimeConvergence({
+      assets: createOpenCodeAssetsService(undefined, { opencodePinnedPath: latch }),
+      turnInFlight: async () => false,
+    })
+    noteRuntimeConvergence({ cli: 'current', skills: 'current', build: 7 })
+    expect((await runtimeConvergenceReport(dir)).pinned).toBe(false)
+    writeFileSync(latch, 'rolled back\n')
+    expect((await runtimeConvergenceReport(dir)).pinned).toBe(true)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1124,7 +1153,7 @@ describe('opencode rollback', () => {
     return {
       installed: ws.opencodeInstalled,
       currentLink: ws.opencodeCurrent,
-      prevLink: ws.opencodePrev,
+      prevPath: ws.opencodePrev,
       pinnedPath: ws.opencodePinned,
     }
   }
@@ -1142,7 +1171,7 @@ describe('opencode rollback', () => {
       ...seamWith(['down', 'ok'], restarts),
       opencodeDepsDir: ws.depsDir,
       opencodeCurrentLinkPath: oc.currentLink,
-      opencodePrevLinkPath: oc.prevLink,
+      opencodePrevPath: oc.prevPath,
       opencodePinnedPath: oc.pinnedPath,
       readOpencodeVersion: async () => '1.17.11',
       turnProbe: async () => false,
@@ -1156,8 +1185,10 @@ describe('opencode rollback', () => {
     expect(result.reasons?.opencode).toContain('rolled back')
     // Two restarts: the one that failed, and the one onto the previous version.
     expect(restarts).toEqual(['restart', 'restart'])
-    // The box is pointed back at the binary it was serving before.
-    expect(await readlink(oc.currentLink)).toBe(oc.installed)
+    // The box is pointed back at the RETAINED copy of the binary it was
+    // serving before — not at the store path pnpm would have deleted.
+    expect(await readlink(oc.currentLink)).toBe(oc.prevPath)
+    expect(await readFile(oc.currentLink, 'utf8')).toBe(await readFile(oc.installed, 'utf8'))
     // And it will not try again unaided.
     expect(await stat(oc.pinnedPath).then(() => true, () => false)).toBe(true)
   })
@@ -1175,7 +1206,7 @@ describe('opencode rollback', () => {
       ...seamWith(['ok']),
       opencodeDepsDir: ws.depsDir,
       opencodeCurrentLinkPath: oc.currentLink,
-      opencodePrevLinkPath: oc.prevLink,
+      opencodePrevPath: oc.prevPath,
       opencodePinnedPath: oc.pinnedPath,
       readOpencodeVersion: async () => '1.17.11',
       turnProbe: async () => false,
@@ -1200,7 +1231,7 @@ describe('opencode rollback', () => {
       ...seamWith(['ok']),
       opencodeDepsDir: ws.depsDir,
       opencodeCurrentLinkPath: oc.currentLink,
-      opencodePrevLinkPath: oc.prevLink,
+      opencodePrevPath: oc.prevPath,
       opencodePinnedPath: oc.pinnedPath,
       readOpencodeVersion: async () => '1.17.11',
       turnProbe: async () => false,
@@ -1209,8 +1240,10 @@ describe('opencode rollback', () => {
     })
 
     expect(result.opencode).toBe('updated')
-    // The predecessor is on disk BEFORE the install, so a rollback has a target.
-    expect(await readlink(oc.prevLink)).toBe(oc.installed)
+    // The predecessor is RETAINED on disk BEFORE the install — its own bytes,
+    // not a link to a path pnpm is about to delete.
+    expect(await readFile(oc.prevPath, 'utf8')).toBe(await readFile(oc.installed, 'utf8'))
+    expect(await lstat(oc.prevPath).then((info) => info.isSymbolicLink())).toBe(false)
     expect(await stat(oc.pinnedPath).then(() => true, () => false)).toBe(false)
   })
 
@@ -1241,6 +1274,61 @@ describe('opencode rollback', () => {
     expect(result.opencode).toBe('skipped')
     expect(result.reasons?.opencode).toContain('no rollback target')
     expect(installed).toEqual([])
+  })
+
+  // THE CASE EVERY TEST ABOVE IS BLIND TO.
+  //
+  // They all stub `installOpencode`, so the binary the rollback target names is
+  // still sitting on disk when the rollback runs. The REAL install is
+  // `pnpm add -g opencode-ai@<new>`, which removes the version it replaces from
+  // pnpm's global virtual store — and that store is exactly where
+  // `opencode.current` points on the shipped image:
+  //
+  //   opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)"
+  //   ln -sfn "$opencode_native" /opt/kortix/opencode.current
+  //   (apps/sandbox/Dockerfile)
+  //
+  // So recording the SYMLINK TARGET recorded a path pnpm was about to delete.
+  // The rollback then threw ENOENT inside `publishOpencodeNativeLink` BEFORE
+  // the latch was written: box down, no latch, next pass reinstalls the same
+  // broken version.
+  test('the rollback survives pnpm deleting the version it replaced', async () => {
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, CLI_BYTES)
+    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
+    await bakeDeps(ws, '1.17.11')
+    const oc = opencodeWorkspace(ws)
+    const nextNative = join(ws.root, 'opencode-next.exe')
+
+    const result = await run(ws, stubFetch(), {
+      ...seamWith(['down', 'ok']),
+      opencodeDepsDir: ws.depsDir,
+      opencodeCurrentLinkPath: oc.currentLink,
+      opencodePrevPath: oc.prevPath,
+      opencodePinnedPath: oc.pinnedPath,
+      readOpencodeVersion: async () => '1.17.11',
+      turnProbe: async () => false,
+      installOpencode: async () => {
+        // Exactly what `pnpm add -g` + `installOpencodeVersion` do on a box:
+        // the replaced version leaves the store, the new one arrives, and
+        // `opencode.current` is repointed at it.
+        await rm(ws.opencodeInstalled, { force: true })
+        await Bun.write(nextNative, '#!/bin/sh\nexit 0\n')
+        await chmod(nextNative, 0o755)
+        await rm(oc.currentLink, { force: true })
+        await symlink(nextNative, oc.currentLink)
+      },
+      installPluginDeps: async () => {},
+    })
+
+    expect(result.opencode).toBe('failed')
+    expect(result.reasons?.opencode).toContain('rolled back')
+    // The box is SERVING again: `opencode.current` resolves to a real file.
+    // `stat` follows the link, so a dangling one fails here.
+    expect(await stat(oc.currentLink).then(() => true, () => false)).toBe(true)
+    expect(await readFile(oc.currentLink, 'utf8')).toBe('#!/bin/sh\nexit 0\n')
+    // And the latch was written, so the next pass does not repeat the install.
+    expect(await stat(oc.pinnedPath).then(() => true, () => false)).toBe(true)
   })
 
   // An old snapshot with NO managed binary at all has nothing to roll back to

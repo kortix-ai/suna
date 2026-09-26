@@ -1546,11 +1546,28 @@ export async function runtimeConvergenceReport(
   // has an empty `lastConvergence` and would otherwise report `build: null` and
   // no digests at all — "cannot tell" — on exactly the health read the control
   // plane uses to decide whether to schedule a ~100 MB download.
-  const [pinned, running] = await Promise.all([
+  //
+  // BOTH latches, not just the daemon's. `pinned` answers one question — will
+  // this box heal itself — and the harness has a rollback latch of its own
+  // (`/opt/kortix/opencode.pinned`). Reading only `agent.pinned` reported a box
+  // that had latched OpenCode updates off as a box that was fine.
+  //
+  // Never throws, all the way down: this is reporting, not control, and a
+  // health read that 500s is worse than one that says "not pinned".
+  const harnessPinned = (async () => {
+    try {
+      const assets = swapConfig?.assets ?? resolveHarness().assets
+      return (await assets.updatesPinned?.()) === true
+    } catch {
+      return false
+    }
+  })()
+  const [agentPinned, harnessLatched, running] = await Promise.all([
     agentUpdatesPinned(stateDir),
+    harnessPinned,
     runningRuntimeAssets(statePath),
   ])
-  return { ...lastConvergence, pinned, running }
+  return { ...lastConvergence, pinned: agentPinned || harnessLatched, running }
 }
 
 export function resetRuntimeConvergenceReportForTests(): void {

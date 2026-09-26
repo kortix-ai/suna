@@ -1,6 +1,17 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { access, constants, readlink, rename, rm, stat, symlink } from 'node:fs/promises'
+import {
+  access,
+  chmod,
+  constants,
+  copyFile,
+  link,
+  realpath,
+  rename,
+  rm,
+  stat,
+  symlink,
+} from 'node:fs/promises'
 import { isAbsolute, join, normalize } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -96,56 +107,111 @@ export async function publishOpencodeNativeLink(
  * of the 4096/4097 pair and only swaps once it serves. A candidate cannot be
  * proven for a binary that replaces the global install the running one came
  * from.
+ *
+ * The predecessor is a RETAINED BINARY, not a link. It was a symlink once, and
+ * that was a rollback that could not run: see {@link recordOpencodePrevious}.
  */
-export const OPENCODE_PREV_LINK = '/opt/kortix/opencode.prev'
+export const OPENCODE_PREV_BINARY = '/opt/kortix/opencode.prev'
 export const OPENCODE_PINNED_LATCH = '/opt/kortix/opencode.pinned'
 
-/** Where a link points, or null when it is absent or not a link. */
-export async function readOpencodeLinkTarget(linkPath: string): Promise<string | null> {
+/**
+ * Keep a copy of `source` that no package manager can take away.
+ *
+ * A hard link first: it pins the inode, so the bytes survive every name being
+ * unlinked, and it costs no disk — opencode 1.18.22's native binary is
+ * 184,068,240 bytes (measured) and is not duplicated. `link` refuses across
+ * filesystems (EXDEV) and on filesystems that do not do hard links
+ * (EPERM/ENOSYS/EMLINK), so a real copy is the fallback: slower and ~184 MB,
+ * but only on a pass that actually updates.
+ */
+async function retainExecutable(source: string, target: string): Promise<void> {
   try {
-    const target = await readlink(linkPath)
-    return target.length > 0 ? target : null
+    await link(source, target)
+    return
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | null)?.code
+    if (code !== 'EXDEV' && code !== 'EPERM' && code !== 'ENOSYS' && code !== 'EMLINK') throw err
+  }
+  await copyFile(source, target)
+  await chmod(target, 0o755)
+}
+
+/**
+ * Keep the binary that is serving RIGHT NOW, before anything replaces it.
+ *
+ * A SYMLINK to it is not enough, and that is not theory. `opencode.current`
+ * points INTO pnpm's global virtual store — the image resolves
+ * `# cmd-shim-target=` out of the launcher and links straight at it
+ * (apps/sandbox/Dockerfile) — and `pnpm add -g opencode-ai@<new>` deletes the
+ * version it replaces. A recorded symlink target therefore named a path that
+ * no longer existed by the time the rollback needed it:
+ * `restoreOpencodePrevious` -> `publishOpencodeNativeLink` -> `stat` threw
+ * ENOENT BEFORE the pin latch was written, so the box stayed down, nothing was
+ * latched, and the next pass reinstalled the same broken version.
+ *
+ * So the predecessor is RETAINED, not referenced. Measured in a container with
+ * the image's pnpm layout: `pnpm add -g opencode-ai@1.18.23` over 1.18.22 left
+ * the recorded store path GONE and `opencode.current` dangling, while a hard
+ * link taken before the install still reported `1.18.22`. The retained file
+ * lives until the next successful update replaces it, which is the disk this
+ * rollback costs: one extra opencode binary, and zero when the link succeeds.
+ *
+ * Returns the retained path, or null when there was nothing to keep — which the
+ * caller must treat as "there is no rollback target", not as "fine".
+ */
+export async function recordOpencodePrevious(
+  currentLinkPath = OPENCODE_CURRENT_LINK,
+  prevPath = OPENCODE_PREV_BINARY,
+): Promise<string | null> {
+  let source: string
+  try {
+    // `realpath`, not `readlink`: `opencode.current` may be a chain, and what
+    // has to be retained is the file at the end of it.
+    source = await realpath(currentLinkPath)
+    await requireExecutableFile(source)
   } catch {
     return null
+  }
+  const temporaryPath = `${prevPath}.next-${process.pid}-${randomUUID()}`
+  try {
+    await retainExecutable(source, temporaryPath)
+    // Atomic, and it replaces the predecessor kept by the previous update.
+    await rename(temporaryPath, prevPath)
+    return prevPath
+  } catch {
+    return null
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => {})
   }
 }
 
 /**
- * Remember the binary that is serving RIGHT NOW, before anything replaces it.
+ * Point `opencode.current` back at the retained predecessor.
  *
- * Returns the recorded target, or null when there was nothing to record — which
- * the caller must treat as "there is no rollback target", not as "fine".
+ * Returns the path it restored, or null when there is nothing runnable to go
+ * back to. It does not throw on an absent or unusable predecessor: the caller
+ * is already handling a box that failed to serve, and an exception there is
+ * what once skipped the pin latch.
  */
-export async function recordOpencodePrevious(
-  currentLinkPath = OPENCODE_CURRENT_LINK,
-  prevLinkPath = OPENCODE_PREV_LINK,
-): Promise<string | null> {
-  const target = await readOpencodeLinkTarget(currentLinkPath)
-  if (!target) return null
-  const temporaryLink = `${prevLinkPath}.next-${process.pid}-${randomUUID()}`
-  try {
-    await symlink(target, temporaryLink)
-    await rename(temporaryLink, prevLinkPath)
-    return target
-  } catch {
-    return null
-  } finally {
-    await rm(temporaryLink, { force: true }).catch(() => {})
-  }
-}
-
-/** Point `opencode.current` back at the recorded predecessor. */
 export async function restoreOpencodePrevious(
   currentLinkPath = OPENCODE_CURRENT_LINK,
-  prevLinkPath = OPENCODE_PREV_LINK,
+  prevPath = OPENCODE_PREV_BINARY,
 ): Promise<string | null> {
-  const target = await readOpencodeLinkTarget(prevLinkPath)
-  if (!target) return null
-  await publishOpencodeNativeLink(target, currentLinkPath)
-  return target
+  try {
+    await requireExecutableFile(prevPath)
+  } catch {
+    return null
+  }
+  try {
+    await publishOpencodeNativeLink(prevPath, currentLinkPath)
+  } catch {
+    return null
+  }
+  return prevPath
 }
 
 /** The latch: a previous OpenCode update failed to serve and was rolled back. */
+
 export async function opencodeUpdatesPinned(
   latchPath = OPENCODE_PINNED_LATCH,
 ): Promise<boolean> {
