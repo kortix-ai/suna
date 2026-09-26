@@ -3,6 +3,7 @@
     "ABORT_REASONS",
     "ABORT_REASONS_NOT_YET_EMITTED",
     "ACTIVE_INSTANCE_COOKIE",
+    "ANALYTICS_UNAVAILABLE_CODE",
     "ATTACHMENT_PART_REF_PREFIX",
     "ApiError",
     "AuthError",
@@ -1666,6 +1667,7 @@
     "setCachedAuthToken"
   ],
   "./api-client": [
+    "ANALYTICS_UNAVAILABLE_CODE",
     "ApiError",
     "AuthError",
     "BillingError",
