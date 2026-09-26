@@ -127,6 +127,8 @@ const LIST_END_GAP = 16;
  * never dimmed, fully shown once a row has scrolled under the pills.
  */
 const LIST_TOP_FADE_HEIGHT = 24;
+/** The open refetch waits out the drawer's 420ms slide (`DRAWER_OPEN`). */
+const DRAWER_REFETCH_DELAY_MS = 450;
 /** Drawer progress at or below this counts as closed (fully off screen). */
 const DRAWER_CLOSED_PROGRESS = 0.01;
 
@@ -440,8 +442,8 @@ export interface ProjectLeftDrawerProps {
   reviewNeedsYouCount?: number;
   /**
    * Session id → what it waits on (`needsYouBySession` over the review inbox).
-   * Those sessions leave the list for a "Needs you" group above it (no count:
-   * Jay, 2026-09-27).
+   * Those sessions leave the list for a "Needs you" group at its top, in the
+   * same scroll (no count; Jay, 2026-09-27).
    */
   needsYouBySession?: ReadonlyMap<string, SessionNeedsYou>;
   /** New session: open project home, whose composer starts the session. */
@@ -571,9 +573,13 @@ export function ProjectLeftDrawer({
   }, [refetch]);
   // The drawer stays mounted while closed, so its query never remounts: each
   // open refetches the loaded pages in the background (no spinner), so a
-  // session created or renamed elsewhere shows without a pull.
+  // session created or renamed elsewhere shows without a pull. After the
+  // slide (open is 420ms): a response landing mid-slide re-rendered the list
+  // while it moved (Jay, 2026-09-27: "not smooth").
   useEffect(() => {
-    if (open) void refetch();
+    if (!open) return;
+    const timer = setTimeout(() => void refetch(), DRAWER_REFETCH_DELAY_MS);
+    return () => clearTimeout(timer);
   }, [open, refetch]);
   const handleRetrySessions = useCallback(() => {
     haptics.tap();
@@ -691,6 +697,54 @@ export function ProjectLeftDrawer({
     [activeProjectSessionId, activeOpenCodeSessionId, handleOpenProjectSession, handleOpenSubsession, onSessionActions]
   );
 
+  // Needs you and the Sessions heading scroll WITH the list, as its header
+  // (Jay, 2026-09-27): above it, 20 waiting sessions pushed the list off the
+  // screen and it could never be reached. The 4pt under the heading is the
+  // list's old top padding.
+  const listHeader = useMemo(
+    () => (
+      <View>
+        {needsYouSessions.length > 0 ? (
+          <View className="px-2 -mx-1">
+            <Text variant="muted" className="px-4 pb-1 pt-3">
+              Needs you
+            </Text>
+            {needsYouSessions.map((session) => (
+              <DrawerSessionNode
+                key={session.session_id}
+                session={session}
+                shown={session.session_id === activeProjectSessionId}
+                activeOpenCodeId={activeOpenCodeSessionId}
+                needsYou={needsYouBySession.get(session.session_id)}
+                onPress={handleOpenProjectSession}
+                onLongPress={onSessionActions}
+                onPressSubsession={handleOpenSubsession}
+              />
+            ))}
+          </View>
+        ) : null}
+        {/* No bare heading when every session sits in Needs you. */}
+        {rows.length > 0 || needsYouSessions.length === 0 ? (
+          <View className="px-2 -mx-1 pb-1">
+            <Text variant="muted" className="px-4 pb-1 pt-3">
+              Sessions
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    ),
+    [
+      rows.length,
+      needsYouSessions,
+      needsYouBySession,
+      activeProjectSessionId,
+      activeOpenCodeSessionId,
+      handleOpenProjectSession,
+      onSessionActions,
+      handleOpenSubsession,
+    ]
+  );
+
   const handleNewSession = useCallback(() => {
     haptics.tap();
     onClose();
@@ -741,32 +795,6 @@ export function ProjectLeftDrawer({
         />
       </View>
 
-      {needsYouSessions.length > 0 && (
-        <View className="px-2 -mx-1">
-          <Text variant="muted" className="px-4 pb-1 pt-3">
-            Needs you
-          </Text>
-          {needsYouSessions.map((session) => (
-            <DrawerSessionNode
-              key={session.session_id}
-              session={session}
-              shown={session.session_id === activeProjectSessionId}
-              activeOpenCodeId={activeOpenCodeSessionId}
-              needsYou={needsYouBySession.get(session.session_id)}
-              onPress={handleOpenProjectSession}
-              onLongPress={onSessionActions}
-              onPressSubsession={handleOpenSubsession}
-            />
-          ))}
-        </View>
-      )}
-
-      <View className="px-2 -mx-1">
-        <Text variant="muted" className="px-4 pb-1 pt-3">
-          Sessions
-        </Text>
-      </View>
-
       <View className="flex-1">
         <Animated.FlatList
           style={{ flex: 1 }}
@@ -776,7 +804,8 @@ export function ProjectLeftDrawer({
           showsVerticalScrollIndicator={false}
           onScroll={onListScroll}
           scrollEventThrottle={16}
-          contentContainerStyle={{ paddingTop: 4, paddingBottom: listBottomPadding }}
+          contentContainerStyle={{ paddingBottom: listBottomPadding }}
+          ListHeaderComponent={listHeader}
           // Load the next page about one screen before the end of the list.
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.6}

@@ -5,10 +5,10 @@
  * metals, banded like polished metal catching light:
  *
  *   Free        a quiet grey ring
- *   Team        silver
+ *   Team        lapis lazuli (a deep ultramarine blue; Jay, 2026-09-27 — was silver)
  *   Enterprise  champagne gold (the Kortix yellow hue, low saturation)
  *
- * Each metal has a dark and a light set: the light set is darker, so its
+ * Each ring has a dark and a light set: the light set is darker, so its
  * bands clear the light drawer surface.
  *
  * No known plan (still loading, or a label outside the three) draws the photo alone at
@@ -38,6 +38,9 @@ const METAL_LOCATIONS = [0, 0.3, 0.5, 0.72, 1] as const;
 /** `hsl()` from a hue and saturation — the metals are recipes, not tokens. */
 const hsl = (h: number, s: number, l: number) => `hsl(${h} ${s}% ${l}%)`;
 
+/** Lapis lazuli's ultramarine (Team's ring): between #26619C (210) and ultramarine pigment (~225). */
+const LAPIS_HUE = 222;
+
 /** The hue of a THEME accent (`hsl(H S% L%)`). */
 const hueOf = (color: string) => Number(/hsl\(\s*([\d.]+)/.exec(color)?.[1] ?? 0);
 
@@ -48,18 +51,30 @@ function ringFor(tier: PlanTier, isDark: boolean): Ring {
       return { colors: [withAlpha(muted, 0.6), withAlpha(muted, 0.25)] };
     }
     case 'team': {
-      // Silver (Jay, 2026-09-23). Dark: L 92 · 58 · 97 · 50 · 80 — approved.
-      // Light: the dark set's highlights (92, 97) sat on the 95.7% drawer and
-      // vanished, so the ring broke into dashes. The light set is one step
-      // darker everywhere — L 78 · 46 · 90 · 38 · 66 — so every band clears
-      // the surface and the single 90% highlight still reads as a shine.
-      const l = isDark ? [92, 58, 97, 50, 80] : [78, 46, 90, 38, 66];
-      return { colors: [hsl(0, 0, l[0]), hsl(0, 0, l[1]), hsl(0, 0, l[2]), hsl(0, 0, l[3]), hsl(0, 0, l[4])], locations: METAL_LOCATIONS };
+      // Lapis lazuli (Jay, 2026-09-27; it was silver, which read as grey): the
+      // stone's deep ultramarine, hue 222 — between the lapis colour
+      // (#26619C, hue 210) and ultramarine pigment (~225) — banded like the
+      // metals so it reads as polished stone, not a flat blue.
+      // Dark: s 70 · 62 · 78 · 62 · 66, L 72 · 40 · 84 · 32 · 62.
+      // Light: one step darker so every band clears the 95.7% drawer —
+      // L 56 · 30 · 70 · 24 · 46, same saturations.
+      const sat = [70, 62, 78, 62, 66];
+      const l = isDark ? [72, 40, 84, 32, 62] : [56, 30, 70, 24, 46];
+      return {
+        colors: [
+          hsl(LAPIS_HUE, sat[0], l[0]),
+          hsl(LAPIS_HUE, sat[1], l[1]),
+          hsl(LAPIS_HUE, sat[2], l[2]),
+          hsl(LAPIS_HUE, sat[3], l[3]),
+          hsl(LAPIS_HUE, sat[4], l[4]),
+        ],
+        locations: METAL_LOCATIONS,
+      };
     }
     case 'enterprise': {
       // Champagne gold (Jay, 2026-09-23: the saturated yellow → orange gold
       // read brassy). One warm hue, the Kortix yellow's (48), at low
-      // saturation, so it reads as the silver's warm sibling, not a colour.
+      // saturation, so it reads as a warm metal, not a loud colour.
       // Dark: s 55 · 45 · 60 · 45 · 50, L 82 · 52 · 92 · 44 · 72.
       // Light: darker and a touch richer so it clears the 95.7% drawer —
       // s 50 · 45 · 55 · 45 · 48, L 66 · 38 · 82 · 32 · 56.
