@@ -239,6 +239,20 @@ export async function prebuildPackages(nodeModules: string, names: readonly stri
   return manifest;
 }
 
+// No top-level `await` here on purpose: this file is imported (for
+// PREBUILT_FORMAT/types) by apps/api/src/pi-packages/bundle.ts, which is
+// reachable from apps/api/src/projects/routes/projects.ts — the file whose
+// own first statement registers the global `projectsApp.use('/*', supabaseAuth)`
+// auth gate. A syntactic top-level await marks the WHOLE module graph above it
+// as an async module for the ES loader's evaluation order, which defers that
+// registration behind this promise. Any route file positioned later in the
+// barrel (projects/index.ts) — e.g. routes/turn-permissions.ts,
+// routes/monitors.ts — then registers on `projectsApp` before the auth
+// middleware, so its requests bypass supabaseAuth entirely (PROJ-38 regressed
+// from 401 to 403). See index.ts's identical warning on `mountLlmGateway` for
+// the same class of bug. `.then()` keeps this a synchronous module while the
+// CLI (`bun prebuild.ts <node_modules> <outDir> <package>...`) still runs to
+// completion the same way: bun keeps the process alive until the promise settles.
 if (import.meta.main) {
   const [nodeModules, outDir, ...names] = process.argv.slice(2);
   if (!nodeModules || !outDir || names.length === 0) {
@@ -246,6 +260,12 @@ if (import.meta.main) {
     process.exit(2);
   }
   mkdirSync(outDir, { recursive: true });
-  const manifest = await prebuildPackages(nodeModules, names, outDir);
-  process.stdout.write(`${JSON.stringify(manifest)}\n`);
+  prebuildPackages(nodeModules, names, outDir)
+    .then((manifest) => {
+      process.stdout.write(`${JSON.stringify(manifest)}\n`);
+    })
+    .catch((err) => {
+      process.stderr.write(`${(err as Error).stack ?? String(err)}\n`);
+      process.exit(1);
+    });
 }
