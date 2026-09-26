@@ -248,12 +248,14 @@ describe('native test-lane workflow', () => {
 
     // Per-ref group: a PR run (refs/pull/N/merge) can never cancel the trunk.
     expect(testWorkflow).toContain('group: tests-${{ github.ref }}');
-    expect(testWorkflow).toContain('cancel-in-progress: true');
+    // A PR cancels its superseded run; a push to main queues, so a burst of
+    // merges still ends with a verdict instead of all-cancelled.
+    expect(testWorkflow).toContain("cancel-in-progress: ${{ github.event_name != 'push' }}");
 
     const report = testWorkflow.slice(testWorkflow.indexOf('\n  trunk-report:'));
     expect(report).toContain('needs: lane');
     // A lane that hits `timeout-minutes` concludes `cancelled`, not `failure`,
-    // so `failure()` would miss it. `cancelled()` covers the superseded run.
+    // so `failure()` would miss it. `cancelled()` covers a replaced pending run.
     expect(report).toContain(
       "if: github.event_name == 'push' && !cancelled() && needs.lane.result != 'success'",
     );

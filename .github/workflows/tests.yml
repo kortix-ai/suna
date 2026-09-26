@@ -31,9 +31,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A pull request cancels its superseded run: only its newest commit matters.
+# A push to `main` QUEUES instead. Merges land faster than the ~9 min suite, so
+# cancelling left busy afternoons with no trunk result at all (2026-09-26: 7 of
+# the last 8 push runs cancelled). Queued, the running commit finishes and the
+# newest waiting commit runs next, so every burst ends with a verdict.
 concurrency:
   group: tests-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 permissions:
   contents: read
@@ -231,7 +236,8 @@ jobs:
     needs: lane
     # A lane that hits `timeout-minutes` concludes `cancelled`, not `failure`,
     # so `failure()` would miss it. `cancelled()` is true only when the whole
-    # run is cancelled, which is the superseded-commit case.
+    # run is cancelled: a manual cancel, or a pending push run that a newer
+    # push replaced before it started.
     if: github.event_name == 'push' && !cancelled() && needs.lane.result != 'success'
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 10
