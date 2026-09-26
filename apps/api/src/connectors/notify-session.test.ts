@@ -73,6 +73,16 @@ test('a named account is told by name, once per account, so a second account is 
   expect(enqueued[0].idempotencyKey).toBe('connector-connected:session-1:gmail:conn-2');
 });
 
+test('the account name is one shell word however it is spelled', () => {
+  // A member names the account; the agent may paste the command as written.
+  // Inside double quotes a shell still expands \, ", $ and backticks.
+  const text = connectorConnectedPrompt('gmail', 'gmail', {
+    connectionId: 'conn-3',
+    label: 'a\\b"c$(rm -rf ~)`id`',
+  });
+  expect(text).toContain('--account "a\\\\b\\"c\\$(rm -rf ~)\\`id\\`"');
+});
+
 test('an unknown session is skipped', async () => {
   sessionRow = undefined;
   await notifyConnectorSession('nope', 'project-1', 'user-1', 'gmail', 'gmail');

@@ -27,6 +27,15 @@ export interface ConnectedAccount {
   label: string;
 }
 
+/**
+ * `value` as one POSIX double-quoted shell word. A member chooses the account
+ * name and the agent may run the command as written, so every character a
+ * shell still expands inside double quotes (\, ", $, backtick) is escaped.
+ */
+function shellDoubleQuote(value: string): string {
+  return `"${value.replace(/[\\"$`]/g, (char) => `\\${char}`)}"`;
+}
+
 /** Exported for tests. The text delivered to the requesting session's agent. */
 export function connectorConnectedPrompt(
   slug: string,
@@ -37,10 +46,9 @@ export function connectorConnectedPrompt(
   if (account) {
     // A named account sits beside any others on the connector, so an unnamed
     // call may now be refused with account_required. Name it on every call.
-    const label = account.label.replace(/"/g, '\\"');
     return (
       `A new account "${account.label}" was just connected on the ${appLabel} connector. ` +
-      `Run calls as it with \`kortix connectors call ${slug} <action> --account "${label}"\` ` +
+      `Run calls as it with \`kortix connectors call ${slug} <action> --account ${shellDoubleQuote(account.label)}\` ` +
       `(check with \`kortix connectors accounts ${slug}\`), then continue the task that was ` +
       'blocked on it. Do not mint a new connect link for this connector.'
     );
