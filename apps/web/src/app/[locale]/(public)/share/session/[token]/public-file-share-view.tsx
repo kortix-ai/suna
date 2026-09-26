@@ -146,6 +146,7 @@ export function PublicFileShareView({
 
   const source = useMemo<FileSource>(
     () => ({
+      id: 'public-share',
       useFileContent: (path) => usePublicFileContent(token, path, fileUrl),
       useBinaryBlob: (path) => usePublicBinaryBlob(token, path, fileUrl),
       download: (_filePath, name) => downloadFileFromUrl(fileUrl, name || fileName),

@@ -11,6 +11,7 @@ import {
   runtimeWakeInProgress,
   runtimeWakePollDelayMs,
   runtimeWakeProgressPatch,
+  runtimeWakeRestoreProgressPatch,
   stampedRuntimeFailureState,
   waitForRuntimeWakeRunning,
 } from './runtime-wake-fence';
@@ -355,6 +356,17 @@ describe('runtimeWakeInProgress — hard ceiling', () => {
     expect(patch).not.toHaveProperty('runtimeWakeStartedAt');
     // No claim id ⇒ no lease to extend.
     expect(runtimeWakeProgressPatch({ runtimeWakeStartedAt: started.toISOString() }, 'x', observedAt)).toBeNull();
+  });
+
+  test('a restore inside start() holds the wake past the lease, and still ends at the ceiling', () => {
+    // Renewed every 30 s through an 8 min restore; the status loop sees none of it.
+    let metadata: Record<string, unknown> = wake(RUNTIME_WAKE_LEASE_MS);
+    for (let ms = 30_000; ms <= 8 * 60_000; ms += 30_000) {
+      metadata = { ...metadata, ...runtimeWakeRestoreProgressPatch(at(ms)) };
+    }
+    expect(runtimeWakeInProgress(metadata, at(8 * 60_000 + 1))).toBe(true);
+    expect(runtimeWakeInProgress(metadata, at(RUNTIME_WAKE_HARD_MS + 1))).toBe(false);
+    expect(metadata.runtimeWakeStartedAt).toBe(started.toISOString());
   });
 });
 

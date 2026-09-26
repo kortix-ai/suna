@@ -5474,9 +5474,10 @@ export function SessionChat({
   // failure counter every tick, so `unreachable` never fires no matter how
   // long it stays wedged. See `useRuntimeBootStalled`.
   const runtimeStalled = useRuntimeBootStalled();
-  // Label an involuntary page load (discarded tab, or a chunk 404 after a
+  // Classify an involuntary page load (discarded tab, or a chunk 404 after a
   // deploy) so the next "my session randomly disconnected" report arrives with
-  // its cause attached instead of a shrug.
+  // its cause attached instead of a shrug. An actionable cause reports to
+  // Sentry; a routine browser tab discard only leaves a breadcrumb.
   useReloadForensics(projectSessionId);
   // Nothing has answered yet and the mount is young: the difference between
   // "this session is asleep" and "we have not looked yet". Without it, every

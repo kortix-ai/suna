@@ -1,7 +1,7 @@
 import { Rotation } from '@embedpdf/models';
 import { ZoomMode } from '@embedpdf/plugin-zoom';
 import { describe, expect, test } from 'bun:test';
-import { getRotatedPageSize, selectPdfZoomLevel } from './pdf-viewer';
+import { getRotatedPageSize, isPdfCopyShortcut, selectPdfZoomLevel } from './pdf-viewer';
 
 describe('getRotatedPageSize (page-1 size report → fitSplitPercent aspect input)', () => {
   const size = { width: 595, height: 842 }; // US Letter-ish, portrait
@@ -36,5 +36,31 @@ describe('selectPdfZoomLevel (the guard against a global default-zoom flip)', ()
     const level = selectPdfZoomLevel(true, 1);
     expect(level).toBe(ZoomMode.FitPage);
     expect(typeof level).not.toBe('number');
+  });
+});
+
+describe('isPdfCopyShortcut (Safari keydown without a key must not throw)', () => {
+  test('key undefined returns false instead of throwing', () => {
+    expect(isPdfCopyShortcut({ key: undefined, metaKey: true, ctrlKey: false })).toBe(false);
+  });
+
+  test('Cmd+C is the shortcut', () => {
+    expect(isPdfCopyShortcut({ key: 'c', metaKey: true, ctrlKey: false })).toBe(true);
+  });
+
+  test('Ctrl+C is the shortcut (case-insensitive key)', () => {
+    expect(isPdfCopyShortcut({ key: 'C', metaKey: false, ctrlKey: true })).toBe(true);
+  });
+
+  test('C without a modifier is not the shortcut', () => {
+    expect(isPdfCopyShortcut({ key: 'c', metaKey: false, ctrlKey: false })).toBe(false);
+  });
+
+  test('another key with a modifier is not the shortcut', () => {
+    expect(isPdfCopyShortcut({ key: 'v', metaKey: true, ctrlKey: false })).toBe(false);
+  });
+
+  test('empty key is not the shortcut', () => {
+    expect(isPdfCopyShortcut({ key: '', metaKey: true, ctrlKey: false })).toBe(false);
   });
 });

@@ -27,6 +27,7 @@ import { createEnvRouter } from '../routes/env'
 import { createOpenCodeControlService } from '../harness/open-code/control'
 import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
 import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
+import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
 import {
   __resetRuntimeProjectionRelayForTests,
   __setRuntimeProjectionStateReaderForTests,
@@ -42,11 +43,13 @@ afterAll(() => rmSync(TEST_ENV_DIR, { recursive: true, force: true }))
 // `bun test` process runs every file, so each row restores what it changed.
 let envSnapshot: NodeJS.ProcessEnv
 beforeEach(() => {
+  resetConfigReleaseStateForTests()
   envSnapshot = { ...process.env }
   delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
   resetConfigReleaseStateForTests()
 })
 afterEach(() => {
+  resetConfigReleaseStateForTests()
   for (const key of Object.keys(process.env)) if (!(key in envSnapshot)) delete process.env[key]
   Object.assign(process.env, envSnapshot)
   resetConfigReleaseStateForTests()
