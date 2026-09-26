@@ -8,13 +8,21 @@ export async function seedSessionTranscript(
     accountId: string;
     sessionId: string;
     ensureSandbox?: boolean;
+    /** The saved transcript to write, in place of the default prompt and reply. */
+    messages?: (root: string) => Array<{
+      info: { id: string; role: string; time: { created: number; completed?: number } } & Record<
+        string,
+        unknown
+      >;
+      parts: Array<Record<string, unknown>>;
+    }>;
   },
 ) {
   if (!env.databaseUrl || env.target === 'prod')
     throw new Error('A non-production database is required');
   const root = `ses_${input.sessionId.replaceAll('-', '')}`;
   const created = Date.now() - 60_000;
-  const messages = [
+  const messages = input.messages?.(root) ?? [
     {
       info: {
         id: 'msg_000000000000000000000001',
