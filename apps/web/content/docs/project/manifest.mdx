@@ -100,6 +100,7 @@ triggers:
 | `default_agent`                                     | yes      | must name a declared, enabled agent                                                        |
 | `imports`                                           | no       | other YAML files or directories whose `triggers`, `connectors`, `agents`, and `apps` merge into this manifest. See [`imports:`](#imports) |
 | `runtime`                                           | no       | `"opencode"` (the default) or `"pi"` — the agent harness a session boots inside its sandbox; `pi` runs pi-agent-core in-process in the sandbox daemon and reads the same `.kortix/opencode/agents/*.md` and skills. The project's `pi_harness` feature flag selects pi without this line. |
+| `harnesses.pi.packages`                             | no       | pi packages ([pi.dev/packages](https://pi.dev/packages)) the project's pi sessions load. See [`harnesses:`](#harnesses) |
 | `project.name` / `project.description`              | no       | display metadata; the platform does not read `project.name` for the project's display name |
 | `env.required` / `env.optional`                     | no       | env var names; `required` is advisory only, never enforced at session start                |
 | `sandbox` / `sandbox.templates` / `sandbox.default` | no       | sandbox image(s) and hardware                                                              |
@@ -265,6 +266,66 @@ opencode:
 | `config_dir` | string | `.kortix/opencode` | Repo-relative directory. |
 
 That directory holds agents, skills, commands, tools, plugins, and `opencode.jsonc`. `opencode.jsonc` stays the OpenCode-native registry for plugins, MCP servers, providers, and permissions — do not duplicate those settings in the manifest. See [Agents](/docs/project/agents).
+
+## `harnesses:`
+
+Per-harness settings. Today one key exists: `pi.packages`, the pi packages every pi session of this project loads (`runtime: pi`, or the `pi_harness` flag). A package is anything from [pi.dev/packages](https://pi.dev/packages): extensions (tools, hooks, commands), and the skills and prompts a package ships.
+
+```yaml
+runtime: pi
+harnesses:
+  pi:
+    packages:
+      - npm:pi-web-access@0.30.0            # the pi.dev install line, with an exact version
+      - source: npm:pi-mcp-adapter@2.36.0
+        extensions: ["extensions/*.ts"]     # load only these files of the package
+        skills: []                          # load none of its skills
+      - ./.kortix/pi/audit.ts               # an extension file in this repository
+```
+
+| Entry form | Meaning |
+| --- | --- |
+| `npm:<name>@<x.y.z>` | An npm package at an exact version. A range or a missing version fails validation. |
+| `./<path>` | An extension file or package directory in this repository. It may not leave the repository with `..`. |
+| `{ source, extensions, skills, prompts, themes }` | The same source with pi's own include/exclude filters. An omitted filter loads everything; `[]` loads nothing. |
+
+At most 20 entries. Git sources are rejected.
+
+### Per agent
+
+An agent can add its own packages and drop top-level ones, under `agents.<name>.harnesses`:
+
+```yaml
+harnesses:
+  pi:
+    packages: [npm:pi-web-access@0.30.0]            # every agent
+agents:
+  researcher:
+    harnesses:
+      pi:
+        packages: [npm:@juicesharp/rpiv-todo@2.11.0] # researcher only
+  reviewer:
+    harnesses:
+      pi:
+        exclude: [pi-web-access]                     # reviewer loads no web tools
+```
+
+- An agent's packages are the top-level list, minus its `exclude`, plus its own `packages`.
+- An agent entry for a package the top level also lists replaces the top-level entry for that agent (another version, or other filters).
+- `exclude` lists package names (`pi-web-access`, `@scope/name`) or `./` paths as the top-level list writes them. It never takes a version.
+- Each distinct package list is built once. Agents with the same list share the build.
+- Packages belong to the agent a session starts with. A subagent that another agent starts with the `task` tool uses the standard workspace tools only (`bash`, `read`, `write`, `edit`, `glob`, `grep`), not its own packages and not the parent's; the parent's extension hooks still apply to its calls. Start a session with that agent to use its packages.
+
+How packages reach a session:
+
+1. Merging the change request that edits this list builds the packages once, for the sandbox platform, with install scripts off. Each extension is pre-built into one minified file. The build keeps the package's other files, except the code that file already contains, type declarations, source maps, and the root README and CHANGELOG. Projects with the same list share the build.
+2. A new or restarted session downloads the build while its repository clones, and loads each extension directly. A session never runs `npm install` or compiles a package.
+3. A package that cannot be pre-built (for example, one whose `pi.extensions` uses globs) still works: the session loads it from the installed packages instead, which takes longer. If a package's code reads one of the files the build leaves out, give its entry an `extensions` filter: the session then loads it from the installed packages too.
+4. A session that starts before the build exists boots without the project packages and starts the build; the next session has them.
+
+Kortix also installs a set of system packages into every pi session. A project entry for the same package replaces the system version. A repository can also hold pi-native extensions in `.pi/extensions/*.ts`; pi loads them without a manifest entry.
+
+Extensions run without a terminal UI: tools, hooks, and commands work; terminal-only widgets do nothing.
 
 ## `triggers:`
 

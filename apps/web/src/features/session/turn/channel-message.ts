@@ -24,7 +24,7 @@
  * took 22 s and 7 s.
  */
 
-import { indexOfIgnoreCase, readLegacyChannelHeader } from '@kortix/shared';
+import { readLegacyChannelHeader, replaceSpans, tagBlocks } from '@kortix/shared';
 
 export type ChannelPlatform = 'Slack' | 'Teams' | 'Telegram';
 
@@ -55,45 +55,13 @@ function stripMentionMarkup(value: string): string {
 }
 
 /**
- * `value.replace(/<at[^>]*>.*?<\/at>/gi, ' ')` in one pass. The regex re-read
- * the rest of the text for each `<at` that lacked a `>`, and the rest of the
- * line for each one that lacked a `</at>`.
+ * `value.replace(/<at[^>]*>.*?<\/at>/gi, ' ')` without re-reading the text for
+ * each `<at` — the regex re-read the rest of the text for an opener with no `>`,
+ * and the rest of the line for one with no `</at>`. `tagBlocks` pins it.
  */
 function replaceMentions(value: string): string {
-  let out = '';
-  let last = 0;
-  let from = 0;
-  // The next `>`, `</at>`, and line end at or after the last position each was searched from.
-  let gt = -2;
-  let close = -2;
-  let lineEnd = -2;
-  for (;;) {
-    const open = indexOfIgnoreCase(value, '<at', from);
-    if (open === -1) break;
-    if (gt < open + 3) gt = value.indexOf('>', open + 3);
-    // No `>` or `</at>` after this opener means none after any later opener either.
-    if (gt === -1) break;
-    if (close < gt + 1) close = indexOfIgnoreCase(value, '</at>', gt + 1);
-    if (close === -1) break;
-    if (lineEnd < gt + 1) lineEnd = nextLineEnd(value, gt + 1);
-    // `.*?` stops at a line terminator: the closing tag must come first.
-    if (lineEnd < close) {
-      from = open + 1;
-      continue;
-    }
-    out += value.slice(last, open) + ' ';
-    last = from = close + 5;
-  }
-  return out + value.slice(last);
-}
-
-/** The index of the first line terminator at or after `from`, or the length of the text. */
-function nextLineEnd(value: string, from: number): number {
-  for (let i = from; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code === 10 || code === 13 || code === 0x2028 || code === 0x2029) return i;
-  }
-  return value.length;
+  const mentions = tagBlocks(value, 'at', { attributes: 'any', ignoreCase: true, singleLine: true });
+  return replaceSpans(value, mentions, () => ' ');
 }
 
 function cutAtTail(text: string): string {

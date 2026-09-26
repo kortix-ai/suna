@@ -26,6 +26,10 @@
  * `routes/preview.ts` re-exports the public names, so every existing import
  * path keeps working.
  */
+import {
+  isTurnStartRequest,
+  stripInBoxProxyPrefix,
+} from '../projects/turn-start-request';
 import type { ProviderName } from '../platform/providers';
 import type { syncSandboxEnvForPrompt } from '../projects/lib/sandbox-env-sync';
 import { SecretGrantResolutionError } from '../projects/lib/secret-grant';
@@ -87,6 +91,16 @@ function isRetryableEnvSyncFailure(message: string): boolean {
  * Should this request get the PRE-PROMPT project-env sync (and the small set of
  * turn-start side effects that hang off it)?
  *
+ * ONE PREDICATE, because three turn-start preparations used to disagree inside a
+ * single request. `shouldSyncProjectEnvBeforeProxy` — which this replaces —
+ * answered `port !== 8000 ⇒ false` and never stripped the in-box `/proxy/<n>/`
+ * prefix, while the config-convergence gate and the connector gate both keyed on
+ * `isTurnStartRequest`, which covers 4096/4097 AND strips the prefix. Platinum
+ * rewrites 4096→8000 and Daytona does not, so on Daytona a prompt addressed
+ * straight at :4096 got the config check and the undeclared-agent drop but NOT
+ * the secret refresh or the connector-grant re-mint. Same request, two answers,
+ * provider-dependent. Built on `isTurnStartRequest` so that can never recur.
+ *
  * THREE endpoints. `/command` is one of them, and it was missing until
  * 2026-08-12. `POST /session/:id/command` is opencode's blocking slash-command
  * endpoint: it creates a user message and runs a full agent turn, exactly like
@@ -112,20 +126,21 @@ function isRetryableEnvSyncFailure(message: string): boolean {
  * `/summarize` stays OUT even though `isTurnStartRequest` counts it. Compaction
  * carries no user prompt and no `agent` to re-scope for, and the sync is
  * fail-closed on a grant error — refusing to compact a conversation because a
- * manifest read failed would wedge a session instead of protecting it. Same
- * reasoning as `isConnectorGatedTurn`, which excludes it for the same reason.
+ * manifest read failed would wedge a session instead of protecting it. That is
+ * the ONLY difference from `isTurnStartRequest`, and it is why the connector
+ * gate (`isConnectorGatedTurn`, which excluded `/summarize` for the identical
+ * reason) is now this same function rather than a second copy of it.
+ *
+ * CALL IT WITH THE UPSTREAM PORT and the remaining path — the values the request
+ * actually reaches the box on. Passing the client-addressed port is what created
+ * the divergence above.
  *
  * Pure + exported so the gate is unit-tested without provisioning a box — the
  * same reason `shouldAutoResumeStoppedSandbox` and `isProxiedBaseReset` are.
  */
-export function shouldSyncProjectEnvBeforeProxy(
-  port: number,
-  method: string,
-  path: string,
-): boolean {
-  if (port !== 8000) return false;
-  if (method.toUpperCase() !== 'POST') return false;
-  return /^\/session\/[^/]+\/(?:prompt_async|message|command)(?:$|[/?#])/.test(path);
+export function isTurnStartEnvSync(port: number, method: string, path: string): boolean {
+  if (!isTurnStartRequest(port, method, path)) return false;
+  return !/^\/session\/[^/]+\/summarize(?:$|[/?#])/.test(stripInBoxProxyPrefix(path));
 }
 
 /** The body's `agent` field, or null. Pure + exported so it is unit-tested
@@ -250,7 +265,7 @@ export interface PrePromptEnvSyncDeps {
  * — that control flow is load-bearing and unchanged by this extraction.
  *
  * Runs for `/prompt_async`, `/message` AND `/command` (see
- * `shouldSyncProjectEnvBeforeProxy`). The caller has already applied the
+ * `isTurnStartEnvSync`). The caller has already applied the
  * 'default'-sentinel body rewrite, so `body` here is what will be forwarded.
  */
 export async function runPrePromptEnvSync(

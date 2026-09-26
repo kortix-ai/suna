@@ -500,8 +500,9 @@ export interface ObjectGrantRow {
   grantId: string;
   accountId: string;
   projectId: string;
-  /** Legacy wire vocabulary: `member` | `group`. */
-  principalType: 'member' | 'group';
+  /** Legacy wire vocabulary: `member` | `group`, plus `project` (everyone with
+   *  access to the project; `principalId` is the project id). */
+  principalType: 'member' | 'group' | 'project';
   principalId: string;
   resourceType: string;
   resourceId: string;
@@ -527,14 +528,15 @@ export async function objectGrantRows(filter: {
   const out: ObjectGrantRow[] = [];
   for (const r of rows) {
     if (!r.objectType || !r.objectId || !r.scopeId) continue;
-    // Only a human or a group can hold an object grant — the legacy table's
-    // principal_type enum had exactly those two values.
-    if (r.principalType !== 'user' && r.principalType !== 'group') continue;
+    // A human, a group, or everyone in the project holds an object grant.
+    if (r.principalType !== 'user' && r.principalType !== 'group' && r.principalType !== 'project') {
+      continue;
+    }
     out.push({
       grantId: r.assignmentId,
       accountId: r.accountId,
       projectId: r.scopeId,
-      principalType: r.principalType === 'user' ? 'member' : 'group',
+      principalType: r.principalType === 'user' ? 'member' : r.principalType,
       principalId: r.principalId,
       resourceType: r.objectType,
       resourceId: r.objectId,

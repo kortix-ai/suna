@@ -29,9 +29,6 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 25
     env:
-      # Account: Workers Scripts Write. kortix.com zone: DNS Write,
-      # Workers Routes Write, SSL and Certificates Write, and Zone Read.
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
       CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
       # 192.0.2.1 is TEST-NET-1 and never routable: the Worker answers every
       # request on this hostname, so the record exists only to make the name
@@ -41,6 +38,21 @@ jobs:
       PREVIEW_CERT_HOST: '*.p.kortix.com'
     steps:
       - uses: actions/checkout@v7
+
+      # CLOUDFLARE_API_TOKEN — Account: Workers Scripts Write. kortix.com zone:
+      # DNS Write, Workers Routes Write, SSL and Certificates Write, Zone Read.
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            CLOUDFLARE_API_TOKEN=kortix-ci-env:CLOUDFLARE_APPS_EDGE_API_TOKEN
 
       - name: Validate Cloudflare configuration
         run: |

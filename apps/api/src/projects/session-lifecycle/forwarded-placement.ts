@@ -65,12 +65,17 @@
 
 import {
   MAX_WIRE_ID_CLOCK_CORRECTION,
-  WIRE_ID_TIME_MASK,
   WIRE_ID_TIME_SCALE,
+  isWireIdAheadOf,
+  maxWireIdClock,
   mintWireMessageId,
   newestWireIdTime,
+  wireIdClockAt,
+  wireIdClockDelta,
   wireIdTime,
 } from '../wire-message-id';
+
+const ZERO = BigInt(0);
 
 /** The shape of one transcript message the placement logic reads. */
 export interface PlacementTipMessage {
@@ -135,7 +140,7 @@ export function strandedPlacement(
       const at = wireIdTime(m.id);
       const parentAt = typeof m.parentID === 'string' ? wireIdTime(m.parentID) : null;
       if (at === null || parentAt === null) continue;
-      if (at > mine && parentAt < mine) strandedBy = m.id;
+      if (wireIdClockDelta(at, mine) > ZERO && wireIdClockDelta(parentAt, mine) < ZERO) strandedBy = m.id;
     }
   }
   return {
@@ -166,7 +171,14 @@ export function reachedPlacement(
     if (m.parentID === wireMessageId) return true;
     const at = wireIdTime(m.id);
     const parentAt = typeof m.parentID === 'string' ? wireIdTime(m.parentID) : null;
-    if (at === null || parentAt === null || at <= mine || parentAt < mine) continue;
+    if (
+      at === null ||
+      parentAt === null ||
+      wireIdClockDelta(at, mine) <= ZERO ||
+      wireIdClockDelta(parentAt, mine) < ZERO
+    ) {
+      continue;
+    }
     // ID order says this step covers the message — but ids are minted from
     // the SENDER's clock, not from causality: a message deliberately placed
     // BELOW the running step's parent (under-placement) has a lower id than
@@ -204,7 +216,7 @@ export function openUserAbove(
   for (const m of tip) {
     if (m.role !== 'user' || m.id === wireMessageId) continue;
     const at = wireIdTime(m.id);
-    if (at === null || at <= mine) continue;
+    if (at === null || wireIdClockDelta(at, mine) <= ZERO) continue;
     const v = strandedPlacement(tip, m.id);
     if (!v.answered && !v.stranded) return true;
   }
@@ -251,7 +263,7 @@ export function isLaterTipMessage(
   // id clock, which is `page()`'s own sub-millisecond tiebreak.
   const at = wireIdTime(candidate.id);
   const bt = wireIdTime(incumbent.id);
-  if (at !== null && bt !== null && at !== bt) return at > bt;
+  if (at !== null && bt !== null && at !== bt) return wireIdClockDelta(at, bt) > ZERO;
   return candidate.id > incumbent.id;
 }
 
@@ -378,17 +390,46 @@ export function mintLivePlacement(input: {
   if (skew === null || !Number.isFinite(skew) || Math.abs(skew) > MAX_TRUSTED_SKEW_MS) {
     return { ...base, lifted: false };
   }
-  const boxNow =
-    (BigInt(Math.trunc(input.nowMs + skew)) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
-  if (boxNow <= base.time) return { ...base, lifted: false };
+  const boxNowMs = input.nowMs + skew;
+  const boxNow = wireIdClockAt(boxNowMs);
+  if (wireIdClockDelta(boxNow, base.time) <= ZERO) return { ...base, lifted: false };
   // Never lift past what the floor itself would accept as a correction.
-  if (input.newestKnownTime !== null && boxNow - input.newestKnownTime > MAX_WIRE_ID_CLOCK_CORRECTION) {
+  if (
+    input.newestKnownTime !== null &&
+    wireIdClockDelta(boxNow, input.newestKnownTime) > MAX_WIRE_ID_CLOCK_CORRECTION
+  ) {
     return { ...base, lifted: false };
   }
-  const tail = base.id.slice('msg_'.length + 12);
-  return {
-    id: `msg_${boxNow.toString(16).padStart(12, '0')}${tail}`,
-    time: boxNow,
-    lifted: true,
-  };
+  // At the box's own clock, with no backdate: where OpenCode would mint it.
+  const lifted = mintWireMessageId({ nowMs: boxNowMs, backdateMs: 0, random: input.random });
+  return { ...lifted, lifted: true };
+}
+
+/**
+ * The floor a re-minted inbox prompt must clear: the newest of
+ *
+ *  - the transcript's newest id, or, when the read failed, the clock "now"
+ *    with no backdate (OpenCode mints its own ids from a raw `Date.now()`, so
+ *    an id it wrote a second ago is still beaten);
+ *  - the newest id THIS SESSION's inbox already put on the wire
+ *    (`deliveredNewest`). The transcript lags: OpenCode persists a mid-turn
+ *    user message ~4s after the POST, so two prompts sent inside that window
+ *    read the same transcript newest;
+ *  - the id the client submitted, unless it is far AHEAD of the clock (the
+ *    pre-fix CLI's high-bits mint, ~40 days out), which nothing placed.
+ *
+ * Merged on the ring, so a post-wrap floor beats a pre-wrap one.
+ */
+export function remintFloorTime(input: {
+  transcript: { read: boolean; newest: bigint | null };
+  deliveredNewest: bigint | null;
+  submittedMessageId: string | null | undefined;
+  nowMs: number;
+}): bigint | null {
+  const submitted =
+    input.submittedMessageId && !isWireIdAheadOf(input.submittedMessageId, input.nowMs)
+      ? wireIdTime(input.submittedMessageId)
+      : null;
+  const transcript = input.transcript.read ? input.transcript.newest : wireIdClockAt(input.nowMs);
+  return maxWireIdClock([transcript, input.deliveredNewest, submitted]);
 }

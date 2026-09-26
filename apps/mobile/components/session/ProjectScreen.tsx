@@ -44,6 +44,8 @@ import {
   type ParamListBase,
 } from 'expo-router/react-navigation';
 import { useAuthContext } from '@/contexts';
+import { requestPushPermissionOnce } from '@/lib/notifications/registration';
+import { usePushStore } from '@/stores/push-store';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { useLastProjectStore } from '@/stores/last-project-store';
 import {
@@ -64,6 +66,9 @@ import {
   returnThreadForPage,
   drawerRouteMove,
   drawerSessionRowMove,
+  drawerThreadMove,
+  threadOpenTarget,
+  type PendingThreadFocus,
   returnHomeMove,
   shownProjectSessionId,
   projectEdgeGesture,
@@ -83,11 +88,17 @@ import {
 import { ProjectHome, type ProjectHomeSubmit } from '@/components/session/ProjectHome';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { newSessionCreateInput } from '@/lib/session/new-session-input';
-import { resolveSessionTitle, sessionDisplayTitle } from '@/lib/session/session-list';
+import {
+  projectSessionForOpenCodeId,
+  resolveSessionTitle,
+  sessionDisplayTitle,
+  subsessionTitle,
+} from '@/lib/session/session-list';
 import { subAgentRelation, subAgentsOf } from '@/lib/session/sub-agents';
 import { ProjectLeftDrawer } from '@/components/session/ProjectLeftDrawer';
 import {
   SessionActionsSheet,
+  type SessionActionsInitialView,
   type SessionActionsSheetRef,
 } from '@/components/session/SessionActionsSheet';
 import { Drawer } from 'react-native-drawer-layout';
@@ -101,6 +112,7 @@ import {
   useProjectSessions,
   useCreateProjectSession,
 } from '@/lib/projects/hooks';
+import { DRAWER_CLOSE, DRAWER_OPEN } from '@/lib/ui/drawer-springs';
 import { useReviewItems } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
 import { countReviewItemsBySegment, getProjectSession } from '@kortix/sdk';
@@ -211,21 +223,6 @@ async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
 
 // ─── Main screen ────────────────────────────────────────────────────────────
 
-/**
- * The drawer's close spring (Jay, 2026-09-22). The library's one spring
- * (stiffness 1000, damping 500, mass 3) is 4.6× overdamped: its slow pole
- * decays at ~2/s, so a close crawls over its last third. This one is
- * critically damped (damping = 2·√stiffness at mass 1): 90% of the travel in
- * ~195ms, settled in ~330ms, no overshoot. It stays a spring, so a swipe
- * release keeps its velocity. Open keeps the library spring: an exit runs
- * faster than an enter.
- *
- * `closeSpringConfig` is not a library prop: it comes from
- * `patches/react-native-drawer-layout+4.2.10.patch`. When the patch is not
- * applied (`npx patch-package` after an install), `tsc` fails on the prop.
- * Module scope: the library lists it as a `useCallback` dependency.
- */
-const DRAWER_CLOSE_SPRING = { stiffness: 400, damping: 40, mass: 1 };
 /** Shared empty list: a fresh `[]` per render would re-render the thread. */
 const EMPTY_SUB_AGENTS: ProjectSession[] = [];
 
@@ -261,8 +258,9 @@ export function ProjectScreen() {
   // reaches it without its own state.
   const actionsSheetRef = useRef<SessionActionsSheetRef>(null);
   // `initialView` (COR-140): the thread header's title tap opens this same
-  // sheet straight to Rename, instead of a second rename implementation.
-  const openSessionActions = useCallback((session: ProjectSession, initialView?: 'rename') => {
+  // sheet straight to Rename, and its Share button straight to Share
+  // (KRTX-248), instead of a second implementation of either.
+  const openSessionActions = useCallback((session: ProjectSession, initialView?: SessionActionsInitialView) => {
     actionsSheetRef.current?.present(session, initialView);
   }, []);
   // The project/account switcher (COR-124): mounted here once, beside the
@@ -432,6 +430,11 @@ export function ProjectScreen() {
   // the sessions list has not caught up with a just-created session, so a
   // new thread takes photos from its first frame (COR-185).
   const openedProjectSessionIdsRef = useRef<Record<string, string>>({});
+  // A sub-session to show once its project session's thread connects: a
+  // sub-session row tapped while its parent was not open (or still
+  // connecting). `connectToProjectSession` opens the thread on it instead of
+  // the root, then clears it. Any other open replaces or clears it.
+  const pendingThreadFocusRef = useRef<PendingThreadFocus | null>(null);
 
   // Refetch both session lists (the drawer's and the paged Sessions page).
   const refreshSessionLists = useCallback(() => {
@@ -446,9 +449,13 @@ export function ProjectScreen() {
       if (!ps.sandbox_url || !ps.opencode_session_id) return false;
       const externalId =
         ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
+      // The root, or a pending sub-session of this session. The sandbox gate
+      // (openedThreadRef) records the id the store is about to show.
+      const threadId = threadOpenTarget(pendingThreadFocusRef.current, ps.session_id, ps.opencode_session_id);
+      pendingThreadFocusRef.current = null;
       // The same value switchSandbox derives from `external_id`.
       openedThreadRef.current = {
-        sessionId: ps.opencode_session_id,
+        sessionId: threadId,
         sandboxUrl: getSandboxUrl(externalId),
       };
       switchSandbox({
@@ -468,7 +475,8 @@ export function ProjectScreen() {
       seedFirstPrompt(ps.opencode_session_id, firstPromptRef.current[ps.session_id]);
       delete firstPromptRef.current[ps.session_id];
       openedProjectSessionIdsRef.current[ps.opencode_session_id] = ps.session_id;
-      navigateToSession(ps.opencode_session_id);
+      openedProjectSessionIdsRef.current[threadId] = ps.session_id;
+      navigateToSession(threadId);
       // The row may be missing from the lists yet (a just-created session):
       // refetch them, so the thread's title and `···` menu appear.
       refreshSessionLists();
@@ -604,8 +612,13 @@ export function ProjectScreen() {
   // Open a project session from the list. Always enter the connecting state —
   // ensureAndOpen polls the sandbox endpoint (re-provisioning/waking as needed)
   // before opening, so even a previously-idle session comes back cleanly.
+  // `focusOpenCodeId` (a sub-session row): the thread opens on that
+  // sub-session instead of the root once it connects.
   const handleOpenProjectSession = useCallback(
-    (ps: ProjectSession) => {
+    (ps: ProjectSession, focusOpenCodeId?: string) => {
+      pendingThreadFocusRef.current = focusOpenCodeId
+        ? { sessionId: ps.session_id, openCodeId: focusOpenCodeId }
+        : null;
       haptics.tap();
       releaseWarmSession(ps.session_id);
       navigateToSession(null);
@@ -621,6 +634,7 @@ export function ProjectScreen() {
   // Open a session by raw id (e.g. Fix-with-agent returns a new session).
   const handleOpenSessionById = useCallback(
     (sessionId: string) => {
+      pendingThreadFocusRef.current = null;
       releaseWarmSession(sessionId);
       navigateToSession(null);
       setConnectError(null);
@@ -655,18 +669,25 @@ export function ProjectScreen() {
     }
   }, [connectingProjectSessionId, restartingSession, projectId, ensureAndOpen]);
 
-  // The active tab's project-session row. The tab store's activeSessionId is the
-  // OPENCODE root id (connectToProjectSession navigates with
-  // ps.opencode_session_id), so resolve back to the Kortix row through the pin —
-  // every /projects/:id/sessions/:sid API call needs the Kortix UUID.
+  // The active tab's project-session row. The tab store's activeSessionId is an
+  // OPENCODE id — the root (connectToProjectSession navigates with
+  // ps.opencode_session_id), or a sub-session of it (a drawer sub-session row,
+  // a task tool's View) — so resolve back to the Kortix row through the pin or
+  // the row's `opencode_sessions` snapshot. Every
+  // /projects/:id/sessions/:sid API call needs the Kortix UUID.
   const activeProjectSession = useMemo(
-    () =>
-      activeSessionId
-        ? (projectSessions.find(
-            (s) => s.opencode_session_id === activeSessionId || s.session_id === activeSessionId
-          ) ?? null)
-        : null,
+    () => projectSessionForOpenCodeId(projectSessions, activeSessionId),
     [projectSessions, activeSessionId]
+  );
+  // The thread shows a sub-session of that row, not its root: the header
+  // reads the sub-session's title and the title tap (rename of the project
+  // session) is off.
+  const activeSubsession = useMemo(
+    () =>
+      activeProjectSession && activeSessionId && activeSessionId !== activeProjectSession.opencode_session_id
+        ? ((activeProjectSession.opencode_sessions ?? []).find((item) => item.id === activeSessionId) ?? null)
+        : null,
+    [activeProjectSession, activeSessionId]
   );
 
   // The open thread's sub-agent relation (COR-162): the same relation the
@@ -867,6 +888,8 @@ export function ProjectScreen() {
         // The session holds the prompt now: drop the home's saved draft
         // (COR-143). Cancel hands the text back through `takeInitialDraft`.
         clearComposerDraftIfSent(draftKey({ kind: 'project', projectId }), text);
+        // The first send asks for notification permission, once per install.
+        void requestPushPermissionOnce();
         return true;
       } catch (err: any) {
         if (showUpgradeForError(err)) return false;
@@ -1099,19 +1122,71 @@ export function ProjectScreen() {
   });
   const shownSessionIdRef = useRef(shownSessionId);
   shownSessionIdRef.current = shownSessionId;
+  // The OpenCode id the thread on screen shows (null under a tool page or
+  // while connecting): which drawer sub-session row is highlighted.
+  const shownOpenCodeId = shownSessionId && !activePageId ? activeSessionId : null;
+  const shownOpenCodeIdRef = useRef(shownOpenCodeId);
+  shownOpenCodeIdRef.current = shownOpenCodeId;
 
-  // A drawer session row (the drawer has already closed itself). The row of
-  // the session on screen does nothing more: reopening it would unmount the
-  // thread, show Connecting, and rerun the connect loop.
-  const openSessionFromDrawer = useCallback(
-    (ps: ProjectSession) => {
-      if (drawerSessionRowMove(ps.session_id, shownSessionIdRef.current) === 'close') {
-        haptics.tap();
+  // Push (components/notifications/PushNotificationsBridge): the session on
+  // screen suppresses its own notification banner while this project is on top.
+  useEffect(() => {
+    usePushStore.getState().setViewingSessionId(isFocused ? shownSessionId : null);
+  }, [isFocused, shownSessionId]);
+  useEffect(() => () => usePushStore.getState().setViewingSessionId(null), []);
+
+  // A tapped notification for this project: open its session, the same path
+  // as the Sessions page. The session already on screen stays as it is.
+  const pushOpen = usePushStore((s) => s.pendingOpen);
+  useEffect(() => {
+    if (!pushOpen || !projectId || !scopeReady || !isFocused) return;
+    const open = usePushStore.getState().takeOpen(projectId);
+    if (!open) return;
+    if (drawerSessionRowMove(open.sessionId, shownSessionIdRef.current) === 'open') {
+      handleOpenSessionById(open.sessionId);
+    }
+  }, [pushOpen, projectId, scopeReady, isFocused, handleOpenSessionById]);
+
+  // A drawer row (the drawer has already closed itself) that targets one
+  // OpenCode session of `ps`: its root (a session row) or a sub-session (a
+  // row under it). Another session opens through the connect path. On the
+  // session on screen, another OpenCode session of it only swaps the thread's
+  // active id — the same sandbox, no reconnect (the task tool's View does the
+  // same) — and the one already showing does nothing more: reopening it would
+  // unmount the thread, show Connecting, and rerun the connect loop. While
+  // the session on screen still connects, the target waits for the thread
+  // (`queue`). A sub-session row of another session opens that session and
+  // then shows the sub-session (`handleOpenProjectSession` focus).
+  const openThreadFromDrawer = useCallback(
+    (ps: ProjectSession, targetOpenCodeId: string | null) => {
+      const move = drawerThreadMove({
+        rowSessionId: ps.session_id,
+        targetOpenCodeId,
+        shownSessionId: shownSessionIdRef.current,
+        activeOpenCodeId: shownOpenCodeIdRef.current,
+      });
+      if (move === 'open') {
+        // A sub-session row: open its parent, then show the sub-session.
+        const focus = targetOpenCodeId && targetOpenCodeId !== ps.opencode_session_id ? targetOpenCodeId : undefined;
+        handleOpenProjectSession(ps, focus);
         return;
       }
-      handleOpenProjectSession(ps);
+      haptics.tap();
+      if (move === 'focus' && targetOpenCodeId) navigateToSession(targetOpenCodeId);
+      // Still connecting: the thread opens on the target when it connects.
+      if (move === 'queue' && targetOpenCodeId) {
+        pendingThreadFocusRef.current = { sessionId: ps.session_id, openCodeId: targetOpenCodeId };
+      }
     },
-    [handleOpenProjectSession]
+    [handleOpenProjectSession, navigateToSession]
+  );
+  const openSessionFromDrawer = useCallback(
+    (ps: ProjectSession) => openThreadFromDrawer(ps, ps.opencode_session_id ?? null),
+    [openThreadFromDrawer]
+  );
+  const openSubsessionFromDrawer = useCallback(
+    (ps: ProjectSession, childId: string) => openThreadFromDrawer(ps, childId),
+    [openThreadFromDrawer]
   );
 
   // The left drawer. It mounts through renderDrawerContent, so it stays mounted while visually closed.
@@ -1122,23 +1197,29 @@ export function ProjectScreen() {
       <ProjectLeftDrawer
         projectId={projectId}
         activeProjectSessionId={shownSessionId}
+        activeOpenCodeSessionId={shownOpenCodeId}
         reviewNeedsYouCount={reviewNeedsYouCount}
         needsYouBySession={needsYouSessions}
         // New session opens project home: its composer starts the session.
         onNewSession={returnHome}
         onOpenProjectSession={openSessionFromDrawer}
+        onOpenSubsession={openSubsessionFromDrawer}
         onNavigateRoute={navigateProjectRoute}
         onSessionActions={openSessionActions}
         onOpenSwitcher={openSwitcher}
         onClose={closeDrawer}
+        open={drawerOpen}
       />
     ),
     [
       projectId,
       shownSessionId,
+      shownOpenCodeId,
+      drawerOpen,
       reviewNeedsYouCount,
       returnHome,
       openSessionFromDrawer,
+      openSubsessionFromDrawer,
       navigateProjectRoute,
       openSessionActions,
       openSwitcher,
@@ -1234,9 +1315,17 @@ export function ProjectScreen() {
               activeProjectSession ? () => openSessionActions(activeProjectSession) : undefined
             }
             onRenamePress={
-              activeProjectSession ? () => openSessionActions(activeProjectSession, 'rename') : undefined
+              activeProjectSession && !activeSubsession
+                ? () => openSessionActions(activeProjectSession, 'rename')
+                : undefined
             }
-            sessionTitle={activeProjectSession ? sessionDisplayTitle(activeProjectSession) : undefined}
+            sessionTitle={
+              activeSubsession
+                ? subsessionTitle(activeSubsession)
+                : activeProjectSession
+                  ? sessionDisplayTitle(activeProjectSession)
+                  : undefined
+            }
             subAgentRelation={activeSubAgentRelation}
             subAgents={activeSubAgents}
             onOpenProjectSession={handleOpenProjectSession}
@@ -1260,6 +1349,7 @@ export function ProjectScreen() {
               onCancel={handleCancelConnect}
               onRestart={handleRestartSession}
               restarting={restartingSession}
+              showLoader={!drawerOpen}
             />
           </View>
         ) : null}
@@ -1347,7 +1437,16 @@ export function ProjectScreen() {
         swipeEnabled={isFocused && edgeGesture === 'drawer'}
         swipeEdgeWidth={80}
         swipeMinDistance={30}
-        closeSpringConfig={DRAWER_CLOSE_SPRING}
+        // A tap opens on the iOS sheet curve (420ms, 90% by ~154ms) and closes
+        // on ease-out-quad (320ms, 80% by ~170ms); a swipe release keeps a
+        // critically damped spring and its
+        // velocity (`lib/ui/drawer-springs.ts`). The props come from
+        // `patches/react-native-drawer-layout+4.2.10.patch`; without the patch
+        // applied (`npx patch-package`), `tsc` fails on them. Module-level
+        // constants: the library lists them as `useCallback` dependencies, and
+        // a new object would re-toggle the drawer.
+        openSpringConfig={DRAWER_OPEN}
+        closeSpringConfig={DRAWER_CLOSE}
         renderDrawerContent={renderDrawer}>
         <ProjectRouteProvider value={projectRoute}>
           {/* Native Stack: platform default push/pop. No iOS swipe-back: the

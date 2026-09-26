@@ -180,7 +180,7 @@ describe('web ECS migration', () => {
     expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(4);
     expect(workflow).toContain('pnpm test -- --target-full');
     expect(workflow).toContain('PREVIEW_LOCKFILE_SHA256');
-    expect(workflow).toContain('Test report:');
+    expect(read('scripts/ci/preview-sticky-comment.sh')).toContain('Test report:');
     expect(workflow).toContain('deployments: write');
     expect(workflow).toContain('type: choice');
     expect(workflow).toContain('- platinum');
@@ -190,7 +190,8 @@ describe('web ECS migration', () => {
     expect(workflow).not.toContain('configure-aws-credentials');
     expect(workflow).not.toMatch(/vercel/i);
     expect(workflow).not.toContain('KORTIX_PREVIEW_APPROVED_SHA');
-    expect(workflow).toContain('**Preview:**');
+    expect(read('scripts/ci/preview-sticky-comment.sh')).toContain('**Preview:**');
+    expect(workflow).toContain('bun tests/bin/sandbox-preview.ts suite');
   });
 
   /**

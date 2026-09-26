@@ -13,8 +13,9 @@
 import type { ApiClient } from './api/client.ts';
 import { status } from './style.ts';
 
-/** `role_assignments.principal_type`. */
-export const PRINCIPAL_TYPES = ['user', 'group', 'service_account', 'pending'] as const;
+/** `role_assignments.principal_type`. `project` is everyone with access to the
+ *  project: `principal_id` is the project id, and it holds object grants only. */
+export const PRINCIPAL_TYPES = ['user', 'group', 'service_account', 'pending', 'project'] as const;
 export type PrincipalType = (typeof PRINCIPAL_TYPES)[number];
 
 /** `role_assignments.scope_type` / `permissions.scope_type`. */
@@ -22,7 +23,7 @@ export const SCOPE_TYPES = ['account', 'project'] as const;
 export type ScopeType = (typeof SCOPE_TYPES)[number];
 
 /** `role_assignments.object_type` — an assignment narrowed to ONE object. */
-export const OBJECT_TYPES = ['agent', 'skill', 'secret', 'app', 'trigger'] as const;
+export const OBJECT_TYPES = ['agent', 'skill', 'secret', 'app', 'trigger', 'connection'] as const;
 export type ObjectType = (typeof OBJECT_TYPES)[number];
 
 /**
@@ -167,8 +168,9 @@ export async function principalLabels(
   return labels;
 }
 
-/** `user:alice@corp.com`, `group:Engineering`, or the raw id when unlabelled. */
+/** `user:alice@corp.com`, `group:Engineering`, `everyone`, or the raw id when unlabelled. */
 export function principalLabel(a: IamAssignment, labels: Map<string, string>): string {
+  if (a.principal_type === 'project') return 'everyone';
   const label = labels.get(a.principal_id) ?? a.principal_id;
   return `${a.principal_type}:${label}`;
 }

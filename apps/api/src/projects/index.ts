@@ -44,6 +44,7 @@ import './routes/channel-email';
 import './routes/turn-stream';
 import './routes/models';
 import './routes/turn-questions';
+import './routes/turn-permissions';
 import './routes/oauth2-connectors';
 import './routes/project-detail';
 import './routes/project-files';

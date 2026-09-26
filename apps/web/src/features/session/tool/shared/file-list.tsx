@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { getDirectory, getFilename } from '@/ui';
+import type { GrepFileGroup } from '@kortix/shared/tool-output';
 import { CaretRightIcon as ChevronRight, FileTextIcon as FileText } from '@phosphor-icons/react';
 import { type ReactNode, useState } from 'react';
 
@@ -20,53 +21,7 @@ export function parseFilePaths(output: string): string[] | null {
   return null;
 }
 
-interface GrepMatch {
-  line: number;
-  content: string;
-}
-export interface GrepFileGroup {
-  filePath: string;
-  matches: GrepMatch[];
-}
-
-export function parseGrepOutput(
-  output: string,
-): { matchCount: number; groups: GrepFileGroup[] } | null {
-  if (!output) return null;
-  const text = String(output).trim();
-  const headerMatch = text.match(/^Found\s+(\d+)\s+match/i);
-  const matchCount = headerMatch ? parseInt(headerMatch[1], 10) : 0;
-  const body = headerMatch ? text.slice(headerMatch[0].length).trim() : text;
-  if (!body) return null;
-
-  const groups: GrepFileGroup[] = [];
-  const blocks = body.split(/\n\n+/);
-
-  for (const block of blocks) {
-    const trimmed = block.trim();
-    if (!trimmed) continue;
-    const fileMatch = trimmed.match(/^(\/[^:]+?):\s*/);
-    if (!fileMatch) continue;
-    const filePath = fileMatch[1];
-    const rest = trimmed.slice(fileMatch[0].length);
-    const matches: GrepMatch[] = [];
-    const lineRegex = /Line\s+(\d+):\s*([\s\S]*?)(?=\s*(?:Line\s+\d+:|$))/g;
-    let m: RegExpExecArray | null;
-    while ((m = lineRegex.exec(rest)) !== null) {
-      matches.push({
-        line: parseInt(m[1], 10),
-        content: m[2].trim().replace(/;$/, ''),
-      });
-    }
-    if (matches.length > 0) groups.push({ filePath, matches });
-  }
-
-  if (groups.length === 0) return null;
-  return {
-    matchCount: matchCount || groups.reduce((sum, g) => sum + g.matches.length, 0),
-    groups,
-  };
-}
+export { type GrepFileGroup, parseGrepOutput } from '@kortix/shared/tool-output';
 
 export function ToolListRow({
   icon,

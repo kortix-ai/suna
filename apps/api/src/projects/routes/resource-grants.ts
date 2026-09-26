@@ -138,10 +138,15 @@ projectsApp.openapi(
           : false;
     };
 
-    // Agents/skills come from iam_resource_grants. SECRETS no longer have a
-    // resource-type here — secret sharing was retired (a secret is always
-    // project-wide; the only access gate is the agent-side `secrets` grant).
-    const grants = (await listResourceGrants(projectId)).filter((g) => g.resourceType !== 'secret');
+    // Agents and skills only. SECRETS no longer have a resource-type here —
+    // secret sharing was retired (a secret is always project-wide; the only
+    // access gate is the agent-side `secrets` grant). CONNECTION grants are a
+    // shared account's audience, listed on the connection itself
+    // (`GET /:projectId/connections`, `shared_with`), and gated by a different
+    // capability than this route.
+    const grants = (await listResourceGrants(projectId)).filter(
+      (g) => g.resourceType === 'agent' || g.resourceType === 'skill',
+    );
 
     // Resolve principal labels in two batched lookups.
     const memberIds = [
@@ -175,10 +180,14 @@ projectsApp.openapi(
         resource_id: g.resourceId,
         principal_type: g.principalType,
         principal_id: g.principalId,
+        // `project` = everyone with access to the project; its label is the
+        // project's name.
         principal_label:
           g.principalType === 'member'
             ? (emailByUser.get(g.principalId) ?? g.principalId)
-            : (groupNameById.get(g.principalId) ?? g.principalId),
+            : g.principalType === 'project'
+              ? loaded.row.name
+              : (groupNameById.get(g.principalId) ?? g.principalId),
         granted_by: g.grantedBy,
         created_at: g.createdAt.toISOString(),
         expires_at: g.expiresAt?.toISOString() ?? null,

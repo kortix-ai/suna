@@ -19,8 +19,10 @@ mock.module('../shared/db', () => ({
     select: () => ({
       from: () => ({
         leftJoin: () => ({
-          where: () => ({
-            limit: async () => shareRow ? [shareRow] : [],
+          leftJoin: () => ({
+            where: () => ({
+              limit: async () => shareRow ? [shareRow] : [],
+            }),
           }),
         }),
         innerJoin: () => ({
@@ -223,4 +225,46 @@ describe('public session preview shares', () => {
     expect(res.status).toBe(405);
   });
 
+});
+
+describe('public transcript shares on the proxy edge', () => {
+  beforeEach(() => {
+    shareRow = {
+      ...shareRow,
+      resourceType: 'transcript',
+      label: 'Conversation',
+      port: null,
+      filePath: null,
+      externalId: null,
+      sandboxStatus: null,
+    };
+  });
+
+  test('a transcript share resolves without a sandbox and names its public messages route', async () => {
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.share.resource_type).toBe('transcript');
+    expect(body.share.proxy_path).toBe(`/v1/public/session-shares/${SHARE_TOKEN}/messages`);
+    expect(body.share.public_url.endsWith(`/share/session/${SHARE_TOKEN}`)).toBe(true);
+  });
+
+  test('a transcript share opens no port and no file', async () => {
+    shareRow = { ...shareRow, externalId: EXTERNAL_ID, sandboxStatus: 'active' };
+    for (const path of ['3000/', 'file', 'file/open']) {
+      const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/${path}`);
+      expect(res.status).toBe(403);
+    }
+    expect(fetchUrls.length).toBe(0);
+  });
+});
+
+describe('public shares of a deleted session', () => {
+  test('a tombstoned session ends every link to it → 410', async () => {
+    for (const resourceType of ['preview', 'transcript']) {
+      shareRow = { ...shareRow, resourceType, sessionMetadata: { deletedAt: '2026-09-26T00:00:00.000Z' } };
+      const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
+      expect(res.status).toBe(410);
+    }
+  });
 });

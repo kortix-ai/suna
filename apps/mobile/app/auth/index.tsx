@@ -12,7 +12,7 @@
  */
 
 import * as React from 'react';
-import { View, Platform, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { View, Platform, useWindowDimensions } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
@@ -117,13 +117,9 @@ export default function AuthScreen() {
               <PlatformFullWidthButton
                 size="xl"
                 label={oauthPending === 'google' ? 'Opening Google…' : 'Continue with Google'}
-                leading={
-                  oauthPending === 'google' ? (
-                    <ActivityIndicator size="small" color={onPrimary} />
-                  ) : (
-                    <GoogleIcon size={18} />
-                  )
-                }
+                // Pending is an inline disabled state: the label says it,
+                // the icon stays (KRTX-244).
+                leading={<GoogleIcon size={18} />}
                 disabled={!!oauthPending}
                 onPress={() => void signInWith('google')}
               />
@@ -133,13 +129,7 @@ export default function AuthScreen() {
                 <PlatformFullWidthButton
                   size="xl"
                   label={oauthPending === 'apple' ? 'Opening Apple…' : 'Continue with Apple'}
-                  leading={
-                    oauthPending === 'apple' ? (
-                      <ActivityIndicator size="small" color={onPrimary} />
-                    ) : (
-                      <AppleIcon size={18} color={onPrimary} />
-                    )
-                  }
+                  leading={<AppleIcon size={18} color={onPrimary} />}
                   disabled={!!oauthPending}
                   onPress={() => void signInWith('apple')}
                 />

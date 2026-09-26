@@ -130,21 +130,70 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
       if (method === 'GET' && path === '/global/health') return json(200, { healthy: true, version: rt.sessionObject().version })
 
       // ── session ──────────────────────────────────────────────────────────
-      if (path === '/session' && method === 'GET') return json(200, [rt.sessionObject()])
+      if (path === '/session' && method === 'GET') return json(200, [rt.sessionObject(), ...rt.childSessions()])
       if (path === '/session' && method === 'POST') return json(200, rt.sessionObject())
       if (path === '/session/status' && method === 'GET') {
-        const status = rt.sessionStatus()
-        return json(200, status.type === 'idle' ? {} : { [root]: status })
+        const statuses = (rt.stateDoc().statuses as { value: Record<string, { type: string }> }).value
+        return json(200, Object.fromEntries(Object.entries(statuses).filter(([, status]) => status.type !== 'idle')))
       }
 
       const session = /^\/session\/([^/]+)(?:\/(.*))?$/.exec(path)
       if (session) {
         const sessionId = decodeSegment(session[1]!)
         if (sessionId === null) return json(400, { error: 'path contains malformed percent-encoding' })
-        if (sessionId !== root) return json(404, { error: 'unknown session' })
+        // A child session (a subagent) is readable here; it is driven only by its parent's task tool.
+        const child = sessionId === root ? null : rt.childSession(sessionId)
+        if (sessionId !== root && !child) return json(404, { error: 'unknown session' })
+        const transcript = child?.transcript ?? rt.transcript
         const sub = session[2] ?? ''
 
-        if (sub === '' && method === 'GET') return json(200, rt.sessionObject())
+        if (sub === '' && method === 'GET') return json(200, child?.object ?? rt.sessionObject())
+        if (sub === 'children' && method === 'GET') return json(200, child ? [] : rt.childSessions())
+        const message = /^message(?:\/([^/]+)(?:\/part\/([^/]+))?)?$/.exec(sub)
+        if (message && method === 'GET') {
+          const messageId = message[1] ? decodeSegment(message[1]) : null
+          if ((message[1] && messageId === null) || (message[2] && decodeSegment(message[2]) === null)) {
+            return json(400, { error: 'path contains malformed percent-encoding' })
+          }
+          if (!messageId) {
+            const limitRaw = Number(search.get('limit') ?? 0)
+            const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? limitRaw : Math.max(transcript.count, 1)
+            // ONE PROTOCOL, TWO SPELLINGS. The SDK's page loader sends
+            // `before`; the API's transcript capture sends `cursor`
+            // (session-transcript-capture.ts). Reading only `before` made
+            // every capture re-read the newest page — see the header note on
+            // `x-next-cursor` for why that was worse than it sounds.
+            const before = (search.get('before') ?? search.get('cursor'))?.trim() || null
+            const page = transcript.page({ limit, before })
+            const stripped = stripInlineAttachmentBytes(page.messages, partRef(sessionId))
+            /*
+              THE ABSENT CURSOR IS A CLAIM, SO IT MUST BE EARNED.
+
+              Every pager in the fleet reads "no `x-next-cursor`" as "this page
+              reached the session's first message". `readTranscriptPages` turns
+              that into `headComplete`, the capture turns THAT into
+              `complete`, and a complete read licenses the writer's
+              "DELETE what disappeared" branch. pi never sent the header, so a
+              flagged session longer than one page mirrored its newest window,
+              declared itself whole, and deleted every older row it had.
+
+              `page()` already knows: `hasMore`. The cursor is the window's
+              OLDEST id, because `page({before})` is an exclusive upper bound
+              on the id order — the same contract OpenCode's list serves.
+            */
+            const older = page.hasMore ? String(page.messages[0]?.info.id ?? '') : ''
+            return json(200, stripped.value, older ? { 'x-next-cursor': older } : {})
+          }
+          if (!message[2]) {
+            const found = transcript.messageById(messageId)
+            if (!found) return json(404, { error: 'unknown message' })
+            return json(200, stripInlineAttachmentBytes(found, partRef(sessionId)).value)
+          }
+        }
+        if (child) {
+          if ((sub === 'todo' || sub === 'diff') && method === 'GET') return json(200, [])
+          return json(501, { code: 'feature_not_supported', error: 'a pi subagent session is read-only; its parent task drives it' })
+        }
         if (sub === '' && method === 'PATCH') return json(200, rt.sessionObject())
         if (sub === '' && method === 'DELETE') return json(200, true)
 
@@ -180,7 +229,6 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
           return json(200, true)
         }
         if (sub === 'todo' && method === 'GET') return json(200, [])
-        if (sub === 'children' && method === 'GET') return json(200, [])
         if (sub === 'diff' && method === 'GET') return json(200, [])
         if ((sub === 'revert' || sub === 'unrevert') && method === 'POST') {
           return json(501, { code: 'feature_not_supported', error: 'session rewind is not supported by the pi harness' })
@@ -189,47 +237,9 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
           return json(501, { code: 'feature_not_supported', error: `${sub} is not supported by the pi harness` })
         }
 
-        const message = /^message(?:\/([^/]+)(?:\/part\/([^/]+))?)?$/.exec(sub)
         if (message) {
           const messageId = message[1] ? decodeSegment(message[1]) : null
-          const partId = message[2] ? decodeSegment(message[2]) : null
-          if ((message[1] && messageId === null) || (message[2] && partId === null)) {
-            return json(400, { error: 'path contains malformed percent-encoding' })
-          }
-          if (method === 'GET' && !messageId) {
-            const limitRaw = Number(search.get('limit') ?? 0)
-            const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? limitRaw : Math.max(rt.transcript.count, 1)
-            // ONE PROTOCOL, TWO SPELLINGS. The SDK's page loader sends
-            // `before`; the API's transcript capture sends `cursor`
-            // (session-transcript-capture.ts). Reading only `before` made
-            // every capture re-read the newest page — see the header note on
-            // `x-next-cursor` for why that was worse than it sounds.
-            const before = (search.get('before') ?? search.get('cursor'))?.trim() || null
-            const page = rt.transcript.page({ limit, before })
-            const stripped = stripInlineAttachmentBytes(page.messages, partRef(root))
-            /*
-              THE ABSENT CURSOR IS A CLAIM, SO IT MUST BE EARNED.
-
-              Every pager in the fleet reads "no `x-next-cursor`" as "this page
-              reached the session's first message". `readTranscriptPages` turns
-              that into `headComplete`, the capture turns THAT into
-              `complete`, and a complete read licenses the writer's
-              "DELETE what disappeared" branch. pi never sent the header, so a
-              flagged session longer than one page mirrored its newest window,
-              declared itself whole, and deleted every older row it had.
-
-              `page()` already knows: `hasMore`. The cursor is the window's
-              OLDEST id, because `page({before})` is an exclusive upper bound
-              on the id order — the same contract OpenCode's list serves.
-            */
-            const older = page.hasMore ? String(page.messages[0]?.info.id ?? '') : ''
-            return json(200, stripped.value, older ? { 'x-next-cursor': older } : {})
-          }
-          if (method === 'GET' && messageId && !partId) {
-            const found = rt.transcript.messageById(messageId)
-            if (!found) return json(404, { error: 'unknown message' })
-            return json(200, stripInlineAttachmentBytes(found, partRef(root)).value)
-          }
+          if (message[1] && messageId === null) return json(400, { error: 'path contains malformed percent-encoding' })
           if (method === 'DELETE') {
             if (rt.activeTurnMessageId() === messageId) return json(409, { error: 'message is already running' })
             return json(409, { error: 'message deletion is not supported by the pi harness' })

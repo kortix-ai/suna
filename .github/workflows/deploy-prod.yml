@@ -52,6 +52,7 @@ concurrency:
 
 permissions:
   contents: write
+  id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
 
 jobs:
   # ── Resolve the version from VERSION ────────────────────────────────────────
@@ -148,7 +149,6 @@ jobs:
       github_environment: prod
       trusted_branch: prod
       cloudflare: true
-    secrets: inherit
 
   terraform-prod:
     name: Apply prod web Terraform
@@ -168,7 +168,6 @@ jobs:
       github_environment: prod
       trusted_branch: prod
       cloudflare: true
-    secrets: inherit
 
   # ── Raise the "release in progress" banner ──────────────────────────────────
   # Show users a CRITICAL banner for the duration of the rollout (non-dismissible
@@ -184,10 +183,24 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
+      # Best effort, like the banner itself: an unreadable token skips it.
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        continue-on-error: true
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            MAINTENANCE_TOKEN=kortix-ci-env:PROD_MAINTENANCE_TOKEN?
       - name: Detect maintenance token
         id: cfg
         env:
-          TOKEN: ${{ secrets.PROD_MAINTENANCE_TOKEN }}
+          TOKEN: ${{ env.MAINTENANCE_TOKEN || secrets.PROD_MAINTENANCE_TOKEN }}
         run: |
           if [ -n "$TOKEN" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -199,7 +212,7 @@ jobs:
         if: steps.cfg.outputs.enabled == 'true'
         continue-on-error: true
         env:
-          MAINTENANCE_TOKEN: ${{ secrets.PROD_MAINTENANCE_TOKEN }}
+          MAINTENANCE_TOKEN: ${{ env.MAINTENANCE_TOKEN || secrets.PROD_MAINTENANCE_TOKEN }}
         run: bash scripts/ci-maintenance-banner.sh on "v${{ needs.version.outputs.version }}"
 
   # ── Retag staged images → versioned + latest (no rebuild) ───────────────────
@@ -210,11 +223,24 @@ jobs:
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Re-tag release images
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -296,10 +322,23 @@ jobs:
     needs: [version, retag-images]
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Pull + verify baked KORTIX_COMMIT on api and gateway
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -415,7 +454,8 @@ jobs:
   #                           @kortix/llm-catalog@<version>, pinned in lockstep
   #   @kortix/agent-tunnel  — the local-machine tunnel CLI and library
   #
-  # @kortix/executor-sdk had one final deprecated publication at 0.12.5.
+  # @kortix/executor-sdk had one final deprecated publication at 0.12.5; its
+  # one-shot publish-and-deprecate job was removed with the NPM_TOKEN secret.
   #
   # Each package declares its published layout in its own
   # publishConfig. scripts/publish-npm-package.sh builds it, stages that manifest
@@ -423,14 +463,11 @@ jobs:
   # the release version, verify every entrypoint and binary exists) and publishes
   # idempotently.
   #
-  # Auth is Trusted Publishing (OIDC) when the job grants id-token, else the
-  # NPM_TOKEN secret (an npm automation token with publish rights on the @kortix
-  # org). Production sets REQUIRE_NPM_AUTH=1: missing auth fails the release
-  # instead of silently omitting a package. Once Trusted Publishing is verified
-  # per package on npmjs.com (package
-  # → Settings → Trusted Publisher → this repo + this workflow), the NPM_TOKEN
-  # secret and the NODE_AUTH_TOKEN env line below can be removed — OIDC needs no
-  # stored secret.
+  # Auth is Trusted Publishing (OIDC) only: each job grants id-token and each
+  # package trusts this repo + this workflow on npmjs.com (package → Settings →
+  # Trusted Publisher). No npm token is stored anywhere. Production sets
+  # REQUIRE_NPM_AUTH=1: missing auth fails the release instead of silently
+  # omitting a package.
 
   # @kortix/llm-catalog publishes first, on its own, so @kortix/sdk's pinned
   # @kortix/llm-catalog@<version> dependency is already on the registry before the
@@ -464,14 +501,11 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Build + publish (Trusted Publishing via OIDC; token fallback)
+      - name: Build + publish (Trusted Publishing via OIDC)
         working-directory: packages/llm-catalog
         env:
           VERSION: ${{ needs.version.outputs.version }}
           REQUIRE_NPM_AUTH: '1'
-          # Fallback only. Once Trusted Publishing is verified, delete the
-          # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash ../../scripts/publish-npm-package.sh
 
   publish-sdk:
@@ -503,14 +537,11 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Build + publish (Trusted Publishing via OIDC; token fallback)
+      - name: Build + publish (Trusted Publishing via OIDC)
         working-directory: packages/sdk
         env:
           VERSION: ${{ needs.version.outputs.version }}
           REQUIRE_NPM_AUTH: '1'
-          # Fallback only. Once Trusted Publishing is verified, delete the
-          # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash ../../scripts/publish-npm-package.sh
 
   publish-agent-tunnel:
@@ -542,54 +573,12 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Build + publish (Trusted Publishing via OIDC; token fallback)
+      - name: Build + publish (Trusted Publishing via OIDC)
         working-directory: packages/agent-tunnel
         env:
           VERSION: ${{ needs.version.outputs.version }}
           REQUIRE_NPM_AUTH: '1'
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash ../../scripts/publish-npm-package.sh
-
-  publish-executor-sdk:
-    name: Publish and deprecate final @kortix/executor-sdk
-    needs: [version, publish-sdk]
-    if: ${{ needs.version.outputs.version == '0.12.5' }}
-    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
-    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
-    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install workspace deps (pnpm)
-        run: |
-          corepack enable && corepack prepare pnpm@latest --activate || true
-          pnpm install --frozen-lockfile
-        env:
-          npm_config_engine_strict: "false"
-
-      - name: Build, publish, and deprecate the compatibility adapter
-        working-directory: packages/executor-sdk
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-          REQUIRE_NPM_AUTH: '1'
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          bash ../../scripts/publish-npm-package.sh
-          npm deprecate "@kortix/executor-sdk@${VERSION}" \
-            "Deprecated: use @kortix/sdk and kortix.project(projectId).connectors"
 
   # ── Build prod desktop installers (Electron, signed) ────────────────────────
   build-desktop:
@@ -646,6 +635,35 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
+      # Signing material lives in kortix-ci-env. Every key is optional: a build
+      # never hard-fails on missing certs. The read is skipped on Windows,
+      # where no signing material has ever been stored (WINDOWS_CERTIFICATE*
+      # stays empty, so Windows installers build UNSIGNED, as before). Only
+      # the Apple-ID notarization keys are stored today; the APPLE_API_* keys
+      # are read in case they are added later.
+      - name: Check out the aws-env action
+        if: runner.os != 'Windows'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read signing credentials from AWS Secrets Manager
+        if: runner.os != 'Windows'
+        continue-on-error: true
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            APPLE_CERTIFICATE?
+            APPLE_CERTIFICATE_PASSWORD?
+            APPLE_ID?
+            APPLE_APP_SPECIFIC_PASSWORD?
+            APPLE_TEAM_ID?
+            APPLE_API_KEY_P8?
+            APPLE_API_KEY_ID=kortix-ci-env:APPLE_API_KEY?
+            APPLE_API_ISSUER?
+
       # Never hard-fail on missing certs — a release should always ship an
       # installer. Sign (+ notarize on macOS) when the platform's secrets are
       # present; otherwise build UNSIGNED (Gatekeeper/SmartScreen warning).
@@ -653,10 +671,10 @@ jobs:
         id: sign
         shell: bash
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ env.APPLE_CERTIFICATE || secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ env.APPLE_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE: ${{ env.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ env.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
           enabled=false
           case "${{ runner.os }}" in
@@ -672,7 +690,7 @@ jobs:
         if: runner.os == 'macOS' && steps.sign.outputs.enabled == 'true'
         shell: bash
         env:
-          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_P8: ${{ env.APPLE_API_KEY_P8 }}
         run: |
           if [ -n "$APPLE_API_KEY_P8" ]; then
             KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
@@ -694,17 +712,17 @@ jobs:
             --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
             --config.extraMetadata.kortixUpdateChannel="stable"
         env:
-          CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE || '' }}
-          CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_API_KEY_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_API_KEY || '' }}
-          APPLE_API_ISSUER: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_API_ISSUER || '' }}
+          CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_CERTIFICATE || secrets.APPLE_CERTIFICATE) || '' }}
+          CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD) || '' }}
+          APPLE_API_KEY_ID: ${{ steps.sign.outputs.enabled == 'true' && env.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ steps.sign.outputs.enabled == 'true' && env.APPLE_API_ISSUER || '' }}
           # Apple-ID notarization fallback — electron-builder uses whichever set
           # is populated (API key above OR Apple-ID here).
-          APPLE_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && (secrets.APPLE_APP_SPECIFIC_PASSWORD || secrets.APPLE_PASSWORD) || '' }}
-          APPLE_TEAM_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
-          WIN_CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && secrets.WINDOWS_CERTIFICATE || '' }}
-          WIN_CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+          APPLE_ID: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_ID || secrets.APPLE_ID) || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_APP_SPECIFIC_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD) || '' }}
+          APPLE_TEAM_ID: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID) || '' }}
+          WIN_CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && env.WINDOWS_CERTIFICATE || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && env.WINDOWS_CERTIFICATE_PASSWORD || '' }}
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.sign.outputs.enabled }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -725,7 +743,7 @@ jobs:
   #
   # DELIBERATELY NOT gated on the npm publish jobs. The Release's contents come
   # from build-cli (and attach-desktop) — not from the registry — so an npm
-  # outage or an expired NPM_TOKEN must not cost this release its tag, its
+  # outage or a Trusted Publishing failure must not cost this release its tag, its
   # Release, its binaries, its changelog, or the two VERSION syncs that follow
   # it. v0.13.25 (run 35589361726, prod b902d67fc4) is the incident: prod served
   # 0.13.25 correctly while publish-llm-catalog and publish-agent-tunnel failed
@@ -907,13 +925,23 @@ jobs:
       - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
         env:
           npm_config_engine_strict: "false"
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DATABASE_URL=kortix-prod-env:DATABASE_URL
       - name: Apply pending migrations (node-pg-migrate; halts on failure)
-        env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ]; then
-            echo "::error::PROD_DATABASE_URL secret is not set — refusing to deploy without a migration check."
+            echo "::error::kortix-prod-env DATABASE_URL is not set — refusing to deploy without a migration check."
             exit 1
           fi
           pnpm --filter @kortix/db migrate
@@ -952,9 +980,20 @@ jobs:
           --health-retries 20
     env:
       CANONICAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
-      LIVE_DB_URL: ${{ secrets.PROD_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v7
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            LIVE_DB_URL=kortix-prod-env:DATABASE_URL
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -1125,11 +1164,22 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     continue-on-error: true
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '9785405a992435bb0c7bd19f9b6d26d5' }}
       WORKER_NAME: api-kortix-router
     steps:
       - uses: actions/checkout@v7
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            CLOUDFLARE_API_TOKEN
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -1168,7 +1218,6 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       source_sha: ${{ needs.version.outputs.source_sha }}
       synchronize_database: true
-    secrets: inherit
 
   
 
@@ -1320,10 +1369,25 @@ jobs:
           h="$(curl -s --max-time 10 "https://api.kortix.com/v1/health" || true)"
           echo "commit=$(printf '%s' "$h" | jq -r '.commit // ""' 2>/dev/null)" >> "$GITHUB_OUTPUT"
 
+      # Best effort, like the announcement itself: a missing value skips Slack.
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        continue-on-error: true
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            SLACK_BOT_TOKEN?
+            SLACK_RELEASE_CHANNEL?
       - name: Announce to Slack
         env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_RELEASE_CHANNEL: ${{ secrets.SLACK_RELEASE_CHANNEL }}
+          SLACK_BOT_TOKEN: ${{ env.SLACK_BOT_TOKEN || secrets.SLACK_BOT_TOKEN }}
+          SLACK_RELEASE_CHANNEL: ${{ env.SLACK_RELEASE_CHANNEL || secrets.SLACK_RELEASE_CHANNEL }}
           VERSION: ${{ needs.version.outputs.version }}
           TAG: ${{ needs.version.outputs.tag }}
           TITLE: ${{ needs.version.outputs.title }}
@@ -1414,7 +1478,6 @@ jobs:
     env:
       AWS_REGION: eu-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
-      DOTENV_PRIVATE_KEY_PROD: ${{ secrets.WEB_DOTENV_PRIVATE_KEY_PROD }}
       VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
@@ -1426,6 +1489,19 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          role-to-assume: ''
+          keys: |
+            DOTENV_PRIVATE_KEY_PROD=kortix-ci-env:WEB_DOTENV_PRIVATE_KEY_PROD
       - name: Sync the encrypted production web profile to Secrets Manager
         run: |
           set -euo pipefail
@@ -1454,7 +1530,6 @@ jobs:
     env:
       AWS_REGION: eu-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -1462,6 +1537,19 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          role-to-assume: ''
+          keys: |
+            CLOUDFLARE_API_TOKEN
       - name: Point only the isolated prod FE-ECS hostname at the web ALB
         run: |
           set -euo pipefail
@@ -1516,12 +1604,22 @@ jobs:
     name: Deploy prod web to Vercel (after API is live)
     needs: [version, verify-live-version]
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
-    env:
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
       - uses: actions/checkout@v7
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            VERCEL_ORG_ID=kortix-ci-env:VERCEL_TEAM_ID
+            VERCEL_PROJECT_ID
+            VERCEL_TOKEN
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -1691,10 +1789,24 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
+      # Best effort, like the banner itself: an unreadable token skips it.
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        continue-on-error: true
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            MAINTENANCE_TOKEN=kortix-ci-env:PROD_MAINTENANCE_TOKEN?
       - name: Detect maintenance token
         id: cfg
         env:
-          TOKEN: ${{ secrets.PROD_MAINTENANCE_TOKEN }}
+          TOKEN: ${{ env.MAINTENANCE_TOKEN || secrets.PROD_MAINTENANCE_TOKEN }}
         run: |
           if [ -n "$TOKEN" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -1706,7 +1818,7 @@ jobs:
         if: steps.cfg.outputs.enabled == 'true'
         continue-on-error: true
         env:
-          MAINTENANCE_TOKEN: ${{ secrets.PROD_MAINTENANCE_TOKEN }}
+          MAINTENANCE_TOKEN: ${{ env.MAINTENANCE_TOKEN || secrets.PROD_MAINTENANCE_TOKEN }}
         run: bash scripts/ci-maintenance-banner.sh off
 
   # ── Move the self-host `:prod` channel tag onto the release that just went live ─
@@ -1732,10 +1844,23 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - uses: docker/setup-buildx-action@v4
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Re-tag api/gateway/frontend → :prod
         env:
           VERSION: ${{ needs.version.outputs.version }}

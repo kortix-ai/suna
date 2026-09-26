@@ -9,6 +9,8 @@
  * (COR-140 Task 5): `ProjectScreen` passes `onOpenMore` for the open thread's
  * project session, opening `SessionActionsSheet`.
  *
+ * Share has no header button (Jay, 2026-09-27): it is a row in that sheet.
+ *
  * `-mr-2.5` mirrors `MenuButton`'s `-ml-2.5`: the last control's right edge
  * sits on the page's 16pt padding edge. When the `···` button is absent, the
  * pill itself must hold that edge — callers pass `edge={false}` on the pill

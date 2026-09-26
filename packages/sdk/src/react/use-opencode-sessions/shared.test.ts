@@ -90,7 +90,7 @@ describe('canQueryOpenCodeSession', () => {
 // getLSCache / setLSCache / clearProjectProviderCache — the localStorage-backed
 // per-family caches, scoped by the active sandbox id (or an explicit scope).
 // `window`/`localStorage` don't exist in bun's default test environment, so
-// both are stubbed with a minimal in-memory `Storage` implementation.
+// both are stubbed with one minimal in-memory `Storage` implementation.
 // ============================================================================
 
 class MemoryStorage implements Storage {
@@ -120,10 +120,16 @@ interface GlobalWithDom {
   localStorage?: Storage;
 }
 
+/** As in a browser, `window.localStorage` and the bare global are one object. */
+function stubBrowserStorage(): void {
+  const storage = new MemoryStorage();
+  (globalThis as GlobalWithDom).window = { localStorage: storage };
+  (globalThis as GlobalWithDom).localStorage = storage;
+}
+
 describe('getLSCache / setLSCache (localStorage stubbed)', () => {
   beforeEach(() => {
-    (globalThis as GlobalWithDom).window = {};
-    (globalThis as GlobalWithDom).localStorage = new MemoryStorage();
+    stubBrowserStorage();
     setCurrentRuntime(null);
   });
 
@@ -215,8 +221,7 @@ describe('asRuntimeList', () => {
 
 describe('cachedRuntimeList (localStorage stubbed)', () => {
   beforeEach(() => {
-    (globalThis as GlobalWithDom).window = {};
-    (globalThis as GlobalWithDom).localStorage = new MemoryStorage();
+    stubBrowserStorage();
     setCurrentRuntime(null);
   });
 

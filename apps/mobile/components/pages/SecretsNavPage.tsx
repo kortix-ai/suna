@@ -13,7 +13,6 @@ import {
   View,
   Pressable,
   ScrollView,
-  ActivityIndicator,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,6 +31,7 @@ import {
   type AppIcon,
 } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
@@ -202,7 +202,7 @@ function SharingField({
       {value.mode === 'members' && (
         <View style={{ marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
           {access.isLoading ? (
-            <View style={{ padding: 18, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
+            <View style={{ padding: 18, alignItems: 'center' }}><KortixLoader size="small" /></View>
           ) : members.length === 0 ? (
             <View style={{ padding: 18, alignItems: 'center' }}><Text style={{ fontSize: 13, color: muted }}>No members.</Text></View>
           ) : (
@@ -449,7 +449,7 @@ function ActionRow({
     >
       {destructive && <Trash2 size={16} color={color} style={{ marginRight: 10 }} />}
       <Text style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-Medium', color }}>{label}</Text>
-      {busy ? <ActivityIndicator size="small" color={color} /> : !destructive && <ChevronRight size={18} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}
+      {busy ? <KortixLoader size="small" /> : !destructive && <ChevronRight size={18} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}
     </Pressable>
   );
 }

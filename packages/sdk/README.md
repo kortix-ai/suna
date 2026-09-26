@@ -227,13 +227,14 @@ no build step required:
 ## Entry points
 
 `@kortix/sdk` is the canonical entry — everything framework-free lives there.
-Three others exist, each for a reason that fits in one sentence:
+Four others exist, each for a reason that fits in one sentence:
 
-| Entry                    | Why it can't live at root   |
-| ------------------------ | --------------------------- |
-| `@kortix/sdk/react`      | React is a peer dependency  |
-| `@kortix/sdk/server`     | imports `node:async_hooks`  |
-| `@kortix/sdk/internal/*` | unsupported, outside semver |
+| Entry                         | Why it is separate                                         |
+| ----------------------------- | ---------------------------------------------------------- |
+| `@kortix/sdk/react`           | React is a peer dependency                                 |
+| `@kortix/sdk/server`          | imports `node:async_hooks`                                 |
+| `@kortix/sdk/wire-message-id` | the wire-id clock alone, one file with no imports (also at root) |
+| `@kortix/sdk/internal/*`      | unsupported, outside semver                                |
 
 Install the optional peers before you use the React entry:
 
@@ -243,7 +244,7 @@ npm install @kortix/sdk react @tanstack/react-query
 
 Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
 `@deprecated`. Import from the root instead — see **Entry points** below for
-the three that are real, and **API-MAP.md**'s Stability table for the full
+the four that are real, and **API-MAP.md**'s Stability table for the full
 list of aliases (20 of them).
 
 > **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
@@ -703,8 +704,9 @@ provider, resolved model, HTTP status, code, and bounded message.
 
 ## Entry points
 
-**There are three, plus one internal.** Everything framework-free lives at the
-root; the other two exist because each carries a dependency the root cannot.
+**There are four, plus one internal.** Everything framework-free lives at the
+root. `react` and `server` exist because each carries a dependency the root
+cannot; `wire-message-id` exists so a server can load one module, not the barrel.
 That is the whole map — learn it once.
 
 | import | when you use it | why it is separate |
@@ -712,6 +714,7 @@ That is the whole map — learn it once.
 | `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health, `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
 | `@kortix/sdk/react` | hooks and providers: `useSession`, every `useOpenCode*`, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
+| `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
 
 The root really is canonical, and that is a test rather than a promise:
