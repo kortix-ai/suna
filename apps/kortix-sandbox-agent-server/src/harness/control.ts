@@ -90,6 +90,20 @@ export interface HarnessConfigConvergeResult {
   reason: string | null
 }
 
+/**
+ * The longest a fault-injected delay may hold a convergence.
+ *
+ * It lives on the harness CONTRACT, not inside an adapter, because the route
+ * that parses the query parameter may not import an adapter (the ownership
+ * boundary tripwire in `__tests__/harness-boundary.test.ts`).
+ */
+export const MAX_SWAP_DELAY_MS = 30_000
+
+/** Test-only inputs on the convergence. See `ConvergeDeps.delayBeforeSwapMs`. */
+export interface HarnessConfigConvergeOptions {
+  delayBeforeSwapMs?: number
+}
+
 export interface HarnessControlOperations {
   applyEnvironment(input: HarnessEnvironmentInput): Promise<HarnessEnvironmentResult>
   refresh(input: HarnessRefreshInput): Promise<HarnessRefreshResult>
@@ -98,7 +112,7 @@ export interface HarnessControlOperations {
    * runtime without config releases. Throws an error named
    * `ConvergeBusyError` while another convergence runs.
    */
-  convergeConfig?(): Promise<HarnessConfigConvergeResult>
+  convergeConfig?(options?: HarnessConfigConvergeOptions): Promise<HarnessConfigConvergeResult>
   abort(): Promise<HarnessAbortResult>
   armAbortAfterTool(input: HarnessAbortAfterToolInput): Promise<void>
   /** Without a prompt id, disarm every pending interrupt. */

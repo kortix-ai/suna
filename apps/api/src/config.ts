@@ -408,6 +408,10 @@ const envSchema = z.object({
   OPENROUTER_API_KEY: optStr,
   MORPH_API_URL: optUrl('https://api.morphllm.com/v1'),
   MORPH_API_KEY: optStr,
+  // Managed model IDs that use Morph direct as their first candidate.
+  // An empty value disables Morph for every managed model.
+  MORPH_MANAGED_MODELS: z.string().default('deepseek-v4.1-flash,kimi-k3')
+    .transform((value) => value.split(',').map((id) => id.trim()).filter(Boolean)),
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -1280,6 +1284,7 @@ export const config = {
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   MORPH_API_URL: env.MORPH_API_URL,
   MORPH_API_KEY: env.MORPH_API_KEY,
+  MORPH_MANAGED_MODELS: env.MORPH_MANAGED_MODELS,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env

@@ -3228,6 +3228,21 @@ export const auditEvents = kortixSchema.table(
       table.sessionId,
       table.sessionSequence,
     ),
+    // The per-session audit read (GET /v1/projects/:id/sessions/:id/audit)
+    // filters on `session_id` ALONE and orders by (session_sequence, event_id)
+    // — deliberately without an account predicate, because chain rows written
+    // before account resolution (auth.login.success) or from project-neutral
+    // endpoints would vanish from the middle of the integrity chain. Every
+    // other index on this table leads with account_id/actor/resource, so that
+    // query seq-scanned the whole ledger and died on the 25 s statement
+    // timeout (57014) on the request path (prod, 2026-09-25). This index leads
+    // with session_id and carries the ordering tuple in query order, so
+    // Postgres walks it and stops at LIMIT.
+    index('idx_audit_events_session_sequence').on(
+      table.sessionId,
+      table.sessionSequence,
+      table.eventId,
+    ),
     // `idx_audit_events_account_source_phase_time` was dropped 2026-09-09
     // (migration 20260909083000000): 8.6 GB, zero scans in 2.5 months, one
     // index write on every audit row. A filter on (authoritative_source, phase)

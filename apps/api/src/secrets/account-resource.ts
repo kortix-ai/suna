@@ -195,6 +195,49 @@ export async function resolveDefaultCodexAccountSecret(accountId: string, projec
   return row ? { secretId: row.secretId, label: row.label, value: decryptAccountSecret(accountId, row.valueEnc) } : null;
 }
 
+/**
+ * The project's shared provider accounts a session WITHOUT an explicit pool
+ * falls back to: the same keys the model picker lists (`listUsableGatewaySecrets`
+ * — `userId` must read the project and be an account member; a key is usable
+ * when it is shared with the whole project, or granted to `grantUserId`),
+ * oldest first, with their values. A key cooling down after a rate limit is
+ * skipped; when every usable key cools down, `retryAfterSeconds` names the
+ * earliest one to free up.
+ *
+ * Resolved at use time, so a revoked grant or a deleted key affects the next call.
+ */
+export async function resolveProjectSharedProviderSecrets(input: Omit<GatewaySecretQuery, 'providerId'> & {
+  userId: string;
+  providerId: string;
+}): Promise<{ coolingDown: boolean; retryAfterSeconds?: number; secrets: { secretId: string; label: string; value: string }[] }> {
+  const usable = await listUsableGatewaySecrets(input);
+  if (!usable.length) return { coolingDown: false, secrets: [] };
+  const rows = await db.select({
+    secretId: accountSecretResources.secretId,
+    valueEnc: accountSecretResources.valueEnc,
+    cooldownUntil: accountSecretResources.cooldownUntil,
+  }).from(accountSecretResources).where(and(
+    eq(accountSecretResources.accountId, input.accountId),
+    eq(accountSecretResources.active, true),
+    inArray(accountSecretResources.secretId, usable.map((row) => row.secretId)),
+  ));
+  const byId = new Map(rows.map((row) => [row.secretId, row]));
+  const ordered = usable.flatMap((key) => {
+    const row = byId.get(key.secretId);
+    return row ? [{ ...key, ...row }] : [];
+  });
+  const now = Date.now();
+  const ready = ordered.filter((row) => !row.cooldownUntil || row.cooldownUntil.getTime() <= now);
+  if (!ready.length) {
+    if (!ordered.length) return { coolingDown: false, secrets: [] };
+    const earliest = Math.min(...ordered.map((row) => row.cooldownUntil!.getTime()));
+    return { coolingDown: true, retryAfterSeconds: Math.max(1, Math.ceil((earliest - now) / 1000)), secrets: [] };
+  }
+  return { coolingDown: false, secrets: ready.map((row) => ({
+    secretId: row.secretId, label: row.label, value: decryptAccountSecret(input.accountId, row.valueEnc),
+  })) };
+}
+
 /** Resolve at use time so grant revocation and deletion affect the next call. */
 export async function resolveSessionProviderSecrets(input: {
   accountId: string;

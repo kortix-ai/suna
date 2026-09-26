@@ -7,7 +7,7 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, FRESHNESS, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlugIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
@@ -352,7 +352,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId),
-    ...contract('config'),
+    ...contract(FRESHNESS.connectors),
   });
   const projectQuery = useQuery({
     queryKey: qk.project.detail(projectId),
