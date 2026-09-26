@@ -3717,6 +3717,8 @@ flow(
       'GET /v1/projects/:projectId/connections',
       'GET /v1/connectors/projects/:projectId/connectors/:slug/accounts',
       'GET /v1/projects/:projectId/resource-grants',
+      'POST /v1/projects/:projectId/connections/me',
+      'POST /v1/projects/:projectId/connections/:connectionId/share',
     ],
   },
   async (ctx) => {
@@ -3883,6 +3885,44 @@ flow(
         const r = await kortix(owner, ['access', 'grant', '--everyone', '--role', 'manager'], 2);
         if (!r.stderr.includes('--everyone holds an agent or a connection')) {
           throw new Error(`stderr: ${r.stderr.slice(0, 400)}`);
+        }
+      });
+
+      await ctx.step("`kortix connectors connections share --group` shares the owner's own private account with Sales", async () => {
+        const OWN = 'Owner private';
+        const created = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/connections/me',
+          { connector_alias: slug, label: OWN },
+          { params: { projectId: project.id } },
+        );
+        created.status([200, 201]);
+        const ownId = created.json<{ connection_id: string }>().connection_id;
+        const r = await kortix(owner, ['connectors', 'connections', 'share', ownId, '--group', groupId]);
+        if (!r.stdout.includes(`Shared ${OWN}`)) throw new Error(`share output: ${r.all.slice(0, 600)}`);
+        const ls = await kortix(owner, ['connectors', 'connections', 'ls']);
+        const line = ls.stdout.split('\n').find((l) => l.includes(` ${OWN} `)) ?? '';
+        // A shared account now, narrowed to Sales, which the owner is not in.
+        if (!line.includes('project') || !line.includes(`${groupName} (not you)`)) {
+          throw new Error(`connections ls row: ${line || ls.stdout.slice(0, 600)}`);
+        }
+        if (!(await accountLabels(sales)).includes(OWN)) throw new Error('the Sales member does not list it');
+        if ((await accountLabels(outsider)).includes(OWN)) throw new Error('the outsider lists it');
+      });
+
+      await ctx.step('a plain member cannot share their own private account → non-zero exit, the reason named', async () => {
+        const created = await ctx.client.as(inSales).post(
+          '/v1/projects/:projectId/connections/me',
+          { connector_alias: slug, label: 'Sales member private' },
+          { params: { projectId: project.id } },
+        );
+        created.status([200, 201]);
+        const theirs = created.json<{ connection_id: string }>().connection_id;
+        const r = await sales.run([
+          'connectors', 'connections', 'share', theirs, '--everyone', '--project', project.id,
+        ]);
+        throwIfCliInfraFailure(r, 'kortix connectors connections share');
+        if (r.exitCode === 0 || !/manage the project's connections/.test(r.all)) {
+          throw new Error(`plain member share: exit ${r.exitCode}: ${r.all.slice(0, 600)}`);
         }
       });
     } finally {

@@ -57,9 +57,11 @@ import {
   type ConnectorConnectOptions,
   type ConnectorConnectOwner,
   renameConnection,
+  shareConnection,
   connectionSharedWithEveryone,
   type Connection,
   type ConnectionShare,
+  type ConnectionSharePrincipal,
 } from './connectors';
 
 const canonicalConnectionType: import('./connectors').Connection = {
@@ -305,6 +307,20 @@ test('connection methods use the canonical connection route contract', async () 
   expect(last().url).toContain('/projects/P1/connections/connection-1/label');
   expect(renamed.label).toBe('Support inbox');
   expect(renamed.connected_as).toBe('support@example.test');
+
+  // Your own private account, shared: POST .../share with who may use it; an
+  // empty list shares it with everyone in the project.
+  nextResponse = {
+    status: 200,
+    body: { ...canonicalConnectionType, connection_id: 'connection-1', owner_type: 'project', is_default: false },
+  };
+  const audience: ConnectionSharePrincipal[] = [{ principal_type: 'group', principal_id: 'group-1' }];
+  const shared = await shareConnection('P1', 'connection-1', audience);
+  expect(last()).toMatchObject({ method: 'POST', body: { principals: audience } });
+  expect(last().url).toContain('/projects/P1/connections/connection-1/share');
+  expect(shared.owner_type).toBe('project');
+  await shareConnection('P1', 'connection-1');
+  expect(last().body).toEqual({ principals: [] });
 
   nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
   await ensureProjectConnectorConnection('P1', 'gmail');

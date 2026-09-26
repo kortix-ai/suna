@@ -917,7 +917,11 @@ the grant. `kortix access grant --everyone --connection <id>` opens it: the
 outsider lists it, WHO CAN USE reads `everyone`, and the listing names the
 principal `everyone`. `kortix access grant --everyone --agent kortix` writes a
 `project` principal agent grant. `--everyone` with only a role exits 2 before
-any request.
+any request. `kortix connectors connections share <id> --group <id>` shares the
+owner's OWN private account: it becomes a project account narrowed to Sales
+(`connections ls` shows `project` and `Sales (not you)`), the Sales member
+lists it and the outsider does not. A plain member sharing their own private
+account exits non-zero with the manage-connections reason (the API's `403`).
 
 ---
 

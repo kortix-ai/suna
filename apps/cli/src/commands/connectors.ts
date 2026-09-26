@@ -15,7 +15,13 @@ import {
   removeArrayBlock,
   setTableScalar,
 } from '../manifest-edit.ts';
-import { renameConnection, setConnectorSecretBinding } from '@kortix/sdk';
+import {
+  type ConnectionSharePrincipal,
+  renameConnection,
+  setConnectorSecretBinding,
+  shareConnection,
+} from '@kortix/sdk';
+import { resolveUserId, UUID_RE } from '../iam.ts';
 import { withKortixScope } from '../api/sdk.ts';
 import { C, help, pad, status } from '../style.ts';
 import { runConnector } from './connector-gateway.ts';
@@ -304,6 +310,11 @@ Subcommands:
   default <id>                      Make a connection its owner-scope default.
   rename <id> <label…>              Rename a connection. Label only: the account,
                                     owner, and default stay; no re-authorization.
+  share <id> [--group <id>]… [--user <email|id>]… [--everyone]
+                                    Share YOUR private account: it becomes a
+                                    shared account only they may use (--everyone:
+                                    the whole project). Needs the right to manage
+                                    the project's connections.
   connect <id> [options]            Start Pipedream OAuth for a connection.
   finalize <id> [--json]            Finalize Pipedream OAuth for a connection.
 
@@ -372,6 +383,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
   let conditions: string[] = [];
   let addIds: string[] = [];
   let rmIds: string[] = [];
+  let shareGroups: string[] = [];
+  let shareUsers: string[] = [];
+  let shareEveryone = false;
   try {
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
@@ -410,6 +424,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
     conditions = takeFlagValues(rest, ['--condition', '--cond']);
     addIds = takeFlagValues(rest, ['--add']);
     rmIds = takeFlagValues(rest, ['--rm']);
+    shareGroups = takeFlagValues(rest, ['--group']);
+    shareUsers = takeFlagValues(rest, ['--user', '--member']);
+    shareEveryone = takeFlagBool(rest, ['--everyone']);
     asStdin = takeFlagBool(rest, ['--stdin']);
     statusOnly = takeFlagBool(rest, ['--status']);
     deviceFlow = takeFlagBool(rest, ['--device']);
@@ -455,6 +472,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         mine,
         asStdin,
         rawArgs: rest,
+        share: { groups: shareGroups, users: shareUsers, everyone: shareEveryone },
       });
     }
     switch (sub) {
@@ -1404,8 +1422,10 @@ async function runConnections(input: {
   mine: boolean;
   asStdin: boolean;
   rawArgs: string[];
+  /** `share`: who may use the account (`--group`, `--user`, `--everyone`). */
+  share: { groups: string[]; users: string[]; everyone: boolean };
 }): Promise<number> {
-  const { action, positional, ctx, flags, json, all, mine, asStdin, rawArgs } = input;
+  const { action, positional, ctx, flags, json, all, mine, asStdin, rawArgs, share } = input;
   if (!action || action === '-h' || action === '--help') {
     process.stdout.write(CONNECTIONS_HELP);
     return action ? 0 : 2;
@@ -1555,6 +1575,50 @@ async function runConnections(input: {
       }
       process.stdout.write(
         `${status.ok(`Renamed connection ${C.bold}${connectionId}${C.reset} → ${C.bold}${response.label}${C.reset}`)}\n`,
+      );
+      return 0;
+    }
+    case 'share': {
+      const connectionId = positional[0];
+      if (!connectionId) return missing('a connection id');
+      if (share.everyone && share.groups.length + share.users.length > 0) {
+        return fail('--everyone shares it with the whole project; drop --group and --user');
+      }
+      if (!share.everyone && share.groups.length + share.users.length === 0) {
+        return missing('who can use it: --group <id>, --user <email|id>, or --everyone');
+      }
+      const principals: ConnectionSharePrincipal[] = share.groups.map((id) => ({
+        principal_type: 'group',
+        principal_id: id,
+      }));
+      let accountId: string | null = null;
+      for (const who of share.users) {
+        if (UUID_RE.test(who)) {
+          principals.push({ principal_type: 'user', principal_id: who });
+          continue;
+        }
+        // An email resolves against the account's member directory.
+        accountId ??= (await ctx.client.get<{ account_id: string }>(`/projects/${ctx.projectId}`))
+          .account_id;
+        const userId = await resolveUserId(ctx.client, accountId, who);
+        if (!userId) return 1;
+        principals.push({ principal_type: 'user', principal_id: userId });
+      }
+      const response = await withKortixScope(ctx.auth, () =>
+        shareConnection(ctx.projectId, connectionId, principals),
+      );
+      if (json) {
+        emitJson(response);
+        return 0;
+      }
+      const audience = share.everyone
+        ? 'everyone in the project'
+        : `${principals.length} ${principals.length === 1 ? 'person or group' : 'people and groups'}`;
+      process.stdout.write(
+        `${status.ok(`Shared ${C.bold}${response.label}${C.reset} with ${audience}`)}\n`,
+      );
+      process.stdout.write(
+        `  ${C.dim}It is a shared account now. See who can use it: kortix connectors connections ls${C.reset}\n`,
       );
       return 0;
     }

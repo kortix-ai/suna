@@ -899,6 +899,30 @@ export async function renameConnection(projectId: string, connectionId: string, 
   );
 }
 
+/** Who may use a shared account: a person, a group, or everyone in the project. */
+export interface ConnectionSharePrincipal {
+  principal_type: 'user' | 'group' | 'project';
+  principal_id: string;
+}
+
+/**
+ * Share the caller's OWN private account: it becomes a shared account only
+ * `principals` may use (an empty list: everyone in the project). Needs the
+ * right to manage the project's connections. The account is never open to the
+ * whole project in between: the server writes the grants first.
+ */
+export async function shareConnection(
+  projectId: string,
+  connectionId: string,
+  principals: ConnectionSharePrincipal[] = [],
+) {
+  return unwrap(
+    await backendApi.post<Connection>(`/projects/${projectId}/connections/${connectionId}/share`, {
+      principals,
+    }),
+  );
+}
+
 /** Managed connector providers that can issue a hosted Connect Link. */
 export type ConnectorConnectProvider = 'composio' | 'pipedream';
 
