@@ -43,7 +43,26 @@
     "connectAccount": "Connetti account",
     "oauthWaiting": "In attesa di autorizzazione…",
     "oauthExpired": "Autorizzazione scaduta. Riprova.",
-    "oauthPrivateDescription": "I nuovi account ChatGPT sono disponibili per questo progetto per impostazione predefinita. Puoi limitare ogni account ai membri selezionati.",
+    "oauthPrivateDescription": "Usa il tuo piano ChatGPT Plus o Pro in questo progetto. I nuovi account restano privati finché non li condividi.",
+    "chatGptSubscription": "Abbonamento ChatGPT",
+    "useYourChatGpt": "Usa il tuo abbonamento ChatGPT",
+    "manageChatGptAccounts": "Gestisci account ChatGPT",
+    "connect": "Connetti",
+    "connectChatGpt": "Connetti ChatGPT",
+    "noChatGptAccounts": "Nessun account ChatGPT",
+    "oauthCreationDescription": "Accedi con il tuo account ChatGPT Plus o Pro. Kortix conserva l’accesso crittografato e non lo mostra mai.",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "Solo tu",
+    "onlyYouDescription": "Solo tu puoi selezionarla in una sessione.",
+    "onlyOwner": "Solo {name}",
+    "shareRequiresPermission": "Per condividere con altri serve l’autorizzazione a gestire i segreti del progetto.",
+    "accountConnected": "Account ChatGPT connesso",
+    "accountReconnected": "Account ChatGPT riconnesso",
+    "connectFailed": "Autorizzazione ChatGPT non riuscita. Riprova.",
+    "reconnectAccount": "Riconnetti",
+    "reconnectTitle": "Riconnetti {label}",
+    "reconnectDescription": "Accedi di nuovo a ChatGPT. L’account mantiene nome, accesso e selezioni di sessione.",
+    "needsReconnection": "Da riconnettere",
     "accountLabelPlaceholder": "es. Il mio account ChatGPT",
     "chooseProvider": "Scegli un fornitore.",
     "saved": "Segreto salvato",
@@ -52,7 +71,7 @@
     "deleteError": "Impossibile eliminare il segreto",
     "accessError": "Impossibile modificare l’accesso",
     "sharedTitle": "Connessioni ai provider",
-    "sharedDescription": "Aggiungi più chiavi API e account ChatGPT. Per impostazione predefinita, tutti nel progetto possono usarli. Limita l’accesso per ogni connessione e scegli le chiavi per sessione.",
+    "sharedDescription": "Aggiungi chiavi API e account ChatGPT. Quelli nuovi restano privati finché non li condividi. Scegli quali usa ogni sessione.",
     "legacyProjectKey": "Chiave del progetto esistente · Usata quando la sessione non ha una selezione di chiavi",
     "keyCount": "{count, plural, one {# chiave} other {# chiavi}}",
     "providerKeysFor": "Chiavi API di {provider}",
@@ -102,6 +121,7 @@
     "providerKeys": "Chiavi fornitore",
     "chooseSharedKeys": "Scegli le chiavi condivise che questa sessione può usare.",
     "sessionKeyPool": "Pool di chiavi della sessione",
+    "sharedSessionKeys": "Questa sessione è condivisa con il progetto, quindi qui funzionano solo le chiavi condivise con tutto il progetto. Le chiavi assegnate a te funzionano nelle tue sessioni private.",
     "projectDefaultShort": "Impostazione predefinita del progetto",
     "rateLimitDescription": "Il gateway alterna le chiavi selezionate quando un fornitore segnala un limite di richieste.",
     "enableGateway": "Abilita il gateway LLM nelle impostazioni del progetto per usare i pool di chiavi.",
@@ -1109,7 +1129,7 @@
         },
         "pooled_provider_secrets": {
           "name": "Segreti del provider condivisi",
-          "description": "Condividi più chiavi del provider con i membri e seleziona un gruppo di chiavi per ogni sessione."
+          "description": "I membri collegano i propri abbonamenti ChatGPT e chiavi dei provider, li condividono quando serve e scelgono quali usa ogni sessione."
         },
         "pi_worker": {
           "name": "Runtime worker Pi (compilato)",
@@ -1122,6 +1142,10 @@
         "agent_principal": {
           "name": "Agenti come principali",
           "description": "Gli agenti agiscono come se stessi: con i loro permessi Kortix, limitati dal loro ruolo. Chi esegue un agente aggiunge solo i propri account."
+        },
+        "config_releases": {
+          "name": "Release di configurazione",
+          "description": "Esegue le sessioni con la configurazione agente corrente del branch di base, servita in sola lettura, così un agente, skill o strumento unito raggiunge ogni sessione attiva. Disattivato, una sessione legge la propria cartella di configurazione nel workspace."
         }
       }
     },
@@ -1594,6 +1618,7 @@
     "backToProject": "Torna al progetto",
     "delete": "Elimina sessione",
     "failedLabel": "Sessione non riuscita",
+    "loadingConversation": "Caricamento della conversazione",
     "prompt": {
       "queueFailed": "Impossibile accodare il prompt salvato",
       "unavailable": "Nessun prompt salvato disponibile.",
@@ -1617,11 +1642,6 @@
     "previousRepository": {
       "title": "Questa sessione non è aggiornata",
       "message": "Il progetto è cambiato dopo l’avvio di questa sessione. Aggiornala per continuare a lavorare sull’ultima versione.",
-      "unavailable": "L’area di lavoro precedente non è più disponibile. Avvia una nuova sessione nel repository corrente.",
-      "resume": "Riprendi area di lavoro precedente",
-      "resuming": "Ripresa in corso…",
-      "newSession": "Avvia nuova sessione",
-      "delete": "Elimina sessione",
       "update": "Aggiorna all’ultima versione",
       "updating": "Aggiornamento…",
       "dismiss": "Ignora",
@@ -6226,7 +6246,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Tutte le esecuzioni Worker sono attualmente in pausa."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Nessun contenuto"
+      "line1115JsxTextNoContent": "Nessun contenuto",
+      "loadRemoteImage": "Carica immagine da {host}"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Premi Invio per avviare..."
@@ -9456,7 +9477,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": ". Queste modifiche esistono solo qui; non sono ancora nella tua",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "versione. Proponi le modifiche per farle revisionare e applicare.",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Rinomina…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Condividi…",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "La sessione Kortix è in fase di avvio",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "Nuovo terminale",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "Visualizzazione dei file",
@@ -18564,6 +18584,17 @@
       "textea5d0ffa0962": "Un responsabile del progetto collega l’account condiviso.",
       "text3d6627454174": "Imposta credenziale",
       "text929505ef815a": "Nessun account è ancora collegato. Aggiungi il tuo qui sotto, oppure chiedi a un responsabile del progetto di collegare un account condiviso.",
+      "text931cb67e2af7": "Impossibile caricare la nuova configurazione dell'agente. Questa sessione usa ancora una configurazione precedente.",
+      "textd9ff3a72833d": "Configurazione non caricata",
+      "textebfb07812fb4": "Impossibile caricare la nuova configurazione dell'agente",
+      "text4e62b29dd3b6": "Questa sessione usa una configurazione precedente. La configurazione non riuscita non viene ritentata finché il branch di base non cambia.",
+      "textf81ab834de5f": "Motivo",
+      "text44cdf35701cd": "In uso ora",
+      "text591f9f0f3259": "Release non riuscita",
+      "text00ed4c71dc2b": "Ultima release funzionante",
+      "textbd7a1a3b4141": "La configurazione predefinita della piattaforma",
+      "text643df05476ab": "Questa sessione usa la configurazione predefinita della piattaforma. La configurazione non riuscita non viene ritentata finché il branch di base non cambia.",
+      "text40652e008fc9": "Impossibile caricare la nuova configurazione dell'agente. Questa sessione usa la configurazione predefinita della piattaforma.",
       "text3312ddb06c1d": "Registra un bot in Azure, collegalo qui e poi carica il pacchetto dell'app su Teams.",
       "text7f1b55a356b0": "Registra il bot in Azure",
       "text91004edf8b30": "Collegalo a questo progetto",
@@ -18672,7 +18703,9 @@
       "texta0bcee97cbb3": "Checkout integrato confermato",
       "text0b751a917c97": "Installazione GitHub connessa",
       "text8b7a8797d532": "Tenant Microsoft Teams connesso",
+      "text83c0e255d4bb": "Installazione di Microsoft Teams completata",
       "text17a8cf884e2a": "Workspace Slack connesso",
+      "textf887cb0e6800": "Installazione dell’app Slack completata",
       "textc7f9ec5ed69c": "Agente del tunnel del computer connesso",
       "textafd58fcedeee": "Casella email connessa",
       "text2eda12b4ed38": "GitHub App esistente connessa",
@@ -18929,6 +18962,7 @@
       "text60954a626cee": "Chiave del gateway LLM revocata",
       "text32c1477a3336": "Autorizzazione del tunnel del computer revocata",
       "text953488439740": "Account del connettore revocato",
+      "texte817b7da7436": "Account del connettore privato condiviso",
       "text538cb0effaea": "Token di accesso personale revocato",
       "text74be1c139903": "Autorizzazione alla chiave del provider in pool revocata",
       "text6d3935be0516": "Token CLI del progetto revocato",
@@ -19135,7 +19169,50 @@
       "text2afef4702cc0": "Banner dello stato del sistema visualizzato",
       "textbda3fcd4343c": "Configurazioni dei piani visualizzate",
       "text30cef615e8e3": "Riepilogo delle transazioni visualizzato",
-      "textd2c6127fc332": "Diff della versione visualizzato"
+      "textd2c6127fc332": "Diff della versione visualizzato",
+      "text8cc0d84b66bb": "Anteprima del link di identità Slack",
+      "text508b43cc4545": "Anteprima del link di identità Teams",
+      "text467f597e95b0": "Dominio SSO verificato",
+      "text8295f9d4861b": "Verifica del dominio SSO dell’account impostata",
+      "text7beaff63a7d3": "Archivio di configurazione del progetto scaricato",
+      "text5176d59f25fd": "Release di configurazione della sessione risolta",
+      "text273c48dbf3b9": "Dispositivo per notifiche push registrato",
+      "textbb666ddf7a57": "Dispositivo per notifiche push rimosso",
+      "text397ab5aecbbf": "Richiesta di autorizzazione della sessione inoltrata"
+    },
+    "publicShareConfirm": {
+      "title": "Creare un link pubblico?",
+      "description": "Chiunque abbia il link può vederlo senza accedere. Il link resta attivo finché non lo revochi.",
+      "confirm": "Crea link"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "Link pubblico",
+      "sectionDescription": "Chiunque abbia il link può leggere questa conversazione senza accedere.",
+      "create": "Crea link pubblico",
+      "revokeDescription": "La conversazione smette di caricarsi per chiunque abbia il link. Potrai creare un nuovo link in seguito.",
+      "rowMeta": "Conversazione di sola lettura",
+      "unavailable": "Questa conversazione non è temporaneamente disponibile.",
+      "unavailableDescription": "Al momento non è possibile leggere la conversazione. Riprova tra poco.",
+      "loadFailedDescription": "Impossibile caricare la conversazione.",
+      "empty": "Ancora nessun messaggio",
+      "savedCopy": "Copia salvata il {date}"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "Account {service}",
+      "chatWorkspace": "Workspace {service}",
+      "checking": "Verifica del link…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} non è stato collegato",
+      "mismatch": "Questa installazione è stata avviata da un altro account Kortix o per un altro progetto. Accedi con quell’account oppure riavvia l’installazione dal progetto.",
+      "expired": "Questo link di installazione non è valido o è scaduto. Riavvia l’installazione dal progetto.",
+      "failed": "Non è stato possibile completare l’installazione. Riavviala dal progetto.",
+      "backToProject": "Torna al progetto"
+    },
+    "secretIntakeWithheld": {
+      "title": "Salvato, ma {agent} non può ancora leggerlo",
+      "grant": "{names} non {count, plural, one {è} other {sono}} tra i segreti dell'agente {agent}. Apri Personalizza → Agenti → {agent} → Segreti e {count, plural, one {abilitalo} other {abilitali}}.",
+      "allowlist": "{names} {count, plural, one {è} other {sono}} fuori dai segreti di questa sessione. Avvia una nuova sessione per {count, plural, one {usarlo} other {usarli}}."
     }
   },
   "projectOnboarding": {
@@ -19250,7 +19327,17 @@
   },
   "commandPalette": {
     "title": "Tavolozza dei comandi",
-    "description": "Cerca un comando da eseguire..."
+    "description": "Cerca un comando da eseguire...",
+    "copyTitle": "Copia",
+    "copyEmail": "email",
+    "copyUserId": "ID utente",
+    "copyAccountId": "ID account",
+    "copyProjectId": "ID progetto",
+    "copySessionId": "ID sessione",
+    "copySessionLink": "link della sessione",
+    "copyAction": "Copia {label}",
+    "copied": "Copiato: {label}",
+    "copyFailed": "Impossibile copiare negli appunti"
   },
   "personalWelcome": {
     "dismiss": "Chiudi",
@@ -20017,6 +20104,9 @@
     "providerError": "Impossibile aggiornare l’accesso al fornitore.",
     "managedTitle": "Modelli gestiti da Kortix",
     "managedDescription": "Modelli gestiti addebitati in crediti Kortix. Non serve una chiave API.",
+    "pricingEstimate": "Prezzo stimato per il cliente. La rotta utilizzata determina il costo.",
+    "pricingRoute": "{route}: {input} input / {cacheRead} cache / {output} output per 1 milione di token",
+    "pricingPreferred": "Preferita",
     "textImage": "Testo + immagine",
     "textOnly": "Solo testo",
     "zdrTitle": "Conservazione zero dei dati",
@@ -20147,5 +20237,64 @@
   },
   "connectorsAppReturn": {
     "done": "Fatto. Torna all’app Kortix"
+  },
+  "ssoDomainVerification": {
+    "title": "Verifica del dominio",
+    "verified": "Verificato",
+    "unverified": "Non verificato",
+    "verifiedDescription": "Il tuo provider di identità è attendibile per {domain}. L’obbligo SSO si applica a questo dominio.",
+    "unverifiedDescription": "Aggiungi questo record DNS TXT per dimostrare che controlli {domain}. Fino ad allora, l’accesso SSO funziona solo all’interno di questo account e l’obbligo SSO non ha effetto.",
+    "recordName": "Nome",
+    "recordValue": "Valore",
+    "verify": "Verifica dominio",
+    "verifiedToast": "Dominio verificato",
+    "failedToast": "Dominio non ancora verificato",
+    "enforceNeedsVerification": "Verifica prima il dominio. L’obbligo SSO si applica solo a un dominio verificato."
+  },
+  "accessSharing": {
+    "everyone": "Tutti in {project}",
+    "everyoneRoleNote": "Ognuno mantiene il proprio ruolo nel progetto. Gli agenti scelti valgono per tutti in {project}.",
+    "shareTitle": "Condividi {label}",
+    "shareDescription": "Scegli chi può usare questo account. Scegli solo te stesso per tenerlo per te.",
+    "whoCanUse": "Chi può usarlo",
+    "add": "Aggiungi persone o gruppi",
+    "everyoneDefaultMeta": "Finché non aggiungi un gruppo o una persona",
+    "everyoneMeta": "Tutti con accesso al progetto",
+    "groupMeta": "Gruppo",
+    "memberMeta": "Membro",
+    "remove": "Rimuovi {name}",
+    "keep": "Mantieni",
+    "removedMeta": "Rimosso al salvataggio",
+    "resultEveryone": "Tutti in {project} possono usare questo account.",
+    "resultNarrowed": "Solo le persone scelte possono usare questo account, nelle loro sessioni private.",
+    "save": "Salva",
+    "saved": "Accesso aggiornato",
+    "saveFailed": "Impossibile aggiornare l’accesso",
+    "manageAccess": "Gestisci accesso",
+    "sharedWith": "Condiviso con {names}",
+    "notSharedWithYou": "Non condiviso con te",
+    "removeEveryoneTitle": "Smettere di condividere {agent} con tutti?",
+    "removeEveryoneDescription": "Solo le persone e i gruppi a cui è assegnato {agent} lo mantengono. Gli altri membri perdono l’accesso.",
+    "removeEveryone": "Smetti di condividere",
+    "removed": "Rimosso",
+    "removeFailed": "Impossibile rimuovere l’accesso",
+    "accountsTitle": "Account",
+    "addAccount": "Aggiungi account",
+    "addAccountTitle": "Aggiungi un account {connector}",
+    "addAccountDescription": "Dai un nome all’account e scegli chi può usarlo.",
+    "onlyYou": "Solo tu",
+    "onlyYouDescription": "Solo tu puoi usarlo, nelle tue sessioni private.",
+    "specificPeople": "Persone o gruppi specifici",
+    "specificPeopleDescription": "Solo le persone e i gruppi scelti, nelle loro sessioni private.",
+    "shareRequiresManage": "Per condividere un account serve il permesso di gestire le connessioni del progetto.",
+    "nameTaken": "Esiste già un account chiamato {label}.",
+    "noAccountsTitle": "Ancora nessun account",
+    "noAccountsDescription": "Aggiungi un account per usare {connector} nelle sessioni.",
+    "visibilityEveryone": "Tutto il progetto",
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "Salvato come {label}",
+    "connectFailed": "Impossibile collegare l’account. Riprova.",
+    "sharePrivateDescription": "Scegli chi altro può usare il tuo account. Diventa un account condiviso, che possono gestire anche i gestori delle connessioni del progetto.",
+    "ownerMeta": "Il tuo account"
   }
 }

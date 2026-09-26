@@ -61,13 +61,19 @@ Each flag has two gates. They answer different questions.
 AND-gated by `available`. `enabled` therefore always implies `available`.
 
 `available` is an operator decision, made by the environment the API runs in.
-Three flags read it from configuration; every other flag is always available:
+Four flags read it from configuration; every other flag is always available:
 
 | Flag | Available when |
 |---|---|
 | `agent_tunnel` | `TUNNEL_ENABLED` is on |
 | `llm_gateway` | `LLM_GATEWAY_ENABLED` is on |
 | `monitors` | `PLATINUM_API_KEY` is set |
+| `config_releases` | `CONFIG_RELEASES_ENABLED` is on (default: on) |
+
+`CONFIG_RELEASES_ENABLED=false` is a kill switch: it turns config releases off
+for every project at once, whatever each project chose, and the row disappears
+from Settings. Every session then reads its workspace config directory at its
+next boot or start.
 
 ## Stability badges
 
@@ -167,7 +173,12 @@ refs). An explicit project choice always wins.
   restarted session boots pi, whatever the manifest says. Off: the manifest
   decides — `runtime: pi` still boots pi, anything else boots OpenCode. Same
   repo layout, agents and skills either way; a running session keeps its
-  harness until it is restarted or resumed.
+  harness until it is restarted or resumed. Subagents work on pi: the agent
+  delegates with the `task` tool to `general`, `explore` (read-only), or any
+  agent in `.kortix/opencode/agents/` with `mode: subagent`, and the transcript
+  shows each subagent's steps in place. pi sessions also load pi.dev packages:
+  see [`harnesses:`](/docs/project/manifest#harnesses).
+
 ### Graduated flags
 
 A graduated feature is on for every project and has no switch.

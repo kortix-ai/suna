@@ -95,8 +95,8 @@ describe('AccountPicker: quiet header trigger, not a form field', () => {
   });
 });
 
-describe('AccountPicker: EntityAvatar matches AccountSwitcher header scale', () => {
-  test('sizes every account avatar "xs" — same tile as account-switcher.tsx', () => {
+describe('AccountPicker: EntityAvatar size contract', () => {
+  test('renders every account avatar at size xs', () => {
     expect(code).toContain('<EntityAvatar');
     const avatars = code.match(/<EntityAvatar[\s\S]*?\/>/g) ?? [];
     expect(avatars.length).toBeGreaterThan(0);

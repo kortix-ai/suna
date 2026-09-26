@@ -8,7 +8,7 @@ import {
   sessionLifecycleCommands,
   sessionProviderSecretPools,
 } from '@kortix/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
@@ -17,7 +17,9 @@ import { accountMayUseManagedModels } from '../../billing/services/entitlements'
 import { type SandboxProviderName, config } from '../../config';
 import { consumeProjectSessionCreateBudget } from '../../shared/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../../shared/rate-limit-audit';
-import { agentMayUseConnector } from '../../iam/agent-scope';
+import { agentMayUseConnector, agentMayUseEnv } from '../../iam/agent-scope';
+import { usableProviderKeys } from '../../secrets/provider-key-selection';
+import { decideSessionOnBehalfOf } from './on-behalf-of';
 import {
   loadSessionGrants,
   resolveInheritedSessionSharing,
@@ -66,7 +68,9 @@ import {
   secretKeyCollisionInAllowlist,
 } from '../secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
+import { piPackageBundleForSession } from '../../pi-packages/bundle';
 import {
+  manifestPiPackages,
   manifestRuntime,
   resolveCompiledAgentConfigForSession,
   resolveManifestRuntime,
@@ -84,11 +88,11 @@ import {
   type ProjectRow,
   type ProjectSessionRow,
   type RequestAuditContext,
-  UUID_V4_REGEX,
   deriveKortixApiRoot,
-  normalizeJsonObject,
   normalizeString,
 } from './serializers';
+import { normalizeJsonObject } from '../../shared/json';
+import { isUuid } from '../../shared/validate';
 import {
   canonicalConnectorAlias,
   parseSessionConnectorBindings,
@@ -109,6 +113,7 @@ import {
   resolveSessionSandboxSlug,
 } from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
+import { transitionSession } from '../session-lifecycle/status-transitions';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,
@@ -138,6 +143,56 @@ export function sendSessionCreateError(c: Context, error: SessionCreateError) {
     c.header(key, value);
   }
   return c.json(error.body, error.status as any);
+}
+
+/** The fields postgres.js attaches to a `Failed query:` error (pg error codes). */
+type PostgresErrorFields = {
+  code?: string;
+  constraint?: string;
+  detail?: string;
+  table?: string;
+  column?: string;
+  message?: string;
+};
+
+/**
+ * Map a failure of the session-insert transaction to an HTTP error body.
+ *
+ * A postgres.js error's `message` embeds the FULL SQL statement and EVERY bound
+ * parameter value (attachment filenames, model config, opaque ids). Returning
+ * that message to the client leaked customer data into the caller's error
+ * tracker as an opaque `ApiError` (Better Stack pattern `9aecd4f8…`) and hid the
+ * cause, which the old `catch` never logged. Log the real cause server-side
+ * here, and return a stable, non-leaking body the caller can branch on.
+ *
+ * A `23505` unique violation on the session PK means the caller retried a
+ * create with a `session_id` that already exists; that is an idempotent race,
+ * not a defect, so it maps to a typed 409.
+ */
+export function resolveSessionInsertFailure(error: unknown): SessionCreateError {
+  const pg = (error ?? {}) as PostgresErrorFields;
+  // postgres.js appends the bound parameter values after "\nparams:" in the
+  // message. Keep the statement (column names only) and drop the values, so the
+  // server log identifies the failing insert without duplicating customer data.
+  const message = (pg.message ?? String(error)).split('\nparams:')[0];
+  console.error('[projects] session insert failed', {
+    pgCode: pg.code ?? null,
+    constraint: pg.constraint ?? null,
+    table: pg.table ?? null,
+    column: pg.column ?? null,
+    detail: pg.detail ?? null,
+    message,
+  });
+  if (pg.code === '23505') {
+    return {
+      status: 409,
+      body: { error: 'A session with this id already exists', code: 'session_already_exists' },
+    };
+  }
+  return {
+    status: 500,
+    body: { error: 'Failed to create session', code: 'SESSION_CREATE_FAILED', retry: true },
+  };
 }
 
 /**
@@ -498,6 +553,7 @@ export async function buildSessionSandboxEnvVars(input: {
   // the one exception: it routes `runtime: pi` to the split worker topology
   // BEFORE this builder runs (createSession), and never reaches it.
   let manifestHarness: 'opencode' | 'pi' | null = null;
+  let manifestPackages: unknown[] = [];
   let harness: 'opencode' | 'pi' = 'opencode';
   if (input.defaultBranch && !input.platformMetaAgent) {
     const gitProject = {
@@ -509,6 +565,7 @@ export async function buildSessionSandboxEnvVars(input: {
     };
     const onManifest = (raw: Record<string, unknown>) => {
       manifestHarness = manifestRuntime(raw);
+      manifestPackages = manifestPiPackages(raw, input.agentName);
     };
     compiledAgentConfig =
       !(input.repositoryAccess ?? true)
@@ -559,6 +616,11 @@ export async function buildSessionSandboxEnvVars(input: {
       runtime: manifestHarness,
     });
   }
+  // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
+  const piPackagesBundle =
+    harness === 'pi' && manifestPackages.length > 0
+      ? await piPackageBundleForSession(manifestPackages, { projectId: input.projectId, sessionId: input.sessionId })
+      : null;
 
   // Per-session secret policy, read by sessionId inside the builder so all three
   // call sites (create, restart, open/ensure) are covered — no caller can
@@ -709,6 +771,8 @@ export async function buildSessionSandboxEnvVars(input: {
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
       harness,
+      piPackages: manifestPackages,
+      piPackagesBundle,
       repositoryAccess: input.repositoryAccess,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,
@@ -867,6 +931,8 @@ async function loadParentSessionSharing(
 
 export async function createProjectSession(input: {
   attachmentSourceCommandId?: string;
+  /** The `create_session` command to link the new session to, atomically. */
+  createCommandId?: string;
   project: ProjectRow;
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
@@ -1112,10 +1178,13 @@ export async function createProjectSession(input: {
 
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
   const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
-  if (body.provider_secret_pools !== undefined &&
-    (!resolveFeatureFlag(project.metadata, 'pooled_provider_secrets') || !llmGatewayEnabled)) {
+  const pooledProviderSecrets = resolveFeatureFlag(project.metadata, 'pooled_provider_secrets');
+  if (body.provider_secret_pools !== undefined && (!pooledProviderSecrets || !llmGatewayEnabled)) {
     return { error: { status: 403, body: { error: 'Provider secret pools are unavailable' } } };
   }
+  // The key selection this session starts with: the caller's, or the one
+  // chosen below for a model that runs only on pooled keys.
+  let providerSecretPools = body.provider_secret_pools as Record<string, string[]> | undefined;
 
   // Model: normalize + fail-fast at create. Two paths, forked on the project's
   // `llm_gateway` flag:
@@ -1161,14 +1230,54 @@ export async function createProjectSession(input: {
       opencodeModel = requestedModel;
       opencodeModelSource = 'explicit';
     } else {
-      const servable = await isModelServableForAccount({
+      let servable = await isModelServableForAccount({
         userId,
         accountId,
         projectId,
         freeModelsOnly,
         model: requestedModel,
-        providerSecretPools: body.provider_secret_pools as Record<string, string[]> | undefined,
+        providerSecretPools,
       });
+      // A model reached only through pooled keys needs a key selection, and a
+      // caller that names only the model (the CLI, the SDK, a chat channel)
+      // names none: it was refused here. Select every key the caller may use
+      // for its provider, so they rotate — the same keys the web offers.
+      // Personal keys only in a session private to them that acts on their
+      // behalf (spec 2026-09-22 §2.3); a child session's human is its
+      // parent's, unknown here, so it gets shared keys only.
+      if (!servable && providerSecretPools === undefined && pooledProviderSecrets) {
+        const personal =
+          visibility === 'private' && !input.callerSessionId
+            ? decideSessionOnBehalfOf({
+                userId,
+                origin,
+                // The metadata the session will carry: the request's, then the caller's.
+                metadata: { ...normalizeJsonObject(body.metadata), ...normalizeJsonObject(input.metadata) },
+                isAccountMember: true,
+                slackRequiresUserIdentity: config.SLACK_REQUIRE_USER_IDENTITY !== false,
+                teamsRequiresUserIdentity: config.TEAMS_REQUIRE_USER_IDENTITY !== false,
+              })
+            : null;
+        const selection = await usableProviderKeys({
+          accountId,
+          projectId,
+          userId,
+          grantUserId: personal,
+          model: requestedModel,
+        }).catch(() => null);
+        if (selection && agentMayUseEnv(grantFromLoadedAgents(agentName, loadedAgents), selection.envVar)) {
+          const selected = { [selection.providerId]: selection.secretIds };
+          servable = await isModelServableForAccount({
+            userId,
+            accountId,
+            projectId,
+            freeModelsOnly,
+            model: requestedModel,
+            providerSecretPools: selected,
+          });
+          if (servable) providerSecretPools = selected;
+        }
+      }
       if (!servable) {
         return {
           error: {
@@ -1192,7 +1301,7 @@ export async function createProjectSession(input: {
         agentName,
         explicit: null,
         freeModelsOnly,
-        providerSecretPools: body.provider_secret_pools as Record<string, string[]> | undefined,
+        providerSecretPools,
       });
       const concreteModel =
         resolved.model ??
@@ -1473,7 +1582,7 @@ export async function createProjectSession(input: {
   }
 
   const requestedSessionId = normalizeString(body.session_id ?? body.sessionId);
-  if (requestedSessionId && !UUID_V4_REGEX.test(requestedSessionId)) {
+  if (requestedSessionId && !isUuid(requestedSessionId)) {
     return { error: { status: 400, body: { error: 'Invalid session id' } } };
   }
   const sessionId = requestedSessionId ?? randomUUID();
@@ -1507,6 +1616,17 @@ export async function createProjectSession(input: {
       },
     };
   }
+  // A name supplied at create is an EXPLICIT, user-chosen name — the same thing
+  // `PATCH /sessions/:id` writes when the user renames. It belongs in
+  // `metadata.custom_name`, NOT `metadata.name`: `name` is the auto-title slot
+  // the first prompt fills, and it is the WEAKEST link in the display chain
+  // (`custom_name ?? runtimeTitle ?? name`). Writing it there let the runtime's
+  // own auto-title (`runtimeTitle` from the OpenCode snapshot, and the client
+  // mirror that copies it) displace the name the user chose, seconds after the
+  // first prompt. `custom_name` is the single authoritative key every reader
+  // (`serializeSession`, `getSessionDisplayTitle`, `patchKortixSessionTitleMirrors`)
+  // and both title-writer gates (`needsTitle`, the `persistTitle` CAS) already
+  // respect, so a session born named is never auto-titled.
   const sessionName = normalizeString(body.name);
   // An explicit `title_source` means the baked prompt is a rendered envelope
   // (Slack/Teams/Telegram turn instructions + workspace/channel ids) and these
@@ -1539,7 +1659,7 @@ export async function createProjectSession(input: {
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
-    ...(sessionName ? { name: sessionName } : {}),
+    ...(sessionName ? { custom_name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
     // Picks only — the prompt itself is a durable inbox row (see below), and a
     // pre-deploy web bundle replays `pending_prompt.text` client-side, so
@@ -1600,10 +1720,25 @@ export async function createProjectSession(input: {
       })
       .returning();
     if (!row) throw new Error('Session insert returned no row');
-    const requestedPools = body.provider_secret_pools as Record<string, string[]> | undefined;
-    if (requestedPools && Object.keys(requestedPools).length > 0) {
+    if (input.createCommandId) {
+      // Same transaction as the session row: a create command whose worker
+      // dies after this commit is reclaimed WITH its session id, and
+      // executeQueuedCreate returns this session instead of provisioning a
+      // second one.
+      await tx
+        .update(sessionLifecycleCommands)
+        .set({ sessionId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(sessionLifecycleCommands.commandId, input.createCommandId),
+            eq(sessionLifecycleCommands.commandType, 'create_session'),
+            isNull(sessionLifecycleCommands.sessionId),
+          ),
+        );
+    }
+    if (providerSecretPools && Object.keys(providerSecretPools).length > 0) {
       await tx.insert(sessionProviderSecretPools).values(
-        Object.entries(requestedPools).map(([providerId, secretIds]) => ({ sessionId, providerId, secretIds })),
+        Object.entries(providerSecretPools).map(([providerId, secretIds]) => ({ sessionId, providerId, secretIds })),
       );
     }
     if (parsedRuntimeContext.context !== undefined) {
@@ -1683,8 +1818,9 @@ export async function createProjectSession(input: {
     if (error instanceof HTTPException && error.status < 500) {
       return { error: { status: error.status, body: await error.getResponse().json() } };
     }
-    const message = (error as Error).message || 'Insert failed';
-    return { error: { status: 500, body: { error: message, retry: true } } };
+    // Never return `(error as Error).message`: postgres.js embeds the whole
+    // statement and its parameters in it (see `resolveSessionInsertFailure`).
+    return { error: resolveSessionInsertFailure(error) };
   }
 
   if (sessionRow === null) {
@@ -1988,18 +2124,14 @@ export async function createProjectSession(input: {
       const message = (err as Error)?.message || 'Sandbox provisioning failed';
       console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
       try {
-        await db
-          .update(projectSessions)
-          .set({
-            status: 'failed',
-            error: message,
-            // Merge, never re-write the create-time snapshot: by the time
-            // provisioning fails the row may already carry a generated title,
-            // remote_branch or the start timeline.
-            metadata: projectSessionMetadataMerge({ provisioning_error: message }),
-            updatedAt: new Date(),
-          })
-          .where(eq(projectSessions.sessionId, sessionId));
+        // Merge, never re-write the create-time snapshot: by the time
+        // provisioning fails the row may already carry a generated title,
+        // remote_branch or the start timeline. A session deleted meanwhile
+        // keeps its tombstone.
+        await transitionSession('fail', sessionId, {
+          error: message,
+          metadata: { provisioning_error: message },
+        });
       } catch (markErr) {
         console.error(`[projects] Failed to mark session ${sessionId} failed:`, markErr);
       }

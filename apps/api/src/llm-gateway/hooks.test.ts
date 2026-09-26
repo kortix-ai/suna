@@ -62,6 +62,7 @@ mock.module('./resolution/default-model', () => ({
 
 mock.module('./budgets', () => ({
   checkBudget: async () => ({ exceeded: false }),
+  releaseBudgetReservation: () => {},
 }));
 
 // A minimal stand-in for the real `BillingGateError` (HTTPException + `.reason`)
@@ -95,31 +96,17 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     billingThrow = null;
   });
 
-  test('insufficient_credits survives the RPC boundary', async () => {
+  test.each([
+    ['insufficient_credits', 'Out of credits. Top up to continue.'],
+    ['no_account', 'No credit account found.'],
+    ['subscription_required', 'Subscribe to activate your seat.'],
+  ] as const)('%s survives the RPC boundary', async (reason, message) => {
     billingThrow = () => {
-      throw new BillingGateError('insufficient_credits', 0, 'Out of credits. Top up to continue.', 'acct-1');
+      throw new BillingGateError(reason, 0, message, 'acct-1');
     };
     const result = await authorizeRequest('good');
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errorCode).toBe('insufficient_credits');
-  });
-
-  test('no_account survives the RPC boundary', async () => {
-    billingThrow = () => {
-      throw new BillingGateError('no_account', 0, 'No credit account found.', 'acct-1');
-    };
-    const result = await authorizeRequest('good');
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errorCode).toBe('no_account');
-  });
-
-  test('subscription_required still works (not a stale default masking real gaps)', async () => {
-    billingThrow = () => {
-      throw new BillingGateError('subscription_required', 0, 'Subscribe to activate your seat.', 'acct-1');
-    };
-    const result = await authorizeRequest('good');
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errorCode).toBe('subscription_required');
+    if (!result.ok) expect(result.errorCode).toBe(reason);
   });
 
   test('a non-BillingGateError billing failure falls back to subscription_required (unknown reason, not a crash)', async () => {

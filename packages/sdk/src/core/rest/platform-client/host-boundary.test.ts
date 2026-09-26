@@ -18,8 +18,40 @@ afterEach(() => {
 });
 
 const boundary = await import('./host-boundary');
+import type { SecretSetupLinkSubmitResult } from './host-boundary';
 
 describe('host boundary transport', () => {
+  test('secret submit returns the names the requesting agent will not receive', async () => {
+    responseFactory = () =>
+      Response.json({
+        ok: true,
+        saved: ['API_KEY'],
+        agent: 'analyst',
+        withheld: [{ name: 'API_KEY', reason: 'agent_grant' }],
+      });
+    const result: SecretSetupLinkSubmitResult = await boundary.submitSecretSetupLink(
+      'secret-token',
+      { API_KEY: 'value' },
+      { backendUrl: 'https://api.example.test/v1' },
+    );
+
+    expect(requests[0]?.url).toBe('https://api.example.test/v1/setup-links/secret/secret-token');
+    expect(result.saved).toEqual(['API_KEY']);
+    expect(result.agent).toBe('analyst');
+    expect(result.withheld?.[0]?.reason).toBe('agent_grant');
+  });
+
+  test('secret submit from an older server carries no withheld names', async () => {
+    responseFactory = () => Response.json({ ok: true, saved: ['API_KEY'] });
+    const result = await boundary.submitSecretSetupLink(
+      'secret-token',
+      { API_KEY: 'value' },
+      { backendUrl: 'https://api.example.test/v1' },
+    );
+
+    expect(result.withheld).toBeUndefined();
+  });
+
   test('public marketplace reads accept explicit cache options', async () => {
     responseFactory = () => Response.json({ items: [{ id: 'skill-1' }] });
     const result = await boundary.listPublicMarketplaceItems(
@@ -61,6 +93,29 @@ describe('host boundary transport', () => {
     ]);
     expect(requests[0]?.init?.headers).not.toHaveProperty('Authorization');
     expect(requests[1]?.init?.headers).not.toHaveProperty('Authorization');
+  });
+
+  test('connector setup-link info carries the app display name and icon', async () => {
+    responseFactory = () =>
+      Response.json({
+        kind: 'connector',
+        project_name: 'Project 1',
+        slug: 'miro',
+        app: 'miro',
+        name: 'Miro',
+        icon_url: 'https://cdn.example.test/miro.svg',
+        expires_at: '2026-10-01T00:00:00.000Z',
+      });
+
+    const info = await boundary.getConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    const identity: { name: string | null | undefined; icon: string | null | undefined } = {
+      name: info.name,
+      icon: info.icon_url,
+    };
+    expect(identity).toEqual({ name: 'Miro', icon: 'https://cdn.example.test/miro.svg' });
   });
 
   test('connector setup-link finalize POSTs anonymously and returns the connected flag', async () => {
@@ -106,6 +161,57 @@ describe('host boundary transport', () => {
       'https://api.example.test/v1/setup-links/connectors/connect-token/start',
     );
     expect(requests[0]?.init?.method).toBe('POST');
+  });
+
+  test('connector setup-link info names its project and the suggested account name', async () => {
+    responseFactory = () =>
+      Response.json({
+        kind: 'connector',
+        project_id: 'P1',
+        project_name: 'Acme',
+        label: "Dad's Gmail",
+        owner: 'project',
+        slug: 'gmail',
+        app: 'gmail',
+        expires_at: '2026-01-01',
+      });
+
+    const info = await boundary.getConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    const projectId: string | undefined = info.project_id;
+    const label: string | null | undefined = info.label;
+    const owner: 'me' | 'project' | undefined = info.owner;
+    expect({ projectId, label, owner }).toEqual({ projectId: 'P1', label: "Dad's Gmail", owner: 'project' });
+  });
+
+  test('connector setup-link finalize names ONE account when given its connection id', async () => {
+    responseFactory = () =>
+      Response.json({
+        connected: true,
+        connected_as: 'dad@example.test',
+        connection_id: 'conn-2',
+        label: "Dad's Gmail",
+      });
+
+    const result = await boundary.finalizeConnectorSetupLink(
+      'connect-token',
+      { backendUrl: 'https://api.example.test/v1' },
+      { connectionId: 'conn-2' },
+    );
+
+    expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({ connection_id: 'conn-2' });
+    const named: { id: string | undefined; label: string | null | undefined } = {
+      id: result.connection_id,
+      label: result.label,
+    };
+    expect(named).toEqual({ id: 'conn-2', label: "Dad's Gmail" });
+
+    await boundary.finalizeConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+    expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({});
   });
 
   test('connector setup-link finalize reports a still-pending connect as connected:false', async () => {

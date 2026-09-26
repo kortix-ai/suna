@@ -37,7 +37,7 @@ const WORKERS: Record<string, string> = {
   'audit-reconciliation': 'shared/audit-reconciliation-worker.ts',
   'project-snapshots': 'git-proxy/project-snapshot-worker.ts',
   'iam-grant-expiry': 'iam/expiry-sweeper.ts',
-  'session-lifecycle': 'projects/session-lifecycle/engine.ts',
+  'session-lifecycle': 'projects/session-lifecycle/drain.ts',
   'tunnel-cleanup': 'tunnel/index.ts',
   'tunnel-rpc-forwarder': 'tunnel/core/cluster-forwarder.ts',
   'billing-trial-expiry': 'billing/index.ts',
@@ -58,6 +58,8 @@ const NOT_WORKERS: Record<string, string> = {
   'projects/lib/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
   'projects/provider-transition/provider-transition-service.ts': 'renews a lease inside the provider-transition tick',
   'projects/routes/session-stream.ts': 'heartbeat on one open session stream',
+  'projects/session-lifecycle/command-lease.ts':
+    'renews the lock of one claimed command while its drain lane or inline create runs',
   'projects/session-lifecycle/worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
   'router/config/model-pricing.ts': 'refreshes the in-memory model pricing',
   'sandbox-proxy/preview-state-page.ts': 'browser JavaScript inside an HTML string',
@@ -86,6 +88,8 @@ const STARTS: Record<string, string> = {
   startTunnelService: 'tunnel-cleanup',
   startAccessControlCache: 'not a worker: in-memory cache',
   startTmpReaper: 'not a worker: local tmp directories only',
+  startConfigBaseMoveBroadcast:
+    'not a worker: one LISTEN connection, event-driven, no timer and no tick',
 };
 
 function sourceFiles(dir: string): string[] {

@@ -37,7 +37,7 @@ import { ACTIVE_SESSION_STATUSES } from '../projects/lib/session-status';
 import { db } from '../shared/db';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import type { SessionHandleFacts } from './handle-substitution';
-import { SecretBrokerError, type SecretSubstitution } from './http-broker';
+import type { SecretBrokerError, SecretSubstitution } from './http-broker';
 import { networkBoundaryPolicyError } from './network-boundary';
 import {
   matchRule,
@@ -451,15 +451,4 @@ export async function authorizeSecretRelay(
     facts: spendable.facts,
     isBoundarySecret,
   };
-}
-
-/** The single refusal that is NOT expressible as a `SecretBrokerError`, mapped
- *  for callers that want one anyway (the websocket upgrade, which has no JSON
- *  envelope of its own). */
-export function relayAuthzToBrokerError(denied: SecretRelayAuthzDenied): SecretBrokerError {
-  return new SecretBrokerError(
-    denied.code === 'policy_denied' ? 'policy_denied' : 'invalid_request',
-    denied.message,
-    denied.status,
-  );
 }

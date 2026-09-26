@@ -45,7 +45,8 @@ import {
 } from '../sandbox-turn-lifecycle';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { wireIdTime } from '../wire-message-id';
-import { drainSessionLifecycleQueue, resolveSessionOpencodeEndpoint } from './engine';
+import { drainSessionLifecycleQueue } from './drain';
+import { resolveSessionOpencodeEndpoint } from './runtime-client';
 import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, parsePlacementTip, strandedPlacement, tipIsBusy } from './forwarded-placement';
 import { promoteNextInboxRow, withNextDeliveryAttempt } from './store';
 import { wireMessageIdMatches } from './wire-id-match';
@@ -60,15 +61,12 @@ export interface ForwardedTurnReconciliation {
   candidates: number;
   stranded: number;
   /** Newer candidates the loop exited PAST: placed at the tip, never read,
-   *  nothing running. Live incident 2026-08-20 (SampleCo session d1b74954):
+   *  nothing running. Live incident 2026-08-20 (a prod session):
    *  a prompt forwarded at 12:59:05Z sat at the tip; the loop completed at
    *  12:59:17Z without reading it and its queued continuation was rejected —
    *  "not stranded" left it in place forever. */
   orphaned: number;
   requeued: number;
-  /** Later, un-stranded siblings pulled back with a stranded row so the
-   *  redelivery batch restores send order. */
-  reordered: number;
 }
 
 export interface StrandReconcileDeps {
@@ -206,7 +204,7 @@ export async function reconcileForwardedTurnsAtEnd(
   input: { sessionId: string; opencodeSessionId?: string | null; endedMessageId?: string | null },
   deps: StrandReconcileDeps = liveDeps,
 ): Promise<ForwardedTurnReconciliation> {
-  const out: ForwardedTurnReconciliation = { closedOlder: 0, candidates: 0, stranded: 0, orphaned: 0, requeued: 0, reordered: 0 };
+  const out: ForwardedTurnReconciliation = { closedOlder: 0, candidates: 0, stranded: 0, orphaned: 0, requeued: 0 };
   let open: StoredSandboxTurn[];
   try {
     open = await deps.readOpenTurns(input.sessionId);
@@ -302,10 +300,9 @@ export async function reconcileForwardedTurnsAtEnd(
   // placed correctly AT THE TIP (no assistant above it, so not "stranded")
   // that the ended loop simply never read. With the tip's newest assistant
   // CLOSED, nothing will ever answer it — OpenCode's queued continuation for
-  // it can be rejected at turn end (observed live 2026-08-20, SampleCo
-  // session d1b74954: "Bro no fucking idea whats happening here lol",
-  // delivered 12:59:05Z, loop completed 12:59:17Z past it, queue request
-  // rejected, prompt swallowed). Requeue it exactly like a stranded row.
+  // it can be rejected at turn end (observed live 2026-08-20 on a prod
+  // session: a user message delivered 12:59:05Z, loop completed 12:59:17Z
+  // past it, queue request rejected, prompt swallowed). Requeue it exactly like a stranded row.
   // Guards, in order: the row must be ACCEPTED (`active` — a `delivering`
   // row is a send still on the wire), the message must actually be on the
   // tip, and the tip must not be mid-step (an open newest assistant is a

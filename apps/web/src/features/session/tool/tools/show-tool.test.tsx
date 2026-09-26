@@ -1,9 +1,9 @@
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { NextIntlClientProvider } from '@/i18n/use-translations';
 import type { ToolPart } from '@/ui';
 import { ArrowSquareOutIcon, FileCsvIcon, FilePdfIcon } from '@phosphor-icons/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
-import { NextIntlClientProvider } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -317,7 +317,9 @@ describe('ShowTool header shows format-specific icons', () => {
     expect(html).not.toContain('data-slot="avatar-group"');
     expect(html).not.toContain('data-slot="avatar"');
     expect(html).not.toContain('+2');
-    expect(html).toContain('Deliverables');
+    // The header is a tablist of the five items, named by the call's title.
+    expect(html).toContain('role="tablist" aria-label="Deliverables"');
+    expect(html.match(/role="tab"/g)).toHaveLength(5);
   });
 
   test('a two-item carousel also shows no avatar group', () => {

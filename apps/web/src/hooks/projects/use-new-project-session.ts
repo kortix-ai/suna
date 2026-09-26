@@ -319,7 +319,7 @@ export function useNewProjectSession(projectId: string | undefined) {
           }
           // The row exists — kick provisioning so it overlaps the navigation.
           // For an adopted warm session this is also the call that drops the
-          // server's `metadata.warm` marker (apps/api/.../routes/r8.ts).
+          // server's `metadata.warm` marker (apps/api/.../routes/session-runtime.ts).
           const started = prefetchSessionStart(queryClient, projectId, sessionId);
           if (adoptedWarmSession) {
             const replenish = () => {

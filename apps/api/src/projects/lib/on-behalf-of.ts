@@ -76,6 +76,32 @@ export function promptClearsOnBehalfOf(input: {
 }
 
 /**
+ * Pure rule for a prompt that did NOT come through the HTTP prompt route: a
+ * trigger fire or a channel message. Returns the prompter to compare against
+ * `on_behalf_of` — a human id, or `null` for a non-human prompter, which clears
+ * any value — or `undefined` when this source never clears (the HTTP sources,
+ * which clear in the route, and platform notifications such as
+ * `system:connector-connected`, which the session's own human caused).
+ *
+ * The channel identities mirror the mint rule above: email and Telegram
+ * senders are never Kortix identities, and a Slack/Teams message carries its
+ * sender's Kortix user only when the deployment requires a linked identity.
+ */
+export function channelPrompterForOnBehalfOf(input: {
+  source: string;
+  userId: string | null;
+  slackRequiresUserIdentity: boolean;
+  teamsRequiresUserIdentity: boolean;
+}): string | null | undefined {
+  if (typeof input.source !== 'string') return undefined;
+  if (input.source.startsWith('trigger:')) return null;
+  if (input.source === 'email' || input.source === 'telegram') return null;
+  if (input.source === 'slack') return input.slackRequiresUserIdentity ? input.userId : null;
+  if (input.source === 'teams') return input.teamsRequiresUserIdentity ? input.userId : null;
+  return undefined;
+}
+
+/**
  * Mint-time resolution for session `sessionId`. Reads the session row, the
  * launcher's account membership, and — for a child — the parent's live
  * token. Any read failure resolves to NULL: a missing value costs personal
@@ -135,15 +161,17 @@ export async function resolveSessionOnBehalfOf(input: {
 }
 
 /**
- * A human prompted session `sessionId`. When the session's token acts on
- * behalf of a DIFFERENT human, clear it on every live token of the session and
- * stamp the session so a re-mint never restores it. Returns true when it
- * cleared a value. Idempotent.
+ * Someone other than the session's `on_behalf_of` human prompted session
+ * `sessionId`. When the session's token acts on behalf of a DIFFERENT human —
+ * or of any human, when `prompterUserId` is null (a trigger or an unlinked
+ * channel sender) — clear it on every live token of the session and stamp the
+ * session so a re-mint never restores it. Returns true when it cleared a
+ * value. Idempotent.
  */
 export async function clearSessionOnBehalfOfForPrompt(input: {
   accountId: string;
   sessionId: string;
-  prompterUserId: string;
+  prompterUserId: string | null;
 }): Promise<boolean> {
   const cleared = await db
     .update(accountTokens)
@@ -153,7 +181,9 @@ export async function clearSessionOnBehalfOfForPrompt(input: {
         eq(accountTokens.sessionId, input.sessionId),
         eq(accountTokens.accountId, input.accountId),
         isNotNull(accountTokens.onBehalfOfUserId),
-        ne(accountTokens.onBehalfOfUserId, input.prompterUserId),
+        input.prompterUserId === null
+          ? undefined
+          : ne(accountTokens.onBehalfOfUserId, input.prompterUserId),
       ),
     )
     .returning({ tokenId: accountTokens.tokenId });

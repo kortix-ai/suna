@@ -119,32 +119,6 @@ export function withDefaultTimeout(
 }
 
 /**
- * Build a Headers object from request input + init, injecting the auth token
- * as a Bearer Authorization header (unless one is already present).
- */
-export function buildAuthHeaders(
-	input: RequestInfo | URL,
-	init?: RequestInit,
-	token?: string | null,
-	clientSource?: string,
-): Headers {
-	const headers = new Headers(input instanceof Request ? input.headers : undefined);
-	if (init?.headers) {
-		new Headers(init.headers).forEach((value, key) => {
-			headers.set(key, value);
-		});
-	}
-	if (token && !headers.has('Authorization')) {
-		headers.set('Authorization', `Bearer ${token}`);
-	}
-	const normalizedClientSource = normalizeClientSource(clientSource);
-	if (normalizedClientSource && !headers.has('X-Kortix-Client')) {
-		headers.set('X-Kortix-Client', normalizedClientSource);
-	}
-	return headers;
-}
-
-/**
  * The synthetic 401 returned when no token is available — safe for all
  * callers including the OpenCode SDK, which expects fetch() semantics
  * (returns a Response, never throws), and it means the request never goes

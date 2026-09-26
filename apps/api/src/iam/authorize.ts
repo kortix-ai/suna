@@ -42,6 +42,7 @@ import {
   serviceAccounts,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { retryTransientDatabaseRead } from '../shared/database-errors';
 import { isImpersonatingAccount, isImpersonationBlockedAccount } from '../shared/impersonation';
 import { ttlMemo } from '../shared/ttl-memo';
@@ -445,6 +446,13 @@ export async function filterAccessibleObjects(
 
   const roles = await loadSystemRoles();
   const systemRole = effectiveProjectRole(roles, rec, projectId);
+  // Step 8 before step 9, as in `authorize`: the Slack and Teams pickers reach
+  // here with only an account member, and a `project` grant names everyone IN
+  // the project, not everyone in the account.
+  const inProject =
+    (systemRole !== null && systemRole.actions.has('project.read')) ||
+    customRoleAllows(rec, 'project', 'project.read', { type: 'project', id: projectId });
+  if (!inProject) return [];
   const managerTier = systemRole !== null && systemRole.actions.has('project.write');
   const grants = await loadObjectGrants(projectId, objectType);
   const unscopedOpen = (await unscopedDefaultFor(objectType)) === 'open';
@@ -453,12 +461,32 @@ export async function filterAccessibleObjects(
   return objectIds.filter((id) => {
     const principals = grants.get(id);
     if (!principals || principals.length === 0) return unscopedOpen || managerTier;
-    return principals.some(
-      (p) =>
-        (p.principalType === 'user' && p.principalId === principal.id) ||
-        (p.principalType === 'group' && groups.has(p.principalId)),
-    );
+    return principals.some((p) => objectGrantReaches(p, principal.id, groups));
   });
+}
+
+/**
+ * Does ONE object grant name this principal?
+ *
+ *   user     -> that user
+ *   group    -> any member of that group
+ *   project  -> everyone with access to the project. The grant map is loaded
+ *               per project, so a `project` row here is always the caller's
+ *               own project, and the caller has already passed the
+ *               project-role check. The DB shape check keeps `principal_id =
+ *               scope_id` for every writer.
+ *
+ * Any other kind grants nothing.
+ */
+export function objectGrantReaches(
+  grant: { principalType: string; principalId: string },
+  principalId: string,
+  groupIds: ReadonlySet<string>,
+): boolean {
+  if (grant.principalType === 'project') return true;
+  if (grant.principalType === 'user') return grant.principalId === principalId;
+  if (grant.principalType === 'group') return groupIds.has(grant.principalId);
+  return false;
 }
 
 // ─── Pure decision helpers (exported for unit tests) ────────────────────────
@@ -502,7 +530,8 @@ export function isImplicitManager(accountRoleKey: string | null): boolean {
  *   no grant rows at all -> the OBJECT TYPE's default (agents closed, the rest
  *                           open), with the manager tier always getting open
  *   >=1 grant row        -> only the named principals, identically for both
- *                           tiers
+ *                           tiers (`objectGrantReaches`; a `project` row names
+ *                           everyone in the project)
  */
 export async function objectUsable(
   objectType: string,
@@ -516,11 +545,7 @@ export async function objectUsable(
     return (await unscopedDefaultFor(objectType)) === 'open';
   }
   const groups = new Set(groupIds);
-  return grantsForObject.some(
-    (g) =>
-      (g.principalType === 'user' && g.principalId === principalId) ||
-      (g.principalType === 'group' && groups.has(g.principalId)),
-  );
+  return grantsForObject.some((g) => objectGrantReaches(g, principalId, groups));
 }
 
 // ─── Principal resolution ───────────────────────────────────────────────────
@@ -821,6 +846,16 @@ interface ObjectGrantPrincipal {
  * grant taking effect on every replica at once — the same rule the legacy
  * `loadProjectResourceGrants` memo already applies (#6535).
  */
+/**
+ * `role_assignments.account_id` equals the account that owns `projectId`. A
+ * project-scoped row written in another account grants nothing here; new ones
+ * are refused at write time (`assertProjectInAccount`, and the
+ * `role_assignments_project_account_guard` trigger).
+ */
+function projectAccountMatches(projectId: string) {
+  return sql`${qualifiedColumn(roleAssignments.accountId)} = (select p.account_id from kortix.projects p where p.project_id = ${projectId}::uuid)`;
+}
+
 const loadObjectGrants = ttlMemo({
   ttlMs: TTL_MS,
   keyFn: (projectId: string, objectType: string) => `${projectId}|${objectType}`,
@@ -836,6 +871,8 @@ const loadObjectGrants = ttlMemo({
         and(
           eq(roleAssignments.scopeType, 'project'),
           eq(roleAssignments.scopeId, projectId),
+          // Only rows written in the project's own account count.
+          projectAccountMatches(projectId),
           eq(roleAssignments.objectType, objectType),
           or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, sql`now()`)),
         ),

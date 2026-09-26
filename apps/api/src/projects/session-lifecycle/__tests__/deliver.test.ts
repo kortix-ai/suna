@@ -130,17 +130,6 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
     expect(outcome).toBe('unreachable');
   });
 
-  test('a MISSING session stays terminal — there is nothing to come back to', async () => {
-    const outcome = await deliverWithRetry({
-      opened: ready('ext-1', 'oc-1'),
-      reopen: async () => null,
-      send: async () => false,
-      now: stepNow(1000),
-      sleepFn: noSleep,
-    });
-    expect(outcome).toBe('no-session');
-  });
-
   // THE PATH TO THE BOX IS DOWN, AND THE BOX ITSELF LOOKS FINE. `reopen` keeps
   // answering `ready` — the session row IS ready, the sandbox IS running — but
   // every POST comes back 502 from the proxy. That used to spend the deadline

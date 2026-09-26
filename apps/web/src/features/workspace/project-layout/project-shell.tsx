@@ -40,7 +40,7 @@ import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useGatewayCatalogSync } from '@kortix/sdk/react';
-import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({
@@ -292,6 +292,11 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
       {/* Collapsed: an invisible strip on the viewport's left edge summons
           the sidebar as a hover flyout; it self-hides while docked open. */}
       <SidebarEdgePeek />
+      {/* Some project views start with content instead of a titlebar row. Give
+          those views the same native drag band without covering controls on
+          views that already own the band. CSS disables this fallback whenever
+          the active view contains `.kx-titlebar-row`. */}
+      <div aria-hidden="true" className="kx-project-shell-drag-region" />
       {/* Mobile: the sidebar is a sheet with no docked affordance, and view
           headers come and go (sessions render theirs only once booted) — so
           the opener lives here, always mounted, on every project view. The

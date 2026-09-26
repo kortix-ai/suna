@@ -324,7 +324,7 @@ export function NewWorkspacePage() {
             `performSignOut`, not the old bare `void signOut()`: that neither
             awaited the sign-out nor navigated, so pressing Log out here signed
             the user out and left them sitting on the create form. */}
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <Button
             type="button"
             variant="ghost"

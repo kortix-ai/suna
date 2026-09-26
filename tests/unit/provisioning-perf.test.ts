@@ -142,7 +142,8 @@ async function loadProvisionMatrix(opts: {
       opts.windows.push({ label, startedAt, endedAt: performance.now() });
       return { id: `${label}-user-id` };
     },
-    passwordGrant: async () => 'jwt-token',
+    passwordGrantSession: async () => ({ accessToken: 'jwt-token', refreshToken: 'refresh', expiresInMs: 3_600_000 }),
+    refreshGrant: async () => ({ accessToken: 'jwt-token-2', refreshToken: 'refresh-2', expiresInMs: 3_600_000 }),
     adminDeleteUser: async () => undefined,
   }));
   vi.doMock('../src/fixtures/billing', () => ({ subscribe: opts.subscribe }));
@@ -229,7 +230,8 @@ describe('provisionMatrix parallelism (P1.7)', () => {
       adminCreateUser: async (_env: unknown, email: string) => ({
         id: email.includes('nonmember') ? 'NONMEMBER-user-id' : 'OWNER-user-id',
       }),
-      passwordGrant: async () => 'jwt-token',
+      passwordGrantSession: async () => ({ accessToken: 'jwt-token', refreshToken: 'refresh', expiresInMs: 3_600_000 }),
+      refreshGrant: async () => ({ accessToken: 'jwt-token-2', refreshToken: 'refresh-2', expiresInMs: 3_600_000 }),
       adminDeleteUser: async (_env: unknown, id: string) => {
         deleted.push(id);
       },
@@ -326,9 +328,9 @@ describe('buildWorld provisioning parallelism (P1.7)', () => {
       },
       synthUser: async () => {
         await record('platform-admin-user', 30);
-        return { user: { id: 'ADMIN-user-id' }, jwt: 'admin-jwt', principal: {} };
+        return { user: { id: 'ADMIN-user-id' }, session: { token: 'admin-jwt' }, principal: {} };
       },
-      synthUserWithEmail: async () => ({ user: { id: 'x' }, jwt: 'j', principal: {} }),
+      synthUserWithEmail: async () => ({ user: { id: 'x' }, session: { token: 'j' }, principal: {} }),
     }));
     vi.doMock('../src/fixtures/platform-admin', () => ({
       grantEphemeralPlatformAdmin: async () => async () => undefined,

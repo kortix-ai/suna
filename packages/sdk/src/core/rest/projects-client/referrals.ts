@@ -1,5 +1,8 @@
-import { backendApi } from '../../http/api-client';
-import { unwrap } from './shared';
+/**
+ * Referral program. The API removed every `/v1/referrals/*` route; these
+ * exports remain for import compatibility until the next major.
+ */
+import { retiredEndpointError } from '../../http/api/errors';
 
 export interface ReferralCodeResponse {
   referral_code: string;
@@ -51,47 +54,35 @@ export interface ReferralEmailResponse {
   total_count?: number;
 }
 
+/** @deprecated The referral program was removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
 export async function getReferralCode(): Promise<ReferralCodeResponse> {
-  return unwrap(await backendApi.get<ReferralCodeResponse>('/referrals/code'), 'GET_CODE_FAILED');
+  throw retiredEndpointError('getReferralCode');
 }
 
+/** @deprecated The referral program was removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
 export async function refreshReferralCode(): Promise<ReferralCodeResponse> {
-  return unwrap(
-    await backendApi.post<ReferralCodeResponse>('/referrals/code/refresh', {}),
-    'REFRESH_CODE_FAILED',
-  );
+  throw retiredEndpointError('refreshReferralCode');
 }
 
-export async function validateReferralCode(code: string): Promise<ValidateReferralCodeResponse> {
-  return unwrap(
-    await backendApi.post<ValidateReferralCodeResponse>('/referrals/validate', {
-      referral_code: code,
-    }),
-    'VALIDATE_CODE_FAILED',
-  );
+/** @deprecated The referral program was removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
+export async function validateReferralCode(_code: string): Promise<ValidateReferralCodeResponse> {
+  throw retiredEndpointError('validateReferralCode');
 }
 
+/** @deprecated The referral program was removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
 export async function getReferralStats(): Promise<ReferralStats> {
-  return unwrap(await backendApi.get<ReferralStats>('/referrals/stats'), 'GET_STATS_FAILED');
+  throw retiredEndpointError('getReferralStats');
 }
 
-export async function listReferrals(options: {
+/** @deprecated The referral program was removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
+export async function listReferrals(_options: {
   limit?: number;
   offset?: number;
 } = {}): Promise<ReferralListResponse> {
-  const search = new URLSearchParams({
-    limit: String(options.limit ?? 50),
-    offset: String(options.offset ?? 0),
-  });
-  return unwrap(
-    await backendApi.get<ReferralListResponse>(`/referrals/list?${search}`),
-    'GET_REFERRALS_FAILED',
-  );
+  throw retiredEndpointError('listReferrals');
 }
 
-export async function sendReferralEmails(emails: string[]): Promise<ReferralEmailResponse> {
-  return unwrap(
-    await backendApi.post<ReferralEmailResponse>('/referrals/email', { emails }),
-    'SEND_EMAILS_FAILED',
-  );
+/** @deprecated The referral program was removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
+export async function sendReferralEmails(_emails: string[]): Promise<ReferralEmailResponse> {
+  throw retiredEndpointError('sendReferralEmails');
 }

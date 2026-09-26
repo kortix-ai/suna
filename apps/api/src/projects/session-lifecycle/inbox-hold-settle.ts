@@ -56,8 +56,9 @@ import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import { abortRuntimeTurn } from './abort-runtime-turn';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
-import { resolveSessionOpencodeEndpoint } from './engine';
+import { resolveSessionOpencodeEndpoint } from './runtime-client';
 import {
   type PlacementTipMessage,
   parsePlacementTip,
@@ -95,13 +96,13 @@ const CLAIMED_POLL_MS = 100;
  * re-minted wire id, and the user saw the same prompt twice — once unanswered,
  * once answered (the "KNOWN COST" documented in `holdInboxPrompts`). The
  * exclusion was invisible to the unit tests because every one of them stubs
- * `listStopPaused`; see the compiled-SQL test that now pins it.
+ * `listStopPaused`; integration-prompt-inbox runs it on real rows.
  *
  * A row that is `queued` and held (this settle's own `holdAsQueued` outcome,
  * or a prompt that never went out) is still excluded — by `status`
  * (`succeeded`) and by `result.status`, not by the held marker.
  */
-export function stopPausedOnWireScope(sessionId: string) {
+function stopPausedOnWireScope(sessionId: string) {
   return and(
     inboxScope(sessionId),
     eq(sessionLifecycleCommands.status, 'succeeded'),
@@ -132,7 +133,7 @@ export interface HoldSettleDeps {
   now: () => number;
 }
 
-const liveDeps: HoldSettleDeps = {
+export const liveHoldSettleDeps: HoldSettleDeps = {
   async countClaimed(sessionId) {
     const [row] = await db
       .select({ n: sql<number>`count(*)::int` })
@@ -169,17 +170,11 @@ const liveDeps: HoldSettleDeps = {
     if (!res.ok) return null;
     return parsePlacementTip(await res.json().catch(() => null));
   },
-  async abort(sessionId) {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return false;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/abort?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
-    return res.ok;
-  },
+  // This abort is part of the Stop the user pressed, and it does not pass the
+  // sandbox proxy that stamps `UserStop`. It also runs before the client's own
+  // abort in the common case, so it stamps the open turn itself. A turn a late
+  // delivery opened after the hold is stopped by this call alone.
+  abort: (sessionId) => abortRuntimeTurn(sessionId, { requestedStop: true }),
   async removeMessage(sessionId, messageId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
     if (!resolved) return false;
@@ -250,7 +245,7 @@ export interface HoldSettlement {
 
 export async function settleInboxHoldAfterStop(
   sessionId: string,
-  deps: HoldSettleDeps = liveDeps,
+  deps: HoldSettleDeps = liveHoldSettleDeps,
 ): Promise<HoldSettlement> {
   const out: HoldSettlement = {
     waitedMs: 0,

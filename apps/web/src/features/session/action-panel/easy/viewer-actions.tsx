@@ -57,12 +57,14 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { downloadFile } from '@/features/files/api/runtime-files';
+import { PublicShareLinkConfirm } from '@/components/projects/public-share-link-confirm';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import type { CreateSessionPublicShareInput } from '@kortix/sdk';
 import {
+  ArrowClockwiseIcon,
   CaretDownIcon,
   DotsThreeIcon,
   LinkSimpleIcon,
@@ -295,6 +297,7 @@ export function ViewerActions({
           </DropdownMenu>
         )}
         {downloadButton}
+        <PublicShareLinkConfirm confirmation={share.confirmation} />
       </span>
     );
   }
@@ -380,7 +383,48 @@ export function ViewerActions({
     <span className={cn('flex shrink-0 items-center gap-1', className)}>
       {split}
       {downloadButton}
+      <PublicShareLinkConfirm confirmation={share.confirmation} />
     </span>
+  );
+}
+
+/**
+ * Re-read the open file from the sandbox now.
+ *
+ * The safety net under the automatic refresh: the agent's turn end already
+ * refetches every open file, so this is for edits the turn end cannot see — a
+ * terminal, another tab, a stylesheet an HTML page loads. It acts on the file,
+ * not the panel, so it sits before Download with the file's other actions. The
+ * glyph gives way to the product's one spinner while the read is in flight.
+ */
+export function RefreshButton({
+  onRefresh,
+  refreshing,
+}: {
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const label = tI18nComplete.raw('text0e9161011702');
+
+  return (
+    <Hint label={label} side="bottom">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onRefresh}
+        disabled={refreshing}
+        aria-label={label}
+        aria-busy={refreshing}
+        className="size-7 shrink-0 active:scale-[0.96]"
+      >
+        {refreshing ? (
+          <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
+        ) : (
+          <ArrowClockwiseIcon className="size-3.5" />
+        )}
+      </Button>
+    </Hint>
   );
 }
 

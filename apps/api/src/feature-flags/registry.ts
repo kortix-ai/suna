@@ -298,8 +298,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
-      'No dedicated routes. The secret write paths (POST /secrets and PUT ' +
-      '/secrets/:id/strategy in projects/routes/r3.ts) reject a request that ' +
+      'No dedicated routes. The secret write paths (POST /secrets in ' +
+      'projects/routes/secrets.ts, PUT /secrets/:id/strategy in ' +
+      'projects/routes/secret-delivery.ts) reject a request that ' +
       'moves a secret INTO egress delivery when the flag is off. A secret that ' +
       'is already egress keeps serving and stays editable, so turning the flag ' +
       'off never strands an existing enforced secret.',
@@ -307,7 +308,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   {
     key: 'pooled_provider_secrets',
     name: 'Pooled Provider Secrets',
-    description: 'Use multiple project credentials per provider, with optional member restrictions and session selection.',
+    description: 'Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
@@ -338,6 +339,33 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcementNote:
       'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
       'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
+  },
+  {
+    key: 'config_releases',
+    name: 'Config Releases',
+    description:
+      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
+    stability: 'experimental',
+    // Operator kill switch (config.ts CONFIG_RELEASES_ENABLED). Off ⇒ the
+    // Settings row disappears and the surface is dark for every project.
+    available: () => config.CONFIG_RELEASES_ENABLED,
+    // OFF by default until this is proven on real projects (Marko, 2026-09-24:
+    // "its off for now, as its untested"). The behaviour it gates is the
+    // intended one; the default is a rollout decision, not a design opinion.
+    // Turn it on per project in Settings, watch it, then widen. Flip this to
+    // `true` when the rollout is done.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Mixed, and both halves are enforced. ROUTES: the descriptor route ' +
+      '(POST /projects/:id/sessions/:id/config-release) and the archive route ' +
+      '(GET /projects/:id/config-archives/:tree) answer 403 `feature_disabled` ' +
+      'when off — config-releases/routes.ts. BEHAVIORAL: convergeSessionConfig ' +
+      'returns `disabled` without reaching the box (session-config-convergence.ts), ' +
+      'reloadSessionConfig takes the pre-release legacy path (session-reload.ts), ' +
+      'and GET /config omits the `release` block (routes/session-config.ts). Off ⇒ ' +
+      'no release is built, no archive is stored, and no kortix.config_releases ' +
+      'row is written. See docs/specs/config-releases.md → "Feature flag".',
   },
   {
     key: 'agent_principal',

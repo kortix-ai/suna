@@ -136,7 +136,7 @@ describe('FileViewer toolbar', () => {
   });
 
   test('a file with only one form gets no toggle — it would have one position', () => {
-    // Markdown is the other no-toggle kind, but `DocMarkdown` can't be rendered
+    // Markdown is the other no-toggle kind, but `UnifiedMarkdown` can't be rendered
     // by this effect-free harness, so plain source stands in for both.
     const txt = render('notes.txt', 'hi');
     expect(txt).not.toContain('aria-label="Preview"');
@@ -355,27 +355,18 @@ You are **Veyris Internal**.
 
 describe('FileViewer — markdown frontmatter', () => {
   // Rendered assertions live in markdown-frontmatter.test.ts: `parseFrontmatter`
-  // owns the behaviour and is tested directly there. DocMarkdown needs the full
-  // i18n + sandbox-proxy provider stack, which this suite does not stand up (the
-  // other cases here only render non-markdown paths), so what is asserted here
-  // is the WIRING — that the viewer splits the file before the markdown parser
-  // can see the fences.
+  // owns the behaviour and is tested directly there. The markdown renderer
+  // needs the full i18n + sandbox-proxy provider stack, which this suite does
+  // not stand up (the other cases here only render non-markdown paths), so what
+  // is asserted here is the WIRING — that the viewer hands the whole file to
+  // the component that splits frontmatter off before the parser sees it.
 
-  test('the markdown branch splits frontmatter off instead of passing raw content', () => {
-    // The bug: `<DocMarkdown content={content} />`. Markdown then read `---` as
-    // a thematic break and the closing `---` as a setext underline, turning the
-    // whole metadata block into one giant <h2>.
-    expect(FILE_VIEWER_SOURCE).toContain('parseFrontmatter');
-    expect(FILE_VIEWER_SOURCE).not.toMatch(/<DocMarkdown\s+content=\{content\}/);
-  });
-
-  test('the parsed body — not the original file — reaches DocMarkdown', () => {
-    expect(FILE_VIEWER_SOURCE).toMatch(/<DocMarkdown[\s\S]{0,120}content=\{body\}/);
-  });
-
-  test('the metadata renders through the shared card, not a bespoke one', () => {
-    // Same component the chat's inline preview uses, so the two panes agree.
-    expect(FILE_VIEWER_SOURCE).toContain('MarkdownFrontmatterCard');
+  test('the markdown branch renders through MarkdownWithFrontmatter', () => {
+    // The bug: the raw file went straight to the markdown renderer. Markdown
+    // then read `---` as a thematic break and the closing `---` as a setext
+    // underline, turning the whole metadata block into one giant <h2>.
+    expect(FILE_VIEWER_SOURCE).toMatch(/<MarkdownWithFrontmatter\s+content=\{content\}/);
+    expect(FILE_VIEWER_SOURCE).not.toContain('<UnifiedMarkdown');
   });
 });
 

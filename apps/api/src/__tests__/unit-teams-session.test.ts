@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 /**
  * Time-to-first-card. On dev (2026-09-18) the "Working on it…" card showed a
@@ -17,6 +18,7 @@ const calls: string[] = [];
 let actor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
 let existingThread: Array<{
   sessionId: string;
+  projectId?: string;
   createdBy?: string | null;
   metadata?: Record<string, unknown> | null;
   status?: string | null;
@@ -72,9 +74,31 @@ mock.module('../shared/db', () => ({
   },
 }));
 
+const testConfig = { TEAMS_REQUIRE_USER_IDENTITY: true, FRONTEND_URL: 'https://dev.kortix.com' };
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
-  config: { TEAMS_REQUIRE_USER_IDENTITY: true, FRONTEND_URL: 'https://dev.kortix.com' },
+  config: testConfig,
+}));
+
+// The model and key plan itself is pinned in unit-channel-model-access; this
+// file pins what the session code gives it and does with its answer.
+const startPlans: Array<Record<string, unknown>> = [];
+const followUpPlans: Array<Record<string, unknown>> = [];
+let startPlan: { model: string | null; pools?: Record<string, string[]> } = { model: null };
+let followUpModel: string | null = null;
+mock.module('../channels/model-access', () => ({
+  projectChannelModelScope: async (_project: unknown, person: { linkedUserId: string | null; oneToOne: boolean }) => ({
+    ...person,
+    personalUserId: person.oneToOne ? person.linkedUserId : null,
+  }),
+  planChannelSessionStart: async (input: Record<string, unknown>) => {
+    startPlans.push(input);
+    return startPlan;
+  },
+  planChannelFollowUp: async (input: Record<string, unknown>) => {
+    followUpPlans.push(input);
+    return followUpModel;
+  },
 }));
 
 mock.module('../channels/teams/turn', () => ({
@@ -124,18 +148,23 @@ mock.module('../channels/teams/turn', () => ({
 
 mock.module('../channels/teams/identity', () => ({
   teamsUserId: () => 'aad-user-1',
-  // Reached by the AGENT_NOT_DECLARED recovery picker, which scopes its list
-  // to the pressing user.
-  lookupTeamsIdentity: async () => null,
-  resolveTeamsActor: async () => {
-    calls.push('resolveTeamsActor');
-    return actor;
-  },
   postTeamsIdentityPrompt: async (input: Record<string, unknown>) => {
     calls.push('postTeamsIdentityPrompt');
     prompts.push(input);
   },
 }));
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({
+  
+  // Reached by the AGENT_NOT_DECLARED recovery picker, which scopes its list
+  // to the pressing user.
+  lookupChatIdentity: async () => null,
+  resolveChatActor: async () => {
+    calls.push('resolveChatActor');
+    return actor;
+  },
+}),
+);
 
 const bindings: Array<Record<string, unknown>> = [];
 mock.module('../channels/teams/binding', () => ({
@@ -150,8 +179,9 @@ mock.module('../channels/teams/binding', () => ({
 // session-start path reaches through this file has to be listed. Session start
 // pulls `listProjectAgents` through the AGENT_NOT_DECLARED recovery picker
 // (channels/teams/agent-picker.ts -> channels/scoped-agents.ts).
+let channelSelection: Record<string, unknown> | null = null;
 mock.module('../channels/slack/selection', () => ({
-  currentChannelSelection: async () => null,
+  currentChannelSelection: async () => channelSelection,
   listProjectAgents: async () => [],
 }));
 
@@ -199,6 +229,12 @@ beforeEach(() => {
   notices.length = 0;
   dbOps.length = 0;
   bindings.length = 0;
+  testConfig.TEAMS_REQUIRE_USER_IDENTITY = true;
+  startPlans.length = 0;
+  followUpPlans.length = 0;
+  startPlan = { model: null };
+  followUpModel = null;
+  channelSelection = null;
   participantVerdict = { allowed: true };
   owners.length = 0;
   gateCalls.length = 0;
@@ -227,7 +263,7 @@ describe('createOrJoinTeamsConversationSession — the live card goes out first'
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
 
     expect(calls.indexOf('startTurn')).toBeGreaterThanOrEqual(0);
-    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveTeamsActor'));
+    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveChatActor'));
     expect(calls.filter((c) => c === 'startTurn')).toHaveLength(1);
     expect(created).toHaveLength(1);
     expect(created[0].userId).toBe('user-1');
@@ -241,7 +277,7 @@ describe('createOrJoinTeamsConversationSession — the live card goes out first'
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
 
     expect(calls.filter((c) => c === 'startTurn')).toHaveLength(1);
-    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveTeamsActor'));
+    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveChatActor'));
     expect(continued).toHaveLength(1);
     expect(continued[0].sessionId).toBe('sess-existing');
     expect(created).toHaveLength(0);
@@ -253,7 +289,7 @@ describe('createOrJoinTeamsConversationSession — the live card goes out first'
 
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
 
-    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveTeamsActor'));
+    expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveChatActor'));
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toMatchObject({ reason: 'unlinked', replaceActivityId: 'live-card-1' });
     expect(created).toHaveLength(0);
@@ -392,7 +428,7 @@ describe('join policy on a follow-up', () => {
       teamsUserId: 'aad-user-1',
       actorUserId: 'user-1',
     });
-    expect(calls.indexOf('resolveTeamsActor')).toBeLessThan(calls.indexOf('continueSession'));
+    expect(calls.indexOf('resolveChatActor')).toBeLessThan(calls.indexOf('continueSession'));
   });
 
   test('not allowed: the requester\'s live card becomes the notice, nothing is delivered, the session is untouched', async () => {
@@ -629,5 +665,114 @@ describe('createOrJoinTeamsConversationSession — Stop appears as soon as the s
     const repaint = calls.indexOf('showStopOnLiveCard');
     expect(bind).toBeGreaterThanOrEqual(0);
     expect(repaint).toBeGreaterThan(bind);
+  });
+});
+
+describe('models and keys — a chat runs what its /model picked, on the keys it may use', () => {
+  const inChat = (conversationType?: string) => ({
+    ...activity,
+    conversation: { ...activity.conversation, ...(conversationType ? { conversationType } : {}) },
+  });
+
+  test('a personal chat starts a session private to the linked person, so their own keys count', async () => {
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat('personal') });
+    expect(created[0].visibility).toBe('private');
+    expect(startPlans[0].scope).toMatchObject({ linkedUserId: 'user-1', oneToOne: true, personalUserId: 'user-1' });
+  });
+
+  test('a group chat or channel stays shared with the project, and no one`s own keys count', async () => {
+    for (const type of ['groupChat', 'channel']) {
+      created.length = 0;
+      startPlans.length = 0;
+      selectCount = 0;
+      await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat(type) });
+      expect(created[0].visibility).toBe('project');
+      expect(startPlans[0].scope).toMatchObject({ oneToOne: false, personalUserId: null });
+    }
+  });
+
+  test('a conversation Teams did not type is never guessed personal', async () => {
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat() });
+    expect(created[0].visibility).toBe('project');
+  });
+
+  test('without required identity, sessions run as the account owner: shared, and no personal keys', async () => {
+    testConfig.TEAMS_REQUIRE_USER_IDENTITY = false;
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat('personal') });
+    expect(created[0].userId).toBe('automation-user');
+    expect(created[0].visibility).toBe('project');
+    expect(startPlans[0].scope).toMatchObject({ linkedUserId: null, personalUserId: null });
+  });
+
+  test('the conversation`s choice and the keys planned for it start the session', async () => {
+    channelSelection = { projectId: PROJECT_ID, agentName: 'reviewer', opencodeModel: 'kortix/codex/gpt-6-astra' };
+    startPlan = { model: 'kortix/codex/gpt-6-astra', pools: { codex: ['k1', 'k2'] } };
+
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat('personal') });
+
+    expect(startPlans[0]).toMatchObject({ userId: 'user-1', chosenModel: 'kortix/codex/gpt-6-astra', agentName: 'reviewer' });
+    expect(created[0].body).toMatchObject({
+      agent_name: 'reviewer',
+      opencode_model: 'kortix/codex/gpt-6-astra',
+      provider_secret_pools: { codex: ['k1', 'k2'] },
+    });
+  });
+
+  test('no planned keys, no key selection in the body', async () => {
+    startPlan = { model: 'kortix/glm-5.3-flash' };
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+    expect(created[0].body).not.toHaveProperty('provider_secret_pools');
+  });
+
+  test('a follow-up carries the planned model, planned with the chat`s choice and the session`s owner and pin', async () => {
+    existingThread = [{
+      sessionId: 'sess-existing',
+      createdBy: 'user-1',
+      metadata: { opencode_model: 'kortix/codex/gpt-6-astra' },
+      status: 'running',
+    }];
+    channelSelection = { projectId: PROJECT_ID, opencodeModel: 'kortix/deepseek-v4.1-flash' };
+    followUpModel = 'deepseek-v4.1-flash';
+
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+
+    expect(followUpPlans[0]).toMatchObject({
+      userId: 'user-1',
+      chosenModel: 'kortix/deepseek-v4.1-flash',
+      session: { sessionId: 'sess-existing', ownerUserId: 'user-1', pinnedModel: 'kortix/codex/gpt-6-astra' },
+      hasImage: false,
+    });
+    expect(continued[0]).toMatchObject({ overrides: { model: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' } } });
+  });
+
+  test('a follow-up with nothing to change sends no model', async () => {
+    existingThread = [{ sessionId: 'sess-existing', createdBy: 'user-1', metadata: null, status: 'running' }];
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+    expect(continued[0]).not.toHaveProperty('overrides');
+  });
+});
+
+/**
+ * A conversation's session lives in exactly one project (`chat_threads`). A
+ * per-project (bring-your-own) bot may reach only its own project, so a
+ * conversation whose session another project owns is refused: no card, no
+ * identity lookup, no delivery.
+ */
+describe('createOrJoinTeamsConversationSession — a session owned by another project', () => {
+  test('a per-project bot refuses it before posting anything', async () => {
+    existingThread = [{ sessionId: 'sess-other', projectId: 'project-other' }];
+
+    await createOrJoinTeamsConversationSession({
+      projectId: PROJECT_ID,
+      tenantId: TENANT_ID,
+      conversationId: CONVERSATION_ID,
+      activity,
+      ownThreadsOnly: true,
+    });
+
+    expect(calls).not.toContain('startTurn');
+    expect(calls).not.toContain('resolveChatActor');
+    expect(continued).toHaveLength(0);
+    expect(created).toHaveLength(0);
   });
 });

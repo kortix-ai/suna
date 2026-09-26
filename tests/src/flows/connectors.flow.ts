@@ -4,6 +4,7 @@
  * per-connector sharing/agent-scope — retired 2026-07-06, see
  * spec/end-to-end.md §24). Maps to spec §24 (CONN-1..5, 7-9, 12-14).
  */
+import { assert } from '../core/expect';
 import { flow } from '../core/flow';
 import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 
@@ -1149,6 +1150,7 @@ flow(
     const slug = `ke2e-composio-${Date.now().toString(36)}`;
     const otherSlug = `${slug}-other`;
     const rejectedLegacySlug = `${slug}-legacy-rejected`;
+    const ownAppSlug = `${slug}-own-app`;
     const toolkit = 'composio_search';
     const action = 'duck_duck_go';
     let composioConfigured = false;
@@ -1381,6 +1383,76 @@ flow(
         if (opened.total !== largest.total) {
           throw new Error(
             `section ${largest.key} heading says ${largest.total}, View all returns ${opened.total}`,
+          );
+        }
+      },
+    );
+
+    await ctx.step(
+      'an invalid Composio toolkit slug returns a named 422 from connect',
+      async () => {
+        if (!composioConfigured) return;
+        const invalidSlug = `${slug}-invalid-toolkit`;
+        const added = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug: invalidSlug, provider: 'composio', app: 'anthropic', create_only: true },
+          { params: { projectId: p.id } },
+        );
+        added.status(200).body().has('$.ok', true);
+        const connected = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/connectors/projects/:projectId/connectors/:slug/connect',
+          {},
+          { params: { projectId: p.id, slug: invalidSlug } },
+        );
+        connected.status(422).body().has('$.status', 422);
+        const message = connected.json<{ message?: string }>().message ?? '';
+        if (!message.includes('anthropic') || !message.includes('toolkit')) {
+          throw new Error(`invalid toolkit response omitted the slug and reason: ${message}`);
+        }
+        if (message.includes('ToolRouterV2_') || message.includes('Invalid toolkit slugs')) {
+          throw new Error(`invalid toolkit response exposed the provider error: ${message}`);
+        }
+      },
+    );
+
+    await ctx.step(
+      'a toolkit with no Composio-managed app is listed only when its declaration syncs, and otherwise fails with a named 422 reason',
+      async () => {
+        if (!composioConfigured) return;
+        // Spotify is OAuth-only and Composio holds no app for it, like X. It
+        // syncs only when the deployment's Composio project has an auth config
+        // with the operator's own app. Either state is valid; the catalogue and
+        // the sync must agree on which one this deployment is in.
+        const ownAppToolkit = 'spotify';
+        const listed = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/connectors/projects/:projectId/connect/toolkits', {
+            params: { projectId: p.id },
+            query: { q: ownAppToolkit, limit: '20' },
+          });
+        listed.status(200).body().exists('$.items');
+        const visible = listed
+          .json<{ items: Array<{ slug?: string }> }>()
+          .items.some((item) => item.slug === ownAppToolkit);
+
+        const added = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug: ownAppSlug, provider: 'composio', app: ownAppToolkit, create_only: true },
+          { params: { projectId: p.id } },
+        );
+        added.status(200).body().has('$.ok', true);
+        const error = added
+          .json<{ sync?: { errors?: Array<{ slug: string; error: string }> } }>()
+          .sync?.errors?.find((entry) => entry.slug === ownAppSlug)?.error;
+        if (error?.includes('ToolRouterV2_BadRequest')) {
+          throw new Error(`sync leaked Composio's raw refusal: ${error}`);
+        }
+        if (visible && error) {
+          throw new Error(`catalogue listed ${ownAppToolkit} but its sync failed: ${error}`);
+        }
+        if (!visible && !error?.includes(`no enabled "${ownAppToolkit}" auth config`)) {
+          throw new Error(
+            `catalogue hid ${ownAppToolkit} but sync did not name the missing auth config: ${error ?? 'no error'}`,
           );
         }
       },
@@ -3098,6 +3170,840 @@ flow(
       upstream.close();
       await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [p.id, slug]).catch(() => {});
       await db.end().catch(() => {});
+    }
+  },
+);
+
+// ── CONN-EGRESS-1 — a connector reaches public endpoints only ────────────────
+// Connector endpoints come from project configuration (`base_url`, an OpenAPI
+// `servers[0].url`, an MCP URL). Sync refuses a literal private host, and the
+// gateway resolves and checks the target of every call and every redirect hop.
+// The local stack allows its own loopback upstream (127.0.0.1) and nothing else,
+// so the redirect steps run on the local target only.
+flow(
+  'CONN-EGRESS-1',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'DELETE /v1/connectors/projects/:projectId/connectors/:slug',
+      'POST /v1/connectors/projects/:projectId/call',
+    ],
+  },
+  async (ctx) => {
+    // The manifest step needs a Git-backed project. The seeded connectors live
+    // in a database-only project: it has no kortix.yaml, so no sync (this
+    // flow's or a parallel account-wide reconcile) removes them as undeclared.
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const seeded = await ctx.fixtures.project();
+    const { createServer } = await import('node:http');
+    const { Client: PgClient } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    const stamp = Date.now().toString(36);
+    const yamlSlug = `ke2e-egress-yaml-${stamp}`;
+    const seededSlug = `ke2e-egress-db-${stamp}`;
+
+    const hits: string[] = [];
+    let redirectTo = '';
+    const upstream = createServer((req, res) => {
+      hits.push(req.url ?? '');
+      if (redirectTo) {
+        res.writeHead(302, { location: redirectTo });
+        res.end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ reached: true }));
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+    const call = (slug: string) =>
+      ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/call',
+          { connector: slug, action: 'ping', args: {} },
+          { params: { projectId: seeded.id }, timeoutMs: 60_000 },
+        );
+    let accountId = '';
+    const seed = async (baseUrl: string) => {
+      if (!accountId) {
+        const owner = await db.query<{ account_id: string }>(
+          `SELECT account_id FROM kortix.projects WHERE project_id = $1`,
+          [seeded.id],
+        );
+        accountId = owner.rows[0]?.account_id ?? '';
+        if (!accountId) throw new Error('project has no account');
+      }
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [seeded.id, seededSlug]);
+      const connector = await db.query<{ connector_id: string }>(
+        `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+         VALUES ($1, $2, $3, 'KE2E egress', 'http', $4::jsonb, 'active') RETURNING connector_id`,
+        [accountId, seeded.id, seededSlug, JSON.stringify({ baseUrl, auth: { type: 'none' } })],
+      );
+      const connectorId = connector.rows[0]?.connector_id;
+      if (!connectorId) throw new Error('connector insert returned no id');
+      await db.query(
+        `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+         VALUES ($1, $2, $3, 'project', 'KE2E egress', 'active', true, $4::jsonb)`,
+        [accountId, seeded.id, connectorId, JSON.stringify({ provider: 'http', connector_slug: seededSlug })],
+      );
+      await db.query(
+        `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+         VALUES ($1, 'ping', 'ping', 'Ping', '{"type":"object"}'::jsonb, 'read', $2::jsonb)`,
+        [connectorId, JSON.stringify({ kind: 'http', method: 'GET', path: '/ping' })],
+      );
+    };
+    const expectBlocked = (r: Awaited<ReturnType<typeof call>>) => {
+      r.status(500).body().has('$.status', 'error');
+      const reason = r.json<{ reason: string }>().reason;
+      if (!reason.startsWith('connector_egress_blocked')) {
+        throw new Error(`expected connector_egress_blocked, got: ${reason}`);
+      }
+    };
+
+    try {
+      await db.connect();
+      await ctx.step('adding an http connector whose base_url is a private address reports the endpoint as refused', async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug: yamlSlug, provider: 'http', baseUrl: 'http://10.255.255.1:8080', auth: { type: 'none' } },
+          { params: { projectId: p.id }, timeoutMs: 60_000 },
+        );
+        r.status(200).body().has('$.ok', true);
+        const errors = r.json<{ sync?: { errors?: Array<{ slug: string; error: string }> } }>().sync?.errors ?? [];
+        const mine = errors.find((e) => e.slug === yamlSlug);
+        if (!mine || !mine.error.includes('base_url must be a public host')) {
+          throw new Error(`sync did not refuse the private base_url: ${JSON.stringify(errors)}`);
+        }
+        // Another sync of the same account (a machine or channel reconcile from
+        // a parallel flow) can own the write; it lands within a few seconds.
+        let rows: Array<{ status: string; actions: string }> = [];
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          const row = await db.query<{ status: string; actions: string }>(
+            `SELECT c.status, (SELECT count(*) FROM kortix.connector_actions a WHERE a.connector_id = c.connector_id)::text AS actions
+               FROM kortix.connectors c WHERE c.project_id = $1 AND c.slug = $2`,
+            [p.id, yamlSlug],
+          );
+          rows = row.rows;
+          if (rows.length > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        if (rows[0]?.status !== 'error' || rows[0]?.actions !== '0') {
+          throw new Error(`connector row is callable: ${JSON.stringify(rows)}`);
+        }
+      });
+
+      await ctx.step('a stored private base_url is refused at call time before any request', async () => {
+        await seed('http://10.255.255.1:8080');
+        expectBlocked(await call(seededSlug));
+      });
+
+      await ctx.step('a stored link-local metadata address is refused at call time', async () => {
+        await seed('http://169.254.169.254/latest');
+        expectBlocked(await call(seededSlug));
+      });
+
+      if (ctx.env.target === 'local') {
+        await ctx.step('an allowed upstream answers the call and its response comes back', async () => {
+          redirectTo = '';
+          await seed(`http://127.0.0.1:${port}`);
+          const before = hits.length;
+          const r = await call(seededSlug);
+          r.status(200).body().has('$.ok', true).has('$.data.reached', true);
+          if (hits.length !== before + 1) throw new Error(`upstream saw ${hits.length - before} requests`);
+        });
+
+        await ctx.step('a redirect from the allowed upstream to a metadata address is refused, not followed', async () => {
+          redirectTo = 'http://169.254.169.254/latest/meta-data/';
+          const before = hits.length;
+          expectBlocked(await call(seededSlug));
+          if (hits.length !== before + 1) throw new Error(`upstream saw ${hits.length - before} requests`);
+        });
+
+        await ctx.step('a redirect to another loopback port is refused too: only the listed host is exempt', async () => {
+          redirectTo = `http://localhost:${port}/ping`;
+          expectBlocked(await call(seededSlug));
+        });
+      }
+
+      await ctx.step('delete the manifest connector → 200', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .del('/v1/connectors/projects/:projectId/connectors/:slug', { params: { projectId: p.id, slug: yamlSlug } });
+        r.status(200);
+      });
+    } finally {
+      upstream.close();
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [seeded.id, seededSlug]).catch(() => {});
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [p.id, yamlSlug]).catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
+
+flow(
+  'CONN-28',
+  {
+    domain: 'connectors',
+    routes: [
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/projects/:projectId/connections',
+      'POST /v1/projects/:projectId/connections/me',
+      'GET /v1/projects/:projectId/connections',
+      'POST /v1/accounts/:accountId/iam/groups',
+      'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'DELETE /v1/accounts/:accountId/iam/assignments/:assignmentId',
+      'DELETE /v1/projects/:projectId/resource-grants/:grantId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project({ managedGit: true });
+    const inSales = await team.addMember('member');
+    const outsideSales = await team.addMember('member');
+    const slug = `ke2e-share-${Date.now().toString(36)}`;
+    const accountParams = { accountId: team.id };
+    const projectParams = { projectId: project.id };
+
+    const listed = async (who: typeof inSales) => {
+      const r = await ctx.client.as(who).get('/v1/projects/:projectId/connections', {
+        params: projectParams,
+      });
+      r.status(200);
+      return r.json<any>().connections as any[];
+    };
+    const grantBody = (principal: { type: string; id: string }, objectId: string) => ({
+      principal_type: principal.type,
+      principal_id: principal.id,
+      role_key: 'agent-user',
+      scope_type: 'project',
+      scope_id: project.id,
+      object_type: 'connection',
+      object_id: objectId,
+    });
+    const grant = (who: typeof inSales, principal: { type: string; id: string }, objectId: string) =>
+      ctx.client
+        .as(who)
+        .post('/v1/accounts/:accountId/iam/assignments', grantBody(principal, objectId), {
+          params: accountParams,
+        });
+
+    await ctx.step('both members get a project member role', async () => {
+      await team.grantProjectRole(project.id, inSales.userId!, 'member');
+      await team.grantProjectRole(project.id, outsideSales.userId!, 'member');
+    });
+
+    let connectionId = '';
+    await ctx.step('the owner seeds a connector and one shared account on it', async () => {
+      const connector = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/connectors/projects/:projectId/connectors',
+        { slug, provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } },
+        { params: projectParams },
+      );
+      connector.status(200).body().has('$.ok', true);
+      const shared = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/connections',
+        { connector_alias: slug, owner_type: 'project', label: 'Sales CRM' },
+        { params: projectParams },
+      );
+      shared.status(201).body().has('$.owner_type', 'project');
+      connectionId = shared.json<any>().connection_id;
+    });
+
+    await ctx.step('with no grant every member lists it as usable, shared with no one in particular', async () => {
+      const row = (await listed(outsideSales)).find((c) => c.connection_id === connectionId);
+      assert({
+        kind: 'body',
+        description: 'an un-narrowed shared account is everyone’s',
+        pass: row?.usable === true && Array.isArray(row?.shared_with) && row.shared_with.length === 0,
+        expected: { usable: true, shared_with: [] },
+        actual: row,
+      });
+    });
+
+    let groupId = '';
+    await ctx.step('the owner creates a Sales group holding one member', async () => {
+      const g = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/accounts/:accountId/iam/groups', { name: ctx.fixtures.name('sales') }, {
+          params: accountParams,
+        });
+      g.status(201);
+      groupId = g.json<any>().group_id;
+      const add = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups/:groupId/members',
+        { userId: inSales.userId! },
+        { params: { ...accountParams, groupId } },
+      );
+      add.status(200).body().has('$.added', 1);
+    });
+
+    await ctx.step('a plain member cannot narrow a shared account → 403', async () => {
+      (await grant(inSales, { type: 'group', id: groupId }, connectionId)).status(403);
+    });
+
+    await ctx.step('a grant naming a private account or an unknown id → 404', async () => {
+      const mine = await ctx.client.as(inSales).post(
+        '/v1/projects/:projectId/connections/me',
+        { connector_alias: slug, label: 'Mine' },
+        { params: projectParams },
+      );
+      mine.status([200, 201]).body().has('$.owner_type', 'member');
+      for (const objectId of [mine.json<any>().connection_id as string, crypto.randomUUID()]) {
+        (await grant(ctx.P.OWNER, { type: 'group', id: groupId }, objectId)).status(404);
+      }
+    });
+
+    let groupGrantId = '';
+    await ctx.step('the owner narrows the shared account to the Sales group → 201', async () => {
+      const r = await grant(ctx.P.OWNER, { type: 'group', id: groupId }, connectionId);
+      r.status(201).body().has('$.object_type', 'connection').has('$.object_id', connectionId);
+      groupGrantId = r.json<any>().assignment_id;
+    });
+
+    await ctx.step(
+      'Sales still uses it; the member outside Sales no longer sees it; the owner sees it only to manage it',
+      async () => {
+        const salesRow = (await listed(inSales)).find((c) => c.connection_id === connectionId);
+        assert({
+          kind: 'body',
+          description: 'a group member lists the narrowed account, naming the group',
+          pass:
+            salesRow?.usable === true &&
+            salesRow?.shared_with?.length === 1 &&
+            salesRow.shared_with[0].principal_type === 'group' &&
+            salesRow.shared_with[0].principal_id === groupId &&
+            salesRow.shared_with[0].grant_id === groupGrantId,
+          expected: { usable: true, shared_with: [{ principal_type: 'group', principal_id: groupId }] },
+          actual: salesRow,
+        });
+        const outsideRow = (await listed(outsideSales)).find((c) => c.connection_id === connectionId);
+        assert({
+          kind: 'body',
+          description: 'a member outside the audience does not list it',
+          pass: outsideRow === undefined,
+          expected: undefined,
+          actual: outsideRow,
+        });
+        const ownerRow = (await listed(ctx.P.OWNER)).find((c) => c.connection_id === connectionId);
+        assert({
+          kind: 'body',
+          description: 'the owner, outside the group, lists it only to manage it',
+          pass: ownerRow?.usable === false,
+          expected: { usable: false },
+          actual: ownerRow,
+        });
+      },
+    );
+
+    await ctx.step('the agent/skill grant route cannot delete a connection grant → 404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/projects/:projectId/resource-grants/:grantId', {
+          params: { ...projectParams, grantId: groupGrantId },
+        });
+      r.status(404);
+    });
+
+    let everyoneGrantId = '';
+    await ctx.step('a grant to everyone in the project opens it again, beside the group grant', async () => {
+      const r = await grant(ctx.P.OWNER, { type: 'project', id: project.id }, connectionId);
+      r.status(201).body().has('$.principal_type', 'project');
+      everyoneGrantId = r.json<any>().assignment_id;
+      const row = (await listed(outsideSales)).find((c) => c.connection_id === connectionId);
+      assert({
+        kind: 'body',
+        description: 'everyone lists it again',
+        pass: row?.usable === true,
+        expected: { usable: true },
+        actual: row,
+      });
+    });
+
+    await ctx.step('revoking every grant leaves the account everyone’s, with no grant listed', async () => {
+      for (const assignmentId of [everyoneGrantId, groupGrantId]) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+            params: { ...accountParams, assignmentId },
+          });
+        r.status(200).body().has('$.revoked', true);
+      }
+      const row = (await listed(outsideSales)).find((c) => c.connection_id === connectionId);
+      assert({
+        kind: 'body',
+        description: 'no grant left: usable by everyone, shared_with empty',
+        pass: row?.usable === true && row?.shared_with?.length === 0,
+        expected: { usable: true, shared_with: [] },
+        actual: row,
+      });
+    });
+  },
+);
+
+// ── CONN-29 — a narrowed shared account at the gateway ──
+// CONN-28 proves the list. This flow proves the call: the gateway resolves a
+// narrowed account only for a human in its audience, only in a private
+// session. Sessions and tokens are seeded the way CONN-ACCOUNTS seeds them.
+flow(
+  'CONN-29',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    // The agent config PUT is a Git commit round-trip on a managed project.
+    timeoutMs: 180_000,
+    routes: [
+      'POST /v1/accounts/tokens',
+      'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'POST /v1/accounts/:accountId/iam/groups',
+      'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'POST /v1/connectors/projects/:projectId/call',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project({ managedGit: true });
+    const inSales = await team.addMember('member');
+    const outsideSales = await team.addMember('member');
+    const { randomUUID } = await import('node:crypto');
+    const { Client: PgClient } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new PgClient({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    const slug = `ke2e-gate-${Date.now().toString(36)}`;
+    const LABEL = 'Sales CRM';
+    const accountParams = { accountId: team.id };
+    type Caller = 'Sales, private session' | 'outsider, private session' | 'Sales, shared session';
+    const callers = new Map<Caller, typeof ctx.client>();
+    const sessionIds: string[] = [];
+    const tokenIds: string[] = [];
+    let connectorId = '';
+    let connectionId = '';
+    let groupId = '';
+
+    const call = (who: Caller) =>
+      callers.get(who)!.post(
+        '/v1/connectors/projects/:projectId/call',
+        { connector: slug, action: 'anything', args: {}, account: LABEL },
+        { params: { projectId: project.id }, timeoutMs: 60_000 },
+      );
+    // The fixture registers no action, so `action_not_found` is past account
+    // resolution: the call ran as LABEL.
+    const expectResolved = async (who: Caller) => {
+      (await call(who)).status(404).body().has('$.ok', false).has('$.reason', 'action_not_found');
+    };
+    const expectDenied = async (who: Caller) => {
+      const r = await call(who);
+      r.status(403)
+        .body()
+        .has('$.reason', 'connector_not_connected')
+        .has('$.requested_account', LABEL);
+      const available = r.json<{ available_accounts?: string[] }>().available_accounts ?? [];
+      assert({
+        kind: 'body',
+        description: `${who}: the denial does not offer the narrowed account`,
+        pass: !available.includes(LABEL),
+        expected: `available_accounts without "${LABEL}"`,
+        actual: available,
+      });
+    };
+    const grant = (principal: { type: 'group' | 'project'; id: string }) =>
+      ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: principal.type,
+          principal_id: principal.id,
+          role_key: 'agent-user',
+          scope_type: 'project',
+          scope_id: project.id,
+          object_type: 'connection',
+          object_id: connectionId,
+        },
+        { params: accountParams },
+      );
+
+    try {
+      await db.connect();
+
+      await ctx.step(
+        'seed one shared account, a Sales group, and three session tokens',
+        async () => {
+          await team.grantProjectRole(project.id, inSales.userId!, 'member');
+          await team.grantProjectRole(project.id, outsideSales.userId!, 'member');
+          const declared = await ctx.client.as(ctx.P.OWNER).put(
+            '/v1/projects/:projectId/agents/:agentName/config',
+            { connectors: 'all', secrets: 'all', kortix_permissions: 'all', skills: 'all' },
+            { params: { projectId: project.id, agentName: 'kortix' }, timeoutMs: 60_000 },
+          );
+          declared.status(200);
+
+          const g = await ctx.client
+            .as(ctx.P.OWNER)
+            .post('/v1/accounts/:accountId/iam/groups', { name: ctx.fixtures.name('sales') }, {
+              params: accountParams,
+            });
+          g.status(201);
+          groupId = g.json<any>().group_id;
+          const added = await ctx.client.as(ctx.P.OWNER).post(
+            '/v1/accounts/:accountId/iam/groups/:groupId/members',
+            { userId: inSales.userId! },
+            { params: { ...accountParams, groupId } },
+          );
+          added.status(200).body().has('$.added', 1);
+
+          // `http` with `auth: none`: every active account on it is connected,
+          // so the access rule alone decides the call (see CONN-ACCOUNTS).
+          const connector = await db.query<{ connector_id: string }>(
+            `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+             VALUES ($1, $2, $3, 'KE2E Gate', 'http', $4::jsonb, 'active') RETURNING connector_id`,
+            [
+              team.id,
+              project.id,
+              slug,
+              JSON.stringify({ base_url: 'https://ke2e.kortix.test', auth: { type: 'none' } }),
+            ],
+          );
+          connectorId = connector.rows[0]?.connector_id ?? '';
+          const shared = await db.query<{ connection_id: string }>(
+            `INSERT INTO kortix.connector_connections
+               (account_id, project_id, connector_id, owner_type, label, status, is_default)
+             VALUES ($1, $2, $3, 'project', $4, 'active', true) RETURNING connection_id`,
+            [team.id, project.id, connectorId, LABEL],
+          );
+          connectionId = shared.rows[0]?.connection_id ?? '';
+          if (!connectorId || !connectionId) throw new Error('connector fixtures incomplete');
+
+          const seats: Array<[Caller, string, 'private' | 'project']> = [
+            ['Sales, private session', inSales.userId!, 'private'],
+            ['outsider, private session', outsideSales.userId!, 'private'],
+            ['Sales, shared session', inSales.userId!, 'project'],
+          ];
+          for (const [who, userId, visibility] of seats) {
+            const sessionId = randomUUID();
+            sessionIds.push(sessionId);
+            // One session per branch (`idx_project_sessions_project_branch`).
+            await db.query(
+              `INSERT INTO kortix.project_sessions
+                 (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
+               VALUES ($1, $2, $3, $6, 'kortix', 'running', $4, $5)`,
+              [sessionId, team.id, project.id, userId, visibility, `ke2e/${sessionId.slice(0, 8)}`],
+            );
+            await db.query(
+              `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+               VALUES ($1::uuid, $1, $2, $3, 'active')`,
+              [sessionId, team.id, project.id],
+            );
+            const minted = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {
+              name: `CONN-29 ${sessionId.slice(0, 8)}`,
+            });
+            minted.status(201);
+            const credential = minted.json<{ token_id: string; secret_key: string }>();
+            tokenIds.push(credential.token_id);
+            await db.query(
+              `UPDATE kortix.account_tokens
+                 SET account_id = $2, user_id = $3, project_id = $4, session_id = $5, agent_grant = $6::jsonb
+               WHERE token_id = $1`,
+              [
+                credential.token_id,
+                team.id,
+                userId,
+                project.id,
+                sessionId,
+                JSON.stringify({ agent: 'kortix', connectors: 'all', permissions: [], env: [] }),
+              ],
+            );
+            callers.set(who, ctx.client.withBearer(credential.secret_key, 'SESSION_TOKEN'));
+          }
+        },
+      );
+
+      await ctx.step('with no grant all three callers resolve the shared account', async () => {
+        for (const who of callers.keys()) await expectResolved(who);
+      });
+
+      await ctx.step('the owner narrows the account to the Sales group → 201', async () => {
+        (await grant({ type: 'group', id: groupId })).status(201);
+      });
+
+      await ctx.step('the Sales member in a private session still resolves it', async () => {
+        await expectResolved('Sales, private session');
+      });
+
+      await ctx.step('the member outside Sales is denied → 403 connector_not_connected', async () => {
+        await expectDenied('outsider, private session');
+      });
+
+      await ctx.step('the Sales member in a shared session is denied → 403 connector_not_connected', async () => {
+        await expectDenied('Sales, shared session');
+      });
+
+      await ctx.step('a grant to everyone in the project opens it to all three again', async () => {
+        (await grant({ type: 'project', id: project.id })).status(201);
+        for (const who of callers.keys()) await expectResolved(who);
+      });
+    } finally {
+      const cleanup = [
+        [`DELETE FROM kortix.role_assignments WHERE object_type = 'connection' AND object_id = $1`, [connectionId]],
+        [`DELETE FROM kortix.connector_connections WHERE connector_id::text = $1`, [connectorId]],
+        [`DELETE FROM kortix.connectors WHERE connector_id::text = $1`, [connectorId]],
+        [`DELETE FROM kortix.account_tokens WHERE token_id::text = ANY($1)`, [tokenIds]],
+        [`DELETE FROM kortix.session_sandboxes WHERE session_id::text = ANY($1)`, [sessionIds]],
+        [`DELETE FROM kortix.project_sessions WHERE session_id::text = ANY($1)`, [sessionIds]],
+      ] as const;
+      for (const [sql, params] of cleanup) await db.query(sql, [...params]).catch(() => undefined);
+      await db.end().catch(() => undefined);
+    }
+  },
+);
+
+// ── CONN-30 — the real `kortix` CLI shares a connector account ──
+// The CLI half of the Share dialog: `kortix access grant --connection` narrows
+// an account, `--everyone` opens it, and the two listing commands say who can
+// use it. Each principal runs its own CLI process, logged in with its own PAT.
+flow(
+  'CONN-30',
+  {
+    domain: 'connectors',
+    timeoutMs: 240_000,
+    routes: [
+      'POST /v1/accounts/tokens',
+      'DELETE /v1/accounts/tokens/:tokenId',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/projects/:projectId/connections',
+      'POST /v1/accounts/:accountId/iam/groups',
+      'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/projects/:projectId/connections',
+      'GET /v1/connectors/projects/:projectId/connectors/:slug/accounts',
+      'GET /v1/projects/:projectId/resource-grants',
+      'POST /v1/projects/:projectId/connections/me',
+      'POST /v1/projects/:projectId/connections/:connectionId/share',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project({ managedGit: true });
+    const inSales = await team.addMember('member');
+    const outsideSales = await team.addMember('member');
+    const slug = `ke2e-cli-share-${Date.now().toString(36)}`;
+    const LABEL = 'Sales CRM';
+    const groupName = ctx.fixtures.name('sales');
+    const owner = new CliSandbox('conn30-owner');
+    const sales = new CliSandbox('conn30-sales');
+    const outsider = new CliSandbox('conn30-outsider');
+    const memberTokens: Array<{ who: typeof inSales; tokenId: string }> = [];
+    let groupId = '';
+    let connectionId = '';
+
+    // Every command names the project; `access` commands act on the active
+    // account, which `login --account` pins to the team.
+    const kortix = async (sb: CliSandbox, args: string[], expectExit = 0) => {
+      const r = await sb.run([...args, '--project', project.id]);
+      throwIfCliInfraFailure(r, `kortix ${args.join(' ')}`);
+      if (r.exitCode !== expectExit) {
+        throw new Error(`kortix ${args.join(' ')}: exit ${r.exitCode}, want ${expectExit}: ${r.all.slice(0, 800)}`);
+      }
+      return r;
+    };
+    const accountLabels = async (sb: CliSandbox) => {
+      const r = await kortix(sb, ['connectors', 'accounts', slug, '--json']);
+      return (JSON.parse(r.stdout) as { accounts?: Array<{ label: string }> }).accounts?.map((a) => a.label) ?? [];
+    };
+    const whoCanUse = async () => {
+      const r = await kortix(owner, ['connectors', 'connections', 'ls']);
+      return r.stdout.split('\n').find((line) => line.includes(` ${LABEL} `)) ?? '';
+    };
+
+    try {
+      await ctx.step('the owner seeds a Sales group with one member, a connector, and a shared account', async () => {
+        await team.grantProjectRole(project.id, inSales.userId!, 'member');
+        await team.grantProjectRole(project.id, outsideSales.userId!, 'member');
+        const g = await ctx.client
+          .as(ctx.P.OWNER)
+          .post('/v1/accounts/:accountId/iam/groups', { name: groupName }, { params: { accountId: team.id } });
+        g.status(201);
+        groupId = g.json<{ group_id: string }>().group_id;
+        (
+          await ctx.client.as(ctx.P.OWNER).post(
+            '/v1/accounts/:accountId/iam/groups/:groupId/members',
+            { userId: inSales.userId! },
+            { params: { accountId: team.id, groupId } },
+          )
+        ).status(200);
+        (
+          await ctx.client.as(ctx.P.OWNER).post(
+            '/v1/connectors/projects/:projectId/connectors',
+            { slug, provider: 'http', baseUrl: 'https://crm.example.com', auth: { type: 'none' } },
+            { params: { projectId: project.id } },
+          )
+        ).status(200);
+        const shared = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/connections',
+          { connector_alias: slug, owner_type: 'project', label: LABEL },
+          { params: { projectId: project.id } },
+        );
+        shared.status(201);
+        connectionId = shared.json<{ connection_id: string }>().connection_id;
+      });
+
+      await ctx.step('three CLI processes log in with their own tokens → exit 0', async () => {
+        const mint = async (who: typeof inSales) => {
+          const r = await ctx.client.as(who).post('/v1/accounts/tokens', { name: ctx.fixtures.name('conn30') });
+          r.status(201);
+          const body = r.json<{ token_id: string; secret_key: string }>();
+          memberTokens.push({ who, tokenId: body.token_id });
+          return body.secret_key;
+        };
+        const logins: Array<[CliSandbox, string]> = [
+          [owner, await ctx.fixtures.pat()],
+          [sales, await mint(inSales)],
+          [outsider, await mint(outsideSales)],
+        ];
+        for (const [sb, pat] of logins) {
+          const r = await sb.login(pat, { noProject: true, account: team.id });
+          throwIfCliInfraFailure(r, 'kortix login');
+          if (r.exitCode !== 0) throw new Error(`login: exit ${r.exitCode}: ${r.all.slice(0, 600)}`);
+        }
+      });
+
+      await ctx.step('before any grant, the member outside Sales lists the shared account', async () => {
+        const labels = await accountLabels(outsider);
+        if (!labels.includes(LABEL)) throw new Error(`outsider accounts: ${labels.join(', ')}`);
+        const line = await whoCanUse();
+        if (!line.includes('everyone')) throw new Error(`WHO CAN USE before any grant: ${line}`);
+      });
+
+      await ctx.step('`kortix access grant --group --connection` narrows the account to Sales → exit 0', async () => {
+        const r = await kortix(owner, ['access', 'grant', '--group', groupId, '--connection', connectionId, '--json']);
+        const assignment = JSON.parse(r.stdout) as Record<string, string>;
+        assert({
+          kind: 'body',
+          description: 'the CLI wrote a connection object grant to the group',
+          pass:
+            assignment.principal_type === 'group' &&
+            assignment.principal_id === groupId &&
+            assignment.object_type === 'connection' &&
+            assignment.object_id === connectionId &&
+            assignment.role_key === 'agent-user',
+          expected: { principal_type: 'group', object_type: 'connection', object_id: connectionId },
+          actual: assignment,
+        });
+      });
+
+      await ctx.step('`connections ls` shows who can use it: Sales, and not the owner', async () => {
+        const line = await whoCanUse();
+        if (!line.includes(`${groupName} (not you)`)) throw new Error(`WHO CAN USE after the group grant: ${line}`);
+      });
+
+      await ctx.step('`connectors accounts --json` lists it for the Sales member and omits it for the outsider', async () => {
+        const inside = await accountLabels(sales);
+        if (!inside.includes(LABEL)) throw new Error(`Sales member accounts: ${inside.join(', ')}`);
+        const outside = await accountLabels(outsider);
+        if (outside.includes(LABEL)) throw new Error(`outsider still lists it: ${outside.join(', ')}`);
+      });
+
+      await ctx.step('`kortix access assignments` names the group grant on the connection', async () => {
+        const r = await kortix(owner, ['access', 'assignments']);
+        const row = r.stdout.split('\n').find((line) => line.includes(`connection:${connectionId}`)) ?? '';
+        if (!row.includes(`group:${groupName}`)) throw new Error(`assignments row: ${row || r.stdout.slice(0, 800)}`);
+      });
+
+      await ctx.step('`kortix access grant --everyone --connection` opens it to the project again', async () => {
+        const r = await kortix(owner, ['access', 'grant', '--everyone', '--connection', connectionId]);
+        if (!r.stdout.includes('to everyone in project')) throw new Error(`grant output: ${r.all.slice(0, 600)}`);
+        const outside = await accountLabels(outsider);
+        if (!outside.includes(LABEL)) throw new Error(`outsider after --everyone: ${outside.join(', ')}`);
+        const line = await whoCanUse();
+        if (!line.includes('everyone') || line.includes('(not you)')) {
+          throw new Error(`WHO CAN USE after --everyone: ${line}`);
+        }
+        const listed = await kortix(owner, ['access', 'assignments']);
+        const everyoneRow = listed.stdout
+          .split('\n')
+          .find((l) => l.includes(`connection:${connectionId}`) && l.includes('everyone'));
+        if (!everyoneRow) throw new Error(`no everyone row: ${listed.stdout.slice(0, 800)}`);
+      });
+
+      await ctx.step('`kortix access grant --everyone --agent kortix` writes a project principal agent grant', async () => {
+        await kortix(owner, ['access', 'grant', '--everyone', '--agent', 'kortix']);
+        const grants = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/resource-grants', { params: { projectId: project.id } });
+        grants.status(200);
+        const rows = grants.json<{ grants: Array<{ resource_id: string; principal_type: string }> }>().grants;
+        assert({
+          kind: 'body',
+          description: 'the agent grant names everyone in the project',
+          pass: rows.some((g) => g.resource_id === 'kortix' && g.principal_type === 'project'),
+          expected: { resource_id: 'kortix', principal_type: 'project' },
+          actual: rows,
+        });
+      });
+
+      await ctx.step('`--everyone` with only a role exits 2 before any request', async () => {
+        const r = await kortix(owner, ['access', 'grant', '--everyone', '--role', 'manager'], 2);
+        if (!r.stderr.includes('--everyone holds an agent or a connection')) {
+          throw new Error(`stderr: ${r.stderr.slice(0, 400)}`);
+        }
+      });
+
+      await ctx.step("`kortix connectors connections share --group` shares the owner's own private account with Sales", async () => {
+        const OWN = 'Owner private';
+        const created = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/connections/me',
+          { connector_alias: slug, label: OWN },
+          { params: { projectId: project.id } },
+        );
+        created.status([200, 201]);
+        const ownId = created.json<{ connection_id: string }>().connection_id;
+        const r = await kortix(owner, ['connectors', 'connections', 'share', ownId, '--group', groupId]);
+        if (!r.stdout.includes(`Shared ${OWN}`)) throw new Error(`share output: ${r.all.slice(0, 600)}`);
+        const ls = await kortix(owner, ['connectors', 'connections', 'ls']);
+        const line = ls.stdout.split('\n').find((l) => l.includes(` ${OWN} `)) ?? '';
+        // A shared account now, narrowed to Sales, which the owner is not in.
+        if (!line.includes('project') || !line.includes(`${groupName} (not you)`)) {
+          throw new Error(`connections ls row: ${line || ls.stdout.slice(0, 600)}`);
+        }
+        if (!(await accountLabels(sales)).includes(OWN)) throw new Error('the Sales member does not list it');
+        if ((await accountLabels(outsider)).includes(OWN)) throw new Error('the outsider lists it');
+      });
+
+      await ctx.step('a plain member cannot share their own private account → non-zero exit, the reason named', async () => {
+        const created = await ctx.client.as(inSales).post(
+          '/v1/projects/:projectId/connections/me',
+          { connector_alias: slug, label: 'Sales member private' },
+          { params: { projectId: project.id } },
+        );
+        created.status([200, 201]);
+        const theirs = created.json<{ connection_id: string }>().connection_id;
+        const r = await sales.run([
+          'connectors', 'connections', 'share', theirs, '--everyone', '--project', project.id,
+        ]);
+        throwIfCliInfraFailure(r, 'kortix connectors connections share');
+        if (r.exitCode === 0 || !/manage the project's connections/.test(r.all)) {
+          throw new Error(`plain member share: exit ${r.exitCode}: ${r.all.slice(0, 600)}`);
+        }
+      });
+    } finally {
+      for (const sb of [owner, sales, outsider]) sb.dispose();
+      for (const { who, tokenId } of memberTokens) {
+        await ctx.client
+          .as(who)
+          .del('/v1/accounts/tokens/:tokenId', { params: { tokenId } })
+          .catch(() => undefined);
+      }
     }
   },
 );

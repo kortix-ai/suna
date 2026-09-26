@@ -22,7 +22,7 @@ describe('SessionSiteHeader sidebar toggle', () => {
     expect(source).toContain('<SidebarToggle />');
     const toggleAt = source.indexOf('<SidebarToggle />');
     expect(toggleAt).toBeGreaterThan(-1);
-    expect(toggleAt).toBeLessThan(source.indexOf('{headerTitle}'));
+    expect(toggleAt).toBeLessThan(source.indexOf('>{headerTitle}</span>'));
   });
 
   // `sidebarState` survives for the title-bar indent (`sidebarHidden`), not
@@ -41,7 +41,7 @@ describe('SessionSiteHeader sidebar toggle', () => {
 describe('SessionSiteHeader session title', () => {
   test('renders the session name in the leading cluster, after the home button and before leadingAction', () => {
     const homeButtonIndex = source.indexOf('<HouseIcon');
-    const titleIndex = source.indexOf('{headerTitle}');
+    const titleIndex = source.indexOf('>{headerTitle}</span>');
     const leadingActionIndex = source.lastIndexOf('{leadingAction}');
     expect(titleIndex).toBeGreaterThan(-1);
     expect(titleIndex).toBeGreaterThan(homeButtonIndex);
@@ -51,7 +51,7 @@ describe('SessionSiteHeader session title', () => {
   // Without these, a long title just grows the leading cluster and pushes
   // the trailing cluster (config/dev-tools/⋯) off-screen instead of eliding.
   test('the title element carries min-w-0 and truncate, so a long value shrinks instead of expanding the row', () => {
-    const titleIndex = source.indexOf('{headerTitle}');
+    const titleIndex = source.indexOf('>{headerTitle}</span>');
     const titleTagStart = source.lastIndexOf('<span', titleIndex);
     const titleTag = source.slice(titleTagStart, titleIndex);
     expect(titleTag).toContain('min-w-0');
@@ -67,27 +67,48 @@ describe('SessionSiteHeader session title', () => {
     expect(precedingChunk.trim().endsWith('>')).toBe(true);
   });
 
-  test('renders the title and down caret as a padded dropdown trigger', () => {
-    const titleIndex = source.indexOf('{headerTitle}');
-    const triggerStart = source.lastIndexOf('<DropdownMenuTrigger', titleIndex);
-    const trigger = source.slice(
-      triggerStart,
-      source.indexOf('</DropdownMenuTrigger>', titleIndex),
-    );
+  // Split control: the name and the caret are two buttons. A click on the
+  // name edits it in place; only the caret opens the session menu.
+  test('the name is a plain button that starts the inline rename, not a menu trigger', () => {
+    const titleIndex = source.indexOf('>{headerTitle}</span>');
+    const nameButton = source.slice(source.lastIndexOf('<Button', titleIndex), titleIndex);
+    expect(nameButton).toContain('onClick={startRename}');
+    expect(nameButton).toContain('rounded-md');
+    expect(nameButton).toContain('px-2.5');
 
-    expect(triggerStart).toBeGreaterThan(-1);
-    expect(trigger).toContain('rounded-md');
-    expect(trigger).toContain('px-2.5');
-    expect(trigger).toContain('py-1');
+    const triggerStart = source.indexOf('<DropdownMenuTrigger asChild>');
+    expect(triggerStart).toBeGreaterThan(titleIndex);
+  });
+
+  test('the caret is its own menu trigger and never rotates', () => {
+    const triggerStart = source.indexOf('<DropdownMenuTrigger asChild>');
+    const trigger = source.slice(triggerStart, source.indexOf('</DropdownMenuTrigger>'));
+    expect(trigger).toContain('size="icon-sm"');
+    expect(trigger).toContain('aria-label=');
     expect(trigger).toContain('data-[state=open]:bg-card');
     expect(trigger).toContain('<CaretDownIcon');
-    expect(trigger).toContain('group-data-[state=open]:rotate-180');
+    expect(trigger).not.toContain('rotate-180');
+    expect(trigger).not.toContain('{headerTitle}');
+  });
+
+  test('renaming swaps the name for the inline field, which saves through the shared hook', () => {
+    expect(source).toContain('<SessionTitleInput');
+    expect(source).toContain('useRenameSession(');
+    expect(source).toContain('renameMutation.mutate(name)');
+    // One rename surface: the modal is gone from the header.
+    expect(source).not.toContain('<RenameSessionModal');
+  });
+
+  test('the menu Rename item keeps focus in the field Radix would steal back', () => {
+    expect(source).toContain('renameFromMenu.current = true;');
+    const content = source.slice(source.indexOf('<DropdownMenuContent\n'));
+    expect(content).toContain('onCloseAutoFocus');
+    expect(content).toContain('e.preventDefault()');
   });
 
   test('uses the complete action list in the title menu', () => {
     expect(source.split('{sessionActionItems}').length - 1).toBe(1);
-    expect(source).toContain('setRenameOpen(true)');
-    expect(source).toContain('setShareOpen(true)');
+    expect(source).toContain('startRename();');
     expect(source).toContain('restartMutation.mutate()');
     expect(source).toContain('reloadConfig.reload()');
     expect(source).toContain('stopMutation.mutate()');
@@ -308,5 +329,46 @@ describe('SessionConfigIndicator wiring', () => {
     // config, Reload fetches a new one. Adjacent so the difference is legible.
     expect(source).toContain('Reload config');
     expect(source.indexOf('Restart')).toBeLessThan(source.indexOf('Reload config'));
+  });
+});
+
+describe('SessionSiteHeader Share', () => {
+  const menuStart = source.indexOf('const sessionActionItems = (');
+  const menu = source.slice(menuStart, source.indexOf('\n  );', menuStart));
+
+  test('Share is a visible header button, not a session-menu item', () => {
+    // Anti-vacuity guard: prove the slice is the menu.
+    expect(menu).toContain('startRename();');
+    expect(menu).not.toContain('setShareOpen(true)');
+    expect(source.split('setShareOpen(true)').length - 1).toBe(1);
+    const button = source.slice(
+      source.lastIndexOf('<Button', source.indexOf('setShareOpen(true)')),
+      source.indexOf('</Button>', source.indexOf('setShareOpen(true)')),
+    );
+    expect(button).toContain('<Share ');
+    // The visible label is "Share"; below `sm` the button is icon-only and
+    // keeps its accessible name.
+    expect(button).toContain("'i18nComplete.text29887a5ff984'");
+    expect(button).toContain('aria-label={shareLabel}');
+  });
+
+  test('the button needs a loaded project session, like the dialog it opens', () => {
+    const at = source.indexOf('setShareOpen(true)');
+    const guard = source.lastIndexOf('{isProjectSession && projectSession && (', at);
+    expect(guard).toBeGreaterThan(-1);
+    expect(at - guard).toBeLessThan(800);
+  });
+
+  test('matches the 28px row: xs, square when icon-only, and a Hint only then', () => {
+    const at = source.indexOf('setShareOpen(true)');
+    const hint = source.slice(source.lastIndexOf('<Hint', at), at);
+    expect(hint).toContain('open={isMobileViewport ? undefined : false}');
+    expect(hint).toContain('label={shareLabel}');
+    const button = source.slice(source.lastIndexOf('<Button', at), source.indexOf('</Button>', at));
+    expect(button).toContain('size="xs"');
+    expect(button).toContain('max-md:w-7 max-md:has-[>svg]:px-0');
+    // The label hides at the same breakpoint the Hint turns on.
+    expect(button).toContain('hidden md:inline');
+    expect(button).toContain('<Share />');
   });
 });

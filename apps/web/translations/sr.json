@@ -43,7 +43,26 @@
     "connectAccount": "Повежи налог",
     "oauthWaiting": "Чека се овлашћење…",
     "oauthExpired": "Време за овлашћење је истекло. Покушајте поново.",
-    "oauthPrivateDescription": "Нови ChatGPT налози су подразумевано доступни овом пројекту. Сваки налог можете ограничити на изабране чланове.",
+    "oauthPrivateDescription": "Користите свој ChatGPT Plus или Pro план у овом пројекту. Нови налози су приватни док их не поделите.",
+    "chatGptSubscription": "ChatGPT претплата",
+    "useYourChatGpt": "Користите своју ChatGPT претплату",
+    "manageChatGptAccounts": "Управљајте ChatGPT налозима",
+    "connect": "Повежи",
+    "connectChatGpt": "Повежи ChatGPT",
+    "noChatGptAccounts": "Још нема ChatGPT налога",
+    "oauthCreationDescription": "Пријавите се својим ChatGPT Plus или Pro налогом. Kortix чува пријаву шифровану и никада је не приказује.",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "Само ви",
+    "onlyYouDescription": "Само ви можете да је изаберете у сесији.",
+    "onlyOwner": "Само {name}",
+    "shareRequiresPermission": "За дељење са другима потребна је дозвола за управљање тајнама пројекта.",
+    "accountConnected": "ChatGPT налог је повезан",
+    "accountReconnected": "ChatGPT налог је поново повезан",
+    "connectFailed": "Овлашћење за ChatGPT није успело. Покушајте поново.",
+    "reconnectAccount": "Поново повежи",
+    "reconnectTitle": "Поново повежи {label}",
+    "reconnectDescription": "Поново се пријавите у ChatGPT. Налог задржава назив, приступ и изборе у сесијама.",
+    "needsReconnection": "Потребно поновно повезивање",
     "accountLabelPlaceholder": "нпр. Мој ChatGPT налог",
     "chooseProvider": "Изаберите провајдера.",
     "saved": "Тајна је сачувана",
@@ -52,7 +71,7 @@
     "deleteError": "Тајна није обрисана",
     "accessError": "Приступ није промењен",
     "sharedTitle": "Везе са добављачима",
-    "sharedDescription": "Додајте више API кључева и ChatGPT налога. Подразумевано их могу користити сви у овом пројекту. Ограничите приступ по вези и изаберите кључеве по сесији.",
+    "sharedDescription": "Додајте API кључеве и ChatGPT налоге. Нове везе су приватне док их не поделите. Изаберите које користи свака сесија.",
     "legacyProjectKey": "Постојећи кључ пројекта · Користи се када за ову сесију нису изабрани кључеви",
     "keyCount": "{count, plural, one {# кључ} few {# кључа} other {# кључева}}",
     "providerKeysFor": "API кључеви за {provider}",
@@ -102,6 +121,7 @@
     "providerKeys": "Кључеви провајдера",
     "chooseSharedKeys": "Изаберите дељене кључеве које ова сесија може да користи.",
     "sessionKeyPool": "Скуп кључева сесије",
+    "sharedSessionKeys": "Ова сесија је дељена са пројектом, па овде раде само кључеви дељени са целим пројектом. Кључеви додељени вама раде у вашим приватним сесијама.",
     "projectDefaultShort": "Подразумевано за пројекат",
     "rateLimitDescription": "Мрежни пролаз мења изабране кључеве када провајдер пријави ограничење захтева.",
     "enableGateway": "Укључите LLM мрежни пролаз у подешавањима пројекта да бисте користили скупове кључева.",
@@ -1109,7 +1129,7 @@
         },
         "pooled_provider_secrets": {
           "name": "Дељени тајни кључеви провајдера",
-          "description": "Делите више кључева провајдера са члановима и изаберите групу кључева за сваку сесију."
+          "description": "Чланови повезују своје ChatGPT претплате и кључеве провајдера, деле их по потреби и бирају које користи свака сесија."
         },
         "pi_worker": {
           "name": "Pi окружење за извршавање (компајлирано)",
@@ -1122,6 +1142,10 @@
         "agent_principal": {
           "name": "Агенти као принципали",
           "description": "Агенти делују у своје име: са својим Kortix дозволама, ограниченим улогом. Ко покреће агента додаје само своје налоге."
+        },
+        "config_releases": {
+          "name": "Издања конфигурације",
+          "description": "Покрећите сесије са тренутном конфигурацијом агента са основне гране, послуженом само за читање, тако да спојени агент, вештина или алат стигне до сваке покренуте сесије. Када је искључено, сесија чита сопствену фасциклу конфигурације у радном простору."
         }
       }
     },
@@ -1594,6 +1618,7 @@
     "backToProject": "Назад на пројекат",
     "delete": "Обриши сесију",
     "failedLabel": "Неуспешна сесија",
+    "loadingConversation": "Учитавање разговора",
     "prompt": {
       "queueFailed": "Није могуће ставити сачувани упит у ред",
       "unavailable": "Сачувани упит није доступан.",
@@ -1617,11 +1642,6 @@
     "previousRepository": {
       "title": "Ова сесија је застарела",
       "message": "Пројекат се променио након покретања ове сесије. Ажурирајте је да бисте наставили рад на најновијој верзији.",
-      "unavailable": "Претходни радни простор више није доступан. Покрените нову сесију у тренутном складишту.",
-      "resume": "Настави претходни радни простор",
-      "resuming": "Настављање…",
-      "newSession": "Покрени нову сесију",
-      "delete": "Избриши сесију",
       "update": "Ажурирај на најновије",
       "updating": "Ажурирање…",
       "dismiss": "Одбаци",
@@ -6226,7 +6246,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "Сва Воркер извршења су тренутно паузирана."
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "Нема садржаја"
+      "line1115JsxTextNoContent": "Нема садржаја",
+      "loadRemoteImage": "Учитај слику са {host}"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Притисните Enter да покренете..."
@@ -9451,7 +9472,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "Предложи измене",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "Прикажи промене",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Преименуј…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Подели…",
     "autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00": "Нова сесија",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix Сесија почиње",
     "autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70": "Повезивање…",
@@ -18564,6 +18584,17 @@
       "textea5d0ffa0962": "Заједнички налог повезује менаџер пројекта.",
       "text3d6627454174": "Постави акредитив",
       "text929505ef815a": "Још ниједан налог није повезан. Додајте сопствени испод, или замолите менаџера пројекта да повеже заједнички налог.",
+      "text931cb67e2af7": "Нова конфигурација агента није учитана. Ова сесија и даље ради са ранијом конфигурацијом.",
+      "textd9ff3a72833d": "Конфигурација није учитана",
+      "textebfb07812fb4": "Нова конфигурација агента није учитана",
+      "text4e62b29dd3b6": "Ова сесија ради са ранијом конфигурацијом. Неуспела конфигурација се не покушава поново док се основна грана не промени.",
+      "textf81ab834de5f": "Разлог",
+      "text44cdf35701cd": "Тренутно ради",
+      "text591f9f0f3259": "Неуспело издање",
+      "text00ed4c71dc2b": "Последње исправно издање",
+      "textbd7a1a3b4141": "Подразумевана конфигурација платформе",
+      "text643df05476ab": "Ова сесија ради са подразумеваном конфигурацијом платформе. Неуспела конфигурација се не покушава поново док се основна грана не промени.",
+      "text40652e008fc9": "Нова конфигурација агента није учитана. Ова сесија ради са подразумеваном конфигурацијом платформе.",
       "text3312ddb06c1d": "Registrujte bota u Azure-u, povežite ga ovde, pa otpremite paket aplikacije u Teams.",
       "text7f1b55a356b0": "Registrujte bota u Azure-u",
       "text91004edf8b30": "Povežite ga sa ovim projektom",
@@ -18672,7 +18703,9 @@
       "texta0bcee97cbb3": "Потврђено уграђено плаћање",
       "text0b751a917c97": "GitHub инсталација повезана",
       "text8b7a8797d532": "Microsoft Teams закупац повезан",
+      "text83c0e255d4bb": "Инсталација Microsoft Teams-а завршена",
       "text17a8cf884e2a": "Slack радни простор повезан",
+      "textf887cb0e6800": "Инсталација Slack апликације завршена",
       "textc7f9ec5ed69c": "Агент тунела рачунара повезан",
       "textafd58fcedeee": "Пријемно сандуче е-поште повезано",
       "text2eda12b4ed38": "Постојећи GitHub App повезан",
@@ -18929,6 +18962,7 @@
       "text60954a626cee": "Кључ LLM гејтвеја опозван",
       "text32c1477a3336": "Дозвола тунела рачунара опозвана",
       "text953488439740": "Налог конектора опозван",
+      "texte817b7da7436": "Приватни налог конектора подељен",
       "text538cb0effaea": "Лични приступни токен опозван",
       "text74be1c139903": "Додела кључа провајдера из пула опозвана",
       "text6d3935be0516": "CLI токен пројекта опозван",
@@ -19135,7 +19169,50 @@
       "text2afef4702cc0": "Банер системског статуса прегледан",
       "textbda3fcd4343c": "Конфигурације нивоа прегледане",
       "text30cef615e8e3": "Сажетак трансакција прегледан",
-      "textd2c6127fc332": "Разлике између верзија прегледане"
+      "textd2c6127fc332": "Разлике између верзија прегледане",
+      "text8cc0d84b66bb": "Прегледан линк за Slack идентитет",
+      "text508b43cc4545": "Прегледан линк за Teams идентитет",
+      "text467f597e95b0": "SSO домен је верификован",
+      "text8295f9d4861b": "Постављена верификација SSO домена налога",
+      "text7beaff63a7d3": "Архива конфигурације пројекта преузета",
+      "text5176d59f25fd": "Издање конфигурације сесије разрешено",
+      "text273c48dbf3b9": "Регистрован уређај за пусх обавештења",
+      "textbb666ddf7a57": "Уклоњен уређај за пусх обавештења",
+      "text397ab5aecbbf": "Захтев за дозволу сесије прослеђен"
+    },
+    "publicShareConfirm": {
+      "title": "Направити јавни линк?",
+      "description": "Свако ко има линк може ово да види без пријаве. Линк остаје активан док га не опозовеш.",
+      "confirm": "Направи линк"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "Јавни линк",
+      "sectionDescription": "Свако ко има линк може да чита овај разговор без пријаве.",
+      "create": "Направи јавни линк",
+      "revokeDescription": "Разговор престаје да се учитава за свакога ко има линк. Након тога можеш да направиш нови линк.",
+      "rowMeta": "Разговор само за читање",
+      "unavailable": "Овај разговор је привремено недоступан.",
+      "unavailableDescription": "Разговор тренутно не може да се прочита. Покушај поново за тренутак.",
+      "loadFailedDescription": "Разговор није могао да се учита.",
+      "empty": "Још нема порука",
+      "savedCopy": "Сачувана копија од {date}"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} налог",
+      "chatWorkspace": "{service} радни простор",
+      "checking": "Провера линка…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} nije povezan",
+      "mismatch": "Ova instalacija je pokrenuta sa drugog Kortix naloga ili za drugi projekat. Prijavite se tim nalogom ili ponovo pokrenite instalaciju iz projekta.",
+      "expired": "Ovaj link za instalaciju je nevažeći ili je istekao. Ponovo pokrenite instalaciju iz projekta.",
+      "failed": "Instalacija nije mogla da se završi. Ponovo je pokrenite iz projekta.",
+      "backToProject": "Nazad na projekat"
+    },
+    "secretIntakeWithheld": {
+      "title": "Сачувано, али {agent} још не може да га прочита",
+      "grant": "{names} {count, plural, one {није} other {нису}} међу тајнама агента {agent}. Отвори Прилагоди → Агенти → {agent} → Тајне и {count, plural, one {укључи је} other {укључи их}}.",
+      "allowlist": "{names} {count, plural, one {је} other {су}} ван тајни ове сесије. Покрени нову сесију да {count, plural, one {би је користио} other {би их користио}}."
     }
   },
   "projectOnboarding": {
@@ -19250,7 +19327,17 @@
   },
   "commandPalette": {
     "title": "Палета команди",
-    "description": "Потражите команду за покретање..."
+    "description": "Потражите команду за покретање...",
+    "copyTitle": "Копирај",
+    "copyEmail": "имејл",
+    "copyUserId": "ИД корисника",
+    "copyAccountId": "ИД налога",
+    "copyProjectId": "ИД пројекта",
+    "copySessionId": "ИД сесије",
+    "copySessionLink": "везу сесије",
+    "copyAction": "Копирај {label}",
+    "copied": "Копирано: {label}",
+    "copyFailed": "Копирање у оставу није успело"
   },
   "personalWelcome": {
     "dismiss": "Затвори",
@@ -20017,6 +20104,9 @@
     "providerError": "Nije moguće ažurirati pristup provajderu.",
     "managedTitle": "Modeli kojima upravlja Kortix",
     "managedDescription": "Upravljani modeli se naplaćuju Kortix kreditima. API ključ nije potreban.",
+    "pricingEstimate": "Процењена цена за корисника. Коришћена рута одређује наплату.",
+    "pricingRoute": "{route}: {input} улаз / {cacheRead} кеш / {output} излаз по милион токена",
+    "pricingPreferred": "Пожељна",
     "textImage": "Текст + слика",
     "textOnly": "Само текст",
     "zdrTitle": "Nulto zadržavanje podataka",
@@ -20147,5 +20237,64 @@
   },
   "connectorsAppReturn": {
     "done": "Gotovo. Nazad u Kortix aplikaciju"
+  },
+  "ssoDomainVerification": {
+    "title": "Верификација домена",
+    "verified": "Верификовано",
+    "unverified": "Није верификовано",
+    "verifiedDescription": "Вашем добављачу идентитета се верује за {domain}. Обавезни SSO важи за овај домен.",
+    "unverifiedDescription": "Додајте овај DNS TXT запис да докажете да контролишете {domain}. До тада SSO пријава ради само унутар овог налога, а обавезни SSO нема ефекта.",
+    "recordName": "Назив",
+    "recordValue": "Вредност",
+    "verify": "Верификуј домен",
+    "verifiedToast": "Домен је верификован",
+    "failedToast": "Домен још није верификован",
+    "enforceNeedsVerification": "Прво верификујте домен. Обавезни SSO важи само за верификовани домен."
+  },
+  "accessSharing": {
+    "everyone": "Сви у пројекту {project}",
+    "everyoneRoleNote": "Свако задржава своју улогу у пројекту. Изабрани агенти важе за све у пројекту {project}.",
+    "shareTitle": "Подели {label}",
+    "shareDescription": "Изаберите ко може да користи овај налог. Изаберите само себе да га задржите за себе.",
+    "whoCanUse": "Ко може да га користи",
+    "add": "Додај особе или групе",
+    "everyoneDefaultMeta": "Док не додате групу или особу",
+    "everyoneMeta": "Сви са приступом пројекту",
+    "groupMeta": "Група",
+    "memberMeta": "Члан",
+    "remove": "Уклони {name}",
+    "keep": "Задржи",
+    "removedMeta": "Уклања се при чувању",
+    "resultEveryone": "Сви у пројекту {project} могу да користе овај налог.",
+    "resultNarrowed": "Само особе које сте изабрали могу да користе овај налог, у својим приватним сесијама.",
+    "save": "Сачувај",
+    "saved": "Приступ је ажуриран",
+    "saveFailed": "Приступ није могуће ажурирати",
+    "manageAccess": "Управљај приступом",
+    "sharedWith": "Подељено са: {names}",
+    "notSharedWithYou": "Није подељено са вама",
+    "removeEveryoneTitle": "Престати да делите {agent} са свима?",
+    "removeEveryoneDescription": "Само особе и групе којима је додељен {agent} га задржавају. Остали чланови губе приступ.",
+    "removeEveryone": "Престани да делиш",
+    "removed": "Уклоњено",
+    "removeFailed": "Приступ није могуће уклонити",
+    "accountsTitle": "Налози",
+    "addAccount": "Додај налог",
+    "addAccountTitle": "Додај {connector} налог",
+    "addAccountDescription": "Дајте налогу назив и изаберите ко може да га користи.",
+    "onlyYou": "Само ви",
+    "onlyYouDescription": "Само ви можете да га користите, у својим приватним сесијама.",
+    "specificPeople": "Одређене особе или групе",
+    "specificPeopleDescription": "Само особе и групе које изаберете, у својим приватним сесијама.",
+    "shareRequiresManage": "За дељење налога потребна је дозвола за управљање везама пројекта.",
+    "nameTaken": "Налог са називом {label} већ постоји.",
+    "noAccountsTitle": "Још нема налога",
+    "noAccountsDescription": "Додајте налог да бисте користили {connector} у сесијама.",
+    "visibilityEveryone": "Цео пројекат",
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "Сачувано као {label}",
+    "connectFailed": "Налог није могао да се повеже. Покушајте поново.",
+    "sharePrivateDescription": "Изаберите ко још може да користи ваш налог. Он постаје дељени налог, којим могу да управљају и управљачи веза пројекта.",
+    "ownerMeta": "Ваш налог"
   }
 }

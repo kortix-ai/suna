@@ -97,7 +97,7 @@ describe('buildQuestionCard — anything the buttons cannot express becomes a fo
   });
 
   test('`custom` ALONE never forces a form — the relay route defaults it to true', () => {
-    // projects/routes/r4.ts:3839 is `obj.custom === false ? false : true`, so
+    // projects/routes/turn-questions.ts is `obj.custom === false ? false : true`, so
     // nearly every question arrives with custom set. Gating the one-tap card on
     // it would turn every plain yes/no into a form with a Submit button.
     // Replying in chat is already the free-text path, and the card says so.

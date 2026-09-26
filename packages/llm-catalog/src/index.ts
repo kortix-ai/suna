@@ -446,9 +446,15 @@ export const CATALOG_PROVIDER_ENV = providerEnvJson as ReadonlyArray<{ id: strin
 export interface ManagedModel {
   id: string;
   name: string;
-  // OpenAI-compatible upstream model ID.
+  // OpenRouter model ID used by the managed route.
   upstreamModelId: string;
   transport: 'openrouter';
+  // Both fields are required when MORPH_MANAGED_MODELS selects this model.
+  morphModelId?: string;
+  morphPricing?: { inputPerMillion: number; cachedInputPerMillion?: number; outputPerMillion: number };
+  // Public per-endpoint OpenRouter rates checked 2026-09-26. Only entries in openrouterProvider.only
+  // are eligible. The gateway still settles from upstream usage.cost when sent.
+  openrouterEndpointPricing?: Record<string, { inputPerMillion: number; cachedInputPerMillion: number; outputPerMillion: number }>;
   // Omit this to keep the model grouped under Kortix in the picker.
   providerBrand?: string;
   // Catalog lookup hint. Managed pricing below is the routing authority.
@@ -472,7 +478,7 @@ export interface ManagedModel {
   vision: boolean;
   // A conservative OpenCode output ceiling inside the upstream context window.
   limit: { context: number; output: number };
-  // OpenRouter endpoint pin and privacy constraints.
+  // OpenRouter provider routing: the allowed endpoint pool and privacy constraints.
   openrouterProvider?: Record<string, unknown>;
 }
 
@@ -496,32 +502,71 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
   return candidates;
 }
 
-// Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>` so the
-// picker shows Kortix while the gateway routes through ZDR OpenRouter endpoints.
+// Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>`, so the
+// picker shows Kortix whichever upstream serves the request.
+//
+// Models selected by MORPH_MANAGED_MODELS try Morph direct first. Every model
+// has an OpenRouter endpoint pool. Each pool lists
+// only endpoints that, on 2026-09-24, were in
+// OpenRouter's ZDR feed, had a CONFIRMED US datacenter (US headquarters plus US
+// datacenters in /api/v1/providers, or a `/us` endpoint tag), and answered pinned
+// text and image probes. US headquarters alone does not qualify. `allow_fallbacks: true` lets OpenRouter move between pool members;
+// `only` keeps it inside the pool. `max_price` (USD per 1M tokens) excludes premium
+// tiers. packages/llm-catalog/README.md records the probe results.
 // Vision is explicit per model so the picker and runtime reject image input for text-only models.
+const OPENROUTER_POOL_PRIVACY = { allow_fallbacks: true, zdr: true, data_collection: 'deny' } as const;
+
+// Checked against OpenRouter's ZDR and provider-location feeds on 2026-09-26.
+// Resolver uses this list for operator overlays too; an unknown endpoint fails closed.
+export const VERIFIED_US_MANAGED_ENDPOINTS = [
+  'coreweave/fp8', 'decart/fp4', 'coreweave/nvfp4', 'fireworks/us',
+] as const;
+
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', upstreamModelId: 'deepseek/deepseek-v4.1-flash',
-    transport: 'openrouter', pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
-    pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.006, outputPerMillion: 0.6 },
+    transport: 'openrouter', morphModelId: 'morph-dsv41flash',
+    morphPricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.003, outputPerMillion: 0.6 },
+    pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
+    pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 },
+    openrouterEndpointPricing: { 'coreweave/fp8': { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 } },
     tier: 'balanced', vision: true, limit: { context: 1_048_576, output: 16_384 },
-    openrouterProvider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+    openrouterProvider: {
+      only: ['coreweave/fp8'],
+      ...OPENROUTER_POOL_PRIVACY,
+      max_price: { prompt: 0.3, completion: 1.2 },
+    },
   },
   {
     id: 'glm-5.3-flash', name: 'GLM 5.3 Flash', upstreamModelId: 'z-ai/glm-5.3-flash',
-    transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+    transport: 'openrouter', morphModelId: 'morph-glm53flash',
+    morphPricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
+    pricingRef: 'openrouter/z-ai/glm-5.3-flash',
     pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
+    openrouterEndpointPricing: {
+      'decart/fp4': { inputPerMillion: 0.1275, cachedInputPerMillion: 0.0255, outputPerMillion: 0.425 },
+      'coreweave/nvfp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
+    },
     tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
     openrouterProvider: {
-      only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny',
+      only: ['decart/fp4', 'coreweave/nvfp4'],
+      ...OPENROUTER_POOL_PRIVACY,
+      max_price: { prompt: 0.15, completion: 0.5 },
     },
   },
   {
     id: 'kimi-k3', name: 'Kimi K3 2.8T', upstreamModelId: 'moonshotai/kimi-k3',
-    transport: 'openrouter', pricingRef: 'openrouter/moonshotai/kimi-k3',
-    pricing: { inputPerMillion: 2.5, cachedInputPerMillion: 0.25, outputPerMillion: 10.95 },
+    transport: 'openrouter', morphModelId: 'morph-kimik3',
+    morphPricing: { inputPerMillion: 2.5, cachedInputPerMillion: 0.29, outputPerMillion: 14 },
+    pricingRef: 'openrouter/moonshotai/kimi-k3',
+    pricing: { inputPerMillion: 3.3, cachedInputPerMillion: 0.33, outputPerMillion: 16.5 },
+    openrouterEndpointPricing: { 'fireworks/us': { inputPerMillion: 3.3, cachedInputPerMillion: 0.33, outputPerMillion: 16.5 } },
     tier: 'flagship', vision: true, limit: { context: 1_048_576, output: 16_384 },
-    openrouterProvider: { only: ['wafer'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+    openrouterProvider: {
+      only: ['fireworks/us'],
+      ...OPENROUTER_POOL_PRIVACY,
+      max_price: { prompt: 3.3, completion: 16.5 },
+    },
   },
 ];
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { Children, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { resolveOpenablePath, wrapChildrenWithPaths } from './clickable-path';
+import { ClickablePath, resolveOpenablePath, wrapChildrenWithPaths } from './clickable-path';
 
 // ─── Agents write workspace-relative paths far more often than absolute ones.
 // This component used to reject anything without a leading slash, so clicking
@@ -103,8 +103,8 @@ describe('wrapChildrenWithPaths', () => {
 
 // ─── One path, one button ───────────────────────────────────────────────────
 // `li` wraps its children and the nested `p` wraps them again, so the walk used
-// to descend into the span the first pass produced: nested `role="button"`
-// elements, two handlers on one path. ───────────────────────────────────────
+// to descend into the element the first pass produced: nested buttons, two
+// handlers on one path. ─────────────────────────────────────────────────────
 
 describe('wrapChildrenWithPaths double pass', () => {
   it('does not nest a second ClickablePath inside the first', () => {
@@ -112,8 +112,29 @@ describe('wrapChildrenWithPaths double pass', () => {
     const twice = wrapChildrenWithPaths(once);
 
     const html = renderToStaticMarkup(<>{twice}</>);
-    const buttons = html.match(/role="button"/g) ?? [];
+    const buttons = html.match(/<button/g) ?? [];
 
     expect(buttons.length).toBe(1);
   });
+});
+
+// ─── Keyboard ───────────────────────────────────────────────────────────────
+// A path used to be `<span role="button" tabIndex={0}>` with a click handler
+// only: a tab stop that announced "button" and ignored Enter and Space. A
+// native button gets focus, Enter and Space from the browser. ──────────────
+
+describe('ClickablePath is a native button', () => {
+  for (const variant of ['inline', 'terminal'] as const) {
+    it(`${variant} variant renders <button type="button">`, () => {
+      const html = renderToStaticMarkup(
+        <ClickablePath filePath="docs/readme.md" lineNumber={3} variant={variant} />,
+      );
+
+      expect(html).toStartWith('<button type="button"');
+      expect(html).not.toContain('role="button"');
+      expect(html).not.toContain('tabindex');
+      expect(html).toContain('focus-visible:ring-ring');
+      expect(html).toContain('docs/readme.md:3 — Click to preview');
+    });
+  }
 });

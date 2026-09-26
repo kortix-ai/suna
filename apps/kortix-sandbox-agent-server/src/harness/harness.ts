@@ -76,3 +76,13 @@ export function resolveHarness(cfg?: Pick<Config, 'harness'>, id?: string): Harn
   if (selected === 'pi') return piDefinition
   throw new Error(`Unsupported harness: ${selected}`)
 }
+
+/**
+ * Image build only (`kortix-agent warm-pi-packages`): load the pi system
+ * packages once so their extension cache ships in the image. Lives here because
+ * only the resolver may reach into an adapter.
+ */
+export async function warmPiSystemPackages(agentDir?: string): Promise<{ loaded: string[]; failed: Array<{ name: string; error: string }> }> {
+  const [{ warmSystemPackageCache }, { DEFAULT_PI_AGENT_DIR }] = await Promise.all([import('./pi/extensions/host'), import('./pi/config')])
+  return warmSystemPackageCache(agentDir?.trim() || DEFAULT_PI_AGENT_DIR)
+}

@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
-import { forgetWebhookEvent, recordWebhookEvent, withAccountLock } from './webhook-concurrency';
+import { isWebhookEventProcessed, recordWebhookEvent, withAccountLock } from './webhook-concurrency';
 import { config } from '../../config';
 import { WebhookError } from '../../errors';
 import { getCreditAccount } from '../repositories/credit-accounts';
@@ -20,10 +20,10 @@ import {
   isPerSeatAccount,
   resolveRenewalGrant,
   resolvePerSeatPriceId,
-  INCLUDED_CREDITS_PER_SEAT_USD,
   defaultAutoTopupForSeats,
 } from './tiers';
-import { grantCredits, resetExpiringCredits } from './credits';
+import { grantForPaidProrationInvoice } from './proration-grants';
+import { wallet } from '../wallet';
 import { isPayingSubscriptionStatus } from './billing-state';
 import { grantMachineBonusOnce, getStripeMachineBonusKey } from './machine-bonus';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
@@ -31,6 +31,7 @@ import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { isUuid } from '../../shared/validate';
 
 /**
  * The plan a Stripe object names in its metadata.
@@ -78,54 +79,73 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
     throw new WebhookError(`Signature verification failed: ${(err as Error).message}`);
   }
 
-  if (!(await recordWebhookEvent(event.id, event.type))) {
+  // The dedupe marker is written AFTER the handler succeeds, never before. A
+  // marker written first survives a process death mid-handler (deploy, OOM),
+  // and Stripe's retry would then be answered "duplicate" and the event lost.
+  // Every handler below is idempotent on its own (grants carry per-object
+  // ledger keys, account writes are upserts of provider state), so a retry of
+  // a half-finished event, or two overlapping deliveries, converge.
+  if (await isWebhookEventProcessed(event.id)) {
     console.log(`[Webhook] Skipping duplicate ${event.type} (${event.id})`);
     return { received: true, event_type: event.type, deduped: true };
   }
 
   console.log(`[Webhook] Processing ${event.type} (${event.id})`);
 
-  try {
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
-        break;
+  switch (event.type) {
+    case 'checkout.session.completed':
+      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+      break;
 
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-        await handleSubscriptionChange(event.data.object as Stripe.Subscription);
-        break;
+    // A delayed payment method (ACH debit, bank transfer) completes Checkout
+    // before the money arrives: `checkout.session.completed` carries
+    // `payment_status='unpaid'` and grants nothing. These two events report
+    // the outcome.
+    case 'checkout.session.async_payment_succeeded':
+      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+      break;
 
-      case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
-        break;
+    case 'checkout.session.async_payment_failed':
+      await handleCheckoutAsyncPaymentFailed(event.data.object as Stripe.Checkout.Session);
+      break;
 
-      case 'invoice.paid':
-        await handleInvoicePaid(event.data.object as Stripe.Invoice);
-        break;
-
-      case 'invoice.payment_failed':
-        await handleInvoiceFailed(event.data.object as Stripe.Invoice);
-        break;
-
-      case 'subscription_schedule.completed':
-        await handleScheduleCompleted(event.data.object as any);
-        break;
-
-      case 'subscription_schedule.released':
-        console.log(`[Webhook] Schedule released: ${(event.data.object as any).id}`);
-        break;
-
-      default:
-        console.log(`[Webhook] Unhandled event type: ${event.type}`);
+    case 'payment_intent.succeeded':
+    case 'payment_intent.payment_failed': {
+      const { settleAutoTopupPaymentIntent } = await import('./auto-topup');
+      await settleAutoTopupPaymentIntent(event.data.object as Stripe.PaymentIntent);
+      break;
     }
-  } catch (err) {
-    await forgetWebhookEvent(event.id).catch((cleanupErr) => {
-      console.error(`[Webhook] Failed to clear failed event marker ${event.id}:`, cleanupErr);
-    });
-    throw err;
+
+    case 'customer.subscription.created':
+    case 'customer.subscription.updated':
+      await handleSubscriptionChange(event.data.object as Stripe.Subscription);
+      break;
+
+    case 'customer.subscription.deleted':
+      await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
+      break;
+
+    case 'invoice.paid':
+      await handleInvoicePaid(event.data.object as Stripe.Invoice);
+      break;
+
+    case 'invoice.payment_failed':
+      await handleInvoiceFailed(event.data.object as Stripe.Invoice);
+      break;
+
+    case 'subscription_schedule.completed':
+      await handleScheduleCompleted(event.data.object as any);
+      break;
+
+    case 'subscription_schedule.released':
+      console.log(`[Webhook] Schedule released: ${(event.data.object as any).id}`);
+      break;
+
+    default:
+      console.log(`[Webhook] Unhandled event type: ${event.type}`);
   }
 
+  await recordWebhookEvent(event.id, event.type);
   return { received: true, event_type: event.type };
 }
 
@@ -146,31 +166,71 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   }
 }
 
-async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId: string) {
-  const amountTotal = (session.amount_total ?? 0) / 100;
-  if (amountTotal <= 0) return;
-
-  await grantCredits(
-    accountId,
-    amountTotal,
-    'purchase',
-    `Credit purchase: $${amountTotal.toFixed(2)}`,
-    false,
-    session.id,
-  );
+/** Mark the `credit_purchases` row this Checkout Session was created for. */
+async function markCreditPurchase(session: Stripe.Checkout.Session, status: 'completed' | 'failed') {
+  const completedAt = status === 'completed' ? new Date().toISOString() : undefined;
+  const purchaseId = session.metadata?.purchase_id;
+  if (purchaseId && isUuid(purchaseId)) {
+    await updatePurchaseStatus(purchaseId, status, completedAt);
+    return;
+  }
 
   const paymentIntentId = typeof session.payment_intent === 'string'
     ? session.payment_intent
     : session.payment_intent?.id;
+  if (!paymentIntentId) return;
+  const purchase = await getPurchaseByPaymentIntent(paymentIntentId);
+  if (purchase) {
+    await updatePurchaseStatus(purchase.id, status, completedAt);
+  }
+}
 
-  if (paymentIntentId) {
-    const purchase = await getPurchaseByPaymentIntent(paymentIntentId);
-    if (purchase) {
-      await updatePurchaseStatus(purchase.id, 'completed', new Date().toISOString());
-    }
+async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId: string) {
+  const amountTotal = (session.amount_total ?? 0) / 100;
+  if (amountTotal <= 0) return;
+
+  // Money first. Stripe fires `checkout.session.completed` as soon as the
+  // customer finishes Checkout, including for delayed payment methods whose
+  // funds have not arrived (`payment_status='unpaid'`). Those sessions are
+  // fulfilled by `checkout.session.async_payment_succeeded`, which carries the
+  // same session with `payment_status='paid'` and reaches this function again.
+  // The grant key is the session id, so either event grants exactly once.
+  if (session.payment_status !== 'paid') {
+    console.log(
+      `[Webhook] Credit purchase for ${accountId} deferred: session ${session.id} payment_status=${session.payment_status ?? 'unknown'}. Waiting for async_payment_succeeded.`,
+    );
+    return;
   }
 
+  await wallet.grant({
+    accountId,
+    amount: amountTotal,
+    kind: 'purchase',
+    description: `Credit purchase: $${amountTotal.toFixed(2)}`,
+    expiring: false,
+    key: { event: session.id },
+  });
+
+  await markCreditPurchase(session, 'completed');
+
   console.log(`[Webhook] Credit purchase: $${amountTotal} for ${accountId}`);
+}
+
+/**
+ * A delayed payment for a Checkout Session failed. A credit purchase granted
+ * nothing when the session completed unpaid, so there is nothing to reverse;
+ * only the purchase record changes. A subscription checkout stays deferred:
+ * its activation waits for `invoice.paid`, which never arrives.
+ */
+async function handleCheckoutAsyncPaymentFailed(session: Stripe.Checkout.Session) {
+  const accountId = session.metadata?.account_id;
+  if (!accountId) return;
+  if (session.mode === 'payment') {
+    await markCreditPurchase(session, 'failed');
+  }
+  console.log(
+    `[Webhook] Delayed payment failed for ${accountId}: session ${session.id} (mode=${session.mode})`,
+  );
 }
 
 async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, accountId: string) {
@@ -332,7 +392,7 @@ async function activateSubscriptionForAccount(params: {
   );
 
   // A real subscription ends an admin-issued trial: mark it converted so the
-  // trial overlay (effective-tier.ts) stops masking the purchased plan.
+  // trial overlay (resolve-billing.ts) stops masking the purchased plan.
   // `trial_status` is admin-owned, so it cannot ride along in the patch above —
   // it goes through the narrow cross-domain helper in trial-admin.ts.
   if (existingAccount?.trialStatus === 'active') {
@@ -347,14 +407,14 @@ async function activateSubscriptionForAccount(params: {
     : `${tier.displayName} subscription activated: ${creditAmount} credits`;
 
   if (creditAmount > 0) {
-    await grantCredits(
+    await wallet.grant({
       accountId,
-      creditAmount,
-      'tier_grant',
-      creditDesc,
-      true,
-      `subscription_activation:${subscriptionId}`,
-    );
+      amount: creditAmount,
+      kind: 'tier_grant',
+      description: creditDesc,
+      expiring: true,
+      key: { event: `subscription_activation:${subscriptionId}` },
+    });
   }
 
   // Upsert Stripe customer record
@@ -515,15 +575,17 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       (perSeatPriceId && item.price?.id === perSeatPriceId) ||
       subscription.metadata?.billing_model === 'per_seat',
   );
-  let perSeatDelta = 0;
   let perSeatNewSeats = 0;
-  // Same gate as the tier write. Seat count, billing model, and the seat
-  // allowance grant are all entitlements bought with the first invoice; an
-  // `incomplete` per-seat subscription has bought none of them yet.
+  // Same gate as the tier write. Seat count and billing model are entitlements
+  // bought with the first invoice; an `incomplete` per-seat subscription has
+  // bought none of them yet.
+  //
+  // This handler never grants the allowance for seats added mid-period. A
+  // quantity change is not a payment: Stripe reports it here before any money
+  // for the new seats is collected. The allowance for added seats is granted
+  // from the PAID proration invoice instead (proration-grants.ts).
   if (perSeatItem && subIsPaying) {
     const newSeats = Math.max(1, Math.floor(perSeatItem.quantity ?? 1));
-    const oldSeats = account?.seatCount ?? 0;
-    perSeatDelta = newSeats - oldSeats;
     perSeatNewSeats = newSeats;
     // Per-seat BILLING semantics live on `billing_model`, `seat_count`, and the
     // seat item id — never on `tier`. All three are written unconditionally:
@@ -613,69 +675,20 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       : getMonthlyCredits(resolvedTier)
     : 0;
 
-  // This reset SETS expiring credit to the whole seat allowance, so it already
-  // funds every seat including the ones counted in perSeatDelta. Letting the
-  // delta grant below also run would stack a second full allowance on top
-  // (a brand-new N-seat team would land on 2 x $25N).
-  const recoveryCoveredEverySeat = shouldGrantRecoveryCredits && !!perSeatItem && recoveryCredits > 0;
-
   if (shouldGrantRecoveryCredits && resolvedTier) {
     if (recoveryCredits > 0) {
-      await resetExpiringCredits(
+      await wallet.reset({
         accountId,
-        recoveryCredits,
-        `Recovered Stripe subscription: ${recoveryCredits} credits`,
-        `subscription_activation:${subscription.id}`,
-      );
+        amount: recoveryCredits,
+        description: `Recovered Stripe subscription: ${recoveryCredits} credits`,
+        key: { event: `subscription_activation:${subscription.id}` },
+      });
     }
   }
 
-  if (perSeatItem && subIsPaying && perSeatDelta > 0 && !recoveryCoveredEverySeat) {
-    // INCLUDED_CREDITS_PER_SEAT_USD ($25 of wallet allowance), never
-    // PER_SEAT_PRICE_USD ($40, the price the customer pays). tiers.ts documents
-    // that the two are decoupled on purpose — the other $15 is platform margin.
-    // Using the price here over-granted every mid-cycle seat addition by 1.6x;
-    // all 7 seat_grant rows in production history are wrong by exactly that
-    // factor ($760 granted where $475 was owed).
-    const seatGrant = INCLUDED_CREDITS_PER_SEAT_USD * perSeatDelta;
-    await grantCredits(
-      accountId,
-      seatGrant,
-      'seat_grant',
-      `Per-seat allowance (+${perSeatDelta} ${perSeatDelta === 1 ? 'seat' : 'seats'})`,
-      true,
-      // Keyed on the seat count REACHED, scoped to the current billing period.
-      //
-      // Both halves matter, and each fixes a different real defect:
-      //
-      // - Period scope fixes an UNDER-grant. The old key
-      //   (`${sub}:seats:${newSeats}`) had no period in it, so a team that grew
-      //   to 3 seats in one month, shrank, then grew back to 3 in a LATER month
-      //   reused the first month's key and was silently deduped — those seats
-      //   went unfunded until the next monthly reset.
-      // - Keying on the seat count reached, rather than on the `old->new`
-      //   transition, bounds an OVER-grant. Seat removals never claw allowance
-      //   back (there is no negative branch here on purpose), so an account that
-      //   shrinks and regrows inside one period is already funded for the larger
-      //   count. `4->5` and `3->5` and `2->5` are distinct transitions but the
-      //   same destination: keyed on the destination, only the first one funds.
-      //
-      // What this still does NOT catch: a team that starts a period at N seats,
-      // shrinks, then returns to N grants one extra delta, because the monthly
-      // reset that funded N is not a `seat_grant` row and so never wrote this
-      // key. Bounding that needs a per-period funded-seat high-water mark, which
-      // is a schema change, not a key change. Tracked as follow-up.
-      `${subscription.id}:seats:${subscription.current_period_start}:${perSeatNewSeats}`,
-    ).catch((err) =>
-      console.warn(`[Webhook] per-seat grant failed for ${accountId}:`, err),
-    );
-  }
-
-  // Minting seat tokens is NOT part of the grant decision and must not be
-  // nested inside it. It lived inside the `perSeatDelta > 0` block, so adding
-  // the `!recoveryCoveredEverySeat` credit guard above would have silently
-  // stopped minting for exactly the case this mint exists for — a brand-new
-  // per-seat team, which is also the case the recovery reset covers.
+  // Minting seat tokens is NOT part of any grant decision and must not be
+  // nested inside one. A brand-new per-seat team needs its tokens whether or
+  // not a recovery reset funded it.
   if (perSeatItem && !isPerSeatAccount(account?.billingModel)) {
     const { mintYoloTokensForAllMembers } = await import('./seat-management');
     void mintYoloTokensForAllMembers(accountId).catch((err) =>
@@ -826,8 +839,14 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   // `subscription_cycle` is a renewal. `subscription_create` is the FIRST
   // invoice of a new subscription actually settling — the event that proves
   // money moved, and therefore the only trustworthy activation trigger.
+  // `subscription_update` is a proration invoice for a mid-period change (added
+  // seats, a plan upgrade) that has now been PAID.
   const billingReason = invoice.billing_reason;
-  if (billingReason !== 'subscription_cycle' && billingReason !== 'subscription_create') return;
+  if (
+    billingReason !== 'subscription_cycle' &&
+    billingReason !== 'subscription_create' &&
+    billingReason !== 'subscription_update'
+  ) return;
 
   const stripe = getStripe();
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -838,6 +857,11 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 
   if (billingReason === 'subscription_create') {
     await activateOnFirstInvoicePaid(accountId, subscription, subscriptionId);
+    return;
+  }
+
+  if (billingReason === 'subscription_update') {
+    await grantForPaidProrationInvoice(accountId, invoice);
     return;
   }
 
@@ -867,7 +891,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   });
 
   if (credits > 0) {
-    await resetExpiringCredits(accountId, credits, renewalDesc, invoice.id);
+    await wallet.reset({ accountId, amount: credits, description: renewalDesc, key: { event: invoice.id } });
   }
 
   const planType = account.planType ?? 'monthly';
@@ -1103,8 +1127,10 @@ export async function processRevenueCatWebhook(body: any) {
   const appUserId = event.app_user_id;
   if (!appUserId) throw new WebhookError('Missing app_user_id');
 
+  // Same marker contract as processStripeWebhook: checked first, written only
+  // after the handler succeeded. Every handler below is keyed or idempotent.
   const dedupeKey = `revenuecat:${eventId}`;
-  if (!(await recordWebhookEvent(dedupeKey, eventType))) {
+  if (await isWebhookEventProcessed(dedupeKey)) {
     console.log(`[RevenueCat] Skipping duplicate ${eventType} (${eventId})`);
     return { received: true, event_type: eventType, deduped: true };
   }
@@ -1118,52 +1144,42 @@ export async function processRevenueCatWebhook(body: any) {
 
   console.log(`[RevenueCat] Processing ${eventType} for ${appUserId} -> ${accountId}`);
 
-  try {
-    switch (eventType) {
-      case 'INITIAL_PURCHASE':
-        await handleRevenueCatPurchase(accountId, event, dedupeKey);
-        break;
+  switch (eventType) {
+    case 'INITIAL_PURCHASE':
+      await handleRevenueCatPurchase(accountId, event, dedupeKey);
+      break;
 
-      case 'RENEWAL':
-        await handleRevenueCatRenewal(accountId, event, dedupeKey);
-        break;
+    case 'RENEWAL':
+      await handleRevenueCatRenewal(accountId, event, dedupeKey);
+      break;
 
-      case 'CANCELLATION':
-      case 'EXPIRATION':
-        await handleRevenueCatCancellation(accountId, event);
-        break;
+    case 'CANCELLATION':
+    case 'EXPIRATION':
+      await handleRevenueCatCancellation(accountId, event);
+      break;
 
-      case 'UNCANCELLATION':
-        await handleRevenueCatUncancellation(accountId, event);
-        break;
+    case 'UNCANCELLATION':
+      await handleRevenueCatUncancellation(accountId, event);
+      break;
 
-      case 'PRODUCT_CHANGE':
-        await handleRevenueCatProductChange(accountId, event);
-        break;
+    case 'PRODUCT_CHANGE':
+      await handleRevenueCatProductChange(accountId, event);
+      break;
 
-      case 'NON_RENEWING_PURCHASE':
-        await handleRevenueCatTopup(accountId, event, dedupeKey);
-        break;
+    case 'NON_RENEWING_PURCHASE':
+      await handleRevenueCatTopup(accountId, event, dedupeKey);
+      break;
 
-      case 'SUBSCRIPTION_PAUSED':
-      case 'BILLING_ISSUE':
-        await handleRevenueCatBillingIssue(accountId, event);
-        break;
+    case 'SUBSCRIPTION_PAUSED':
+    case 'BILLING_ISSUE':
+      await handleRevenueCatBillingIssue(accountId, event);
+      break;
 
-      default:
-        console.log(`[RevenueCat] Unhandled event type: ${eventType}`);
-    }
-  } catch (err) {
-    // `recordWebhookEvent` claimed this event id BEFORE the handler ran. If the
-    // handler throws, the claim has to go or RevenueCat's retry is answered
-    // "duplicate, skipped" and the purchase is never applied — money taken, no
-    // credits, forever. Same contract as processStripeWebhook above.
-    await forgetWebhookEvent(dedupeKey).catch((cleanupErr) => {
-      console.error(`[RevenueCat] Failed to clear failed event marker ${dedupeKey}:`, cleanupErr);
-    });
-    throw err;
+    default:
+      console.log(`[RevenueCat] Unhandled event type: ${eventType}`);
   }
 
+  await recordWebhookEvent(dedupeKey, eventType);
   return { received: true, event_type: eventType, account_id: accountId };
 }
 
@@ -1206,27 +1222,27 @@ async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey
   );
 
   if (tier.monthlyCredits > 0) {
-    await grantCredits(
+    await wallet.grant({
       accountId,
-      tier.monthlyCredits,
-      'tier_grant',
-      `${tier.displayName} subscription (mobile): ${tier.monthlyCredits} credits`,
-      true,
-      dedupeKey,
-    );
+      amount: tier.monthlyCredits,
+      kind: 'tier_grant',
+      description: `${tier.displayName} subscription (mobile): ${tier.monthlyCredits} credits`,
+      expiring: true,
+      key: { event: dedupeKey },
+    });
   }
 
   const { MACHINE_CREDIT_BONUS } = await import('./tiers');
   if (MACHINE_CREDIT_BONUS > 0) {
     try {
-      await grantCredits(
+      await wallet.grant({
         accountId,
-        MACHINE_CREDIT_BONUS,
-        'machine_bonus',
-        `Welcome credit bonus: $${MACHINE_CREDIT_BONUS}`,
-        false,
-        `machine_bonus:revenuecat:${accountId}:${productId}`,
-      );
+        amount: MACHINE_CREDIT_BONUS,
+        kind: 'machine_bonus',
+        description: `Welcome credit bonus: $${MACHINE_CREDIT_BONUS}`,
+        expiring: false,
+        key: { event: `machine_bonus:revenuecat:${accountId}:${productId}` },
+      });
       console.log(`[RevenueCat] Granted $${MACHINE_CREDIT_BONUS} machine bonus for ${accountId}`);
     } catch (err) {
       console.error(`[RevenueCat] Failed to grant machine bonus for ${accountId}:`, err);
@@ -1251,7 +1267,12 @@ async function handleRevenueCatRenewal(accountId: string, event: any, dedupeKey:
   const credits = getMonthlyCredits(tierName);
 
   if (credits > 0) {
-    await resetExpiringCredits(accountId, credits, `Mobile renewal: ${credits} credits`, dedupeKey);
+    await wallet.reset({
+      accountId,
+      amount: credits,
+      description: `Mobile renewal: ${credits} credits`,
+      key: { event: dedupeKey },
+    });
   }
 
   await applyStripeSync(
@@ -1358,14 +1379,14 @@ async function handleRevenueCatTopup(accountId: string, event: any, dedupeKey: s
   const price = event.price ? Number(event.price) : 0;
   if (price <= 0) return;
 
-  await grantCredits(
+  await wallet.grant({
     accountId,
-    price,
-    'purchase',
-    `Mobile credit purchase: $${price.toFixed(2)}`,
-    false,
-    dedupeKey,
-  );
+    amount: price,
+    kind: 'purchase',
+    description: `Mobile credit purchase: $${price.toFixed(2)}`,
+    expiring: false,
+    key: { event: dedupeKey },
+  });
 
   console.log(`[RevenueCat] Top-up: $${price} for ${accountId}`);
 }

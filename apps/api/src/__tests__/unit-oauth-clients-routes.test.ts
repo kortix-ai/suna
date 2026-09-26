@@ -27,7 +27,6 @@ mock.module('../accounts/iam/helpers', () => ({
   auditIam: async (_c: unknown, args: Record<string, unknown>) => {
     audits.push(args);
   },
-  readBody: async (c: any) => c.req.json(),
   requireEntitlement: async () => null,
   isUniqueViolation: () => false,
   HttpError: class extends Error {},

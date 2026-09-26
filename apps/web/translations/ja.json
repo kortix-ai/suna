@@ -43,7 +43,26 @@
     "connectAccount": "アカウントを接続",
     "oauthWaiting": "認証を待機中…",
     "oauthExpired": "認証がタイムアウトしました。もう一度お試しください。",
-    "oauthPrivateDescription": "新しい ChatGPT アカウントは、既定でこのプロジェクトの全員が利用できます。アカウントごとに特定のメンバーに制限できます。",
+    "oauthPrivateDescription": "このプロジェクトで ChatGPT Plus または Pro プランを使用します。新しいアカウントは共有するまで自分専用です。",
+    "chatGptSubscription": "ChatGPT サブスクリプション",
+    "useYourChatGpt": "自分の ChatGPT サブスクリプションを使う",
+    "manageChatGptAccounts": "ChatGPT アカウントを管理",
+    "connect": "接続",
+    "connectChatGpt": "ChatGPT を接続",
+    "noChatGptAccounts": "ChatGPT アカウントはまだありません",
+    "oauthCreationDescription": "ChatGPT Plus または Pro アカウントでサインインしてください。ログイン情報は暗号化して保存され、表示されることはありません。",
+    "defaultAccountLabel": "ChatGPT · {name}",
+    "onlyYou": "自分のみ",
+    "onlyYouDescription": "セッションで選択できるのは自分だけです。",
+    "onlyOwner": "{name} のみ",
+    "shareRequiresPermission": "他のメンバーと共有するには、プロジェクトのシークレットを管理する権限が必要です。",
+    "accountConnected": "ChatGPT アカウントを接続しました",
+    "accountReconnected": "ChatGPT アカウントを再接続しました",
+    "connectFailed": "ChatGPT の認証に失敗しました。もう一度お試しください。",
+    "reconnectAccount": "再接続",
+    "reconnectTitle": "{label} を再接続",
+    "reconnectDescription": "ChatGPT にもう一度サインインしてください。アカウントの名前、アクセス、セッションの選択はそのまま維持されます。",
+    "needsReconnection": "再接続が必要です",
     "accountLabelPlaceholder": "例: 自分の ChatGPT アカウント",
     "chooseProvider": "プロバイダーを選択してください。",
     "saved": "シークレットを保存しました",
@@ -52,7 +71,7 @@
     "deleteError": "シークレットを削除できませんでした",
     "accessError": "アクセス権を変更できませんでした",
     "sharedTitle": "プロバイダー接続",
-    "sharedDescription": "複数の API キーと ChatGPT アカウントを追加できます。既定ではこのプロジェクトの全員が使用できます。接続ごとにアクセスを制限し、セッションごとにキーを選択できます。",
+    "sharedDescription": "API キーと ChatGPT アカウントを追加できます。新しい接続は共有するまで自分専用です。セッションごとに使用する接続を選択できます。",
     "legacyProjectKey": "既存のプロジェクトキー · このセッションでキーを選択していない場合に使用",
     "keyCount": "{count, plural, one {# 個のキー} other {# 個のキー}}",
     "providerKeysFor": "{provider} の API キー",
@@ -102,6 +121,7 @@
     "providerKeys": "プロバイダーキー",
     "chooseSharedKeys": "このセッションで使用できる共有キーを選択します。",
     "sessionKeyPool": "セッションのキープール",
+    "sharedSessionKeys": "このセッションはプロジェクトと共有されているため、ここではプロジェクト全体で共有されているキーのみ使用できます。自分に付与されたキーは、自分の非公開セッションで使用できます。",
     "projectDefaultShort": "プロジェクトのデフォルト",
     "rateLimitDescription": "プロバイダーがレート制限を返した場合、ゲートウェイは選択したキーを順に使用します。",
     "enableGateway": "キープールを使用するには、プロジェクト設定で LLM ゲートウェイを有効にしてください。",
@@ -1109,7 +1129,7 @@
         },
         "pooled_provider_secrets": {
           "name": "共有プロバイダーシークレット",
-          "description": "複数のプロバイダーキーをメンバーと共有し、セッションごとにキープールを選択します。"
+          "description": "メンバーが自分の ChatGPT サブスクリプションとプロバイダーキーを接続し、必要に応じて共有し、セッションごとに使用するものを選択します。"
         },
         "pi_worker": {
           "name": "Pi ワーカーランタイム（コンパイル済み）",
@@ -1122,6 +1142,10 @@
         "agent_principal": {
           "name": "プリンシパルとしてのエージェント",
           "description": "エージェントはエージェント自身として動作します。権限は Kortix の権限で、ロールが上限です。エージェントを実行する人が加えるのは自分のアカウントだけです。"
+        },
+        "config_releases": {
+          "name": "設定リリース",
+          "description": "ベースブランチの現在のエージェント設定を読み取り専用で配信してセッションを実行し、マージされたエージェント・スキル・ツールが実行中のすべてのセッションに届きます。オフの場合、セッションは自分のワークスペース設定フォルダーを読みます。"
         }
       }
     },
@@ -1594,6 +1618,7 @@
     "backToProject": "プロジェクトに戻る",
     "delete": "セッションを削除",
     "failedLabel": "失敗したセッション",
+    "loadingConversation": "会話を読み込んでいます",
     "prompt": {
       "queueFailed": "保存済みのプロンプトをキューに追加できませんでした",
       "unavailable": "利用できる保存済みのプロンプトはありません。",
@@ -1617,11 +1642,6 @@
     "previousRepository": {
       "title": "このセッションは古くなっています",
       "message": "このセッションの開始後にプロジェクトが変更されました。最新の状態で作業を続けるには更新してください。",
-      "unavailable": "以前のワークスペースは利用できません。現在のリポジトリで新しいセッションを開始してください。",
-      "resume": "以前のワークスペースを再開",
-      "resuming": "再開中…",
-      "newSession": "新しいセッションを開始",
-      "delete": "セッションを削除",
       "update": "最新に更新",
       "updating": "更新中…",
       "dismiss": "閉じる",
@@ -6226,7 +6246,8 @@
       "line64JsxTextAllWorkerExecutionsAreCurrentlyPaused": "現在、すべてのWorker実行は一時停止されています。"
     },
     "componentsMarkdownUnifiedMarkdown": {
-      "line1115JsxTextNoContent": "コンテンツなし"
+      "line1115JsxTextNoContent": "コンテンツなし",
+      "loadRemoteImage": "{host} から画像を読み込む"
     },
     "componentsOnboardingBootOverlay": {
       "line135JsxTextPressEnterToBoot": "Enterキーを押して起動..."
@@ -9456,7 +9477,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": "。これらの変更はここにのみ存在し、まだ次には含まれていません:",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "バージョン。変更を提案してレビューと適用を受けてください。",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "名前を変更…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "シェア…",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix セッションを起動しています",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "新しいターミナル",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "ファイルビュー",
@@ -18564,6 +18584,17 @@
       "textea5d0ffa0962": "共有アカウントはプロジェクト管理者が接続します。",
       "text3d6627454174": "認証情報を設定",
       "text929505ef815a": "まだアカウントが接続されていません。以下で自分のアカウントを追加するか、プロジェクト管理者に共有アカウントの接続を依頼してください。",
+      "text931cb67e2af7": "新しいエージェント設定を読み込めませんでした。このセッションは以前の設定で実行されています。",
+      "textd9ff3a72833d": "設定を読み込めませんでした",
+      "textebfb07812fb4": "新しいエージェント設定を読み込めませんでした",
+      "text4e62b29dd3b6": "このセッションは以前の設定で実行されています。失敗した設定は、ベースブランチが変更されるまで再試行されません。",
+      "textf81ab834de5f": "理由",
+      "text44cdf35701cd": "現在実行中",
+      "text591f9f0f3259": "失敗したリリース",
+      "text00ed4c71dc2b": "最後に動作したリリース",
+      "textbd7a1a3b4141": "プラットフォームのデフォルト設定",
+      "text643df05476ab": "このセッションはプラットフォームのデフォルト設定で実行されています。失敗した設定は、ベースブランチが変更されるまで再試行されません。",
+      "text40652e008fc9": "新しいエージェント設定を読み込めませんでした。このセッションはプラットフォームのデフォルト設定で実行されています。",
       "text3312ddb06c1d": "Azure でボットを登録し、ここで接続してから、アプリ パッケージを Teams にアップロードします。",
       "text7f1b55a356b0": "Azure でボットを登録",
       "text91004edf8b30": "このプロジェクトに接続",
@@ -18672,7 +18703,9 @@
       "texta0bcee97cbb3": "インラインチェックアウトを確定しました",
       "text0b751a917c97": "GitHub インストールを接続しました",
       "text8b7a8797d532": "Microsoft Teams テナントを接続しました",
+      "text83c0e255d4bb": "Microsoft Teams のインストールを完了しました",
       "text17a8cf884e2a": "Slack ワークスペースを接続しました",
+      "textf887cb0e6800": "Slack アプリのインストールを完了しました",
       "textc7f9ec5ed69c": "コンピュータトンネルエージェントを接続しました",
       "textafd58fcedeee": "メール受信トレイを接続しました",
       "text2eda12b4ed38": "既存の GitHub App を接続しました",
@@ -18929,6 +18962,7 @@
       "text60954a626cee": "LLM ゲートウェイキーを取り消しました",
       "text32c1477a3336": "コンピュータトンネルの権限を取り消しました",
       "text953488439740": "コネクタアカウントを取り消しました",
+      "texte817b7da7436": "非公開のコネクタアカウントを共有しました",
       "text538cb0effaea": "個人用アクセストークンを取り消しました",
       "text74be1c139903": "プールされたプロバイダーキーの付与を取り消しました",
       "text6d3935be0516": "プロジェクト CLI トークンを取り消しました",
@@ -19135,7 +19169,50 @@
       "text2afef4702cc0": "システムステータスバナーを表示しました",
       "textbda3fcd4343c": "ティア設定を表示しました",
       "text30cef615e8e3": "取引の概要を表示しました",
-      "textd2c6127fc332": "バージョンの差分を表示しました"
+      "textd2c6127fc332": "バージョンの差分を表示しました",
+      "text8cc0d84b66bb": "Slack ID リンクをプレビュー",
+      "text508b43cc4545": "Teams ID リンクをプレビュー",
+      "text467f597e95b0": "SSO ドメインを検証しました",
+      "text8295f9d4861b": "アカウントの SSO ドメイン検証を設定しました",
+      "text7beaff63a7d3": "プロジェクトの設定アーカイブをダウンロードしました",
+      "text5176d59f25fd": "セッションの設定リリースを解決しました",
+      "text273c48dbf3b9": "プッシュ通知デバイスを登録しました",
+      "textbb666ddf7a57": "プッシュ通知デバイスを削除しました",
+      "text397ab5aecbbf": "セッションの権限リクエストを中継しました"
+    },
+    "publicShareConfirm": {
+      "title": "公開リンクを作成しますか？",
+      "description": "リンクを知っている人は誰でもサインインせずに閲覧できます。リンクは取り消すまで有効です。",
+      "confirm": "リンクを作成"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "公開リンク",
+      "sectionDescription": "リンクを知っている人は誰でもサインインせずにこの会話を読めます。",
+      "create": "公開リンクを作成",
+      "revokeDescription": "リンクを持つすべての人に対して会話が読み込まれなくなります。後で新しいリンクを作成できます。",
+      "rowMeta": "読み取り専用の会話",
+      "unavailable": "この会話は一時的に利用できません。",
+      "unavailableDescription": "現在この会話を読み込めません。しばらくしてからもう一度お試しください。",
+      "loadFailedDescription": "会話を読み込めませんでした。",
+      "empty": "まだメッセージはありません",
+      "savedCopy": "{date} に保存されたコピー"
+    },
+    "chatIdentityConnect": {
+      "chatAccount": "{service} アカウント",
+      "chatWorkspace": "{service} ワークスペース",
+      "checking": "リンクを確認中…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} は接続されませんでした",
+      "mismatch": "このインストールは別の Kortix アカウント、または別のプロジェクトから開始されました。そのアカウントでサインインするか、プロジェクトからインストールをやり直してください。",
+      "expired": "このインストールリンクは無効か期限切れです。プロジェクトからインストールをやり直してください。",
+      "failed": "インストールを完了できませんでした。プロジェクトからやり直してください。",
+      "backToProject": "プロジェクトに戻る"
+    },
+    "secretIntakeWithheld": {
+      "title": "保存しましたが、{agent} はまだ読み取れません",
+      "grant": "{count, plural, other {# 件のシークレット}}（{names}）はエージェント {agent} のシークレットに含まれていません。カスタマイズ → エージェント → {agent} → シークレット を開いて{count, plural, =1 {それ} other {それら}}を有効にしてください。",
+      "allowlist": "{count, plural, other {# 件のシークレット}}（{names}）はこのセッションのシークレットの範囲外です。{count, plural, =1 {それ} other {それら}}を使用するには新しいセッションを開始してください。"
     }
   },
   "projectOnboarding": {
@@ -19250,7 +19327,17 @@
   },
   "commandPalette": {
     "title": "コマンドパレット",
-    "description": "実行するコマンドを検索..."
+    "description": "実行するコマンドを検索...",
+    "copyTitle": "コピー",
+    "copyEmail": "メールアドレス",
+    "copyUserId": "ユーザー ID",
+    "copyAccountId": "アカウント ID",
+    "copyProjectId": "プロジェクト ID",
+    "copySessionId": "セッション ID",
+    "copySessionLink": "セッションのリンク",
+    "copyAction": "{label}をコピー",
+    "copied": "{label}をコピーしました",
+    "copyFailed": "クリップボードにコピーできませんでした"
   },
   "personalWelcome": {
     "dismiss": "閉じる",
@@ -20017,6 +20104,9 @@
     "providerError": "プロバイダーへのアクセスを更新できませんでした。",
     "managedTitle": "Kortix管理モデル",
     "managedDescription": "Kortixクレジットで課金される管理モデルです。APIキーは不要です。",
+    "pricingEstimate": "お客様向けの概算料金です。実際の料金は使用された経路によって決まります。",
+    "pricingRoute": "{route}：100万トークンあたり入力 {input} / キャッシュ {cacheRead} / 出力 {output}",
+    "pricingPreferred": "優先",
     "textImage": "テキスト + 画像",
     "textOnly": "テキストのみ",
     "zdrTitle": "ゼロデータ保持",
@@ -20147,5 +20237,64 @@
   },
   "connectorsAppReturn": {
     "done": "完了。Kortix アプリに戻る"
+  },
+  "ssoDomainVerification": {
+    "title": "ドメイン検証",
+    "verified": "検証済み",
+    "unverified": "未検証",
+    "verifiedDescription": "ID プロバイダーは {domain} について信頼されています。SSO の必須化はこのドメインに適用されます。",
+    "unverifiedDescription": "{domain} を管理していることを証明するため、この DNS TXT レコードを追加してください。それまでは SSO サインインはこのアカウント内でのみ機能し、SSO の必須化は効果がありません。",
+    "recordName": "名前",
+    "recordValue": "値",
+    "verify": "ドメインを検証",
+    "verifiedToast": "ドメインを検証しました",
+    "failedToast": "ドメインはまだ検証されていません",
+    "enforceNeedsVerification": "先にドメインを検証してください。SSO の必須化は検証済みのドメインにのみ適用されます。"
+  },
+  "accessSharing": {
+    "everyone": "{project} の全員",
+    "everyoneRoleNote": "各メンバーのプロジェクトロールは変わりません。選択したエージェントは {project} の全員に適用されます。",
+    "shareTitle": "{label} を共有",
+    "shareDescription": "このアカウントを使用できるユーザーを選択します。自分だけを選ぶと、自分専用になります。",
+    "whoCanUse": "使用できるユーザー",
+    "add": "ユーザーまたはグループを追加",
+    "everyoneDefaultMeta": "グループまたはユーザーを追加するまで",
+    "everyoneMeta": "プロジェクトにアクセスできる全員",
+    "groupMeta": "グループ",
+    "memberMeta": "メンバー",
+    "remove": "{name} を削除",
+    "keep": "残す",
+    "removedMeta": "保存時に削除されます",
+    "resultEveryone": "{project} の全員がこのアカウントを使用できます。",
+    "resultNarrowed": "選択したユーザーだけが、自分のプライベートセッションでこのアカウントを使用できます。",
+    "save": "保存",
+    "saved": "アクセスを更新しました",
+    "saveFailed": "アクセスを更新できませんでした",
+    "manageAccess": "アクセスを管理",
+    "sharedWith": "{names} と共有",
+    "notSharedWithYou": "あなたとは共有されていません",
+    "removeEveryoneTitle": "{agent} を全員と共有するのをやめますか？",
+    "removeEveryoneDescription": "{agent} を付与されたユーザーとグループだけが引き続き使用できます。ほかのメンバーはアクセスできなくなります。",
+    "removeEveryone": "共有をやめる",
+    "removed": "削除しました",
+    "removeFailed": "アクセスを削除できませんでした",
+    "accountsTitle": "アカウント",
+    "addAccount": "アカウントを追加",
+    "addAccountTitle": "{connector} アカウントを追加",
+    "addAccountDescription": "アカウントに名前を付け、使用できるユーザーを選択します。",
+    "onlyYou": "自分のみ",
+    "onlyYouDescription": "自分のプライベートセッションで、自分だけが使用できます。",
+    "specificPeople": "特定のユーザーまたはグループ",
+    "specificPeopleDescription": "選択したユーザーとグループだけが、各自のプライベートセッションで使用できます。",
+    "shareRequiresManage": "アカウントを共有するには、プロジェクトの接続を管理する権限が必要です。",
+    "nameTaken": "{label} という名前のアカウントはすでに存在します。",
+    "noAccountsTitle": "アカウントはまだありません",
+    "noAccountsDescription": "セッションで {connector} を使用するには、アカウントを追加してください。",
+    "visibilityEveryone": "プロジェクト全員",
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "{label} として保存しました",
+    "connectFailed": "アカウントを接続できませんでした。もう一度お試しください。",
+    "sharePrivateDescription": "自分のアカウントを使用できるユーザーを追加で選択します。共有アカウントになり、プロジェクトの接続管理者も管理できるようになります。",
+    "ownerMeta": "自分のアカウント"
   }
 }

@@ -1,11 +1,14 @@
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { Platform } from 'react-native';
 import { log } from '@/lib/logger';
+import type { ServerPreferences } from '@/lib/notifications/push';
 
 interface RegisterDeviceTokenRequest {
   device_token: string;
-  device_type?: string;
-  provider?: string;
+  device_type: 'ios' | 'android';
+  provider: 'expo';
+  /** Omitted keys keep their stored values on the server. */
+  preferences?: ServerPreferences;
 }
 
 interface RegisterDeviceTokenResponse {
@@ -47,8 +50,10 @@ async function fetchApi<T>(
 }
 
 export const notificationsApi = {
+  /** Idempotent upsert: re-registering the same token only updates its preferences. */
   async registerDeviceToken(
-    deviceToken: string
+    deviceToken: string,
+    preferences?: ServerPreferences
   ): Promise<RegisterDeviceTokenResponse> {
     log.log('📲 Registering device token...');
     
@@ -58,6 +63,7 @@ export const notificationsApi = {
       device_token: deviceToken,
       device_type: deviceType,
       provider: 'expo',
+      ...(preferences ? { preferences } : {}),
     };
 
     const response = await fetchApi<RegisterDeviceTokenResponse>(
@@ -72,13 +78,15 @@ export const notificationsApi = {
     return response;
   },
 
-  async unregisterDeviceToken(deviceToken: string): Promise<void> {
+  /** Idempotent. `signal` aborts the request (the sign-out deadline). */
+  async unregisterDeviceToken(deviceToken: string, signal?: AbortSignal): Promise<void> {
     log.log('🗑️ Unregistering device token...');
     
-    await fetchApi<void>(
+    await fetchApi<{ success: boolean; deleted?: boolean }>(
       `/notifications/device-token/${encodeURIComponent(deviceToken)}`,
       {
         method: 'DELETE',
+        signal,
       }
     );
 

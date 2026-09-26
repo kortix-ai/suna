@@ -16,9 +16,13 @@ on:
         required: false
         type: string
 
+# Queue, never cancel: an in-flight staging deploy finishes (a cancel could
+# kill `migrate-db` against STAGING_DATABASE_URL mid-migration), and the newest
+# pending run replaces older pending ones, so the latest staging commit still
+# wins. Enforced by tests/unit/deploy-concurrency.test.ts.
 concurrency:
   group: deploy-staging
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -360,7 +364,21 @@ jobs:
       # the two keys (or an unapplied Terraform) leaves the API on the Git
       # path: the config validates the bucket as optional and the worker idles.
       # docs/runbooks/project-snapshot-s3.md#aws
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2"}'
+      #
+      # KORTIX_CONFIG_ARCHIVE_S3_* points the API's ONE object store
+      # (apps/api/src/object-store/s3.ts) at the SAME bucket for config release
+      # archives, under the `config-releases/` prefix
+      # (KORTIX_CONFIG_ARCHIVE_S3_PREFIX, default). Own keys, not the snapshot
+      # ones, so naming a config bucket never starts the snapshot producer.
+      # Credentials: the task role, which already holds PutObject/GetObject on
+      # the objects and ListBucket on the bucket.
+      # KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT=0 hands retention to the
+      # bucket's lifecycle rule (expiration_days = 30 in
+      # infra/terraform/modules/project-snapshots-bucket): that role has NO
+      # s3:DeleteObject, and expiry is safe because the archive is a cache the
+      # API rebuilds from its Git mirror.
+      # docs/specs/config-releases.md#store
+      KORTIX_ECS_ENV_OVERRIDES: '{"CONFIG_RELEASES_ENABLED":"true","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

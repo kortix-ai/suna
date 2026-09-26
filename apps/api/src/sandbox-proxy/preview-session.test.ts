@@ -13,12 +13,12 @@ const {
   verifyPreviewSession,
 } = await import('./preview-session');
 
-const TARGET = { sandboxLabel: 'sbx-01m0g4hxcm32bx5r1gpyzdyc1h', port: 8081 };
+const TARGET = { sandboxLabel: 'sbx-01aaaaaaaaaaaaaaaaaaaaaaaa', port: 8081 };
 
 const principal = {
   kind: 'principal' as const,
   sandboxLabel: TARGET.sandboxLabel,
-  sandboxId: 'sbx_01M0G4HXCM32BX5R1GPYZDYC1H',
+  sandboxId: 'sbx_01AAAAAAAAAAAAAAAAAAAAAAAA',
   port: TARGET.port,
   userId: 'user-1',
   callerSessionId: null,
@@ -26,42 +26,30 @@ const principal = {
 };
 
 describe('mint / verify', () => {
-  test('round-trips a principal grant', () => {
-    const token = mintPreviewSession(principal, PREVIEW_SESSION_TTL_SECONDS);
-    const session = verifyPreviewSession(token, TARGET);
-    expect(session).toMatchObject({
-      kind: 'principal',
-      userId: 'user-1',
-      port: 8081,
-      // The canonical id rides along so a cookie hit skips the label lookup.
-      sandboxId: 'sbx_01M0G4HXCM32BX5R1GPYZDYC1H',
-    });
-  });
-
-  test('round-trips a public-share grant', () => {
-    const token = mintPreviewSession(
+  // A cookie carries every field the forwarder later authorizes on, and the
+  // canonical id, so a cookie hit skips the label lookup.
+  test.each([
+    ['a principal grant', principal],
+    [
+      'a sandbox-authored principal grant bound to a session',
+      { ...principal, callerSessionId: 'session-9', sandboxAuthored: true },
+    ],
+    [
+      'a public-share grant',
       {
-        kind: 'public_share',
+        kind: 'public_share' as const,
         sandboxLabel: TARGET.sandboxLabel,
-        sandboxId: 'sbx_01M0G4HXCM32BX5R1GPYZDYC1H',
+        sandboxId: 'sbx_01AAAAAAAAAAAAAAAAAAAAAAAA',
         port: TARGET.port,
         shareId: 's1',
         mode: 'read',
       },
-      900,
-    );
-    expect(verifyPreviewSession(token, TARGET)).toMatchObject({ kind: 'public_share', shareId: 's1' });
-  });
-
-  test('preserves the fields the forwarder authorizes on', () => {
-    const token = mintPreviewSession(
-      { ...principal, callerSessionId: 'session-9', sandboxAuthored: true },
-      60,
-    );
-    expect(verifyPreviewSession(token, TARGET)).toMatchObject({
-      callerSessionId: 'session-9',
-      sandboxAuthored: true,
-    });
+    ],
+  ])('round-trips %s', (_label, grant) => {
+    const token = mintPreviewSession(grant, PREVIEW_SESSION_TTL_SECONDS);
+    const { exp, ...session } = verifyPreviewSession(token, TARGET)!;
+    expect(exp).toBeGreaterThan(Date.now() / 1000);
+    expect(session).toEqual(grant);
   });
 
   test('a cookie for one preview is refused on another sandbox', () => {
@@ -110,9 +98,7 @@ describe('cookies', () => {
     // behind a plain-http reverse proxy. `SameSite=None` without `Secure` is
     // rejected outright, so Lax is the most that can be stored there.
     const cookies = previewSessionCookies('value', { secure: false, maxAgeSeconds: 100 });
-    expect(cookies).toHaveLength(1);
-    expect(cookies[0]).not.toContain('SameSite=None');
-    expect(cookies[0]).not.toContain('Secure');
+    expect(cookies).toEqual([`${PREVIEW_COOKIE}=value; Path=/; HttpOnly; Max-Age=100; SameSite=Lax`]);
   });
 
   test('reads the partitioned copy first so an embed wins over a stale tab cookie', () => {

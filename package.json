@@ -112,14 +112,14 @@
     },
     "patchedDependencies": {
       "e2b@2.37.0": "patches/e2b@2.37.0.patch",
-      "blume@1.5.3": "patches/blume@1.5.3.patch"
+      "blume@1.5.3": "patches/blume@1.5.3.patch",
+      "shaders@2.5.135": "patches/shaders@2.5.135.patch"
     }
   },
   "version": "1.0.0",
   "description": "<div align=\"center\">",
   "main": "index.js",
   "directories": {
-    "doc": "docs",
     "test": "tests"
   },
   "dependencies": {

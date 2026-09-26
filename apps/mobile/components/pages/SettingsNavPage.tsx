@@ -6,7 +6,7 @@
  * Settings (the drawer's own gear button, its other entry point, was removed
  * — COR-124/COR-157 Task 4). As a sub-page its `PageHeader` shows Go back
  * (`onBack`) in place of the hamburger, and back returns to Settings. The
- * Customize rows push Schedules and Secrets the same way (`onOpenPage`), so
+ * Customize rows push Schedules, Secrets and Members the same way (`onOpenPage`), so
  * back from them returns here. `PageHeader title` is the project's name, not
  * the tab label "Settings" (Jay, 2026-09-23), with the tab label as a
  * loading fallback.
@@ -14,14 +14,19 @@
  * Groups (Jay, 2026-09-23 — titled, unlike the rest of this page's earlier
  * shape: `SettingsGroup`/`SettingsRow`, tap a row to edit, never an inline
  * form on the page):
- *   • Customize — Schedules and Secrets (`PROJECT_CUSTOMIZE_ITEMS`,
- *     `lib/session/dock-menu.ts`; each opens its page as a sub-page), then two
- *     web-handoff rows opened in the in-app browser
- *     (`lib/projects/web-project-links.ts`): Members and "More on
- *     kortix.com" (the project's full Customize hub). This group replaces
- *     the project sheet (`CustomizeSheet`), deleted in the same change
- *     (COR-123/COR-160 Task 3): Agents, Skills, Members and Terminal have no
- *     mobile page any more; Review moves into the drawer (Task 4).
+ *   • Customize — Schedules, Secrets and Members (`PROJECT_CUSTOMIZE_ITEMS`,
+ *     `lib/session/dock-menu.ts`; each opens its page as a sub-page), then
+ *     Connectors (KRTX-249, moved here from the project drawer's `NavPill`: a
+ *     `kind: 'web-handoff'` row that opens `WebHandoffSheet` — "Customize in
+ *     the web app" — whose Continue runs the connectors web flow, unchanged
+ *     from the old drawer row's auth session + query invalidation), then one
+ *     web-handoff row opened directly in the in-app browser
+ *     (`lib/projects/web-project-links.ts`): "More on kortix.com" (the
+ *     project's full Customize hub). This group replaces the project sheet
+ *     (`CustomizeSheet`), deleted in COR-123/COR-160 Task 3: Agents, Skills
+ *     and Terminal have no mobile page; Members was a web handoff until it
+ *     came back as an in-app page (Jay, 2026-09-24); Review moves into the
+ *     drawer (Task 4).
  *   • Details — Name (was "Project name"), Repository (open on GitHub, edit
  *     the default branch + manifest path), and (managed repos) invite a
  *     GitHub collaborator.
@@ -45,7 +50,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { BottomSheetView } from '@gorhom/bottom-sheet';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import {
   GitBranchIcon as GitBranch,
@@ -53,7 +58,6 @@ import {
   UserPlusIcon as UserPlus,
   GithubLogoIcon as Github,
   CheckIcon as Check,
-  UsersIcon as Users,
   GlobeIcon as Globe,
 } from '@/lib/icons';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
@@ -74,15 +78,21 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { PageContent } from '@/components/kortix/page-content';
 import { PageList } from '@/components/kortix/page-list';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import { KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, type SheetRef } from '@/components/kortix/sheet';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
+import { WebHandoffSheet } from '@/components/session/WebHandoffSheet';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { useProject, useUpdateProject, useArchiveProject } from '@/lib/projects/hooks';
+import { projectKeys, useProject, useUpdateProject, useArchiveProject } from '@/lib/projects/hooks';
 import { inviteRepoCollaborator, isManagedGithubProject } from '@/lib/projects/projects-client';
 import type { KortixProject } from '@/lib/projects/projects-client';
 import { KORTIX_WEB_URL } from '@/lib/kortix-web';
-import { projectCustomizeWebUrl, projectMembersWebUrl } from '@/lib/projects/web-project-links';
+import {
+  CONNECTORS_DONE_URI,
+  CONNECTORS_RETURN_URL,
+  projectConnectorsWebUrl,
+  projectCustomizeWebUrl,
+} from '@/lib/projects/web-project-links';
 import { PROJECT_CUSTOMIZE_ITEMS } from '@/lib/session/dock-menu';
 import type { SubPageId } from '@/lib/session/project-stack';
 import { DOCK_ICONS } from '@/components/session/dock-icons';
@@ -100,7 +110,7 @@ interface SettingsNavPageProps {
   projectId: string;
   /** Pushed as a sub-page: Go back in the header, in place of the hamburger. */
   onBack?: () => void;
-  /** Open a Customize row's page (Schedules, Secrets) as a sub-page over this one. */
+  /** Open a Customize row's page (Schedules, Secrets, Members) as a sub-page over this one. */
   onOpenPage: (pageId: SubPageId) => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
@@ -364,6 +374,8 @@ export function SettingsNavPage({
   const editFieldRef = useRef<EditFieldSheetRef>(null);
   const collaboratorModalRef = useRef<BottomSheetModal>(null);
   const deleteModalRef = useRef<BottomSheetModal>(null);
+  const connectorsHandoffRef = useRef<SheetRef>(null);
+  const queryClient = useQueryClient();
 
   const openNameEditor = (current: KortixProject) =>
     editFieldRef.current?.open({
@@ -414,18 +426,33 @@ export function SettingsNavPage({
   const repoLabel = githubUrl?.replace('https://github.com/', '') || project?.repo_url || null;
   const managed = project ? isManagedGithubProject(project) : false;
 
-  const openMembersOnWeb = () => {
-    haptics.tap();
-    WebBrowser.openBrowserAsync(projectMembersWebUrl(KORTIX_WEB_URL, projectId)).catch((error) => {
-      log.error('Error opening project members:', error);
-    });
-  };
-
   const openCustomizeOnWeb = () => {
     haptics.tap();
     WebBrowser.openBrowserAsync(projectCustomizeWebUrl(KORTIX_WEB_URL, projectId)).catch((error) => {
       log.error('Error opening project customize page:', error);
     });
+  };
+
+  // Connectors (KRTX-249): moved here from the project drawer's `NavPill`.
+  // Mobile still has no connector catalog, so web's Customize → Connectors
+  // page still owns connecting — only the entry point changed, from a full
+  // drawer row to a "Customize in the web app" hand-off sheet. Continue opens
+  // the page in an in-app auth session with `return_to=kortix://connectors/done`:
+  // its bottom bar sends the browser there once the user is done, and the
+  // session closes itself on that redirect (or on the user closing the
+  // browser by hand). Either way the project's connector list refetches, so a
+  // thread's connector rows see the new connections.
+  const runConnectorsHandoff = async () => {
+    try {
+      await WebBrowser.openAuthSessionAsync(
+        projectConnectorsWebUrl(KORTIX_WEB_URL, projectId, CONNECTORS_DONE_URI),
+        CONNECTORS_RETURN_URL
+      );
+    } catch {
+      // The browser failed to open; nothing changed on the server.
+      return;
+    }
+    void queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
   };
 
   return (
@@ -449,16 +476,16 @@ export function SettingsNavPage({
               <SettingsGroup title="Customize">
                 {PROJECT_CUSTOMIZE_ITEMS.map((item) => (
                   <SettingsRow
-                    key={item.pageId}
+                    key={item.label}
                     icon={DOCK_ICONS[item.icon]}
                     label={item.label}
                     onPress={() => {
                       haptics.tap();
-                      onOpenPage(item.pageId);
+                      if (item.kind === 'item') onOpenPage(item.pageId);
+                      else connectorsHandoffRef.current?.open();
                     }}
                   />
                 ))}
-                <SettingsRow icon={Users} label="Members" external onPress={openMembersOnWeb} />
                 <SettingsRow icon={Globe} label="More on kortix.com" external onPress={openCustomizeOnWeb} />
               </SettingsGroup>
 
@@ -511,6 +538,12 @@ export function SettingsNavPage({
 
       <EditFieldSheet ref={editFieldRef} />
       <AddCollaboratorSheet projectId={projectId} modalRef={collaboratorModalRef} />
+      <WebHandoffSheet
+        ref={connectorsHandoffRef}
+        title="Customize in the web app"
+        line="Connectors are set up on kortix.com."
+        run={runConnectorsHandoff}
+      />
       {project ? (
         <DeleteProjectSheet
           project={project}

@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { getClient } from '../core/runtime/client';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
+import { getClient } from '../core/runtime/client';
 import type { MessageWithPartsLike, ToolPartLike } from '../core/turns/types';
+import { shouldRunSelfHealPoll } from './self-heal-poll-gate';
 
 /** A tool stuck in `running` this long with nothing pending is suspicious —
  * long enough that ordinary tool startup never trips it. */
@@ -89,6 +91,11 @@ export interface UsePermissionSelfHealOptions {
  * every 15s so an active session never gets hammered. The poll stops the moment
  * a pending permission shows up (from this poll or the SSE event finally
  * arriving) or the tool part settles.
+ *
+ * The poll also stops while the sandbox is not reachable or is parked
+ * (`shouldRunSelfHealPoll`): a parked box answers every read from the session
+ * row with a 503 and a GET can never resume it, so a part left `running` when
+ * the box parked used to poll it forever (one 5xx per interval, KRTX-269).
  */
 export function usePermissionSelfHeal(
   sessionId: string,
@@ -101,13 +108,22 @@ export function usePermissionSelfHeal(
     (s) => Object.values(s.permissions).filter((p) => p.sessionID === sessionId).length,
   );
   const active = useMemo(() => hasActiveNonQuestionTool(messages), [messages]);
+  const sandboxStatus = useSandboxConnectionStore((s) => s.status);
+  const parked = useSandboxConnectionStore((s) => s.parked);
+  const pollAllowed = shouldRunSelfHealPoll({
+    enabled,
+    hasCandidate: active,
+    pendingCount,
+    sandboxStatus,
+    parked,
+  });
 
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const inFlightRef = useRef(false);
   const lastAtRef = useRef(0);
   useEffect(() => {
-    if (!enabled || !active || pendingCount > 0) return;
+    if (!pollAllowed) return;
 
     let cancelled = false;
 
@@ -158,5 +174,5 @@ export function usePermissionSelfHeal(
       cancelled = true;
       clearInterval(timer);
     };
-  }, [enabled, active, pendingCount, addPermission]);
+  }, [pollAllowed, addPermission]);
 }

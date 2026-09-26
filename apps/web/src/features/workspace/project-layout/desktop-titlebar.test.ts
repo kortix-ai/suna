@@ -8,10 +8,10 @@ import { join } from 'node:path';
  * main process positions the macOS traffic lights, and the (remote) web app
  * positions everything else that shares the band with them. Nothing links the
  * two at build time, so the numbers were copied by hand — and drifted into
- * four disagreeing band heights (60px in main.js's comment, 52px for
- * `.kx-app-header`, 40px for the tab bar and both sidebar headers) with two
- * React components centering controls on a y=26 line while the lights sat at
- * y=30.
+ * four disagreeing band heights (60px in main.js's comment, 52px for the
+ * standalone-page breadcrumb header, 40px for the tab bar and both sidebar
+ * headers) with two React components centering controls on a y=26 line while
+ * the lights sat at y=30.
  *
  * window-chrome.js is now the one table. These tests fail if the CSS mirror or
  * a component stops agreeing with it.
@@ -311,6 +311,72 @@ describe('nothing re-hard-codes the band', () => {
       layout.indexOf('{children}'),
     );
     expect(control).toContain('[-webkit-app-region:no-drag]');
+  });
+
+  test('headerless project views get a shell drag region without covering real titlebars', () => {
+    expect(shell).toContain('className="kx-project-shell-drag-region"');
+    expect(shell).toContain('aria-hidden="true"');
+    expect(css).toContain(
+      "html[data-desktop-platform='macos'] .kx-project-shell-drag-region {",
+    );
+    expect(css).toMatch(
+      /\[data-kx-titlebar-owner\]:has\(\.kx-titlebar-row\)\s*>\s*\.kx-project-shell-drag-region\s*\{[^}]*display:\s*none/s,
+    );
+  });
+
+  test('controls outside a drag owner or overlay never cut holes in the band', () => {
+    // Chromium collects no-drag rects unclipped, in DOM order, ignoring
+    // z-index. A transcript control scrolled under the session header must
+    // not subtract from it. Blink maps `none` to no-drag, so only `initial`
+    // resets the shell's injected rule.
+    const reset = css.match(
+      /:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button, a, input[^)]*\)\s*\{([^}]*)\}/s,
+    );
+    expect(reset?.[1]).toContain('-webkit-app-region: initial');
+    expect(reset?.[1]).toContain('app-region: initial');
+    expect(reset?.[1]).not.toMatch(/app-region:\s*none/);
+
+    const scoped = css.match(
+      /:is\(\s*\.kx-titlebar-row,([^)]*)\)\s*:is\(\s*button, a, input[^)]*\),\s*html\[data-desktop-platform='macos'\] \[class\*='app-region:no-drag'\]\s*\{\s*-webkit-app-region: no-drag;/s,
+    );
+    expect(scoped).not.toBeNull();
+    for (const owner of [
+      '.kx-titlebar-tabs',
+      '.kx-project-sidebar-header',
+      "[role='dialog']",
+      "[role='menu']",
+      '[data-radix-popper-content-wrapper]',
+    ]) {
+      expect(scoped?.[1]).toContain(owner);
+    }
+  });
+
+  test('pages without a titlebar owner get a full-height root drag band', () => {
+    // Auth, `/projects`, and `/new` have no row in the band. The 6px strip was
+    // their only drag area.
+    expect(css).toMatch(
+      /body:not\(:has\(\[data-kx-titlebar-owner\]\)\) \.kx-desktop-chrome \{\s*height: max\(6px, var\(--kx-titlebar-inset\)\);/,
+    );
+    // The scroll reset stays scoped to owner pages, so visible controls under
+    // the transparent root band keep the shell's no-drag rule.
+    expect(css).toMatch(
+      /html\[data-desktop-platform='macos'\]\s*:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button, a,/,
+    );
+  });
+
+  test('the full-height root drag band never takes a DOM click from Back', () => {
+    // The strip is fixed at z-index 9999 and Back at z-50. A click in Back's
+    // no-drag rect reaches the page, and the page hit test picks the topmost
+    // box. The grown strip and its child must be transparent to that test, or
+    // Back is dead on auth, `/projects`, `/new`, and onboarding.
+    const grown = css.match(
+      /html\[data-desktop-platform='macos'\] body:not\(:has\(\[data-kx-titlebar-owner\]\)\) \.kx-desktop-chrome,\s*html\[data-desktop-platform='macos'\] body:not\(:has\(\[data-kx-titlebar-owner\]\)\) \.kx-desktop-chrome > \* \{([^}]*)\}/,
+    );
+    expect(grown?.[1]).toContain('pointer-events: none');
+    // Back stays below the strip in z-order; only pointer-events makes it
+    // reachable. Raising Back instead would leave every other control in the
+    // band covered.
+    expect(control).toContain('z-50');
   });
 
   test('the session header takes the band offsets from the shared row class', () => {

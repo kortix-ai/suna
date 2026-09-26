@@ -23,6 +23,7 @@ import {
   NODE_VERSION,
   NPM_VERSION,
   OPENCODE_VERSION,
+  PI_SYSTEM_PACKAGES,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
@@ -228,7 +229,11 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // OpenCode config while it indexes /workspace, then restores the exact checkout.
 // v44: install the shared shell tool floor (rg, fd, bat, jq, fzf, …) from
 // @kortix/shared/sandbox shell-tools.ts, with `fd`/`bat` linked to Debian's names.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v44';
+// v45: bake /etc/profile.d/zz-kortix.sh + an /etc/bash.bashrc hook
+// (kortixShellProfileRun). Debian's /etc/profile resets PATH in the web
+// terminal's `bash -l`, so pnpm/uv/bun tools (opencode) were not found on
+// Debian-based custom templates; terminals also never loaded project secrets.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v48';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -940,9 +945,9 @@ const runtimeIntegrityKey = () =>
     BUN_SHA256_ARM64,
   ].join(':');
 const runtimeVersionKey = () =>
-  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${ANYDOC_VERSION}:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${ANYDOC_VERSION}:${PI_SYSTEM_PACKAGES.join(',')}:${runtimeIntegrityKey()}`;
 const sandboxVersionStr = () =>
-  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:anydoc:${ANYDOC_VERSION}:integrity:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:anydoc:${ANYDOC_VERSION}:pi:${PI_SYSTEM_PACKAGES.join(',')}:integrity:${runtimeIntegrityKey()}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;

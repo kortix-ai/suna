@@ -24,7 +24,33 @@ export function mermaidSvgFileName(fileName: string): string {
 export function hasOwnMermaidConfig(source: string): boolean {
   if (/%%\{\s*init(ialize)?\s*:/i.test(source)) return true;
   const front = /^\s*---\r?\n([\s\S]*?)\r?\n---/.exec(source);
-  return !!front && /^\s*config\s*:/m.test(front[1]);
+  return !!front && hasConfigLine(front[1] ?? '');
+}
+
+const isSpace = (text: string, at: number) => at < text.length && /\s/.test(text[at] ?? '');
+const isLineBreak = (text: string, at: number) => at < text.length && !/./.test(text[at] ?? '');
+
+/**
+ * Whether a line starts with `config:` after any whitespace, as
+ * `/^\s*config\s*:/m` found it. `\s*` crosses lines, so every line start
+ * inside a blank run reaches the same text: the regex retried each one, and
+ * 240k blank lines took 23 s. Here each run is read once.
+ */
+function hasConfigLine(yaml: string): boolean {
+  for (let at = 0; at <= yaml.length; ) {
+    let key = at;
+    while (isSpace(yaml, key)) key++;
+    if (yaml.startsWith('config', key)) {
+      let colon = key + 6;
+      while (isSpace(yaml, colon)) colon++;
+      if (yaml[colon] === ':') return true;
+    }
+    // The next line start after the whitespace run.
+    let end = key;
+    while (end < yaml.length && !isLineBreak(yaml, end)) end++;
+    at = end + 1;
+  }
+  return false;
 }
 
 /**

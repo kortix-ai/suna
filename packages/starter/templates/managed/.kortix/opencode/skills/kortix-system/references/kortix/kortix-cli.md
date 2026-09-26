@@ -173,9 +173,9 @@ the exact HTTPS hosts the policy lists.
 
 | Command | Effect |
 | --- | --- |
-| `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. |
+| `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. In a session it lists only your agent's granted secrets; a declared key outside the grant shows `not granted` (set or not, you never receive it — ask the human to enable it under Customize → Agents → your agent → Secrets). |
 | `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). |
-| `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER the value(s)** — you never see/handle the raw key. Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `runtime` = injected into the sandbox env), `--expires <minutes>` (default 30). Use this when you need a key you don't have. |
+| `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER the value(s)** — you never see/handle the raw key. Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `connector` = server-side only; pass `--scope runtime` for a value your code reads from the env), `--expires <minutes>` (default 7 days). Warns when your agent's grant will withhold a requested name. Use this when you need a key you don't have. |
 | `kortix secrets unset NAME …` | Remove. |
 | `kortix secrets call IDENTIFIER URL [--method METHOD] [--header NAME:VALUE] [--data BODY\|--data-file PATH]` | (Experimental network enforcement only.) Send one policy-bound HTTPS request. Kortix adds the secret server-side. Use it when a request cannot be relayed transparently. |
 
@@ -214,7 +214,7 @@ package**. JSON output.
 | `kortix connectors upload <file> --connector <slug>` | Stage one file; prints `ref` (`{"$kortix_attachment":"<id>"}`) to place in args — an attachments[] element or a base64 field such as `contentBytes`. |
 | `kortix connectors add <slug> --provider composio --app <toolkit> --apply` | Add a managed SaaS connector now, commit it to `kortix.yaml` on main, and sync it. |
 | `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
-| `kortix connectors connect <slug> [--owner me\|project]` | Mint the configured provider's authorization URL for a NEW account. `me` (default) is yours alone; `project` shares it with the whole project. |
+| `kortix connectors connect <slug> [--owner me\|project]` | Mint the provider's raw authorization URL for the connector's default account (`me`, the default, is yours; `project` is the shared one). It cannot name a new account: add one with the MCP `connect` tool and its `label`. |
 | `kortix connectors mcp` | Run the `kortix-connectors` stdio MCP server. |
 
 > Use Composio for every new managed SaaS connector. Pipedream is retained only

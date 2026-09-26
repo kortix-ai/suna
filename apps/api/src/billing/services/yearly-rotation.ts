@@ -3,8 +3,7 @@ import {
   updateCreditAccount,
 } from '../repositories/credit-accounts';
 import { getMonthlyCredits } from './tiers';
-import { resetExpiringCredits } from './credits';
-export { calculateNextCreditGrant } from './credit-grant-schedule';
+import { wallet } from '../wallet';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 
 // STORED TIER ON PURPOSE — do not route this file through the effective-plan
@@ -36,12 +35,12 @@ export async function processYearlyCreditRotation(): Promise<{
       const idempotencyKey = `yearly_rotation_${account.accountId}_${yearMonth}`;
 
       if (credits > 0) {
-        await resetExpiringCredits(
-          account.accountId,
-          credits,
-          `Yearly plan monthly credit rotation: ${credits} credits`,
-          idempotencyKey,
-        );
+        await wallet.reset({
+          accountId: account.accountId,
+          amount: credits,
+          description: `Yearly plan monthly credit rotation: ${credits} credits`,
+          key: { event: idempotencyKey },
+        });
       }
 
       const nextGrant = calculateNextCreditGrant(now);
@@ -60,14 +59,4 @@ export async function processYearlyCreditRotation(): Promise<{
 
   console.log(`[YearlyRotation] Processed: ${processed}, Skipped: ${skipped}, Errors: ${errors.length}`);
   return { processed, skipped, errors };
-}
-
-export function isYearlyAccountDueForRotation(account: Record<string, any>): boolean {
-  if (account.planType !== 'yearly') return false;
-  if (!account.tier || account.tier === 'free' || account.tier === 'none') return false;
-
-  if (!account.nextCreditGrant) return true;
-
-  const nextGrant = new Date(account.nextCreditGrant);
-  return nextGrant <= new Date();
 }

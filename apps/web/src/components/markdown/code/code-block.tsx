@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+import { CODE_SETTLE_MS, useSettledValue } from './settle';
 import {
   highlightAsync,
   highlightSync,
@@ -14,30 +15,6 @@ import {
   SHIKI_THEME_LIGHT,
   type CodeThemeName,
 } from './shiki-highlighter';
-
-/**
- * How long a streaming block's text must hold still before it is highlighted.
- *
- * The block that is still arriving changes on every paced render, and
- * tokenizing it each time was the dominant cost of streaming a code answer
- * (Shiki re-ran over the whole block per delta batch, and its cache never hit
- * because the key moved with the text). A block renders as plain text while it
- * grows and highlights once it stops — when its fence closes and the message
- * moves on, or at once when the stream ends.
- */
-export const CODE_SETTLE_MS = 400;
-
-/** `value` once it has held still for `delayMs` while `active`; `value` when not active; else null. */
-function useSettledValue(value: string, active: boolean, delayMs: number): string | null {
-  const [settled, setSettled] = useState<string | null>(null);
-  useEffect(() => {
-    if (!active) return;
-    const timer = setTimeout(() => setSettled(value), delayMs);
-    return () => clearTimeout(timer);
-  }, [value, active, delayMs]);
-  if (!active) return value;
-  return settled === value ? value : null;
-}
 
 interface HighlightResult {
   code: string;
@@ -97,10 +74,7 @@ export function HighlightedCode({
     target === null
       ? null
       : (highlightSync(target, language, theme, opts) ??
-        (result &&
-        result.code === target &&
-        result.language === language &&
-        result.theme === theme
+        (result && result.code === target && result.language === language && result.theme === theme
           ? result.html
           : null));
 

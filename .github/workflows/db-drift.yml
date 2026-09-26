@@ -11,7 +11,12 @@ name: DB Drift Sentinel
 
 on:
   schedule:
-    - cron: '0 7 * * *' # 07:00 UTC daily
+    # GitHub runs a schedule as the user who last changed this cron line. It
+    # stops dispatching when that user loses repository access: the previous
+    # line's author left the org and the last scheduled run was 2026-08-04.
+    # Editing the line re-registers the schedule under the merging user. Off
+    # the top of the hour, where GitHub delays or drops scheduled runs.
+    - cron: '17 7 * * *' # 07:17 UTC daily
   workflow_dispatch:
 
 permissions:
@@ -104,12 +109,14 @@ jobs:
   # PROD is a legacy database that predates the migration system: it carries
   # cosmetic differences by the hundreds (auto- vs explicitly-named constraints,
   # `0` vs `0.00` defaults, leftover legacy tables), so the strict signature diff
-  # above is all-false-positives against it. Instead gate prod on PRESENCE only —
-  # every table+column the migrations define must EXIST on prod (extras ignored).
+  # above is all-false-positives against it. Instead gate prod on PRESENCE —
+  # every table, column, enum value, index definition and constraint definition
+  # the migrations build must EXIST on prod (extras reported, never failed;
+  # deliberate gaps listed in packages/db/scripts/verify-live-schema-waivers.ts).
   # This is the nightly counterpart to the deploy-prod verify-schema gate; it also
   # catches drift introduced out-of-band BETWEEN deploys.
   prod-presence:
-    name: Prod has every table+column the migrations define
+    name: Prod has every object the migrations define
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     services:
       postgres:
@@ -165,6 +172,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
       - name: Build canonical from migrations + assert prod is a superset
         if: steps.gate.outputs.skip != 'true'
+        env:
+          # migrate.ts reads DATABASE_URL; without it this step failed before
+          # comparing anything ("No DB URL", runs of 2026-09-24).
+          DATABASE_URL: ${{ env.CANONICAL_DB_URL }}
         run: |
           psql "$CANONICAL_DB_URL" -v ON_ERROR_STOP=1 -f packages/db/scripts/test-prereqs.sql
           pnpm --filter @kortix/db migrate

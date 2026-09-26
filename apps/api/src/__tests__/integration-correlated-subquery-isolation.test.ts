@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { loadSandbox } from '../sandbox-proxy/backend';
 import { db } from '../shared/db';
+import { removeSeeded, seedProject } from './helpers/integration-fixtures';
 
 const run = crypto.randomUUID().slice(0, 8);
 const fixtures = {
@@ -69,9 +70,11 @@ async function insertSandbox(input: {
 }
 
 beforeAll(async () => {
-  projectsForTest = (await db.execute(
-    sql`select project_id, account_id from kortix.projects order by created_at asc limit 2`,
-  )) as unknown as ProjectRow[];
+  // Two tenants: each project in its own synthetic account.
+  projectsForTest = [
+    await seedProject(`iso-a-${run}`),
+    await seedProject(`iso-b-${run}`),
+  ];
 });
 
 afterAll(async () => {
@@ -92,6 +95,7 @@ afterAll(async () => {
   for (const sessionId of fixtures.sessionIds) {
     await db.execute(sql`delete from kortix.project_sessions where session_id = ${sessionId}`);
   }
+  await removeSeeded(projectsForTest);
 });
 
 describe('correlated reads stay on their own row', () => {
@@ -148,5 +152,43 @@ describe('correlated reads stay on their own row', () => {
     const record = await loadSandbox(`sbx_iso_c_${run}`.toLowerCase());
     expect(record?.sessionId).toBe(session);
     expect(record?.agentName).toBe(`iso-c-${run}`);
+    // The canonical provider id, never the lowercased request: every gate
+    // after this one keys on it.
+    expect(record?.externalId).toBe(`SBX_ISO_C_${run}`);
+  });
+
+  // A failed provision can leave older rows on the same provider id. The
+  // proxy must route to the row that owns the box now.
+  test('loadSandbox prefers the active row over a more recently touched failed row', async () => {
+    const [projectA] = projectsForTest as [ProjectRow];
+    const failedSession = await insertSession({
+      project: projectA,
+      agentName: `iso-failed-${run}`,
+      status: 'running',
+    });
+    const liveSession = await insertSession({
+      project: projectA,
+      agentName: `iso-live-${run}`,
+      status: 'running',
+    });
+    await insertSandbox({
+      project: projectA,
+      sessionId: liveSession,
+      externalId: `sbx_iso_shared_${run}`,
+      status: 'active',
+    });
+    await insertSandbox({
+      project: projectA,
+      sessionId: failedSession,
+      externalId: `sbx_iso_shared_${run}`,
+      status: 'error',
+    });
+    await db.execute(sql`
+      update kortix.session_sandboxes set updated_at = now() + interval '1 minute'
+       where session_id = ${failedSession}`);
+
+    const record = await loadSandbox(`sbx_iso_shared_${run}`);
+    expect(record?.sessionId).toBe(liveSession);
+    expect(record?.status).toBe('active');
   });
 });

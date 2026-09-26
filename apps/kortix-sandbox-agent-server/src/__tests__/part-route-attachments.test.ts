@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { OFFLOAD_PLACEHOLDER_URL } from '../harness/open-code/attachment-offload'
 import type { Opencode } from '../harness/open-code/lifecycle'
 import { createPartRouter } from '../routes/part'
-import { createOpenCodeAttachmentService, findAttachment } from '../harness/open-code/queries'
+import { createOpenCodeAttachmentService } from '../harness/open-code/queries'
 
 let root: string
 let server: ReturnType<typeof Bun.serve> | null = null
@@ -32,18 +32,6 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 function fakeOpencode(port: number): Opencode {
   return { getInternalUrl: () => `http://127.0.0.1:${port}` } as unknown as Opencode
 }
-
-describe('findAttachment', () => {
-  test('finds a top-level file part and a nested tool attachment by id', () => {
-    const parts = [
-      { type: 'file', id: 'f1', url: 'data:x' },
-      { type: 'tool', state: { attachments: [{ type: 'file', id: 'a1', url: 'data:y' }] } },
-    ]
-    expect(findAttachment(parts as any, 'f1')?.url).toBe('data:x')
-    expect(findAttachment(parts as any, 'a1')?.url).toBe('data:y')
-    expect(findAttachment(parts as any, 'zz')).toBeNull()
-  })
-})
 
 describe('GET /kortix/part/:s/:m/:p', () => {
   test('serves a tool screenshot from its nested attachment, and an offloaded one from the sidecar', async () => {

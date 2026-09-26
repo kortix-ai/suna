@@ -189,6 +189,13 @@ describe('selectSessionRowsForViewer', () => {
   test('visible scope preserves the existing visibility and resumability filters', () => {
     const own = row('own');
     const privateOther = row('private-other', { createdBy: OTHER_ID });
+    // A session migrated from the old runtime: status `completed`, no runtime
+    // row. An allowlist of live statuses would drop it from the list.
+    const migrated = row('migrated', {
+      status: 'completed',
+      createdBy: OTHER_ID,
+      visibility: 'project',
+    });
     const stoppedLost = row('stopped-lost', { status: 'stopped' });
     const stoppedResumable = row('stopped-resumable', { status: 'stopped' });
     const deleted = row('deleted', {
@@ -196,7 +203,7 @@ describe('selectSessionRowsForViewer', () => {
     });
 
     const selected = selectSessionRowsForViewer({
-      rows: [own, privateOther, stoppedLost, stoppedResumable, deleted],
+      rows: [own, privateOther, migrated, stoppedLost, stoppedResumable, deleted],
       scope: 'visible',
       canManageProject: false,
       subject,
@@ -209,8 +216,10 @@ describe('selectSessionRowsForViewer', () => {
     expect(selected.authorized).toBe(true);
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
       'own',
+      'migrated',
       'stopped-resumable',
     ]);
+    expect(selected.items.find((item) => item.row.sessionId === 'migrated')?.canAccess).toBe(true);
   });
 });
 
