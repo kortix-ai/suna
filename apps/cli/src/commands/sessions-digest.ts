@@ -9,8 +9,9 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad } from '../style.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -114,30 +115,21 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
     json = takeFlagBool(rest, ['--json']);
     all = takeFlagBool(rest, ['--all']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
-  if (positional.length > 0) {
-    process.stderr.write(`${status.err('sessions digest does not take positional arguments.')}\n`);
-    return 2;
-  }
+  if (positional.length > 0) return fail('sessions digest does not take positional arguments.');
 
   const messageLimit = messageLimitRaw === undefined ? 40 : Number(messageLimitRaw);
   if (!Number.isInteger(messageLimit) || messageLimit <= 0 || messageLimit > 500) {
-    process.stderr.write(`${status.err(`Invalid --messages "${messageLimitRaw}" (use 1-500).`)}\n`);
-    return 2;
+    return fail(`Invalid --messages "${messageLimitRaw}" (use 1-500).`);
   }
   const maxChars = charsRaw === undefined ? 700 : Number(charsRaw);
   if (!Number.isInteger(maxChars) || maxChars < 80 || maxChars > 5000) {
-    process.stderr.write(`${status.err(`Invalid --chars "${charsRaw}" (use 80-5000).`)}\n`);
-    return 2;
+    return fail(`Invalid --chars "${charsRaw}" (use 80-5000).`);
   }
   const since = all ? null : parseSince(sinceRaw ?? '7d');
-  if (!all && !since) {
-    process.stderr.write(`${status.err(`Could not parse --since "${sinceRaw}".`)}\n`);
-    return 2;
-  }
+  if (!all && !since) return fail(`Could not parse --since "${sinceRaw}".`);
 
   const opts: CtxOpts = { projectArg, hostArg };
   const ctx = await resolveProjectContext(opts);

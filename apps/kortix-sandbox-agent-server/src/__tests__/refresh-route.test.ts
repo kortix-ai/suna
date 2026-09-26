@@ -96,7 +96,7 @@ function fakeOpencode(
       reloads.push(reloadOpts)
       return opts.reload
         ? opts.reload(reloadOpts.forceFail)
-        : { outcome: 'swapped' as const, port: 4097, pid: 2, turnEnded: false }
+        : { outcome: 'swapped' as const, port: 4097, pid: 2, turnEnded: false, orphanedMessageId: null }
     },
   } as unknown as Opencode
   return { opencode, reloads }
@@ -239,7 +239,7 @@ describe('repo work and reload', () => {
     const lifecycle = fakeOpencode({
       reload: async () => {
         await held
-        return { outcome: 'swapped', port: 4097, pid: 2, turnEnded: false }
+        return { outcome: 'swapped', port: 4097, pid: 2, turnEnded: false, orphanedMessageId: null }
       },
     })
     const daemon = app({ projectTarget: repo.worktree, repoUrl: repo.remote, branchName: 'main' }, lifecycle)

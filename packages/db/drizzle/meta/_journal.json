@@ -589,6 +589,13 @@
       "when": 1790333774831,
       "tag": "20260925105614_config_release_quarantine",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790361989682,
+      "tag": "20260925184629_audit_events_session_sequence_index",
+      "breakpoints": true
     }
   ]
 }

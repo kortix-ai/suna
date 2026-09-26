@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   fail,
@@ -205,21 +206,12 @@ interface ExtraFlags {
 }
 
 export async function runChannels(argv: string[]): Promise<number> {
-  if (argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return 0;
-  }
+  // A bare `kortix channels` runs `status`; only a help flag prints the help.
+  const helpCode = argv.length > 0 ? splitHelp(argv, HELP) : null;
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0] && !argv[0].startsWith('-') ? argv[0] : 'status';
   const rest = argv[0] && !argv[0].startsWith('-') ? argv.slice(1) : argv.slice(0);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
 
   const json = takeFlagBool(rest, ['--json']);
   const manual = takeFlagBool(rest, ['--manual']);
@@ -258,13 +250,11 @@ export async function runChannels(argv: string[]): Promise<number> {
       policy: takeFlagValue(rest, ['--policy']),
     };
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const platform: Platform = platformFlag === 'teams' ? 'teams' : 'slack';
   if (platformFlag && platformFlag !== 'slack' && platformFlag !== 'teams') {
-    process.stderr.write(`${status.err(`--platform must be 'slack' or 'teams', got '${platformFlag}'`)}\n`);
-    return 2;
+    return fail(`--platform must be 'slack' or 'teams', got '${platformFlag}'`);
   }
   const ctxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
@@ -459,10 +449,7 @@ async function connectManual(ctx: ProjectCtx, opts: ConnectOpts): Promise<number
     );
     return 2;
   }
-  if (!botToken.startsWith('xoxb-')) {
-    process.stderr.write(`${status.err('Bot token must start with `xoxb-`.')}\n`);
-    return 2;
-  }
+  if (!botToken.startsWith('xoxb-')) return fail('Bot token must start with `xoxb-`.');
 
   let install: SlackInstallation;
   try {

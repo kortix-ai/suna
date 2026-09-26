@@ -34,17 +34,22 @@ describe('runtime managed model registry', () => {
       .toEqual([expect.objectContaining({ id: 'text', vision: false }), expect.objectContaining({ id: 'vision' })]);
   });
 
-  test('accepts a Morph primary with a ZDR OpenRouter pool', () => {
+  test('accepts a ZDR OpenRouter pool without a direct upstream', () => {
     const pooled = {
       id: 'pooled', name: 'Pooled', upstreamModelId: 'z-ai/glm-5.3-flash',
-      transport: 'openrouter', morphModelId: 'morph-glm53flash', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+      transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
       tier: 'fast', vision: true, limit: { context: 1_000, output: 100 },
       openrouterProvider: {
-        only: ['morph', 'wafer'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+        only: ['decart/fp4', 'coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
         max_price: { prompt: 0.15, completion: 0.5 },
       },
     };
     expect(parseManagedModels(JSON.stringify([pooled]))).toMatchObject([pooled]);
+    const withMorph = { ...pooled, morphModelId: 'morph-glm53flash',
+      morphPricing: { inputPerMillion: 0.1, outputPerMillion: 0.35 } };
+    expect(parseManagedModels(JSON.stringify([withMorph]))).toMatchObject([withMorph]);
+    expect(() => parseManagedModels(JSON.stringify([{ ...pooled, morphModelId: 'morph-glm53flash' }]))).toThrow();
+    expect(() => parseManagedModels(JSON.stringify([{ ...pooled, morphPricing: withMorph.morphPricing }]))).toThrow();
   });
 
   test('rejects an unrestricted, non-ZDR, or data-collecting operator route', () => {
