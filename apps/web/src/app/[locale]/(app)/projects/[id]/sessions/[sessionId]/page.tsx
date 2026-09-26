@@ -1107,6 +1107,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                   boundAgentName={boundAgentName}
                   chatReady={chatReady}
                   onChatReady={handleChatReady}
+                  // A terminal state under a banner: the banner names the reason
+                  // and the one action. A composer beside it would promise that
+                  // the next message wakes a computer that cannot come back.
+                  readOnly={!!notice}
                 />
               )}
             </ProjectSessionRuntimeConnection>
@@ -1332,6 +1336,7 @@ function ActiveSessionChat({
   boundAgentName,
   chatReady,
   onChatReady,
+  readOnly,
 }: {
   projectId: string;
   sessionId: string;
@@ -1343,6 +1348,8 @@ function ActiveSessionChat({
    *  an opaque overlay and must not take focus — see `deferComposerFocus`. */
   chatReady?: boolean;
   onChatReady?: () => void;
+  /** Read the conversation only: no composer (a terminal state under a banner). */
+  readOnly?: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const runtimeReady = useRuntimeConnectionStore(
@@ -1553,6 +1560,7 @@ function ActiveSessionChat({
           onContentReady={onChatReady}
           deferComposerFocus={!chatReady}
           sessionState={chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined}
+          readOnly={readOnly}
         />
       </ClientErrorBoundary>
     </SessionLayout>

@@ -48,6 +48,16 @@ describe('sessionComposerReadiness', () => {
   // PARKED, not actively booting. It resumes on the next send, so the composer
   // states that honestly instead of showing a "waking" spinner-lie: no infinite
   // spinner, no retry, and the copy names what a send does.
+  // The page's own /start is bringing a stopped computer up. "Idle — your next
+  // message wakes it" beside a boot pill saying "Reserving your computer" was two
+  // claims about one computer; only one was true.
+  test('a computer the page is starting reads as waking, not idle', () => {
+    const readiness = sessionComposerReadiness({ runtimeReady: false, connection: 'waking', starting: true });
+    expect(readiness.notice).toBe(SESSION_NOTICE.waking);
+    expect(readiness.ready).toBe(false);
+    expect(readiness.retryable).toBe(false);
+  });
+
   test('a parked/idle box gets an honest idle state, not a waking spinner', () => {
     const readiness = sessionComposerReadiness({ runtimeReady: false, connection: 'waking' });
     expect(readiness.notice).toMatch(/idle/i);

@@ -5512,6 +5512,13 @@ export function SessionChat({
     serverTurnLive: serverHoldsOpenTurn(working),
     unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
     stalled: runtimeStalled,
+    // The route's `/start` is bringing the computer up (or has not answered):
+    // the same fact the boot pill above the thread shows.
+    starting:
+      !!sessionState &&
+      (sessionState.stage == null ||
+        sessionState.stage === 'provisioning' ||
+        sessionState.stage === 'starting'),
   });
   // #6509's `promptLikelyDropped` notice is deliberately NOT carried over: it
   // instrumented the deleted prompt-observation stall machinery to warn about

@@ -137,6 +137,13 @@ export function sessionComposerReadiness(input: {
    */
   stalled?: boolean;
   /**
+   * This page's own `/start` is bringing the computer up: its stage is
+   * `provisioning` or `starting`, or it has not answered yet. A stopped
+   * computer is then WAKING, not idle — the boot pill above the thread says
+   * so, and the composer must not claim the next message is what wakes it.
+   */
+  starting?: boolean;
+  /**
    * The shared connection projection (`projectSessionConnection`).
    *
    * This is what replaced a settle TIMER here. The timer was the same mistake
@@ -212,7 +219,7 @@ export function sessionComposerReadiness(input: {
     // session that is merely asleep (RC-3).
     return {
       ready: false,
-      notice: input.pendingDelivery ? null : SESSION_NOTICE.idle,
+      notice: input.pendingDelivery ? null : input.starting ? SESSION_NOTICE.waking : SESSION_NOTICE.idle,
       retryable: false,
     };
   }
