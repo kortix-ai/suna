@@ -7,12 +7,16 @@
  *   header   `PageHeader` (Jay, 2026-09-22): hamburger, "Sessions" title, and
  *            a Filter action at the right — the same header every other
  *            project tool page uses.
- *   search   SearchListHeader, filters by display title
+ *   search   SearchListHeader, matches title, agent name and session id
  *   filter   Filter sheet (`SettingsGroup` of toggleable status rows: Needs
- *            you / Running / Starting / Stopped / Failed). Empty selection
- *            shows every status; toggling narrows the timeline to just the
- *            checked ones. Basic on purpose — no date range or sort, unlike
- *            web's fuller filter panel.
+ *            you / Running / Stopped / Failed; Running covers starting
+ *            sessions). Empty selection shows every status; toggling narrows
+ *            the timeline to just the checked ones. Basic on purpose — no
+ *            date range or sort, unlike web's fuller filter panel. Picked
+ *            statuses show as a chip under the search field; the chip, the
+ *            sheet and the no-match state share one Reset (search + statuses).
+ *            Search and filter live in `useSessionFilterStore` per project, so
+ *            they survive opening a session and coming back (KRTX-250).
  *   list     Today / Yesterday / This week / Older, one `SettingsGroup` of
  *            `SettingsRow`s each (the settings screens' layout); a group's title
  *            shows only when more than one group has sessions.
@@ -40,7 +44,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useIsFocused } from 'expo-router/react-navigation';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
-import { ArrowElbowDownRightIcon, FunnelIcon as Funnel, NavigationArrowIcon } from '@/lib/icons';
+import { ArrowElbowDownRightIcon, FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -57,25 +61,32 @@ import { useCoveringRoute, useProjectRoute } from '@/components/session/ProjectR
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import { haptics } from '@/lib/haptics';
 import { useProjectSessionsPaged } from '@/lib/projects/hooks';
-import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
+import {
+  sessionListState,
+  shouldAutoFetchForFilter,
+  shouldLoadMoreSessions,
+} from '@/lib/session/session-pages';
 import { needsYouBySession } from '@/lib/session/needs-you';
 import { useReviewItems } from '@/lib/review/use-review';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
   SESSION_STATUS_FILTERS,
+  filterSessionsBySearch,
   filterSessionsByStatus,
-  filterSessionsByTitle,
   groupSessionsByActivity,
   groupSessionsByCoordinator,
+  isSessionFilterActive,
   sessionDisplayStatus,
   sessionDisplayTitle,
   sessionLastActivityAt,
+  sessionStatusFilterSummary,
   sessionStatusLabel,
   shortRelative,
   spokenRelative,
-  type SessionDisplayStatus,
+  type SessionStatusFilter,
 } from '@/lib/session/session-list';
 import { THEME } from '@/lib/utils/theme';
+import { EMPTY_SESSION_FILTER, useSessionFilterStore } from '@/stores/session-filter-store';
 
 /** Relative times ("5m") re-render on this interval so they do not freeze. */
 const NOW_TICK_MS = 60_000;
@@ -156,20 +167,23 @@ export interface ProjectSessionsPageProps {
 }
 
 export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessionsPageProps = {}) {
-  const { projectId, openDrawer, newSession, openSessionActions } = useProjectRoute();
+  const { projectId, openDrawer, newSession, openSessionActions, isDrawerOpen } = useProjectRoute();
   // Opens a row's session once; also replaces this page with the view when a
   // session opens without a row tap (drawer row, notification, deep link).
   const openSession = useCoveringRoute();
   const isFocused = useIsFocused();
+  // One loader at a time (KRTX-244): this page's loaders draw only while it is
+  // the surface in front — not under the open drawer (which loads the same
+  // list with its own loader), not while the view replaces it on a row tap.
+  const showLoaders = isFocused && !isDrawerOpen;
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   // Poll for provisioning rows only while this page is on top.
   // Every session, a page (50) at a time: the list loads the next page as it
-  // nears its end. Search and groups work on the rows loaded so far; a search
-  // with few matches leaves the list short, so it reaches its end at once and
-  // keeps loading pages until the matches fill the screen or the list ends.
+  // nears its end. Search and groups work on the rows loaded so far; a filter
+  // with too few matches loads older pages on its own (auto-fetch, below).
   const sessionsQuery = useProjectSessionsPaged(projectId, { poll: isFocused });
   const allSessions = sessionsQuery.sessions;
 
@@ -186,32 +200,37 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   }, [sessionsQuery.dataUpdatedAt]);
 
   // ── Search, status filter, and grouping ──
-  const [query, setQuery] = React.useState('');
+  // Per project, in `useSessionFilterStore`: opening a session unmounts this
+  // page, and coming back must find the same search and filter (KRTX-250).
+  const storedFilter =
+    useSessionFilterStore((state) => state.byProject[projectId]) ?? EMPTY_SESSION_FILTER;
+  const query = storedFilter.query;
+  // Empty set = no filter (every session passes).
+  const statusFilter = React.useMemo<ReadonlySet<SessionStatusFilter>>(
+    () => new Set(storedFilter.statuses),
+    [storedFilter.statuses]
+  );
   const hasSessions = allSessions.length > 0;
-  React.useEffect(() => {
-    // Nothing left to search: leave no hidden query behind.
-    if (!hasSessions && query) setQuery('');
-  }, [hasSessions, query]);
+  const filterActive = isSessionFilterActive(query, statusFilter);
+  const statusFilterActive = statusFilter.size > 0;
 
-  // Empty set = no filter (every session passes). The filter sheet toggles
-  // membership; `Clear filters` (shown only when non-empty) resets to it.
-  const [statusFilter, setStatusFilter] = React.useState<Set<SessionDisplayStatus>>(
-    () => new Set()
+  const setQuery = React.useCallback(
+    (text: string) => useSessionFilterStore.getState().setQuery(projectId, text),
+    [projectId]
   );
   const filterSheetRef = React.useRef<BottomSheetModal>(null);
-  const toggleStatusFilter = React.useCallback((status: SessionDisplayStatus) => {
-    haptics.selection();
-    setStatusFilter((current) => {
-      const next = new Set(current);
-      if (next.has(status)) next.delete(status);
-      else next.add(status);
-      return next;
-    });
-  }, []);
-  const clearStatusFilter = React.useCallback(() => {
+  const toggleStatusFilter = React.useCallback(
+    (status: SessionStatusFilter) => {
+      haptics.selection();
+      useSessionFilterStore.getState().toggleStatus(projectId, status);
+    },
+    [projectId]
+  );
+  // The page's one Reset: search and statuses together (chip, sheet, no-match state).
+  const resetFilters = React.useCallback(() => {
     haptics.tap();
-    setStatusFilter(new Set());
-  }, []);
+    useSessionFilterStore.getState().resetProject(projectId);
+  }, [projectId]);
 
   // Sessions that wait on the user, from the review inbox. ProjectScreen
   // polls it; this reads the same query cache without a second poll.
@@ -219,7 +238,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   const needsYou = React.useMemo(() => needsYouBySession(reviewItems.data ?? []), [reviewItems.data]);
 
   const filtered = React.useMemo(
-    () => filterSessionsByStatus(filterSessionsByTitle(allSessions, query), statusFilter, needsYou),
+    () => filterSessionsByStatus(filterSessionsBySearch(allSessions, query), statusFilter, needsYou),
     [allSessions, query, statusFilter, needsYou]
   );
   const grouped = React.useMemo(() => groupSessionsByActivity(filtered, now), [filtered, now]);
@@ -244,12 +263,32 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
     }
   }, [sessionsQuery]);
 
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = sessionsQuery;
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = sessionsQuery;
   const onEndReached = React.useCallback(() => {
     if (shouldLoadMoreSessions({ hasNextPage, isFetchingNextPage, isRefreshing: refreshing })) {
       void fetchNextPage();
     }
   }, [hasNextPage, isFetchingNextPage, refreshing, fetchNextPage]);
+
+  // KRTX-250: a filter whose loaded pages hold too few matches loads older
+  // pages itself. `onEndReached` alone strands it: a filtered list that stays
+  // empty never changes size, so FlatList never calls it again. This effect
+  // re-runs after each page lands and stops at a screen of matches, at the
+  // last page, or after a failed page fetch.
+  const autoFetchForFilter = shouldAutoFetchForFilter({
+    filterActive,
+    matchCount: filtered.length,
+    hasNextPage,
+    isFetchingNextPage,
+    isRefreshing: refreshing,
+    fetchNextPageFailed: isFetchNextPageError,
+  });
+  React.useEffect(() => {
+    if (autoFetchForFilter) void fetchNextPage();
+  }, [autoFetchForFilter, fetchNextPage]);
+  // No match yet, older pages still loading: one loader in place of the
+  // no-match copy (never the copy and the footer loader together).
+  const searchingOlder = filterActive && filtered.length === 0 && (isFetchingNextPage || autoFetchForFilter);
 
   // ── Render ──
   // One list item per group: a `SettingsGroup` of `SettingsRow`s, the settings
@@ -325,7 +364,12 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
       ? 'No sessions yet'
       : 'No matching sessions';
 
-  const filterActive = statusFilter.size > 0;
+  // A project with no sessions shows no search field or chip: leave no hidden
+  // filter behind. Only a loaded, empty list counts — never the first load.
+  const listEmpty = rawListState === 'empty';
+  React.useEffect(() => {
+    if (listEmpty && filterActive) useSessionFilterStore.getState().resetProject(projectId);
+  }, [listEmpty, filterActive, projectId]);
 
   return (
     <View className="flex-1 bg-background">
@@ -346,8 +390,8 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
             <Icon
               as={Funnel}
               size={20}
-              className={filterActive ? 'text-primary' : 'text-foreground'}
-              weight={filterActive ? 'fill' : undefined}
+              className={statusFilterActive ? 'text-primary' : 'text-foreground'}
+              weight={statusFilterActive ? 'fill' : undefined}
             />
           </Button>
         }
@@ -356,7 +400,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
       <PageContent>
         {loading ? (
           <View className="flex-1 items-center justify-center" style={{ paddingBottom: insets.bottom }}>
-            <KortixLoader />
+            {showLoaders ? <KortixLoader /> : null}
           </View>
         ) : (
           <>
@@ -367,6 +411,22 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
                 placeholder="Search sessions"
                 inputProps={{ accessibilityLabel: 'Search sessions', autoFocus: autoFocusSearch }}
               />
+            ) : null}
+            {hasSessions && statusFilterActive ? (
+              // The active status filter, visible without opening the sheet.
+              // Tap = Reset (search + statuses).
+              <View className="flex-row px-4 pb-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-full"
+                  onPress={resetFilters}
+                  accessibilityLabel={`Filtered by ${sessionStatusFilterSummary(statusFilter)}. Reset`}
+                  accessibilityHint="Shows every session again">
+                  <Text>{sessionStatusFilterSummary(statusFilter)}</Text>
+                  <Icon as={XIcon} size={14} className="text-muted-foreground" />
+                </Button>
+              </View>
             ) : null}
             <FlatList
               data={sections}
@@ -379,7 +439,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
               onEndReached={onEndReached}
               onEndReachedThreshold={0.6}
               ListFooterComponent={
-                isFetchingNextPage ? (
+                isFetchingNextPage && sections.length > 0 && showLoaders ? (
                   <View className="items-center py-4">
                     <KortixLoader size="small" />
                   </View>
@@ -405,11 +465,24 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
                     accessibilityLabel={emptyMessage}>
                     <PixelDeadFlower color={mutedColor} size={96} animate={isFocused} />
                   </View>
+                ) : searchingOlder ? (
+                  // The filter is still loading older pages: no verdict yet.
+                  <View
+                    className="flex-1 items-center justify-center px-8"
+                    accessible
+                    accessibilityLabel="Searching older sessions">
+                    {showLoaders ? <KortixLoader size="small" /> : null}
+                  </View>
                 ) : (
-                  <View className="flex-1 items-center justify-center px-8">
+                  <View className="flex-1 items-center justify-center gap-3 px-8">
                     <Text variant="muted" className="text-center">
                       {emptyMessage}
                     </Text>
+                    {!loadFailed && filterActive ? (
+                      <Button variant="secondary" size="sm" className="rounded-full" onPress={resetFilters}>
+                        <Text>Reset</Text>
+                      </Button>
+                    ) : null}
                   </View>
                 )
               }
@@ -459,13 +532,9 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
               />
             ))}
           </SettingsGroup>
-          {filterActive ? (
-            <Button
-              variant="secondary"
-              size="lg"
-              className="mt-4 rounded-full"
-              onPress={clearStatusFilter}>
-              <Text>Clear filters</Text>
+          {statusFilterActive ? (
+            <Button variant="secondary" size="lg" className="mt-4 rounded-full" onPress={resetFilters}>
+              <Text>Reset</Text>
             </Button>
           ) : null}
         </BottomSheetScrollView>

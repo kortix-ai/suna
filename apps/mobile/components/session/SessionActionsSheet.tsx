@@ -109,15 +109,19 @@ const PUSHED_VIEW_TITLE: Record<Exclude<SheetView, 'options'>, string> = {
 /** What runs once the sheet has closed: a follow-up overlay, never two at once. */
 type AfterClose = 'delete' | 'open-cr' | 'compact' | null;
 
+/** A view `present` can open straight to, skipping the options. */
+export type SessionActionsInitialView = 'rename' | 'share';
+
 export interface SessionActionsSheetRef {
   /**
    * Open the sheet for this session. `initialView: 'rename'` (COR-140) opens
    * straight to the Rename view instead of the options list — what the
    * thread header's title tap uses, so a rename has exactly one
-   * implementation. Back from it returns to the options, same as a normal
-   * Rename → Back.
+   * implementation. `'share'` (KRTX-248) opens straight to the Share view —
+   * the thread header's Share button. Back from either returns to the
+   * options, same as a normal push → Back.
    */
-  present: (session: ProjectSession, initialView?: 'rename') => void;
+  present: (session: ProjectSession, initialView?: SessionActionsInitialView) => void;
 }
 
 export interface SessionActionsSheetProps {
@@ -187,7 +191,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     // The session and runtime a Compact tap was for, kept past the sheet's close.
     const compactTargetRef = React.useRef<{ sessionId: string; sandboxUrl: string } | null>(null);
 
-    const present = React.useCallback((session: ProjectSession, initialView?: 'rename') => {
+    const present = React.useCallback((session: ProjectSession, initialView?: SessionActionsInitialView) => {
       haptics.medium();
       setMenuSession(session);
       if (initialView) setSheetView(initialView);

@@ -2,8 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
+  SESSION_STATUS_FILTERS,
+  filterSessionsBySearch,
   filterSessionsByStatus,
-  filterSessionsByTitle,
+  isSessionFilterActive,
+  sessionStatusFilterSummary,
   flattenSessionGroups,
   groupSessionsByActivity,
   groupSessionsByCoordinator,
@@ -398,15 +401,15 @@ describe('groupSessionsByActivity', () => {
   });
 });
 
-describe('filterSessionsByTitle', () => {
+describe('filterSessionsBySearch', () => {
   test('an empty query returns the input unchanged', () => {
     const sessions = [makeSession({ session_id: 'a', name: 'Fix login' })];
-    expect(filterSessionsByTitle(sessions, '')).toBe(sessions);
+    expect(filterSessionsBySearch(sessions, '')).toBe(sessions);
   });
 
   test('a whitespace-only query returns the input unchanged', () => {
     const sessions = [makeSession({ session_id: 'a', name: 'Fix login' })];
-    expect(filterSessionsByTitle(sessions, '   ')).toBe(sessions);
+    expect(filterSessionsBySearch(sessions, '   ')).toBe(sessions);
   });
 
   test('matches case-insensitively on a trimmed substring', () => {
@@ -414,7 +417,7 @@ describe('filterSessionsByTitle', () => {
       makeSession({ session_id: 'a', name: 'Fix login bug' }),
       makeSession({ session_id: 'b', name: 'Add billing page' }),
     ];
-    expect(filterSessionsByTitle(sessions, '  LOGIN  ').map((s) => s.session_id)).toEqual(['a']);
+    expect(filterSessionsBySearch(sessions, '  LOGIN  ').map((s) => s.session_id)).toEqual(['a']);
   });
 
   test('matches against the resolved display title, including the untitled fallback', () => {
@@ -422,12 +425,32 @@ describe('filterSessionsByTitle', () => {
       makeSession({ session_id: 'a' }),
       makeSession({ session_id: 'b', name: 'Named session' }),
     ];
-    expect(filterSessionsByTitle(sessions, 'new session').map((s) => s.session_id)).toEqual(['a']);
+    expect(filterSessionsBySearch(sessions, 'new session').map((s) => s.session_id)).toEqual(['a']);
   });
 
   test('no match returns an empty array', () => {
     const sessions = [makeSession({ session_id: 'a', name: 'Fix login' })];
-    expect(filterSessionsByTitle(sessions, 'nonexistent')).toEqual([]);
+    expect(filterSessionsBySearch(sessions, 'nonexistent')).toEqual([]);
+  });
+
+  test('matches the agent name (KRTX-250)', () => {
+    const sessions = [
+      makeSession({ session_id: 'a', name: 'Fix login', agent_name: 'reviewer' }),
+      makeSession({ session_id: 'b', name: 'Add billing', agent_name: 'builder' }),
+      makeSession({ session_id: 'c', name: 'No agent', agent_name: null }),
+    ];
+    expect(filterSessionsBySearch(sessions, 'REVIEW').map((s) => s.session_id)).toEqual(['a']);
+  });
+
+  test('matches the session id, whole or partial (KRTX-250)', () => {
+    const sessions = [
+      makeSession({ session_id: 'ses_7f3a9c', name: 'Fix login' }),
+      makeSession({ session_id: 'ses_1b2d4e', name: 'Add billing' }),
+    ];
+    expect(filterSessionsBySearch(sessions, '7f3a').map((s) => s.session_id)).toEqual(['ses_7f3a9c']);
+    expect(filterSessionsBySearch(sessions, 'ses_1b2d4e').map((s) => s.session_id)).toEqual([
+      'ses_1b2d4e',
+    ]);
   });
 });
 
@@ -464,6 +487,23 @@ describe('filterSessionsByStatus', () => {
     expect(filterSessionsByStatus(sessions, new Set(['failed']))).toEqual([]);
   });
 
+  test('running also matches starting sessions (web parity, KRTX-250)', () => {
+    const sessions = [
+      makeSession({ session_id: 'a', status: 'running' }),
+      makeSession({ session_id: 'b', status: 'provisioning' }),
+      makeSession({ session_id: 'c', status: 'queued' }),
+      makeSession({ session_id: 'd', status: 'branching' }),
+      makeSession({ session_id: 'e', status: 'stopped' }),
+    ];
+    expect(
+      filterSessionsByStatus(sessions, new Set(['running'])).map((s) => s.session_id),
+    ).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  test('the filter sheet offers no separate Starting option', () => {
+    expect(SESSION_STATUS_FILTERS).toEqual(['needs-you', 'running', 'stopped', 'failed']);
+  });
+
   test('needs-you matches the sessions with a pending inbox item', () => {
     const sessions = [
       makeSession({ session_id: 'a', status: 'running' }),
@@ -478,6 +518,29 @@ describe('filterSessionsByStatus', () => {
     expect(
       filterSessionsByStatus(sessions, new Set(['running']), needsYou).map((s) => s.session_id),
     ).toEqual(['a']);
+  });
+});
+
+describe('isSessionFilterActive', () => {
+  test('no query and no status is inactive; whitespace does not count', () => {
+    expect(isSessionFilterActive('', new Set())).toBe(false);
+    expect(isSessionFilterActive('   ', new Set())).toBe(false);
+  });
+
+  test('a query or a status makes the filter active', () => {
+    expect(isSessionFilterActive('login', new Set())).toBe(true);
+    expect(isSessionFilterActive('', new Set(['failed']))).toBe(true);
+  });
+});
+
+describe('sessionStatusFilterSummary', () => {
+  test('lists the picked statuses in the sheet order, whatever the pick order', () => {
+    expect(sessionStatusFilterSummary(new Set(['failed', 'needs-you']))).toBe('Needs you, Failed');
+    expect(sessionStatusFilterSummary(new Set(['running']))).toBe('Running');
+  });
+
+  test('no pick is an empty string', () => {
+    expect(sessionStatusFilterSummary(new Set())).toBe('');
   });
 });
 

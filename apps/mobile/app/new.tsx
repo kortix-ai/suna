@@ -1,136 +1,73 @@
 /**
- * New project — `/new`, the full-screen create for a user with no project in
- * any account (COR-161): after the upgrade screen on the first run, and on
- * every start while no account has a project (`app/index.tsx`,
- * `startDestination`). The switcher's `+` keeps the sheet (`NewProjectSheet`).
+ * First run — `/new`, the screen for a user with no project in any account
+ * (COR-161): after the upgrade screen on the first run, and on every start
+ * while no account has a project (`app/index.tsx`, `startDestination`).
  *
- * Top to bottom: "What should Kortix work on?" (`h3`), the project name
- * (`PillInput`), three starter prompts (`PROJECT_STARTERS`: a pick names the
- * project and becomes the first message's draft), the Account group (only
- * with two or more accounts the user owns or administers —
- * `showAccountPicker`, web's `AccountPicker` rule), Import from GitHub (the
- * sheet's GitHub view, `NewProjectSheet initialView="github"`), and one
- * "Create project" pill at the bottom.
+ * Projects are created on the web (KRTX-246): no form here. "Create your
+ * first project" (`h3`), one `muted` line, and one "Continue on web" pill
+ * that opens web `/new?account=<current account>` in an in-app auth session
+ * (`useWebCreateHandoff`). On return the app refetches accounts and
+ * projects and opens the NEWEST project across every account in the fresh
+ * lists, composer focused (`markComposerFocus`): `/new` is only reached with
+ * zero projects in every account, so any project there is the one just made
+ * — even when the before-snapshot failed or web created it in another
+ * account. Nothing sits under this screen, so Sign out
+ * (header) is the way out.
  *
- * Created → the project's home, composer focused (`markComposerFocus`), with
- * the starter prompt as its draft (`project:<id>` in the composer draft
- * store). Nothing sits under this screen, so Sign out (header) is the way out.
- * A user who can create in no account sees why, and Sign out.
- *
- * Never a dead end (COR-186): a create whose answer was lost may still have
- * made the project, and a retry on the free plan then hits the project limit.
- * So a limit error opens the account's newest project, and whenever the
- * account already has a project, an "Open <project>" row sits above the form.
+ * Never a dead end (COR-186): whenever the current account already has a
+ * project — made on the web while the diff could not load, or on another
+ * device — an "Open <project>" row sits above the heading.
  */
 
 import * as React from 'react';
 import { View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Avatar } from '@/components/kortix/avatar';
-import { KortixLoader } from '@/components/kortix/kortix-loader';
-import { PillInput } from '@/components/kortix/pill-input';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import { NewProjectSheet } from '@/components/projects/NewProjectSheet';
-import { useCreateManagedProject } from '@/components/projects/useCreateManagedProject';
+import { useWebCreateHandoff } from '@/components/projects/useWebCreateHandoff';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { useAuthContext } from '@/contexts';
 import { haptics } from '@/lib/haptics';
-import {
-  ChartBarIcon,
-  GithubLogoIcon,
-  FolderIcon,
-  GlobeIcon,
-  MagnifyingGlassIcon,
-} from '@/lib/icons';
+import { FolderIcon } from '@/lib/icons';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { markComposerFocus } from '@/lib/onboarding/composer-handoff';
-import { useAccounts, useProjects } from '@/lib/projects/hooks';
-import { creatableAccounts } from '@/lib/projects/landing';
-import {
-  nameAfterStarterPick,
-  PROJECT_NAME_MAX_LENGTH,
-  PROJECT_STARTERS,
-  resolveCreateAccountId,
-  showAccountPicker,
-  type ProjectStarter,
-} from '@/lib/projects/new-project-form';
-import { listProjectsForAccount, type KortixProject } from '@/lib/projects/projects-client';
-import { newestProject } from '@/lib/projects/provision-attempt';
+import { useProjects } from '@/lib/projects/hooks';
+import type { KortixProject } from '@/lib/projects/projects-client';
 import { projectHref } from '@/lib/projects/switcher';
-import { draftKey } from '@/lib/session/composer-draft';
-import { useComposerDraftStore } from '@/stores/composer-draft-store';
+import { newestProject } from '@/lib/projects/web-create';
+import { newProjectWebUrl } from '@/lib/projects/web-project-links';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-
-const STARTER_ICONS: Record<ProjectStarter['id'], typeof GlobeIcon> = {
-  research: MagnifyingGlassIcon,
-  website: GlobeIcon,
-  analysis: ChartBarIcon,
-};
 
 export default function NewProjectScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, signOut } = useAuthContext();
-  const accountsQuery = useAccounts(!!user);
-  const accounts = React.useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
-  const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
+  const { signOut } = useAuthContext();
+  const accountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
-
-  const [name, setName] = React.useState('');
-  const [starter, setStarter] = React.useState<ProjectStarter | null>(null);
-  const [pickedAccountId, setPickedAccountId] = React.useState<string | null>(null);
-  const [githubOpen, setGithubOpen] = React.useState(false);
   const [signingOut, setSigningOut] = React.useState(false);
-
-  const creatable = React.useMemo(() => creatableAccounts(accounts), [accounts]);
-  const accountId = resolveCreateAccountId({ accounts, picked: pickedAccountId, preferred: selectedAccountId });
-  const { create, isPending } = useCreateManagedProject();
+  const webCreate = useWebCreateHandoff();
 
   const openProject = React.useCallback(
-    (project: KortixProject, prompt: string | null) => {
+    (project: KortixProject) => {
       if (project.account_id) setSelectedAccountId(project.account_id);
-      if (prompt) {
-        useComposerDraftStore.getState().write(draftKey({ kind: 'project', projectId: project.project_id }), prompt);
-      }
       markComposerFocus(project.project_id);
       router.replace(projectHref(project.project_id));
     },
     [router, setSelectedAccountId]
   );
 
-  // The account's projects: empty on a true first run. Not empty after a
-  // create whose answer was lost — then "Open <project>" is the way on.
+  // Empty on a true first run. Refetched on return from the web.
   const projectsQuery = useProjects(accountId);
   const existingProject = React.useMemo(() => newestProject(projectsQuery.data ?? []), [projectsQuery.data]);
 
-  const handleCreate = React.useCallback(async () => {
-    if (isPending) return;
-    const prompt = starter?.prompt ?? null;
-    const project = await create(accountId, name, {
-      // At the limit: the project this user already has is the one to open.
-      onLimitReached: async (limitAccountId) => {
-        const existing = newestProject(await listProjectsForAccount(limitAccountId));
-        if (!existing) return false;
-        openProject(existing, prompt);
-        return true;
-      },
-    });
-    if (project) openProject(project, prompt);
-    else void projectsQuery.refetch();
-  }, [isPending, create, accountId, name, openProject, starter, projectsQuery]);
-
-  const pickStarter = React.useCallback(
-    (next: ProjectStarter) => {
-      haptics.selection();
-      const picked = starter?.id === next.id ? null : next;
-      setStarter(picked);
-      setName((current) => nameAfterStarterPick(current, picked));
-    },
-    [starter]
-  );
+  const handleContinue = React.useCallback(async () => {
+    haptics.tap();
+    const { after } = await webCreate.open(newProjectWebUrl(KORTIX_WEB_URL, accountId));
+    const project = after ? newestProject(after.projects) : null;
+    if (project) openProject(project);
+  }, [webCreate, accountId, openProject]);
 
   const handleSignOut = React.useCallback(async () => {
     if (signingOut) return;
@@ -141,166 +78,46 @@ export default function NewProjectScreen() {
     if (result?.success) router.replace('/auth');
   }, [router, signOut, signingOut]);
 
-  const canCreate = !isPending && !!accountId && name.trim().length > 0;
+  return (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View className="flex-1 bg-background px-4" style={{ paddingBottom: insets.bottom + 16 }}>
+        <View className="flex-row justify-end pb-2" style={{ paddingTop: insets.top + 8 }}>
+          <Button variant="ghost" size="sm" disabled={signingOut} onPress={handleSignOut}>
+            <Text>Sign out</Text>
+          </Button>
+        </View>
 
-  let body: React.ReactNode;
-  if (accountsQuery.isLoading) {
-    body = (
-      <View className="flex-1 items-center justify-center">
-        <KortixLoader size="large" />
-      </View>
-    );
-  } else if (accountsQuery.isError) {
-    body = (
-      <View className="flex-1 items-center justify-center gap-4">
-        <Text variant="muted">Couldn't load your accounts</Text>
-        <Button variant="secondary" size="lg" className="rounded-full" onPress={() => accountsQuery.refetch()}>
-          <Text>Try again</Text>
-        </Button>
-      </View>
-    );
-  } else if (creatable.length === 0) {
-    body = (
-      <View className="flex-1 justify-center">
-        <Text variant="h3">What should Kortix work on?</Text>
-        <Text variant="muted" className="mt-2">
-          Only an account owner or admin can create a project. Ask one to make you an admin.
-        </Text>
-      </View>
-    );
-  } else {
-    body = (
-      <>
-        <View className="gap-4">
+        <View className="flex-1 justify-center gap-4">
           {existingProject ? (
             <SettingsGroup title="Your project">
               <SettingsRow
                 icon={FolderIcon}
                 label={`Open ${existingProject.name}`}
                 onPress={
-                  isPending
+                  webCreate.pending
                     ? undefined
                     : () => {
                         haptics.tap();
-                        openProject(existingProject, starter?.prompt ?? null);
+                        openProject(existingProject);
                       }
                 }
               />
             </SettingsGroup>
           ) : null}
 
-          <Text variant="h3">What should Kortix work on?</Text>
-
-          <PillInput
-            value={name}
-            onChangeText={setName}
-            placeholder="Project name"
-            accessibilityLabel="Project name"
-            autoCapitalize="none"
-            autoCorrect={false}
-            maxLength={PROJECT_NAME_MAX_LENGTH}
-            returnKeyType="done"
-            onSubmitEditing={canCreate ? handleCreate : undefined}
-            editable={!isPending}
-          />
-
-          <SettingsGroup title="Start with">
-            {PROJECT_STARTERS.map((s) => (
-              <SettingsRow
-                key={s.id}
-                icon={STARTER_ICONS[s.id]}
-                label={s.label}
-                checked={starter?.id === s.id}
-                right={null}
-                onPress={isPending ? undefined : () => pickStarter(s)}
-              />
-            ))}
-          </SettingsGroup>
-
-          {showAccountPicker(accounts) ? (
-            <SettingsGroup title="Account">
-              {creatable.map((a) => (
-                <SettingsRow
-                  key={a.account_id}
-                  leading={<Avatar chalk size={28} fallbackText={a.name} />}
-                  label={a.name}
-                  checked={a.account_id === accountId}
-                  right={null}
-                  onPress={
-                    isPending
-                      ? undefined
-                      : () => {
-                          haptics.selection();
-                          setPickedAccountId(a.account_id);
-                        }
-                  }
-                />
-              ))}
-            </SettingsGroup>
-          ) : null}
-
-          <SettingsGroup>
-            <SettingsRow
-              icon={GithubLogoIcon}
-              label="Import from GitHub"
-              onPress={
-                isPending
-                  ? undefined
-                  : () => {
-                      haptics.tap();
-                      setGithubOpen(true);
-                    }
-              }
-            />
-          </SettingsGroup>
+          <View>
+            <Text variant="h3">Create your first project</Text>
+            <Text variant="muted" className="mt-2">
+              Projects are created on kortix.com.
+            </Text>
+          </View>
         </View>
 
-        <View className="flex-1" />
-        <Button size="lg" className="mt-8 rounded-full" disabled={!canCreate} onPress={handleCreate}>
-          <Text>{isPending ? 'Creating…' : 'Create project'}</Text>
+        <Button size="lg" className="rounded-full" disabled={webCreate.pending} onPress={handleContinue}>
+          <Text>Continue on web</Text>
         </Button>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <Stack.Screen options={{ headerShown: false }} />
-      <View className="flex-1 bg-background">
-        <View className="flex-row justify-end px-4 pb-2" style={{ paddingTop: insets.top + 8 }}>
-          <Button variant="ghost" size="sm" disabled={signingOut} onPress={handleSignOut}>
-            <Text>Sign out</Text>
-          </Button>
-        </View>
-
-        <KeyboardAwareScrollView
-          bottomOffset={24}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            // flexGrow lets the spacer pin Create project to the bottom.
-            flexGrow: 1,
-            paddingHorizontal: 16,
-            paddingTop: 16,
-            paddingBottom: insets.bottom + 16,
-          }}>
-          {body}
-        </KeyboardAwareScrollView>
       </View>
-
-      {githubOpen ? (
-        <NewProjectSheet
-          open
-          initialView="github"
-          accountId={accountId}
-          accounts={accounts}
-          onClose={() => setGithubOpen(false)}
-          onCreated={(project) => {
-            setGithubOpen(false);
-            openProject(project, null);
-          }}
-        />
-      ) : null}
     </>
   );
 }

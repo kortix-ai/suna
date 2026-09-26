@@ -23,6 +23,7 @@ import { useLastProjectStore } from '@/stores/last-project-store';
 import { useSelectedProjectStore } from '@/stores/selected-project-store';
 import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
 import { useComposerDraftStore } from '@/stores/composer-draft-store';
+import { useSessionFilterStore } from '@/stores/session-filter-store';
 
 let useTracking: any = null;
 try {
@@ -58,6 +59,8 @@ function resetUserStores() {
   useSelectedProjectStore.getState().reset();
   // Typed drafts are the user's text; drops pending writes too.
   useComposerDraftStore.getState().reset();
+  // A session search is the user's text too.
+  useSessionFilterStore.getState().reset();
   // Also deletes the screenshot files.
   useTabScreenshotStore.getState().clear();
   // A warm session belongs to the signed-in user.

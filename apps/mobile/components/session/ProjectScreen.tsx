@@ -90,6 +90,7 @@ import { subAgentRelation, subAgentsOf } from '@/lib/session/sub-agents';
 import { ProjectLeftDrawer } from '@/components/session/ProjectLeftDrawer';
 import {
   SessionActionsSheet,
+  type SessionActionsInitialView,
   type SessionActionsSheetRef,
 } from '@/components/session/SessionActionsSheet';
 import { Drawer } from 'react-native-drawer-layout';
@@ -263,8 +264,9 @@ export function ProjectScreen() {
   // reaches it without its own state.
   const actionsSheetRef = useRef<SessionActionsSheetRef>(null);
   // `initialView` (COR-140): the thread header's title tap opens this same
-  // sheet straight to Rename, instead of a second rename implementation.
-  const openSessionActions = useCallback((session: ProjectSession, initialView?: 'rename') => {
+  // sheet straight to Rename, and its Share button straight to Share
+  // (KRTX-248), instead of a second implementation of either.
+  const openSessionActions = useCallback((session: ProjectSession, initialView?: SessionActionsInitialView) => {
     actionsSheetRef.current?.present(session, initialView);
   }, []);
   // The project/account switcher (COR-124): mounted here once, beside the
@@ -1154,11 +1156,13 @@ export function ProjectScreen() {
         onSessionActions={openSessionActions}
         onOpenSwitcher={openSwitcher}
         onClose={closeDrawer}
+        open={drawerOpen}
       />
     ),
     [
       projectId,
       shownSessionId,
+      drawerOpen,
       reviewNeedsYouCount,
       returnHome,
       openSessionFromDrawer,
@@ -1259,6 +1263,11 @@ export function ProjectScreen() {
             onRenamePress={
               activeProjectSession ? () => openSessionActions(activeProjectSession, 'rename') : undefined
             }
+            onSharePress={
+              activeProjectSession && activeProjectSession.can_manage_sharing !== false
+                ? () => openSessionActions(activeProjectSession, 'share')
+                : undefined
+            }
             sessionTitle={activeProjectSession ? sessionDisplayTitle(activeProjectSession) : undefined}
             subAgentRelation={activeSubAgentRelation}
             subAgents={activeSubAgents}
@@ -1283,6 +1292,7 @@ export function ProjectScreen() {
               onCancel={handleCancelConnect}
               onRestart={handleRestartSession}
               restarting={restartingSession}
+              showLoader={!drawerOpen}
             />
           </View>
         ) : null}
