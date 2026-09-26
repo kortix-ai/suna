@@ -36,6 +36,7 @@ export {
   isClientRequestTimeoutMessage,
   isExpectedBillingGateMessage,
   isExpectedCompactionNoModelMessage,
+  isGitMirrorUnavailableNoiseMessage,
   isModelNotServableNoise,
   isRuntimeNotReadyNoiseMessage,
   isServerDeadlineNoiseMessage,
@@ -74,6 +75,7 @@ export {
   isSignalTimeoutNoise,
 } from './browser-noise/rules/network';
 export {
+  isIosWebViewInjectedStackOverflowNoise,
   isOldBrowserDomNullDerefNoise,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,

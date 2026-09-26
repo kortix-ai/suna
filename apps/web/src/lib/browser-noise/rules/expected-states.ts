@@ -234,6 +234,17 @@ const SERVER_DEADLINE_NOISE_WRAPPERS: ReadonlyArray<RegExp> = [
   /^Unhandled promise rejection: (?:ApiError: )?Request exceeded the \d+s server processing deadline$/,
 ];
 
+const GIT_MIRROR_UNAVAILABLE_NOISE_WRAPPERS: ReadonlyArray<RegExp> = [
+  /^git mirror is temporarily unavailable$/,
+  /^ApiError: git mirror is temporarily unavailable$/,
+  /^Unhandled promise rejection: (?:ApiError: )?git mirror is temporarily unavailable$/,
+];
+
+export function isGitMirrorUnavailableNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return GIT_MIRROR_UNAVAILABLE_NOISE_WRAPPERS.some((re) => re.test(normalized));
+}
+
 /**
  * Whether a message is the transient, self-healing "session runtime not ready
  * yet" state — `[opencode-sdk] Server URL not ready — sandbox is still loading`
@@ -375,6 +386,11 @@ export const EXPECTED_STATE_RULES: readonly NoiseRule[] = [
     id: 'server-deadline',
     appliesTo: 'both',
     match: ({ message }) => isServerDeadlineNoiseMessage(message),
+  },
+  {
+    id: 'git-mirror-unavailable',
+    appliesTo: 'both',
+    match: ({ message }) => isGitMirrorUnavailableNoiseMessage(message),
   },
   {
     id: 'billing-gate',

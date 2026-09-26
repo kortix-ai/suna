@@ -378,3 +378,159 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
     await dispose().catch(() => {});
   }
 });
+
+/** An OpenCode wire id minted at `ms` (`msg_` + the low 48 bits of ms * 0x1000). */
+function wireIdAt(ms: number, tag: string): string {
+  const clock = (BigInt(ms) * BigInt(0x1000)) & BigInt(0xffffffffffff);
+  return `msg_${clock.toString(16).padStart(12, '0')}${tag.padEnd(14, 'x').slice(0, 14)}`;
+}
+
+const LONG_RUN_STEPS = 60;
+const FOLLOW_UP_PROMPT = 'Now write the handoff for the long run.';
+const FOLLOW_UP_REPLY = 'The handoff for the long run is written.';
+
+/**
+ * One prompt, LONG_RUN_STEPS replies, then a follow-up and its reply: the
+ * shape of an automated run. The saved copy a page opens on is a bounded tail,
+ * so the prompt that started the run is not in it.
+ */
+function longRunTranscript(root: string) {
+  const base = Date.now() - 3_600_000;
+  const message = (
+    role: 'user' | 'assistant',
+    ms: number,
+    tag: string,
+    text: string,
+    parentID?: string,
+  ) => {
+    const id = wireIdAt(ms, tag);
+    return {
+      info: {
+        id,
+        sessionID: root,
+        role,
+        time: role === 'assistant' ? { created: ms, completed: ms + 1 } : { created: ms },
+        agent: 'kortix',
+        ...(parentID ? { parentID } : {}),
+        ...(role === 'assistant'
+          ? {
+              mode: 'build',
+              providerID: 'kortix',
+              modelID: 'openai/gpt-5.6-sol',
+              path: { cwd: '/workspace', root: '/workspace' },
+              cost: 0,
+              tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+              finish: 'stop',
+            }
+          : { model: { providerID: 'kortix', modelID: 'openai/gpt-5.6-sol' } }),
+      },
+      parts: [{ id: `prt_${tag}`, sessionID: root, messageID: id, type: 'text', text }],
+    };
+  };
+  const prompt = message('user', base, 'runprompt', 'Run the long job.');
+  const steps = Array.from({ length: LONG_RUN_STEPS }, (_, index) =>
+    message(
+      'assistant',
+      base + (index + 1) * 1_000,
+      `step${index + 1}`,
+      `Step ${index + 1} of the long run.`,
+      prompt.info.id,
+    ),
+  );
+  const followUpAt = base + (LONG_RUN_STEPS + 1) * 1_000;
+  const followUp = message('user', followUpAt, 'followup', FOLLOW_UP_PROMPT);
+  const reply = message(
+    'assistant',
+    followUpAt + 1_000,
+    'reply',
+    FOLLOW_UP_REPLY,
+    followUp.info.id,
+  );
+  return [prompt, ...steps, followUp, reply];
+}
+
+test('33 — a long run whose prompt is outside the saved window reads in order, before the next prompt', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const env = loadEnv();
+  const email = `saved-order-${Date.now()}@example.test`;
+  const user = await createAuthUser(email, authOptions);
+  const auth = await signIn(email, authOptions);
+  let dispose = async () => {};
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    const accounts = await api<Array<{ account_id: string; personal_account?: boolean }>>(
+      auth.access_token,
+      'GET',
+      '/accounts',
+    );
+    const accountId = (accounts.find((a) => a.personal_account) ?? accounts[0]).account_id;
+    await fundAccount(env.databaseUrl ?? '', accountId);
+    const project = await createManifestProject({
+      api,
+      accessToken: auth.access_token,
+      databaseUrl: env.databaseUrl ?? '',
+      accountId,
+      userId: user.id,
+      name: 'Saved session order',
+    });
+    dispose = project.dispose;
+    const sessionId = await createDatabaseSession(env, {
+      projectId: project.id,
+      accountId,
+      userId: user.id,
+    });
+    await seedSessionTranscript(env, {
+      projectId: project.id,
+      accountId,
+      sessionId,
+      messages: longRunTranscript,
+    });
+    await runDatabaseSql(
+      "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
+      [sessionId],
+      env.databaseUrl ?? undefined,
+    );
+    // The computer never comes up: the page shows the saved copy alone.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+
+    await installBrowserSessionDirect(page, auth, `/projects/${project.id}`, authOptions);
+    await selectAccountForUi(page, accountId);
+    await dismissOnboarding(page);
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText(FOLLOW_UP_REPLY, { exact: true })).toBeVisible({
+      timeout: 120_000,
+    });
+
+    // Every step on screen reads oldest first. The old grouping prepended each
+    // step whose prompt was not loaded, one at a time: newest step first.
+    const steps = (await page.getByText(/^Step \d+ of the long run\.$/).allTextContents()).map(
+      (text) => Number(/Step (\d+)/.exec(text)?.[1]),
+    );
+    expect(steps.length, 'the saved window shows part of the run').toBeGreaterThan(5);
+    expect(steps).toEqual([...steps].sort((a, b) => a - b));
+    expect(steps.at(-1)).toBe(LONG_RUN_STEPS);
+
+    // The run renders BEFORE the follow-up it preceded, not filed under it.
+    const lastStep = page.getByText(`Step ${LONG_RUN_STEPS} of the long run.`, { exact: true });
+    const followUp = await page.getByText(FOLLOW_UP_PROMPT, { exact: true }).elementHandle();
+    expect(
+      await lastStep.evaluate(
+        (step, prompt) =>
+          !!prompt && !!(step.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING),
+        followUp,
+      ),
+      'the follow-up prompt comes after the last step of the run',
+    ).toBe(true);
+  } finally {
+    release();
+    await dispose().catch(() => {});
+  }
+});

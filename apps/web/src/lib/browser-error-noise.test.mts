@@ -20,10 +20,12 @@ import {
   isFailedToSendMessageNoise,
   isFirefoxReactSchedulerReentryNoise,
   isFramelessNetworkErrorNoise,
+  isGitMirrorUnavailableNoiseMessage,
   isInjectedAppSource,
   isInjectedScriptSendMessageNoise,
   isInpageJsNoErrorMessageNoise,
   isInpageWalletStreamNoise,
+  isIosWebViewInjectedStackOverflowNoise,
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
   isLikelyDomMutationNoise,
@@ -2541,6 +2543,97 @@ test('does NOT suppress a real 5xx server ApiError', () => {
       shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
       false,
       `expected real server error "${value}" to keep reporting`,
+    );
+  }
+});
+
+// Regression for Better Stack frontend pattern `b4d05df2…`
+// (`ApiError: git mirror is temporarily unavailable`) on session starts:
+// `POST /v1/projects/:id/sessions` cold-clones the project's private git
+// mirror; a transient GitHub-edge/credential blip yields `fatal: repository
+// '<url>' not found`, which the API's `isTransientGitMirrorError` classifies as
+// EXPECTED and retryable. The API answers a clean 503 + `Retry-After` with
+// `code: 'git_mirror_unavailable'` and de-noises it from the API's OWN Sentry,
+// but the 503 crosses into the FRONTEND Sentry as an `ApiError(status: 503)`
+// (app 2346967 — a separate app). `handleApiError` skips `captureException`
+// for `status === 503 && isGitMirrorUnavailableNoiseMessage(message)`; these
+// checks are the telemetry-side backstop for leak paths (ClientErrorBoundary /
+// route-error / app-error / onunhandledrejection).
+const GIT_MIRROR_UNAVAILABLE_NOISE_EVENTS = [
+  // The exact API body message.
+  'git mirror is temporarily unavailable',
+  // The ApiError-class-prefixed wrapper.
+  'ApiError: git mirror is temporarily unavailable',
+  // Unhandled-rejection leak paths preserving the message.
+  'Unhandled promise rejection: git mirror is temporarily unavailable',
+  'Unhandled promise rejection: ApiError: git mirror is temporarily unavailable',
+];
+
+test('classifies every transient git-mirror 503 message as expected noise', () => {
+  for (const message of GIT_MIRROR_UNAVAILABLE_NOISE_EVENTS) {
+    assert.equal(
+      isGitMirrorUnavailableNoiseMessage(message),
+      true,
+      `expected "${message}" to be classified as a git-mirror 503`,
+    );
+  }
+});
+
+test('suppresses a transient git-mirror 503 Sentry event regardless of capture path', () => {
+  for (const value of GIT_MIRROR_UNAVAILABLE_NOISE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/projects/p/sessions/s' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [{ filename: 'app:///_next/static/chunks/38irc0p4wwe9z.js' }],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    );
+  }
+});
+
+test('suppresses a transient git-mirror 503 unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Unhandled promise rejection: ApiError: git mirror is temporarily unavailable',
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress a generic 503 message that is not the git-mirror wording', () => {
+  // A generic 503 (`HTTP 503: Service Unavailable`, `sandbox waking up`,
+  // `sandbox provider is temporarily unavailable`) must keep reporting — only
+  // the exact git-mirror message the API's `isTransientGitMirrorError` branch
+  // emits is classified as noise.
+  for (const value of [
+    'HTTP 503: Service Unavailable',
+    'Service Unavailable',
+    'sandbox waking up',
+    'sandbox provider is temporarily unavailable',
+    'git mirror is permanently unavailable',
+    'git mirror unavailable',
+    'git mirror is temporarily unavailable.',
+    'A git mirror is temporarily unavailable',
+  ]) {
+    assert.equal(
+      isGitMirrorUnavailableNoiseMessage(value),
+      false,
+      `expected generic git-mirror message "${value}" to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
+      false,
+      `expected generic git-mirror Sentry event "${value}" to keep reporting`,
     );
   }
 });
@@ -6209,6 +6302,213 @@ test('does NOT suppress a real first-party RangeError recursion with a resolved 
 });
 
 // ---------------------------------------------------------------------------
+// iOS-WebView in-document inline-script stack overflow
+// (Better Stack patterns
+// 101e1671b389e89e5e2a0f555ea7626e4c83a8ed8495e90fc1a2ac0cfa389f87 and
+// d842945607c935d2d4c85dddf54ffc596f9120137f59257cd293a961908a403b,
+// Kortix Frontend prod, application_id 2346967). `RangeError: Maximum call
+// stack size exceeded.`, 1 occurrence each / 0 identified users, last
+// 2026-09-25 20:01:22 UTC / 20:00:30 UTC, release `a9378b74…`, one anonymous
+// Google Search App 436 session on iOS (iPhone) 27.0.0 with Google Translate
+// active. The stack is a tight mutual recursion of Closure-minified functions
+// (`Ok`/`Qk`) at one document line; EVERY frame's filename is the in-page
+// document source `app:///projects/<project_id>/sessions/<session_id>` — no
+// `_next` chunk frame and no resolved `apps/web/src/…` frame. The sibling
+// shape of the frameless iOS-WebKit stack overflow above.
+// ---------------------------------------------------------------------------
+
+// The exact production frame shape, with synthetic ids (never real prod ids).
+const IOS_WEBVIEW_INLINE_SOURCE = 'app:///projects/test-project-id/sessions/test-session-id';
+const IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES = [
+  { function: 'Ok', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 226, colno: 63, in_app: true },
+  { function: 'Qk', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 226, colno: 408, in_app: true },
+  { function: '?', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 198, colno: 237, in_app: true },
+  { function: '?', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 190, colno: 41, in_app: true },
+];
+
+test('classifies the iOS-WebView in-document inline-script stack overflow as noise', () => {
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message,
+        frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+      }),
+      true,
+      `expected "${message}" with in-document inline frames to be noise`,
+    );
+  }
+});
+
+test('suppresses the iOS-WebView in-document stack overflow via the Sentry beforeSend gate', () => {
+  // The exact production event shape: `auto.browser.global_handlers.onerror`
+  // with every frame on the in-page document source, and the request url path
+  // equal to the frame path.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/test-project-id/sessions/test-session-id' },
+      exception: {
+        values: [
+          {
+            value: 'RangeError: Maximum call stack size exceeded.',
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+            stacktrace: { frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('keeps reporting an asset frame or an in-document frame from a different page path', () => {
+  // A loaded `.js` asset on the `app:///` origin is a real script, not inline
+  // code executed in the document.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack size exceeded.',
+      frames: [
+        { function: 'boot', filename: 'app:///assets/index-abc123.js', lineno: 1, colno: 2 },
+      ],
+    }),
+    false,
+  );
+  // An in-document frame whose path is NOT the page path is another document
+  // context (embed, iframe), not this page's injected script.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack size exceeded.',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+      requestUrl: 'https://kortix.com/projects/other-project/sessions/other-session',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/other-project/sessions/other-session' },
+      exception: {
+        values: [
+          {
+            value: 'Maximum call stack size exceeded.',
+            stacktrace: { frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES },
+          },
+        ],
+      },
+    }),
+    false,
+  );
+});
+
+test('suppresses the iOS-WebView in-document stack overflow via the runtime (window.onerror) gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: IOS_WEBVIEW_INLINE_SOURCE,
+    }),
+    true,
+  );
+});
+
+test('keeps reporting a stack overflow that carries a bundle or first-party frame', () => {
+  const bundleFrame = {
+    function: 'e',
+    filename: 'app:///_next/static/chunks/main-abc123.js',
+    lineno: 1,
+    colno: 2,
+  };
+  const nextLiveFrame = {
+    function: 'te',
+    filename: 'app:///_next-live/feedback/913.f924585152f5e22503e7.js',
+    lineno: 1,
+    colno: 2,
+  };
+  const firstPartyFrame = {
+    function: 'deepRecurse',
+    filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+    lineno: 3,
+    colno: 4,
+  };
+  for (const frames of [
+    [bundleFrame],
+    [nextLiveFrame],
+    [firstPartyFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, bundleFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, nextLiveFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, firstPartyFrame],
+  ]) {
+    // This class's OWN guard always declines a bundle / `_next-live` / first-
+    // party frame — assert that independent of every other rule.
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message: 'Maximum call stack size exceeded.',
+        frames,
+      }),
+      false,
+      `expected real recursion with frames ${JSON.stringify(frames)} to keep reporting`,
+    );
+    // At the full Sentry-gate dispatch level, a `_next-live/feedback/…` frame
+    // with no first-party frame is independently dropped by the (pre-existing,
+    // message-agnostic) `isVercelLiveFeedbackNoise` rule — the Vercel toolbar's
+    // reserved source path is never actionable app code, regardless of message.
+    // That is a DIFFERENT rule than this one; it does not mean this class's own
+    // guard failed to preserve the frame.
+    const isVercelFeedbackFrame = frames.some((frame) =>
+      /^app:\/\/\/_next-live\/feedback\//.test(String(frame.filename ?? '')),
+    );
+    const hasFirstPartyFrame = frames.some((frame) =>
+      String(frame.filename ?? '').includes('apps/web/src/'),
+    );
+    const expectedDispatchVerdict = isVercelFeedbackFrame && !hasFirstPartyFrame;
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: 'Maximum call stack size exceeded.',
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      expectedDispatchVerdict,
+      `expected Sentry gate verdict ${expectedDispatchVerdict} for frames ${JSON.stringify(frames)}`,
+    );
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'app:///_next/static/chunks/main-abc123.js',
+    }),
+    false,
+  );
+});
+
+test('does NOT treat an unrelated message from the same in-document source as stack-overflow noise', () => {
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Minified React error #418',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+    }),
+    false,
+  );
+  // Prefix-only, not the canonical message.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+    }),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // EVM-wallet-extension injected `inpage.js` stream EventEmitter noise
 // (Better Stack patterns 17a0ce67ca03dd51cfa5a9a1ac7e5140a958664a5f66ac8ec74c40604ffd772a
 // (`Cannot read properties of undefined (reading 'addListener')`, 21 occ.)
@@ -8813,6 +9113,157 @@ test('does NOT suppress the "Connection closed by server." wording (over-match g
         message,
         frames: [],
       }),
+      false,
+      `expected "${message}" to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// React error #412 — "Connection closed." (RSC / Flight stream close)
+//
+// KRTX-240, Better Stack pattern
+// 3d9e3dd115f302ff96fa4bee9b54beed839db71851ea5b0ad7660778023ec6a7, Kortix
+// Frontend prod (application_id 2346967). React's minified prod error #412 is
+// `Connection closed.` (see React's error-codes map) — the SAME canonical close
+// string a client-side transport library throws, emitted by React's Flight
+// client in `close()` when an RSC stream ends with chunks still pending
+// (ReactFlightClient: `reportGlobalError(weakResponse, new Error('Connection
+// closed.'))`). In a Next.js App Router client this is the RSC/flight response
+// stream closing early — an aborted navigation/prefetch, a network blip, or the
+// server ending the stream. It is a transient, self-healing browser/transport
+// condition, never an app defect. 6 occurrences over 6 days (first
+// 2026-09-17, last 2026-09-23), 0 identified users (anonymous), all Firefox,
+// across the marketing/`/auth`/`/projects/start` routes, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT). The single
+// stack frame is the minified React chunk
+// `app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js` function `n` — NO
+// resolved first-party `apps/web/src/…` frame. React's formatted prod message
+// is canonical (only the deep-link URL varies), so anchoring on the
+// `Minified React error #412;` prefix is specific; the negative guard preserves
+// a real first-party `throw new Error('Connection closed.')` regression.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event: React's formatted prod
+// error #412 (`Connection closed.`). Only the deep-link URL is React's own.
+const REACT_412_CONNECTION_CLOSED_MESSAGE =
+  'Minified React error #412; visit https://react.dev/errors/412 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.';
+
+// The single production stack frame: the minified React chunk that React's
+// Flight client throws from. Sentry's sourcemap resolution did NOT rewrite this
+// to a first-party `apps/web/src/…` path, so the negative guard does not fire.
+const REACT_412_PROD_FRAMES = [
+  {
+    filename: 'app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js',
+    function: 'n',
+    lineno: 1,
+    colno: 1,
+    in_app: true,
+  },
+];
+
+test('classifies the React error #412 "Connection closed." RSC-stream noise (exact prod shape)', () => {
+  assert.equal(
+    isConnectionClosedNoise({
+      message: REACT_412_CONNECTION_CLOSED_MESSAGE,
+      frames: REACT_412_PROD_FRAMES,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth' },
+      exception: {
+        values: [
+          {
+            value: REACT_412_CONNECTION_CLOSED_MESSAGE,
+            stacktrace: { frames: REACT_412_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses React error #412 through all three capture-path wrappers', () => {
+  // `stripErrorWrappers` + the bare-`Error: ` strip must classify the SAME
+  // underlying message regardless of which capture path delivered it.
+  for (const message of [
+    REACT_412_CONNECTION_CLOSED_MESSAGE,
+    `Error: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+    `Unhandled promise rejection: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+    `Unhandled promise rejection: Error: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+  ]) {
+    assert.equal(
+      isConnectionClosedNoise({ message, frames: REACT_412_PROD_FRAMES }),
+      true,
+      `expected "${message}" to be noise`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: REACT_412_PROD_FRAMES } }],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    );
+  }
+});
+
+test('classifies the frameless React error #412 variant as noise (message alone is specific)', () => {
+  assert.equal(
+    isConnectionClosedNoise({ message: REACT_412_CONNECTION_CLOSED_MESSAGE, frames: [] }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [{ value: REACT_412_CONNECTION_CLOSED_MESSAGE }],
+      },
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress React error #412 when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw the close →
+  // actionable; the negative guard MUST preserve it.
+  const frames = [
+    { filename: 'app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js', function: 'n' },
+    { filename: 'apps/web/src/lib/rsc/stream.ts', function: 'onClose' },
+  ];
+  assert.equal(
+    isConnectionClosedNoise({ message: REACT_412_CONNECTION_CLOSED_MESSAGE, frames }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: REACT_412_CONNECTION_CLOSED_MESSAGE, stacktrace: { frames } }],
+      },
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress a near-worded React error number (over-match guard)', () => {
+  // `\b` after `#412` means `#4120` (and any other number) must keep reporting.
+  for (const message of [
+    'Minified React error #4120; visit https://react.dev/errors/4120 for the full message.',
+    'Minified React error #41; visit https://react.dev/errors/41 for the full message.',
+  ]) {
+    assert.equal(
+      isConnectionClosedNoise({ message, frames: [] }),
       false,
       `expected "${message}" to keep reporting`,
     );

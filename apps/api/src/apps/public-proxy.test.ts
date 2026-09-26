@@ -6,6 +6,8 @@ process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE = 'true';
 
 const {
   appPublicUnavailableResponse,
+  assertAppProviderEnabled,
+  AppProviderDisabledError,
   appPublicBudgetResponse,
   appPublicResponseHeaders,
   appPublicStatusResponse,
@@ -597,6 +599,9 @@ describe('Apps public edge', () => {
       ['ready', 'Activating your App', 202, true],
       ['starting', 'Starting Storefront', 202, true],
       ['budget', 'App paused', 402, false],
+      // A provider that has been switched off is PERMANENT. It must not carry
+      // the auto-refresh, or the page promises to continue and never can.
+      ['provider_disabled', 'App needs a redeploy', 503, false],
       ['failed', 'Deployment failed', 503, false],
       ['cancelled', 'Deployment cancelled', 503, false],
     ] as const;
@@ -617,6 +622,21 @@ describe('Apps public edge', () => {
       expect(html).not.toContain('app_stopped');
       expect(html).not.toContain('App not found');
     }
+  });
+
+  // A deployment pins its provider at deploy time. When that provider is later
+  // switched off, waking can NEVER succeed again — only a redeploy fixes it.
+  // Guarding it is what turns an endless "starting" spinner into a page that
+  // names the problem.
+  //
+  // Essentia, 2026-09-08: their E2B stack was hibernated (ASGs to 0, its DNS
+  // pointing at a deleted load balancer) while all four live App deployments
+  // were still pinned to e2b and ALLOWED_SANDBOX_PROVIDERS had been narrowed to
+  // platinum. Every App rendered "Starting … This page will continue
+  // automatically" and refreshed every 3 s, forever.
+  test('a provider that is no longer enabled is refused, not retried forever', () => {
+    expect(() => assertAppProviderEnabled('e2b', ['platinum'])).toThrow(AppProviderDisabledError);
+    expect(() => assertAppProviderEnabled('platinum', ['platinum'])).not.toThrow();
   });
 
   test('returns machine-readable state to non-browser callers', async () => {
