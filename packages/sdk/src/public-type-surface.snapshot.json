@@ -3,6 +3,7 @@
     "ABORT_REASONS",
     "ABORT_REASONS_NOT_YET_EMITTED",
     "ACTIVE_INSTANCE_COOKIE",
+    "ANALYTICS_UNAVAILABLE_CODE",
     "ATTACHMENT_PART_REF_PREFIX",
     "AbortReason",
     "AbortReceipt",
@@ -5870,6 +5871,7 @@
     "setCachedAuthToken"
   ],
   "./api-client": [
+    "ANALYTICS_UNAVAILABLE_CODE",
     "ApiClientOptions",
     "ApiError",
     "ApiErrorFields",
