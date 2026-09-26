@@ -156,6 +156,10 @@ describe('POST /kortix/config/converge end to end through the OpenCode control s
   })
 
   afterEach(() => {
+    // The rows here leave a release owning compiled governance. That is
+    // module-level state, so clear it on the way OUT as well as on the way in —
+    // a later file in the same process inherits whatever this one leaves.
+    resetConfigReleaseStateForTests()
     api.stop()
     for (const name of ENV) {
       if (saved[name] === undefined) delete process.env[name]
