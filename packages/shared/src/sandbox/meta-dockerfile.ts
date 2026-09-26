@@ -4,6 +4,10 @@ import {
   SANDBOX_SHELL_TOOL_APT_LIST,
   SANDBOX_SHELL_TOOL_LINK_COMMAND,
 } from './shell-tools';
+import {
+  SANDBOX_CLI_OWNERSHIP_COMMAND,
+  SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
+} from './platform-binaries';
 
 export interface MetaSandboxDockerfileOptions {
   agentBinaryPath: string;
@@ -99,6 +103,8 @@ COPY ${options.cliBinaryPath} /tmp/kortix.gz
 RUN gzip -dc /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
  && gzip -dc /tmp/kortix.gz > /usr/local/bin/kortix \\
  && chmod 0755 /usr/local/bin/kortix-agent /usr/local/bin/kortix \\
+ && ${SANDBOX_CLI_OWNERSHIP_COMMAND} \\
+ && ${SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND} \\
  && rm /tmp/kortix-agent.gz /tmp/kortix.gz
 COPY ${options.entrypointScriptPath} /usr/local/bin/kortix-entrypoint
 RUN chmod 0755 /usr/local/bin/kortix-entrypoint

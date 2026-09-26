@@ -940,6 +940,35 @@ describe('SessionSyncController', () => {
     expect(reasons).toEqual([]);
   });
 
+  test('a watched session repairs missed messages even when no busy signal arrived', async () => {
+    const clock = createScheduler();
+    const hydrated: string[][] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => page(['message-latest']),
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+      verifyIntervalMs: 30_000,
+    });
+
+    await controller.start();
+    hydrated.length = 0;
+    controller.setBusy(false, true);
+    clock.advance(20_000);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(hydrated).toEqual([]);
+    clock.advance(10_000);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(hydrated).toEqual([['message-latest']]);
+
+    controller.setBusy(false, false);
+    clock.advance(30_000);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(hydrated).toHaveLength(1);
+  });
+
   test('destruction does not fire a turn-end read', async () => {
     const clock = createScheduler();
     const reasons: SessionSyncReason[] = [];
