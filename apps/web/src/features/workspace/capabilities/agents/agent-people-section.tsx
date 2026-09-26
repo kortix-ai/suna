@@ -32,8 +32,10 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  */
 
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EditorSection } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
 import {
@@ -45,6 +47,7 @@ import { builtinRole, customRole, ROLE_NONE } from '@/features/workspace/shared/
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
+  deleteProjectResourceGrant,
   getProjectDetail,
   listProjectAccess,
   listProjectResourceGrants,
@@ -53,9 +56,9 @@ import {
   type ProjectResourceGrant,
   type ProjectRole,
 } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { PencilSimpleIcon, PlusIcon, UsersIcon } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
+import { contract, invalidatePermissionProbes, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { PencilSimpleIcon, PlusIcon, UsersIcon, UsersThreeIcon } from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
 /** The grants that name `agentName`. Orphaned rows (agent renamed) are kept —
@@ -129,6 +132,8 @@ export function AgentPeopleSection({
   agentName: string;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSharing = useI18nTranslations('accessSharing');
+  const queryClient = useQueryClient();
   const canManage =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
@@ -162,9 +167,24 @@ export function AgentPeopleSection({
   const grants = useMemo(() => grantsQuery.data?.grants ?? [], [grantsQuery.data]);
   const assigned = useMemo(() => grantsForAgent(grants, agentName), [grants, agentName]);
 
+  // A grant to everyone in the project has no role to edit: its only action is
+  // to stop sharing, which removes that one grant.
+  const [stopSharing, setStopSharing] = useState<ProjectResourceGrant | null>(null);
+  const stopSharingMutation = useMutation({
+    mutationFn: (grantId: string) => deleteProjectResourceGrant(projectId, grantId),
+    onSuccess: () => {
+      successToast(tSharing('removed'));
+      if (accountId) void invalidatePermissionProbes(queryClient, { accountId });
+      queryClient.invalidateQueries({ queryKey: qk.project.scope(projectId) });
+      setStopSharing(null);
+    },
+    onError: (error: Error) => errorToast(error.message || tSharing('removeFailed')),
+  });
+
   if (!canManage) return null;
 
   const openEdit = (grant: ProjectResourceGrant) => {
+    if (grant.principal_type === 'project') return;
     const agentIds = agentIdsHeldBy(grants, grant.principal_type, grant.principal_id);
     if (grant.principal_type === 'member') {
       const member = accessQuery.data?.members.find((m) => m.user_id === grant.principal_id);
@@ -240,15 +260,23 @@ export function AgentPeopleSection({
                 >
                   {g.principal_type === 'group' ? (
                     <EntityAvatar icon={UsersIcon} size="md" />
+                  ) : g.principal_type === 'project' ? (
+                    <EntityAvatar icon={UsersThreeIcon} size="md" />
                   ) : (
                     <UserAvatar email={member?.email ?? g.principal_label} size="md" />
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="text-foreground block truncate text-sm font-medium">
-                      {g.principal_label}
+                      {g.principal_type === 'project'
+                        ? tSharing('everyone', { project: g.principal_label })
+                        : g.principal_label}
                     </span>
                     <span className="text-muted-foreground block truncate text-xs">
-                      {g.principal_type === 'group' ? 'Group' : 'Member'}
+                      {g.principal_type === 'project'
+                        ? tSharing('everyoneMeta')
+                        : g.principal_type === 'group'
+                          ? tSharing('groupMeta')
+                          : tSharing('memberMeta')}
                       {g.expires_at
                         ? tI18nComplete('textdc40ace03968', {
                             value0: new Date(g.expires_at).toLocaleDateString(),
@@ -257,16 +285,22 @@ export function AgentPeopleSection({
                       {g.orphaned ? tI18nComplete.raw('textc795f93da2e5') : ''}
                     </span>
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => openEdit(g)}
-                    disabled={!accountId}
-                  >
-                    <PencilSimpleIcon className="size-3.5 shrink-0" />
-                    {tI18nComplete.raw('text464c4ffd019e')}
-                  </Button>
+                  {g.principal_type === 'project' ? (
+                    <Button variant="ghost" size="sm" onClick={() => setStopSharing(g)}>
+                      {tSharing('removeEveryone')}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => openEdit(g)}
+                      disabled={!accountId}
+                    >
+                      <PencilSimpleIcon className="size-3.5 shrink-0" />
+                      {tI18nComplete.raw('text464c4ffd019e')}
+                    </Button>
+                  )}
                 </li>
               );
             })}
@@ -308,6 +342,17 @@ export function AgentPeopleSection({
           inheritedFrom={editTarget.inheritedFrom}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={stopSharing !== null}
+        onOpenChange={(open) => !open && setStopSharing(null)}
+        title={tSharing('removeEveryoneTitle', { agent: agentName })}
+        description={tSharing('removeEveryoneDescription', { agent: agentName })}
+        confirmLabel={tSharing('removeEveryone')}
+        confirmVariant="destructive"
+        isPending={stopSharingMutation.isPending}
+        onConfirm={() => stopSharing && stopSharingMutation.mutate(stopSharing.grant_id)}
+      />
     </EditorSection>
   );
 }

@@ -26,7 +26,7 @@ import { createHash } from 'node:crypto';
  * timeout/abort, four attempts, four executions.
  *
  * Keep this as the ONE list. The predicate it replaced was
- * `shouldSyncProjectEnvBeforeProxy`, whose name is about env sync and whose
+ * `isTurnStartEnvSync`, whose name is about env sync and whose
  * path list happened to double as "is this non-idempotent" — so adding an
  * endpoint to one concern silently meant opting into the other, and forgetting
  * to meant opting out of every safety guard at once. Env sync keeps its own

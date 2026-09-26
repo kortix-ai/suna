@@ -63,12 +63,12 @@ export function createPiQueryService(runtime: () => PiRuntime | null, surface: P
           const rt = runtime()
           const t0 = performance.now()
           if (!rt) return { ok: false, body: { error: 'pi runtime is not started' } }
-          const page =
-            sessionId === rt.rootId
-              ? after
-                ? { messages: rt.transcript.all().filter((m) => (m.info.id as string) > after).slice(0, limit), hasMore: false }
-                : rt.transcript.page({ limit, before })
-              : { messages: [], hasMore: false }
+          const transcript = sessionId === rt.rootId ? rt.transcript : rt.childSession(sessionId)?.transcript
+          const page = transcript
+            ? after
+              ? { messages: transcript.all().filter((m) => (m.info.id as string) > after).slice(0, limit), hasMore: false }
+              : transcript.page({ limit, before })
+            : { messages: [], hasMore: false }
           let truncated = 0
           const projected = page.messages.map((message) => ({
             info: message.info,

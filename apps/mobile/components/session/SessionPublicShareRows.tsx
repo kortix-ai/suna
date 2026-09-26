@@ -7,8 +7,10 @@
  *   when it exists), then opens the system share sheet with its `public_url`.
  *   iOS takes `url`; Android has no `url` field, so it gets the link as `message`.
  *   With no live link, a confirm comes first (web's `PublicShareLinkConfirm`
- *   wording: the link needs no sign-in); reusing a live link asks nothing. A
- *   refusal toasts the API's own sentence (`publicLinkErrorMessage`).
+ *   wording: the link needs no sign-in); reusing a live link asks nothing. The
+ *   confirm is a view pushed inside the same sheet (`SessionShareLinkConfirm`,
+ *   `sheet-push`), never a dialog over it (Jay, 2026-09-27). A refusal toasts
+ *   the API's own sentence (`publicLinkErrorMessage`).
  *   A server older than the `transcript` share kind ignores it and mints a
  *   `preview` share instead (still 201) — `guardTranscriptShare`
  *   (`lib/session/public-share-guard.ts`) catches any non-`transcript`
@@ -20,19 +22,21 @@
  *   after that (bound hit, a failed page, or no open thread to page through)
  *   adds a "may not be included" line to the text.
  * - Stop sharing link: only while a live transcript share exists; revokes it
- *   after a destructive confirm. The link then answers 410.
+ *   after a destructive confirm, pushed the same way. The link then answers 410.
  *
- * Settings-list rows, no descriptions, no chevrons: none of them pushes a view.
+ * Settings-list rows, no descriptions. Share link (when it confirms first) and
+ * Stop sharing link push a view, so they keep the chevron.
  */
 import * as React from 'react';
-import { Platform, Share, type ShareContent } from 'react-native';
+import { Platform, Share, View, type ShareContent } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { useToast } from '@/components/kortix/toast-provider';
+import { Button } from '@/components/ui/button';
+import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
-import { FileTextIcon, LinkBreakIcon, LinkIcon } from '@/lib/icons';
+import { FileTextIcon, LinkBreakIcon, ShareNetworkIcon } from '@/lib/icons';
 import { loadFullHistory } from '@/lib/opencode/session-sync';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { projectKeys } from '@/lib/projects/hooks';
@@ -51,15 +55,17 @@ import { buildTranscriptText } from '@/lib/session/transcript-text';
 
 type SharesData = { shares: SessionPublicShare[] };
 
-export interface SessionPublicShareRowsProps {
-  projectId: string;
-  session: ProjectSession;
-}
+/** A confirm the Share view pushes in place of itself. */
+export type PublicShareConfirmKind = 'create-link' | 'stop-link';
 
-export function SessionPublicShareRows({ projectId, session }: SessionPublicShareRowsProps) {
+/**
+ * The session's transcript share: the live-share query, the mint/reuse
+ * mutation (which opens the system share sheet), and revoke. The rows and the
+ * pushed confirm each mount it; both read the same cached share list.
+ */
+function usePublicTranscriptShare(projectId: string, session: ProjectSession) {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const { confirm, dialog } = useConfirmDialog();
 
   const sessionId = session.session_id;
   const title = sessionDisplayTitle(session);
@@ -70,12 +76,6 @@ export function SessionPublicShareRows({ projectId, session }: SessionPublicShar
     queryFn: () => listSessionPublicShares(projectId, sessionId),
   });
   const activeShare = shares.data ? findActiveTranscriptShare(shares.data.shares) : null;
-
-  // The transcript comes from the sync store, keyed by the OpenCode session id.
-  const runtimeSessionId = session.opencode_session_id;
-  const hasMessages = useSyncStore((s) =>
-    runtimeSessionId ? (s.messages[runtimeSessionId]?.length ?? 0) > 0 : false
-  );
 
   const openShareSheet = React.useCallback(
     async (content: ShareContent) => {
@@ -145,6 +145,29 @@ export function SessionPublicShareRows({ projectId, session }: SessionPublicShar
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
 
+  return { title, activeShare, openShareSheet, ensureLink, revoke };
+}
+
+export interface SessionPublicShareRowsProps {
+  projectId: string;
+  session: ProjectSession;
+  /** Push a confirm view in place of the Share view. */
+  onConfirm: (kind: PublicShareConfirmKind) => void;
+}
+
+export function SessionPublicShareRows({ projectId, session, onConfirm }: SessionPublicShareRowsProps) {
+  const toast = useToast();
+  const { title, activeShare, openShareSheet, ensureLink, revoke } = usePublicTranscriptShare(
+    projectId,
+    session
+  );
+
+  // The transcript comes from the sync store, keyed by the OpenCode session id.
+  const runtimeSessionId = session.opencode_session_id;
+  const hasMessages = useSyncStore((s) =>
+    runtimeSessionId ? (s.messages[runtimeSessionId]?.length ?? 0) > 0 : false
+  );
+
   const [loadingHistory, setLoadingHistory] = React.useState(false);
   // False once the Share view unmounts (Back, sheet closed): a history load
   // still running then must not open the share sheet or a toast.
@@ -176,64 +199,123 @@ export function SessionPublicShareRows({ projectId, session }: SessionPublicShar
   };
 
   return (
-    <>
-      <SettingsGroup>
-        <SettingsRow
-          icon={LinkIcon}
-          label="Share link"
-          value={ensureLink.isPending ? 'Creating…' : undefined}
-          disabled={ensureLink.isPending}
-          right={null}
-          onPress={() => {
-            if (ensureLink.isPending) return;
+    <SettingsGroup>
+      <SettingsRow
+        icon={ShareNetworkIcon}
+        label="Share link"
+        value={ensureLink.isPending ? 'Creating…' : undefined}
+        disabled={ensureLink.isPending}
+        // A live link shares at once; without one the row pushes the confirm.
+        right={activeShare ? null : undefined}
+        onPress={() => {
+          if (ensureLink.isPending) return;
+          if (activeShare) {
             haptics.tap();
-            if (activeShare) {
-              ensureLink.mutate();
-              return;
-            }
-            // A new public link is a decision: web's PublicShareLinkConfirm wording.
-            confirm({
-              title: 'Create a public link?',
-              description:
-                'Anyone with the link can view this without signing in. The link stays active until you revoke it.',
-              confirmLabel: 'Create link',
-              onConfirm: () => ensureLink.mutate(),
-            });
+            ensureLink.mutate();
+            return;
+          }
+          onConfirm('create-link');
+        }}
+      />
+      {hasMessages ? (
+        <SettingsRow
+          icon={FileTextIcon}
+          label="Share transcript"
+          value={loadingHistory ? 'Loading…' : undefined}
+          disabled={loadingHistory}
+          right={null}
+          onPress={() => void shareTranscript()}
+        />
+      ) : null}
+      {activeShare ? (
+        <SettingsRow
+          icon={LinkBreakIcon}
+          label="Stop sharing link"
+          destructive
+          value={revoke.isPending ? 'Stopping…' : undefined}
+          disabled={revoke.isPending}
+          onPress={() => {
+            if (revoke.isPending) return;
+            onConfirm('stop-link');
           }}
         />
-        {hasMessages ? (
-          <SettingsRow
-            icon={FileTextIcon}
-            label="Share transcript"
-            value={loadingHistory ? 'Loading…' : undefined}
-            disabled={loadingHistory}
-            right={null}
-            onPress={() => void shareTranscript()}
-          />
-        ) : null}
-        {activeShare ? (
-          <SettingsRow
-            icon={LinkBreakIcon}
-            label="Stop sharing link"
-            destructive
-            value={revoke.isPending ? 'Stopping…' : undefined}
-            disabled={revoke.isPending}
-            right={null}
-            onPress={() => {
-              if (revoke.isPending) return;
-              haptics.warning();
-              confirm({
-                title: 'Stop sharing link',
-                description: 'The link stops working for everyone who has it.',
-                confirmLabel: 'Stop sharing',
-                destructive: true,
-                onConfirm: () => revoke.mutate(activeShare.share_id),
-              });
-            }}
-          />
-        ) : null}
-      </SettingsGroup>
-      {dialog}
-    </>
+      ) : null}
+    </SettingsGroup>
+  );
+}
+
+const CONFIRM_COPY: Record<
+  PublicShareConfirmKind,
+  { description: string; label: string; pendingLabel: string; destructive: boolean }
+> = {
+  'create-link': {
+    description:
+      'Anyone with the link can view this without signing in. The link stays active until you revoke it.',
+    label: 'Create link',
+    pendingLabel: 'Creating…',
+    destructive: false,
+  },
+  'stop-link': {
+    description: 'The link stops working for everyone who has it.',
+    label: 'Stop sharing',
+    pendingLabel: 'Stopping…',
+    destructive: true,
+  },
+};
+
+/** The pushed view's title in the sheet's title row. */
+export const PUBLIC_SHARE_CONFIRM_TITLE: Record<PublicShareConfirmKind, string> = {
+  'create-link': 'Create a public link?',
+  'stop-link': 'Stop sharing link',
+};
+
+export interface SessionShareLinkConfirmProps {
+  projectId: string;
+  session: ProjectSession;
+  kind: PublicShareConfirmKind;
+  /** The action succeeded: go back to the Share view. */
+  onDone: () => void;
+}
+
+/**
+ * The confirm the Share view pushes (`sheet-push`) before it mints or revokes
+ * the public link: one sentence and one pill. Back in the title row cancels.
+ * A failure toasts and keeps this view, so a retry is one tap.
+ */
+export function SessionShareLinkConfirm({ projectId, session, kind, onDone }: SessionShareLinkConfirmProps) {
+  const { activeShare, ensureLink, revoke } = usePublicTranscriptShare(projectId, session);
+  const copy = CONFIRM_COPY[kind];
+  const pending = kind === 'create-link' ? ensureLink.isPending : revoke.isPending;
+
+  const run = () => {
+    if (pending) return;
+    if (kind === 'create-link') {
+      haptics.tap();
+      // The system share sheet opens from the mutation's own onSuccess.
+      ensureLink.mutate(undefined, { onSuccess: onDone });
+      return;
+    }
+    if (!activeShare) {
+      onDone();
+      return;
+    }
+    haptics.warning();
+    revoke.mutate(activeShare.share_id, { onSuccess: onDone });
+  };
+
+  return (
+    <View className="gap-6 px-4 pt-1">
+      <Text variant="muted" className="px-1">
+        {copy.description}
+      </Text>
+      <Button
+        size="lg"
+        variant={copy.destructive ? 'destructive' : 'default'}
+        className="rounded-full"
+        disabled={pending}
+        onPress={run}>
+        <Text>{pending ? copy.pendingLabel : copy.label}</Text>
+      </Button>
+    </View>
   );
 }

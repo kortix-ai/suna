@@ -500,6 +500,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Set project secret': 'textb61c8415b2b6',
   'Set session prompt queue hold': 'text520f1939d072',
   'Set super-admin status': 'text2bc95eda6944',
+  'Shared a private connector account': 'texte817b7da7436',
   'Signed in': 'textca566c8968e7',
   'Signed in with a password': 'text77413d074c15',
   'Signed out': 'text80c6e7caffee',

@@ -72,9 +72,15 @@ const IMAGES: Array<{ label: string; dockerfile: string }> = [
 ];
 
 describe('platform-owned binaries', () => {
-  test('the ownership command hands the daemon the DIRECTORY, not just the file', () => {
+  test('the ownership command hands the daemon the DIRECTORY, and ONLY the directory', () => {
     // rename(2) into /usr/local/bin needs write+execute on the directory.
-    expect(SANDBOX_CLI_OWNERSHIP_COMMAND).toContain('chown kortix:kortix /usr/local/bin');
+    expect(SANDBOX_CLI_OWNERSHIP_COMMAND).toBe('chown kortix:kortix /usr/local/bin');
+    // NOT the file. On apps/sandbox/Dockerfile the CLI arrives owned by
+    // `kortix` through `COPY --chown`, so naming it here changed nothing and
+    // still forced overlayfs to copy the whole binary up into this layer.
+    // Measured on linux/arm64 with a 105,000,000-byte stand-in: the RUN layer
+    // is 105,000,000 bytes with the file named and 0 bytes without it.
+    expect(SANDBOX_CLI_OWNERSHIP_COMMAND).not.toContain('/usr/local/bin/kortix');
     // E2B's Dockerfile parser cannot read heredocs or embedded newlines.
     expect(SANDBOX_CLI_OWNERSHIP_COMMAND).not.toContain('<<');
     expect(SANDBOX_CLI_OWNERSHIP_COMMAND).not.toContain('\n');
@@ -95,6 +101,9 @@ describe('platform-owned binaries', () => {
   for (const { label, dockerfile } of IMAGES) {
     test(`${label} lets the daemon replace /usr/local/bin/kortix`, () => {
       expect(dockerfile).toContain(SANDBOX_CLI_OWNERSHIP_COMMAND);
+      // And no image re-chowns the CLI file itself. `toContain` above would
+      // still pass on `chown kortix:kortix /usr/local/bin /usr/local/bin/kortix`.
+      expect(dockerfile).not.toContain('chown kortix:kortix /usr/local/bin /usr/local/bin/kortix');
     });
 
     test(`${label} bakes the global opencode.json with autoupdate off`, () => {

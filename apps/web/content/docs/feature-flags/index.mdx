@@ -173,7 +173,12 @@ refs). An explicit project choice always wins.
   restarted session boots pi, whatever the manifest says. Off: the manifest
   decides — `runtime: pi` still boots pi, anything else boots OpenCode. Same
   repo layout, agents and skills either way; a running session keeps its
-  harness until it is restarted or resumed.
+  harness until it is restarted or resumed. Subagents work on pi: the agent
+  delegates with the `task` tool to `general`, `explore` (read-only), or any
+  agent in `.kortix/opencode/agents/` with `mode: subagent`, and the transcript
+  shows each subagent's steps in place. pi sessions also load pi.dev packages:
+  see [`harnesses:`](/docs/project/manifest#harnesses).
+
 ### Graduated flags
 
 A graduated feature is on for every project and has no switch.

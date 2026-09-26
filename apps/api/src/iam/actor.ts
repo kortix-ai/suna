@@ -118,9 +118,11 @@ export interface Actor {
   ctx: RequestContext;
 }
 
-/** A principal reference, in the canonical `role_assignments` vocabulary. */
+/** A principal reference, in the canonical `role_assignments` vocabulary.
+ *  `project` = everyone with access to the project `id`; it only ever holds
+ *  object grants and is never an acting principal. */
 export interface PrincipalRef {
-  type: 'user' | 'group' | 'service_account' | 'pending';
+  type: 'user' | 'group' | 'service_account' | 'pending' | 'project';
   id: string;
 }
 

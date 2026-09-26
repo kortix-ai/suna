@@ -9,9 +9,7 @@
  * (COR-140 Task 5): `ProjectScreen` passes `onOpenMore` for the open thread's
  * project session, opening `SessionActionsSheet`.
  *
- * `onShare` (KRTX-248) adds a Share button before the `···`: the thread's
- * prominent Share entry. It opens the same `SessionActionsSheet`, straight to
- * its Share view — never a second share sheet.
+ * Share has no header button (Jay, 2026-09-27): it is a row in that sheet.
  *
  * `-mr-2.5` mirrors `MenuButton`'s `-ml-2.5`: the last control's right edge
  * sits on the page's 16pt padding edge. When the `···` button is absent, the
@@ -23,34 +21,19 @@ import { Keyboard, View } from 'react-native';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { DotsThreeIcon, ExportIcon } from '@/lib/icons';
+import { DotsThreeIcon } from '@/lib/icons';
 
 interface ProjectHeaderActionsProps {
   /** Omit to hide the `···` button. */
   onOpenMore?: () => void;
-  /** Omit to hide the Share button (a session the viewer cannot share). */
-  onShare?: () => void;
-  /** Controls before the Share button and the `···` (the thread's `SubAgentHeaderChip`). */
+  /** Controls before the `···` (the thread's `SubAgentHeaderChip`). */
   children?: React.ReactNode;
 }
 
-export function ProjectHeaderActions({ onOpenMore, onShare, children }: ProjectHeaderActionsProps) {
+export function ProjectHeaderActions({ onOpenMore, children }: ProjectHeaderActionsProps) {
   return (
     <View className="shrink flex-row items-center">
       {children}
-      {onShare ? (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="rounded-full bg-background"
-          onPress={() => {
-            Keyboard.dismiss();
-            onShare();
-          }}
-          accessibilityLabel="Share session">
-          <Icon as={ExportIcon} size={20} className="text-foreground" />
-        </Button>
-      ) : null}
       {onOpenMore ? (
         <Button
           variant="ghost"

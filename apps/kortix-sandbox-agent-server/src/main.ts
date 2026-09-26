@@ -1,7 +1,7 @@
 import { dispatchCli, isManagementSubcommand } from './cli'
 import { loadConfig } from './config'
 import { runGitCredentialHelper } from './git'
-import { resolveHarness } from './harness/harness'
+import { resolveHarness, warmPiSystemPackages } from './harness/harness'
 import { kortixEventBus } from './kortix-event-bus'
 import { enableDaemonLogFile, logger } from './logger'
 import { runMonitorMode } from './monitor-mode'
@@ -53,6 +53,18 @@ if (import.meta.main) {
     runGitCredentialHelper(loadConfig(), process.argv[3])
       .then((code) => process.exit(code))
       .catch(() => process.exit(0))
+  } else if (subcommand === 'warm-pi-packages') {
+    // Image build only: load the pi system packages once so their jiti cache
+    // ships in the image. A package that fails to install or load fails the build.
+    warmPiSystemPackages(process.env.KORTIX_PI_AGENT_DIR)
+      .then((status) => {
+        process.stdout.write(`${JSON.stringify(status)}\n`)
+        process.exit(status.failed.length > 0 ? 1 : 0)
+      })
+      .catch((error) => {
+        process.stderr.write(`[warm-pi-packages] ${error instanceof Error ? error.message : String(error)}\n`)
+        process.exit(1)
+      })
   } else if (subcommand === 'install-compiled-runtime') {
     const cfg = loadConfig()
     resolveHarness(cfg).installCompiledRuntime(cfg)

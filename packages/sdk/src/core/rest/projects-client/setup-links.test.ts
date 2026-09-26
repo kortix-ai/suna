@@ -121,3 +121,24 @@ test('requestProjectConnector mints a shared-account link when the owner is the 
   expect(last().body).toEqual({ slug: 'github', expires_in_minutes: undefined });
   expect(Object.keys(last().body as Record<string, unknown>)).not.toContain('owner');
 });
+
+test('requestProjectConnector sends the name suggested for the new account, only when set', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      kind: 'connector',
+      url: 'https://app.local/connect/tok',
+      slug: 'gmail',
+      app: 'gmail',
+      label: "Dad's Gmail",
+      expires_at: '2026-01-01',
+    },
+  };
+  const link = await requestProjectConnector('P1', { slug: 'gmail', label: "Dad's Gmail" });
+  expect(last().body).toEqual({ slug: 'gmail', label: "Dad's Gmail", expires_in_minutes: undefined });
+  const label: string | null | undefined = link.label;
+  expect(label).toBe("Dad's Gmail");
+
+  await requestProjectConnector('P1', { slug: 'gmail' });
+  expect(Object.keys(last().body as Record<string, unknown>)).not.toContain('label');
+});

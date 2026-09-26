@@ -14,6 +14,7 @@
 import { auth, errors, json } from '../../openapi';
 import { config } from '../../config';
 import { createRoute, z } from '@hono/zod-openapi';
+import { validateConnectionLabel } from '../../connectors/connection-identity';
 import { connectLinkEligibility } from '../../connectors/db-deps';
 import { pipedreamConfigured } from '../../connectors/pipedream';
 import { composioConfigured } from '../../connectors/composio';
@@ -243,6 +244,15 @@ projectsApp.openapi(
       if (!mayManage) return c.json({ error: 'Forbidden' }, 403);
     }
 
+    // A suggested name for the NEW account ("Dad's Gmail"). The human sees it
+    // prefilled in the dialog and may change it; the same rules as any label.
+    let label: string | null = null;
+    if (body.label !== undefined && body.label !== null) {
+      const checked = validateConnectionLabel(body.label);
+      if (!checked.ok) return c.json({ error: checked.error }, 400);
+      label = checked.label;
+    }
+
     const { token, expiresAt } = mintSetupLink(
       projectId,
       {
@@ -252,6 +262,7 @@ projectsApp.openapi(
         uid: loaded.userId,
         sid: (c.get('sessionId') as string | undefined) ?? null,
         owner,
+        label,
       },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
@@ -262,6 +273,7 @@ projectsApp.openapi(
       slug,
       app: conn.app,
       owner,
+      label,
       expires_at: new Date(expiresAt).toISOString(),
     });
   },
