@@ -883,6 +883,10 @@ describe('runtime convergence report', () => {
       staged_agent_sha256: 'd'.repeat(64),
       opencode_version: '1.18.23',
       build: 1787241641,
+      // Never on disk — this call supplied no `catalogSnapshot`, so it reads
+      // as "unconfirmed", the same as an older daemon with no such concept.
+      managed_model_ids: null,
+      managed_catalog_fallback_reason: null,
     })
     // The pass-level fields stay honest about having no pass yet.
     expect(report.build).toBeNull()
@@ -900,6 +904,8 @@ describe('runtime convergence report', () => {
       staged_agent_sha256: null,
       opencode_version: null,
       build: null,
+      managed_model_ids: null,
+      managed_catalog_fallback_reason: null,
     })
   })
 

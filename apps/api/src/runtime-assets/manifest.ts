@@ -30,6 +30,7 @@ import {
   managedSkillOverlayHash,
   type ManagedSkillOverlayFile,
 } from './managed-skills';
+import { RUNTIME_MANAGED_MODELS } from '../llm-gateway/models/managed-models';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
@@ -205,6 +206,18 @@ export interface RuntimeComponents {
   /** Fetched from npm by the daemon, not proxied: 167 MB has no business crossing our control plane. */
   opencode: { version: string; source: 'npm' };
   'managed-skills': { hash: string; count: number };
+  /**
+   * The THIRD convergeable asset, alongside binaries and the skill overlay —
+   * added for the incident this closes: a box's `kortix` provider map is
+   * learned once, at OpenCode process start, and nothing before this made
+   * "the managed lineup moved" a fact the control plane could read per box.
+   * `ids` is `RUNTIME_MANAGED_MODELS`' current id list — config-derived
+   * (`LLM_GATEWAY_MANAGED_MODELS`), fixed for the life of this process, so it
+   * belongs beside the binary digests rather than beside `policy`. Empty on a
+   * self-host deploy with the managed provider off; `runningAssetsVerdict`
+   * then has nothing to converge a box on, same as an unbuilt CLI.
+   */
+  'managed-catalog': { ids: readonly string[] };
 }
 
 export interface RuntimeAssetsPolicy {
@@ -309,6 +322,7 @@ async function computeManifest(): Promise<RuntimeAssetsDigests> {
   const components: RuntimeComponents = {
     opencode: { version: OPENCODE_VERSION, source: 'npm' },
     'managed-skills': { hash: overlay.hash, count: overlay.files.length },
+    'managed-catalog': { ids: RUNTIME_MANAGED_MODELS.map((model) => model.id) },
   };
   if (agent) {
     components.agent = {
@@ -393,6 +407,20 @@ export interface RunningAssetsReport {
   agent_sha256: string | null;
   staged_agent_sha256: string | null;
   opencode_version: string | null;
+  /**
+   * Managed model ids this box currently believes are servable. Null means
+   * UNCONFIRMED, never "empty" — either no live fetch has ever succeeded on
+   * this box, or the daemon predates the field. See `runningAssetsVerdict`'s
+   * doc for why unconfirmed reads as `behind`, not `unknown`, for this one
+   * component.
+   */
+  managed_model_ids: string[] | null;
+}
+
+/** Sorted + joined so id ORDER never manufactures a false difference — both
+ *  sides of every comparison in this file go through this same function. */
+function managedCatalogFingerprint(ids: readonly string[]): string {
+  return [...ids].sort().join(',');
 }
 
 export type RunningAssetsVerdict =
@@ -438,6 +466,7 @@ export async function manifestFingerprint(): Promise<string> {
     c['managed-skills'].hash,
     c.opencode.version,
     c.entrypoint?.sha256 ?? '',
+    c['managed-catalog'].ids.length > 0 ? managedCatalogFingerprint(c['managed-catalog'].ids) : '',
     // Not a digest — the comparison's SHAPE. See above.
     agentSelfUpdateEnabled() ? 'agent-update:on' : 'agent-update:off',
   ].join('|');
@@ -470,6 +499,18 @@ export async function manifestFingerprint(): Promise<string> {
  * disk but the box is not running them. The scheduled pass is then a manifest
  * read and no download (`staged === expected` short-circuits in the daemon),
  * and it is what asks for the swap at the next safe boundary.
+ *
+ * `managed-catalog` breaks the "box states nothing ⇒ unknown" rule the other
+ * components follow, and it does so ON PURPOSE. `managed_model_ids: null`
+ * does not mean "an older daemon with no such field" the way it does for a
+ * missing sha — every daemon in the field reports this key once this ships.
+ * It means UNCONFIRMED: no live fetch has ever succeeded, so the box is
+ * running the baked/bundled managed set with no proof it matches this
+ * deploy's lineup. Reading that as `unknown` (skip) is exactly the silent
+ * staleness a real dev box hit 2026-09-26 — woken, healthy, cli/skills/
+ * opencode all current, and STILL serving a month-old managed lineup because
+ * nothing treated the unconfirmed catalog as a reason to converge. So: stated
+ * lineup + null box report ⇒ `behind`, unconditionally.
  */
 export async function runningAssetsVerdict(
   running: RunningAssetsReport | null,
@@ -483,11 +524,25 @@ export async function runningAssetsVerdict(
     compared += 1;
     return want !== have;
   };
+  const managedCatalogIds = components['managed-catalog'].ids;
+  const managedCatalogDiffers = ((): boolean | null => {
+    if (managedCatalogIds.length === 0) return null; // nothing to converge on
+    if (running.managed_model_ids == null) {
+      compared += 1;
+      return true; // unconfirmed — see the doc above, never treated as fine
+    }
+    compared += 1;
+    return (
+      managedCatalogFingerprint(managedCatalogIds) !==
+      managedCatalogFingerprint(running.managed_model_ids)
+    );
+  })();
   const checks = [
     differs(components.cli?.sha256, running.cli_sha256),
     differs(components['managed-skills'].hash, running.managed_skills_hash),
     differs(components.opencode.version, running.opencode_version),
     agentSelfUpdateEnabled() ? differs(components.agent?.sha256, running.agent_sha256) : null,
+    managedCatalogDiffers,
   ];
   if (checks.some((c) => c === true)) return 'behind';
   return compared > 0 ? 'current' : 'unknown';

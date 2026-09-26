@@ -71,6 +71,10 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // The runtime-asset lane beside the config gate. Void, never awaited — a
   // stub is enough here, and its absence is a module LINK error, not a skip.
   scheduleAssetConvergence: () => {},
+  // The model-catalog lane. AWAITED by the route, unlike the asset lane — a
+  // stub that resolves immediately keeps every case in this file off the
+  // network, same reasoning as `convergeBeforeTurnStart` above.
+  convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
