@@ -10,4 +10,4 @@ incident_date: 2026-09-26
 
 **Incident:** On 2026-09-26, an automated session completed in its terminal while the browser transcript stayed on earlier messages. The client had no periodic tail read when it missed the working signal.
 
-**Enforcement:** `session-sync-controller.test.ts` requires a watched idle session to fetch its tail after 30 seconds. `handle-event.test.ts` requires terminal status events to reconcile without a prior busy frame.
+**Enforcement:** `session-sync-controller.test.ts` requires a watched idle session to fetch its tail after 30 seconds. `handle-event.test.ts` requires terminal status events to reconcile without a prior busy frame. `use-session-sync.test.ts` rejects polling an empty detached session ID.

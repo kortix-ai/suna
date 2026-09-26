@@ -402,9 +402,9 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   useEffect(() => {
     controller.setBusy(
       livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
-      networkEnabled,
+      networkEnabled && canQueryOpenCodeSession(sessionId) && runtimeScope !== 'none',
     );
-  }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn]);
+  }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn, sessionId, runtimeScope]);
 
   /*
     PAGING THE DURABLE TRANSCRIPT.
