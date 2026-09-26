@@ -13,9 +13,66 @@ import { logger } from '../logger'
 // OpenCode-backed terminal already gives today.
 const SCROLLBACK_MAX_BYTES = 64 * 1024
 
+/**
+ * DEF-D 2026-09-26 — how long a running pty with no attached viewer may sit
+ * silent before it stops counting as "live work" the agent swap must protect.
+ *
+ * A Platinum box is suspended and resumed rather than rebooted, so this
+ * daemon process can run for weeks (measured: 30.8 days). Over that lifetime
+ * a terminal someone opened once and then navigated away from — never typed
+ * `exit`, just closed the tab — sits `status: 'running'` forever, and
+ * treating that as live work blocked EVERY later swap on the box: the pty
+ * blocker fired on every single reconcile, for hours, and the box never
+ * gained a daemon update again.
+ *
+ * 30 minutes is generous against a real interactive session (nobody
+ * genuinely watching a shell goes half an hour without a keystroke or a
+ * scrollback glance — and glancing at it is an attach, which resets the
+ * clock to zero regardless of this bound) and small against "the box lives
+ * for weeks" — so a fleet that used to wait forever now waits at most this
+ * long per abandoned terminal. A pty that keeps producing output (a tailed
+ * log, a running build) is never silent long enough to reach it: every
+ * broadcast resets `lastActivityAt`, so it stays protected for as long as it
+ * is genuinely doing something. Visible on `GET /kortix/pty` as `idleMs`
+ * against this bound, and in the swap-deferred log line's `detail`.
+ */
+export const PTY_ABANDONED_AFTER_MS = 30 * 60_000
+
+/**
+ * Is this pty NOT live work the swap must protect?
+ *
+ * An exited pty is definitely not — there is nothing left to protect. Among
+ * running ones, an attached viewer always wins, regardless of the clock:
+ * somebody is looking at it right now. Absent one, a pty younger than the
+ * bound is given the benefit of the doubt — a terminal opened 10 s ago with
+ * nobody attached yet is a race with the client's own WS handshake, not an
+ * abandoned shell.
+ */
+export function ptyIsAbandoned(
+  entry: Pick<KortixPtyMeta, 'status' | 'attachedViewers' | 'idleMs'>,
+  thresholdMs: number = PTY_ABANDONED_AFTER_MS,
+): boolean {
+  if (entry.status !== 'running') return true
+  if (entry.attachedViewers > 0) return false
+  return entry.idleMs >= thresholdMs
+}
+
+/** What `registerAgentSwapBlocker('pty', ...)` actually asks: is ANY pty live work? */
+export function ptyHasLiveWork(
+  entries: readonly KortixPtyMeta[],
+  thresholdMs: number = PTY_ABANDONED_AFTER_MS,
+): boolean {
+  return entries.some((e) => !ptyIsAbandoned(e, thresholdMs))
+}
+
 // Matches OpenCode's own `Pty` entity shape (id/title/command/args/cwd/
 // status/pid/exitCode) so web/CLI clients built against that contract don't
 // need to change their types when they swap to this endpoint.
+//
+// `attachedViewers` and `idleMs` are additive to that contract — DEF-D
+// 2026-09-26 — so the swap blocker (and anyone inspecting `GET /kortix/pty`)
+// can see the same bound the daemon decides a swap by, instead of a bare
+// `status: 'running'` that never expires on its own.
 export interface KortixPtyMeta {
   id: string
   title: string
@@ -25,6 +82,10 @@ export interface KortixPtyMeta {
   status: 'running' | 'exited'
   pid: number
   exitCode?: number
+  /** Live WS viewers attached right now (see `PtyRegistry.attach`). */
+  attachedViewers: number
+  /** Milliseconds since the last input, output, or attach on this pty. */
+  idleMs: number
 }
 
 interface Viewer {
@@ -33,11 +94,13 @@ interface Viewer {
 }
 
 interface PtyEntry {
-  meta: KortixPtyMeta
+  meta: Omit<KortixPtyMeta, 'attachedViewers' | 'idleMs'>
   proc: ReturnType<typeof Bun.spawn>
   scrollback: string[]
   scrollbackBytes: number
   viewers: Set<Viewer>
+  /** Last input, output, or attach. DEF-D's idle clock. */
+  lastActivityAt: number
 }
 
 export interface PtyAttachHandle {
@@ -87,6 +150,15 @@ export type AttachOrCreateResult =
 export function createPtyRegistry(cfg: Config): PtyRegistry {
   const entries = new Map<string, PtyEntry>()
 
+  /** The one place a `KortixPtyMeta` is built from a live entry. */
+  function snapshot(entry: PtyEntry): KortixPtyMeta {
+    return {
+      ...entry.meta,
+      attachedViewers: entry.viewers.size,
+      idleMs: Date.now() - entry.lastActivityAt,
+    }
+  }
+
   function broadcast(entry: PtyEntry, chunk: string): void {
     entry.scrollback.push(chunk)
     entry.scrollbackBytes += Buffer.byteLength(chunk)
@@ -94,6 +166,7 @@ export function createPtyRegistry(cfg: Config): PtyRegistry {
       const dropped = entry.scrollback.shift()
       if (dropped) entry.scrollbackBytes -= Buffer.byteLength(dropped)
     }
+    entry.lastActivityAt = Date.now()
     for (const viewer of entry.viewers) {
       try { viewer.onData(chunk) } catch {}
     }
@@ -140,6 +213,7 @@ export function createPtyRegistry(cfg: Config): PtyRegistry {
       scrollback: [],
       scrollbackBytes: 0,
       viewers: new Set(),
+      lastActivityAt: Date.now(),
     }
 
     const proc = Bun.spawn([command, ...args], {
@@ -166,9 +240,14 @@ export function createPtyRegistry(cfg: Config): PtyRegistry {
 
   function buildHandle(entry: PtyEntry, viewer: Viewer): PtyAttachHandle {
     entry.viewers.add(viewer)
+    // Attaching is itself evidence someone is here, even before they type —
+    // otherwise a viewer that opens a long-idle pty and just looks at it
+    // would find it still counted "abandoned" until the first keystroke.
+    entry.lastActivityAt = Date.now()
     return {
       replay: entry.scrollback.join(''),
       write: (data) => {
+        entry.lastActivityAt = Date.now()
         try { entry.proc.terminal?.write(data) } catch {}
       },
       resize: (cols, rows) => {
@@ -182,14 +261,14 @@ export function createPtyRegistry(cfg: Config): PtyRegistry {
 
   return {
     list() {
-      return [...entries.values()].map((e) => ({ ...e.meta }))
+      return [...entries.values()].map(snapshot)
     },
 
     create(opts) {
       const id = `kpty_${randomUUID().replace(/-/g, '')}`
       const entry = spawnEntry(id, opts)
       logger.info('[pty] created', { id, command: entry.meta.command, args: entry.meta.args, cwd: entry.meta.cwd, pid: entry.meta.pid })
-      return { ...entry.meta }
+      return snapshot(entry)
     },
 
     update(id, opts) {
@@ -197,7 +276,7 @@ export function createPtyRegistry(cfg: Config): PtyRegistry {
       if (!entry || entry.meta.status !== 'running') return null
       if (opts.title !== undefined) entry.meta.title = opts.title
       if (opts.size) entry.proc.terminal?.resize(opts.size.cols, opts.size.rows)
-      return { ...entry.meta }
+      return snapshot(entry)
     },
 
     remove(id) {
@@ -220,12 +299,12 @@ export function createPtyRegistry(cfg: Config): PtyRegistry {
       const entry = id ? entries.get(id) : undefined
       if (entry) {
         if (entry.meta.status === 'running') {
-          return { kind: 'attached', meta: { ...entry.meta }, handle: buildHandle(entry, viewer) }
+          return { kind: 'attached', meta: snapshot(entry), handle: buildHandle(entry, viewer) }
         }
         // Present but exited: the shell really ended (e.g. the user typed
         // `exit`). Report it plainly instead of silently reincarnating a
         // session the user may have deliberately closed.
-        return { kind: 'exited', meta: { ...entry.meta } }
+        return { kind: 'exited', meta: snapshot(entry) }
       }
 
       // Id missing entirely (never existed, a stale id surviving a registry
@@ -240,7 +319,7 @@ export function createPtyRegistry(cfg: Config): PtyRegistry {
         id: newId,
         pid: created.meta.pid,
       })
-      return { kind: 'created', meta: { ...created.meta }, handle: buildHandle(created, viewer) }
+      return { kind: 'created', meta: snapshot(created), handle: buildHandle(created, viewer) }
     },
   }
 }
