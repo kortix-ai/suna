@@ -113,13 +113,17 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       agentmail_email: false,
       teams: false,
       llm_gateway: true,
-      review_center: false,
       meta_agent: false,
       apps: false,
       monitors: false,
       warm_sessions: false,
       secrets_egress: false,
       pi_worker: false,
+      session_transcript_history: false,
+      pooled_provider_secrets: false,
+      pi_harness: false,
+      config_releases: true,
+      agent_principal: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -686,13 +690,17 @@ describe('envelopes', () => {
       'agentmail_email',
       'teams',
       'llm_gateway',
-      'review_center',
       'meta_agent',
       'apps',
       'monitors',
       'warm_sessions',
       'secrets_egress',
       'pi_worker',
+      'session_transcript_history',
+      'pooled_provider_secrets',
+      'pi_harness',
+      'config_releases',
+      'agent_principal',
     ]);
   });
 
@@ -982,9 +990,10 @@ describe('session scope contracts', () => {
   test('emits only connection_id in authoritative scope output', () => {
     const value = {
       secrets_allowlist: ['GMAIL_TOKEN'],
-      // The alias a session REQUIRES, whether or not anything is connected —
-      // the one axis a binding cannot express, since a binding carries an id.
-      required_connectors: ['gmail'],
+      // @deprecated Always null now — no session requires connectors any more
+      // (SessionScopeSchema's own doc comment). The schema is `z.null()`, so
+      // anything else fails to parse.
+      required_connectors: null,
       connector_bindings: { gmail: { connection_id: connectionId } },
       dropped_secrets: [],
       added_secrets: ['GMAIL_TOKEN'],
@@ -1002,6 +1011,23 @@ describe('session scope contracts', () => {
       SessionScopeSchema.safeParse({
         ...value,
         connector_bindings: { gmail: { authorization_id: connectionId } },
+      }).success,
+    ).toBe(false);
+  });
+
+  test('rejects a non-null required_connectors — no session requires connectors any more', () => {
+    expect(
+      SessionScopeSchema.safeParse({
+        secrets_allowlist: ['GMAIL_TOKEN'],
+        required_connectors: ['gmail'],
+        connector_bindings: { gmail: { connection_id: connectionId } },
+        dropped_secrets: [],
+        added_secrets: ['GMAIL_TOKEN'],
+        dropped_bindings: [],
+        retroactive: true,
+        connector_bindings_configured: true,
+        connector_bindings_inherit_unbound: false,
+        detail: 'Applies from the next prompt.',
       }).success,
     ).toBe(false);
   });
@@ -1262,6 +1288,11 @@ describe('removed usage-attribution fields', () => {
 });
 
 describe('SessionCreateInputSchema backend secret bounds', () => {
+  test('bounds create-time provider pools', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    expect(SessionCreateInputSchema.safeParse({ provider_secret_pools: { anthropic: [id] } }).success).toBe(true);
+    expect(SessionCreateInputSchema.safeParse({ provider_secret_pools: { anthropic: Array(11).fill(id) } }).success).toBe(false);
+  });
   test('secrets: accepts an identifier list and [] (narrow to zero), rejects an over-long list', () => {
     expect(
       SessionCreateInputSchema.safeParse({ secrets: ['GMAIL_TOKEN', 'STRIPE_KEY'] }).success,

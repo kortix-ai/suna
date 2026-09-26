@@ -9,9 +9,10 @@
    else.
 
    They used to be copied by hand and had drifted into four different band
-   heights — 60px in this file's comment, 52px for `.kx-app-header`, 40px for
-   the tab bar and both sidebar headers, and a 26px centre line hard-coded into
-   two React components. Derive them all from one table instead.
+   heights — 60px in this file's comment, 52px for the standalone-page
+   breadcrumb header, 40px for the tab bar and both sidebar headers, and a
+   26px centre line hard-coded into two React components. Derive them all
+   from one table instead.
 
    The web half mirrors this as CSS custom properties on
    `html[data-desktop-platform='macos']` in apps/web/src/app/globals.css;
@@ -22,12 +23,20 @@ const MAC_TITLEBAR = {
   band: 40,
   /** Traffic-light diameter (macOS Big Sur and later). */
   lightSize: 12,
+  /** Height of the button frame positioned by AppKit. */
+  lightFrame: 24,
+  /**
+   * The supplied Retina capture places the visible native circle 10 image
+   * pixels above the project row even though the old 24px-frame model said
+   * they matched. Move AppKit's origin by five window pixels, not the web row.
+   */
+  nativeCenterCorrectionY: 5,
   /** Traffic-light centre-to-centre spacing. */
   lightPitch: 20,
   /** Left inset of the first (close) light. */
   lightInsetX: 10,
   /** Clear space between the last light and the app's first control. */
-  gutter: 10,
+  gutter: 16,
   /** Box of a web-rendered control sitting in the band. */
   control: 28,
   /** Optical gap between that control and the content following it. */
@@ -41,12 +50,12 @@ function centerInBand(size) {
 
 /**
  * `BrowserWindowConstructorOptions.trafficLightPosition` — the top-left of the
- * traffic-light cluster, centred in the band.
+ * lights' button frames, placed so the circles centre in the band.
  */
 function macTrafficLightPosition() {
   return {
     x: MAC_TITLEBAR.lightInsetX,
-    y: centerInBand(MAC_TITLEBAR.lightSize),
+    y: centerInBand(MAC_TITLEBAR.lightFrame) + MAC_TITLEBAR.nativeCenterCorrectionY,
   };
 }
 

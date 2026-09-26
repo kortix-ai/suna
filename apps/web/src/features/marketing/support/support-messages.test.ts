@@ -28,7 +28,7 @@ import { locales } from '@/i18n/config';
  */
 
 const TRANSLATIONS = path.join(import.meta.dir, '../../../../translations');
-const PAGES = ['src/app/(public)/(marketing)/support/page.tsx'];
+const PAGES = ['src/app/[locale]/(public)/(marketing)/support/page.tsx'];
 
 /** `useTranslations('support.hub')` → the namespace the file's `t` is bound to. */
 function namespaceOf(source: string): string {

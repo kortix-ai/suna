@@ -1,9 +1,19 @@
 export const MAX_PROMPT_UPLOAD_FILENAME_BYTES = 255 - 40;
+export const MAX_PROMPT_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+export const MAX_PROMPT_ATTACHMENTS_BYTES = 100 * 1024 * 1024;
+export const MAX_PROMPT_ATTACHMENT_FILES = 20;
+export const PROMPT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface PromptFileReference {
   path: string;
   mime: string;
   filename: string;
+  /**
+   * A sent attachment's identity (the SDK local upload id). Only on refs the
+   * browser draws before delivery.
+   */
+  attachment?: string;
+  attachmentUrl?: string;
   pendingId?: string;
 }
 
@@ -90,8 +100,8 @@ function xmlAttribute(value: string): string {
 }
 
 export function promptFileReferenceXml(input: PromptFileReference): string {
-  const pending = input.pendingId
-    ? ` pending="${xmlAttribute(input.pendingId)}"`
-    : '';
-  return `<file path="${xmlAttribute(input.path)}" mime="${xmlAttribute(input.mime)}" filename="${xmlAttribute(input.filename)}"${pending}>\nThis file has been uploaded and is available at the path above.\n</file>`;
+  const value = input.attachmentUrl ?? input.attachment;
+  const attachment = value ? ` attachment="${xmlAttribute(value)}"` : '';
+  const pending = input.pendingId ? ` pending="${xmlAttribute(input.pendingId)}"` : '';
+  return `<file path="${xmlAttribute(input.path)}" mime="${xmlAttribute(input.mime)}" filename="${xmlAttribute(input.filename)}"${pending}${attachment}>\nThis file has been uploaded and is available at the path above.\n</file>`;
 }

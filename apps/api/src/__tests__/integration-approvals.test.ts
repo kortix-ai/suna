@@ -21,13 +21,13 @@ import {
 import { eq, sql } from 'drizzle-orm';
 import { getCreditAccount } from '../billing/repositories/credit-accounts';
 import { applyAdminOverride } from '../billing/services/account-write-owner';
+import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
 /** Test fixture: flip the enterprise-demo flag through the ownership chokepoint. */
 const setDemoEnterprise = (accountId: string, enabled: boolean) =>
   applyAdminOverride(accountId, { demoEnterprise: enabled }, { action: 'test.enterprise_demo.set' });
 import { config } from '../config';
 import { app } from '../index';
-import { metadataClearSubtreeKey, metadataMergeSubtree } from '../projects/lib/metadata-merge';
 import { createAccountToken } from '../repositories/account-tokens';
 import { mintSetupLink } from '../setup-links/token';
 import { db } from '../shared/db';
@@ -44,7 +44,6 @@ let humanUserId = '';
 let readOnlyToken = '';
 let readOnlyUserId = '';
 let priorDemoEnterprise = false;
-let priorReviewCenterOverride: unknown = null;
 
 beforeAll(async () => {
   await db.execute(
@@ -88,7 +87,7 @@ beforeAll(async () => {
   const createdBody = (await created.json()) as { id?: string; user?: { id?: string } };
   humanUserId = createdBody.user?.id ?? createdBody.id ?? '';
   expect(humanUserId).not.toBe('');
-  await db.insert(accountMembers).values({
+  await insertIntoView(db, accountMembers, {
     accountId: ctx.accountId,
     userId: humanUserId,
     accountRole: 'owner',
@@ -134,12 +133,12 @@ beforeAll(async () => {
   };
   readOnlyUserId = readOnlyCreatedBody.user?.id ?? readOnlyCreatedBody.id ?? '';
   expect(readOnlyUserId).not.toBe('');
-  await db.insert(accountMembers).values({
+  await insertIntoView(db, accountMembers, {
     accountId: ctx.accountId,
     userId: readOnlyUserId,
     accountRole: 'member',
   });
-  await db.insert(projectMembers).values({
+  await insertIntoView(db, projectMembers, {
     accountId: ctx.accountId,
     projectId: ctx.projectId,
     userId: readOnlyUserId,
@@ -161,35 +160,9 @@ beforeAll(async () => {
   // contract has its own dedicated test that toggles it off.
   priorDemoEnterprise = (await getCreditAccount(ctx.accountId))?.demoEnterprise ?? false;
   await setDemoEnterprise(ctx.accountId, true);
-  // The Review Center routes are gated on the per-project `review_center`
-  // feature flag (403 `feature_disabled` when off). Turn it on for the borrowed
-  // project and restore the prior override in afterAll.
-  const [projectRow] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, ctx.projectId))
-    .limit(1);
-  priorReviewCenterOverride =
-    (projectRow?.metadata as { experimental?: Record<string, unknown> } | null)?.experimental
-      ?.review_center ?? null;
-  await db
-    .update(projects)
-    .set({ metadata: metadataMergeSubtree('experimental', { review_center: true }) })
-    .where(eq(projects.projectId, ctx.projectId));
 }, 30_000);
 
 afterAll(async () => {
-  if (ctx) {
-    await db
-      .update(projects)
-      .set({
-        metadata:
-          typeof priorReviewCenterOverride === 'boolean'
-            ? metadataMergeSubtree('experimental', { review_center: priorReviewCenterOverride })
-            : metadataClearSubtreeKey('experimental', 'review_center'),
-      })
-      .where(eq(projects.projectId, ctx.projectId));
-  }
   for (const id of execIds)
     await db.delete(connectorCalls).where(eq(connectorCalls.executionId, id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, SESSION));
@@ -205,11 +178,11 @@ afterAll(async () => {
   for (const id of minted)
     await db.execute(sql`delete from kortix.account_tokens where token_id = ${id}`);
   if (ctx && humanUserId) {
-    await db
-      .delete(accountMembers)
-      .where(
-        sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${humanUserId}`,
-      );
+    await deleteFromView(
+      db,
+      accountMembers,
+      sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${humanUserId}`,
+    );
     await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users/${humanUserId}`, {
       method: 'DELETE',
       headers: {
@@ -219,16 +192,16 @@ afterAll(async () => {
     });
   }
   if (ctx && readOnlyUserId) {
-    await db
-      .delete(projectMembers)
-      .where(
-        sql`${projectMembers.projectId} = ${ctx.projectId} and ${projectMembers.userId} = ${readOnlyUserId}`,
-      );
-    await db
-      .delete(accountMembers)
-      .where(
-        sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${readOnlyUserId}`,
-      );
+    await deleteFromView(
+      db,
+      projectMembers,
+      sql`${projectMembers.projectId} = ${ctx.projectId} and ${projectMembers.userId} = ${readOnlyUserId}`,
+    );
+    await deleteFromView(
+      db,
+      accountMembers,
+      sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${readOnlyUserId}`,
+    );
     await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users/${readOnlyUserId}`, {
       method: 'DELETE',
       headers: {

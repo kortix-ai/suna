@@ -12,11 +12,12 @@
  * table again.
  */
 
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNotNull, lte, not, sql } from 'drizzle-orm';
 import type { ProviderName } from '../../platform/providers';
 import { db } from '../../shared/db';
-import { sandboxStopClaimLeaseMs } from '../sandbox-deadline-policy';
+import { holdsStopClaim, noLiveStopClaim } from '../session-lifecycle/stop-claim';
 import { reapBatchSize } from '../reaper-constants';
 import { mergeMetadata } from './sandbox-state-sync';
 
@@ -49,14 +50,14 @@ export function reapCandidatePredicate(sandboxIds?: readonly string[], activeTur
 export function activeTurnAuthorityPredicate() {
   return sql`(
     (
-      coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'token', '') <> ''
-      AND coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'state', '') IN ('delivering', 'active')
+      coalesce(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurn'->>'token', '') <> ''
+      AND coalesce(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurn'->>'state', '') IN ('delivering', 'active')
     )
     OR EXISTS (
       SELECT 1
         FROM jsonb_each(CASE
-          WHEN jsonb_typeof(${sessionSandboxes.metadata}->'activeTurns') = 'object'
-            THEN ${sessionSandboxes.metadata}->'activeTurns'
+          WHEN jsonb_typeof(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns') = 'object'
+            THEN ${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns'
           ELSE '{}'::jsonb
         END) entry
        WHERE entry.key = entry.value->>'token'
@@ -176,19 +177,15 @@ export async function claimExpiredSandboxStop(
         eq(sessionSandboxes.sandboxId, sandboxId),
         eq(sessionSandboxes.status, 'active'),
         lte(sessionSandboxes.deadlineAt, now),
-        sql`(
-          ${sessionSandboxes.metadata}->'lifecycleStopClaim' IS NULL
-          OR ${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
-          OR (${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'claimedAtMs')::bigint
-            <= ${now.getTime() - sandboxStopClaimLeaseMs()})`,
+        noLiveStopClaim(now),
         sql`NOT (
           coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'token', '') <> ''
           AND coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'state', '') IN ('delivering', 'active'))`,
         sql`NOT EXISTS (
               SELECT 1
                 FROM jsonb_each(CASE
-                  WHEN jsonb_typeof(${sessionSandboxes.metadata}->'activeTurns') = 'object'
-                    THEN ${sessionSandboxes.metadata}->'activeTurns'
+                  WHEN jsonb_typeof(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns') = 'object'
+                    THEN ${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns'
                   ELSE '{}'::jsonb
                 END) entry
                WHERE entry.key = entry.value->>'token'
@@ -210,7 +207,7 @@ export async function releaseSandboxStopClaim(sandboxId: string, token: string):
     .where(
       and(
         eq(sessionSandboxes.sandboxId, sandboxId),
-        sql`${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'token' = ${token}`,
+        holdsStopClaim(token),
       ),
     );
 }

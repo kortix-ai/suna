@@ -1,3 +1,4 @@
+import { modelAccessAllows, readModelAccess } from '../../llm-gateway/model-access';
 import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
@@ -7,6 +8,10 @@ import {
 import {
   calculateCost,
   callUpstream,
+  publicPayload,
+  publicUpstreamError,
+  shownModel,
+  shownProvider,
   GatewayResolutionError,
   type AuthedPrincipal,
 } from '@kortix/llm-gateway';
@@ -21,7 +26,6 @@ import { actorOf } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { assertProjectCapability, loadProjectForUser, lookupEmailsByUserIds } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { UUID_V4_REGEX } from '../lib/serializers';
 import {
   createGatewayKey,
   listGatewayKeys,
@@ -670,7 +674,7 @@ projectsApp.openapi(
     summary: 'DELETE /:projectId/gateway/budgets/:budgetId',
     ...auth,
     request: {
-      params: z.object({ projectId: z.string(), budgetId: z.string().regex(UUID_V4_REGEX) }),
+      params: z.object({ projectId: z.string(), budgetId: z.string().uuid() }),
     },
     responses: { 200: json(z.any(), 'Budget removed'), ...errors(403, 404) },
   }),
@@ -815,7 +819,7 @@ projectsApp.openapi(
     summary: 'DELETE /:projectId/gateway/keys/:keyId',
     ...auth,
     request: {
-      params: z.object({ projectId: z.string(), keyId: z.string().regex(UUID_V4_REGEX) }),
+      params: z.object({ projectId: z.string(), keyId: z.string().uuid() }),
     },
     responses: { 200: json(z.any(), 'Gateway API key revoked'), ...errors(403, 404) },
   }),
@@ -922,11 +926,31 @@ projectsApp.openapi(
           if (candidates.length === 0) {
             return { model, ok: false, error: 'No upstream configured for this model' };
           }
-          const descriptor = candidates[0]!;
+          // Same failover as a real turn: a managed model tries each
+          // `failover` candidate in order until one answers 2xx.
+          let descriptor = candidates[0]!;
           const start = Date.now();
-          const res = await callUpstream(request, descriptor);
+          let res = await callUpstream(request, descriptor).catch(() => null);
+          const tried = [shownProvider(descriptor)];
+          for (const next of descriptor.failover ? candidates.slice(1).filter((c) => c.failover) : []) {
+            if (res?.ok) break;
+            await res?.body?.cancel().catch(() => undefined);
+            descriptor = next;
+            tried.push(shownProvider(next));
+            res = await callUpstream(request, next).catch(() => null);
+          }
+          if (!res) throw new Error('Request failed');
           const latencyMs = Date.now() - start;
-          const data = (await res.json()) as any;
+          const rawData = (await res.json().catch(() => null)) as any;
+          // A managed model reports Kortix, its own id, and a classified error.
+          const publicError =
+            descriptor.publicProvider && !res.ok
+              ? publicUpstreamError(res.status, JSON.stringify(rawData ?? {}), model)
+              : null;
+          const data =
+            descriptor.publicProvider && rawData && typeof rawData === 'object'
+              ? (publicPayload(rawData, model) as any)
+              : rawData;
           const usage = data?.usage ?? {};
           const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0;
           const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0;
@@ -936,9 +960,11 @@ projectsApp.openapi(
             Number(
               usage.cache_write_tokens ?? usage.prompt_tokens_details?.cache_write_tokens ?? 0,
             ) || 0;
-          const resolvedModel = String(data?.model ?? descriptor.resolvedModel ?? model);
+          const resolvedModel = descriptor.publicProvider
+            ? shownModel(descriptor, model)
+            : String(data?.model ?? descriptor.resolvedModel ?? model);
           const { upstreamCost, finalCost } = calculateCost(
-            resolvedModel,
+            descriptor.resolvedModel ?? model,
             { promptTokens, completionTokens, cachedTokens, cacheWriteTokens },
             descriptor.billingMode === 'none' ? 0 : descriptor.markup,
             typeof usage.cost === 'number' ? usage.cost : undefined,
@@ -952,17 +978,17 @@ projectsApp.openapi(
             projectId,
             requestedModel: model,
             resolvedModel,
-            provider: descriptor.provider,
+            provider: shownProvider(descriptor),
             billingMode: descriptor.billingMode,
             streaming: false,
             status: res.status,
             ok: res.ok,
             errorMessage: res.ok
               ? undefined
-              : (data?.error?.message ?? data?.message ?? `HTTP ${res.status}`),
+              : (publicError?.message ?? data?.error?.message ?? data?.message ?? `HTTP ${res.status}`),
             latencyMs,
-            attempts: 1,
-            candidatesTried: [descriptor.provider],
+            attempts: tried.length,
+            candidatesTried: tried,
             usage: { promptTokens, completionTokens, cachedTokens, cacheWriteTokens },
             upstreamCost,
             finalCost,
@@ -979,8 +1005,11 @@ projectsApp.openapi(
               accountId: principal.accountId,
               actorUserId: principal.userId,
               projectId,
-              provider: descriptor.provider,
+              provider: shownProvider(descriptor),
               model: resolvedModel,
+              ...(descriptor.publicProvider
+                ? { upstream: { provider: descriptor.provider, model: descriptor.resolvedModel ?? model } }
+                : {}),
               upstreamCost,
               finalCost,
               billingMode: descriptor.billingMode,
@@ -993,7 +1022,7 @@ projectsApp.openapi(
               model,
               ok: false,
               latency_ms: latencyMs,
-              error: data?.error?.message ?? data?.message ?? `HTTP ${res.status}`,
+              error: publicError?.message ?? data?.error?.message ?? data?.message ?? `HTTP ${res.status}`,
             };
           }
           return {
@@ -1005,7 +1034,7 @@ projectsApp.openapi(
             output_tokens: completionTokens,
             cost: finalCost,
             resolved_model: resolvedModel,
-            provider: descriptor.provider,
+            provider: shownProvider(descriptor),
           };
         } catch (err) {
           return { model, ok: false, error: err instanceof Error ? err.message : 'Request failed' };
@@ -1223,6 +1252,9 @@ projectsApp.openapi(
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
     const effectivePrimary =
       policy.defaultModel ?? defaults.account ?? platformDefaultModelId();
+    if (effectivePrimary && !modelAccessAllows(readModelAccess(loaded.row.metadata), effectivePrimary)) {
+      return c.json({ error: 'Enable the default model and its provider before selecting it.', code: 'model_disabled' }, 409);
+    }
     if (policy.defaultFallback?.models.includes(effectivePrimary)) {
       return c.json(
         {

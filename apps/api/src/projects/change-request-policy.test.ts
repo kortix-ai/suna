@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { refusesSelfMerge, resolveChangeRequestBase } from './change-request-policy';
+import {
+  manifestGovernanceChanged,
+  refusesSelfMerge,
+  resolveChangeRequestBase,
+  resolveChangeRequestOrigin,
+} from './change-request-policy';
 
 const SESSION = 'sess-a';
 const OTHER = 'sess-b';
@@ -65,26 +70,81 @@ describe('resolveChangeRequestBase', () => {
 });
 
 describe('refusesSelfMerge', () => {
-  test('a session may not merge the change request it opened', () => {
-    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: SESSION })).toBe(true);
+  test('an ungoverned session may not merge the change request it opened', () => {
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: SESSION, hasExplicitMergeGrant: false })).toBe(true);
+  });
+
+  test('an explicitly granted session may merge the change request it opened', () => {
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: SESSION, hasExplicitMergeGrant: true })).toBe(false);
   });
 
   test('a session MAY merge a change request opened by someone else', () => {
-    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: OTHER })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: OTHER, hasExplicitMergeGrant: false })).toBe(false);
   });
 
   test('a session may merge a change request a PERSON opened', () => {
-    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: null })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: null, hasExplicitMergeGrant: false })).toBe(false);
   });
 
   test('a person is never refused', () => {
-    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: SESSION })).toBe(false);
-    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: SESSION, hasExplicitMergeGrant: false })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null, hasExplicitMergeGrant: false })).toBe(false);
   });
 
   test('two null ids are not treated as a match', () => {
     // Guards the obvious `a === b` bug: without the truthiness check, a person
     // merging a person-opened CR would be refused.
-    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null, hasExplicitMergeGrant: false })).toBe(false);
+  });
+});
+
+describe('resolveChangeRequestOrigin', () => {
+  test('binds an omitted session_id to the authenticated session', () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: true, actingSessionId: SESSION, requestedSessionId: null }))
+      .toEqual({ ok: true, originSessionId: SESSION });
+  });
+
+  test('rejects a different session_id', () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: true, actingSessionId: SESSION, requestedSessionId: OTHER }))
+      .toMatchObject({ ok: false, code: 'CR_SESSION_ID_MISMATCH' });
+  });
+
+  test('requires authenticated session identity for an agent principal', () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: true, actingSessionId: null, requestedSessionId: null }))
+      .toMatchObject({ ok: false, code: 'CR_SESSION_ID_REQUIRED' });
+  });
+
+  test("keeps a person's supplied session origin", () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: false, actingSessionId: null, requestedSessionId: SESSION }))
+      .toEqual({ ok: true, originSessionId: SESSION });
+  });
+});
+
+describe('manifestGovernanceChanged (spec 2026-09-22 §2.4)', () => {
+  const base = 'kortix_version: 2\nagents:\n  builder:\n    kortix_permissions: ["project.write"]\n';
+  test('a change outside agents and triggers is not governance', () => {
+    expect(manifestGovernanceChanged(base, `${base}project:\n  name: renamed\n`, 'yaml')).toBe(false);
+    expect(manifestGovernanceChanged(base, base, 'yaml')).toBe(false);
+    expect(manifestGovernanceChanged(null, null, 'yaml')).toBe(false);
+  });
+  test('widening agents.<a>.kortix_permissions is governance', () => {
+    expect(
+      manifestGovernanceChanged(base, base.replace('"project.write"]', '"project.write","project.secret.read"]'), 'yaml'),
+    ).toBe(true);
+  });
+  test('adding a trigger or an agent is governance', () => {
+    expect(manifestGovernanceChanged(base, `${base}triggers:\n  - slug: hourly\n    type: cron\n    cron: "0 * * * *"\n`, 'yaml')).toBe(true);
+    expect(manifestGovernanceChanged(base, `${base}  other: {}\n`, 'yaml')).toBe(true);
+  });
+  test('creating a manifest that declares agents, or deleting one, is governance', () => {
+    expect(manifestGovernanceChanged(null, base, 'yaml')).toBe(true);
+    expect(manifestGovernanceChanged(base, null, 'yaml')).toBe(true);
+  });
+  test('a manifest that does not parse is treated as governance (fail closed)', () => {
+    expect(manifestGovernanceChanged(base, 'agents: [unclosed', 'yaml')).toBe(true);
+  });
+  test('key order and formatting do not count as a change', () => {
+    const reordered = 'agents:\n  builder: { kortix_permissions: ["project.write"] }\nkortix_version: 2\n';
+    expect(manifestGovernanceChanged(base, reordered, 'yaml')).toBe(false);
   });
 });

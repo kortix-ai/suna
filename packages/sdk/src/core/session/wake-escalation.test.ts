@@ -216,7 +216,7 @@ describe('advanceWakeEscalation — the ladder', () => {
 
 describe('advanceWakeEscalation — provider truth outranks the session row', () => {
   it('escalates a `ready` session whose runtime never answers (row running, box stopped)', () => {
-    // The Essentia desync: POST /start answered 202 and the row says `running`,
+    // The SampleCo desync: POST /start answered 202 and the row says `running`,
     // but the E2B resume silently failed and the daemon proxy 503s. Nothing in
     // the /start payload changes again, so only the health truth can catch it.
     let state = initialWakeEscalationState();

@@ -53,6 +53,15 @@ export interface StoredDraft {
    */
   doc: JSONContent;
   files: RemoteAttachedFile[];
+  /**
+   * The reply quotes in the card above the input, in list order.
+   *
+   * Optional on the wire, and deliberately not a version bump: an envelope
+   * written before quotes existed is still a valid draft, and bumping
+   * `DRAFT_ENVELOPE_VERSION` would discard every one of them. Written only
+   * when non-empty; `deserializeDraft` always returns an array.
+   */
+  quotes?: string[];
 }
 
 /** The `<kind>:<id>` half of the storage key. The family prefix is the store's. */
@@ -78,16 +87,19 @@ export function serializeDraft(input: {
   doc: JSONContent;
   documentIsEmpty: boolean;
   files: readonly AttachedFile[];
+  quotes?: readonly string[];
   userId: string;
 }): StoredDraft | null {
   if (!input.userId) return null;
   const files = input.files.filter(isRemote);
-  if (input.documentIsEmpty && files.length === 0) return null;
+  const quotes = input.quotes ?? [];
+  if (input.documentIsEmpty && files.length === 0 && quotes.length === 0) return null;
   const draft: StoredDraft = {
     v: DRAFT_ENVELOPE_VERSION,
     u: input.userId,
     doc: input.doc,
     files,
+    ...(quotes.length > 0 ? { quotes: [...quotes] } : {}),
   };
   if (JSON.stringify(draft).length > MAX_DRAFT_BYTES) return null;
   return draft;
@@ -106,12 +118,60 @@ export function deserializeDraft(raw: unknown, currentUserId: string): StoredDra
   if (typeof candidate.u !== 'string' || candidate.u !== currentUserId) return null;
   if (!candidate.doc || typeof candidate.doc !== 'object') return null;
   if (!Array.isArray(candidate.files)) return null;
+  const legacy = liftLegacyQuoteNodes(candidate.doc);
+  const quotes: string[] = [];
+  const stored: unknown[] = Array.isArray(candidate.quotes) ? candidate.quotes : [];
+  for (const quote of [...stored, ...legacy.quotes]) {
+    if (typeof quote !== 'string') continue;
+    const text = quote.trim();
+    if (text && !quotes.includes(text)) quotes.push(text);
+  }
   return {
     v: candidate.v,
     u: candidate.u,
-    doc: candidate.doc,
+    doc: legacy.doc,
     files: candidate.files.filter(isRemote),
+    quotes,
   };
+}
+
+/** The node type an earlier build of the composer used for in-editor quotes. */
+const LEGACY_QUOTE_NODE = 'replyQuote';
+
+/**
+ * Move legacy in-editor quote nodes out of a stored document.
+ *
+ * An earlier build drew each reply quote as a `replyQuote` block node inside
+ * the editor, and saved it in the draft document. That node type is gone from
+ * the schema, so a document that still holds one must not reach the editor.
+ * Each node's text becomes a list quote, in document order, and the node is
+ * removed. A document left with no blocks gets one empty paragraph, the
+ * smallest valid document. A document without the node comes back as the
+ * same object.
+ */
+export function liftLegacyQuoteNodes(doc: JSONContent): { doc: JSONContent; quotes: string[] } {
+  const quotes: string[] = [];
+  const strip = (node: JSONContent): JSONContent => {
+    if (!Array.isArray(node.content)) return node;
+    let changed = false;
+    const content: JSONContent[] = [];
+    for (const child of node.content) {
+      if (child?.type === LEGACY_QUOTE_NODE) {
+        changed = true;
+        const text = child.attrs?.text;
+        if (typeof text === 'string') quotes.push(text);
+        continue;
+      }
+      const next = strip(child);
+      if (next !== child) changed = true;
+      content.push(next);
+    }
+    return changed ? { ...node, content } : node;
+  };
+  const stripped = strip(doc);
+  if (stripped === doc) return { doc, quotes };
+  const content = stripped.content?.length ? stripped.content : [{ type: 'paragraph' }];
+  return { doc: { ...stripped, content }, quotes };
 }
 
 /**
@@ -125,11 +185,13 @@ export function deserializeDraft(raw: unknown, currentUserId: string): StoredDra
  * deliberately emptied.
  */
 export function shouldRestoreDraft(input: {
+  active?: boolean;
   editorReady: boolean;
   editorIsEmpty: boolean;
   hasPrefill: boolean;
   alreadyRestored: boolean;
 }): boolean {
+  if (input.active === false) return false;
   if (!input.editorReady) return false;
   if (input.alreadyRestored) return false;
   if (input.hasPrefill) return false;

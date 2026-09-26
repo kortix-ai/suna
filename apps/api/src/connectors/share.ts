@@ -204,7 +204,7 @@ export function isSessionTargetVisibleToCaller(
   // equal a Kortix session id. Reading it here made all three conditions below
   // true for ANY human opening ANY backend-origin session, so the narrowing
   // returned false and `/start` answered 404 — a session listed in the sidebar
-  // that could never be opened. Measured on a live self-host (essentia,
+  // that could never be opened. Measured on a live self-host (sampleco,
   // 2026-08-24): 43 backend-origin sessions in one project, all unopenable,
   // while `user`- and `schedule`-origin sessions in the same project opened
   // fine.
@@ -286,9 +286,24 @@ export function isProjectSessionVisibleTo(
   grants: SecretGrant[],
   subject: ShareSubject,
   ownership: SessionOwnershipContext,
-  context: { metadata: unknown; canManageProject: boolean },
+  context: {
+    metadata: unknown;
+    canManageProject: boolean;
+    /**
+     * The account's "admins can open every session" policy, already resolved
+     * for THIS caller: the flag is on AND the caller holds the account owner or
+     * admin role. See `hasAccountSessionOversight` (iam/authorize.ts).
+     */
+    accountSessionOversight?: boolean;
+  },
 ): boolean {
   if (!isSessionTargetVisibleToCaller(ownership)) return false;
+  // Oversight is a HUMAN admin's power. A sandbox/agent token launched by an
+  // admin must not read every other member's session through it, for the same
+  // reason as the trigger-session manager override below.
+  if (ownership.boundCredentialSessionId === null && context.accountSessionOversight === true) {
+    return true;
+  }
   // The manager override is for callers that are NOT a session-bound agent
   // credential. A sandbox/agent token whose launching user happens to hold
   // `manage` would otherwise read every OTHER trigger-created private session

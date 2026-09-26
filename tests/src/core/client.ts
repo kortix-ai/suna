@@ -13,7 +13,9 @@ import type { Captured } from './result';
 
 export type Auth =
   | { mode: 'none' }
-  | { mode: 'bearer'; token: string }
+  // `ensureFresh` renews a short-lived token before a request uses it (see
+  // fixtures/supabase-session.ts). A plain token string has none.
+  | { mode: 'bearer'; token: string; ensureFresh?: () => Promise<void> }
   | { mode: 'query-token'; token: string } // ?token= (preview proxy / WS)
   | { mode: 'header-token'; token: string } // X-Kortix-Token
   | { mode: 'cookie'; cookie: string }; // raw Cookie header
@@ -68,6 +70,7 @@ const SENSITIVE_HEADERS = new Set([
   'cookie',
   'set-cookie',
   'x-kortix-token',
+  'x-kortix-ci-passthrough',
   'x-kortix-signature',
   'x-hub-signature',
   'x-hub-signature-256',
@@ -447,7 +450,10 @@ export class Client {
       process.env.KE2E_GATEWAY_RETRIES ?? 3,
     ),
   ) {
-    this.origin = new URL(apiUrl).origin;
+    const base = new URL(apiUrl);
+    // Route templates already include /v1. Keep any reverse-proxy mount before it.
+    const mount = base.pathname.replace(/\/+$/, '').replace(/\/v1$/, '');
+    this.origin = base.origin + mount;
   }
 
   /** Clone bound to a principal/identity. */
@@ -531,6 +537,10 @@ export class Client {
       }
     }
     for (const [k, v] of Object.entries(opts?.headers ?? {})) headers.set(k, v);
+    // Renew before reading the token. A renewal that cannot produce a usable
+    // token throws here, so the request is never sent with an expired JWT.
+    const auth = this.identity.auth;
+    if (auth.mode === 'bearer' && auth.ensureFresh) await auth.ensureFresh();
     this.applyAuth(headers, url);
     applyCiPassthrough(headers);
 

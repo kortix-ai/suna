@@ -331,7 +331,31 @@ jobs:
       # makes clients stop using the path proxy, so it goes in only once the
       # certificate pack for that wildcard is active. Unset = path proxy, which
       # is also the complete rollback.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com"}'
+      #
+      # KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/REGION name the bucket Terraform owns
+      # in infra/terraform/environments/staging (module.project_snapshots; the
+      # task role's grant comes with it). Naming the bucket turns on the
+      # PRODUCER only (the leader worker prepares snapshots); no session
+      # consumes one until KORTIX_PROJECT_SNAPSHOT_MODE or a project's
+      # metadata.project_snapshot_mode says prefer-s3 / require-s3. Removing
+      # the two keys (or an unapplied Terraform) leaves the API on the Git
+      # path: the config validates the bucket as optional and the worker idles.
+      # docs/runbooks/project-snapshot-s3.md#aws
+      #
+      # KORTIX_CONFIG_ARCHIVE_S3_* points the API's ONE object store
+      # (apps/api/src/object-store/s3.ts) at the SAME bucket for config release
+      # archives, under the `config-releases/` prefix
+      # (KORTIX_CONFIG_ARCHIVE_S3_PREFIX, default). Own keys, not the snapshot
+      # ones, so naming a config bucket never starts the snapshot producer.
+      # Credentials: the task role, which already holds PutObject/GetObject on
+      # the objects and ListBucket on the bucket.
+      # KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT=0 hands retention to the
+      # bucket's lifecycle rule (expiration_days = 30 in
+      # infra/terraform/modules/project-snapshots-bucket): that role has NO
+      # s3:DeleteObject, and expiry is safe because the archive is a cache the
+      # API rebuilds from its Git mirror.
+      # docs/specs/config-releases.md#store
+      KORTIX_ECS_ENV_OVERRIDES: '{"CONFIG_RELEASES_ENABLED":"true","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -566,6 +590,13 @@ jobs:
       - name: Deploy and alias staging.kortix.com
         env:
           VERSION: ${{ needs.preflight.outputs.version }}
+          # The release gate compares this value against RELEASE_SOURCE_SHA
+          # (tests/src/core/target-smoke.ts). Pass it explicitly: without it
+          # `apps/web/next.config.ts` falls back to VERCEL_GIT_COMMIT_SHA, which
+          # Vercel infers from the CLI tarball's checkout metadata. That
+          # inference happens to be correct today but is not a contract, and the
+          # gate now hard-fails on the value, so it must be one we set.
+          SOURCE_SHA: ${{ needs.preflight.outputs.sha }}
         run: |
           set -euo pipefail
           if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${VERCEL_PROJECT_ID:-}" ] || [ -z "${VERCEL_TEAM_ID:-}" ]; then
@@ -579,30 +610,41 @@ jobs:
             '{orgId:$org, projectId:$project}' > .vercel/project.json
           export VERCEL_ORG_ID="$VERCEL_TEAM_ID"
 
+          # Staging values go to the build AND the runtime. Vercel builds bake the
+          # runtime config into prerendered marketing pages (lib/runtime-config-mode.ts),
+          # and `-e` alone reaches only the runtime: the build would bake the
+          # project's generic Preview values instead of staging's.
+          staging_env=(
+            NEXT_PUBLIC_BACKEND_URL="https://${PUBLIC_API_HOST}/v1"
+            KORTIX_PUBLIC_BACKEND_URL="https://${PUBLIC_API_HOST}/v1"
+            NEXT_PUBLIC_APP_URL="https://${WEB_HOST}"
+            KORTIX_PUBLIC_APP_URL="https://${WEB_HOST}"
+            NEXT_PUBLIC_URL="https://${WEB_HOST}"
+            SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL"
+            SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+            NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL"
+            KORTIX_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL"
+            NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+            KORTIX_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+            BACKEND_URL="https://${PUBLIC_API_HOST}/v1"
+            APP_URL="https://${WEB_HOST}"
+            NEXT_PUBLIC_BILLING_ENABLED="true"
+            KORTIX_PUBLIC_BILLING_ENABLED="true"
+            AUTH_PROVIDERS="google"
+            NEXT_PUBLIC_AUTH_PROVIDERS="google"
+            KORTIX_PUBLIC_AUTH_PROVIDERS="google"
+            AUTH_METHODS="magic,password"
+            NEXT_PUBLIC_AUTH_METHODS="magic,password"
+            KORTIX_PUBLIC_AUTH_METHODS="magic,password"
+          )
+          env_flags=()
+          for kv in "${staging_env[@]}"; do env_flags+=(-e "$kv" -b "$kv"); done
+
           url="$(npx vercel deploy --yes --target preview --archive=tgz \
             --token "$VERCEL_TOKEN" \
-            -e NEXT_PUBLIC_BACKEND_URL="https://${PUBLIC_API_HOST}/v1" \
-            -e KORTIX_PUBLIC_BACKEND_URL="https://${PUBLIC_API_HOST}/v1" \
-            -e NEXT_PUBLIC_APP_URL="https://${WEB_HOST}" \
-            -e KORTIX_PUBLIC_APP_URL="https://${WEB_HOST}" \
-            -e NEXT_PUBLIC_URL="https://${WEB_HOST}" \
-            -e SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
-            -e SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
-            -e NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
-            -e KORTIX_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
-            -e NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
-            -e KORTIX_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
-            -e BACKEND_URL="https://${PUBLIC_API_HOST}/v1" \
-            -e APP_URL="https://${WEB_HOST}" \
-            -e NEXT_PUBLIC_BILLING_ENABLED="true" \
-            -e KORTIX_PUBLIC_BILLING_ENABLED="true" \
-            -e AUTH_PROVIDERS="google" \
-            -e NEXT_PUBLIC_AUTH_PROVIDERS="google" \
-            -e KORTIX_PUBLIC_AUTH_PROVIDERS="google" \
-            -e AUTH_METHODS="magic,password" \
-            -e NEXT_PUBLIC_AUTH_METHODS="magic,password" \
-            -e KORTIX_PUBLIC_AUTH_METHODS="magic,password" \
+            "${env_flags[@]}" \
             -b NEXT_PUBLIC_KORTIX_VERSION="$VERSION" \
+            -b NEXT_PUBLIC_KORTIX_COMMIT="$SOURCE_SHA" \
             | tail -n1)"
           echo "Vercel deployment: ${url}"
           npx vercel alias set "$url" "$WEB_HOST" --token "$VERCEL_TOKEN"
@@ -656,9 +698,17 @@ jobs:
           { [ "$cookie_status" = 200 ] || [ "$cookie_status" = 307 ] || [ "$cookie_status" = 308 ]; } || {
             echo "::error::staging ECS frontend shared-cookie status=$cookie_status"; exit 1;
           }
-          grep -E $'^(#HttpOnly_)?\\.kortix\\.com\t' "$cookie_jar" >/dev/null || {
-            echo "::error::staging ECS frontend did not set the parent-domain access cookie"; exit 1;
+          # The access cookie is HOST-ONLY since #7065: the old Domain=.kortix.com
+          # cookie reached every subdomain (staging, prod, api.kortix.com) no
+          # matter which environment authorized it. curl writes a host-only
+          # cookie under the exact issuing host, so assert that row and refuse a
+          # Domain-scoped one — a `.kortix.com` row here means #7065 regressed.
+          awk -F'\t' -v h="$ECS_WEB_HOST" '$1 == h || $1 == "#HttpOnly_" h { found = 1 } END { exit !found }' "$cookie_jar" || {
+            echo "::error::staging ECS frontend did not set a host-only access cookie for ${ECS_WEB_HOST}"; exit 1;
           }
+          if awk -F'\t' '$1 == ".kortix.com" || $1 == "#HttpOnly_.kortix.com" { found = 1 } END { exit !found }' "$cookie_jar"; then
+            echo "::error::staging ECS frontend set a Domain-scoped .kortix.com access cookie (#7065 made it host-only)"; exit 1;
+          fi
           ecs_health="$(curl -fsS --max-time 20 "$ecs/api/health")"
           [ "$(jq -r '.commit // empty' <<<"$ecs_health")" = "$EXPECTED_COMMIT" ] || {
             echo "::error::staging ECS frontend commit mismatch"; exit 1;
@@ -681,7 +731,7 @@ jobs:
           {
             echo "### Staging verified"
             echo "- API: https://${PUBLIC_API_HOST}/v1/health reports staging ${EXPECTED_VERSION}"
-            echo "- ECS web: https://${ECS_WEB_HOST} reports ${EXPECTED_COMMIT} and accepts the shared test cookie"
+            echo "- ECS web: https://${ECS_WEB_HOST} reports ${EXPECTED_COMMIT} and accepts its host-only test cookie"
             echo "- Vercel web: https://${WEB_HOST} serves staging runtime config"
             echo "- GitOps: API ALB via ECS Fargate"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -2,6 +2,14 @@ import type { UpstreamDescriptor } from '../domain';
 import { ClientAbortError, UpstreamMisconfiguredError } from '../errors';
 import type { AiSdkFetch } from '../transports/ai-sdk';
 import { resolveTransportKind } from '../transports/route-kind';
+// The SHARED implementation. This module carried its own copy using
+// `value.replace(/\/+$/, '')`, which CodeQL flags as `js/polynomial-redos`
+// (high, alert #5907): on a long run of slashes that is not at the end, the
+// engine retries the quantifier from every start position. The copy in
+// transports/ai-sdk/model.ts was rewritten to a linear charCodeAt loop for
+// alert #4731; this one was missed because the logic was duplicated. Importing
+// it means there is one implementation to keep correct.
+import { trimTrailingSlash } from '../transports/ai-sdk/model';
 
 export type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -11,8 +19,8 @@ export interface CallUpstreamOptions {
    *  signal so a caller disconnect aborts the in-flight upstream fetch too,
    *  instead of only bounding it by the retry timeout. */
   signal?: AbortSignal;
-  // Kortix-internal correlation id for this request (see pipeline/handler.ts's
-  // newRequestId()). Sent to the upstream as a best-effort header so a failed
+  // Kortix-internal correlation id for this request (see pipeline/simple-handler.ts's
+  // requestId()). Sent to the upstream as a best-effort header so a failed
   // or slow completion can be cross-referenced against the provider's own
   // request logs/support tooling — every provider here tolerates unknown
   // headers, so this is safe to always send rather than gated per-transport.
@@ -59,10 +67,6 @@ function assertUsableBaseUrl(descriptor: UpstreamDescriptor): void {
 // transport's direct `fetch()` call.
 function toAiSdkFetch(fetchImpl: FetchImpl): AiSdkFetch {
   return (input, init) => fetchImpl(String(input), init ?? {});
-}
-
-function trimTrailingSlash(value: string): string {
-  return value.endsWith('/') ? value.replace(/\/+$/, '') : value;
 }
 
 function directOpenAiRequest(

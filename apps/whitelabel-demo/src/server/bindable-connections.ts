@@ -6,13 +6,20 @@ import type { Connection } from '@kortix/sdk';
  * A wrapper acts under one credential for many end-users, so it has no personal
  * identity upstream. It can therefore bind only project-owned
  * connections — never a member's private one, and never another wrapper's
- * `external` one. `require_connectors`, which resolves the *acting user's own*
- * connection, is refused outright for the same reason
- * (403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY).
+ * `external` one. A `member`-owned account is reachable only by its own human
+ * owner (`owner_id === caller.userId`), never by a service account, so a
+ * wrapper could never use one even if the picker offered it.
  *
- * Offering an unbindable connection in a picker would produce a session-create
- * failure the user cannot act on, so the filtering belongs here rather than in
- * an error message.
+ * `require_connectors` is gone as a live concept (session create/scope now
+ * accept and ignore it on the wire); the credential a call
+ * runs as is a call-time choice (`account` on the call, resolved by
+ * `connector_not_connected` + `connect_url` when nothing usable is bound), not
+ * a session-create-time refusal, so it is no longer part of this picker's
+ * reasoning either.
+ *
+ * Offering an unbindable connection in a picker would still produce a
+ * call-time denial the user cannot act on, so the filtering stays here rather
+ * than in an error message.
  */
 export interface BindableConnection {
   connectionId: string;
@@ -25,8 +32,8 @@ export interface BindableConnection {
  * Why an alias the project HAS connections for still has nothing to bind.
  *
  * Both answers are "ask a teammate", never "connect it yourself": a wrapper
- * credential cannot connect on an end-user's behalf, and `require_connectors`
- * — the interactive flow that would — is refused for it outright.
+ * credential has no personal upstream identity, so it can never complete an
+ * interactive connect flow on an end-user's behalf.
  */
 export type ConnectorBindingUnavailable =
   'private_only' | 'project_connection_inactive';

@@ -50,16 +50,21 @@ export function canMountSessionChat(input: {
   return input.switched || Boolean(input.opencodeSessionId);
 }
 
+/**
+ * The transcript pin for the session being opened.
+ *
+ * Takes the RESOLVED session row, not the project's session list. It used to
+ * search the list, which stopped being sound the moment that list became a
+ * bounded page (`useProjectSessions`): a session older than the first page is
+ * simply absent from it, and the search answered `null` — an open session with
+ * no pin, i.e. a blank transcript. The session page reads its own row by id
+ * (`useProjectSession`), which is exact at any age and also returns metadata
+ * whole, where the list trims it.
+ */
 export function findInitialSessionPin(
-  sessions:
-    | Array<{
-        session_id: string;
-        opencode_session_id: string | null;
-      }>
-    | undefined,
-  sessionId: string,
+  session: { opencode_session_id: string | null } | undefined | null,
 ) {
-  return sessions?.find((session) => session.session_id === sessionId)?.opencode_session_id ?? null;
+  return session?.opencode_session_id ?? null;
 }
 
 /**
@@ -98,7 +103,7 @@ export function resolveSessionContentState(input: {
    * is the one that loses to a waking box. When it lost, the page rendered the
    * full shell — header, composer, empty thread — over a session with a long
    * history, and the user saw an EMPTY CONVERSATION rather than a wait
-   * (screenshot, essentia 2026-08-24: composer live, thread blank, runtime
+   * (screenshot, sampleco 2026-08-24: composer live, thread blank, runtime
    * terminal holding the whole session).
    *
    * Optional so existing callers keep their behaviour; `undefined` means the

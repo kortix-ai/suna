@@ -164,6 +164,7 @@ flow(
       'GET /v1/projects/:projectId/sessions/:sessionId/public-shares',
       'DELETE /v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
       'GET /v1/p/public-share/:token',
+      'GET /v1/p/config',
     ],
   },
   async (ctx) => {
@@ -338,7 +339,7 @@ flow(
     });
 
     await ctx.step(
-      'unauthenticated resolution of the file token → 200/503 with its public origin URL',
+      'unauthenticated file resolution matches the deployment’s preview-origin configuration',
       async () => {
         const r = await ctx.client
           .as(ctx.P.ANON)
@@ -346,6 +347,13 @@ flow(
         r.status([200, 503]);
         if (r.statusCode === 200) {
           r.body().has('$.share.resource_type', 'file').has('$.share.file_path', '/workspace/README.md');
+          const config = await ctx.client.as(ctx.P.ANON).get('/v1/p/config');
+          config.status(200);
+          if (config.json<any>().preview_url_template === null) {
+            r.body().has('$.share.public_url', null)
+              .has('$.share.proxy_path', `/v1/p/public-share/${fileToken}/file`);
+            return;
+          }
           const publicUrl = new URL(r.json<any>().share.public_url);
           if (publicUrl.protocol !== 'https:' || publicUrl.pathname !== '/open') {
             throw new Error(`file share returned an invalid public_url: ${publicUrl}`);
@@ -773,12 +781,10 @@ flow(
  * server-side (`publicShareToken(shareId)`) and resolves through the exact
  * same `resolvePublicShare()` SESS-13 covers, so it inherits identical
  * 404 (unknown) / 410 (revoked or expired) / 503 (sandbox not provisioned
- * yet) semantics — and ANY existing share for the session (created as a
- * `preview` or a `file`, the only kinds the CRUD supports today) unlocks the
- * transcript view too: a share token already proves the owner handed this
- * link to someone outside the account, and the read-only conversation is not
- * more sensitive than the live preview or workspace file that SAME token
- * already exposes.
+ * yet) semantics. A share grants exactly the resource it names: a `preview`
+ * share names one app port and a `file` share one document, so neither reads
+ * the conversation — `.../messages` answers 404 for both (SCOPE-4 pins this on
+ * the local profile).
  *
  * The metadata route (`GET /:shareId`) is DB-only (title/status/timestamps),
  * so it does not itself 503 on an inactive sandbox — only `resolvePublicShare`'s
@@ -856,15 +862,12 @@ flow(
     );
 
     await ctx.step(
-      'anon: read the sanitized transcript for the real share → 200 (digest) or 503 (sandbox not up)',
+      'anon: a preview share does not read the transcript → 404 (the share names one app port)',
       async () => {
         const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
           params: { shareId },
         });
-        r.status([200, 503]);
-        if (r.statusCode === 200) {
-          r.body().exists('$.available').exists('$.messages').exists('$.message_count');
-        }
+        r.status(404).body().has('$.error', 'This share does not include the conversation');
       },
     );
 
@@ -1159,5 +1162,577 @@ flow(
       }
       ctx.track('session', freshId, { projectId: p.id });
     });
+  },
+);
+
+flow(
+  'SESS-28',
+  {
+    domain: 'sessions',
+    requires: ['daytona', 'funded'],
+    timeoutMs: 600_000,
+    routes: [
+      'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'POST /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+    ],
+  },
+  async (ctx) => {
+    const { waitFor } = await import('../core/poll');
+    const project = await ctx.fixtures.project({ managedGit: true, seed: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let restrictedSessionId = '';
+    for (const access of [false, true]) {
+      await ctx.step(`create repository_access=${access} session and prove checkout plus session-token authorization`, async () => {
+        const config = await owner.put('/v1/projects/:projectId/agents/:agentName/config', {
+          repository_access: access,
+          kortix_permissions: ['project.file.read', 'project.gitops.read'],
+        }, { params: { projectId: project.id, agentName: 'kortix' } });
+        config.status(200);
+        const created = await owner.post('/v1/projects/:projectId/sessions', {
+          agent_name: 'kortix', metadata: { repository_access: !access, workspace_mode: access ? 'runtime' : 'branch' },
+        }, { params: { projectId: project.id } });
+        created.status(201);
+        const sessionId = created.json<any>().session_id;
+        if (!sessionId) throw new Error('session create returned no session_id');
+        ctx.track('session', sessionId, { projectId: project.id });
+        if (!access) restrictedSessionId = sessionId;
+        const params = { projectId: project.id, sessionId };
+        const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+        read.status(200).body().has('$.metadata.repository_access', access)
+          .has('$.metadata.workspace_mode', access ? 'branch' : 'runtime');
+        const patch = await owner.patch('/v1/projects/:projectId/sessions/:sessionId', {
+          metadata: { repository_access: !access },
+        }, { params });
+        patch.status(400);
+        const ready = await waitFor(async () => {
+          const response = await owner.post('/v1/projects/:projectId/sessions/:sessionId/start', {},
+            { params, query: { wait_ms: '8000' }, timeoutMs: 25_000 });
+          response.status(200);
+          const body = response.json<any>();
+          if (body.stage === 'error' && body.retriable === false) throw new Error(JSON.stringify(body));
+          return body;
+        }, { until: (body) => body.stage === 'ready' && Boolean(body.sandbox?.external_id ?? body.sandbox?.externalId),
+          timeoutMs: 240_000, intervalMs: 3000, description: 'repository policy session ready' });
+        const externalId = ready.sandbox.external_id ?? ready.sandbox.externalId;
+        // Only status codes and checkout state leave the sandbox. Its credential stays inside it.
+        const script = `const fs = require("node:fs");
+const expected = ${access};
+const checkout = fs.existsSync("/workspace/.git");
+if (checkout !== expected) throw new Error("unexpected checkout: " + checkout);
+const base = process.env.KORTIX_API_URL.replace(/\\/$/, "");
+const headers = { Authorization: "Bearer " + process.env.KORTIX_TOKEN };
+const files = await fetch(base + "/projects/${project.id}/files", { headers });
+if (files.status !== (expected ? 200 : 403)) throw new Error("file status: " + files.status);
+await files.body?.cancel();
+const git = await fetch(base + "/git/${project.id}.git/info/refs?service=git-upload-pack", { headers });
+if (git.status !== (expected ? 200 : 403)) throw new Error("git status: " + git.status);
+await git.body?.cancel();
+console.log(JSON.stringify({ checkout, files: files.status, git: git.status }));`;
+        const command = `bun -e '${script.replace(/'/g, "'\\''")}'`;
+        const execution = await owner.post(`/v1/p/${externalId}/8000/kortix/env-rpc`,
+          { op: 'exec', args: { command, timeout: 30_000 } }, { timeoutMs: 40_000 });
+        execution.status(200).body().has('$.ok', true).has('$.value.exitCode', 0);
+        const proof = JSON.parse(execution.json<any>().value.stdout.trim());
+        if (proof.checkout !== access || proof.files !== (access ? 200 : 403) || proof.git !== (access ? 200 : 403)) {
+          throw new Error(`unexpected repository proof: ${JSON.stringify(proof)}`);
+        }
+      });
+    }
+    await ctx.step('changing the agent to enabled leaves its existing restricted session restricted', async () => {
+      const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId: project.id, sessionId: restrictedSessionId },
+      });
+      read.status(200).body().has('$.metadata.repository_access', false).has('$.metadata.workspace_mode', 'runtime');
+    });
+  },
+);
+
+
+flow(
+  'SESS-29',
+  {
+    domain: 'sessions',
+    global: true,
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+      'GET /v1/projects/:projectId/sessions/:sessionId/scope',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/scope',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const { randomUUID } = await import('node:crypto');
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    const team = await ctx.fixtures.team();
+    await db.connect();
+    const sessionId = randomUUID();
+    const commandId = randomUUID();
+    try {
+      await db.query(
+        `INSERT INTO kortix.credit_accounts
+         (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
+         VALUES ($1, 1000, 1000, 1000, 1000, 'tier_2_20')
+         ON CONFLICT (account_id) DO UPDATE SET
+           balance = 1000, balance_precise = 1000,
+           non_expiring_credits = 1000, non_expiring_credits_precise = 1000,
+           tier = 'tier_2_20'`,
+        [team.id],
+      );
+      const project = await team.project({ managedGit: true });
+      const params = { projectId: project.id, sessionId };
+      const promptPath = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+      await ctx.step(
+        'seed a session whose required_connectors column still names an unconnected connector',
+        async () => {
+          const config = await owner.put(
+            '/v1/projects/:projectId/agents/:agentName/config',
+            { connectors: 'all', secrets: 'none', skills: 'all', kortix_permissions: 'all' },
+            { params: { projectId: project.id, agentName: 'kortix' } },
+          );
+          config.status(200);
+          // The column is populated and deliberately LEFT populated for the
+          // whole flow. Proving a prompt is accepted while the stored value
+          // still names an unconnected connector is stronger than clearing it
+          // first: it pins that nothing reads the column, not that an empty
+          // column is harmless.
+          await db.query(
+            `INSERT INTO kortix.project_sessions
+        (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, required_connectors)
+        VALUES ($1, $2, $3, 'main', 'kortix', 'running', $4, 'project', '["missing-gmail"]'::jsonb)`,
+            [sessionId, team.id, project.id, ctx.P.OWNER.userId],
+          );
+        },
+      );
+      await ctx.step(
+        'Stop holds an in-flight delivery immediately and GET preserves the hold',
+        async () => {
+          // A claimed row models the instant between worker claim and network send.
+          // Its lease prevents the background worker from claiming the fixture.
+          // It also holds every prompt queued after it, which is what keeps the
+          // two acceptance steps below from reaching a runtime this flow never
+          // provisions.
+          await db.query(
+            `INSERT INTO kortix.session_lifecycle_commands
+        (command_id, command_type, source, status, project_id, session_id, account_id,
+         actor_user_id, payload, locked_by, locked_until)
+        VALUES ($1, 'continue_session', 'ui', 'running', $2, $3, $4, $5,
+          '{"text":"hello","clientMessageId":"stop-running"}'::jsonb, 'SESS-29', now() + interval '1 hour')`,
+            [commandId, project.id, sessionId, team.id, ctx.P.OWNER.userId],
+          );
+          const held = await owner.post(`${promptPath}/hold`, { held: true }, { params });
+          held.status(200);
+          for (const response of [held, await owner.get(promptPath, { params })]) {
+            response.status(200);
+            const mine = response.json<any>().prompts.find((p: any) => p.prompt_id === commandId);
+            if (mine?.state !== 'waiting' || mine?.reason !== 'held')
+              throw new Error(`Stop state: ${JSON.stringify(mine)}`);
+          }
+          const stored = await db.query(
+            'SELECT result, payload FROM kortix.session_lifecycle_commands WHERE command_id = $1',
+            [commandId],
+          );
+          if (!stored.rows[0]?.result.held || !stored.rows[0]?.payload.stopPausedOnDelivery)
+            throw new Error('Stop did not persist both markers');
+        },
+      );
+      await ctx.step(
+        'a prompt is accepted 202 while the session still requires an unconnected connector',
+        async () => {
+          const accepted = await owner.post(
+            promptPath,
+            {
+              client_message_id: 'unconnected-connector',
+              message_id: 'msg_0123456789abAbCdEfGhIjKlMn',
+              parts: [{ type: 'text', text: 'hello' }],
+            },
+            { params },
+          );
+          // 202, not 409. The pre-flight is gone: a turn is never refused for an
+          // unconnected connector, because that refusal could not be cleared
+          // from the product. The connector CALL denies instead and carries a
+          // connect link.
+          accepted.status(202).body().has('$.state', 'queued');
+          const queued = await db.query(
+            `SELECT command_id FROM kortix.session_lifecycle_commands
+             WHERE session_id = $1 AND payload->>'clientMessageId' = 'unconnected-connector'`,
+            [sessionId],
+          );
+          if (queued.rowCount !== 1) throw new Error('the accepted prompt was not persisted');
+          const stored = await db.query(
+            'SELECT required_connectors FROM kortix.project_sessions WHERE session_id = $1',
+            [sessionId],
+          );
+          // Nothing cleared the column on the way through. The prompt was
+          // accepted because no reader is left, which is the contract.
+          if (
+            JSON.stringify(stored.rows[0]?.required_connectors) !==
+            JSON.stringify(['missing-gmail'])
+          ) {
+            throw new Error(`required_connectors changed: ${JSON.stringify(stored.rows[0])}`);
+          }
+          await db.query('DELETE FROM kortix.session_lifecycle_commands WHERE command_id = $1', [
+            queued.rows[0].command_id,
+          ]);
+        },
+      );
+      await ctx.step(
+        'PUT .../scope still accepts require_connectors and GET reports required_connectors: null',
+        async () => {
+          const replaced = await owner.put(
+            '/v1/projects/:projectId/sessions/:sessionId/scope',
+            { require_connectors: ['missing-gmail'] },
+            { params },
+          );
+          // 200, not 400. `SessionScopeInputSchema` is `.strict()`, so an old
+          // client that still sends the field would be rejected outright if the
+          // key were deleted. It is accepted, inert, and answered with null.
+          replaced.status(200).body().has('$.required_connectors', null);
+          const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId/scope', {
+            params,
+          });
+          // The key stays on the wire — `SessionScope` is a published
+          // @kortix/sdk type and a consumer reading it must get null, not
+          // undefined — and it never echoes back what the PUT sent.
+          read.status(200).body().has('$.required_connectors', null);
+        },
+      );
+      await ctx.step('a disabled optional connector binding does not hold a prompt either', async () => {
+        const connector = await db.query(
+          `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, enabled)
+           VALUES ($1, $2, 'optional-gmail', 'Optional Gmail', 'openapi', '{}'::jsonb, false)
+           RETURNING connector_id`, [team.id, project.id],
+        );
+        const connection = await db.query(
+          `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label)
+           VALUES ($1, $2, $3, 'project', 'Optional Gmail') RETURNING connection_id`,
+          [team.id, project.id, connector.rows[0].connector_id],
+        );
+        await db.query(
+          `INSERT INTO kortix.project_session_connector_bindings
+           (session_id, account_id, project_id, connector_alias, connector_id, connection_id)
+           VALUES ($1, $2, $3, 'optional-gmail', $4, $5)`,
+          [sessionId, team.id, project.id, connector.rows[0].connector_id, connection.rows[0].connection_id],
+        );
+        const accepted = await owner.post(
+          promptPath,
+          {
+            client_message_id: 'optional-connector',
+            message_id: 'msg_0123456789abAbCdEfGhIjKlMo',
+            parts: [{ type: 'text', text: 'hello without Gmail' }],
+          },
+          { params },
+        );
+        accepted.status(202);
+        const queued = await db.query(
+          `SELECT command_id FROM kortix.session_lifecycle_commands
+           WHERE session_id = $1 AND payload->>'clientMessageId' = 'optional-connector'`, [sessionId],
+        );
+        if (queued.rowCount !== 1) throw new Error('optional connector prompt was not persisted');
+        // The fixture's claimed delivery prevents this row from reaching a runtime.
+        await db.query('DELETE FROM kortix.session_lifecycle_commands WHERE command_id = $1', [queued.rows[0].command_id]);
+      });
+      await ctx.step('Resume clears both hold markers on a claimed delivery', async () => {
+        const response = await owner.post(`${promptPath}/hold`, { held: false }, { params });
+        response.status(200);
+        const stored = await db.query(
+          'SELECT result, payload FROM kortix.session_lifecycle_commands WHERE command_id = $1',
+          [commandId],
+        );
+        if (stored.rows[0]?.result.held || stored.rows[0]?.payload.stopPausedOnDelivery)
+          throw new Error('Resume left a hold marker');
+      });
+    } finally {
+      await db
+        .query('DELETE FROM kortix.session_lifecycle_commands WHERE session_id = $1', [sessionId])
+        .catch(() => {});
+      await db
+        .query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [sessionId])
+        .catch(() => {});
+      await db.end();
+    }
+  },
+);
+
+flow(
+  'SESS-34',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: ['GET /v1/projects/:projectId/sessions/:sessionId/turn'],
+  },
+  async (ctx) => {
+    // Session ad02e053: the sandbox memory guard stopped two turns and the
+    // ledger dropped the reason, so the UI said nothing under four failed
+    // sub-agent tasks. This pins what `/turn` reports about how turns died,
+    // straight off seeded ledger rows: no runtime is needed to read history.
+    const { randomUUID } = await import('node:crypto');
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    await db.connect();
+    const project = await ctx.fixtures.project();
+    const session = await ctx.fixtures.session(project);
+    const sandboxId = randomUUID();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id, sessionId: session.id };
+    const turnPath = '/v1/projects/:projectId/sessions/:sessionId/turn';
+    type Failure = { message_id: string; ended_at: string | null; error: { name: string | null; message: string | null } | null };
+    type TurnBody = {
+      turns: unknown[];
+      last_ended?: { message_id?: string; end_reason: string | null; error?: unknown };
+      recent_failures?: Failure[];
+    };
+    const GUARD = { name: 'SandboxMemoryGuard', message: 'sandbox memory at 97% (opencode 513 MB RSS of 3915 MB): turn stopped' };
+    try {
+      await ctx.step('seed one ledger row per way a turn can end', async () => {
+        const rows: Array<[string, string, string, Record<string, unknown> | null, number]> = [
+          // token suffix, end_reason, message_id, end_error, seconds ago (newest last)
+          ['completed', 'completed', 'msg_fine', null, 90],
+          // Ended before the end_error column existed (2026-08-21): a Stop and
+          // an unexplained abort looked the same then, so it stays hidden.
+          ['legacy', 'failed', 'msg_legacy', null, 60 * 60 * 24 * 400],
+          // Ended after it: nobody said why, and the read must still say it died.
+          ['unnamed', 'failed', 'msg_unnamed', null, 35],
+          ['queue-interrupt', 'failed', 'msg_queue', { name: 'QueueInterrupt', message: null }, 70],
+          ['user-stop', 'failed', 'msg_stop', { name: 'UserStop', message: null }, 60],
+          ['box-gone', 'runtime_gone', 'msg_gone', null, 50],
+          ['bare-abort', 'failed', 'msg_abort', { name: 'MessageAbortedError', message: 'Aborted' }, 40],
+          ['memory', 'failed', 'msg_memory', GUARD, 30],
+        ];
+        for (const [suffix, endReason, messageId, endError, agoSeconds] of rows) {
+          await db.query(
+            `INSERT INTO kortix.session_turns
+               (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id,
+                message_id, state, end_reason, end_error, started_at, ended_at, created_at, updated_at)
+             VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, 'ses_root', $6, 'ended', $7, $8::jsonb,
+                     now() - ($9 || ' seconds')::interval, now() - ($9 || ' seconds')::interval, now(), now())`,
+            [
+              `${sandboxId}-${suffix}`,
+              session.id,
+              sandboxId,
+              project.id,
+              project.accountId,
+              messageId,
+              endReason,
+              endError ? JSON.stringify(endError) : null,
+              String(agoSeconds),
+            ],
+          );
+        }
+      });
+
+      await ctx.step('the read lists the turns that died, newest first, and names the cause it has', async () => {
+        const response = await owner.get(turnPath, { params });
+        response.status(200);
+        const body = response.json<TurnBody>();
+        const listed = (body.recent_failures ?? []).map((f) => [f.message_id, f.error?.name ?? null]);
+        const expected = [
+          ['msg_memory', 'SandboxMemoryGuard'],
+          ['msg_unnamed', null],
+          ['msg_abort', null],
+          ['msg_gone', null],
+        ];
+        if (JSON.stringify(listed) !== JSON.stringify(expected)) {
+          throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(listed)}`);
+        }
+        const memory = body.recent_failures?.find((f) => f.message_id === 'msg_memory');
+        if (memory?.error?.message !== GUARD.message) {
+          throw new Error(`the named cause must carry its message, got ${JSON.stringify(memory)}`);
+        }
+        for (const f of body.recent_failures ?? []) {
+          if (!f.ended_at || !/^\d{4}-\d{2}-\d{2}T/.test(f.ended_at)) {
+            throw new Error(`every failure carries ended_at, got ${JSON.stringify(f)}`);
+          }
+        }
+      });
+
+      await ctx.step('a requested stop and a legacy row are never reported as failures', async () => {
+        const body = (await owner.get(turnPath, { params })).json<TurnBody>();
+        const ids = (body.recent_failures ?? []).map((f) => f.message_id);
+        for (const hidden of ['msg_stop', 'msg_queue', 'msg_legacy', 'msg_fine']) {
+          if (ids.includes(hidden)) throw new Error(`${hidden} must not be listed: ${JSON.stringify(ids)}`);
+        }
+      });
+
+      await ctx.step('last_ended names its message and its cause', async () => {
+        const body = (await owner.get(turnPath, { params })).json<TurnBody>();
+        if (body.last_ended?.message_id !== 'msg_memory' || body.last_ended.end_reason !== 'failed') {
+          throw new Error(`expected the memory turn as last_ended, got ${JSON.stringify(body.last_ended)}`);
+        }
+        if (JSON.stringify(body.last_ended.error) !== JSON.stringify(GUARD)) {
+          throw new Error(`last_ended.error must be the named cause, got ${JSON.stringify(body.last_ended.error)}`);
+        }
+      });
+
+      await ctx.step('a requested stop is not an error on last_ended either', async () => {
+        await db.query(
+          `INSERT INTO kortix.session_turns
+             (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id,
+              message_id, state, end_reason, end_error, started_at, ended_at, created_at, updated_at)
+           VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, 'ses_root', 'msg_stop_2', 'ended', 'failed',
+                   '{"name":"UserStop","message":null}'::jsonb, now(), now(), now(), now())`,
+          [`${sandboxId}-user-stop-2`, session.id, sandboxId, project.id, project.accountId],
+        );
+        const body = (await owner.get(turnPath, { params })).json<TurnBody>();
+        if (body.last_ended?.message_id !== 'msg_stop_2') {
+          throw new Error(`expected the stopped turn as last_ended, got ${JSON.stringify(body.last_ended)}`);
+        }
+        if ('error' in body.last_ended) {
+          throw new Error(`a requested stop must carry no error, got ${JSON.stringify(body.last_ended)}`);
+        }
+      });
+    } finally {
+      await db
+        .query('DELETE FROM kortix.session_turns WHERE session_id = $1', [session.id])
+        .catch(() => {});
+      await db.end();
+    }
+  },
+);
+
+
+flow(
+  'SESS-35',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'POST /v1/projects/:projectId/turn-stream',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+    ],
+  },
+  async (ctx) => {
+    // Prod 2026-09-22: the memory guard stopped a turn three times and the UI
+    // said "No reason was reported". The sandbox ran a daemon built before the
+    // guard named its turn: its cause frame has no `turn_message_id` and says
+    // `error_retryable: true`. The control plane must still attach it.
+    const { randomUUID } = await import('node:crypto');
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    await db.connect();
+    const project = await ctx.fixtures.project();
+    const ownerUserId = ctx.P.OWNER.userId;
+    if (!ownerUserId) throw new Error('OWNER principal has no userId');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const sessionId = randomUUID();
+    let tokenId: string | null = null;
+    let sandbox = ctx.client;
+    const GUARD_MESSAGE =
+      'sandbox memory at 92% (opencode 701 MB RSS of 12288 MB): turn stopped before the kernel would kill opencode';
+    type Failure = { message_id: string; error: { name: string | null; message: string | null } | null };
+    const failures = async () =>
+      (
+        await owner.get('/v1/projects/:projectId/sessions/:sessionId/turn', {
+          params: { projectId: project.id, sessionId },
+        })
+      )
+        .status(200)
+        .json<{ recent_failures?: Failure[] }>().recent_failures ?? [];
+    const insertEndedTurn = (suffix: string, messageId: string, endError: Record<string, unknown>) =>
+      db.query(
+        `INSERT INTO kortix.session_turns
+           (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id,
+            message_id, state, end_reason, end_error, started_at, ended_at, created_at, updated_at)
+         VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, 'ses_root', $6, 'ended', 'failed', $7::jsonb,
+                 now() - interval '40 seconds', now() - interval '1 second', now(), now())`,
+        [`${sessionId}-${suffix}`, sessionId, sessionId, project.id, project.accountId, messageId, JSON.stringify(endError)],
+      );
+    const oldDaemonGuardFrame = () =>
+      sandbox.post(
+        '/v1/projects/:projectId/turn-stream',
+        {
+          session_id: sessionId,
+          kind: 'end',
+          status: 'error',
+          opencode_session_id: 'ses_root',
+          error_name: 'SandboxMemoryGuard',
+          error_message: GUARD_MESSAGE,
+          error_retryable: true,
+        },
+        { params: { projectId: project.id } },
+      );
+    try {
+      await ctx.step('seed a running session, its sandbox, and a sandbox-bound token', async () => {
+        const minted = await owner.post('/v1/accounts/tokens', { name: `SESS-35 ${sessionId.slice(0, 8)}` });
+        minted.status(201);
+        const credential = minted.json<{ token_id: string; secret_key: string }>();
+        tokenId = credential.token_id;
+        sandbox = ctx.client.withBearer(credential.secret_key, 'SESSION_TOKEN');
+        await db.query(
+          `INSERT INTO kortix.project_sessions
+             (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
+           VALUES ($1, $2, $3, 'main', 'kortix', 'running', $4, 'project')`,
+          [sessionId, project.accountId, project.id, ownerUserId],
+        );
+        await db.query(
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+           VALUES ($1::uuid, $1, $2, $3, 'active')`,
+          [sessionId, project.accountId, project.id],
+        );
+        await db.query(
+          `UPDATE kortix.account_tokens
+              SET account_id = $2, user_id = $3, project_id = $4, session_id = $5
+            WHERE token_id = $1`,
+          [tokenId, project.accountId, ownerUserId, project.id, sessionId],
+        );
+      });
+
+      await ctx.step('a turn the abort just closed reads as a bare abort, with no cause', async () => {
+        await insertEndedTurn('aborted', 'msg_aborted', { name: 'MessageAbortedError', message: 'Aborted' });
+        const listed = (await failures()).find((f) => f.message_id === 'msg_aborted');
+        if (!listed || listed.error !== null) {
+          throw new Error(`expected msg_aborted listed with error null, got ${JSON.stringify(listed)}`);
+        }
+      });
+
+      await ctx.step('the old daemon guard frame (no turn id, retryable) is accepted with 200', async () => {
+        (await oldDaemonGuardFrame()).status(200);
+      });
+
+      await ctx.step('the aborted turn now names the memory guard and its message', async () => {
+        const listed = (await failures()).find((f) => f.message_id === 'msg_aborted');
+        if (listed?.error?.name !== 'SandboxMemoryGuard' || listed.error.message !== GUARD_MESSAGE) {
+          throw new Error(`expected the guard cause on msg_aborted, got ${JSON.stringify(listed)}`);
+        }
+      });
+
+      await ctx.step('a stop the user asked for is never turned into a memory failure', async () => {
+        await insertEndedTurn('user-stop', 'msg_user_stop', { name: 'UserStop', message: null });
+        (await oldDaemonGuardFrame()).status(200);
+        const ids = (await failures()).map((f) => f.message_id);
+        if (ids.includes('msg_user_stop')) {
+          throw new Error(`a requested stop must stay hidden, got ${JSON.stringify(ids)}`);
+        }
+      });
+    } finally {
+      await db.query('DELETE FROM kortix.session_turns WHERE session_id = $1', [sessionId]).catch(() => {});
+      await db.query('DELETE FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid', [sessionId]).catch(() => {});
+      await db.query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [sessionId]).catch(() => {});
+      if (tokenId) await db.query('DELETE FROM kortix.account_tokens WHERE token_id = $1', [tokenId]).catch(() => {});
+      await db.end();
+    }
   },
 );

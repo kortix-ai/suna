@@ -16,11 +16,9 @@ import {
 import {
   MinusCircleIcon as CircleMinus,
   PlusCircleIcon as CirclePlus,
-  DownloadIcon as Download,
   DotsThreeIcon as Ellipsis,
   GitDiffIcon as FileDiff,
   ChatIcon as MessageSquare,
-  SidebarSimpleIcon as PanelLeft,
   UploadIcon as Upload,
 } from '@phosphor-icons/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -53,6 +51,7 @@ import {
   SelectValue,
 } from '@/features/file-renderers/shared/select-compat';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { ViewerFileName } from '@/features/file-renderers/shared/viewer-file-name';
 import { cn } from '@/lib/utils';
 import { downloadBlob } from '@/lib/utils/download';
@@ -60,6 +59,7 @@ import {
   createDocxCommentCardRenderer,
   createDocxTrackedChangeCardRenderer,
 } from './docx-annotation-card';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 // react-docx loads its wasm inside a `blob:`-URL Web Worker, where a
 // root-relative path (`/_next/static/media/docx_wasm_bg.*.wasm`) fails to parse
@@ -294,39 +294,28 @@ function ViewerLoadingSurface({ showSpinner = true }: { showSpinner?: boolean })
   );
 }
 
+/**
+ * View options (comments, tracked changes) and Upload. Download is not here:
+ * it is a visible button (`ViewerDownloadButton`) in the toolbar itself.
+ */
 function DocxFileActionsMenu({
   controlsDisabled,
-  downloadDisabled,
-  isPreparingDownload,
-  isDark,
-  onDownload,
   onShowCommentsChange,
   onShowTrackedChangesChange,
-  onIsDarkChange,
   onUploadClick,
   showComments,
-  showDownloadButton,
-  showNightRenderToggle,
   showTrackedChanges,
   showUploadButton,
 }: {
   controlsDisabled: boolean;
-  downloadDisabled: boolean;
-  isPreparingDownload: boolean;
-  isDark: boolean;
-  onDownload: () => void;
   onShowCommentsChange: (checked: boolean) => void;
   onShowTrackedChangesChange: (checked: boolean) => void;
-  onIsDarkChange: (checked: boolean) => void;
   onUploadClick: () => void;
   showComments: boolean;
-  showDownloadButton: boolean;
-  showNightRenderToggle: boolean;
   showTrackedChanges: boolean;
   showUploadButton: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const showFileActions = showDownloadButton || showUploadButton;
 
   return (
     <DropdownMenu>
@@ -362,13 +351,7 @@ function DocxFileActionsMenu({
             {tI18nComplete.raw('text4dd230bca68f')}
           </span>
         </DropdownMenuCheckboxItem>
-        {showFileActions ? <DropdownMenuSeparator /> : null}
-        {showDownloadButton ? (
-          <DropdownMenuItem disabled={downloadDisabled} onClick={onDownload}>
-            {isPreparingDownload ? <Spinner className="size-4" /> : <Download className="size-4" />}
-            {tI18nComplete.raw('textd6eafe823591')}
-          </DropdownMenuItem>
-        ) : null}
+        {showUploadButton ? <DropdownMenuSeparator /> : null}
         {showUploadButton ? (
           <DropdownMenuItem onClick={onUploadClick}>
             <Upload className="size-4" />
@@ -612,20 +595,20 @@ function DocxToolbar({
           <Separator orientation="vertical" className="mx-1 h-4 self-center" />
           <DocxFileActionsMenu
             controlsDisabled={controlsDisabled}
-            downloadDisabled={controlsDisabled || isPreparingDownload}
-            isPreparingDownload={isPreparingDownload}
-            isDark={isDark}
-            onDownload={onDownload}
-            onIsDarkChange={onIsDarkChange}
             onShowCommentsChange={onShowCommentsChange}
             onShowTrackedChangesChange={onShowTrackedChangesChange}
             onUploadClick={onUploadClick}
             showComments={showComments}
-            showDownloadButton={showDownloadButton}
-            showNightRenderToggle={showNightRenderToggle}
             showTrackedChanges={showTrackedChanges}
             showUploadButton={showUploadButton}
           />
+          {showDownloadButton ? (
+            <ViewerDownloadButton
+              disabled={controlsDisabled}
+              pending={isPreparingDownload}
+              onDownload={onDownload}
+            />
+          ) : null}
         </div>
       </TooltipProvider>
     </div>

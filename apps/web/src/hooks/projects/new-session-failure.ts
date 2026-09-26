@@ -34,6 +34,14 @@ export function resolveCreateFailure(
   return 'toast';
 }
 
+export {
+  COMMIT_CONFIRM_ATTEMPTS,
+  COMMIT_CONFIRM_DELAY_MS,
+  confirmCommitted,
+  errorCode,
+  isAmbiguousCreateFailure,
+} from '@kortix/shared';
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }

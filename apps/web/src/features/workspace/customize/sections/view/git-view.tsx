@@ -5,6 +5,7 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -21,6 +22,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getEnv } from '@/lib/env-config';
+import { requestGitHubUserProof } from '@/lib/github-user-proof';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { useProjectCans } from '@/lib/use-project-can';
@@ -30,7 +32,10 @@ import {
   inviteRepoCollaborator,
   isManagedGithubProject,
   listProjectBranches,
+  listLinkableGitHubInstallations,
+  replaceProjectRepository,
   updateProject,
+  type LinkableGitHubInstallation,
   type KortixProject,
   type ProjectDetail,
   type ProjectGitConnection,
@@ -45,7 +50,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
@@ -146,10 +151,10 @@ function CommandLine({
 }) {
   return (
     <div className="bg-muted group/command-line -mx-2 flex min-w-0 items-center gap-2 rounded-sm px-3 py-1.5 transition-colors">
-      <code className="text-foreground scrollbar-hide min-w-0 flex-1 overflow-x-auto font-mono text-[12px] whitespace-nowrap">
+      <code className="text-foreground scrollbar-hide min-w-0 flex-1 overflow-x-auto font-mono text-xs whitespace-nowrap">
         {value}
       </code>
-      <span className="shrink-0 opacity-0 transition-opacity duration-200 group-hover/command-line:opacity-100">
+      <span className="shrink-0 opacity-0 transition-opacity duration-moderate group-hover/command-line:opacity-100">
         <CopyButton code={value} size="sm" />
       </span>
     </div>
@@ -299,6 +304,7 @@ function RepositoryGroup({
   canManage: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tRepo = useI18nTranslations('repositoryChange');
   const queryClient = useQueryClient();
   const branchesQuery = useQuery({
     queryKey: qk.project.branches(project.project_id),
@@ -314,6 +320,12 @@ function RepositoryGroup({
 
   const [defaultBranch, setDefaultBranch] = useState(project.default_branch);
   const [manifestPath, setManifestPath] = useState(project.manifest_path);
+  const [changeOpen, setChangeOpen] = useState(false);
+  const [targetRepo, setTargetRepo] = useState('');
+  const [installations, setInstallations] = useState<LinkableGitHubInstallation[]>([]);
+  const [installationId, setInstallationId] = useState('');
+  const [githubProof, setGithubProof] = useState('');
+  const [verifying, setVerifying] = useState(false);
   const { debouncedValue: debouncedBranch, isLoading: isDebouncingBranch } = useDebounce(
     defaultBranch,
     500,
@@ -369,6 +381,47 @@ function RepositoryGroup({
   ]);
 
   const saving = isDebouncingBranch || isDebouncingManifest || isPending;
+  const targetOwner = targetRepo.trim().match(/^https:\/\/github\.com\/([^/]+)\/[^/]+\/?$/i)?.[1]?.toLowerCase();
+  const availableInstallations = installations.filter((installation) =>
+    installation.owner_login?.toLowerCase() === targetOwner,
+  );
+  const changeRepository = useMutation({
+    mutationFn: () => replaceProjectRepository({
+      project_id: project.project_id,
+      repo_url: targetRepo.trim(),
+      expected_repo_url: project.repo_url,
+      installation_id: installationId,
+      github_user_token: githubProof,
+    }),
+    onSuccess: () => {
+      setChangeOpen(false);
+      setGithubProof('');
+      setInstallations([]);
+      setTargetRepo('');
+      queryClient.invalidateQueries({ queryKey: qk.project.detail(project.project_id) });
+      queryClient.invalidateQueries({ queryKey: qk.project.summary(project.project_id) });
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+      queryClient.invalidateQueries({ queryKey: qk.project.branches(project.project_id) });
+      successToast(tRepo('changedToast'));
+    },
+    onError: (error: Error) => errorToast(error.message),
+  });
+  const verifyGitHub = async () => {
+    setVerifying(true);
+    try {
+      const proof = await requestGitHubUserProof();
+      const result = await listLinkableGitHubInstallations({ account_id: project.account_id, github_user_token: proof });
+      setGithubProof(proof);
+      setInstallations(result.installations);
+      setInstallationId(result.installations.find((installation) =>
+        installation.owner_login?.toLowerCase() === targetOwner,
+      )?.installation_id ?? '');
+    } catch (error) {
+      errorToast(error instanceof Error ? error.message : tRepo('verifyError'));
+    } finally {
+      setVerifying(false);
+    }
+  };
   const repositoryProvider =
     connection?.provider ??
     (connection ? undefined : projectRepoFallback(project.repo_url)?.provider);
@@ -392,6 +445,7 @@ function RepositoryGroup({
           description={providerSentence(repositoryProvider)}
         >
           <RepositoryValue connection={connection} repoUrl={project.repo_url} />
+          {canManage ? <Button variant="outline" size="sm" onClick={() => setChangeOpen(true)}>{tRepo('change')}</Button> : null}
         </SettingsRow>
 
         <SettingsRow label={tI18nComplete.raw('text920e413c7d41')}>
@@ -442,6 +496,49 @@ function RepositoryGroup({
           />
         </SettingsRow>
       </SettingsRowGroup>
+      <Modal open={changeOpen} onOpenChange={(open) => {
+        if (changeRepository.isPending) return;
+        setChangeOpen(open);
+        if (!open) { setGithubProof(''); setInstallations([]); setInstallationId(''); setTargetRepo(''); }
+      }}>
+        <ModalContent className="flex flex-col overflow-hidden sm:max-w-md">
+          <ModalHeader className="shrink-0">
+            <ModalTitle>{tRepo('title')}</ModalTitle>
+            <ModalDescription>{tRepo('description')}</ModalDescription>
+          </ModalHeader>
+          <ModalBody className="min-h-0 space-y-4 overflow-y-auto">
+            <div className="space-y-1 text-sm">
+              <p className="text-muted-foreground">{tRepo('current')}</p>
+              <p className="break-all font-mono text-xs">{project.repo_url}</p>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="replacement-repo-url" className="text-sm font-medium">{tRepo('newUrl')}</label>
+              <Input id="replacement-repo-url" value={targetRepo} onChange={(event) => setTargetRepo(event.target.value)} placeholder="https://github.com/owner/repository" autoComplete="off" />
+            </div>
+            <div className="space-y-2">
+              <Button variant="outline" size="sm" onClick={verifyGitHub} disabled={verifying || changeRepository.isPending}>
+                {verifying ? tRepo('verifying') : githubProof ? tRepo('verifyAgain') : tRepo('verify')}
+              </Button>
+              {githubProof && availableInstallations.length === 0 ? <p className="text-muted-foreground text-xs">{tRepo('noInstallation')}</p> : null}
+              {availableInstallations.length > 0 ? (
+                <Select value={installationId} onValueChange={setInstallationId}>
+                  <SelectTrigger aria-label={tRepo('installation')}><SelectValue placeholder={tRepo('selectInstallation')} /></SelectTrigger>
+                  <SelectContent>{availableInstallations.map((installation) => (
+                    <SelectItem key={installation.installation_id} value={installation.installation_id}>{installation.owner_login ?? installation.installation_id}</SelectItem>
+                  ))}</SelectContent>
+                </Select>
+              ) : null}
+            </div>
+            <p className="text-muted-foreground text-xs">{tRepo('manifestRequirement', { manifest: project.manifest_path })}</p>
+          </ModalBody>
+          <ModalFooter className="shrink-0 bg-sidebar py-3">
+            <Button variant="outline" onClick={() => setChangeOpen(false)} disabled={changeRepository.isPending}>{tRepo('cancel')}</Button>
+            <Button onClick={() => changeRepository.mutate()} disabled={!targetOwner || targetRepo.trim() === project.repo_url || !availableInstallations.some((installation) => installation.installation_id === installationId) || !githubProof || changeRepository.isPending}>
+              {changeRepository.isPending ? tRepo('changing') : tRepo('title')}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </section>
   );
 }
@@ -469,7 +566,7 @@ function Step({
 }) {
   return (
     <li className="flex gap-3 px-4 py-3.5">
-      <span className="bg-muted text-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-medium tabular-nums">
+      <span className="bg-muted text-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums">
         {index}
       </span>
       <div className="min-w-0 flex-1 space-y-2.5">
@@ -579,7 +676,7 @@ function OwnGitClient({ project }: { project: ProjectWithOrigin }) {
             </span>
             <CaretDownIcon
               className={cn(
-                'text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform duration-200',
+                'text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform duration-moderate',
                 open && 'rotate-180',
               )}
             />
@@ -616,7 +713,7 @@ function OwnGitClient({ project }: { project: ProjectWithOrigin }) {
  * Two things the old gate got wrong, both fixed here:
  *
  * 1. It read `project.write`. The route asserts `project.members.manage`
- *    (`apps/api/src/projects/routes/r1.ts`, "Inviting a git collaborator
+ *    (`apps/api/src/projects/routes/project-git.ts`, "Inviting a git collaborator
  *    grants a human standing access to the repo — membership-tier, not plain
  *    write"). A custom role holding write-but-not-members.manage saw the form
  *    and got a 403 on submit; the reverse role saw nothing though the API
@@ -806,7 +903,7 @@ export function GitView({ projectId }: { projectId: string }) {
   // Two leaves, one roundtrip. This used to be a single `project.write` probe
   // reused for BOTH the repository settings and the collaborator invite — but
   // the invite route asserts `project.members.manage`
-  // (`apps/api/src/projects/routes/r1.ts`), a strictly different leaf, so the
+  // (`apps/api/src/projects/routes/project-git.ts`), a strictly different leaf, so the
   // one probe was answering a question the server never asked. `GIT_VIEW_ACTIONS`
   // is module-level and stable because the action-list identity is part of the
   // SDK query key.

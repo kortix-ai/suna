@@ -223,6 +223,59 @@ stays manageable when its creator leaves. An account owner and an account admin
 hold manager-equivalent access on every project, so the same applies to them.
 The App record reports `viewer_can_access` for the second question.
 
+## Agents and Apps
+
+An agent session can call an App with its session credential. The App gate
+checks that credential in `Authorization: Bearer` or in
+`X-Kortix-App-Authorization: Bearer`. Use `X-Kortix-App-Authorization` when the
+App reads `Authorization` for its own API key. The gate deletes
+`X-Kortix-App-Authorization` before it forwards the request, so the App never
+receives it. The gate also deletes an `Authorization: Bearer` header whose
+token is a Kortix credential (`kortix_…`), and it removes the Kortix App access
+and preview cookies from `Cookie`. Any other `Authorization` value and every
+other cookie reach the App unchanged. App code never receives a Kortix
+credential.
+
+The gate judges a governed agent session as the agent, not as the person who
+started it. List the
+Apps an agent may open in `kortix.yaml`:
+
+```yaml
+agents:
+  report-writer:
+    kortix_permissions: [project.app.read]
+    apps: [reports-dashboard]   # App slugs, `all`, or `none` (the default)
+```
+
+| App mode | The agent session is admitted when |
+|---|---|
+| `public` | Always |
+| `project` | `project.app.read` is in the agent's effective permissions |
+| `restricted`, `private` | The App slug is in `apps` and `project.app.read` is effective |
+| `password` | Never |
+
+An agent session only opens Apps of its own project. A refused request answers
+`401 app_auth_required`.
+
+Three paths write the same `apps` list:
+
+- **Dashboard** — Customize → Agents → the agent → **Apps**. Pick App slugs, or
+  choose `All` to cover Apps added later. The page appears only when this flag
+  is on for the project.
+- **CLI** — `kortix agents scope <agent> --apps reports-dashboard,example-org`
+  (also `--apps all` and `--apps none`). Needs a v2 `kortix.yaml`.
+- **A change request** that edits `kortix.yaml` directly.
+
+The App's **Access** dialog reads the list back and shows every agent admitted
+to that App.
+
+A connector whose base URL is an App of the same project (an `openapi` or `http`
+connector built from the App's OpenAPI document) needs no Kortix credential in
+its configuration. When an agent session calls it, the connector gateway adds a
+signed assertion for that session in `X-Kortix-App-Authorization`. The
+assertion names the calling session, binds to one App and one project, and
+expires after 60 seconds. The gateway never adds it for any other host.
+
 ## Versions and rollback
 
 Each deployment gets the next version number for its App and is immutable. The

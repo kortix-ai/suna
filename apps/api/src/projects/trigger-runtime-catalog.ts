@@ -1,5 +1,5 @@
-import { projectTriggerRuntime } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { projectSessions, projectTriggerRuntime } from '@kortix/db';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
   type TriggerRuntimeCatalogStore,
@@ -65,6 +65,16 @@ const databaseStore: TriggerRuntimeCatalogStore = {
           updatedAt: now,
         },
       });
+  },
+
+  async sessionsOfProject(projectId, sessionIds) {
+    const rows = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(eq(projectSessions.projectId, projectId), inArray(projectSessions.sessionId, [...sessionIds])),
+      );
+    return new Set(rows.map((row) => row.sessionId));
   },
 
   async remove(projectId, slug) {

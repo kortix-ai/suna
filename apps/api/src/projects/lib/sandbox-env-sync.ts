@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
@@ -24,12 +24,13 @@ import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 import { createCoalescedRunner } from './env-sync-coalescer';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import {
-  workspaceModeAllowsFullRepository,
-  workspaceModeFromSessionMetadata,
+  repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
+import { resolveSessionPersonalOwner } from './personal-resources';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
+import { hasConfigReleaseCapability } from './session-config-release';
 
 /** Resolve the LLM gateway URL used by every supported remote provider. */
 export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): string {
@@ -151,7 +152,7 @@ export function __resetPromptModelSignatureCacheForTests(): void {
  *   - the LLM-gateway mode and base URL.
  *   - `args.opencodeEnv` — an explicit runtime-env push a caller asked this
  *     same call to carry (e.g. a channel follow-up's `KORTIX_CONNECTORS_MCP_ENABLED`,
- *     see `continueSession`/engine.ts). Omitting it would silently drop that
+ *     see `continueSession`/continue-session.ts). Omitting it would silently drop that
  *     caller's request to apply its own change.
  *
  * Keys of `opencodeEnv` are sorted so caller-side object literal order never
@@ -371,6 +372,22 @@ async function resolveOwnerRawEnv(
   scope: SandboxEnvSnapshot['scope'];
 } | null> {
   if (!sessionId) return null;
+  // The project read below is keyed on `projectId`, not on anything this row
+  // returns, so both go out together: one round trip instead of two.
+  // Promise.resolve, not the query builder itself: a Drizzle builder is a
+  // thenable, so it starts here but has no `.catch` of its own.
+  const projectRead = Promise.resolve(
+    db
+      .select({
+        repoUrl: projects.repoUrl,
+        defaultBranch: projects.defaultBranch,
+        manifestPath: projects.manifestPath,
+      })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1),
+  );
+  projectRead.catch(() => undefined);
   const [row] = await db
     .select({
       createdBy: projectSessions.createdBy,
@@ -394,15 +411,7 @@ async function resolveOwnerRawEnv(
   // the env with the RUNNING agent's grant before the prompt is forwarded. A
   // switch is never refused — see secret-grant.ts for why refusing protected
   // nothing that was still protectable.
-  const [project] = await db
-    .select({
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      manifestPath: projects.manifestPath,
-    })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
+  const [project] = await projectRead;
 
   const grantEnv = await resolveSessionSecretGrant({
     projectId,
@@ -418,9 +427,17 @@ async function resolveOwnerRawEnv(
   // every secret-CRUD fan-out) would re-push the full agent-grant set into a
   // narrowed sandbox, silently widening it back. null allowlist → passthrough.
   const grantEnvForSession = intersectSecretGrants(grantEnv, row.secretsAllowlist ?? null);
+  // Spec 2026-09-22 §2.3: the personal-override owner is the session's
+  // on-behalf-of human in a private session under the agent-principal model
+  // (null after a foreign prompt clears it); the creator otherwise (legacy).
+  const personalUserId = await resolveSessionPersonalOwner({
+    projectId,
+    sessionId,
+    legacyUserId: row.createdBy,
+  });
   const snapshot = await listProjectSecretsSnapshotForUser(
     projectId,
-    row.createdBy,
+    personalUserId,
     grantEnvForSession,
     // Same session the boot path built for — boot and hot push must agree on
     // delivery or a prompt would re-push a value boot deliberately withheld.
@@ -615,6 +632,19 @@ export async function syncSandboxEnvForPrompt(args: {
   const lap = (label: string) => {
     timing[label] = Math.round(performance.now() - t0 - Object.values(timing).reduce((a, b) => a + b, 0));
   };
+  // The snapshot, the network boundary and the gateway flag read DIFFERENT
+  // rows for the same session and project, and none of them consumes another's
+  // result. They start together and are awaited in the original order, so a
+  // failure still surfaces at the same place and with the same meaning — the
+  // boundary's fail-closed grant error included.
+  const boundaryRead = resolveSessionNetworkBoundary(
+    args.projectId,
+    args.sessionId,
+    args.requestedAgent,
+  );
+  const gatewayRead = projectLlmGatewayEnabledById(args.projectId);
+  boundaryRead.catch(() => undefined);
+  gatewayRead.catch(() => undefined);
   const snapshot = await resolveSandboxEnvSnapshot(
     args.projectId,
     args.sessionId,
@@ -633,11 +663,7 @@ export async function syncSandboxEnvForPrompt(args: {
   // this leg omitted it and landed on the resolver's `?? true` default, so THIS
   // was the line that threw. The parameter is gone, so the two legs can no
   // longer disagree about policy — they share one resolver with one behavior.
-  const networkBoundary = await resolveSessionNetworkBoundary(
-    args.projectId,
-    args.sessionId,
-    args.requestedAgent,
-  );
+  const networkBoundary = await boundaryRead;
   lap('boundary');
   // Sampled BEFORE the attempt, because a failed arm forgets its record. `true`
   // means this process already armed a DIFFERENT set on this sandbox (an
@@ -701,7 +727,7 @@ export async function syncSandboxEnvForPrompt(args: {
     );
   }
   lap('arm');
-  const llmGatewayEnabled = await projectLlmGatewayEnabledById(args.projectId);
+  const llmGatewayEnabled = await gatewayRead;
   lap('gateway-flag');
   const llmGatewayBaseUrl = llmGatewayEnabled
     ? llmGatewayBaseUrlForProvider(args.providerName)
@@ -794,9 +820,24 @@ export const propagateProjectSecretsToActiveSandboxes = createCoalescedRunner<
   },
 });
 
+/**
+ * Re-push ONE session's secrets into its own sandbox — what an agent session
+ * gets from `POST /secrets/sync`. It is the same per-session work the
+ * pre-prompt env sync does on every prompt, so it grants the agent nothing new;
+ * it only lets the agent pull a just-changed secret or grant mid-turn. It never
+ * touches another session's box: the project-wide fan-out stays a person's
+ * action (d649d08932, finding F6). Not coalesced — one box, one push.
+ */
+export function syncSessionSecretsToSandbox(
+  projectId: string,
+  sessionId: string,
+): Promise<ProjectSecretPropagationResult> {
+  return runProjectSecretPropagation(projectId, { sessionId });
+}
+
 async function runProjectSecretPropagation(
   projectId: string,
-  opts?: { refreshModels?: boolean },
+  opts?: { refreshModels?: boolean; sessionId?: string },
 ): Promise<ProjectSecretPropagationResult> {
   const report: ProjectSecretPropagationResult = {
     ok: true,
@@ -817,11 +858,21 @@ async function runProjectSecretPropagation(
         metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
+      .where(
+        and(
+          eq(sessionSandboxes.projectId, projectId),
+          eq(sessionSandboxes.status, 'active'),
+          ...(opts?.sessionId ? [eq(sessionSandboxes.sessionId, opts.sessionId)] : []),
+        ),
+      );
     // INSTANCE SCOPE (shared local DB — ../instance-scope.ts): a box another
     // API instance provisioned must not receive THIS instance's env (its
     // `KORTIX_URL`-derived gateway URL). No-op when KORTIX_INSTANCE_ID is unset.
-    const rows = allRows.filter((r) => sandboxBelongsToThisInstance(r.metadata));
+    // A session-scoped sync re-checks the session in code too: the guarantee
+    // that it never reaches another session's box must not rest on one WHERE.
+    const rows = allRows
+      .filter((r) => sandboxBelongsToThisInstance(r.metadata))
+      .filter((r) => !opts?.sessionId || r.sessionId === opts.sessionId);
 
     report.active_sandboxes = rows.length;
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
@@ -1012,26 +1063,31 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
   }
 }
 
+/**
+ * Record which model route this box is on. ONE conditional statement: the flag
+ * is merged into `config` in the database, and the row is only touched when the
+ * stored value actually differs. This ran as a read plus an unconditional
+ * rewrite of the identical value on EVERY prompt — two round trips to change
+ * nothing in the steady state. `updated_at` still moves per prompt through the
+ * turn-ledger writes, so nothing that watches the row for activity loses a
+ * signal.
+ */
 async function markSandboxLlmGatewayMode(
   sessionId: string,
   enabled: boolean,
 ): Promise<void> {
-  const [row] = await db
-    .select({ config: sessionSandboxes.config })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, sessionId))
-    .limit(1);
-  if (!row) return;
   await db
     .update(sessionSandboxes)
     .set({
-      config: {
-        ...((row.config as Record<string, unknown> | null) ?? {}),
-        llmGatewayEnabled: enabled,
-      },
+      config: sql`COALESCE(${sessionSandboxes.config}, '{}'::jsonb) || jsonb_build_object('llmGatewayEnabled', ${enabled}::boolean)`,
       updatedAt: new Date(),
     })
-    .where(eq(sessionSandboxes.sessionId, sessionId));
+    .where(
+      and(
+        eq(sessionSandboxes.sessionId, sessionId),
+        sql`(${sessionSandboxes.config}->>'llmGatewayEnabled') IS DISTINCT FROM ${String(enabled)}`,
+      ),
+    );
 }
 
 function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
@@ -1118,6 +1174,45 @@ function nonActiveSandboxSkip(
   return { applied: false, reason: `sandbox row is '${status}', not active` };
 }
 
+/**
+ * Is a config release ACTUALLY governing this box? `true`, `false`, or `null`
+ * when health did not answer.
+ *
+ * Such a box receives compiled governance inside its config release
+ * (docs/specs/config-releases.md, "Capability gate"). A separate
+ * `KORTIX_COMPILED_AGENT_CONFIG` push through `/kortix/env` would restart
+ * OpenCode on governance that does not match the release it runs — and the box
+ * drops it anyway (`releaseGovernanceActive`, daemon `harness/open-code/control.ts`).
+ *
+ * This reads the box's STATE (`config.release_id`), not the binary's
+ * `config.release.v1` capability. The capability is compiled in and is present
+ * whatever the project chose, so gating on it withheld the push from every box
+ * that runs NO release — `config_releases` off for the project, or a release
+ * chain that stepped down to the image default. Those boxes are exactly the
+ * pre-release case the push exists for. `releaseGovernanceActive` is the same
+ * `running.release_id !== null` the daemon applies on its own side.
+ */
+export async function daemonHasConfigReleases(
+  baseUrl: string,
+  headers: Record<string, string>,
+  fetchImpl: (url: string, init?: RequestInit) => Promise<Response> = (url, init) => fetch(url, init),
+): Promise<boolean | null> {
+  try {
+    const res = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/kortix/health`, {
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { capabilities?: unknown; config?: unknown };
+    // An old daemon has neither the capability nor a `config` block.
+    if (!hasConfigReleaseCapability(body.capabilities)) return false;
+    const config = (body.config ?? null) as { release_id?: unknown } | null;
+    return typeof config?.release_id === 'string' && config.release_id.length > 0;
+  } catch {
+    return null;
+  }
+}
+
 export async function pushSessionAgentConfigToSandbox(input: {
   projectId: string;
   sessionId: string;
@@ -1151,7 +1246,7 @@ export async function pushSessionAgentConfigToSandbox(input: {
       gitAuthToken: null,
     };
     const compiled =
-      !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
+      !repositoryAccessFromSessionMetadata(session?.metadata) &&
       session?.agentName
         ? await resolveSelectedAgentConfigForSession(
             gitProject,
@@ -1196,6 +1291,21 @@ export async function pushSessionAgentConfigToSandbox(input: {
       port: SANDBOX_SERVICE_PORT,
       transport: 'http',
     });
+    // Capability gate. A daemon with config releases gets governance from its
+    // release; `null` (health did not answer) is not permission to push.
+    const releases = await daemonHasConfigReleases(url, {
+      ...(headers as Record<string, string>),
+      Authorization: `Bearer ${serviceKey}`,
+    });
+    if (releases !== false) {
+      return {
+        applied: false,
+        reason:
+          releases === true
+            ? 'the daemon receives compiled governance in its config release'
+            : 'could not read the daemon capabilities',
+      };
+    }
     // The daemon call blocks until its verified reload either promotes the new
     // runtime or keeps the old one. This phase therefore names the whole
     // apply-and-validate boundary instead of inventing sub-phases we cannot see.

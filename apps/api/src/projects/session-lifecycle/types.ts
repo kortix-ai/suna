@@ -53,6 +53,14 @@ export type SessionLifecycleStatus =
   | 'deleted';
 
 export interface CreateSessionCommand {
+  /** Internal retained-upload authority from an already accepted create command. */
+  attachmentSourceCommandId?: string;
+  /**
+   * The durable `create_session` command this create executes. The new
+   * session id is written onto it in the session insert transaction, so a
+   * reclaimed command finds the session instead of creating a second one.
+   */
+  createCommandId?: string;
   source: SessionInvocationSource;
   project: ProjectRow;
   userId: string;
@@ -100,6 +108,12 @@ export interface QueuedCreateSessionPayload {
 export interface ContinueSessionCommand {
   source: SessionInvocationSource;
   sessionId: string;
+  /**
+   * The project the producer addressed. When present, delivery refuses a
+   * session of any other project (`no-session`): a queued command names its
+   * project and session in separate columns, and nothing else ties the two.
+   */
+  projectId?: string | null;
   /** Legacy plain-text form. Ignored when `parts` is present. */
   text: string;
   userId?: string | null;
@@ -178,9 +192,29 @@ export interface StartSessionCommand {
  * was in fact a down runtime, and the drain treated it as terminal: a queued
  * prompt delivered while the box was unreachable went `dead_lettered` on its
  * FIRST attempt and was never re-tried when the box came back minutes later
- * (Essentia, 2026-08-26: `state:failed, attempts:1,
+ * (SampleCo, 2026-08-26: `state:failed, attempts:1,
  * last_error:"delivery outcome: failed"`).
  */
+/**
+ * What the user reads under their own undelivered bubble, rendered as
+ * `Not sent — <this>` by `queued-prompt-bubbles.tsx`.
+ *
+ * `last_error` is CUSTOMER-FACING, not a log line. It used to be the literal
+ * `delivery outcome: pending`, which told a paying customer on 2026-09-15
+ * nothing at all — they mailed support asking what it meant. Say what happened
+ * to their message, in words they can act on.
+ */
+export const DELIVERY_FAILURE_COPY: Record<
+  Exclude<SessionDeliveryOutcome, 'delivered'>,
+  string
+> = {
+  pending: 'the session was not ready in time',
+  unreachable: "the session's machine could not be reached",
+  'not-landed': 'the session accepted it but never recorded it',
+  'no-session': 'that session no longer exists',
+  failed: 'the session refused it',
+};
+
 export type SessionDeliveryOutcome =
   | 'delivered'
   | 'pending'

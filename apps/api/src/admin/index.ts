@@ -7,24 +7,22 @@
  *
  * Scope (v1): the safe accounts console — list accounts (filterable by tier,
  * payment status, paid-only, and subscription presence), account members,
- * credit ledger, and grant/debit credits (reusing the billing grantCredits
- * service). Stripe customer id/email are still returned as null (no join yet);
+ * credit ledger, and grant/debit credits (through the billing wallet). Stripe customer id/email are still returned as null (no join yet);
  * the legacy env/exec/schema endpoints are intentionally NOT restored.
  */
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { supabaseAuth } from '../middleware/auth';
+import { requestClientIp } from '../shared/client-ip';
 import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { MAX_ACCOUNT_SESSION_LIMIT, setAccountSessionLimit } from './account-session-limit';
 import { analyticsApp } from './analytics';
+import { isUuid } from '../shared/validate';
+import { readJsonObject } from '../shared/http-body';
 
 export const adminApp = makeOpenApiApp<AppEnv>();
-
-// `account_id` reaches Postgres as a `uuid`, where a malformed value is a
-// 22P02 cast error long before any guard runs — a 500 on input the caller
-// controls. Shape-check first so a typo is a clean 400.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Drizzle wraps the Postgres error: `e.message` is "Failed query: <sql> …" and
 // the real reason (undefined column, statement timeout, constraint) hides in
@@ -118,13 +116,13 @@ adminApp.openapi(
     const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
       INNER JOIN kortix.account_members am ON am.user_id = au.id
-      WHERE am.account_id = ${accounts.accountId}
-      ORDER BY (am.user_id = ${accounts.accountId}) DESC,
+      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)}
+      ORDER BY (am.user_id = ${qualifiedColumn(accounts.accountId)}) DESC,
                CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
                am.joined_at ASC, au.email ASC
       LIMIT 1)`;
     const memberCount = sql<number>`(
-      SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${accounts.accountId})`;
+      SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${qualifiedColumn(accounts.accountId)})`;
 
     const conds: any[] = [];
     // Exact-id lookup — the sheet's live row, immune to the list's filters.
@@ -134,7 +132,7 @@ adminApp.openapi(
         or(
           ilike(accounts.name, `%${search}%`),
           sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
-                      WHERE am.account_id = ${accounts.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
+                      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)} AND au.email ILIKE ${'%' + search + '%'})`,
         ),
       );
     }
@@ -364,7 +362,7 @@ adminApp.openapi(
     const accountId = c.req.param('id');
     const userId = c.req.param('userId');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const roleRaw = String(body.role || '').trim();
 
     if (roleRaw !== 'owner' && roleRaw !== 'admin' && roleRaw !== 'member') {
@@ -419,7 +417,7 @@ adminApp.openapi(
         resourceId: userId,
         before: { account_role: target.accountRole },
         after: { account_role: role },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
     } catch {
@@ -461,13 +459,13 @@ adminApp.openapi(
     const { eq, desc, sql } = await import('drizzle-orm');
 
     const sessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
     const activeSessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps
-      WHERE ps.project_id = ${projects.projectId}
+      WHERE ps.project_id = ${qualifiedColumn(projects.projectId)}
         AND ps.status IN ('queued', 'branching', 'provisioning', 'running'))`;
     const lastSessionAt = sql<string | null>`(
-      SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
 
     const rows = await db
       .select({
@@ -557,13 +555,13 @@ adminApp.openapi(
     const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
       INNER JOIN kortix.account_members am ON am.user_id = au.id
-      WHERE am.account_id = ${accounts.accountId}
-      ORDER BY (am.user_id = ${accounts.accountId}) DESC,
+      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)}
+      ORDER BY (am.user_id = ${qualifiedColumn(accounts.accountId)}) DESC,
                CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
                am.joined_at ASC, au.email ASC
       LIMIT 1)`;
     const sessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
     // Bound one-parameter-per-status: a bare `IN ${array}` binds the whole array
     // as a single value and matches nothing.
     const activeStatuses = sql.join(
@@ -572,10 +570,10 @@ adminApp.openapi(
     );
     const activeSessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps
-      WHERE ps.project_id = ${projects.projectId}
+      WHERE ps.project_id = ${qualifiedColumn(projects.projectId)}
         AND ps.status::text IN (${activeStatuses}))`;
     const lastSessionAt = sql<string | null>`(
-      SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
 
     const conds: any[] = [];
     if (search) {
@@ -584,7 +582,7 @@ adminApp.openapi(
           ilike(projects.name, `%${search}%`),
           ilike(accounts.name, `%${search}%`),
           sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
-                      WHERE am.account_id = ${projects.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
+                      WHERE am.account_id = ${qualifiedColumn(projects.accountId)} AND au.email ILIKE ${'%' + search + '%'})`,
         ),
       );
     }
@@ -704,7 +702,7 @@ adminApp.openapi(
   async (c: any) => {
   try {
     const accountId = c.req.param('id');
-    if (!UUID_RE.test(accountId)) return c.json({ subscription: null });
+    if (!isUuid(accountId)) return c.json({ subscription: null });
     const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
     const account = await getCreditAccount(accountId);
     const subscriptionId = account?.stripeSubscriptionId ?? null;
@@ -743,6 +741,12 @@ adminApp.openapi(
   },
 );
 
+/** The buckets an admin credit route echoes back; no credit row reads as empty. */
+async function adminBalance(accountId: string) {
+  const { wallet } = await import('../billing/wallet');
+  return (await wallet.balance(accountId)) ?? { balance: 0, expiring: 0, nonExpiring: 0, daily: 0 };
+}
+
 // ── Grant credits ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
@@ -776,16 +780,22 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const amount = Number(body.amount);
     const description = String(body.description || 'Admin credit grant');
     const isExpiring = body.isExpiring !== false;
     if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
 
-    const { grantCredits, getBalance } = await import('../billing/services/credits');
-    await grantCredits(accountId, amount, 'admin_grant', `${description} (by admin ${actorUserId ?? 'unknown'})`, isExpiring);
-    const balance = await getBalance(accountId);
-    return c.json({ ok: true, balance });
+    const { wallet } = await import('../billing/wallet');
+    await wallet.grant({
+      accountId,
+      amount,
+      kind: 'admin_grant',
+      description: `${description} (by admin ${actorUserId ?? 'unknown'})`,
+      expiring: isExpiring,
+      key: null,
+    });
+    return c.json({ ok: true, balance: await adminBalance(accountId) });
   } catch (e: any) {
     return c.json({ error: adminErrorMessage(e) }, 500);
   }
@@ -824,15 +834,23 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const amount = Number(body.amount);
     const description = String(body.description || 'Admin credit debit');
     if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
 
-    const { grantCredits, getBalance } = await import('../billing/services/credits');
-    await grantCredits(accountId, -Math.abs(amount), 'admin_debit', `${description} (by admin ${actorUserId ?? 'unknown'})`, false);
-    const balance = await getBalance(accountId);
-    return c.json({ ok: true, balance });
+    const { wallet } = await import('../billing/wallet');
+    // A negative grant of its own kind: an operator correction is not
+    // customer usage, and it is not refused by the admission floor.
+    await wallet.grant({
+      accountId,
+      amount: -Math.abs(amount),
+      kind: 'admin_debit',
+      description: `${description} (by admin ${actorUserId ?? 'unknown'})`,
+      expiring: false,
+      key: null,
+    });
+    return c.json({ ok: true, balance: await adminBalance(accountId) });
   } catch (e: any) {
     return c.json({ error: adminErrorMessage(e) }, 500);
   }
@@ -872,7 +890,7 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const tier = String(body.tier || '').trim();
 
     const { isValidTier } = await import('../billing/services/tiers');
@@ -915,7 +933,7 @@ adminApp.openapi(
         resourceId: accountId,
         before: { tier: before?.tier ?? null },
         after: { tier },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
     } catch {
@@ -968,7 +986,7 @@ adminApp.openapi(
     try {
       const accountId = c.req.param('id');
       const actorUserId = c.get('userId') as string | undefined;
-      const body = await c.req.json().catch(() => ({}));
+      const body = await readJsonObject(c);
       const enabled = body.enabled;
       if (typeof enabled !== 'boolean') {
         return c.json({ error: 'enabled must be a boolean' }, 400);
@@ -996,7 +1014,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { enterprise_entitled: before },
           after: { enterprise_entitled: enabled },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1061,7 +1079,7 @@ adminApp.openapi(
         accountId,
         actorUserId,
         maxConcurrentSessions: body.max_concurrent_sessions,
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       },
       {
@@ -1160,7 +1178,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { trial: result.before },
           after: { trial: result.current, credit_granted: result.creditGranted },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1212,7 +1230,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { trial: result.before },
           after: { trial: result.current },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1283,7 +1301,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { managed_models_override: before },
           after: { managed_models_override: body.override },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1350,7 +1368,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { demo_enterprise: before },
           after: { demo_enterprise: body.enabled },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1358,6 +1376,74 @@ adminApp.openapi(
       }
 
       return c.json({ ok: true, enabled: body.enabled });
+    } catch (e: any) {
+      return c.json({ error: adminErrorMessage(e) }, 500);
+    }
+  },
+);
+
+// ── Mark an account's SSO domain verified (operator) ────────────────────────
+// The self-serve path is DNS (`POST /accounts/:id/iam/sso/provider/verify-domain`).
+// An operator can record the same fact after proving domain control another way
+// (a support ticket from the domain's mail, a signed order form), or withdraw it.
+// A verified domain makes the IdP's asserted emails trusted outside the account
+// and turns on `enforce_sso`, so the change is audited on the account.
+adminApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/api/accounts/{id}/sso-domain-verification',
+    tags: ['admin'],
+    summary: "Mark the account's SSO primary domain verified or unverified",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: { content: { 'application/json': { schema: z.object({ verified: z.boolean() }) } } },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), primary_domain: z.string(), domain_verified: z.boolean() }),
+        'Updated domain verification',
+      ),
+      404: json(z.record(z.string(), z.any()), 'No SSO provider'),
+      409: json(z.record(z.string(), z.any()), 'Domain verified by another account'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const body = c.req.valid('json') as { verified: boolean };
+      const { domainVerifiedByOtherAccount, getSsoProvider, isSsoDomainVerified, setSsoDomainVerified } =
+        await import('../repositories/sso');
+      const before = await getSsoProvider(accountId);
+      if (!before) return c.json({ error: 'no SSO provider configured' }, 404);
+      if (body.verified && (await domainVerifiedByOtherAccount(accountId, before.primaryDomain))) {
+        return c.json(
+          { error: `${before.primaryDomain} is already verified by another account`, code: 'sso_domain_claimed' },
+          409,
+        );
+      }
+      const after = await setSsoDomainVerified(accountId, body.verified);
+      if (!after) return c.json({ error: 'no SSO provider configured' }, 404);
+      try {
+        const { recordAuditEvent } = await import('../shared/audit');
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: 'admin.account.sso_domain.set',
+          resourceType: 'sso_provider',
+          resourceId: after.ssoProviderId,
+          before: { primary_domain: before.primaryDomain, domain_verified: isSsoDomainVerified(before) },
+          after: { primary_domain: after.primaryDomain, domain_verified: isSsoDomainVerified(after), method: 'operator' },
+          ip: requestClientIp(c),
+          userAgent: c.req.header('user-agent') || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the change */
+      }
+      return c.json({ ok: true, primary_domain: after.primaryDomain, domain_verified: isSsoDomainVerified(after) });
     } catch (e: any) {
       return c.json({ error: adminErrorMessage(e) }, 500);
     }
@@ -1462,7 +1548,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { entitlement_overrides: before },
           after: { entitlement_overrides: stored },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1506,12 +1592,14 @@ adminApp.openapi(
     responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const src = (body && typeof body.weights === 'object') ? body.weights : body;
+    const body = await readJsonObject(c);
+    const src = (
+      typeof body.weights === 'object' && body.weights !== null ? body.weights : body
+    ) as Record<string, unknown>;
     const { config } = await import('../config');
     const weights: Record<string, number> = {};
     for (const p of config.ALLOWED_SANDBOX_PROVIDERS) {
-      const w = Number(src?.[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
+      const w = Number(src[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
     }
     const { db } = await import('../shared/db');
     const { platformSettings } = await import('@kortix/db');
@@ -1547,8 +1635,8 @@ adminApp.openapi(
     responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const value = { enabled: body?.enabled === true };
+    const body = await readJsonObject(c);
+    const value = { enabled: body.enabled === true };
     const { db } = await import('../shared/db');
     const { platformSettings } = await import('@kortix/db');
     const { PROVIDER_FALLBACK_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
@@ -1601,7 +1689,7 @@ adminApp.openapi(
   }),
   async (c: any) => {
     const sessionId = c.req.param('sessionId');
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const target = String(body.targetProvider || '');
     const { config } = await import('../config');
     if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(target)) return c.json({ error: 'invalid targetProvider' }, 400);
@@ -1816,7 +1904,7 @@ adminApp.openapi(
       const accountId = typeof body?.account_id === 'string' ? body.account_id.trim() : '';
       const reasonRaw = typeof body?.reason === 'string' ? body.reason.trim() : '';
       const reason = reasonRaw ? reasonRaw.slice(0, 500) : null;
-      if (!UUID_RE.test(accountId)) {
+      if (!isUuid(accountId)) {
         return c.json({ error: 'account_id must be a uuid' }, 400);
       }
 
@@ -1860,7 +1948,7 @@ adminApp.openapi(
           reason,
           expires_at: expiresAt.toISOString(),
         },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
 
@@ -1919,7 +2007,7 @@ adminApp.openapi(
           impersonator_user_id: adminUserId,
           target_account_id: grant.targetAccountId,
         },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
 

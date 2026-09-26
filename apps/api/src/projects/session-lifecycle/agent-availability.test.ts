@@ -1,7 +1,6 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import {
   RUNTIME_AGENT_ROSTER_TTL_MS,
-  clearRuntimeAgentRosterCache,
   parseRuntimeAgentNames,
   resolveDeliverableAgent,
   runtimeAgentRoster,
@@ -68,8 +67,9 @@ describe('parseRuntimeAgentNames', () => {
   });
 });
 
+// Every case reads its own sandbox id, so the process-wide cache never
+// carries a roster from one case into another.
 describe('runtimeAgentRoster', () => {
-  beforeEach(() => clearRuntimeAgentRosterCache());
 
   test('reads once and serves the cache inside the TTL', async () => {
     let reads = 0;

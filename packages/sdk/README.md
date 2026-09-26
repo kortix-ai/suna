@@ -35,7 +35,7 @@ await kortix.projects.list();
 
 ### Call external systems through Connectors
 
-Use one six-method data plane for every Connector provider. A user token binds
+Use one data plane for every Connector provider. A user token binds
 the project explicitly. An agent-minted session token already carries its
 project scope, so it can use the top-level fallback.
 
@@ -49,14 +49,162 @@ await connectors.tools();
 await connectors.search('send email');
 await connectors.describe('gmail.send_email');
 await connectors.call('gmail.send_email', { to, subject, body });
-await connectors.uploadAttachment(bytes, {
+await connectors.accounts('gmail');
+const { ref } = await connectors.uploadAttachment(bytes, {
   filename: 'invoice.pdf',
   contentType: 'application/pdf',
+  connector: 'microsoft-graph', // the connector the file is for
+});
+// `ref` is { $kortix_attachment: '<id>' }. The gateway swaps in the file:
+// as an attachments[] element it becomes the provider's attachment item,
+// in a string field it becomes the base64. The bytes never enter call args.
+await connectors.call('microsoft-graph.sendmail', {
+  user: 'sender@example.com',
+  body: { message: { subject: 'Invoice', attachments: [ref] } },
 });
 ```
 
 A Connector defines callable tools. A Connection stores one authorization for
 that Connector. Credentials remain server-side and never enter the sandbox.
+
+#### Choose which account a call runs as
+
+One Connector can hold the project's shared account and each member's own. List
+the accounts a caller may use, then name one on the call:
+
+```ts
+const accounts = await connectors.accounts('gmail');
+// [{ connection_id, label, owner_type: 'project' | 'member', is_default }]
+
+const result = await connectors.call('gmail.send_email', { to, subject, body }, {
+  account: 'Support inbox',   // a label, a connection id, `me`, or `project`
+});
+result.account; // { connection_id, label, owner_type } — the identity that ran
+```
+
+`account` takes a connection label (case-insensitive), a connection id, or one
+of two selector words: `me` (the caller's own default private account) and
+`project` (the default account shared with the whole project). Omit it and
+resolution takes the caller's own default first, then the project's.
+
+A named account is never silently substituted. If it does not match one this
+caller is entitled to, the call is denied with `connector_not_connected` and the
+denial lists the accounts that were available. Every successful call echoes
+`account`, so a transcript can always show which identity acted.
+
+Nothing connected yet? Start a hosted authorization and say who the new account
+belongs to:
+
+```ts
+await project.connectors.pipedream.connect('gmail', { owner: 'me' });      // my own
+await project.connectors.pipedream.connect('gmail', { owner: 'project' }); // shared
+
+// Or hand a human a link instead of authorizing inline:
+await project.setupLinks.requestConnector({ slug: 'gmail', owner: 'project' });
+```
+
+`owner` defaults to `me`. Creating a `project`-owned account requires
+`project.connector.write`.
+
+### Upload prompt attachments before Send
+
+Create one controller per composer. `add(file)` starts a private project upload
+without waiting for a session runtime. Subscribe to `getSnapshot()` for tile state.
+
+```ts
+const attachments = kortix.project(projectId).attachments.createController();
+const localId = attachments.add(file);
+const unsubscribe = attachments.subscribe(() => render(attachments.getSnapshot()));
+
+// Inside the submit handler. Send never waits for uploads.
+const ids = attachments.getSnapshot().attachments.map((item) => item.id);
+attachments.submit(ids); // hand-off: the composer clears, the uploads continue
+paintMessage(text, ids);
+try {
+  const parts = await attachments.whenReady(ids); // handle-only parts, in `ids` order
+  await kortix.session(projectId, sessionId).prompts.create({
+    clientMessageId,
+    messageId,
+    parts: [{ type: 'text', text }, ...parts],
+  });
+  attachments.forget(ids); // release; does not delete storage objects
+} catch (error) {
+  attachments.reclaim(ids); // back to the composer, with the failed file's state
+}
+```
+
+React consumers use `usePromptAttachments(projectId)` from `@kortix/sdk/react`.
+It returns the controller methods plus the reactive `attachments` list. It omits
+`dispose`, `subscribe`, and `getSnapshot`, and keeps its identity until the list
+changes.
+
+Files move through `pending`, `uploading`, `processing`, `ready`, `error`, or
+`aborted`. Progress counts bytes sent. Progress snapshots are throttled: one per
+whole-percent change, at most ten per second per upload. The default concurrency
+is two files.
+Limits are 50 MiB per file, 100 MiB per message, and 20 files. Empty files are
+rejected. Refuse Send only while a selected file is `error` or `aborted`.
+
+`whenReady(ids, { signal })` resolves once every upload is `ready`. It rejects
+when one fails, is aborted or removed, or `signal` aborts. A rejected wait does
+not stop the upload.
+
+Ownership: `submit(ids)` hands entries to one send. They leave `attachments` and
+stop counting toward the limits. `dispose()` aborts and deletes only listed
+work, so a composer that unmounts after Send (a navigation, a remount) does not
+cancel its held uploads. The controller object lives as long as the send's `whenReady`
+promise references it. Call `forget(ids)` after the prompt POST succeeds, or
+`reclaim(ids)` when a failed send restores its draft. `forget()` with no argument
+releases only the listed selection. A host that keeps a failed send on screen
+keeps its entries: `retry(id)` reaches a handed-off entry after `dispose()`.
+
+`retry(localId)` resumes the same upload and preserves the original File. After
+`attachment_size_mismatch` or `attachment_failed` the server keeps no usable
+handle, so `retry` uploads the File again as a new attachment. An expired upload
+cannot retry: `retry` throws, and the item error carries code
+`attachment_expired`. `remove(localId)` removes the entry, aborts its upload, and
+resolves at once. It deletes unbound storage best-effort and never rejects; a
+failed or refused DELETE leaves the object to the 24-hour expiry.
+`abort(localId)` cancels unfinished work. `dispose()` aborts listed work and
+deletes its uploads best-effort: no send holds them, and drafts keep no handle.
+Call it on non-React cleanup; the hook handles unmount and project changes.
+Unused uploads expire after 24 hours.
+
+Selections live in memory only. Never persist a File, blob URL, signed URL, or
+upload handle in a draft.
+
+For non-composer uploads, call `kortix.project(projectId).attachments.upload(file,
+{ signal, onProgress, onUpload, resume })`. The server selects the transport in the
+handle's `upload` field:
+
+- `kind: 'direct'` (default): one `PUT` of the whole file to `upload.url` with
+  `upload.headers` and no Authorization header. Hosts with `XMLHttpRequest`
+  (browsers, React Native) report sent bytes; other hosts use `fetch` and report
+  0, then the full size. An expired URL, or one Storage refuses with 400/401/403,
+  is re-signed once for the same `attachment_id`; the server creates no second
+  upload. A `409` from Storage means an earlier attempt already stored the file.
+- `kind: 'chunked'`: sequential authenticated `PUT`s of `upload.chunk_size` bytes.
+  The SDK accepts any positive `chunk_size`. Only a deployment whose edge drops
+  large request bodies selects it.
+
+Completion then verifies the stored bytes. Retain the `onUpload` handle for manual
+same-ID recovery. If completion answers `409 attachment_not_uploaded`, `onUpload`
+reports the direct handle with `received_bytes: 0`, so a resume sends the file
+again. Initiation, the upload, and completion retry timeouts, network errors,
+429, and 5xx with jittered exponential backoff. The budget is 60 seconds from the
+first failure, so a long upload that fails late still retries. Completion also
+retries `attachment_processing`, with a five-minute budget. Initiation never
+retries 402 (a `BillingError`: the account cannot run) or 429
+`attachment_budget_exceeded` (40 unfinished uploads or 500 MiB of unsent uploads
+for the user; unused uploads expire within 24 hours). The server answers or
+refuses one completion within 105 seconds; each completion request allows 120
+seconds. Caller aborts never retry.
+
+A sent attachment's reference is released 1 hour after its prompt is delivered,
+and when its session or project is deleted. The next maintenance sweep then
+removes the file, and its `attachment_id` can no longer be sent.
+Completed `attachment_id` parts use platform prompt routes. Runtime `sendParts`
+continues to accept runtime URL parts. Legacy platform URL parts remain supported.
 
 ## No bundler, no framework
 
@@ -131,6 +279,22 @@ await kortix.project(pid).secrets.upsert({
   strategy: "broker",
   consumer: "llm_gateway",
 });
+// When pooled_provider_secrets and llm_gateway are enabled for the project,
+// a new account secret is available to this project's members by default.
+const shared = await kortix.accounts.secretResources.create(accountId, {
+  project_id: pid,
+  label: "Anthropic backup",
+  provider_id: "anthropic",
+  name: "ANTHROPIC_API_KEY",
+  value: providerKey,
+  consumer: "llm_gateway",
+  strategy: "broker",
+});
+// Restrict it to selected members when needed. The creator keeps access.
+await kortix.accounts.secretResources.setAccess(accountId, shared.secret_id, "members", [memberUserId]);
+await kortix.session(pid, sid).providerSecretPool.set("anthropic", [shared.secret_id]);
+const { pools, can_edit } = await kortix.session(pid, sid).providerSecretPool.list();
+// Passing null to set() resets the session to the project default.
 const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
@@ -156,6 +320,13 @@ await s.reloadConfigStream(
 const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 ```
+
+React consumers use `useAccountSecretResources(accountId)` and
+`useSessionProviderSecretPools(projectId, sessionId)` from `@kortix/sdk/react`.
+The latter exposes `setPool.mutate({ providerId, secretIds })`. `null` restores
+inheritance; `[]` disables that provider for the session. Empty configured pools
+remain listed after their last resource is deleted. Successful writes refresh
+both the pool list and the session's provider-specific query cache.
 
 ### Apps
 
@@ -185,11 +356,32 @@ OpenCode session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
+### Saved session attachments
+
+With `session_transcript_history` enabled, `session.attachments.upload(file)` stores up to
+50 MiB in private object storage. It returns `{ attachment_id, filename, mime, size, url }`.
+Use `url` in a file part sent to the prompt inbox. The API copies those bytes into the
+sandbox after startup. Uploads and `session.attachments.read(attachment_id)` do not start a
+sandbox. Reads return a `Blob` and require access to the session. Retries of the same `File`
+reuse the successful upload; an explicit `attachmentId` supports caller-managed retries.
+
 ### React runtime
 
 `useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by
 `POST /start`. The hook owns messages, rewind and restore, cancellation,
 commands, permissions, and questions. Hosts do not construct runtime routes.
+
+Projects can opt into `session_transcript_history` in Settings → Feature flags. `useSession`
+then reads saved messages from the platform database while `/start` continues. It uses the
+server-validated OpenCode root and lets the live read reconcile the saved messages by ID.
+The flag is off by default. Missing or rejected history falls back to the existing runtime path.
+See [the testing runbook](../../docs/runbooks/session-transcript-history.md) for capture limits
+and local verification.
+
+`useSession().savedTranscript` says whether that saved conversation can show before the
+computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
+`messages`, and `none` when nothing can show until the runtime answers. A host renders
+placeholder rows on `loading` and its boot screen only on `none`.
 
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
@@ -206,6 +398,26 @@ OpenCode query and synchronization controllers to the sandbox runtime. Two
 sandboxes cannot share browser cache state when a snapshot exposes the same
 OpenCode id during adoption.
 
+After a project replaces its repository, a session created before the
+replacement still starts. It runs the project's CURRENT config release and
+converges like any other session. What stays true of it is physical: its
+`/workspace` clone came from the old repository while `origin` now resolves to
+the new one. The two histories are unrelated, so a push from that clone needs a
+rebase first.
+
+`repositoryMode: 'previous'` is accepted and changes nothing:
+
+```tsx
+useSession(projectId, sessionId, { repositoryMode: 'previous' });
+```
+
+The server reads it as telemetry. Keep it only for callers built against the
+older behaviour.
+
+Message retries keep the originating sandbox URL after navigation. A `404` or
+`410` message read stops automatic retries and preserves the cached transcript.
+An explicit reconciliation can recover the controller when the session returns.
+
 ## The facade surface
 
 `createKortix(config)` returns one client. The table below is illustrative, not
@@ -214,13 +426,15 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | namespace | what |
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
+| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
+| `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
+| `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
-| `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment` |
+| `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
 | `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 
 Runnable, self-contained scripts for the highest-value flows live in
@@ -290,8 +504,9 @@ await project.sessions.create({
 ```
 
 Member connections are owner-only even for project managers, and sessions using
-one must remain private. Project defaults remain shared; external/agent/subject
-connections remain operator-managed. Every connection is project/connector scoped
+one must remain private. A service account — an agent or a trigger — never
+reaches a member connection, only the shared project one. Project defaults
+remain shared; external/agent/subject connections remain operator-managed. Every connection is project/connector scoped
 and resolved on every Connector request, so revocation takes effect without a
 restart. Credentials are encrypted server-side and are never returned, placed
 in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment. Raw env
@@ -428,8 +643,8 @@ chat UI actually dispatches on.
 ## Errors
 
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the
-platform client's `platformFetch`, `authenticatedFetch`, the files client, the
-opencode client, and `ensureReady()` all throw/return the same classes (from
+`authenticatedFetch`, the files client, the opencode client, and
+`ensureReady()` all throw/return the same classes (from
 the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes: `instanceof` works across every host, and
 `name`/shape are preserved for legacy `error.name === 'ApiError'` sniffers.
 
@@ -438,9 +653,10 @@ the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes:
   `.url` / `.endpoint` / `.timeout`.
 - `HeadlessAuthError extends ApiError` — `getToken()` returned null; the request was
   never sent (`code: 'NO_SESSION'`).
-- `BillingError` — HTTP 402, with the backend's payload on `.detail`.
-- `RequestTooLargeError` — HTTP 431 (usually a too-large upload batch), with a
-  `.detail.suggestion`.
+- `BillingError extends ApiError` — HTTP 402, with the backend's payload on
+  `.detail` and its machine code on `.code`.
+- `RequestTooLargeError extends ApiError` — HTTP 431 (usually a too-large
+  upload batch), with a `.detail.suggestion`.
 - `SessionNotReadyError` (root barrel) — a session handle's runtime-scoped
   member (`.runtime`, `.previewUrl()`, `.proxyUrl()`) was touched before
   `ensureReady()` resolved this session's own sandbox.
@@ -531,7 +747,7 @@ code imports the root.
 interface KortixPlatformConfig {
   backendUrl: string;
   getToken: () => Promise<string | null>;
-  clientSource?: 'api' | 'cli' | 'mobile' | 'web';
+  clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;
@@ -643,3 +859,126 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
 REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
 per-release changes.
+
+
+### Agent repository access
+
+Agent configuration accepts `repository_access?: boolean` (default `true`).
+Set `false` to run new sessions without the project repository or repository API access.
+Git, secret, connector, and tool permissions remain separate. Existing sessions retain their saved policy.
+`AgentConfigBlock.workspace` is deprecated. The SDK maps legacy `branch`/`runtime` to the boolean field.
+A legacy `read` write requires an explicit `repository_access` choice; it does not enable read-only repository access.
+
+
+### Project provider and model access
+
+```ts
+const policy = await kortix.projects.modelAccess(projectId);
+await kortix.projects.setModelAccess(projectId, {
+  target: 'provider', id: 'kortix', enabled: false,
+});
+await kortix.projects.setModelAccess(projectId, {
+  target: 'model', id: 'openai/gpt-5.5', enabled: false,
+});
+```
+
+`kortix` identifies Kortix Managed Models. Other provider IDs identify BYOK, Codex, or custom providers. Provider disable takes precedence over individual model choices. Each write changes one target and preserves credentials. Disabling the current project default or its provider returns `409 cannot_disable_default`; select another default first.
+
+`useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setProjectModelEnablement` remains display-only. Native runtimes that bypass the gateway return `enforced: false`.
+
+### Pooled ChatGPT connections
+
+With the `pooled_provider_secrets` and `llm_gateway` project flags enabled, a
+member can create a named ChatGPT OAuth account resource:
+
+```ts
+const challenge = await kortix.project(projectId).secrets.startProviderOAuth('openai', {
+  resourceLabel: 'My ChatGPT account',
+});
+// Show challenge.verification_url and challenge.user_code, then poll the flow.
+const result = await kortix.project(projectId).secrets.pollProviderOAuth('openai', challenge.flow_id);
+```
+
+Poll until `result.status` is `success`, `failed`, or `expired`. A successful
+named flow returns `credential.secret_id`. It creates a separate project-scoped
+account resource; reconnecting does not replace another account. Every project
+member can use it by default. The owner can restrict access to selected members.
+A session can select one or more available
+ChatGPT resources through its provider secret pool (`providerId: 'codex'`).
+Without an explicit session selection, the caller's newest personal ChatGPT
+resource is used. The legacy project login remains the fallback when that
+caller has no personal resource.
+
+### ChatGPT subscription usage
+
+`getSessionCost` and `getTurnCost` report zero LLM cost for ChatGPT/Codex
+subscription messages. This also corrects historical runtime costs. Token
+counts remain available. Mixed sessions retain paid API costs; OpenAI API
+models remain billable. Subscription coverage does not include sandbox compute.
+
+### Durable prompt placement
+
+`createSessionPrompt` and `useSessionPrompts().enqueue` accept an optional
+`placement: 'transcript' | 'composer'`. `transcript` (Quick Queue) runs before
+every `composer` (Queue List) entry and ends the active response after its
+current tool call. `composer` waits for the active response to finish. Each
+placement keeps submission order. A row without placement keeps its submission
+order ahead of `composer` entries and is presented as `composer`.
+
+`SessionPrompt.full_text` preserves complete text for rendering after reload;
+`text` remains the bounded preview. List responses expose attachment names and
+MIME types without attachment bytes. Removal responses retain the complete
+parts and captured model options for undo.
+
+Queued work keeps `useSessionWorking().state` at `working` so it can be stopped.
+`pendingDelivery: true` distinguishes a send waiting for runtime delivery from an
+active agent response. The web app still shows one working indicator whenever the
+session is `working`, so Stop is never the only sign of work.
+A timed-out or skipped cancel does not acknowledge an abort receipt.
+
+A worker claim only checks admission and keeps the prompt waiting. Delivery starts
+after admission succeeds. A confirmed active turn clears the pending presentation
+even if the previous inbox snapshot still lists that prompt. Runtime activity
+preserves the active turn's message ID during this handoff.
+
+Web calls Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**. Both
+advance automatically; Quick Queue entries run first. Queue List entries stay editable
+until delivery begins. Stop pauses pending entries; Resume releases that hold.
+
+Pass the inbox IDs, in queue order, as `pendingMessageIds` to
+`groupMessagesIntoTurns(messages, { pendingMessageIds })`. Client-minted wire
+IDs still represent waiting prompts. The renderer keeps them after delivered
+turns until the inbox releases them.
+
+Queue acceptance and runtime execution are separate states. Each distinct submission
+appears immediately, including while a previous POST is pending. The working hook
+updates `pendingDelivery` when the same turn becomes active, without waiting for
+a different turn ID or timestamp.
+
+
+### Why a turn ended
+
+The transcript of an interrupted turn only carries `MessageAbortedError`. The
+control plane records the cause the sandbox reported, for example
+`SandboxMemoryGuard` when box memory passed its guard threshold, in
+`session_turns.end_error`. A stop somebody asked for is recorded there too, as a
+request (`UserStop` for a client abort, `QueueInterrupt` for a prompt sent into a
+busy session), and a request is never reported as a failure.
+
+`GET .../turn` returns the cause in `last_ended.error` and lists the turns that
+died in `recent_failures`, keyed by `message_id`, whether or not a turn is
+running: named causes, and failures with `error: null` when nobody named one.
+`useSessionTurnOutcome(projectId, sessionId)` reads both, plus the read time
+`atMs`, from the cache `useSessionWorking()` keeps fresh and makes no request of
+its own. `turnEndNotice(outcome, messageId, transcript)` turns that into one
+typed notice per turn — `sandbox-memory`, `cause`, `unexplained`, or `null` — so
+a host maps a kind to copy and never parses the sandbox's message.
+`turnEndCause(outcome, messageId)` returns the raw recorded cause.
+
+### External directory freshness
+
+`contract('directory')` from `@kortix/sdk/react` refreshes mounted group and
+member queries every 10 seconds while the tab is visible. It also refreshes on
+focus and reconnect, including data still inside the stale-time window. It does
+not poll background tabs or change the identity provider's provisioning schedule.
+Other freshness tiers keep their existing behavior.

@@ -5,14 +5,15 @@
  * model call or a lost idle event emits neither, so the last assistant message
  * stays open on disk and every client streaming that root spins forever. The
  * daemon already knows how to clean this up — `finalizeOrphanedTurn`
- * (apps/kortix-sandbox-agent-server/src/main.ts:1217-1239) — but it runs that
+ * (apps/kortix-sandbox-agent-server/src/harness/open-code/boot.ts) — but it runs that
  * ONLY on its own boot. A box that never restarts keeps its husk forever, and
  * the reaper meanwhile deletes the turn record that was the last evidence
  * anything was ever running. This module is the same finalize, reachable from
  * the reaper pass.
  *
- * `/kortix/abort` cannot be used per-turn: apps/kortix-sandbox-agent-server/
- * src/routes/abort.ts:29 resolves `readPinnedOpencodeSessionId()` and ignores
+ * `/kortix/abort` cannot be used per-turn: its OpenCode `abort()` in
+ * apps/kortix-sandbox-agent-server/src/harness/open-code/control.ts
+ * resolves `readPinnedOpencodeSessionId()` and ignores
  * the session the caller asked about. It would abort the PINNED root, which is
  * a different root than a husk left by a secondary session. The abort here is
  * issued against the turn's own root through the OpenCode REST surface.
@@ -210,7 +211,7 @@ function isAbortableHusk(inspection: HuskInspection): boolean {
 
 /**
  * Read the tail of the root and apply the DAEMON'S open-turn predicate, byte
- * for byte (apps/kortix-sandbox-agent-server/src/opencode-turn-state.ts:89-93),
+ * for byte (apps/kortix-sandbox-agent-server/src/harness/open-code/opencode-turn-state.ts:89-93),
  * to the assistant message that answers `messageId`. A retryable error is NOT a
  * closed turn — OpenCode still owns it.
  *

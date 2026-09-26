@@ -28,6 +28,8 @@ let principal: any = { kind: 'user', userId: 'user-1' };
 let agentGrant: any = null;
 /** Refs the fake upstream actually received — empty means nothing was forwarded. */
 let upstreamReceived: string[] = [];
+/** Every upstream request with the client port of the connection it rode. */
+let upstreamConnections: Array<{ method: string; path: string; port: number }> = [];
 
 /** What IAM answers for a human's ref-scope question; swapped per test. */
 let iamAllowsHuman = true;
@@ -45,6 +47,11 @@ mock.module('../projects', () => ({
   authorizeGitProxy: async () => ({
     ok: true,
     principal,
+    // The real `authorizeGitProxy` resolves the session's agent grant and
+    // surfaces it here; the receive-pack route then places it on the request
+    // context for the ref-scope resolver. The test must NOT inject the grant
+    // through a host middleware, or it would mask the exact plumbing under test.
+    agentGrant,
     project: {
       projectId: PROJECT_ID,
       accountId: 'acc-1',
@@ -72,8 +79,9 @@ beforeAll(async () => {
   // Stands in for GitHub: advertises one ref, accepts any push, records it.
   upstreamServer = Bun.serve({
     port: 0,
-    async fetch(req) {
+    async fetch(req, server) {
       const url = new URL(req.url);
+      upstreamConnections.push({ method: req.method, path: url.pathname, port: server.requestIP(req)?.port ?? -1 });
       if (url.pathname.endsWith('/info/refs')) {
         // Advertise the refs the tests operate on. An "empty repository"
         // advertisement would make git refuse a delete client-side ("remote ref
@@ -122,16 +130,12 @@ beforeAll(async () => {
   });
   upstreamUrl = `http://127.0.0.1:${upstreamServer.port}/upstream.git`;
 
-  // The scope resolver reads the agent grant off the request context, which the
-  // auth middleware sets in production. Hono collects handlers in REGISTRATION
-  // order and this app's routes exist at import time, so a `use('*')` added
-  // here would run AFTER them. A parent app shares the context with a routed
-  // sub-app, which injects the grant without mocking a module process-wide.
+  // The receive-pack route must place the grant it got from `authorizeGitProxy`
+  // onto the request context — the same contract the ordinary auth middleware
+  // fulfills on every non-git route. A parent app that injected the grant here
+  // would hide a missing `c.set('agentGrant', …)` in the route, so mount the
+  // app without one and let the route under test do the work.
   const host = new Hono();
-  host.use('*', async (c, next) => {
-    c.set('agentGrant' as never, agentGrant as never);
-    await next();
-  });
   host.route('/', gitProxyApp);
   proxyServer = Bun.serve({ port: 0, fetch: (req) => host.fetch(req) });
   proxyBase = `http://127.0.0.1:${proxyServer.port}/${PROJECT_ID}.git`;
@@ -191,7 +195,7 @@ async function push(...args: string[]): Promise<{ code: number; output: string }
 
 describe('a session principal', () => {
   beforeAll(() => {
-    principal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID };
+    principal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID, userId: 'user-1', tokenId: 'tok-1' };
   });
 
   test('is refused pushing the default branch, as a git rejection', async () => {
@@ -310,11 +314,23 @@ describe('a user principal', () => {
 
 describe('a session GRANTED project.gitops.ref.any', () => {
   beforeAll(() => {
-    principal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID };
-    agentGrant = { agent: 'main', kortixCli: ['project.gitops.ref.any'] };
+    principal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID, userId: 'user-1', tokenId: 'tok-1' };
+    agentGrant = { agent: 'main', permissions: ['project.gitops.ref.any'] };
   });
   afterAll(() => {
     agentGrant = null;
+  });
+
+  test('cannot push another branch when IAM denies the granted scope', async () => {
+    iamAllowsHuman = false;
+    try {
+      const { code, output } = await push('--force', 'origin', 'HEAD:refs/heads/shared');
+      expect(code).not.toBe(0);
+      expect(output).toContain('[remote rejected]');
+      expect(upstreamReceived).toEqual([]);
+    } finally {
+      iamAllowsHuman = true;
+    }
   });
 
   test('CAN push another branch — the scope is what makes it deliberate', async () => {
@@ -352,3 +368,38 @@ describe('a monitor principal', () => {
     expect(upstreamReceived).toEqual([]);
   });
 });
+
+// An upstream may answer a push before it has read the whole body (a
+// rejection, a size limit). Bun's fetch then pools the socket while the body is
+// still in flight, and the next request to that host (any project's) is written
+// onto it and fails to parse: the local-git fixture showed exactly this as a
+// bare 400 (GH-17 / AGP-10, 2026-09-23). A push therefore never shares its
+// upstream connection with a later request.
+describe('the upstream connection of a push', () => {
+  beforeAll(() => {
+    principal = { kind: 'user', userId: 'user-1', tokenId: 'tok-1' };
+    agentGrant = null;
+    iamAllowsHuman = true;
+  });
+
+  test('is never reused by the next upstream request', async () => {
+    upstreamConnections = [];
+    const pushed = await push('--force', 'origin', 'HEAD:refs/heads/feature');
+    expect(pushed.code).toBe(0);
+    expect(upstreamReceived).toEqual(['refs/heads/feature']);
+    // This fake upstream advertises receive-pack only: a second push's ref
+    // discovery is the next upstream request.
+    const again = await push('origin', '--delete', 'refs/heads/feature');
+    expect(again.code).toBe(0);
+
+    const pushIndex = upstreamConnections.findIndex(
+      (c) => c.method === 'POST' && c.path.endsWith('/git-receive-pack'),
+    );
+    expect(pushIndex).toBeGreaterThanOrEqual(0);
+    const pushPort = upstreamConnections[pushIndex]!.port;
+    const later = upstreamConnections.slice(pushIndex + 1);
+    expect(later.length).toBeGreaterThan(0);
+    expect(later.filter((c) => c.port === pushPort)).toEqual([]);
+  });
+});
+

@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { useTranslations } from '@/i18n/use-translations';
 import { BookOpenIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 
 import { railItemForTab } from './rail';
 import { useSettingsRailChromeCopy, useSettingsRailItem } from './rail-copy-context';

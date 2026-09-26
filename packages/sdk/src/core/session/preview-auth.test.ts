@@ -6,6 +6,22 @@ mock.module('../http/auth', () => ({
   getAuthToken: async () => token,
 }));
 
+// The deployment's advertised preview template (`GET /v1/p/config`). Only an
+// origin built from it may receive the one-shot `?token`.
+let advertisedTemplate: string | null = 'https://dev-p{port}-{sandbox}.p.kortix.com';
+let configLoads = 0;
+mock.module('./preview-config', () => ({
+  hasPreviewConfig: () => false,
+  cachedPreviewUrlTemplate: () => advertisedTemplate,
+  loadPreviewUrlTemplate: async () => {
+    configLoads += 1;
+    return advertisedTemplate;
+  },
+  knownPreviewUrlTemplates: () => (advertisedTemplate ? [advertisedTemplate] : []),
+  resetPreviewConfigCache: () => {},
+}));
+
+const { configureKortix } = await import('../http/config');
 const { authorizePreviewUrl, ensurePreviewSessionCookie } = await import('./preview-auth');
 
 const originalFetch = globalThis.fetch;
@@ -21,6 +37,10 @@ function stubFetch(handler: () => Response | Promise<Response>) {
 beforeEach(() => {
   token = 'jwt-token';
   requests = [];
+  advertisedTemplate = 'https://dev-p{port}-{sandbox}.p.kortix.com';
+  configLoads = 0;
+  // The path-proxy URLs below are served by this backend.
+  configureKortix({ backendUrl: 'http://localhost:8008/v1', getToken: async () => token });
 });
 
 afterEach(() => {
@@ -49,6 +69,13 @@ describe('ensurePreviewSessionCookie', () => {
     stubFetch(() => new Response(null, { status: 204 }));
 
     expect(await ensurePreviewSessionCookie('https://example.com/a.md')).toBe(false);
+    expect(requests).toHaveLength(0);
+  });
+
+  test('never sends the bearer to a path-proxy URL on an origin nobody configured', async () => {
+    stubFetch(() => new Response(null, { status: 204 }));
+
+    expect(await ensurePreviewSessionCookie('https://collector.example/v1/p/sbx1/3211/open')).toBe(false);
     expect(requests).toHaveLength(0);
   });
 
@@ -94,9 +121,36 @@ describe('authorizePreviewUrl — the URL to actually open', () => {
     expect(requests).toHaveLength(0);
   });
 
-  test('the local origin form is treated the same way', async () => {
+  test('the local origin form is treated the same way against a local backend', async () => {
+    advertisedTemplate = null;
     const url = await authorizePreviewUrl('http://p3211-sbx-a.localhost:8008/open?path=/a.md');
     expect(url).toContain('token=jwt-token');
+  });
+
+  test('a host that only looks like a preview origin never receives the credential', async () => {
+    stubFetch(() => new Response(null, { status: 204 }));
+    for (const target of [
+      // A Kortix App host whose slug starts with `p<digits>-`.
+      'https://dev-p3000-x-0123456789abcdef.apps.kortix.com/',
+      // A foreign host with the preview label shape.
+      'https://p80-anything.attacker.example/',
+      // The local form on a port the local backend does not serve.
+      'http://p3211-sbx-a.localhost:9999/open',
+    ]) {
+      expect(await authorizePreviewUrl(target)).toBe(target);
+    }
+    expect(requests).toHaveLength(0);
+  });
+
+  test('a deployment that advertises no preview origin trusts none', async () => {
+    advertisedTemplate = null;
+    const target = 'https://dev-p3211-sbx-a.p.kortix.com/open';
+    expect(await authorizePreviewUrl(target)).toBe(target);
+  });
+
+  test('the template is asked for before the first decision', async () => {
+    await authorizePreviewUrl('https://dev-p3211-sbx-a.p.kortix.com/open');
+    expect(configLoads).toBe(1);
   });
 
   test('a path-proxy URL still mints the cookie and is returned unchanged', async () => {

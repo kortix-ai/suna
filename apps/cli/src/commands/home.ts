@@ -1,6 +1,11 @@
 import type { ProjectSession } from '../api/types.ts';
 import { resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
 import { confirm } from '../prompts.ts';
+import {
+  DORMANT_SESSION_STATUSES as DORMANT,
+  SessionRuntimeError,
+  waitForSessionReady,
+} from '../session-runtime.ts';
 import { C, status } from '../style.ts';
 import { type SelectItem, selectFromList } from '../tui-select.ts';
 import { prepareClientCreatedBranch } from './sessions.ts';
@@ -8,9 +13,6 @@ import { prepareClientCreatedBranch } from './sessions.ts';
 type Ctx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
-
-/** Session states a picked row has to traverse before `connect` can attach. */
-const DORMANT: ReadonlySet<ProjectSession['status']> = new Set(['stopped', 'completed', 'failed']);
 
 export type ConnectPickerChoice = ProjectSession | 'new';
 
@@ -125,40 +127,24 @@ async function createSession(ctx: Ctx): Promise<string | null> {
 }
 
 /**
- * Drive the canonical `/start` lifecycle endpoint until the runtime is ready —
- * the same loop `sessions new --wait` runs (row status alone can say "running"
- * before OpenCode actually answers). Sandbox boots take minutes, not seconds:
- * up to 75 × 4s ≈ 5 min, matching the API's own provisioning ceiling.
+ * The CLI's voice over the shared `/start` poll (`waitForSessionReady` in
+ * session-runtime.ts, which `attach-opencode.ts` runs too): prints the progress
+ * line and turns each failure kind into this command's message.
  */
 async function waitUntilReady(ctx: Ctx, sessionId: string): Promise<boolean> {
   process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
-  for (let i = 0; i < 75; i += 1) {
-    if (i > 0) await new Promise((r) => setTimeout(r, 4000));
-    let stage: string;
-    let reason: string | undefined;
-    try {
-      const start = await ctx.client.post<{
-        stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
-        reason?: string;
-      }>(`/projects/${ctx.projectId}/sessions/${sessionId}/start`, {});
-      stage = start.stage;
-      reason = start.reason;
-    } catch (err) {
-      return surfaceApiError(err) === 0;
-    }
-    if (stage === 'ready') return true;
-    // A just-restarted session can report `stopped` for a few polls before the
-    // provisioner picks it up — only treat it as terminal once that grace is
-    // clearly over.
-    if (stage === 'stopped' && i < 5) continue;
-    if (stage === 'failed' || stage === 'stopped') {
-      process.stderr.write(
-        `${status.err(`Session did not start (${stage}${reason ? `: ${reason}` : ''}).`)}\n` +
-          `  ${C.dim}Try ${C.reset}${C.cyan}kortix sessions restart ${sessionId}${C.reset}${C.dim}, then ${C.reset}${C.cyan}kortix connect${C.reset}${C.dim} again.${C.reset}\n`,
-      );
-      return false;
-    }
+  try {
+    await waitForSessionReady(ctx.client, ctx.projectId, sessionId);
+    return true;
+  } catch (err) {
+    if (!(err instanceof SessionRuntimeError)) throw err;
+    if (err.kind === 'api') return surfaceApiError(err.cause) === 0;
+    process.stderr.write(
+      `${status.err(err.message)}\n` +
+        (err.kind === 'start-failed'
+          ? `  ${C.dim}Try ${C.reset}${C.cyan}kortix sessions restart ${sessionId}${C.reset}${C.dim}, then ${C.reset}${C.cyan}kortix connect${C.reset}${C.dim} again.${C.reset}\n`
+          : ''),
+    );
+    return false;
   }
-  process.stderr.write(`${status.err('Timed out waiting for the sandbox to start.')}\n`);
-  return false;
 }

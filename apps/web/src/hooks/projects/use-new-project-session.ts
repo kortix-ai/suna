@@ -9,7 +9,10 @@ import { errorToast, loadingToast } from '@/components/ui/toast';
 import { createScopedSession } from '@/features/session/scope/create-scoped-session';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
 import {
+  confirmCommitted,
+  errorCode,
   getRequiredConnectorConnections,
+  isAmbiguousCreateFailure,
   resolveCreateFailure,
 } from '@/hooks/projects/new-session-failure';
 import {
@@ -33,6 +36,7 @@ import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
   createProjectSession,
+  getProjectSession,
   getProjectSessionScope,
   markSessionFresh,
   setProjectSessionScope,
@@ -40,7 +44,7 @@ import {
   type ProjectSession,
   type SessionConnectorBindingsInput,
 } from '@kortix/sdk';
-import { prefetchSessionStart, qk } from '@kortix/sdk/react';
+import { prefetchSessionStart, qk, upsertCachedProjectSession } from '@kortix/sdk/react';
 
 /**
  * The shared project-session entry path. Calls without options only open the
@@ -85,8 +89,11 @@ import { prefetchSessionStart, qk } from '@kortix/sdk/react';
  * agent; the API re-scopes its grants before forwarding the prompt.
  * `connector_bindings` binds specific connections; `inherit_unbound`
  * keeps the project-default fallback for every OTHER connector so binding one
- * doesn't null the rest. `require_connectors` names connectors that must resolve
- * to the acting user's OWN connection — a missing one opens the connect gate.
+ * doesn't null the rest.
+ *
+ * No `require_connectors` — a session no longer declares connectors it
+ * requires up front (connector-credentials rework). A connector CALL denies
+ * instead, with `connect_url`; see `SetupLinkButton`.
  */
 export type NewProjectSessionOpts = {
   onNavigate?: (sessionId: string) => void;
@@ -98,7 +105,6 @@ export type NewProjectSessionOpts = {
     pending_prompt?: PendingSessionPrompt;
     connector_bindings?: SessionConnectorBindingsInput;
     inherit_unbound?: boolean;
-    require_connectors?: string[];
   };
 };
 
@@ -108,6 +114,12 @@ export function useNewProjectSession(projectId: string | undefined) {
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const { canRun, isLoading: billingLoading, accountId } = useProjectCanRun(projectId);
+  // The live billing answer. `startSession` must not decide from its render
+  // closure — see the read site below.
+  const billingRef = useRef({ loading: billingLoading, canRun });
+  useEffect(() => {
+    billingRef.current = { loading: billingLoading, canRun };
+  }, [billingLoading, canRun]);
   const openUpgradeDialog = useUpgradeDialogStore((state) => state.openUpgradeDialog);
   const openConnectorGate = useConnectorGateStore((state) => state.openConnectorGate);
   // A ref so the connect-to-start gate's `retry` re-invokes the LATEST create fn.
@@ -162,12 +174,22 @@ export function useNewProjectSession(projectId: string | undefined) {
         return;
       }
 
-      if (isBillingEnabled() && billingLoading) {
+      // Read the LIVE billing answer, not this callback's render closure. The
+      // home composer awaits the account answer before it calls us
+      // (`projects/[id]/page.tsx`), and it resumes inside a closure built
+      // before that answer arrived — so a closure read here reported "still
+      // loading" for a value that had already landed and dropped the prompt
+      // via `onError()`. Measured on the staging release gate: `/detail` and
+      // `/billing/account-state` still had 4.5s and 5.9s to run when Enter
+      // was pressed (run 35242868705).
+      const { loading: billingLoadingNow, canRun: canRunNow } = billingRef.current;
+
+      if (isBillingEnabled() && billingLoadingNow) {
         opts?.onError?.();
         return;
       }
 
-      if (isBillingEnabled() && !canRun) {
+      if (isBillingEnabled() && !canRunNow) {
         openUpgradeDialog({ reason: 'subscription_required', accountId });
         opts?.onError?.();
         return;
@@ -234,10 +256,23 @@ export function useNewProjectSession(projectId: string | undefined) {
         const sessionId = crypto.randomUUID();
         markSessionFresh(sessionId);
         router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
-        await createProjectSession(projectId, {
-          session_id: sessionId,
-          ...opts?.create,
-        });
+        try {
+          await createProjectSession(projectId, {
+            session_id: sessionId,
+            ...opts?.create,
+          });
+        } catch (error) {
+          // A timeout is not a refusal: the server keeps running the create and
+          // commits the session WITH its first prompt. Rejecting here left the
+          // user on the page they sent from, composer unlocked with a prompt the
+          // agent was already answering. The id is ours, so ask for it.
+          const committed =
+            isAmbiguousCreateFailure(errorCode(error)) &&
+            (await confirmCommitted(async () =>
+              Boolean(await getProjectSession(projectId, sessionId, { showErrors: false })),
+            ));
+          if (!committed) throw error;
+        }
         return sessionId;
       };
 
@@ -269,13 +304,22 @@ export function useNewProjectSession(projectId: string | undefined) {
           // taken but never made it this far (a scope-replacement failure,
           // say) never seeds a phantom row here — see warm-session-seed.ts.
           if (adoptedWarmSession) {
-            queryClient.setQueryData<ProjectSession[]>(qk.project.sessions(projectId), (current) =>
-              seedAdoptedWarmSession(current, adoptedWarmSession!, new Date().toISOString()),
+            // Every cached shape, not just the flat key. The sidebar caches
+            // PAGES now (`useProjectSessions`), so a write aimed at the flat
+            // list left a brand-new session invisible there until the next
+            // refetch — the one surface the user is watching when they start
+            // one. `seedAdoptedWarmSession` still owns what an adopted row
+            // looks like; the cache write is the only part that moved.
+            const [adopted] = seedAdoptedWarmSession(
+              undefined,
+              adoptedWarmSession!,
+              new Date().toISOString(),
             );
+            if (adopted) upsertCachedProjectSession(queryClient, projectId, adopted);
           }
           // The row exists — kick provisioning so it overlaps the navigation.
           // For an adopted warm session this is also the call that drops the
-          // server's `metadata.warm` marker (apps/api/.../routes/r8.ts).
+          // server's `metadata.warm` marker (apps/api/.../routes/session-runtime.ts).
           const started = prefetchSessionStart(queryClient, projectId, sessionId);
           if (adoptedWarmSession) {
             const replenish = () => {
@@ -328,9 +372,11 @@ export function useNewProjectSession(projectId: string | undefined) {
       });
     },
     [
+      // `billingLoading` / `canRun` are deliberately absent: they are read
+      // through `billingRef` above, so a billing change must NOT mint a new
+      // `startSession` identity (which churned every consumer's `useCallback`
+      // on each refetch).
       projectId,
-      billingLoading,
-      canRun,
       release,
       router,
       openUpgradeDialog,

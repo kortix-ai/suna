@@ -18,6 +18,7 @@ import {
 } from './daytona-ci';
 import {
   PlatinumApi,
+  PlatinumHttpError,
   type PlatinumSandbox,
   buildPlatinumTemplateSpec,
   downloadArtifacts as downloadPlatinumArtifacts,
@@ -35,15 +36,46 @@ import {
   type SandboxPreviewResult,
   buildPreviewBootstrapScript,
   previewLockfileHash,
+  previewDeploymentStatusPath,
   previewSandboxIdentity,
   previewSandboxName,
   selectStalePreviewSandboxIds,
   selectTeardownSandboxIds,
 } from './sandbox-preview';
 import type { PreviewRuntimeSecrets } from './preview-stack';
+import {
+  PLATINUM_POOL_MB_DEFAULT,
+  PREVIEW_HOST_RAM_MB,
+  PREVIEW_SESSION_MAX_IDLE_MS,
+  type PlatinumListedSandbox,
+  formatPoolUsage,
+  poolCannotFit,
+  previewHostNames,
+  selectPreviewSessionsForTeardown,
+  selectStalePreviewSessions,
+  summarizePoolUsage,
+} from './preview-session-reaper';
 
 const PREVIEW_TIMEOUT_MS = 90 * 60_000;
 const LOG_CHUNK_BYTES = 1024 * 1024;
+
+/** Stop a detached bootstrap that survived cancellation of its Actions job. */
+export function stopPreviousPreviewWorkerCommand(): string {
+  return `for pid in $(pgrep -f '^bash /workspace/run-kortix-preview\\.sh$' || true); do
+  pgid="$(ps -o pgid= -p "$pid" | tr -d ' ')"
+  case "$pgid" in ''|*[!0-9]*) continue ;; esac
+  kill -TERM -- "-$pgid" 2>/dev/null || true
+done
+for _ in $(seq 1 10); do
+  pgrep -f '^bash /workspace/run-kortix-preview\\.sh$' >/dev/null || exit 0
+  sleep 1
+done
+for pid in $(pgrep -f '^bash /workspace/run-kortix-preview\\.sh$' || true); do
+  pgid="$(ps -o pgid= -p "$pid" | tr -d ' ')"
+  case "$pgid" in ''|*[!0-9]*) continue ;; esac
+  kill -KILL -- "-$pgid" 2>/dev/null || true
+done`;
+}
 
 export interface SandboxPreviewDeploymentInput {
   repository: string;
@@ -56,7 +88,6 @@ export interface SandboxPreviewDeploymentInput {
   lockfileHash: string;
   secrets: PreviewRuntimeSecrets;
   platinum: { apiUrl: string; apiKey: string };
-  daytona: { apiUrl: string; apiKey: string; target: string };
   /**
    * A PERSISTENT per-branch environment instead of an ephemeral per-PR preview.
    *
@@ -78,8 +109,10 @@ export interface SandboxPreviewDeploymentInput {
   publicOrigin?: string;
 }
 
+type ListedPlatinumSandbox = PlatinumSandbox & PlatinumListedSandbox;
+
 interface PlatinumSandboxPage {
-  rows?: PlatinumSandbox[];
+  rows?: ListedPlatinumSandbox[];
   has_more?: boolean;
 }
 
@@ -128,8 +161,8 @@ async function writeDeploymentResult(
   );
 }
 
-async function allPlatinumPreviewSandboxes(api: PlatinumApi): Promise<PlatinumSandbox[]> {
-  const sandboxes: PlatinumSandbox[] = [];
+async function allPlatinumPreviewSandboxes(api: PlatinumApi): Promise<ListedPlatinumSandbox[]> {
+  const sandboxes: ListedPlatinumSandbox[] = [];
   const limit = 100;
   for (let offset = 0; ; offset += limit) {
     const page = await api.json<PlatinumSandboxPage>(
@@ -148,17 +181,120 @@ async function deletePlatinum(api: PlatinumApi, sandboxId: string): Promise<void
   }
 }
 
+/**
+ * Stop, never delete: a stop is reversible and releases the box's RAM, which
+ * is the resource the org ran out of. 404 (gone) and 409 (not running) are the
+ * desired end state.
+ */
+async function stopPlatinum(api: PlatinumApi, sandboxId: string): Promise<boolean> {
+  try {
+    await api.json(`/v1/sandboxes/${sandboxId}/stop`, { method: 'POST' }, { retry: true });
+    return true;
+  } catch (error) {
+    if (error instanceof PlatinumHttpError && (error.status === 404 || error.status === 409)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function stopAll(
+  api: PlatinumApi,
+  sandboxIds: readonly string[],
+  label: string,
+): Promise<number> {
+  let stopped = 0;
+  for (const sandboxId of sandboxIds) {
+    try {
+      if (await stopPlatinum(api, sandboxId)) stopped += 1;
+    } catch (error) {
+      console.warn(`[sandbox-preview] ${label}: stop ${sandboxId} failed: ${String(error)}`);
+    }
+  }
+  return stopped;
+}
+
+/** Stop the running session boxes that belong to these preview hosts. */
+async function stopPreviewSessionsOf(
+  api: PlatinumApi,
+  sandboxes: readonly ListedPlatinumSandbox[],
+  hostNames: readonly string[],
+): Promise<number> {
+  const ids = selectPreviewSessionsForTeardown(sandboxes, hostNames);
+  const stopped = await stopAll(api, ids, `sessions of ${hostNames.join(',')}`);
+  if (ids.length > 0) {
+    console.log(
+      `[sandbox-preview] stopped ${stopped}/${ids.length} session box(es) of ${hostNames.join(', ')}`,
+    );
+  }
+  return stopped;
+}
+
+function maxIdleMs(): number {
+  const hours = Number(process.env.PREVIEW_SESSION_MAX_IDLE_HOURS);
+  return Number.isFinite(hours) && hours > 0 ? hours * 3_600_000 : PREVIEW_SESSION_MAX_IDLE_MS;
+}
+
+function poolMb(): number {
+  const value = Number(process.env.PREVIEW_PLATINUM_POOL_MB);
+  return Number.isFinite(value) && value > 0 ? value : PLATINUM_POOL_MB_DEFAULT;
+}
+
+/**
+ * Stop preview session boxes whose host is gone or that idled past the limit.
+ * Returns the stopped ids, so a caller can drop them from its pool estimate.
+ */
+async function sweepStalePreviewSessions(
+  api: PlatinumApi,
+  sandboxes: readonly ListedPlatinumSandbox[],
+  liveHostNames: ReadonlySet<string>,
+): Promise<Set<string>> {
+  const stale = selectStalePreviewSessions(sandboxes, {
+    liveHostNames,
+    nowMs: Date.now(),
+    maxIdleMs: maxIdleMs(),
+  });
+  const stopped = new Set<string>();
+  for (const box of stale) {
+    try {
+      if (await stopPlatinum(api, box.id)) stopped.add(box.id);
+    } catch (error) {
+      console.warn(`[sandbox-preview] sweep: stop ${box.id} failed: ${String(error)}`);
+    }
+  }
+  if (stale.length > 0) {
+    const ownerGone = stale.filter((box) => box.reason === 'owner-gone').length;
+    console.log(
+      `[sandbox-preview] sweep stopped ${stopped.size}/${stale.length} preview session box(es): ` +
+        `${ownerGone} with no live host, ${stale.length - ownerGone} idle > ${maxIdleMs() / 3_600_000} h`,
+    );
+  }
+  return stopped;
+}
+
+async function stopOwnSessionsAfterSuite(api: PlatinumApi, hostName: string): Promise<void> {
+  try {
+    await stopPreviewSessionsOf(api, await allPlatinumPreviewSandboxes(api), [hostName]);
+  } catch (error) {
+    console.warn(`[sandbox-preview] post-suite session stop failed: ${String(error)}`);
+  }
+}
+
 async function replaceExistingPlatinumPreview(
   api: PlatinumApi,
   prNumber: number,
+  sandboxes: readonly ListedPlatinumSandbox[],
 ): Promise<void> {
   const name = previewSandboxName(prNumber);
-  const existing = (await allPlatinumPreviewSandboxes(api)).filter(
+  const existing = sandboxes.filter(
     (sandbox) =>
       sandbox.name === name &&
       sandbox.metadata?.owner === 'kortix-preview' &&
       Number(sandbox.metadata?.pr_number) === prNumber,
   );
+  // The replaced host takes its database with it, so its session boxes can
+  // never be resumed. Stop them before the host goes.
+  if (existing.length > 0) await stopPreviewSessionsOf(api, sandboxes, [name]);
   for (const sandbox of existing) await deletePlatinum(api, sandbox.id);
 }
 
@@ -173,6 +309,7 @@ export function platinumPreviewIdempotencyKey(input: {
 export async function deployPlatinumPreview(
   input: SandboxPreviewDeploymentInput,
 ): Promise<SandboxPreviewResult> {
+  const statusPath = previewDeploymentStatusPath(input.runId, input.runAttempt);
   if (!input.platinum.apiKey) throw new PreviewInfrastructureError('PLATINUM_API_KEY is required');
   const api = new PlatinumApi(input.platinum.apiUrl, input.platinum.apiKey);
   let sandboxId = '';
@@ -180,15 +317,46 @@ export async function deployPlatinumPreview(
   // Set only when this run adopted an existing branch environment, so the
   // failure path below can tell "a box I made" from "the standing environment".
   let reusedSandboxId = '';
+  const identity = previewSandboxIdentity(input);
   try {
-    const identity = previewSandboxIdentity(input);
+    const listing = await allPlatinumPreviewSandboxes(api);
     // A branch environment reuses its sandbox; only an ephemeral PR preview is
     // replaced, which is what rotates its URL on every push.
     const reusable = identity.reuseExisting
-      ? (await allPlatinumPreviewSandboxes(api)).find(
+      ? listing.find(
           (sandbox) => sandbox.name === identity.name && sandbox.metadata?.owner === identity.owner,
         ) ?? null
       : null;
+    // Every deploy sweeps the shared org first: preview deploys are frequent,
+    // and the daily reconcile alone let 87 idle session boxes fill the pool in
+    // under 8 hours on 2026-09-23. Then report who holds the pool, so a refusal
+    // below is diagnosable from this log alone.
+    const swept = await sweepStalePreviewSessions(api, listing, previewHostNames(listing)).catch(
+      (error) => {
+        console.warn(`[sandbox-preview] session sweep failed: ${String(error)}`);
+        return new Set<string>();
+      },
+    );
+    const usage = summarizePoolUsage(
+      listing.filter((sandbox) => !swept.has(sandbox.id)),
+      poolMb(),
+    );
+    console.log(`[sandbox-preview] ${formatPoolUsage(usage)}`);
+    const neededMb = reusable && String(reusable.state).toLowerCase() === 'running' ? 0 : PREVIEW_HOST_RAM_MB;
+    if (poolCannotFit(usage, neededMb)) {
+      console.warn(
+        `[sandbox-preview] the pool shows ${Math.max(0, usage.freeMb)} MB free and this host needs ${neededMb} MB; provisioning may be refused`,
+      );
+    }
+    const poolExhausted = (error: unknown): never => {
+      if (error instanceof PlatinumHttpError && error.status === 429) {
+        throw new PreviewInfrastructureError(
+          `Platinum refused the preview host: the org RAM pool is full.\n${formatPoolUsage(usage)}`,
+          error,
+        );
+      }
+      throw error;
+    };
     // A branch environment idles between deploys; Platinum may have stopped it.
     if (reusable) {
       reusedSandboxId = reusable.id;
@@ -196,7 +364,9 @@ export async function deployPlatinumPreview(
         .json(`/v1/sandboxes/${reusable.id}/start`, { method: 'POST' })
         .catch(() => undefined);
     }
-    if (!identity.reuseExisting) await replaceExistingPlatinumPreview(api, input.prNumber);
+    if (!identity.reuseExisting) {
+      await replaceExistingPlatinumPreview(api, input.prNumber, listing);
+    }
     const hash = previewLockfileHash(input.lockfileHash);
     const base = await ensureTemplate(
       api,
@@ -235,7 +405,7 @@ export async function deployPlatinumPreview(
             },
           }),
         },
-      ));
+      ).catch(poolExhausted));
     sandboxId = created.id;
     const sandbox = await observePlatinumSandboxStart({
       sandbox: created,
@@ -264,6 +434,16 @@ export async function deployPlatinumPreview(
     // while the browser is on the stable name and every auth redirect leaves it.
     const origin = input.publicOrigin ? validatedPreviewUrl(input.publicOrigin) : sandboxOrigin;
     await execPlatinum(api, sandboxId, ['bash', '-lc', 'mkdir -p /workspace/kortix-preview']);
+    // Cancelling Actions cannot signal a detached process inside this host.
+    // Stop the prior suite before it can keep creating session boxes or hold
+    // deploy.lock while this replacement waits.
+    if (reusable) {
+      await execPlatinum(api, sandboxId, [
+        'bash',
+        '-lc',
+        stopPreviousPreviewWorkerCommand(),
+      ]);
+    }
     await api.write(
       `${sandboxId}:/workspace/kortix-preview/runtime-secrets.json`,
       `${JSON.stringify(input.secrets)}\n`,
@@ -271,7 +451,7 @@ export async function deployPlatinumPreview(
     );
     await api.write(
       `${sandboxId}:/workspace/run-kortix-preview.sh`,
-      buildPreviewBootstrapScript({ ...input, origin }),
+      buildPreviewBootstrapScript({ ...input, origin, statusPath, hostName: identity.name }),
       '0755',
     );
     const launch = await execPlatinum(api, sandboxId, [
@@ -287,11 +467,11 @@ export async function deployPlatinumPreview(
       startedAt: Date.now(),
       timeoutMs: PREVIEW_TIMEOUT_MS,
       checkExitCode: async () => {
-        const status = await statPlatinum(api, sandboxId, '/workspace/kortix-preview/kortix-preview.exit', 1);
+        const status = await statPlatinum(api, sandboxId, statusPath, 1);
         if (!status) return null;
         const bytes = await api.read(
           sandboxId,
-          '/workspace/kortix-preview/kortix-preview.exit',
+          statusPath,
           undefined,
           undefined,
           1,
@@ -310,6 +490,12 @@ export async function deployPlatinumPreview(
           1,
         ),
     });
+    // An ephemeral PR preview's suite creates real session boxes, and a gate
+    // run has nobody left to use them. Stop them now rather than after an idle
+    // timeout: their disks stay for inspection and a session resumes on open.
+    // A persistent branch environment is a place people work: a redeploy must
+    // not interrupt its sessions, so they are left to its deadline reaper.
+    if (!identity.reuseExisting) await stopOwnSessionsAfterSuite(api, identity.name);
     const result: SandboxPreviewResult = {
       provider: 'platinum',
       exitCode,
@@ -323,161 +509,15 @@ export async function deployPlatinumPreview(
     await writeDeploymentResult(input.root, result, input);
     return result;
   } catch (error) {
-    if (launched) throw error;
+    if (launched) {
+      if (!identity.reuseExisting) await stopOwnSessionsAfterSuite(api, identity.name);
+      throw error;
+    }
     // Clean up only a sandbox THIS run created. Deleting a reused branch
     // environment would throw away the stable origin it exists to hold — and a
     // failed deploy is a reason to look at it, not to destroy it.
     if (sandboxId && !reusedSandboxId) await deletePlatinum(api, sandboxId).catch(() => {});
     throw new PreviewInfrastructureError('Platinum preview infrastructure failed', error);
-  }
-}
-
-async function replaceExistingDaytonaPreview(
-  api: DaytonaApi,
-  prNumber: number,
-): Promise<void> {
-  const existing = await getSandboxByName(api, previewSandboxName(prNumber));
-  if (!existing) return;
-  if (
-    existing.labels?.['kortix-preview'] !== 'true' ||
-    existing.labels?.['kortix-preview-pr'] !== String(prNumber)
-  ) {
-    throw new Error(`refused to replace unowned Daytona sandbox ${existing.id}`);
-  }
-  await deleteDaytonaSandbox(api, existing.id);
-}
-
-export async function deployDaytonaPreview(
-  input: SandboxPreviewDeploymentInput,
-): Promise<SandboxPreviewResult> {
-  if (!input.daytona.apiKey) throw new PreviewInfrastructureError('DAYTONA_API_KEY is required');
-  // Daytona is the fallback for a Platinum infrastructure failure, and it issues
-  // its own preview URL. Falling back would therefore hand a branch environment
-  // a DIFFERENT origin than the one people bookmarked and Stripe posts webhooks
-  // to — the one property it exists to hold still. Fail loudly instead.
-  if (input.branchEnv) {
-    throw new PreviewInfrastructureError(
-      `branch environment ${input.branchEnv} is pinned to Platinum: a Daytona fallback would change its origin`,
-    );
-  }
-  const api = new DaytonaApi(input.daytona.apiUrl, input.daytona.apiKey);
-  let sandbox: DaytonaSandbox | null = null;
-  let launched = false;
-  try {
-    await replaceExistingDaytonaPreview(api, input.prNumber);
-    const hash = previewLockfileHash(input.lockfileHash);
-    const ciInput: DaytonaCiInput = {
-      apiUrl: input.daytona.apiUrl,
-      apiKey: input.daytona.apiKey,
-      target: input.daytona.target,
-      repository: input.repository,
-      sha: input.sha,
-      ref: input.ref,
-      runId: input.runId,
-      runAttempt: input.runAttempt,
-      testArgs: [],
-      root: input.root,
-    };
-    const snapshot = await ensureWarmSnapshot(api, ciInput, hash);
-    sandbox = await waitForDaytonaSandbox(
-      api,
-      await createDaytonaSandbox(api, {
-        name: previewSandboxName(input.prNumber),
-        snapshot: snapshot.name,
-        target: input.daytona.target,
-        public: true,
-        autoStopInterval: 0,
-        autoArchiveInterval: 10_080,
-        autoDeleteInterval: 10_080,
-        labels: {
-          'kortix-preview': 'true',
-          'kortix-preview-pr': String(input.prNumber),
-          'kortix-preview-repository': input.repository,
-          'kortix-preview-git-sha': input.sha,
-          'kortix-preview-run-id': input.runId,
-        },
-      }),
-    );
-    const marker = await executeDaytona(
-      api,
-      sandbox,
-      'test -s /workspace/.kortix-ci-warm-ready && ! pgrep -x dockerd >/dev/null && ! pgrep -x containerd >/dev/null',
-      30,
-    );
-    if (marker.exitCode !== 0) throw new Error('Daytona preview did not restore the warm marker');
-    const link = await api.json<PreviewLink>(
-      `/sandbox/${encodeURIComponent(sandbox.id)}/ports/8080/preview-url`,
-    );
-    const origin = validatedPreviewUrl(link.url);
-    const secretsUpload = await executeDaytona(
-      api,
-      sandbox,
-      encodedFileCommand(
-        '/workspace/kortix-preview/runtime-secrets.json',
-        `${JSON.stringify(input.secrets)}\n`,
-      ),
-      60,
-    );
-    if (secretsUpload.exitCode !== 0) throw new Error(`Daytona secret upload failed: ${secretsUpload.result}`);
-    const scriptUpload = await executeDaytona(
-      api,
-      sandbox,
-      encodedFileCommand(
-        '/workspace/run-kortix-preview.sh',
-        buildPreviewBootstrapScript({ ...input, origin }),
-        '0755',
-      ),
-      60,
-    );
-    if (scriptUpload.exitCode !== 0) throw new Error(`Daytona script upload failed: ${scriptUpload.result}`);
-    const launch = await executeDaytona(
-      api,
-      sandbox,
-      'setsid -f /workspace/run-kortix-preview.sh >/workspace/kortix-preview/bootstrap.log 2>&1 </dev/null',
-      30,
-    );
-    if (launch.exitCode !== 0) throw new Error(`Daytona preview launch failed: ${launch.result}`);
-    launched = true;
-    const exitCode = await observePlatinumWorker({
-      startedAt: Date.now(),
-      timeoutMs: PREVIEW_TIMEOUT_MS,
-      checkExitCode: () =>
-        readRemoteExitCode(
-          api,
-          sandbox!,
-          '/workspace/kortix-preview/kortix-preview.exit',
-          'preview',
-        ),
-      statLog: () =>
-        statRemoteLog(api, sandbox!, '/workspace/kortix-preview/kortix-preview.log', 'preview'),
-      readLog: (offset, limit) =>
-        readRemoteLog(
-          api,
-          sandbox!,
-          '/workspace/kortix-preview/kortix-preview.log',
-          offset,
-          Math.min(limit, LOG_CHUNK_BYTES),
-          'preview',
-        ),
-    });
-    const result: SandboxPreviewResult = {
-      provider: 'daytona',
-      exitCode,
-      sandboxId: sandbox.id,
-      previewUrl: origin,
-      // Daytona serves PR previews only (a branch environment is refused
-      // above), and a PR preview IS its provider origin.
-      sandboxOrigin: origin,
-    };
-    await downloadDaytonaArtifacts(api, sandbox, input.root).catch((error) => {
-      console.warn(`[sandbox-preview] Daytona result download failed: ${String(error)}`);
-    });
-    await writeDeploymentResult(input.root, result, input);
-    return result;
-  } catch (error) {
-    if (launched) throw error;
-    if (sandbox) await deleteDaytonaSandbox(api, sandbox.id).catch(() => {});
-    throw new PreviewInfrastructureError('Daytona preview infrastructure failed', error);
   }
 }
 
@@ -496,7 +536,13 @@ export async function teardownPlatinumPreview(input: {
 }): Promise<number> {
   if (!input.apiKey) return 0;
   const api = new PlatinumApi(input.apiUrl, input.apiKey);
-  const owned = selectTeardownSandboxIds(await allPlatinumPreviewSandboxes(api), input);
+  const sandboxes = await allPlatinumPreviewSandboxes(api);
+  const owned = selectTeardownSandboxIds(sandboxes, input);
+  const ownedNames = sandboxes
+    .filter((sandbox) => owned.includes(sandbox.id) && sandbox.name)
+    .map((sandbox) => sandbox.name as string);
+  // The host's database dies with it; its session boxes can never resume.
+  await stopPreviewSessionsOf(api, sandboxes, ownedNames);
   for (const sandboxId of owned) await deletePlatinum(api, sandboxId);
   return owned.length;
 }
@@ -535,6 +581,20 @@ export async function reconcilePlatinumPreviews(input: {
     input.liveBranchSandboxNames,
   );
   for (const sandboxId of stale) await deletePlatinum(api, sandboxId);
+  // Session boxes are judged against the hosts that SURVIVE this sweep: a box
+  // whose host was just deleted, or was deleted long ago, has no database
+  // behind it any more.
+  const staleIds = new Set(stale);
+  const surviving = previewHostNames(sandboxes.filter((sandbox) => !staleIds.has(sandbox.id)));
+  const stoppedSessions = await sweepStalePreviewSessions(api, sandboxes, surviving);
+  console.log(
+    `[sandbox-preview] ${formatPoolUsage(
+      summarizePoolUsage(
+        sandboxes.filter((sandbox) => !staleIds.has(sandbox.id) && !stoppedSessions.has(sandbox.id)),
+        poolMb(),
+      ),
+    )}`,
+  );
   return stale.length;
 }
 

@@ -21,7 +21,9 @@ Each agent has two parts:
   frontmatter sets the model, mode, and tools. Its body is the system prompt.
 - **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the same
   name. It sets what the agent may access on Kortix: connectors, secrets,
-  skills, and CLI actions.
+  skills, Apps, and Kortix permissions.
+  The map can live in a file the manifest lists under
+  [`imports:`](/docs/project/manifest#imports); `default_agent` stays in `kortix.yaml`.
 
 The manifest never sets a prompt, mode, or tool. The `.md` file never sets
 platform access. See [the manifest reference](/docs/project/manifest) for
@@ -29,13 +31,22 @@ every governance field.
 
 ## Governance is deny-by-default
 
-An agent with no `connectors`, `secrets`, `skills`, or `kortix_cli` key gets
-none of that access. This grant is the second of the two bindings: the agent
-also holds roles as a `service_account` principal, and a session can only do
-what both allow — see
+An agent with no `connectors`, `secrets`, `skills`, `apps`, or `kortix_permissions` key gets
+none of that access. `apps` lists the [Kortix Apps](/docs/feature-flags/apps#agents-and-apps)
+the agent may open when an App is restricted or private. This grant is the second of the two bindings: the agent
+also holds a role as a `service_account` principal — its ceiling — and a
+session can only do what both allow. See
+[Agent permissions](/docs/project/permissions) and
 [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings). Set a field to `all` to grant full access, or list
 specific names. `default_agent` in `kortix.yaml` names the agent a session
 starts when you request no agent.
+
+Set each grant from the dashboard — Customize → Agents → the agent, one page
+per grant set on the Access rail: Skills, Connectors, Secrets, Apps, Kortix
+permissions — or from the CLI with `kortix agents scope <agent>`
+(`--secrets`, `--connectors`, `--apps`). The Apps page appears only when the
+project has the [Apps](/docs/feature-flags/apps) feature flag on. Every path
+writes the same `agents.<name>` block in `kortix.yaml`.
 
 Legacy `kortix.toml` (v1) projects list agents in an array, not a map, and
 grant full access by default. Set specific grants to restrict access. See
@@ -56,8 +67,9 @@ Set the default agent from the dashboard, the API, or the SDK. Each writes
 `default_agent` to `kortix.yaml` and commits the change to the project's
 default branch.
 
-An agent never exceeds the access of the person or token that started the
-session.
+An agent acts as itself: its Kortix permissions within its ceiling role,
+whoever runs it. Starting a session does not lend the agent your own role.
+See [Agent permissions](/docs/project/permissions).
 
 New or changed agents and skills reach future sessions only after a
 [change request](/docs/work/change-requests) merges them into the default

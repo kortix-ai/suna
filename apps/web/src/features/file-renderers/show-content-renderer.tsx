@@ -37,18 +37,18 @@ import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Loading from '@/components/ui/loading';
-import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
+import { TextShimmer } from '@/components/ui/text-shimmer';
+import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { safeHttpUrl } from '@/lib/safe-url';
-import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
-import { buildStaticFileLocalUrl } from '@kortix/sdk';
+import { buildStaticFileLocalUrl, isSessionAttachmentRef } from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
   CaretLeftIcon as ChevronLeft,
@@ -62,6 +62,7 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
+import { MermaidDiagram } from './mermaid/mermaid-diagram';
 import { ViewerFrame } from './shared/viewer-frame';
 import { resolveShowType, shouldRenderFromSandboxFile } from './show-type-utils';
 import { VideoRenderer } from './video-renderer';
@@ -83,22 +84,18 @@ const DocxRenderer = lazy(() =>
 const PptxRenderer = lazy(() =>
   import('./pptx-renderer').then((m) => ({ default: m.PptxRenderer })),
 );
+// The whole file viewer (CodeMirror, diffs, HTML preview). Show rows render in
+// every transcript — the marketing home demo included — and most never reach
+// the generic-file branch below.
+const FileContentRenderer = lazy(() =>
+  import('@/features/files/components/file-content-renderer').then((m) => ({
+    default: m.FileContentRenderer,
+  })),
+);
 
 // ── Extension regexes + type resolution (pure, unit-tested sibling module) ──
 
-export {
-  getShowFileCategory,
-  resolveShowType,
-  SHOW_AUDIO_EXT_RE,
-  SHOW_CSV_EXT_RE,
-  SHOW_DOCX_EXT_RE,
-  SHOW_HTML_EXT_RE,
-  SHOW_IMAGE_EXT_RE,
-  SHOW_PDF_EXT_RE,
-  SHOW_PPTX_EXT_RE,
-  SHOW_VIDEO_EXT_RE,
-  SHOW_XLSX_EXT_RE,
-} from './show-type-utils';
+export { getShowFileCategory, resolveShowType } from './show-type-utils';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -133,6 +130,36 @@ function isLocalSandboxFilePath(value: string): boolean {
 
 /** Types loaded via useBinaryBlob (/file/raw, direct binary fetch) */
 const BLOB_TYPES = new Set(['image', 'video', 'audio', 'docx', 'pptx']);
+
+/**
+ * Where a show's binary viewer reads its bytes from, or null for no blob read.
+ *
+ * A `kortix-attachment://` copy recorded by saved history wins over the
+ * sandbox path: it is exactly what the agent showed, and it needs no box. PDF
+ * joins only when such a copy exists, because its sandbox read is a base64
+ * text read while a stored copy is bytes.
+ *
+ * NEVER HTML. An `html` or `html-file` show renders through the sandbox's
+ * static server on its own isolated preview origin. A blob made from a stored
+ * copy would be same-origin with the app, so agent-authored script would run
+ * with the user's session. Keeping HTML out of this function is what keeps it
+ * out of the app origin.
+ *
+ * For every type it DOES serve, a stored copy adds no exposure: those viewers
+ * already turn the sandbox's bytes into a same-origin blob, and the copy is
+ * byte-identical to what that read would return.
+ */
+export function showBlobSource(input: {
+  effectiveType: string;
+  attachment?: string | null;
+  sandboxPath: string | null;
+}): string | null {
+  const stored = isSessionAttachmentRef(input.attachment) ? (input.attachment as string) : null;
+  const binary =
+    BLOB_TYPES.has(input.effectiveType) || (input.effectiveType === 'pdf' && stored !== null);
+  if (!binary) return null;
+  return stored ?? input.sandboxPath;
+}
 
 function RendererFallback({ className }: { className?: string }) {
   return (
@@ -176,6 +203,15 @@ export interface ShowContentProps {
   content?: string;
   language?: string;
   aspectRatio?: string;
+  /**
+   * A `kortix-attachment://` copy of the file at `path`, when saved session
+   * history recorded one. The server copies every file an agent showed while
+   * the box is up, so a card from a stopped session can render its bytes
+   * instead of waiting on the sandbox. Only binary viewers and PDF read it:
+   * HTML stays on the sandbox's isolated preview origin, because a same-origin
+   * blob would run agent-authored script inside the app.
+   */
+  attachment?: string;
   /** Optional: render a proxied localhost iframe. Caller provides this component. */
   LocalhostPreview?: React.ComponentType<{ url: string; label?: string }>;
   /**
@@ -202,6 +238,12 @@ export interface ShowContentProps {
    * way the user sees one header with the actions on its right.
    */
   toolbarActions?: React.ReactNode;
+  /**
+   * Show the file name in the viewer's header row. Off when the card header
+   * already names the item (the inline carousel's tabs): a row carrying only a
+   * repeated name is dead height, and with no actions it is not drawn at all.
+   */
+  showFileLabel?: boolean;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -215,10 +257,12 @@ export function ShowContentRenderer({
   content = '',
   language = '',
   aspectRatio = '',
+  attachment,
   LocalhostPreview,
   fill = false,
   onStatusChange,
   toolbarActions,
+  showFileLabel = true,
 }: ShowContentProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const arCSS = showAspectRatioToCSS(aspectRatio);
@@ -254,6 +298,7 @@ export function ShowContentRenderer({
   const isText = effectiveType === 'text';
   const isHtml = effectiveType === 'html';
   const isHtmlFile = effectiveType === 'html-file';
+  const isMermaid = effectiveType === 'mermaid';
   const hasLocalhostUrl = !!parseLocalhostUrl(url) && !isAppRouteUrl(url);
   const safeExternalUrl = safeHttpUrl(url);
 
@@ -269,6 +314,7 @@ export function ShowContentRenderer({
   }, [path, isLocalPath]);
 
   const fileName = useMemo(() => path.split('/').pop() || '', [path]);
+  const frameLabel = showFileLabel ? fileName : undefined;
 
   /**
    * ── One header, never two ──────────────────────────────────────────────
@@ -292,14 +338,14 @@ export function ShowContentRenderer({
     fill ? (
       node
     ) : (
-      <ViewerFrame label={fileName} actions={toolbarActions}>
+      <ViewerFrame label={frameLabel} actions={toolbarActions}>
         {node}
       </ViewerFrame>
     );
 
   /** For renderers that never draw a header themselves. */
   const alwaysFramed = (node: React.ReactNode) => (
-    <ViewerFrame label={fileName} actions={toolbarActions}>
+    <ViewerFrame label={frameLabel} actions={toolbarActions}>
       {node}
     </ViewerFrame>
   );
@@ -315,8 +361,11 @@ export function ShowContentRenderer({
   // Binary blob: ONE hook for image, video, audio, pdf, docx, pptx
   // Uses /file/raw endpoint (direct binary fetch via authenticatedFetch),
   // NOT the SDK text-read endpoint. More reliable for binary content.
-  const needsBlob = BLOB_TYPES.has(effectiveType) && !!sandboxPath;
-  const blobFilePath = needsBlob ? sandboxPath : null;
+  // The stored copy wins when saved history recorded one: it is exactly what
+  // the agent showed, and it needs no box. PDF joins the blob path only then —
+  // its sandbox read is a base64 text read, but a stored copy is bytes.
+  const storedCopy = isSessionAttachmentRef(attachment) ? (attachment as string) : null;
+  const blobFilePath = showBlobSource({ effectiveType, attachment, sandboxPath });
   const {
     blobUrl,
     blob: rawBlob,
@@ -332,7 +381,7 @@ export function ShowContentRenderer({
   );
 
   // PDF: base64 content via SDK, decoded by PdfRenderer into a Blob URL.
-  const pdfLoadPath = isPdf && sandboxPath ? sandboxPath : null;
+  const pdfLoadPath = isPdf && sandboxPath && !storedCopy ? sandboxPath : null;
   const {
     data: pdfData,
     isLoading: pdfLoading,
@@ -406,8 +455,11 @@ export function ShowContentRenderer({
   const ownStatus = useMemo<'loading' | 'ready' | 'error' | null>(() => {
     // Generic file → FileContentRenderer reports via its own onStatusChange.
     if (effectiveType === 'file' && path && sandboxPath) return null;
-    // Binary/media types backed by useBinaryBlob.
-    if ((isImage || isVideo || isAudio || isDocx || isPptx) && path) {
+    // A Mermaid file with no inline source renders through the same branch.
+    if (isMermaid && !content && path && sandboxPath) return null;
+    // Binary/media types backed by useBinaryBlob — and a PDF whose stored copy
+    // is read the same way.
+    if ((isImage || isVideo || isAudio || isDocx || isPptx || (isPdf && storedCopy)) && path) {
       if (blobError) return 'error';
       if (blobLoading || (isImage && heicConverting)) return 'loading';
       return 'ready';
@@ -427,6 +479,8 @@ export function ShowContentRenderer({
     effectiveType,
     path,
     sandboxPath,
+    isMermaid,
+    content,
     isImage,
     isVideo,
     isAudio,
@@ -434,6 +488,7 @@ export function ShowContentRenderer({
     isPptx,
     isPdf,
     isCsv,
+    storedCopy,
     blobError,
     blobLoading,
     heicConverting,
@@ -590,6 +645,26 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   // PDF — loaded via useFileContent base64 → atob → Blob URL → native PDF viewer
   // ═════════════════════════════════════════════════════════════════════════
+  if (isPdf && path && storedCopy) {
+    if (blobLoading) return <RendererFallback className={mediaH} />;
+    if (blobError) return <LoadError message={blobError} />;
+    if (blobUrl) {
+      return (
+        <Suspense fallback={<RendererFallback className={mediaH} />}>
+          <div className={mediaH}>
+            {framed(
+              <PdfRenderer
+                url={blobUrl}
+                fileName={fileName}
+                className="h-full"
+                {...viewerChrome}
+              />,
+            )}
+          </div>
+        </Suspense>
+      );
+    }
+  }
   if (isPdf && path) {
     if (pdfLoading) return <RendererFallback className={mediaH} />;
     if (pdfError)
@@ -732,6 +807,18 @@ export function ShowContentRenderer({
   }
 
   // ═════════════════════════════════════════════════════════════════════════
+  // Mermaid — inline source renders here. A path with no inline content falls
+  // through to FileContentRenderer below, which renders `.mmd` the same way.
+  // ═════════════════════════════════════════════════════════════════════════
+  if (isMermaid && content) {
+    return (
+      <div className={mediaH}>
+        {alwaysFramed(<MermaidDiagram source={content} fileName={fileName || 'diagram.mmd'} />)}
+      </div>
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
   // Generic file (json, yaml, ts, py, etc.) → FileContentRenderer
   // FileContentRenderer handles text/code detection, syntax highlighting,
   // and binary fallbacks. Works great for text files via SDK text-read.
@@ -744,18 +831,20 @@ export function ShowContentRenderer({
     return (
       <div className={mediaH}>
         {alwaysFramed(
-          <FileContentRenderer
-            filePath={sandboxPath!}
-            showHeader={false}
-            // A show is a presentation of the file, not a place to edit it —
-            // same read-only CodeMirror the file explorer's preview modal and
-            // the public share view mount. Without this the card mounted a
-            // live editor whose edits went nowhere.
-            readOnly
-            className="h-full"
-            errorFallback={fileErrorFallback}
-            onStatusChange={onStatusChange}
-          />,
+          <Suspense fallback={<RendererFallback className="h-full" />}>
+            <FileContentRenderer
+              filePath={sandboxPath!}
+              showHeader={false}
+              // A show is a presentation of the file, not a place to edit it —
+              // same read-only CodeMirror the file explorer's preview modal and
+              // the public share view mount. Without this the card mounted a
+              // live editor whose edits went nowhere.
+              readOnly
+              className="h-full"
+              errorFallback={fileErrorFallback}
+              onStatusChange={onStatusChange}
+            />
+          </Suspense>,
         )}
       </div>
     );
@@ -785,7 +874,7 @@ export function ShowContentRenderer({
     return (
       <div data-scrollable={scrollableAttr} className={textWrap}>
         {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-        <UnifiedMarkdown content={body} />
+        <UnifiedMarkdown content={body} trust="agent" />
       </div>
     );
   }
@@ -796,7 +885,7 @@ export function ShowContentRenderer({
   if (isText && content) {
     return (
       <div data-scrollable={scrollableAttr} className={textWrap}>
-        <UnifiedMarkdown content={content} />
+        <UnifiedMarkdown content={content} trust="agent" />
       </div>
     );
   }
@@ -825,7 +914,7 @@ export function ShowContentRenderer({
             title={title || tI18nComplete.raw('textfbe19644d843')}
             className="w-full border-0 bg-white"
             style={frameStyle}
-            sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
+            sandbox={framePolicy('document', htmlBlobUrl).sandbox}
           />
         )}
       </div>
@@ -858,7 +947,7 @@ export function ShowContentRenderer({
           data-scrollable={scrollableAttr}
           className={fill ? undefined : 'max-h-96 overflow-auto'}
         >
-          <UnifiedMarkdown content={content} />
+          <UnifiedMarkdown content={content} trust="agent" />
         </div>
       )}
       {path && !content && (
@@ -901,6 +990,11 @@ export interface ShowCarouselItem {
   content?: string;
   language?: string;
   aspect_ratio?: string;
+  /** Stored copy of `path` from saved history — see `ShowContentProps.attachment`. */
+  attachment?: string;
+  /** `pending`: a grouped `show` call whose payload has not arrived yet. The
+   *  slot holds its place so the card does not jump when it lands. */
+  status?: 'pending' | 'ready' | 'error';
 }
 
 export interface ShowCarouselProps {
@@ -914,6 +1008,12 @@ export interface ShowCarouselProps {
   /** Header actions for the ACTIVE item, forwarded to its renderer so paging
    *  between deliverables keeps the toolbar instead of losing it after item 1. */
   toolbarActions?: React.ReactNode;
+  /** Controlled active index. The inline card's header tabs own the index, so
+   *  the tabs and the body can never disagree. Omit to let the carousel own it. */
+  activeIndex?: number;
+  /** Hide the chevron + pill strip: the caller renders its own navigation
+   *  (the inline card's header tabs). */
+  hideNav?: boolean;
 }
 
 const SHOW_TYPE_LABELS: Record<string, string> = {
@@ -1000,11 +1100,18 @@ export function ShowCarousel({
   onIndexChange,
   fill = false,
   toolbarActions,
+  activeIndex,
+  hideNav = false,
 }: ShowCarouselProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const typeLabels = useLocalizedUiCatalog(SHOW_TYPE_LABELS);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [ownIndex, setCurrentIndex] = useState(0);
+  const requestedIndex = activeIndex ?? ownIndex;
   const count = items.length;
+  // A grouped carousel can lose an item (a call that settled empty), so the
+  // stored index is clamped instead of trusted.
+  const currentIndex = Math.max(0, Math.min(requestedIndex, count - 1));
   const segmentRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const stripRef = useRef<HTMLDivElement | null>(null);
 
@@ -1045,8 +1152,8 @@ export function ShowCarousel({
     });
   }, [currentIndex]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  const handleArrowKey = useCallback(
+    (e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'preventDefault'>) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const el = document.activeElement as HTMLElement | null;
       if (
@@ -1066,33 +1173,64 @@ export function ShowCarousel({
         e.preventDefault();
         next();
       }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [prev, next]);
+    },
+    [prev, next],
+  );
+
+  // The panel shows one carousel, so ←/→ page it from anywhere. Inline, a
+  // thread can hold several carousels: a window listener paged all of them at
+  // once. There the keys act only while focus is inside this card (see the
+  // root's `onKeyDown`).
+  useEffect(() => {
+    if (!fill) return;
+    window.addEventListener('keydown', handleArrowKey);
+    return () => window.removeEventListener('keydown', handleArrowKey);
+  }, [fill, handleArrowKey]);
 
   const currentItem = items[currentIndex];
   if (!currentItem) return null;
 
   return (
-    <div className={cn(fill && 'flex h-full flex-col')}>
+    <div
+      className={cn('outline-none', fill && 'flex h-full flex-col')}
+      // -1: a click on the content focuses the card, so ←/→ page it next,
+      // without adding a Tab stop. Tab still reaches the chevrons inside.
+      tabIndex={fill || count < 2 ? undefined : -1}
+      onKeyDown={fill || count < 2 ? undefined : (e) => handleArrowKey(e)}
+    >
       <div className={cn(fill ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-[420px]')}>
-        <ShowContentRenderer
-          type={currentItem.type}
-          title={currentItem.title}
-          description={currentItem.description}
-          path={currentItem.path}
-          url={currentItem.url}
-          content={currentItem.content}
-          language={currentItem.language}
-          aspectRatio={currentItem.aspect_ratio}
-          LocalhostPreview={LocalhostPreview}
-          toolbarActions={toolbarActions}
-          fill={fill}
-        />
+        {currentItem.status === 'pending' ? (
+          <div
+            className={cn(
+              'flex items-center justify-center gap-3',
+              fill ? 'h-full' : 'min-h-[420px]',
+            )}
+          >
+            <Loading className="text-muted-foreground size-4" />
+            <TextShimmer duration={1} spread={2} className="text-sm">
+              {tHardcodedUi.raw('componentsSessionToolRenderers.line4935JsxTextPreparingOutput')}
+            </TextShimmer>
+          </div>
+        ) : (
+          <ShowContentRenderer
+            type={currentItem.type}
+            title={currentItem.title}
+            description={currentItem.description}
+            path={currentItem.path}
+            url={currentItem.url}
+            content={currentItem.content}
+            language={currentItem.language}
+            aspectRatio={currentItem.aspect_ratio}
+            attachment={currentItem.attachment}
+            LocalhostPreview={LocalhostPreview}
+            toolbarActions={toolbarActions}
+            showFileLabel={!hideNav}
+            fill={fill}
+          />
+        )}
       </div>
 
-      {count > 1 && (
+      {count > 1 && !hideNav && (
         <div className="border-border flex shrink-0 items-center gap-2 border-t px-2 py-1.5 pr-3.5">
           <div className="flex shrink-0 items-center">
             <Button

@@ -11,22 +11,30 @@
  * here and torn down after.
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountGroups,
+  accountMemberships,
+  accountScimUsers,
+  accountSecretGrants,
+  accountSecretResources,
   accountMembers,
   accountSsoGroupMappings,
   accountSsoProviders,
   accounts,
   projectGroupGrants,
   projects,
+  projectSessions,
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { syncSsoMembership } from '../iam/sso-sync';
+import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
+import { resolveAccountIdentityByEmail } from '../iam/account-identity';
 import { authorize } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -52,10 +60,10 @@ const canWrite = async (userId: string) =>
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'sso-sync-test' });
   await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' });
-  await db.insert(accountGroups).values({ groupId: MKT_GROUP, accountId: ACCOUNT, name: 'Marketing', source: 'scim' });
+  await db.insert(accountGroups).values({ groupId: MKT_GROUP, accountId: ACCOUNT, name: 'Marketing', source: 'sso' });
   // The group grants MANAGER on the project — this is the admin-configured
   // group→project→role binding the synced membership rides on.
-  await db.insert(projectGroupGrants).values({ projectId: PROJECT, groupId: MKT_GROUP, accountId: ACCOUNT, role: 'manager' });
+  await insertIntoView(db, projectGroupGrants, { projectId: PROJECT, groupId: MKT_GROUP, accountId: ACCOUNT, role: 'manager' });
   await db.insert(accountSsoProviders).values({
     ssoProviderId: crypto.randomUUID(),
     accountId: ACCOUNT,
@@ -64,6 +72,8 @@ beforeAll(async () => {
     primaryDomain: 'acme-inc.com',
     groupClaimName: 'memberOf',
     autoCreateMembers: true,
+    // Identity merges trust the asserted email only on a verified domain.
+    domainVerifiedAt: new Date(),
   });
   await db.insert(accountSsoGroupMappings).values({
     accountId: ACCOUNT,
@@ -130,6 +140,263 @@ describe('Azure AD directory-sync → authorization', () => {
       expect(rows.length).toBe(0);
     } finally {
       await db.update(accountSsoProviders).set({ autoCreateMembers: true }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    }
+  });
+
+  test('an active SCIM person moves from the old Auth id to the SSO Auth id', async () => {
+    await db.update(accountSsoProviders).set({ autoCreateMembers: false }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    const oldUser = crypto.randomUUID();
+    const ssoUser = crypto.randomUUID();
+    const sessionId = crypto.randomUUID();
+    const secretId = crypto.randomUUID();
+    try {
+      await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: oldUser });
+      await db.insert(accountSecretResources).values({
+        secretId,
+        accountId: ACCOUNT,
+        label: 'Migrated provider key',
+        name: 'PROVIDER_KEY',
+        valueEnc: 'encrypted-test-value',
+        consumer: 'sandbox',
+        strategy: 'runtime',
+        createdBy: oldUser,
+      });
+      await db.insert(accountSecretGrants).values({
+        secretId,
+        accountId: ACCOUNT,
+        userId: oldUser,
+        grantedBy: oldUser,
+      });
+      await db.insert(accountGroupMembers).values({ groupId: MKT_GROUP, userId: oldUser });
+      await db.insert(accountScimUsers).values({
+        accountId: ACCOUNT,
+        scimId: crypto.randomUUID(),
+        userId: oldUser,
+        userName: 'linked@acme-inc.com',
+        active: true,
+      });
+      await db.insert(projectSessions).values({
+        sessionId,
+        accountId: ACCOUNT,
+        projectId: PROJECT,
+        branchName: `identity-${sessionId}`,
+        createdBy: oldUser,
+        status: 'stopped',
+      });
+
+      const out = await syncSsoMembership({ userId: ssoUser, email: 'LINKED@acme-inc.com', jwtPayload: jwt([AAD_CLAIM]) });
+      expect(out.memberCreated).toBe(true);
+      expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, oldUser)))).length).toBe(0);
+      expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, ssoUser)))).length).toBe(1);
+      expect((await db.select().from(accountGroupMembers).where(and(eq(accountGroupMembers.groupId, MKT_GROUP), eq(accountGroupMembers.userId, oldUser)))).length).toBe(0);
+      expect((await db.select().from(accountGroupMembers).where(and(eq(accountGroupMembers.groupId, MKT_GROUP), eq(accountGroupMembers.userId, ssoUser)))).length).toBe(1);
+      expect((await db.select().from(accountScimUsers).where(and(eq(accountScimUsers.accountId, ACCOUNT), eq(accountScimUsers.userId, ssoUser)))).length).toBe(1);
+      expect((await db.select().from(projectSessions).where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.createdBy, ssoUser)))).length).toBe(1);
+      expect((await db.select().from(accountSecretGrants).where(and(eq(accountSecretGrants.secretId, secretId), eq(accountSecretGrants.userId, oldUser)))).length).toBe(0);
+      expect((await db.select().from(accountSecretGrants).where(and(eq(accountSecretGrants.secretId, secretId), eq(accountSecretGrants.userId, ssoUser)))).length).toBe(1);
+    } finally {
+      await db.update(accountSsoProviders).set({ autoCreateMembers: true }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    }
+  });
+
+  test('one existing account member with the same email moves to the SSO Auth id', async () => {
+    await db.update(accountSsoProviders).set({ autoCreateMembers: false }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    const oldUser = crypto.randomUUID();
+    const ssoUser = crypto.randomUUID();
+    const email = `manual-${oldUser}@acme-inc.com`;
+    try {
+      await db.execute(sql`INSERT INTO auth.users (id, email) VALUES (${oldUser}::uuid, ${email})`);
+      await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: oldUser });
+
+      const out = await syncSsoMembership({ userId: ssoUser, email: email.toUpperCase(), jwtPayload: jwt([]) });
+      expect(out.memberCreated).toBe(true);
+      expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, oldUser)))).length).toBe(0);
+      expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, ssoUser)))).length).toBe(1);
+    } finally {
+      await db.execute(sql`DELETE FROM auth.users WHERE id=${oldUser}::uuid`);
+      await db.update(accountSsoProviders).set({ autoCreateMembers: true }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    }
+  });
+
+  test('every legacy Auth id for one email moves to the current SSO Auth id', async () => {
+    await db.update(accountSsoProviders).set({ autoCreateMembers: false }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    const oldUsers = [crypto.randomUUID(), crypto.randomUUID()];
+    const ssoUser = crypto.randomUUID();
+    const email = `duplicates-${ssoUser}@acme-inc.com`;
+    const sessionIds: string[] = oldUsers.map(() => crypto.randomUUID());
+    try {
+      for (const [index, oldUser] of oldUsers.entries()) {
+        await db.execute(sql`
+          INSERT INTO auth.users (id, email, is_sso_user)
+          VALUES (${oldUser}::uuid, ${email}, ${index === 1})
+        `);
+        await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: oldUser });
+      }
+      await db.insert(projectSessions).values(oldUsers.map((oldUser, index) => {
+        const sessionId = sessionIds[index];
+        if (!sessionId) throw new Error(`Missing session id at index ${index}`);
+        return {
+          sessionId,
+          accountId: ACCOUNT,
+          projectId: PROJECT,
+          branchName: `identity-${sessionId}`,
+          createdBy: oldUser,
+          status: 'stopped' as const,
+        };
+      }));
+
+      const out = await syncSsoMembership({ userId: ssoUser, email: email.toUpperCase(), jwtPayload: jwt([]) });
+      expect(out.memberCreated).toBe(true);
+      for (const oldUser of oldUsers) {
+        expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, oldUser)))).length).toBe(0);
+      }
+      expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, ssoUser)))).length).toBe(1);
+      expect((await db.select().from(projectSessions).where(and(eq(projectSessions.accountId, ACCOUNT), eq(projectSessions.createdBy, ssoUser)))).filter((session) => sessionIds.includes(session.sessionId)).length).toBe(2);
+    } finally {
+      await db.execute(sql`DELETE FROM auth.users WHERE id IN (${sql.join(oldUsers.map((id) => sql`${id}::uuid`), sql`, `)})`);
+      await db.update(accountSsoProviders).set({ autoCreateMembers: true }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    }
+  });
+
+  test('a migrated session owner without a membership moves on first SSO login', async () => {
+    await db.update(accountSsoProviders).set({ autoCreateMembers: false }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    const oldUser = crypto.randomUUID();
+    const ssoUser = crypto.randomUUID();
+    const sessionId = crypto.randomUUID();
+    const email = `orphan-owner-${ssoUser}@acme-inc.com`;
+    try {
+      await db.execute(sql`INSERT INTO auth.users (id, email) VALUES (${oldUser}::uuid, ${email})`);
+      await db.insert(projectSessions).values({
+        sessionId,
+        accountId: ACCOUNT,
+        projectId: PROJECT,
+        branchName: `identity-${sessionId}`,
+        createdBy: oldUser,
+        status: 'stopped',
+      });
+
+      const out = await syncSsoMembership({ userId: ssoUser, email, jwtPayload: jwt([]) });
+      expect(out.memberCreated).toBe(true);
+      expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, ssoUser)))).length).toBe(1);
+      expect((await db.select().from(projectSessions).where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.createdBy, ssoUser)))).length).toBe(1);
+    } finally {
+      await db.execute(sql`DELETE FROM auth.users WHERE id=${oldUser}::uuid`);
+      await db.update(accountSsoProviders).set({ autoCreateMembers: true }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    }
+  });
+
+  test('an unverified domain never merges an existing identity into the SSO identity', async () => {
+    await db.update(accountSsoProviders).set({ domainVerifiedAt: null }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    const oldUser = crypto.randomUUID();
+    const ssoUser = crypto.randomUUID();
+    const email = `unverified-${ssoUser}@acme-inc.com`;
+    try {
+      await db.execute(sql`INSERT INTO auth.users (id, email) VALUES (${oldUser}::uuid, ${email})`);
+      await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: oldUser });
+
+      const out = await syncSsoMembership({ userId: ssoUser, email, jwtPayload: jwt([]) });
+      expect(out.memberCreated).toBe(true);
+      expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, oldUser)))).length).toBe(1);
+      expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, ssoUser)))).length).toBe(1);
+    } finally {
+      await db.execute(sql`DELETE FROM auth.users WHERE id=${oldUser}::uuid`);
+      await db.update(accountSsoProviders).set({ domainVerifiedAt: new Date() }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    }
+  });
+
+  test('an owner or a super-admin with the same email is never merged into the SSO identity', async () => {
+    const owner = crypto.randomUUID();
+    const superAdmin = crypto.randomUUID();
+    const ownerSso = crypto.randomUUID();
+    const superAdminSso = crypto.randomUUID();
+    const ownerEmail = `owner-${owner}@acme-inc.com`;
+    const superAdminEmail = `super-${superAdmin}@acme-inc.com`;
+    try {
+      await db.execute(sql`INSERT INTO auth.users (id, email) VALUES (${owner}::uuid, ${ownerEmail}), (${superAdmin}::uuid, ${superAdminEmail})`);
+      await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: owner });
+      await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+        principal: { type: 'user', id: owner },
+        roleKey: 'owner',
+        scope: { type: 'account' },
+        exclusive: true,
+      });
+      await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: superAdmin, isSuperAdmin: true });
+
+      await syncSsoMembership({ userId: ownerSso, email: ownerEmail, jwtPayload: jwt([]) });
+      await syncSsoMembership({ userId: superAdminSso, email: superAdminEmail, jwtPayload: jwt([]) });
+
+      const [ownerRow] = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, owner)));
+      expect(ownerRow?.accountRole).toBe('owner');
+      const [ownerSsoRow] = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, ownerSso)));
+      expect(ownerSsoRow?.accountRole).toBe('member');
+      const [superRow] = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, superAdmin)));
+      expect(superRow?.isSuperAdmin).toBe(true);
+      const [superSsoRow] = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, superAdminSso)));
+      expect(superSsoRow?.isSuperAdmin).toBe(false);
+    } finally {
+      await db.execute(sql`DELETE FROM kortix.role_assignments WHERE account_id=${ACCOUNT}::uuid AND principal_id IN (${owner}::uuid, ${superAdmin}::uuid, ${ownerSso}::uuid, ${superAdminSso}::uuid)`);
+      await db.execute(sql`DELETE FROM auth.users WHERE id IN (${owner}::uuid, ${superAdmin}::uuid)`);
+    }
+  });
+
+  test('email admission ignores another account\'s SSO identity whose domain is unverified', async () => {
+    const foreignAccount = crypto.randomUUID();
+    const foreignProvider = crypto.randomUUID();
+    const foreignSsoUser = crypto.randomUUID();
+    const email = `foreign-${foreignSsoUser}@elsewhere.test`;
+    try {
+      await db.insert(accounts).values({ accountId: foreignAccount, name: 'foreign-idp' });
+      await db.insert(accountSsoProviders).values({
+        accountId: foreignAccount,
+        supabaseSsoProviderId: foreignProvider,
+        name: 'Foreign IdP',
+        primaryDomain: 'foreign-idp.test',
+      });
+      await db.execute(sql`
+        INSERT INTO auth.users (id, email, is_sso_user, raw_app_meta_data)
+        VALUES (${foreignSsoUser}::uuid, ${email}, true, ${JSON.stringify({ provider: `sso:${foreignProvider}`, providers: [`sso:${foreignProvider}`] })}::jsonb)
+      `);
+      expect(await resolveAccountIdentityByEmail(ACCOUNT, email)).toEqual({ userId: null, ambiguous: false });
+
+      // Verified, but for a different domain than the email's: still not proof.
+      await db.update(accountSsoProviders).set({ domainVerifiedAt: new Date() }).where(eq(accountSsoProviders.accountId, foreignAccount));
+      expect(await resolveAccountIdentityByEmail(ACCOUNT, email)).toEqual({ userId: null, ambiguous: false });
+
+      // Verified for the email's own domain: the IdP vouches for the address.
+      await db.update(accountSsoProviders).set({ primaryDomain: 'elsewhere.test' }).where(eq(accountSsoProviders.accountId, foreignAccount));
+      expect(await resolveAccountIdentityByEmail(ACCOUNT, email)).toEqual({ userId: foreignSsoUser, ambiguous: false });
+    } finally {
+      await db.execute(sql`DELETE FROM auth.users WHERE id=${foreignSsoUser}::uuid`);
+      await db.delete(accounts).where(eq(accounts.accountId, foreignAccount));
+    }
+  });
+
+  test('email admission resolves the account SSO identity before a manual Auth identity', async () => {
+    const manualUser = crypto.randomUUID();
+    const ssoUser = crypto.randomUUID();
+    const email = `resolve-${ssoUser}@acme-inc.com`;
+    try {
+      await db.execute(sql`
+        INSERT INTO auth.users (id, email, is_sso_user, raw_app_meta_data)
+        VALUES
+          (${manualUser}::uuid, ${email}, false, '{}'::jsonb),
+          (${ssoUser}::uuid, ${email}, true, ${JSON.stringify({ provider: `sso:${SUPA_SSO}`, providers: [`sso:${SUPA_SSO}`] })}::jsonb)
+      `);
+      await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: manualUser });
+      await db.insert(accountScimUsers).values({
+        accountId: ACCOUNT,
+        scimId: crypto.randomUUID(),
+        userId: manualUser,
+        userName: email,
+        active: true,
+      });
+
+      expect(await resolveAccountIdentityByEmail(ACCOUNT, email.toUpperCase())).toEqual({
+        userId: ssoUser,
+        ambiguous: false,
+      });
+    } finally {
+      await db.execute(sql`DELETE FROM auth.users WHERE id IN (${manualUser}::uuid, ${ssoUser}::uuid)`);
     }
   });
 

@@ -314,11 +314,11 @@ test('isFeatureDisabledError reads the flag key from the body when `feature` is 
   const err = new ApiError('nope', {
     status: 403,
     code: 'feature_disabled',
-    data: { error: 'nope', code: 'feature_disabled', feature: 'review_center' },
+    data: { error: 'nope', code: 'feature_disabled', feature: 'teams' },
   });
 
   expect(isFeatureDisabledError(err)).toBe(true);
-  expect(featureDisabledKey(err)).toBe('review_center');
+  expect(featureDisabledKey(err)).toBe('teams');
 });
 
 test('isFeatureDisabledError rejects other errors', () => {
@@ -333,4 +333,27 @@ test('isFeatureDisabledError rejects other errors', () => {
 
 test('featureDisabledKey returns null when the error is not a feature gate', () => {
   expect(featureDisabledKey(new ApiError('boom', { status: 500 }))).toBeNull();
+});
+
+test('BillingError and RequestTooLargeError are ApiErrors, so one instanceof check covers every HTTP failure', () => {
+  const billing = new BillingError(402, { message: 'out of credits' });
+  const tooLarge = new RequestTooLargeError();
+  expect(billing).toBeInstanceOf(ApiError);
+  expect(tooLarge).toBeInstanceOf(ApiError);
+  expect(billing.name).toBe('BillingError');
+  expect(tooLarge.name).toBe('RequestTooLargeError');
+  expect(billing.status).toBe(402);
+  expect(tooLarge.status).toBe(431);
+});
+
+test('parseBillingError keeps the source error code, body and response on the BillingError', () => {
+  const response = new Response(null, { status: 402 });
+  const body = { error: 'Budget exceeded', code: 'app_budget_exceeded', balance: 0 };
+  const source = new ApiError('Budget exceeded', { status: 402, code: 'app_budget_exceeded', details: body, data: body, response });
+  const billing = parseBillingError(source) as BillingError;
+  expect(billing).toBeInstanceOf(BillingError);
+  expect(billing.code).toBe('app_budget_exceeded');
+  expect(billing.details).toEqual(body);
+  expect(billing.response).toBe(response);
+  expect(billing.message).toBe('Budget exceeded');
 });

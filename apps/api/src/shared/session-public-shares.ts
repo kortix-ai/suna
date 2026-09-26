@@ -34,6 +34,17 @@ export function isViewOnlyShare(share: { mode?: string | null; resourceType?: st
   return share.mode !== 'interactive';
 }
 
+/**
+ * True when this share names the session conversation itself. A share grants
+ * exactly the resource it names: a `file` share is one document and a
+ * `preview` share is one app port, so neither reads the transcript. No share
+ * kind names the transcript today, so this is false for every share the CRUD
+ * routes mint.
+ */
+export function shareUnlocksTranscript(share: { resourceType?: string | null }): boolean {
+  return share.resourceType === 'transcript';
+}
+
 export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([
   22,
   ...OPENCODE_PORTS,
@@ -306,7 +317,15 @@ export async function touchPublicShare(shareId: string) {
     .where(eq(projectSessionPublicShares.shareId, shareId));
 }
 
-export async function resolvePublicShare(token: string) {
+export async function resolvePublicShare(
+  token: string,
+  opts: {
+    /** Refuse (404) a share that does not name the conversation, before any
+     *  sandbox-readiness answer: the transcript route must not report the
+     *  sandbox state of a share it will never serve. */
+    requireTranscript?: boolean;
+  } = {},
+) {
   // LEFT JOIN, not INNER: a session that was created but never started (or
   // whose sandbox hasn't been provisioned yet) has no `session_sandboxes` row
   // at all. An INNER JOIN made that case fall straight into `!row` → 404
@@ -367,6 +386,9 @@ export async function resolvePublicShare(token: string) {
       status: 403,
       error: 'Sessions using a personal connection cannot be shared publicly',
     };
+  }
+  if (opts.requireTranscript && !shareUnlocksTranscript(row)) {
+    return { ok: false as const, status: 404, error: 'This share does not include the conversation' };
   }
   if (!row.externalId) return { ok: false as const, status: 503, error: 'Sandbox is not ready' };
   if (row.resourceType === 'preview' && (!row.port || PUBLIC_SHARE_BLOCKED_PORTS.has(row.port))) {

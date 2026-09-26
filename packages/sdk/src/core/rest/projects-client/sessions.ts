@@ -20,6 +20,31 @@ export type ProjectSessionStatus =
   | 'failed'
   | 'completed';
 
+/**
+ * The session's `metadata` jsonb bag.
+ *
+ * Open by design — the API writes many keys and adds more over time, so the
+ * index signature stays. Keys the SDK has verified against the API and that
+ * hosts read back are declared, so a reader gets a type instead of `unknown`.
+ * Declaring a key here is NOT breaking: a `Record<string, unknown>` still
+ * assigns to this in both directions (an optional property is not satisfied by
+ * a source index signature, so TypeScript skips it).
+ */
+export interface ProjectSessionMetadata {
+  /**
+   * The session that spawned this one — an agent starting a sub-session from
+   * inside a turn. Written at create time by
+   * `apps/api/src/projects/lib/sessions.ts:1566` and deliberately retained on
+   * the list payload (`LIST_OMITTED_SESSION_METADATA_KEYS`,
+   * `apps/api/src/projects/lib/serializers.ts:84`). Absent on a root session.
+   *
+   * Read it through {@link sessionParentId}, which also rejects a malformed or
+   * self-referential value.
+   */
+  spawned_by_session?: string;
+  [key: string]: unknown;
+}
+
 export interface ProjectSession {
   session_id: string;
   account_id: string;
@@ -46,7 +71,7 @@ export interface ProjectSession {
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
-  metadata: Record<string, unknown>;
+  metadata: ProjectSessionMetadata;
   opencode_sessions: ProjectOpenCodeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
@@ -86,6 +111,28 @@ export interface ProjectSession {
   deleted_by?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * The session that spawned `session`, or `null` when it is a root session.
+ *
+ * Three hosts hand-rolled the identical `typeof meta.spawned_by_session ===
+ * 'string'` cast over an `unknown` bag
+ * (`apps/web/src/components/projects/session-label.ts:61`,
+ * `apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359`,
+ * `apps/tui/src/lib/session-groups.ts:145`). `metadata` is jsonb, so a
+ * malformed row is possible and a non-string must never escape as a session
+ * id. A self-referential link is rejected too: a session that is its own
+ * parent makes any tree walk loop forever.
+ */
+export function sessionParentId(
+  session: Pick<ProjectSession, 'session_id'> & { metadata?: ProjectSessionMetadata },
+): string | null {
+  const parent = session.metadata?.spawned_by_session;
+  if (typeof parent !== 'string') return null;
+  const trimmed = parent.trim();
+  if (!trimmed || trimmed === session.session_id) return null;
+  return trimmed;
 }
 
 export type SessionRuntimeContextScalar = string | number | boolean | null;
@@ -153,9 +200,16 @@ export interface CreateProjectSessionInput {
    */
   inherit_unbound?: boolean;
   /**
-   * Connectors that must resolve a strategy-compatible authorization
-   * before provisioning. Missing authorizations return
-   * `CONNECTOR_CONNECTION_REQUIRED`.
+   * @deprecated INERT since the connector-credentials rework. Accepted and
+   * ignored by the API; kept so an existing caller still compiles and still
+   * gets a session.
+   *
+   * A session no longer declares connectors it requires, because that refusal
+   * could not be cleared from the product: a `user`-strategy ("Private")
+   * connector had no self-serve connect flow, so the refusal card had no
+   * button and the composer sat on "Thinking" indefinitely. The connector
+   * CALL denies instead — `connector_not_connected`, with a `connect_url` the
+   * agent hands to a human.
    */
   require_connectors?: string[];
   /**
@@ -197,18 +251,96 @@ export interface ProjectOpenCodeSession {
   archived_at: number | null;
 }
 
+/** Default page size the API applies when `limit` is omitted. Mirrors
+ *  `SESSION_PAGE_DEFAULT_LIMIT` in `apps/api/src/projects/lib/session-inventory.ts`. */
+export const PROJECT_SESSION_PAGE_DEFAULT_LIMIT = 50;
+/** Largest page the API will serve. A bigger `limit` is rejected with 400. */
+export const PROJECT_SESSION_PAGE_MAX_LIMIT = 200;
+
 /**
- * @param options.scope - `project` asks for the manager-only lifecycle
- * inventory. Both scopes omit sessions the caller cannot open.
+ * The window used by surfaces that read this list only to resolve a session id
+ * to a NAME — the command palette, the Review Center filter, the gateway spend
+ * table, the schedule pickers.
+ *
+ * They are not browsing sessions, so they do not page; they just need enough
+ * recent sessions that a label resolves instead of rendering a raw uuid. One
+ * shared constant because those surfaces also share one cache key: react-query
+ * keeps ONE entry per key and the first observer to mount installs its fetcher,
+ * so two of them asking for different limits would silently hand one the
+ * other's page. Beyond this window a label falls back to the id, which is the
+ * pre-existing behaviour for any session the list did not return.
+ */
+export const PROJECT_SESSION_NAME_LOOKUP_LIMIT = PROJECT_SESSION_PAGE_MAX_LIMIT;
+
+export interface ListProjectSessionsOptions {
+  /** `project` asks for the manager-only lifecycle inventory. Both scopes omit
+   *  sessions the caller cannot open. */
+  scope?: 'visible' | 'project';
+  /** Rows per page, 1..`PROJECT_SESSION_PAGE_MAX_LIMIT`. */
+  limit?: number;
+  /** A previous page's `next_cursor`. Opaque — pass it back unmodified. */
+  cursor?: string | null;
+}
+
+/** One keyset page of a project's sessions. */
+export interface ProjectSessionPage {
+  items: ProjectSession[];
+  /** Pass as `cursor` for the next page. `null` means this was the last page. */
+  next_cursor: string | null;
+}
+
+function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
+  const params = new URLSearchParams();
+  if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
+  if (options?.cursor) params.set('cursor', options.cursor);
+  return params.size > 0 ? `?${params}` : '';
+}
+
+/**
+ * One page of a project's sessions, newest activity first.
+ *
+ * NOT the whole inventory. `GET /projects/:id/sessions` used to answer with
+ * every row the viewer could see, so a project that had accumulated 12,617
+ * sessions shipped a multi-megabyte body — on a list the sidebar re-polls every
+ * 5 seconds while any one row is still provisioning. It is now a bounded keyset
+ * page; walk it with `next_cursor`.
+ *
+ * To resolve ONE session, call `getProjectSession` — do not page the list
+ * looking for it.
+ */
+export async function listProjectSessionsPage(
+  projectId: string,
+  options?: ListProjectSessionsOptions,
+): Promise<ProjectSessionPage> {
+  const response = await backendApi.get<ProjectSession[]>(
+    `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+  );
+  const items = unwrap(response);
+  return {
+    items,
+    // Absent means the server folded the list to its end. Normalized to null so
+    // a caller can loop on `while (cursor)` without also testing for undefined.
+    next_cursor: response.headers?.get('x-next-cursor') ?? null,
+  };
+}
+
+/**
+ * The first page of a project's sessions as a bare array.
+ *
+ * Kept for every existing caller: the 200 body is still `ProjectSession[]`, so
+ * nothing had to learn an envelope. It returns ONE page — use
+ * `listProjectSessionsPage` when you need to know whether more follow.
  */
 export async function listProjectSessions(
   projectId: string,
-  options?: { scope?: 'visible' | 'project' },
+  options?: ListProjectSessionsOptions,
 ) {
-  const params = new URLSearchParams();
-  if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
-  const query = params.size > 0 ? `?${params}` : '';
-  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
+  return unwrap(
+    await backendApi.get<ProjectSession[]>(
+      `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+    ),
+  );
 }
 
 /**
@@ -558,7 +690,20 @@ export interface SessionTranscriptSyncEnvelope {
   complete: boolean;
   captured_at: string | null;
   opencode_session_id: string | null;
+  /** How many messages are in THIS window of the transcript. */
   message_count: number;
+  /**
+   * Messages the mirror holds for this session, across every window.
+   * `complete === false` says a window is partial; this says by how much.
+   *
+   * Optional because an older API does not send it — a self-hosted or staging
+   * backend behind this client answers without these two fields, and reading
+   * them as required would make a correct response look malformed.
+   */
+  total?: number;
+  /** Pass as `before` to read the window OLDER than this one. Null when this
+   *  window already reaches the oldest message the mirror holds. */
+  next_cursor?: string | null;
   messages: SessionTranscriptSyncMessage[];
 }
 
@@ -592,14 +737,27 @@ export async function getSessionTranscript(
 export async function getSessionTranscriptSync(
   projectId: string,
   sessionId: string,
-  options?: { limit?: number; signal?: AbortSignal },
+  options?: {
+    limit?: number;
+    signal?: AbortSignal;
+    history?: boolean;
+    /**
+     * A previous window's `next_cursor`. Returns the window of messages
+     * strictly OLDER than it, so a client can walk back through a history the
+     * mirror retains in full. A cursor naming no mirrored message answers 400
+     * rather than silently returning the newest window again.
+     */
+    before?: string | null;
+  },
 ) {
   const search = new URLSearchParams({ shape: 'sync' });
   if (options?.limit != null) search.set('limit', String(options.limit));
+  if (options?.history) search.set('history', 'true');
+  if (options?.before) search.set('before', options.before);
   return unwrap(
     await backendApi.get<SessionTranscriptSyncEnvelope>(
       `/projects/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,
-      { showErrors: false },
+      { showErrors: false, signal: options?.signal },
     ),
   );
 }
@@ -623,13 +781,33 @@ export interface SessionTurn {
   accepted_at: string | null;
 }
 
+/** Why a `failed` turn ended: the name and message of the cause the sandbox
+ *  reported. A stop somebody asked for is never reported here. */
+export interface SessionTurnEndError {
+  name: string | null;
+  message: string | null;
+}
+
+/** One recent turn that failed, keyed by its user message. A turn the user
+ *  stopped is not a failure and is never listed. */
+export interface SessionTurnFailure {
+  message_id: string;
+  ended_at: string | null;
+  /** Null when the turn failed and nobody named why. */
+  error: SessionTurnEndError | null;
+}
+
 /** How the most recent turn ended. Present only when no turn is running —
  *  it is what separates "this session has never run a turn" from "the last
  *  one just finished". */
 export interface SessionTurnEnded {
   turn_token: string;
+  /** The user message the turn answered. Absent for a turn nobody named. */
+  message_id?: string;
   end_reason: string | null;
   ended_at: string | null;
+  /** Absent when nobody named the failure. */
+  error?: SessionTurnEndError;
 }
 
 export interface SessionTurnStatus {
@@ -638,6 +816,10 @@ export interface SessionTurnStatus {
    *  prompt, say), so this is a list and never a single turn. */
   turns: SessionTurn[];
   last_ended?: SessionTurnEnded;
+  /** Recent turns that failed, newest first, with the cause when one was named. Reported whether
+   *  or not a turn is running — `last_ended` is one row and vanishes when the
+   *  next turn starts. Absent when there are none. */
+  recent_failures?: SessionTurnFailure[];
 }
 
 /** Server truth about this session's running turns (`GET .../turn`), answered
@@ -786,6 +968,8 @@ export interface SessionPromptPart {
   text?: string;
   mime?: string;
   url?: string;
+  /** Completed private project upload. Legacy URL parts remain supported. */
+  attachment_id?: string;
   filename?: string;
   name?: string;
   source?: unknown;
@@ -812,6 +996,10 @@ export interface SessionPromptOverrides {
 export type SessionPromptState = 'queued' | 'delivering' | 'waiting' | 'failed';
 
 export interface SessionPrompt {
+  /** Pending presentation only; both placements use the same automatic FIFO. */
+  placement?: 'transcript' | 'composer';
+  /** Full accepted text for pending messages after reload. Absent on older servers. */
+  full_text?: string;
   prompt_id: string;
   /** The host's own stable submission name — the same value re-POSTing is a
    *  no-op on, and the key an optimistic row is matched by. */
@@ -826,11 +1014,8 @@ export interface SessionPrompt {
    *  from servers older than this field. */
   wire_message_id?: string;
   state: SessionPromptState;
-  /** Why the prompt is `waiting`: `older_prompt_pending` (its own queue is
-   *  ahead of it) or `held` (the user pressed Stop — only an explicit send or
-   *  send-now releases it). A running turn is NOT one of them: the control
-   *  plane forwards a prompt into a live turn, and OpenCode runs it in arrival
-   *  order. */
+  /** Why admission waits: `turn_active`, `older_prompt_pending`, or `held`.
+   * A live turn holds all later prompts until its terminal event. */
   reason: string | null;
   /** Flattened text preview, capped server-side. */
   text: string;
@@ -863,6 +1048,8 @@ export interface CreateSessionPromptResult {
 }
 
 export interface CreateSessionPromptInput {
+  /** Pending presentation; omitted preserves the legacy composer queue. */
+  placement?: 'transcript' | 'composer';
   clientMessageId: string;
   messageId: string;
   parts: SessionPromptPart[];
@@ -906,6 +1093,7 @@ export async function createSessionPrompt(
         client_message_id: input.clientMessageId,
         message_id: input.messageId,
         parts: input.parts,
+        ...(input.placement ? { placement: input.placement } : {}),
         ...(input.overrides ? { overrides: input.overrides } : {}),
         ...(input.remintOnDelivery ? { remint_on_delivery: true } : {}),
         ...(typeof input.clientSentAtMs === 'number'
@@ -927,6 +1115,8 @@ export async function listSessionPrompts(
   return unwrap(
     await backendApi.get<{ prompts: SessionPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
+      // A background poll: a failed tick must not toast every second.
+      { showErrors: false },
     ),
   );
 }
@@ -934,12 +1124,11 @@ export async function listSessionPrompts(
 /**
  * The prompt a DELETE removed, in the shape that re-creates it exactly.
  *
- * Deliberately not a `SessionPrompt`: that carries a truncated text PREVIEW and
- * no parts at all, because it is what a queue row RENDERS. Undoing a removal
- * from that shape silently drops every attachment, the agent/model/variant
- * picks, and anything past the truncation — under a button labelled "Undo".
+ * Unlike `SessionPrompt`, this includes full parts and captured overrides.
+ * Restoring from a list row would drop attachment bytes and model selections.
  */
 export interface RemovedSessionPrompt {
+  placement?: 'transcript' | 'composer';
   prompt_id: string;
   client_message_id: string;
   message_id: string;
@@ -967,6 +1156,8 @@ export async function deleteSessionPrompt(
   const body = unwrap(
     await backendApi.delete<{ removed: RemovedSessionPrompt }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
     ),
   );
   return body.removed;
@@ -990,6 +1181,8 @@ export async function retrySessionPrompt(
     await backendApi.post<SessionPrompt>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}/retry`,
       {},
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
     ),
   );
 }
@@ -1011,11 +1204,13 @@ export async function holdSessionPrompts(
   projectId: string,
   sessionId: string,
   held: boolean,
-): Promise<{ prompts: SessionPrompt[] }> {
+): Promise<{ prompts: SessionPrompt[]; observed_at?: string }> {
   return unwrap(
-    await backendApi.post<{ prompts: SessionPrompt[] }>(
+    await backendApi.post<{ prompts: SessionPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/hold`,
       { held },
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
     ),
   );
 }
@@ -1059,6 +1254,42 @@ export async function stopProjectSession(projectId: string, sessionId: string) {
 }
 
 /**
+ * The config release state of one session: which config release the box runs,
+ * which one the API assigns, and why the two differ.
+ *
+ * A config release is one archive of the base branch's config dir plus one
+ * compiled governance. The sandbox serves it from a read-only directory, never
+ * from `/workspace`. `/workspace` stays the full editable clone: a config edit
+ * made there reaches a box only once it is pushed to the base branch.
+ */
+export interface SessionConfigRelease {
+  /**
+   * Always `follow-base`: a session runs the base branch's current config
+   * release. One member on purpose — there is no per-session config policy.
+   */
+  mode: 'follow-base';
+  /**
+   * Where the running config comes from, as the daemon reports it. The chain
+   * is the desired release, then the last release this box proved, then the
+   * platform's own default config dir. `/workspace` is not a step in it.
+   */
+  source: 'release' | 'image-default';
+  /** The release ID the box serves from. `null` when no release is running. */
+  running_release_id: string | null;
+  /** The release ID the API assigns. `null` when the base branch produces none. */
+  desired_release_id: string | null;
+  /** True when the running config passed the proven check on this box. */
+  proven: boolean;
+  /**
+   * Why the box runs a config other than the desired release. `null` when it
+   * does not. When set, an earlier config serves the session.
+   */
+  fallback_reason: string | null;
+  /** The release ID that failed on this box, when one did. */
+  failed_release_id: string | null;
+}
+
+/**
  * Whether a session is running the agent config the manifest compiles to now.
  *
  * A session's agent behaviour is compiled from git ONCE, at provision, and
@@ -1085,6 +1316,11 @@ export interface SessionConfigState {
    */
   stale: boolean | null;
   sandbox_reachable: boolean;
+  /**
+   * The config release state. Absent on a response from an API that predates
+   * config releases; a host then renders from `stale` alone.
+   */
+  release?: SessionConfigRelease;
 }
 
 /**
@@ -1156,6 +1392,22 @@ export interface SessionReloadResult {
   /** Why nothing was applied. Internal wording — map it, don't render it. */
   reason?: string;
   detail: string;
+  /**
+   * The config release state after the reload. Absent on a response from an
+   * API that predates config releases. A set `fallback_reason` means the reload
+   * did not take effect and an earlier config still serves the session.
+   */
+  release?: SessionConfigRelease;
+  /**
+   * What happened to the session's own `/workspace` checkout — the other half
+   * of a reload. A reload fast-forwards the checkout AND converges the config
+   * the box runs; a host reports both, so a half-sync is never silent.
+   *
+   * `not-requested` when the caller passed `refresh_repo: false`, `refused`
+   * when the box declined the pull. Absent on a response from an API that
+   * predates config releases.
+   */
+  workspace_checkout?: 'updated' | 'already-current' | 'not-requested' | 'refused';
 }
 
 /** Server-observed boundaries for a live session-config reload. */
@@ -1341,8 +1593,14 @@ export interface SessionScopeInput {
 
 export interface SessionScope {
   secrets_allowlist: string[] | null;
-  /** Aliases this session requires, connected or not. See `require_connectors`. */
-  required_connectors: string[] | null;
+  /**
+   * @deprecated Always `null`. No session requires connectors any more.
+   *
+   * The field is kept (rather than removed) because `SessionScope` is a
+   * published type: dropping it would break every consumer that reads it.
+   * `null` has always meant "nothing required", which is now always true.
+   */
+  required_connectors: null;
   connector_bindings: SessionConnectorBindings;
   /**
    * Whether this session HOLDS its own connector override.

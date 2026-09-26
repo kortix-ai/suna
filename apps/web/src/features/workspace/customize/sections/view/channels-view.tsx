@@ -101,7 +101,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { errorToast, successToast } from '@/components/ui/toast';
+import Loading from '@/components/ui/loading';
+import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { ModelSelector } from '@/features/session/model-selector';
@@ -113,6 +114,7 @@ import {
 import { SlackConnectCard } from '@/features/workspace/customize/sections/component/slack-connect-card';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
 import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
+import { ChannelBrandMark } from '@/features/session/turn/channel-brand';
 import {
   type ChannelBinding,
   useChannelBindings,
@@ -128,6 +130,7 @@ import {
   useSlackMode,
 } from '@/hooks/channels/use-channels-installations';
 import {
+  type TeamsInstallation,
   useDisconnectTeams,
   useTeamsInstall,
   useTeamsMode,
@@ -144,7 +147,8 @@ import {
 } from '@kortix/sdk/react';
 import { AtIcon, EnvelopeIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
 const EMAIL_CONNECTOR_SLUG = 'kortix_email';
@@ -158,6 +162,7 @@ const CHANNEL_LOADING_ROWS = ['channel-loading-1', 'channel-loading-2'];
 
 export function ChannelsSection({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  useTeamsInstallReturnToast();
   // This view used to read the flags off the project SUMMARY query
   // (`qk.project.summary` / `getProject`, whose payload nests them one level
   // shallower). It now reads the one gating primitive, which is backed by
@@ -174,6 +179,7 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   const teamsChannelEnabled = teamsFlag.enabled;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
+  const { data: teamsInstall } = useTeamsInstall(teamsChannelEnabled ? projectId : null);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
     emailChannelEnabled ? projectId : null,
     EMAIL_CONNECTOR_SLUG,
@@ -259,6 +265,13 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
           ) : null}
 
           {install ? <SlackFollowUp projectId={projectId} canWrite={canWrite} /> : null}
+          {/* Bindings are per conversation on EVERY platform (Slack channels, Teams
+              chats/channels). The table used to hang off the Slack nudge, so a
+              Teams-only project could not see or change its agent / model /
+              join policy at all. */}
+          {!install && teamsInstall ? (
+            <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
+          ) : null}
 
           {teamsChannelEnabled ? <TeamsChannelPanel projectId={projectId} /> : null}
         </>
@@ -491,9 +504,20 @@ function ChannelBindingTableRow({
   return (
     <TableRow className="hover:bg-transparent">
       <TableCell>
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{binding.channelName ?? binding.channelId}</p>
-          <p className="text-muted-foreground text-xs">{binding.workspaceId}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          {binding.platform === 'teams' || binding.platform === 'slack' ? (
+            <ChannelBrandMark platform={binding.platform === 'teams' ? 'Teams' : 'Slack'} />
+          ) : null}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium" title={binding.channelId}>
+              {binding.channelName ?? bindingFallbackName(binding, tI18nComplete)}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {binding.platform === 'teams'
+                ? bindingScopeLabel(binding.channelType, tI18nComplete)
+                : binding.workspaceId}
+            </p>
+          </div>
         </div>
       </TableCell>
       <TableCell>
@@ -589,8 +613,114 @@ function ChannelBindingTableRow({
   );
 }
 
+/**
+ * A binding with no captured name.
+ *
+ * Teams conversation ids are ~100 characters
+ * (`19:…@thread.tacv2;messageid=…`), so falling back to the raw id filled the
+ * name column with an opaque string that told a reader nothing — seen on dev
+ * for channels bound before the name was read off the activity. The scope
+ * reads better, and the full id is still on the row's `title`.
+ */
+function bindingFallbackName(
+  binding: { platform: string; channelId: string; channelType: string | null },
+  tI18nComplete: UiTranslator,
+): string {
+  if (binding.platform !== 'teams') return binding.channelId;
+  if (binding.channelType === 'channel') return tI18nComplete.raw('text5cb103d6008c');
+  return tI18nComplete.raw('text31d248c44579');
+}
+
+/** Teams rows: the conversation scope reads better than a tenant GUID underneath the name. */
+function bindingScopeLabel(channelType: string | null, tI18nComplete: UiTranslator): string {
+  if (channelType === 'personal') return tI18nComplete.raw('text895ce927db2e');
+  if (channelType === 'groupChat') return tI18nComplete.raw('text28c7d3f8b75d');
+  return tI18nComplete.raw('textce4683e7013a');
+}
+
 function errorToastFallback(error: unknown, tI18nComplete: UiTranslator) {
   errorToast(error instanceof Error ? error.message : tI18nComplete.raw('textf8bc408a8d81'));
+}
+
+/**
+ * The API's one-click install callback lands here with `?teams=<status>`.
+ * Turn it into a toast once and strip it from the URL so a reload does not
+ * repeat it. The install row itself renders the PERSISTED outcome
+ * (`publishState`), so this is only the announcement — a `publishing` status
+ * keeps the row live through the SDK hook's polling.
+ */
+function useTeamsInstallReturnToast() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const status = searchParams?.get('teams') ?? null;
+
+  useEffect(() => {
+    if (!status) return;
+    switch (status) {
+      case 'connected':
+        successToast(tI18nComplete.raw('textbfd886d0029b'));
+        break;
+      case 'review':
+        infoToast(tI18nComplete.raw('text65228e6e414d'));
+        break;
+      case 'failed':
+        errorToast(tI18nComplete.raw('textf5262c55d1be'));
+        break;
+      case 'publishing':
+        infoToast(tI18nComplete.raw('text76930360e909'));
+        break;
+      case 'declined':
+        warningToast(tI18nComplete.raw('textb8d155eea2ab'));
+        break;
+      case 'disabled':
+        warningToast(tI18nComplete.raw('textd4b32aea5c4a'));
+        break;
+      case 'unconfigured':
+        warningToast(tI18nComplete.raw('text57ef9e5e8110'));
+        break;
+      default:
+        break;
+    }
+    const next = new URLSearchParams(searchParams?.toString() ?? '');
+    next.delete('teams');
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [status, searchParams, router, pathname, tI18nComplete]);
+}
+
+/**
+ * The org-catalog publish outcome, as a badge beside the row name. Null when
+ * there is nothing to say: a manual/BYO install never publishes, and a
+ * published app already shows its "Open in Teams" action.
+ */
+function TeamsPublishBadge({
+  install,
+  tI18nComplete,
+}: {
+  install: TeamsInstallation;
+  tI18nComplete: UiTranslator;
+}) {
+  switch (install.publishState) {
+    case 'publishing':
+      return (
+        <Badge variant="muted">
+          <Loading className="size-3" />
+          {tI18nComplete.raw('text36f6474748b3')}
+        </Badge>
+      );
+    case 'review':
+      return <Badge variant="warning">{tI18nComplete.raw('text45b9df5730ac')}</Badge>;
+    case 'failed':
+      return (
+        <Badge variant="destructive" title={install.publishError ?? undefined}>
+          {tI18nComplete.raw('textdf5e72815836')}
+        </Badge>
+      );
+    default:
+      return null;
+  }
 }
 
 function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
@@ -602,14 +732,33 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
   const connected = Boolean(install);
   const installUrl = mode?.orgConsentUrl ?? null;
   const deepLinkUrl = install?.orgInstalled ? (mode?.deepLinkUrl ?? null) : null;
+  // The consent URL doubles as the retry AND the upgrade: consenting again
+  // re-runs the publish against the tenant that is already bound, and for an
+  // app already in the catalog the API submits this manifest version as a new
+  // app definition. Hidden only while a publish is in flight or awaiting
+  // review; a BYO install has no consent URL, so it never shows.
+  const publishInFlight =
+    install?.publishState === 'publishing' || install?.publishState === 'review';
+  const retryUrl = install && !publishInFlight ? installUrl : null;
+  const retryLabel =
+    install?.publishState === 'failed'
+      ? tI18nComplete.raw('text942087cc2d41')
+      : tI18nComplete.raw('text8ccfe10f2f2d');
+  // The Graph reason, verbatim, under the row: a tooltip on the badge is not
+  // discoverable enough for the one line that says what to fix.
+  const detail =
+    install?.publishState === 'failed' && install.publishError
+      ? `${install.teamName ?? install.tenantId} · ${install.publishError}`
+      : (install?.teamName ?? install?.tenantId ?? null);
 
   return (
     <ChannelRow
       icon={<MicrosoftTeams className="size-5 shrink-0" />}
       name="Microsoft Teams"
       connected={connected}
-      detail={install?.teamName ?? install?.tenantId ?? null}
+      detail={detail}
       pitch={tI18nComplete.raw('text9225e456b795')}
+      badge={install ? <TeamsPublishBadge install={install} tI18nComplete={tI18nComplete} /> : null}
       actions={
         !canWrite ? null : connected ? (
           <>
@@ -617,6 +766,13 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
               <Button size="sm" variant="secondary" asChild>
                 <Link href={deepLinkUrl} target="_blank" rel="noopener noreferrer">
                   {tI18nComplete.raw('text1fece1858ee9')}
+                </Link>
+              </Button>
+            ) : null}
+            {retryUrl ? (
+              <Button size="sm" variant="secondary" asChild>
+                <Link href={retryUrl} target="_blank" rel="noopener noreferrer">
+                  {retryLabel}
                 </Link>
               </Button>
             ) : null}

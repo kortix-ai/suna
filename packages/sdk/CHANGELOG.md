@@ -30,8 +30,50 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `KortixProject` **as exported from `@kortix/sdk/opencode-client`** — renamed to
   `KortixMasterProject`. The platform's `KortixProject` (from the root) is
   unchanged and keeps its name.
+- The `review_center` member of `FeatureFlagKey`. Review Center graduated out
+  of the flag system and is on for every project. The key still typechecks, and
+  `useFeatureFlag(id, 'review_center')` reports `enabled: true`. The API no
+  longer lists, resolves, or accepts it, so it is absent from
+  `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `updateFeatureFlag(id, 'review_center', …)` answers `400`. Removed in the next
+  major.
+- Functions and hooks whose API route was deleted. The exports remain until the
+  next major. Each one now fails at once with an `ApiError` whose `code` is
+  `ENDPOINT_RETIRED`, and sends no request (it used to send one that returned
+  `404`):
+  - referrals: `getReferralCode`, `refreshReferralCode`, `validateReferralCode`,
+    `getReferralStats`, `listReferrals`, `sendReferralEmails`;
+  - Google Slides: `getGoogleAuthUrl`, `convertPresentationToGoogleSlides`
+    (export PDF or PPTX with `convertRuntimePresentation`);
+  - templates and warm pool: `getTemplate`, `installTemplate`,
+    `updateTemplateWarmPool`;
+  - account-level sandbox: `getInvite`, `acceptInvite`, `declineInvite`,
+    `deleteInstance`, `claimComputer`, `getSandboxProvisionStreamUrl` (throws).
+    `markInstanceError` and `getSandboxProvisionStatus` never threw; they now
+    resolve `undefined` and `null` without a request;
+  - `@kortix/sdk/react` admin hooks: every hook in `use-admin-analytics`
+    (28), `use-admin-feedback` (8), `use-system-status` (4) and
+    `use-admin-billing` (4); the per-sandbox hooks `useAdminSandboxDetail`,
+    `useAdminSandboxHealth`, `useAdminSandboxHealthBatch`, `useAdminSandboxExec`,
+    `useAdminSandboxAction`, `useAdminSandboxRepair`, `useDeleteAdminSandbox`
+    and `fetchAdminSandboxProxyToken`; and `useAdminAccountSandboxes`.
+    Retired queries never retry or poll.
 
 ### Fixed
+- `BillingError` (402) and `RequestTooLargeError` (431) now extend `ApiError`.
+  `err instanceof ApiError` matches every failed request, and a 402 keeps the
+  backend's machine `code` (for example `app_budget_exceeded`), `details` and
+  `response`. `instanceof BillingError` and `.detail` are unchanged.
+- `backendApi`, `backendApi.postStream` and `authenticatedFetch` now send
+  through one module (`core/http/transport.ts`) and share one policy:
+  - `authenticatedFetch` (the session runtime, files, PTY) now carries the
+    act-as (`X-Kortix-Impersonate`) and admin read-bypass headers, as
+    `backendApi` always did;
+  - `backendApi` requests now replay a `401` once with a fresh token from
+    `getToken()`, as `authenticatedFetch` did;
+  - `backendApi.postStream` now honors `configureKortix({ fetch })`, and
+    without a token it resolves a `401` without sending an unauthenticated
+    request.
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
   `ReferenceError` in a browser `<script>` bundle and on React Native.
 - The HTTP layer (`backendApi`/`makeRequest`) now transparently retries transient

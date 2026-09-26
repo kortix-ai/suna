@@ -40,6 +40,7 @@ import {
   DEFAULT_AGENT_SENTINEL,
   type LoadedAgents,
   grantFromLoadedAgents,
+  isLaunchableAgentName,
   loadProjectAgents,
 } from '../agents';
 
@@ -113,7 +114,7 @@ export function secretGrantEnvDiffers(
 }
 
 /**
- * The same collapse for a grant's `connectors` / `kortixCli` lists.
+ * The same collapse for a grant's `connectors` / `permissions` lists.
  *
  * Deliberately NOT case-folded, unlike `grantEnvKey`. Each list is compared by
  * its own gate with an exact `includes()` (`agentMayUseConnector`,
@@ -127,8 +128,18 @@ function grantListKey(list: string[] | 'all' | undefined): string {
 }
 
 /**
+ * The same collapse for `apps`, whose ABSENT value means none (not all — see
+ * `agentMayOpenApp`). A null grant carries no App restriction at all, which is
+ * its own key. Lowercased, because the gate compares App slugs lowercase.
+ */
+function grantAppsKey(apps: string[] | 'all' | undefined): string {
+  if (apps === 'all' || apps?.includes('*')) return '*all*';
+  return [...new Set((apps ?? []).map((slug) => slug.toLowerCase()))].sort().join(',');
+}
+
+/**
  * True when running `requestedAgent` instead of `sessionAgent` would change ANY
- * part of the authorization grant — secrets, connectors, or Kortix CLI actions.
+ * part of the authorization grant — secrets, connectors, or Kortix permissions.
  *
  * This is the RE-MINT predicate, not a refusal. A session's `agentGrant` is
  * written onto its token row ONCE, at mint (`account_tokens.agent_grant`), from
@@ -163,7 +174,8 @@ export function agentGrantDiffers(
   return (
     secretGrantEnvDiffers(sessionGrant?.env, requestedGrant?.env) ||
     grantListKey(sessionGrant?.connectors) !== grantListKey(requestedGrant?.connectors) ||
-    grantListKey(sessionGrant?.kortixCli) !== grantListKey(requestedGrant?.kortixCli)
+    grantListKey(sessionGrant?.permissions) !== grantListKey(requestedGrant?.permissions) ||
+    grantAppsKey(sessionGrant?.apps) !== grantAppsKey(requestedGrant?.apps)
   );
 }
 
@@ -216,7 +228,7 @@ export async function resolveSessionSecretGrant(
 
 /**
  * The FULL grant of the agent a prompt will actually run — secrets, connectors
- * and Kortix CLI actions.
+ * and Kortix permissions.
  *
  * Same resolution and same failure mode as `resolveSessionSecretGrant` (which
  * is this function's `env` leg): callers get `SecretGrantResolutionError` on an
@@ -227,6 +239,47 @@ export async function resolveSessionAgentGrant(
   input: SessionSecretGrantInput,
 ): Promise<AgentGrant | null> {
   return (await loadGrantForRunningAgent(input)).grant;
+}
+
+/**
+ * Does this project declare `agentName` as a launchable agent?
+ *
+ * The gate every path must pass before an agent name reaches a session token,
+ * the prompt's secret env, or the runtime (see `isLaunchableAgentName` and
+ * INC-2026-09-15). FAIL CLOSED: an unreadable manifest answers `false`, and the
+ * caller runs the session's own agent instead — always a safe choice.
+ *
+ * A miss is re-checked once against a forced mirror refresh, so an agent a
+ * change request declared seconds ago on another replica is not refused by a
+ * stale mirror.
+ */
+export async function isAgentLaunchableForProject(input: {
+  projectId: string;
+  repoUrl: string;
+  defaultBranch: string | null | undefined;
+  manifestPath: string | null | undefined;
+  agentName: string;
+}): Promise<boolean> {
+  // No git context means no manifest and no per-agent governance: unchanged.
+  if (!input.defaultBranch) return true;
+  const read = async (forceRefresh: boolean) => {
+    const loaded = await loadProjectAgents(
+      {
+        projectId: input.projectId,
+        repoUrl: input.repoUrl,
+        defaultBranch: input.defaultBranch as string,
+        manifestPath: input.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      },
+      { rethrowReadErrors: true, forceRefresh },
+    );
+    return isLaunchableAgentName(input.agentName, loaded);
+  };
+  try {
+    return (await read(false)) || (await read(true));
+  } catch {
+    return false;
+  }
 }
 
 async function loadGrantForRunningAgent(
@@ -259,5 +312,30 @@ async function loadGrantForRunningAgent(
   }
 
   const env = secretGrantEnvForRunningAgent(loaded, runningAgent);
-  return { grant: grantFromLoadedAgents(runningAgent, loaded), env };
+  return { grant: withGrantProvenance(grantFromLoadedAgents(runningAgent, loaded), loaded), env };
+}
+
+/**
+ * Stamp WHERE a grant came from onto the grant itself.
+ *
+ * The re-mint policy (`session-token-grant.ts`) compares a freshly derived
+ * grant against the one the token already holds. Without provenance it can
+ * only compare the two lists — and a list derived from a stale or glitched
+ * manifest read looks exactly like a deliberate narrowing. With the blob sha
+ * and commit attached, "same manifest, different grant" and "older commit,
+ * narrower grant" are both recognisable as reads that must NOT rewrite the
+ * token. A `null` grant (unrestricted) carries nothing: there is no row to
+ * protect.
+ */
+export function withGrantProvenance(
+  grant: AgentGrant | null,
+  loaded: Pick<LoadedAgents, 'manifest'>,
+): AgentGrant | null {
+  if (!grant) return null;
+  return {
+    ...grant,
+    manifestRevision: loaded.manifest?.revision ?? null,
+    manifestCommit: loaded.manifest?.commit ?? null,
+    resolvedAt: new Date().toISOString(),
+  };
 }

@@ -4,7 +4,7 @@
  * Transform backend thread data into UI-friendly formats
  */
 
-import { MessageCircle } from 'lucide-react-native';
+import { ChatCircleIcon as MessageCircle } from '@/lib/icons';
 import type { Thread, Agent } from '@/api/types';
 import type { Conversation, ConversationSection } from '@/components/menu/types';
 

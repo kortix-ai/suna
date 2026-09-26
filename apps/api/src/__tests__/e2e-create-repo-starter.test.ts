@@ -229,14 +229,6 @@ mock.module('../snapshots/builder', () => ({
     built: false,
     isDefault: true,
   }),
-  ensureFastSandboxImage: async () => ({
-    snapshotName: 'kortix-fast-test',
-    slug: 'default',
-    contentHash: 'f'.repeat(64),
-    built: false,
-    isDefault: true,
-    runtimeProfile: 'fast',
-  }),
   ensureMetaSandboxImage: async () => ({
     snapshotName: 'kortix-meta-test',
     slug: 'meta',
@@ -263,6 +255,18 @@ mock.module('../snapshots/builder', () => ({
 }));
 
 mock.module('../projects/github', () => ({
+  // provision-core.ts classifies rate-limited repo creates with this class.
+  GitHubApiError: class GitHubApiError extends Error {
+    constructor(
+      message: string,
+      readonly status: number,
+      readonly path: string,
+      readonly retryAfterSeconds?: number,
+    ) {
+      super(message);
+      this.name = 'GitHubApiError';
+    }
+  },
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
   verifyGitHubAppInstallState: (state: string) =>
     state === 'valid-install-state' ? ACCOUNT_ID : null,
@@ -318,6 +322,8 @@ mock.module('../projects/github', () => ({
     expect(token).toBe('github-user-token');
     return { login: 'github-admin' };
   },
+  // github-installations.ts maps a failed verification to a status through this export.
+  githubVerificationStatus: () => 403 as const,
   getRepo: async (input: any) => ({
     id: input.owner === 'acme' ? 84 : 7,
     name: input.repo,
@@ -888,15 +894,17 @@ describe('create-repo starter scaffold contract', () => {
     );
   });
 
-  test('forwards bounded search options to the managed GitHub repository lister', async () => {
+  test('forwards bounded search options to the instance backend repository lister', async () => {
+    // The instance backend has its OWN namespace. It used to ride inside
+    // `/github/repositories?installation_id=pat`, which made an
+    // instance-global credential look like one account's connection.
     process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
     process.env.MANAGED_GIT_GITHUB_TOKEN = 'managed-token';
     selfHostOperator = true;
 
     const app = createApp();
     const response = await app.request(
-      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}` +
-        '&installation_id=pat&search=customer%20portal&limit=25',
+      '/v1/projects/git/backend/repositories?search=customer%20portal&limit=25',
     );
 
     expect(response.status).toBe(200);
@@ -924,13 +932,20 @@ describe('create-repo starter scaffold contract', () => {
       installations: [],
     });
 
-    const repositories = await app.request(
-      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}&installation_id=pat`,
-    );
+    const repositories = await app.request('/v1/projects/git/backend/repositories');
     expect(repositories.status).toBe(403);
     expect(await repositories.json()).toEqual({
-      error: 'Managed GitHub repository import is only available to a self-host operator',
+      error: 'The instance git backend is only browsable by a self-host operator',
     });
+    expect(ownerRepoListCalls).toEqual([]);
+
+    // The account-scoped route no longer knows the sentinel at all: it answers
+    // "not connected to this account", naming nothing about the instance.
+    const viaAccountRoute = await app.request(
+      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}&installation_id=pat`,
+    );
+    expect(viaAccountRoute.status).toBe(409);
+    expect(JSON.stringify(await viaAccountRoute.json())).not.toContain('managed-kortix');
     expect(ownerRepoListCalls).toEqual([]);
 
     const linked = await app.request('/v1/projects/link-repository', {
@@ -938,7 +953,7 @@ describe('create-repo starter scaffold contract', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         account_id: ACCOUNT_ID,
-        installation_id: 'pat',
+        source: 'managed',
         repo_full_name: 'managed-kortix/private-repo',
       }),
     });
@@ -965,17 +980,15 @@ describe('create-repo starter scaffold contract', () => {
 
     const app = createApp();
 
-    // 1. The synthetic installation is not even offered.
+    // 1. The instance backend is not offered as an account connection at all.
     const installations = await app.request(
       `/v1/projects/github/installations?account_id=${ACCOUNT_ID}`,
     );
     expect(installations.status).toBe(200);
     expect(await installations.json()).toMatchObject({ installed: false, installations: [] });
 
-    // 2. Listing the org is refused, and no upstream call is made.
-    const repositories = await app.request(
-      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}&installation_id=pat`,
-    );
+    // 2. Listing the instance backend is refused, and no upstream call is made.
+    const repositories = await app.request('/v1/projects/git/backend/repositories');
     expect(repositories.status).toBe(403);
     expect(ownerRepoListCalls).toEqual([]);
 
@@ -985,11 +998,39 @@ describe('create-repo starter scaffold contract', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         account_id: ACCOUNT_ID,
-        installation_id: 'pat',
+        source: 'managed',
         repo_full_name: 'managed-kortix/someone-elses-project',
       }),
     });
     expect(linked.status).toBe(403);
+
+    // 4. The retired `installation_id: 'pat'` pseudo-id is just an unknown
+    // installation now — 409 "not connected", and nothing about the instance.
+    const legacySelector = await app.request('/v1/projects/link-repository', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        installation_id: 'pat',
+        repo_full_name: 'managed-kortix/someone-elses-project',
+      }),
+    });
+    expect([400, 409]).toContain(legacySelector.status);
+    expect(JSON.stringify(await legacySelector.json())).not.toContain('managed-kortix');
+
+    // 5. `source: 'managed'` and an `installation_id` together are a
+    // contradiction, refused before any gate or upstream call.
+    const both = await app.request('/v1/projects/link-repository', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        source: 'managed',
+        installation_id: '42',
+        repo_full_name: 'managed-kortix/someone-elses-project',
+      }),
+    });
+    expect(both.status).toBe(400);
     expect(await linked.json()).toEqual({
       error: 'Managed GitHub repository import is only available to a self-host operator',
     });

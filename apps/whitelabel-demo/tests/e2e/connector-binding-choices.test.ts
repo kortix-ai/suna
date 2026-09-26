@@ -100,10 +100,9 @@ describe('connectorBindingNotice', () => {
   });
 
   test('neither case offers a self-connect action', () => {
-    // A wrapper credential has no personal upstream identity, and the
-    // interactive flow that would connect one is refused for it outright
-    // (403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY) — so a "connect it yourself"
-    // button could only ever lead to that refusal.
+    // A wrapper credential has no personal upstream identity, so it can never
+    // complete an interactive connect flow for a member-owned account — a
+    // "connect it yourself" button could only ever lead to that dead end.
     for (const unavailable of ['private_only', 'project_connection_inactive']) {
       expect(
         connectorBindingNotice(choiceFor({ unavailable }))!.selfServiceAction,

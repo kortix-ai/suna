@@ -74,6 +74,3 @@ export async function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext)
     }
   }
 }
-
-/** Exported for tests: which flags have registered effects. */
-export const FEATURE_FLAGS_WITH_TOGGLE_EFFECTS = Object.keys(TOGGLE_EFFECTS) as FeatureFlagKey[];

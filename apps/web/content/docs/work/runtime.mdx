@@ -51,6 +51,112 @@ The agent finishes with `kortix sessions reload "$KORTIX_SESSION_ID" --project "
 
 The session header reports each server-confirmed reload phase in real time. A web reload checks the session, compiles the agent config, applies and validates the runtime replacement, then confirms the active config. It does not refresh the repository. The CLI can refresh the repository unless you pass `--no-repo`.
 
+### Config convergence
+
+A sandbox holds the config of the commit it was provisioned from. A resume or a restart returns the same VM, so the config does not change by itself. Kortix converges each session on the current config of its `base_ref`, at every boot and start of its box.
+
+The platform never writes `/workspace` to do this. `/workspace` stays the full clone that you and the agent read and edit.
+
+The unit a session runs is a **config release**: one archive of the OpenCode config directory (`.kortix/opencode` unless the manifest sets `opencode.config_dir`) at a base commit, plus the agent config the API compiles from `kortix.yaml` and the agent files. The release ID covers both halves. A commit that changes neither produces the same release ID, so nothing restarts.
+
+Convergence runs at the **start of every turn**: a prompt on a box that is behind converges first, then runs. It also runs after the box boots, after each resume and restart, when the base branch moves, and when you select **Reload config** or run `kortix sessions reload`. Those are a warm-up — they move the box onto the current config while nobody waits, so the turn usually starts with nothing to do and pays nothing.
+
+Convergence never ends a turn. A turn that is already running blocks it, and the next turn start picks it up.
+
+1. The box asks the API which release it should run. The request carries no inputs: the answer is always the base branch's current release for that session.
+2. The daemon downloads the archive through the API and extracts it to `/opt/kortix/config/<release_id>`. It verifies every file against its Git blob ID, then seals the directory read-only. OpenCode reads its agents, skills, tools, and plugins from there.
+3. The daemon starts a replacement OpenCode on the new config and runs the proven check: the replacement serves the session API, lists the default agent, and loads every tool in `tools/`. Only a proven replacement takes over. The daemon then records the release as the last proven release in `/opt/kortix/config/current.json`.
+
+#### `/workspace` is where you edit, the base branch is what runs
+
+A session ALWAYS runs the base branch's current config. There is no per-session config mode.
+
+`/workspace` is your editable checkout. Read the config there, change it there — and the change reaches the running session once it is **pushed to the base branch**, after which the normal convergence picks it up. An edit that is only in `/workspace` changes nothing about how the session behaves, and the running agent is told so: its instructions name the commit its config comes from and say that `/workspace` may be behind it.
+
+The release copy is read-only, so an edit to the wrong copy fails with a permission error instead of silently doing nothing.
+
+#### When the configuration no longer declares a session's agent
+
+A session is created with an agent. If a later commit removes or renames that agent, the session moves to the project's default agent — once, and only when the session's owner may use that agent. Kortix records the move in the audit log and states it in the running agent's instructions, so the session says what happened.
+
+If the owner may not use the default agent, or the project declares no default, the session keeps no agent and no agent access. It still boots, and it reports the reason. Declare the agent again, set a default agent for the project, or ask a project manager for access to the default agent.
+
+#### Fallback
+
+A config that fails the proven check never replaces a working one. The daemon keeps the running OpenCode, records the release as failed, and reports the reason. On boot, and after a failed convergence, the daemon serves the first config that works, in this order:
+
+1. The desired release.
+2. The last proven release.
+3. The default config of the sandbox image.
+
+`/workspace` is not in that list. A box never silently falls back to a stale session checkout as the project's config.
+
+Each step down records a `fallback_reason`. The session header then shows **Config failed to load**. Its popover names the reason, the config that runs now, and the release that failed. The box does not retry a failed release until the base branch moves. After 2 sessions of a project fail on the same release, the API stops assigning it in that project and assigns the last release that any session proved.
+
+#### What the session header shows
+
+| State | Condition | Header |
+| --- | --- | --- |
+| Current | Not stale, no fallback | Nothing |
+| Update available | `stale: true` | The update badge, with **Reload config** |
+| Fallback | `fallback_reason` set | A red chip: **Config failed to load** |
+
+A reload that ends on a fallback reports an error, not a success.
+
+#### Freshness
+
+`GET /v1/projects/{projectId}/sessions/{sessionId}/config` reports freshness in `stale` and the release state in `release`:
+
+```json
+{
+  "stale": true,
+  "release": {
+    "mode": "follow-base",
+    "source": "release",
+    "running_release_id": "<hex or null>",
+    "desired_release_id": "<hex or null>",
+    "proven": true,
+    "fallback_reason": null,
+    "failed_release_id": null
+  }
+}
+```
+
+- For a sandbox that supports config releases, `stale` is `true` when `running_release_id` differs from `desired_release_id`.
+- For an older sandbox, `stale` compares the compiled agent config etag. The API omits `release` for it.
+- `stale` is `null` when Kortix cannot tell. It is never `false` in that case.
+- `mode` is always `follow-base`. `source` is `release` or `image-default`: where the running config comes from.
+
+The response carries a top-level `agent_repoint` only when the configuration dropped the session's agent. Kortix omits the key otherwise.
+
+```json
+{
+  "agent_repoint": {
+    "from": "<the agent the session was created with>",
+    "to": "<the project's default agent, or null>",
+    "applied": true,
+    "reason": "<one sentence, safe to show as-is>"
+  }
+}
+```
+
+`applied` is `true` when the session now runs `to`. It is `false` when the session holds no agent, and `reason` then says why.
+
+The `@kortix/sdk` type for `release` is `SessionConfigRelease`.
+
+#### Reload config
+
+**Reload config** — and `kortix sessions reload <session id>` — does two things in one step, and names what happened to each:
+
+1. It moves the running session onto the base branch's current agents, skills, and tools.
+2. It fast-forwards the `/workspace` checkout, so the files you read there match the config the session runs.
+
+The checkout pull is fast-forward only, on the session's own branch, so it discards nothing. Pass `--no-repo` on the CLI to skip it. To bring the CODE of `base_ref` into the session branch, use **Ask agent to sync**.
+
+#### Turning it off
+
+Config releases are a per-project feature flag, **Config Releases**, on by default in **Settings → Feature flags**. Turn it off and the project returns to the earlier behaviour: OpenCode reads the config directory inside `/workspace`, no release is built, and the session header shows the earlier, etag-based state. The change takes effect at the next boot or start of each session's box; a running session keeps working until then. Turning it back on converges each session again at its next boot or start.
+
 ## Layout inside the sandbox
 
 ```
@@ -59,6 +165,8 @@ The session header reports each server-confirmed reload phase in real time. A we
 /usr/local/bin/kortix-agent      ← The daemon (supervisor + reverse proxy).
 /usr/local/bin/kortix-entrypoint ← The container ENTRYPOINT (PID 1).
 /opt/kortix/home                 ← OpenCode's HOME — its object store lives here, off the repo.
+/opt/kortix/config/<release_id>  ← Read-only config release: the OpenCode config dir at a base commit.
+/opt/kortix/config/current.json  ← Pointer to the last proven config release.
 ```
 
 OpenCode's `HOME` is `/opt/kortix/home`, not `/workspace`. Its object store never lands among your repo files.
@@ -108,7 +216,7 @@ The daemon sends `KORTIX_TOKEN` only to the Kortix Git proxy. The proxy resolves
 
 ## The agent runtime
 
-The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the project's config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
+The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the config the box currently runs. With config releases on, that is the read-only release directory under `/opt/kortix/config`. With the feature off, it is the project's config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
 
 ## Transcript attachments and memory
 
@@ -126,6 +234,7 @@ The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_S
 | --- | --- |
 | `GET /kortix/health` | Liveness check (no auth required). Reports daemon and OpenCode state, repo, branch, commit. |
 | `POST /kortix/refresh` | Re-pull the session branch and restart OpenCode in place. |
+| `POST /kortix/config/converge` | Fetch the desired config release from the API and apply it. The request carries no config content. A second request while one runs returns `409`. |
 | `POST /kortix/abort` | Abort the current run. |
 | `POST /kortix/env` | Update the runtime environment. |
 | `/kortix/pty` | Backs the in-dashboard terminal. |
@@ -171,14 +280,16 @@ Set exactly one of `dockerfile` or `image` on each entry. Dockerfile paths must 
 Kortix appends this layer on top of your Dockerfile's final stage.
 
 - A system package floor with `git`, `curl`, `build-essential`, `ffmpeg`, and `tmux`.
+- A shell tool floor: `rg` (ripgrep), `fd`, `bat`, `jq`, `fzf`, `tree`, `htop`, `lsof`, `rsync`, `sqlite3`, `wget`, `zip`/`unzip`, `zstd`, `git-lfs`, `ssh`, `nc`, and `nano`. Every package installs on Ubuntu 22.04, Ubuntu 24.04, and Debian 12 bases.
 - pnpm-managed Node.js and npm, plus uv-managed Python 3.
 - A document-tools floor: LibreOffice, Pandoc, and OCR tools.
 - An exact uv-managed Python version exposed as `python` and `python3`. Use `uv run --with <package>` for third-party dependencies.
 - `opencode-ai`, the `bun` runtime, and `agent-browser` with a baked Chromium build.
 - The `kortix-agent` daemon, the `kortix` CLI, and the entrypoint script.
 - `ENV KORTIX_WORKSPACE=/workspace`, `WORKDIR /workspace`, `EXPOSE 8000`, and the entrypoint that starts the daemon.
+- A shell hook at `/etc/profile.d/zz-kortix.sh`, sourced from `/etc/bash.bashrc` too. It puts the Kortix tool directories back on `PATH` in terminal shells and loads the project secrets. Debian's `/etc/profile` resets `PATH` for login shells; without the hook, `opencode`, `pnpm`, `python`, and `bun` are not found in the terminal.
 
-Everything you install in your own Dockerfile stays on `PATH`. Kortix does not remove or relocate it.
+Everything you install in your own Dockerfile stays on `PATH`. Kortix does not remove or relocate it. The shell hook only adds the missing Kortix directories to the front of `PATH`. It keeps every other entry in its position.
 
 ### Constraints
 

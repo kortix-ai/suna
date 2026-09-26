@@ -1,4 +1,4 @@
-import { GRANTABLE_KORTIX_CLI_ACTIONS } from '@kortix/manifest-schema';
+import { GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +7,7 @@ import {
   AGENT_MODE_LABEL,
   AGENT_MODES,
   grantSummary,
-  KORTIX_CLI_CATALOG,
+  KORTIX_PERMISSIONS_CATALOG,
   PERMISSION_ACTION_LABEL,
   PERMISSION_ACTION_ONLY_KEYS,
   PERMISSION_ACTIONS,
@@ -18,8 +18,6 @@ import {
   stableStringify,
   THEME_COLOR_SWATCH,
   THEME_COLORS,
-  WORKSPACE_MODE_LABEL,
-  WORKSPACE_MODES,
 } from './agent-editor';
 
 const read = (file: string) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
@@ -124,6 +122,11 @@ describe('stableStringify — the dirty check', () => {
     );
   });
 
+  test('disabled repository access remains distinct from an omitted or enabled policy', () => {
+    expect(stableStringify({ repository_access: false })).not.toBe(stableStringify({}));
+    expect(stableStringify({ repository_access: false })).not.toBe(stableStringify({ repository_access: true }));
+  });
+
   test('an undefined value reads the same as an absent key', () => {
     expect(stableStringify({ a: 1, b: undefined })).toBe(stableStringify({ a: 1 }));
   });
@@ -165,10 +168,12 @@ describe('mode pickers use the shared component library', () => {
     }
   });
 
-  test('Tabs stay scoped to the grant-mode field — every section uses Select', () => {
+  test('Tabs stay scoped to grants; repository access uses a Switch and enums use Select', () => {
     for (const source of sectionSources) {
       expect(source).not.toContain('@/components/ui/tabs');
-      expect(source).toContain("from '@/components/ui/select'");
+      expect(source).toContain(source === accessFieldsSource
+        ? "from '@/components/ui/switch'"
+        : "from '@/components/ui/select'");
     }
   });
 
@@ -188,7 +193,6 @@ describe('display-name maps — Select renders the value verbatim', () => {
   test('every mode and action has a non-empty capitalized label', () => {
     const cases: [readonly string[], Record<string, string>][] = [
       [AGENT_MODES, AGENT_MODE_LABEL],
-      [WORKSPACE_MODES, WORKSPACE_MODE_LABEL],
       [PERMISSION_ACTIONS, PERMISSION_ACTION_LABEL],
     ];
     for (const [values, labels] of cases) {
@@ -202,17 +206,17 @@ describe('display-name maps — Select renders the value verbatim', () => {
   });
 });
 
-// KORTIX_CLI_CATALOG (the picker's grouped catalog) MUST expose exactly the
-// actions `GRANTABLE_KORTIX_CLI_ACTIONS` allows — imported from the real
+// KORTIX_PERMISSIONS_CATALOG (the picker's grouped catalog) MUST expose exactly the
+// actions `GRANTABLE_KORTIX_PERMISSIONS` allows — imported from the real
 // @kortix/manifest-schema package (not a hand-copied array) so an action
 // silently added or removed on either side of the mirror fails this test
 // immediately instead of only showing up as a UI gap someone notices later.
 // bun:test files aren't bundled for the browser, so importing the package
 // here carries none of the "not in the web bundle" bundle-size concern that
-// keeps KORTIX_CLI_CATALOG itself hand-authored — apps/api's
+// keeps KORTIX_PERMISSIONS_CATALOG itself hand-authored — apps/api's
 // unit-agents-parse.test.ts does the same cross-package import.
-describe('KORTIX_CLI_CATALOG — grantable action mirror', () => {
-  const all = KORTIX_CLI_CATALOG.flatMap((g) => g.actions);
+describe('KORTIX_PERMISSIONS_CATALOG — grantable action mirror', () => {
+  const all = KORTIX_PERMISSIONS_CATALOG.flatMap((g) => g.actions);
 
   test('only project-scoped actions appear (account-scoped admin never grantable)', () => {
     for (const a of all) {
@@ -231,9 +235,9 @@ describe('KORTIX_CLI_CATALOG — grantable action mirror', () => {
     expect(all).toContain('project.gateway.keys.manage');
   });
 
-  test('full-array equality against the real GRANTABLE_KORTIX_CLI_ACTIONS (order-independent)', () => {
-    expect(all.length).toBe(GRANTABLE_KORTIX_CLI_ACTIONS.length);
-    expect([...all].sort()).toEqual([...GRANTABLE_KORTIX_CLI_ACTIONS].sort());
+  test('full-array equality against the real GRANTABLE_KORTIX_PERMISSIONS (order-independent)', () => {
+    expect(all.length).toBe(GRANTABLE_KORTIX_PERMISSIONS.length);
+    expect([...all].sort()).toEqual([...GRANTABLE_KORTIX_PERMISSIONS].sort());
   });
 
   test('has no duplicate actions across groups', () => {

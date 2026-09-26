@@ -13,11 +13,15 @@ import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verif
 import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
-import { syncSsoMembership } from '../iam/sso-sync';
+import { createHash } from 'node:crypto';
+import { extractSsoProviderId, syncSsoMembership } from '../iam/sso-sync';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { requestClientKey } from '../shared/client-ip';
 import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { buildActor } from '../iam/actor';
+import { beginStage } from '../lib/server-timing';
+import { presentedKortixToken, withTokenAttemptBudget } from './token-attempt-budget';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -59,14 +63,60 @@ async function withActor(c: Context, next: Next) {
  * those paths, SSO users whose requests take a different path are never
  * provisioned into their org. Never fails the request — the user already
  * authenticated; sync errors are logged for ops review.
+ *
+ * A successful sync is remembered per (user, IdP, login session, claims) for
+ * `SSO_SYNC_MEMO_TTL_MS`. The claims only change when the IdP issues a new
+ * login, so re-running the sync on every request (one transaction, one
+ * account-wide advisory lock, several email lookups) changed nothing but
+ * serialized every SSO user of an account behind one lock. Membership that SCIM
+ * or an admin changes does not depend on this sync; a new group mapping reaches
+ * a signed-in user within one TTL.
  */
+const SSO_SYNC_MEMO_TTL_MS = 5 * 60_000;
+const SSO_SYNC_MEMO_MAX_ENTRIES = 10_000;
+const ssoSyncMemo = new Map<string, number>();
+
+function ssoSyncMemoKey(
+  userId: string,
+  email: string,
+  jwtPayload: Record<string, unknown> | undefined,
+): string | null {
+  const providerId = extractSsoProviderId(jwtPayload);
+  if (!providerId) return null;
+  const loginSession = jwtPayload?.session_id ?? jwtPayload?.iat;
+  if (typeof loginSession !== 'string' && typeof loginSession !== 'number') return null;
+  const claims = createHash('sha256')
+    .update(JSON.stringify([jwtPayload?.app_metadata ?? null, jwtPayload?.user_metadata ?? null]))
+    .digest('base64url');
+  return `${userId}|${providerId}|${loginSession}|${email.trim().toLowerCase()}|${claims}`;
+}
+
+/** Test hook: forget every remembered SSO sync. */
+export function clearSsoSyncMemo(): void {
+  ssoSyncMemo.clear();
+}
+
 async function jitSyncSso(
   userId: string,
   email: string,
   jwtPayload: Record<string, unknown> | undefined,
 ): Promise<void> {
+  const key = ssoSyncMemoKey(userId, email, jwtPayload);
+  const now = Date.now();
+  if (key) {
+    const expiresAt = ssoSyncMemo.get(key);
+    if (expiresAt !== undefined && expiresAt > now) return;
+    ssoSyncMemo.delete(key);
+  }
   try {
     await syncSsoMembership({ userId, email, jwtPayload });
+    if (key) {
+      if (ssoSyncMemo.size >= SSO_SYNC_MEMO_MAX_ENTRIES) {
+        const oldest = ssoSyncMemo.keys().next().value;
+        if (oldest !== undefined) ssoSyncMemo.delete(oldest);
+      }
+      ssoSyncMemo.set(key, now + SSO_SYNC_MEMO_TTL_MS);
+    }
   } catch (err) {
     console.warn('[auth] SAML JIT sync failed', err);
   }
@@ -100,6 +150,17 @@ async function jitSyncSso(
  * against the api_keys table.
  */
 export async function apiKeyAuth(c: Context, next: Next) {
+  const endAuth = beginStage('auth');
+  try {
+    await withTokenAttemptBudget(c, presentedKortixToken(c), () =>
+      resolveApiKeyAuth(c, () => withActor(c, () => (endAuth(), next()))),
+    );
+  } finally {
+    endAuth();
+  }
+}
+
+async function resolveApiKeyAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -129,7 +190,7 @@ export async function apiKeyAuth(c: Context, next: Next) {
 
   if (!result.isValid) {
     console.warn(
-      `[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'}`,
+      `[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${requestClientKey(c)}`,
     );
     auditLoginFail({
       c,
@@ -155,7 +216,7 @@ export async function apiKeyAuth(c: Context, next: Next) {
     authType: 'apiKey',
     metadata: { api_key_type: result.type },
   });
-  await withActor(c, next);
+  await next();
 }
 
 /**
@@ -210,7 +271,19 @@ async function applyOAuthAccessTokenPrincipal(c: Context, token: string): Promis
  * return an upstream provider credential.
  */
 export async function supabaseAuth(c: Context, next: Next) {
-  return resolveSupabaseAuth(c, () => applyImpersonation(c, () => withActor(c, next)));
+  // `Server-Timing: auth` spans credential verification, impersonation and the
+  // IAM actor build — everything before the handler — and closes the moment
+  // the handler starts (or the chain throws a 401/403).
+  const endAuth = beginStage('auth');
+  try {
+    return await withTokenAttemptBudget(c, presentedKortixToken(c), () =>
+      resolveSupabaseAuth(c, () =>
+        applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+      ),
+    );
+  } finally {
+    endAuth();
+  }
 }
 
 async function resolveSupabaseAuth(c: Context, next: Next) {
@@ -289,6 +362,10 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     // Read by requireScope() to gate Kortix CLI/API actions on top of the
     // user's own role — net effect = userRole ∩ agentGrant.
     c.set('agentGrant', result.agentGrant ?? null);
+    // The human this agent session acts on behalf of (null = unattended, or
+    // cleared by another human's prompt). Personal resources only — see
+    // iam/actor.ts `credentialOnBehalfOf` and projects/lib/on-behalf-of.ts.
+    c.set('onBehalfOfUserId', result.onBehalfOfUserId ?? null);
     setSentryUser({ id: result.userId, accountId: result.accountId });
     setContextField('userId', result.userId);
     if (result.accountId) setContextField('accountId', result.accountId);
@@ -339,7 +416,12 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     // without a sandbox hop. Write-only, about the caller's own session, and
     // the handler re-checks the token's sandbox against `session_sandboxes`
     // (sandbox id -> session -> account) before it stores anything.
-    path.endsWith('/runtime-projection');
+    path.endsWith('/runtime-projection') ||
+    // A legacy sandbox credential can fetch one descriptor for one persisted
+    // prompt attachment. The route handler re-checks sandbox, session,
+    // account, project, command, reference, and part index. Keep this exact
+    // shape: a broader attachment prefix would expose user upload routes.
+    /^\/v1\/projects\/[^/]+\/runtime\/prompt-attachments\/[^/]+$/.test(path);
   if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
@@ -479,7 +561,16 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
  * For preview proxy routes, also sets/refreshes the session cookie.
  */
 export async function combinedAuth(c: Context, next: Next) {
-  return resolveCombinedAuth(c, () => applyImpersonation(c, () => withActor(c, next)));
+  const endAuth = beginStage('auth');
+  try {
+    return await withTokenAttemptBudget(c, presentedKortixToken(c, PREVIEW_SESSION_COOKIE), () =>
+      resolveCombinedAuth(c, () =>
+        applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
+      ),
+    );
+  } finally {
+    endAuth();
+  }
 }
 
 async function resolveCombinedAuth(c: Context, next: Next) {
@@ -611,6 +702,10 @@ async function resolveCombinedAuth(c: Context, next: Next) {
       c.set('sandboxId', patResult.sessionId);
     }
     c.set('agentGrant', patResult.agentGrant ?? null);
+    // Same as supabaseAuth's PAT branch: the fresh on_behalf_of for personal
+    // resources (projects/lib/personal-resources.ts). combinedAuth fronts the
+    // connector gateway, where a foreign prompt's clear must apply at once.
+    c.set('onBehalfOfUserId', patResult.onBehalfOfUserId ?? null);
     setSentryUser({ id: patResult.userId, accountId: patResult.accountId });
     setContextField('userId', patResult.userId);
     if (patResult.accountId) setContextField('accountId', patResult.accountId);
@@ -824,6 +919,35 @@ function extractPreviewSandboxId(path: string): string | null {
 }
 
 /**
+ * Write-only platform sinks whose ONLY caller is the in-guest sandbox daemon
+ * reporting on its OWN session. Every one of them is reached with the
+ * session-scoped `KORTIX_TOKEN`, which is an `isAccountToken` PAT — so it lands
+ * in the PAT branch of `resolveSupabaseAuth` and is judged by
+ * `enforceTokenProjectScope`, NOT by the legacy `sandboxTokenPathAllowed`
+ * allowlist above (that one only covers `kortix_`/`kortix_sb_` API keys, which
+ * nothing has minted for a sandbox since the unified-credential cutover).
+ *
+ * A sink that is missing here is not "secure" — it is UNREACHABLE, answering
+ * 403 to a fire-and-forget push that nobody sees fail. That is exactly what
+ * happened twice:
+ *   - `/v1/platform/runtime-projection`, observed live 2026-08-27.
+ *   - `/v1/platform/boot-timeline`, observed live in prod for the 7 days to
+ *     2026-09-09: 2,338 x `POST /v1/platform/boot-timeline -> 403
+ *     [HTTPException]`, 1,414 of them in the last two days against just 47
+ *     successes (97% denied). Prod minted 583 session-scoped PATs and ZERO
+ *     sandbox API keys in that window, so effectively every boot was denied and
+ *     no in-guest boot timeline was recorded.
+ *
+ * ADD A SINK HERE when you add a route whose caller is the daemon holding
+ * `KORTIX_TOKEN`. `__tests__/unit-boot-timeline-auth-mount.test.ts` pins the
+ * membership of this set for the same reason it pins the middleware mount.
+ */
+const SESSION_BOUND_PLATFORM_SINKS = new Set([
+  '/v1/platform/runtime-projection',
+  '/v1/platform/boot-timeline',
+]);
+
+/**
  * A project-scoped CLI PAT can only act on its bound project. Reject
  * the request if:
  *   - the URL targets a `:projectId` parameter that doesn't match, OR
@@ -843,16 +967,16 @@ async function enforceTokenProjectScope(
 ): Promise<void> {
   const path = c.req.path;
 
-  // `/v1/platform/runtime-projection` — the sandbox daemon pushing its OWN
-  // runtime projection. A session sandbox holds exactly ONE credential — a
-  // project+SESSION-scoped PAT ("One sandbox, one session-scoped Kortix
-  // credential", platform/services/session-sandbox.ts) — so without this
-  // branch the daemon's push can never reach the sink on any environment.
-  // Allowed ONLY for a session-BOUND token; an ordinary project PAT stays
-  // denied. The handler re-verifies the binding against `session_sandboxes`
-  // (sandbox id ∧ session ∧ account ∧ live) via isSessionSandboxCredential,
-  // so this gate is authentication, not the authorization boundary.
-  if (opts.sessionBound && path === '/v1/platform/runtime-projection') return;
+  // Daemon-only platform sinks (SESSION_BOUND_PLATFORM_SINKS). A session
+  // sandbox holds exactly ONE credential — a project+SESSION-scoped PAT ("One
+  // sandbox, one session-scoped Kortix credential",
+  // platform/services/session-sandbox.ts) — so without this branch the daemon's
+  // push can never reach the sink on any environment. Allowed ONLY for a
+  // session-BOUND token; an ordinary project PAT stays denied. Each handler
+  // re-verifies the binding against `session_sandboxes` (sandbox id ∧ session ∧
+  // account ∧ live) via isSessionSandboxCredential, so this gate is
+  // authentication, not the authorization boundary.
+  if (opts.sessionBound && SESSION_BOUND_PLATFORM_SINKS.has(path)) return;
 
   // Whitelist a couple of self-identity probes the CLI hits even for
   // project/session-scoped tokens. `/v1/accounts/me` lets the agent confirm
@@ -885,11 +1009,26 @@ async function enforceTokenProjectScope(
   // not authorization.
   if (path.startsWith('/v1/runtime-assets/')) return;
 
+  const deny = (check: string, reason: string): never => {
+    // NAME the principal and the check in the message. The global `app.onError`
+    // logs `${method} ${path} -> ${status} [HTTPException] ${message}`, so a
+    // bare reason string made every one of these denials indistinguishable in
+    // Better Stack — 2,338 identical `POST /v1/platform/boot-timeline -> 403
+    // [HTTPException]` lines over 7 days named neither the credential that was
+    // rejected nor the branch that rejected it, which is why the boot-timeline
+    // gate defect above went unnoticed for weeks.
+    throw new HTTPException(403, {
+      message:
+        `${reason} ` +
+        `[check=token-project-scope:${check} ` +
+        `principal=${opts.sessionBound ? 'session-scoped-pat' : 'project-scoped-pat'} ` +
+        `project=${tokenProjectId} path=${path}]`,
+    });
+  };
+
   // Reject other account-level routes outright.
   if (path.startsWith('/v1/accounts/') || path === '/v1/accounts') {
-    throw new HTTPException(403, {
-      message: 'Project-scoped token cannot call account-level routes',
-    });
+    deny('account-level-route', 'Project-scoped token cannot call account-level routes');
   }
 
   // `/v1/projects/:projectId/...` AND `/v1/connectors/projects/:projectId/...` —
@@ -903,9 +1042,7 @@ async function enforceTokenProjectScope(
   if (m) {
     const urlProjectId = m[1];
     if (urlProjectId !== tokenProjectId) {
-      throw new HTTPException(403, {
-        message: 'Project-scoped token cannot access a different project',
-      });
+      deny('cross-project', 'Project-scoped token cannot access a different project');
     }
     return;
   }
@@ -913,9 +1050,7 @@ async function enforceTokenProjectScope(
   // Bare `/v1/projects` (list) is also account-scoped: a project-bound
   // token shouldn't enumerate other projects.
   if (path === '/v1/projects') {
-    throw new HTTPException(403, {
-      message: 'Project-scoped token cannot list projects',
-    });
+    deny('project-list', 'Project-scoped token cannot list projects');
   }
 
   // Sandbox-proxy path — this is what session.send()/stream() and other
@@ -932,14 +1067,13 @@ async function enforceTokenProjectScope(
     if (sandboxProjectId && sandboxProjectId === tokenProjectId) {
       return;
     }
-    throw new HTTPException(403, {
-      message: 'Project-scoped token cannot access a sandbox outside its project',
-    });
+    deny(
+      'foreign-sandbox',
+      'Project-scoped token cannot access a sandbox outside its project',
+    );
   }
 
   // All other surfaces (router, billing, channels, etc.) are
   // account-level — refuse.
-  throw new HTTPException(403, {
-    message: 'Project-scoped token cannot call this surface',
-  });
+  deny('default-deny', 'Project-scoped token cannot call this surface');
 }

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  agentSessionStanding,
+  deriveEffectiveRole,
   callerHasManagerStanding,
   isAdminBypassEligible,
   sessionIsTombstoned,
@@ -189,8 +191,59 @@ describe('sessionIsTombstoned — a deleted session refuses every runtime verb',
   });
 
   test('the /start and /restart handlers both ask it after loadVisibleSession', async () => {
-    const src = await Bun.file(new URL('../routes/r8.ts', import.meta.url)).text();
+    const src = await Bun.file(new URL('../routes/session-runtime.ts', import.meta.url)).text();
     const occurrences = src.split('sessionIsTombstoned(visible.row)').length - 1;
     expect(occurrences).toBe(2);
+  });
+});
+
+// Spec docs/specs/2026-09-22-agents-as-principals.md §2.1: under the
+// agent-principal model the launcher's role is not an input. The
+// `effectiveRole` label every manage-tier branch reads is derived from the
+// agent's own effective permissions.
+describe('deriveEffectiveRole', () => {
+  test('legacy (human, flag OFF): the launcher/member role label, unchanged', () => {
+    expect(deriveEffectiveRole({ agentPrincipal: false, agentMayWrite: false, callerRole: 'manager' })).toBe('manager');
+    expect(deriveEffectiveRole({ agentPrincipal: false, agentMayWrite: true, callerRole: 'member' })).toBe('member');
+  });
+  test("agent principal: a manager launcher's role never leaks", () => {
+    expect(deriveEffectiveRole({ agentPrincipal: true, agentMayWrite: false, callerRole: 'manager' })).toBe('member');
+  });
+  test('agent principal: manager tier only when the agent itself holds project.write', () => {
+    expect(deriveEffectiveRole({ agentPrincipal: true, agentMayWrite: true, callerRole: 'member' })).toBe('manager');
+  });
+});
+
+/**
+ * Spec §2 (agents as principals): under the `agent_principal` flag an agent
+ * session acts as ITSELF. Ownership and visibility used to key on the launcher's
+ * user id, so an agent session could see and stop its launcher's OTHER private
+ * sessions. It owns only its own session and the sessions it spawned.
+ */
+describe('agentSessionStanding', () => {
+  const own = { sessionId: 's-own', metadata: {}, visibility: 'private' as const };
+  const child = { sessionId: 's-child', metadata: { spawned_by_session: 's-own' }, visibility: 'private' as const };
+  const launcherPrivate = { sessionId: 's-other', metadata: {}, visibility: 'private' as const };
+  const launcherRestricted = { sessionId: 's-r', metadata: {}, visibility: 'restricted' as const };
+  const shared = { sessionId: 's-p', metadata: {}, visibility: 'project' as const };
+
+  test('owns its own session and its children, visible either way', () => {
+    expect(agentSessionStanding('s-own', own, true)).toEqual({ isOwner: true, visible: true });
+    expect(agentSessionStanding('s-own', child, false)).toEqual({ isOwner: true, visible: true });
+  });
+
+  test("the launcher's other private and restricted sessions are neither owned nor visible", () => {
+    // `visibleByRules` is true here because the old rules key on the launcher.
+    expect(agentSessionStanding('s-own', launcherPrivate, true)).toEqual({ isOwner: false, visible: false });
+    expect(agentSessionStanding('s-own', launcherRestricted, true)).toEqual({ isOwner: false, visible: false });
+  });
+
+  test('a project-visible session stays visible but is not owned', () => {
+    expect(agentSessionStanding('s-own', shared, true)).toEqual({ isOwner: false, visible: true });
+    expect(agentSessionStanding('s-own', shared, false)).toEqual({ isOwner: false, visible: false });
+  });
+
+  test('without a session binding nothing is owned and nothing widens', () => {
+    expect(agentSessionStanding(null, launcherPrivate, true)).toEqual({ isOwner: false, visible: false });
   });
 });

@@ -6,9 +6,18 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MentionChip, chipClass } from '@/features/session/mention-chip';
 import type { MessageWithParts } from '@/ui';
+import { useSessionStateStore } from '@kortix/sdk/react';
 
-import { RemoveFromQueueButton } from './queued-prompt-bubbles';
-import { UserMessage, UserMessageBubble } from './user-message';
+import enMessages from '../../../../translations/en.json';
+import { adoptSentAttachmentPreviews } from '../sent-attachment-previews';
+import { buildOptimisticPromptTextWithUploads, sentAttachmentsOf } from '../uploaded-file-refs';
+import {
+  MessageAttachments,
+  UserMessage,
+  UserMessageBubble,
+  editablePromptText,
+  normalizeAttachments,
+} from './user-message';
 
 const message = {
   info: { id: 'message-1', role: 'user' },
@@ -67,30 +76,6 @@ describe('UserMessage actions', () => {
     expect(markup).not.toContain('aria-label="Edit message and rewind session"');
   });
 
-  test('puts remove-from-queue in the hover actions row, not beside the bubble', () => {
-    const markup = renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-          <TooltipProvider>
-            <UserMessage
-              message={message}
-              sessionId="session-1"
-              ownsPlan={false}
-              onRewind={() => {}}
-              leadingActions={<RemoveFromQueueButton id="prompt-1" onRemove={() => {}} />}
-            />
-          </TooltipProvider>
-        </NextIntlClientProvider>
-      </QueryClientProvider>,
-    );
-    const fade = 'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100';
-    const fadeAt = markup.indexOf(fade);
-    const removeAt = markup.indexOf('aria-label="Remove from queue"');
-    expect(removeAt).toBeGreaterThan(-1);
-    expect(fadeAt).toBeGreaterThan(-1);
-    expect(removeAt).toBeGreaterThan(fadeAt);
-    expect(markup).not.toContain('pr-7');
-  });
 });
 
 describe('UserMessage renders the composer chip, not its own treatment', () => {
@@ -417,10 +402,10 @@ describe('UserMessage persisted attachments', () => {
   });
 
   // The runtime streams the text part first and the file parts seconds later.
-  // The names the preview promised fill the gap as pending tiles, and the
+  // The names the preview promised fill the gap as stable tiles, and the
   // strip says so — instead of blinking out (review finding, 2026-09-05: the
   // earlier fix held a SECOND bubble over this one).
-  test('draws promised-but-unarrived files as pending tiles on the real message', () => {
+  test('draws promised-but-unarrived files without restarting upload progress', () => {
     const streaming = {
       info: { id: 'message-streaming', role: 'user', time: { created: Date.parse('2026-09-05T22:00:00.000Z') } },
       parts: [
@@ -440,7 +425,6 @@ describe('UserMessage persisted attachments', () => {
               { filename: 'logo.svg', mime: 'image/svg+xml' },
               { filename: 'doc.pdf', mime: 'application/pdf' },
             ]}
-            uploadStatus={{ state: 'uploading' }}
           />
         </NextIntlClientProvider>
       </QueryClientProvider>,
@@ -459,7 +443,7 @@ describe('UserMessage persisted attachments', () => {
       ).split('tiny.png').length - 1,
     );
     expect(html).not.toContain('Uploading');
-    expect(html).toContain('animate-spinner-orbit');
+    expect(html).not.toContain('animate-spinner-orbit');
   });
 
   // The store swaps the optimistic copy for the runtime's echo and the parts
@@ -486,7 +470,6 @@ describe('UserMessage persisted attachments', () => {
               { filename: 'tiny.png', mime: 'image/png' },
               { filename: 'doc.pdf', mime: 'application/pdf' },
             ]}
-            uploadStatus={{ state: 'uploading' }}
           />
         </NextIntlClientProvider>
       </QueryClientProvider>,
@@ -495,7 +478,7 @@ describe('UserMessage persisted attachments', () => {
     expect(html).toContain('tiny.png');
     expect(html).toContain('doc.pdf');
     expect(html).not.toContain('Uploading');
-    expect(html).toContain('animate-spinner-orbit');
+    expect(html).not.toContain('animate-spinner-orbit');
   });
 
   test('keeps workspace references before a later native file after reload', () => {
@@ -661,5 +644,500 @@ describe('UserMessage inline edit-from-here editor', () => {
     const markup = renderText('ship the thing', { editingText: 'do it differently' });
     expect(markup).not.toContain('<textarea');
     expect(markup).toContain('ship the thing');
+  });
+});
+
+describe('sent attachment tiles', () => {
+  const tiles = (html: string) => (html.match(/<li class="contents"/g) ?? []).length;
+  const blobImages = (html: string, src: string) =>
+    (html.match(new RegExp(`<img [^>]*src="${src}"`, 'g')) ?? []).length;
+
+  function sentImage(uploadId: string, name: string, localUrl: string) {
+    return {
+      kind: 'local' as const,
+      uploadId,
+      file: new File(['x'], name, { type: 'image/png' }),
+      localUrl,
+      isImage: true,
+    };
+  }
+
+  const renderMessage = (
+    msg: MessageWithParts,
+    props: Record<string, unknown> = {},
+    messages: Record<string, unknown> = {},
+  ) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={messages} onError={() => {}}>
+          <UserMessage message={msg} sessionId="session-1" ownsPlan={false} {...props} />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  function expectFinishedTile(html: string) {
+    expect(html).not.toContain('animate-spinner-orbit');
+    expect(html).not.toContain('Uploading');
+    expect(html).not.toContain('Upload failed');
+    expect(html).not.toContain('role="status"');
+  }
+
+  test('a follow-up sent with an unfinished upload draws its picture from the first frame', () => {
+    const file = sentImage('upload-follow', 'shot.png', 'blob:follow-up');
+    adoptSentAttachmentPreviews([file]);
+    const html = renderText(buildOptimisticPromptTextWithUploads('look', [file]));
+
+    expect(tiles(html)).toBe(1);
+    expect(blobImages(html, 'blob:follow-up')).toBe(1);
+    expectFinishedTile(html);
+  });
+
+  test('the echo reference keeps the sent picture while the sandbox read is still loading', () => {
+    const file = sentImage('upload-echo', 'a.png', 'blob:echo');
+    adoptSentAttachmentPreviews([file]);
+    const html = renderMessage(
+      {
+        info: { id: 'message-echo', role: 'user' },
+        parts: [
+          { id: 'p-text', messageID: 'message-echo', type: 'text', text: 'look' },
+          {
+            id: 'p-ref',
+            messageID: 'message-echo',
+            type: 'text',
+            text: '<file path="/workspace/uploads/.kortix-inbox/0-a.png" mime="image/png" filename="a.png">\nuploaded\n</file>',
+          },
+        ],
+      } as MessageWithParts,
+      { pendingAttachments: sentAttachmentsOf([file]) },
+    );
+
+    expect(tiles(html)).toBe(1);
+    expect(blobImages(html, 'blob:echo')).toBe(1);
+    expectFinishedTile(html);
+  });
+
+  test('a reload has no local bytes: the delivered image loading is one named tile, no spinner', () => {
+    const html = renderMessage({
+      info: { id: 'message-reload', role: 'user' },
+      parts: [
+        {
+          id: 'p-ref',
+          messageID: 'message-reload',
+          type: 'text',
+          text: 'look\n\n<file path="/workspace/uploads/.kortix-inbox/k/0-reload.png" mime="image/png" filename="reload.png">\nuploaded\n</file>',
+        },
+      ],
+    } as MessageWithParts);
+
+    expect(tiles(html)).toBe(1);
+    expect(html).toContain('title="reload.png"');
+    expect(html).not.toContain('<img');
+    expectFinishedTile(html);
+  });
+
+  test('a delivered inline image with no sent picture paints on the first frame, not after a name tile', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const html = renderMessage({
+      info: { id: 'message-inline', role: 'user' },
+      parts: [
+        { id: 'p-text', messageID: 'message-inline', type: 'text', text: 'look' },
+        {
+          id: 'p-png',
+          messageID: 'message-inline',
+          type: 'file',
+          mime: 'image/png',
+          url: png,
+          filename: 'inline.png',
+        },
+        {
+          id: 'p-heic',
+          messageID: 'message-inline',
+          type: 'file',
+          mime: 'image/heic',
+          url: 'data:image/heic;base64,AAAA',
+          filename: 'shot.heic',
+        },
+      ],
+    } as MessageWithParts);
+
+    expect(tiles(html)).toBe(2);
+    // The browser already holds these bytes: the picture is the first frame (session open, remount).
+    expect(html.match(/<img [^>]*src="data:image\/png;base64,iVBORw0KGgo="/g)).toHaveLength(1);
+    // A HEIC echo may not decode in this browser: it stays the named tile until it does.
+    expect(html).not.toContain('src="data:image/heic');
+    expect(html).toContain('title="shot.heic"');
+    expectFinishedTile(html);
+  });
+
+  test('sync store: the echo text part lands before the file part; the tile count stays 1 at every step', () => {
+    const store = useSessionStateStore.getState();
+    store.reset();
+    const file = sentImage('upload-d8', 'a.png', 'blob:d8');
+    adoptSentAttachmentPreviews([file]);
+    const sent = sentAttachmentsOf([file]);
+    const session = 'ses_d8';
+    const id = 'msg_d8';
+
+    store.optimisticAdd(session, { id, sessionID: session, role: 'user', time: {} } as never, [
+      {
+        id: 'prt_client',
+        sessionID: session,
+        messageID: id,
+        type: 'text',
+        text: buildOptimisticPromptTextWithUploads('look', [file]),
+      },
+    ] as never);
+    store.markOptimisticDispatched(session, id);
+
+    const frames: string[] = [];
+    const frame = () =>
+      frames.push(
+        renderMessage(
+          {
+            info: { id, role: 'user' },
+            parts: useSessionStateStore.getState().parts[id] ?? [],
+          } as MessageWithParts,
+          { pendingAttachments: sent },
+        ),
+      );
+
+    frame();
+    store.applyEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id,
+          sessionID: session,
+          role: 'user',
+          time: { created: 1 },
+          agent: 'build',
+          model: { providerID: 'anthropic', modelID: 'claude' },
+        },
+      },
+    } as never);
+    frame();
+    store.upsertPart(
+      id,
+      { id: 'prt_server_text', sessionID: session, messageID: id, type: 'text', text: 'look' } as never,
+      session,
+    );
+    // The echo text replaced the optimistic text, refs and all.
+    expect(useSessionStateStore.getState().parts[id]?.map((p) => p.id)).toEqual(['prt_server_text']);
+    frame();
+    store.upsertPart(
+      id,
+      {
+        id: 'prt_server_file',
+        sessionID: session,
+        messageID: id,
+        type: 'file',
+        mime: 'image/png',
+        filename: 'a.png',
+        url: 'data:image/png;base64,iVBORw0KGgo=',
+      } as never,
+      session,
+    );
+    frame();
+
+    expect(frames.map(tiles)).toEqual([1, 1, 1, 1]);
+    for (const html of frames) {
+      expect(blobImages(html, 'blob:d8')).toBe(1);
+      expectFinishedTile(html);
+    }
+    store.reset();
+  });
+
+  test('a failed send with no files still reads "Couldn\'t send" with Retry; a sent message with no files draws no strip', () => {
+    const failed = { state: 'failed' as const, message: 'checkConnection', onRetry: () => {} };
+    const strip = (status?: typeof failed) =>
+      renderToStaticMarkup(
+        <QueryClientProvider client={new QueryClient()}>
+          <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+            <MessageAttachments attachments={[]} status={status} />
+          </NextIntlClientProvider>
+        </QueryClientProvider>,
+      );
+
+    const kept = strip(failed);
+    expect(tiles(kept)).toBe(0);
+    expect(kept).not.toContain('<ul');
+    expect(kept).toContain('Couldn&#x27;t send');
+    expect(kept).toMatch(/<button[^>]*type="button"[^>]*>Retry<\/button>/);
+    expect(strip()).toBe('');
+
+    // The text-only follow-up SessionChat keeps on screen draws it too.
+    const message = renderText('just text', { uploadStatus: failed });
+    expect(message).toContain('role="alert"');
+    expect(message).toContain('checkConnection');
+    expect(renderText('just text')).not.toContain('role="alert"');
+  });
+
+  test('a failed send keeps its tile and reads "Couldn\'t send" with Retry, never "Upload failed"', () => {
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+          <MessageAttachments
+            attachments={[
+              {
+                key: 'attachment:upload-f',
+                id: 'upload-f',
+                filename: 'f.pdf',
+                mime: 'application/pdf',
+              },
+            ]}
+            status={{ state: 'failed', onRetry: () => {} }}
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(tiles(html)).toBe(1);
+    expect(html).toContain('Couldn&#x27;t send');
+    expect(html).toMatch(/<button[^>]*type="button"[^>]*>Retry<\/button>/);
+    expect(html).not.toContain('Upload failed');
+  });
+});
+
+test('saved attachments resolve before a sandbox path exists', () => {
+  const ref = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+  expect(normalizeAttachments([], [{ path: '', filename: 'a.png', mime: 'image/png', attachment: ref }])[0].src).toBe(ref);
+});
+
+// A message can carry many `<reply_context>` quotes, each written at
+// its position in the text. The bubble draws each quote where it was written,
+// as the same left-rule blockquote the single leading quote always used.
+describe('UserMessage renders N inline reply quotes at their positions', () => {
+  const threeInterleaved =
+    '<reply_context>quoted alpha</reply_context>\nreply to alpha\n' +
+    '<reply_context>quoted bravo</reply_context>\nreply to bravo\n' +
+    '<reply_context>quoted charlie</reply_context>\nreply to charlie';
+
+  /** Positions of `needles` in `markup`, in the order given. */
+  const positions = (markup: string, needles: string[]) => needles.map((n) => markup.indexOf(n));
+  const blockquotes = (markup: string) =>
+    markup.match(/<blockquote\b[^>]*>[\s\S]*?<\/blockquote>/g) ?? [];
+
+  test('three quotes render as three blockquotes, in order, between the reply texts', () => {
+    const markup = renderText(threeInterleaved);
+    const quotes = blockquotes(markup);
+    expect(quotes).toHaveLength(3);
+    expect(quotes[0]).toContain('quoted alpha');
+    expect(quotes[1]).toContain('quoted bravo');
+    expect(quotes[2]).toContain('quoted charlie');
+    const order = positions(markup, [
+      'quoted alpha',
+      'reply to alpha',
+      'quoted bravo',
+      'reply to bravo',
+      'quoted charlie',
+      'reply to charlie',
+    ]);
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // No reply text is drawn INSIDE a quote.
+    for (const quote of quotes) expect(quote).not.toContain('reply to');
+  });
+
+  test('a later quote never falls through to a system-notification card', () => {
+    const markup = renderText(threeInterleaved);
+    // The card labels itself with the humanized tag name ("Reply context").
+    expect(markup).not.toContain('reply_context');
+    expect(markup).not.toContain('Reply context');
+  });
+
+  test('every quote keeps the existing rule-not-card treatment', () => {
+    for (const quote of blockquotes(renderText(threeInterleaved))) {
+      expect(quote).toContain('border-border border-l-2 pl-2.5');
+      expect(quote).toContain('text-muted-foreground line-clamp-2 text-sm leading-5');
+    }
+  });
+
+  test('a legacy single leading quote still renders one quote above the reply', () => {
+    const markup = renderText('<reply_context>the earlier line</reply_context>\n\nfix it');
+    const quotes = blockquotes(markup);
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0]).toContain('the earlier line');
+    expect(markup.indexOf('the earlier line')).toBeLessThan(markup.indexOf('fix it'));
+  });
+
+  test('quotes spread over two text parts each render once, in part order', () => {
+    // Each part is parsed on its own, so its markers start at 0. Unless they
+    // are re-numbered into the combined list, part 2's marker names part 1's
+    // quote and the second quote is never drawn.
+    const markup = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <UserMessage
+            message={
+              {
+                info: { id: 'message-1', role: 'user' },
+                parts: [
+                  {
+                    id: 'part-1',
+                    messageID: 'message-1',
+                    type: 'text',
+                    text: '<reply_context>quote in part one</reply_context>\nanswer one',
+                  },
+                  {
+                    id: 'part-2',
+                    messageID: 'message-1',
+                    type: 'text',
+                    text: '<reply_context>quote in part two</reply_context>\nanswer two',
+                  },
+                ],
+              } as MessageWithParts
+            }
+            sessionId="session-1"
+            ownsPlan={false}
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+    const quotes = blockquotes(markup);
+    expect(quotes).toHaveLength(2);
+    expect(quotes[0]).toContain('quote in part one');
+    expect(quotes[1]).toContain('quote in part two');
+    const order = positions(markup, [
+      'quote in part one',
+      'answer one',
+      'quote in part two',
+      'answer two',
+    ]);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  test('a mention written after a quote is still a chip', () => {
+    const markup = renderText(
+      '<reply_context>some passage</reply_context>\nopen @src/index.ts now',
+    );
+    expect(markup).toContain('aria-label="file mention: src/index.ts"');
+  });
+
+  test('a message that is only quotes still draws its bubble', () => {
+    const markup = renderText(
+      '<reply_context>only alpha</reply_context>\n<reply_context>only bravo</reply_context>',
+    );
+    const quotes = blockquotes(markup);
+    expect(quotes).toHaveLength(2);
+    expect(markup).toContain('bg-sidebar');
+  });
+
+  test('the quote is not inside the bold body-text run', () => {
+    // The body text is `font-medium` + `whitespace-pre-wrap`. A quote nested
+    // inside that run would inherit both and stop looking like the quote the
+    // composer drew.
+    const markup = renderText(threeInterleaved);
+    const beforeFirstQuote = markup.slice(0, markup.indexOf('<blockquote'));
+    const openRuns = (beforeFirstQuote.match(/<div class="[^"]*font-medium[^"]*"/g) ?? []).length;
+    expect(openRuns).toBe(0);
+  });
+});
+
+describe('editablePromptText (the inline edit textarea is plain text)', () => {
+  test('drops every quote block and keeps the reply text in order', () => {
+    expect(
+      editablePromptText(
+        '<reply_context>quoted alpha</reply_context>\nreply to alpha\n' +
+          '<reply_context>quoted bravo</reply_context>\nreply to bravo',
+      ),
+    ).toBe('reply to alpha\nreply to bravo');
+  });
+
+  test('a message without quotes is unchanged', () => {
+    expect(editablePromptText('ship the thing')).toBe('ship the thing');
+  });
+});
+
+// Review fix: since Task 2 the composer serializes a quote node inside the
+// command's args, so a `/command` message can carry quotes of its own.
+describe('UserMessage renders reply quotes inside /command args', () => {
+  const blockquotes = (markup: string) =>
+    markup.match(/<blockquote\b[^>]*>[\s\S]*?<\/blockquote>/g) ?? [];
+  const quotedArgs = '<reply_context>quoted alpha</reply_context>\nlook at this';
+
+  test('a quote after the chip is a blockquote, never literal XML, and is drawn once', () => {
+    // The part text is the expanded template, which carries the same args —
+    // and so the same quote. It must not be drawn a second time.
+    const markup = renderText(`Review template.\n${quotedArgs}`, {
+      commandInfo: { name: 'review', args: quotedArgs, split: { before: '', after: quotedArgs } },
+    });
+    expect(markup).not.toContain('reply_context');
+    const quotes = blockquotes(markup);
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0]).toContain('quoted alpha');
+    const order = ['aria-label="command: /review"', 'quoted alpha', 'look at this'].map((n) =>
+      markup.indexOf(n),
+    );
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  test('an inferred command (args only, no split) renders its quote too', () => {
+    const markup = renderText('TEMPLATE BODY', {
+      commandInfo: { name: 'review', args: quotedArgs },
+    });
+    expect(markup).not.toContain('reply_context');
+    expect(blockquotes(markup)).toHaveLength(1);
+  });
+
+  test('a quote before the chip renders before it, and the args after it', () => {
+    const markup = renderText('TEMPLATE BODY', {
+      commandInfo: {
+        name: 'review',
+        args: '<reply_context>quoted before</reply_context> run it',
+        split: { before: '<reply_context>quoted before</reply_context>', after: 'run it' },
+      },
+    });
+    expect(markup).not.toContain('reply_context');
+    const order = ['quoted before', 'aria-label="command: /review"', 'run it'].map((n) =>
+      markup.indexOf(n),
+    );
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  test('a command without quotes renders byte-identical markup to a command before quote support', () => {
+    // Captured from the renderer before this change.
+    const region = (markup: string) => {
+      const start = markup.indexOf('<div id="message-1-text"');
+      return markup.slice(start, markup.indexOf('</div>', start) + '</div>'.length);
+    };
+    const cases = [
+      { name: 'webapp', args: 'explain to me', split: { before: 'explain', after: 'to me' } },
+      { name: 'webapp', args: 'explain me this skill' },
+      { name: 'webapp' },
+      {
+        name: 'review',
+        args: 'look at @src/a.ts',
+        split: { before: '', after: 'look at @src/a.ts' },
+      },
+    ];
+    const expected = [
+      '<div id="message-1-text" class="max-w-full min-w-0 text-[0.9rem] leading-[22px] font-medium wrap-break-word whitespace-pre-wrap select-text max-h-[200px] overflow-hidden"><span>explain </span><span aria-label="command: /webapp" class="rounded-sm border-[0.5px] px-1.5 py-[0.08rem] [overflow-wrap:anywhere] font-medium whitespace-nowrap align-baseline text-[0.95em] bg-primary/[0.08] text-foreground">/webapp</span> <span>to me</span></div>',
+      '<div id="message-1-text" class="max-w-full min-w-0 text-[0.9rem] leading-[22px] font-medium wrap-break-word whitespace-pre-wrap select-text max-h-[200px] overflow-hidden"><span aria-label="command: /webapp" class="rounded-sm border-[0.5px] px-1.5 py-[0.08rem] [overflow-wrap:anywhere] font-medium whitespace-nowrap align-baseline text-[0.95em] bg-primary/[0.08] text-foreground">/webapp</span> <span>explain me this skill</span></div>',
+      '<div id="message-1-text" class="max-w-full min-w-0 text-[0.9rem] leading-[22px] font-medium wrap-break-word whitespace-pre-wrap select-text max-h-[200px] overflow-hidden"><span aria-label="command: /webapp" class="rounded-sm border-[0.5px] px-1.5 py-[0.08rem] [overflow-wrap:anywhere] font-medium whitespace-nowrap align-baseline text-[0.95em] bg-primary/[0.08] text-foreground">/webapp</span></div>',
+      '<div id="message-1-text" class="max-w-full min-w-0 text-[0.9rem] leading-[22px] font-medium wrap-break-word whitespace-pre-wrap select-text max-h-[200px] overflow-hidden"><span aria-label="command: /review" class="rounded-sm border-[0.5px] px-1.5 py-[0.08rem] [overflow-wrap:anywhere] font-medium whitespace-nowrap align-baseline text-[0.95em] bg-primary/[0.08] text-foreground">/review</span> <span>look at </span><button type="button" aria-label="file mention: src/a.ts" class="rounded-sm border-[0.5px] px-1.5 py-[0.08rem] [overflow-wrap:anywhere] font-medium whitespace-nowrap align-baseline text-[0.95em] bg-primary/[0.08] text-foreground cursor-pointer transition-colors duration-150 hover:bg-foreground/10 dark:hover:bg-foreground/10 active:scale-[0.97] active:transition-transform focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none">@src/a.ts</button></div>',
+    ];
+    cases.forEach((commandInfo, i) => {
+      expect(region(renderText('TEMPLATE BODY', { commandInfo }))).toBe(expected[i]);
+    });
+  });
+});
+
+describe('editablePromptText for a /command', () => {
+  test('drops quote blocks from the args the textarea starts from', () => {
+    expect(
+      editablePromptText('TEMPLATE BODY', {
+        name: 'review',
+        args: '<reply_context>quoted alpha</reply_context>\nlook at this',
+      }),
+    ).toBe('/review look at this');
+  });
+
+  test('a command without quotes is unchanged', () => {
+    expect(editablePromptText('TEMPLATE BODY', { name: 'webapp', args: 'explain me' })).toBe(
+      '/webapp explain me',
+    );
+    expect(editablePromptText('TEMPLATE BODY', { name: 'webapp' })).toBe('/webapp');
   });
 });

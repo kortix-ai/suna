@@ -23,10 +23,11 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 import { authenticatePreviewPrincipalDetailed } from './preview-auth';
+import { bindPreviewResource, bindPreviewSession } from './preview-audit';
 import { resolvePreviewWsUpstream } from './routes/preview';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../shared/opencode-ports';
-import { resolveSandboxIngress } from './backend';
+import { invalidatePreviewLink, resolveSandboxIngress } from './backend';
 import { establishPreviewSession, resolvePreviewRequest, sessionFromCookies } from './preview-origin';
 
 // opencode's PTY WebSocket endpoint lives on opencode's own port, reachable via
@@ -103,6 +104,8 @@ export interface PreviewWsData {
   type: 'preview-ws';
   url: string;
   headers: Record<string, string>;
+  /** Cache identity for refreshing a refused upstream handshake. */
+  ingress?: { sandboxId: string; port: number };
   // Populated in the `open` handler once the upstream socket exists.
   upstream?: WebSocket;
   ready?: boolean;
@@ -175,6 +178,9 @@ export async function preparePreviewWsUpgrade(
   if (!match) return { ok: false, status: 404, message: 'not a preview route' };
 
   const { sandboxId, port, remainingPath } = match;
+  // The PTY terminal: a shell into the sandbox. The validator names the
+  // caller; this names the sandbox, so the owner sees who opened it.
+  bindPreviewResource(sandboxId, port);
 
   const principal = await authenticatePreviewPrincipalDetailed(
     url.searchParams.get('token'),
@@ -234,6 +240,8 @@ export async function preparePreviewHostWsUpgrade(
     }
     session = established.session;
   }
+  bindPreviewSession(session);
+  bindPreviewResource(session.sandboxId, target.port);
   if (session.kind !== 'principal') {
     // A public share is a read-only view of an artifact, not a socket.
     return { ok: false, status: 403, message: 'websocket not available on a shared preview' };
@@ -299,7 +307,10 @@ async function resolveUpgradeForPrincipal(input: {
     }
     return {
       ok: true,
-      data: { type: 'preview-ws', url: upstream.url, headers: upstream.headers },
+      data: {
+        type: 'preview-ws', url: upstream.url, headers: upstream.headers,
+        ingress: { sandboxId, port: upstreamPort },
+      },
     };
   } catch (err) {
     console.warn('[PREVIEW-WS] upstream resolve failed:', (err as Error)?.message || err);
@@ -331,6 +342,11 @@ export const previewWsHandlers = {
     const state = ws.data;
     state.queue = [];
     state.ready = false;
+    const invalidateFailedHandshake = () => {
+      if (!state.ready && state.ingress) {
+        invalidatePreviewLink(state.ingress.sandboxId, state.ingress.port);
+      }
+    };
 
     let upstream: WebSocket;
     try {
@@ -338,6 +354,7 @@ export const previewWsHandlers = {
       // forward the Daytona preview token / service key / signed user-context.
       upstream = new WebSocket(state.url, { headers: state.headers } as any);
     } catch (err) {
+      invalidateFailedHandshake();
       console.warn('[PREVIEW-WS] upstream connect threw:', (err as Error)?.message || err);
       try { ws.close(1011, 'upstream connect failed'); } catch {}
       return;
@@ -364,11 +381,13 @@ export const previewWsHandlers = {
     };
 
     upstream.onclose = (ev: CloseEvent) => {
+      invalidateFailedHandshake();
       stopPreviewWsKeepalive(state);
       try { ws.close(sanitizePreviewWsCloseCode(ev.code), (ev.reason || '').slice(0, 120)); } catch {}
     };
 
     upstream.onerror = () => {
+      invalidateFailedHandshake();
       stopPreviewWsKeepalive(state);
       try { ws.close(4502, 'upstream error'); } catch {}
     };

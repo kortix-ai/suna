@@ -152,8 +152,33 @@ export function isExempt(c: Context): boolean {
   return false;
 }
 
-// Built once — duration is constant for the process lifetime.
+// Prompt attachment completion. It stream-verifies (direct) or assembles
+// (chunked) up to 50 MiB under its own 85 s Storage bound (`COMPLETE_BOUND_MS`
+// in projects/prompt-attachments.ts). The general deadline only races that
+// work: the client gets a 503, retries, and starts a second verify while the
+// first runs. It is not exempt either: the database waits around the Storage
+// work are unbounded, and this guard exists for pool starvation. So it gets a
+// longer deadline, with 10 s for those database waits. It answers before
+// Cloudflare's 100 s proxy timeout: a 524 would make the SDK retry and download
+// the object again. The SDK's 120 s completion timeout is longer still.
+// Begin, chunk, and delete answer fast and keep the general deadline.
+const ATTACHMENT_COMPLETE = /^\/v1\/projects\/[^/]+\/attachments\/[^/]+\/complete$/;
+const ATTACHMENT_COMPLETE_DEADLINE_MS = 95_000;
+
+/** This request's wall-clock deadline, or null when it is exempt or the guard is off. */
+export function requestDeadlineMs(c: Context): number | null {
+  if (!ENABLED || isExempt(c)) return null;
+  if (c.req.method === 'POST' && ATTACHMENT_COMPLETE.test(c.req.path))
+    return Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS);
+  return DEADLINE_MS;
+}
+
+// Built once — each duration is constant for the process lifetime.
 const bounded = timeout(Math.max(DEADLINE_MS, 1), () => new RequestDeadlineHTTPException());
+const completionBounded = timeout(
+  Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS),
+  () => new RequestDeadlineHTTPException(Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS)),
+);
 
 /**
  * Dedicated HTTPException subclass for the request-deadline 503.
@@ -173,9 +198,9 @@ const bounded = timeout(Math.max(DEADLINE_MS, 1), () => new RequestDeadlineHTTPE
 export class RequestDeadlineHTTPException extends HTTPException {
   readonly code = REQUEST_DEADLINE_CODE;
 
-  constructor() {
+  constructor(deadlineMs = DEADLINE_MS) {
     super(503, {
-      message: `Request exceeded the ${Math.round(DEADLINE_MS / 1000)}s server processing deadline`,
+      message: `Request exceeded the ${Math.round(deadlineMs / 1000)}s server processing deadline`,
     });
   }
 }
@@ -185,9 +210,10 @@ export function isRequestDeadlineHTTPException(err: unknown): err is RequestDead
 }
 
 export async function requestDeadline(c: Context, next: Next): Promise<void | Response> {
-  if (!ENABLED || isExempt(c)) {
+  const deadline = requestDeadlineMs(c);
+  if (deadline === null) {
     await next();
     return;
   }
-  return bounded(c, next);
+  return deadline === DEADLINE_MS ? bounded(c, next) : completionBounded(c, next);
 }

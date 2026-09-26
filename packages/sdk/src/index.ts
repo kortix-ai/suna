@@ -57,6 +57,7 @@ export {
   createFile,
   deleteFile,
   files,
+  FileExistsError,
   findFiles,
   findText,
   getCurrentProject,
@@ -136,6 +137,13 @@ export type { SessionHealthResponse, SessionHealthResult } from './core/session/
  * `ensureReady()` return type without reaching into an internal module path).
  */
 export type { SessionRuntimeEntry } from './core/session/session-runtime-registry';
+
+/**
+ * Mint the OpenCode wire `messageId` for `session.prompts.create()`. The id is
+ * the prompt's position in the transcript; a hand-rolled encoding sorts wrong.
+ */
+export { mintWireMessageId } from './core/session/wire-message-id';
+export type { MintWireMessageIdOptions } from './core/session/wire-message-id';
 
 /**
  * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
@@ -473,6 +481,8 @@ export * from './core/http/instance-routes';
 export * from './core/http/opencode-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
+export * from './core/attachments/limits';
+export * from './core/attachments/prompt-attachments';
 export * from './core/runtime/client';
 export * from './core/runtime/attachment-part';
 export * from './core/session';

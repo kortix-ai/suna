@@ -1,6 +1,8 @@
 import { testUiTranslator } from '@/i18n/test-translator';
+import { createTranslator } from 'next-intl';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import deMessages from '../../../translations/de.json';
 import {
   AUDIT_HTTP_ROUTES,
   describeAuditAction,
@@ -10,6 +12,11 @@ import {
 
 const UID = '8fb490fe-4765-480e-9e83-08b4b41a3f06';
 const UID2 = '47dd83e0-c532-4643-a0c1-112abab26d5e';
+const deUiTranslator = createTranslator({
+  locale: 'de',
+  messages: deMessages,
+  namespace: 'hardcodedUi.i18nComplete',
+});
 
 interface RouteManifest {
   routes: Array<{ method: string; path: string }>;
@@ -111,6 +118,26 @@ describe('audit HTTP route registry', () => {
     expect(describeAuditAction(`GET /v1/git/${UID}/compiled-runtime`, testUiTranslator).title).toBe(
       'Downloaded compiled session runtime',
     );
+    expect(
+      describeAuditAction(`POST /v1/projects/${UID}/attachments`, testUiTranslator).title,
+    ).toBe('Started attachment upload');
+    expect(
+      describeAuditAction(`PUT /v1/projects/${UID}/attachments/${UID2}/chunks/0`, testUiTranslator)
+        .title,
+    ).toBe('Uploaded attachment chunk');
+    expect(
+      describeAuditAction(`POST /v1/projects/${UID}/attachments/${UID2}/complete`, testUiTranslator)
+        .title,
+    ).toBe('Completed attachment upload');
+    expect(
+      describeAuditAction(`DELETE /v1/projects/${UID}/attachments/${UID2}`, testUiTranslator).title,
+    ).toBe('Removed attachment upload');
+    expect(
+      describeAuditAction(
+        `GET /v1/projects/${UID}/runtime/prompt-attachments/${UID2}`,
+        deUiTranslator,
+      ).title,
+    ).toBe('Laufzeit-Anhangsbeschreibung aufgelöst');
   });
 
   test('preserves the compact raw route fallback for an unknown route', () => {
@@ -308,9 +335,9 @@ describe('humanizeAuditAction — HTTP routes', () => {
 
   // ── Patterns added for the screenshots in the audit-log polish pass ──
 
-  test('PATCH /v1/accounts/:id → Updated account settings', () => {
+  test('PATCH /v1/accounts/:id → Renamed account', () => {
     expect(humanizeAuditAction(`PATCH /v1/accounts/${UID}`, testUiTranslator).title).toBe(
-      'Updated account settings',
+      'Renamed account',
     );
   });
 
@@ -353,9 +380,9 @@ describe('humanizeAuditAction — HTTP routes', () => {
     ).toBe('Listed pending project invites');
   });
 
-  test('POST /v1/projects/:id/sessions → Started session', () => {
+  test('POST /v1/projects/:id/sessions → Created session', () => {
     expect(humanizeAuditAction(`POST /v1/projects/${UID}/sessions`, testUiTranslator)).toEqual({
-      title: 'Started session',
+      title: 'Created session',
       kind: 'create',
     });
   });
@@ -416,7 +443,7 @@ describe('humanizeAuditAction — HTTP routes', () => {
 describe('humanizeAuditAction — fallbacks', () => {
   test('central session and agent actions use concise labels', () => {
     expect(humanizeAuditAction('session.created', testUiTranslator)).toEqual({
-      title: 'Started session',
+      title: 'Recorded session creation',
       kind: 'create',
     });
     expect(humanizeAuditAction('connector.gmail.send_email', testUiTranslator)).toEqual({
@@ -434,8 +461,8 @@ describe('humanizeAuditAction — fallbacks', () => {
       kind: 'update',
     });
     expect(humanizeAuditAction('connector.computer.shell.exec', testUiTranslator)).toEqual({
-      title: 'Ran connector call',
-      detail: 'computer.shell.exec',
+      title: 'Ran computer operation',
+      detail: 'shell.exec',
       kind: 'update',
     });
   });
@@ -471,5 +498,95 @@ describe('formatResourcePill', () => {
   });
   test('underscore in type rendered as space', () => {
     expect(formatResourcePill('service_account', null)).toBe('service account');
+  });
+});
+
+describe('describeAuditAction — catalog labels', () => {
+  test('a route label shows its catalog title, method, route, and area', () => {
+    expect(describeAuditAction('gateway.key.revoke', testUiTranslator)).toEqual({
+      title: 'Revoked LLM gateway key',
+      kind: 'revoke',
+      mapped: true,
+      method: 'DELETE',
+      route: '/v1/projects/:projectId/gateway/keys/:keyId',
+      area: 'AI gateway',
+    });
+  });
+
+  test('a new row and an old row of one route read the same', () => {
+    expect(describeAuditAction('gateway.key.revoke', testUiTranslator).title).toBe(
+      describeAuditAction(`DELETE /v1/projects/${UID}/gateway/keys/${UID2}`, testUiTranslator)
+        .title,
+    );
+  });
+
+  test('a catch-all label names its route and no method; an entrypoint label names neither', () => {
+    expect(describeAuditAction('sandbox.port.proxy', testUiTranslator)).toMatchObject({
+      title: 'Accessed sandbox port',
+      method: null,
+      route: '/v1/p/:sandboxId/:port/*',
+    });
+    expect(describeAuditAction('sandbox.preview.access', testUiTranslator)).toMatchObject({
+      title: 'Opened sandbox preview',
+      method: null,
+      route: null,
+      area: null,
+    });
+  });
+
+  test('an event label shows its title', () => {
+    expect(humanizeAuditAction('secret.consumer.used', testUiTranslator)).toEqual({
+      title: 'Used secret',
+      kind: 'other',
+    });
+    expect(humanizeAuditAction('iam.assignment.expired', testUiTranslator)).toEqual({
+      title: 'Expired a role',
+      kind: 'revoke',
+    });
+  });
+
+  test('a request no endpoint matched reads as such', () => {
+    expect(humanizeAuditAction('api.route.unmatched', testUiTranslator).title).toBe(
+      'Requested unknown API route',
+    );
+  });
+});
+
+describe('audit title translation keys', () => {
+  test('every title in the shared audit catalog is translated', async () => {
+    const { AUDIT_EVENT_LABELS, AUDIT_ROUTE_LABELS, UNMATCHED_ROUTE_LABEL } = await import(
+      '@kortix/shared/audit-labels'
+    );
+    const { AUDIT_TITLE_TRANSLATION_KEYS } = await import(
+      './audit-title-translation-keys.generated'
+    );
+    const titles = new Set<string>([
+      ...Object.values(AUDIT_ROUTE_LABELS).flatMap((value) =>
+        typeof value === 'string' ? [] : [value.title],
+      ),
+      ...Object.values(AUDIT_EVENT_LABELS),
+      UNMATCHED_ROUTE_LABEL.title,
+    ]);
+    // A new title needs `hardcodedUi.i18nComplete.text<sha256[:12]>` in all nine
+    // catalogs; then run scripts/generate-audit-title-keys.mjs.
+    expect([...titles].filter((title) => !AUDIT_TITLE_TRANSLATION_KEYS[title]).sort()).toEqual([]);
+  });
+
+  test('the generated map is current: regenerate with scripts/generate-audit-title-keys.mjs', async () => {
+    const { renderAuditTitleTranslationKeys } = await import(
+      '../../../scripts/generate-audit-title-keys.mjs'
+    );
+    expect(
+      readFileSync(new URL('./audit-title-translation-keys.generated.ts', import.meta.url), 'utf8'),
+    ).toBe(renderAuditTitleTranslationKeys());
+  });
+});
+
+describe('audit action reference page', () => {
+  test('content/docs/audit-actions.mdx is current: regenerate with scripts/generate-audit-actions-doc.mjs', async () => {
+    const { renderAuditActionsDoc } = await import('../../../scripts/generate-audit-actions-doc.mjs');
+    expect(
+      readFileSync(new URL('../../../content/docs/audit-actions.mdx', import.meta.url), 'utf8'),
+    ).toBe(await renderAuditActionsDoc());
   });
 });

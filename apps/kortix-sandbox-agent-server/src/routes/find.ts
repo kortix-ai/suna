@@ -114,6 +114,37 @@ function fuzzyScore(candidate: string, query: string): number {
   return 1_000 - candidate.length
 }
 
+/**
+ * Parse `rg --json … -- <pattern> .` output into FindMatch[].
+ *
+ * The search root is `.`, so ripgrep prints every path as `./src/a.ts`. Strip
+ * that prefix: the Node fallback and `/find/file` return workspace-relative
+ * paths (`src/a.ts`), and the web search panel displays and opens `path` as-is.
+ */
+export function parseRipgrepJson(stdout: string): FindMatch[] {
+  const matches: FindMatch[] = []
+  for (const line of stdout.split('\n')) {
+    if (!line || matches.length >= MAX_TEXT_MATCHES) break
+    let obj: any
+    try {
+      obj = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (obj?.type !== 'match') continue
+    const d = obj.data
+    const rawPath: string = d?.path?.text ?? ''
+    matches.push({
+      path: rawPath.startsWith('./') ? rawPath.slice(2) : rawPath,
+      lines: d?.lines?.text ?? '',
+      line_number: d?.line_number ?? 0,
+      absolute_offset: d?.absolute_offset ?? 0,
+      submatches: (d?.submatches ?? []).map((s: any) => ({ start: s.start, end: s.end })),
+    })
+  }
+  return matches
+}
+
 export function createFindRouter(cfg: Config): Hono {
   const app = new Hono()
   const workspace = cfg.workspace || '/workspace'
@@ -151,26 +182,7 @@ export function createFindRouter(cfg: Config): Hono {
     )
 
     if (!rg.missing && (rg.code === 0 || rg.code === 1)) {
-      const matches: FindMatch[] = []
-      for (const line of rg.stdout.split('\n')) {
-        if (!line || matches.length >= MAX_TEXT_MATCHES) break
-        let obj: any
-        try {
-          obj = JSON.parse(line)
-        } catch {
-          continue
-        }
-        if (obj?.type !== 'match') continue
-        const d = obj.data
-        matches.push({
-          path: d?.path?.text ?? '',
-          lines: d?.lines?.text ?? '',
-          line_number: d?.line_number ?? 0,
-          absolute_offset: d?.absolute_offset ?? 0,
-          submatches: (d?.submatches ?? []).map((s: any) => ({ start: s.start, end: s.end })),
-        })
-      }
-      return c.json(matches)
+      return c.json(parseRipgrepJson(rg.stdout))
     }
 
     // Fallback: Node walk + regex (ripgrep unavailable on this image).

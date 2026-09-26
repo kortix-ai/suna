@@ -3,8 +3,63 @@
  * Trigger create commits the project manifest (a real git commit).
  */
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
+import { CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 import { createDatabaseSession } from '../fixtures/database-project';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+
+type TriggerRow = { slug: string; model: string | null };
+
+/**
+ * A managed-repo project is seeded from the starter by default (4da295e50b),
+ * and the starter ships a `harness-reflector` cron with no model. So the
+ * trigger a flow just wrote is NOT `triggers[0]`; find it by slug.
+ */
+function triggerBySlug(
+  body: { triggers: TriggerRow[] },
+  slug: string,
+): TriggerRow {
+  const row = body.triggers.find((trigger) => trigger.slug === slug);
+  if (!row) {
+    throw new Error(
+      `trigger "${slug}" missing from response; got ${JSON.stringify(body.triggers.map((t) => t.slug))}`,
+    );
+  }
+  return row;
+}
+
+function expectTriggerModel(body: { triggers: TriggerRow[] }, slug: string, model: string): void {
+  const row = triggerBySlug(body, slug);
+  if (row.model !== model) {
+    throw new Error(`triggers["${slug}"].model === ${JSON.stringify(model)} — got ${JSON.stringify(row.model)}`);
+  }
+}
+
+type ManifestCommit = { hash: string; message?: string };
+
+/**
+ * `kortix.yaml` history on a deployed target lags its writes: the starter seed
+ * and the trigger commit land through the managed-git mirror seconds after the
+ * API answered. Read until two consecutive reads agree, so a comparison
+ * against a later read counts only commits made in between.
+ */
+async function settledManifestHistory(
+  read: () => Promise<ManifestCommit[]>,
+): Promise<ManifestCommit[]> {
+  let previous: string | null = null;
+  const commits = await waitFor(read, {
+    until: (value) => {
+      const key = JSON.stringify(value.map((commit) => commit.hash));
+      const settled = previous === key;
+      previous = key;
+      return settled;
+    },
+    timeoutMs: 90_000,
+    intervalMs: 3_000,
+    description: 'kortix.yaml history settles',
+  });
+  return commits;
+}
 
 flow(
   'TRG-1',
@@ -56,7 +111,8 @@ flow(
         },
         { params: { projectId: p.id } },
       );
-      r.status(201).body().has('triggers[0].model', 'anthropic/claude-sonnet-4-6');
+      r.status(201);
+      expectTriggerModel(r.json<{ triggers: TriggerRow[] }>(), 'nightly', 'anthropic/claude-sonnet-4-6');
     });
     await ctx.step('duplicate slug → 409', async () => {
       const r = await ctx.client
@@ -115,7 +171,8 @@ flow(
           { model: 'openai/gpt-5' },
           { params: { projectId: p.id, slug: 'toggle-me' } },
         );
-      r.status(200).body().has('triggers[0].model', 'openai/gpt-5');
+      r.status(200);
+      expectTriggerModel(r.json<{ triggers: TriggerRow[] }>(), 'toggle-me', 'openai/gpt-5');
     });
   },
 );
@@ -755,14 +812,15 @@ flow(
       ) {
         throw new Error(`unexpected default session_access: ${JSON.stringify(access)}`);
       }
-      const history = await owner.get('/v1/projects/:projectId/files/history', {
-        params: { projectId: project.id },
-        query: { path: 'kortix.yaml' },
-      });
-      history.status(200);
-      manifestCommitHashes = history
-        .json<{ commits: Array<{ hash: string }> }>()
-        .commits.map((commit) => commit.hash);
+      const readHistory = async (): Promise<ManifestCommit[]> => {
+        const history = await owner.get('/v1/projects/:projectId/files/history', {
+          params: { projectId: project.id },
+          query: { path: 'kortix.yaml' },
+        });
+        history.status(200);
+        return history.json<{ commits: ManifestCommit[] }>().commits;
+      };
+      manifestCommitHashes = (await settledManifestHistory(readHistory)).map((commit) => commit.hash);
     });
 
     await ctx.step(
@@ -844,16 +902,21 @@ flow(
         ) {
           throw new Error(`selected session_access was not normalized: ${JSON.stringify(access)}`);
         }
-        const history = await owner.get('/v1/projects/:projectId/files/history', {
-          params: { projectId: project.id },
-          query: { path: 'kortix.yaml' },
+        const current = await settledManifestHistory(async () => {
+          const history = await owner.get('/v1/projects/:projectId/files/history', {
+            params: { projectId: project.id },
+            query: { path: 'kortix.yaml' },
+          });
+          history.status(200);
+          return history.json<{ commits: ManifestCommit[] }>().commits;
         });
-        history.status(200);
-        const currentHashes = history
-          .json<{ commits: Array<{ hash: string }> }>()
-          .commits.map((commit) => commit.hash);
-        if (JSON.stringify(currentHashes) !== JSON.stringify(manifestCommitHashes)) {
-          throw new Error('policy-only PATCH created a kortix.yaml commit');
+        const added = current.filter((commit) => !manifestCommitHashes.includes(commit.hash));
+        if (added.length > 0 || current.length !== manifestCommitHashes.length) {
+          throw new Error(
+            `policy-only PATCH created a kortix.yaml commit: ${JSON.stringify(
+              added.map((commit) => `${commit.hash.slice(0, 8)} ${commit.message ?? ''}`),
+            )}`,
+          );
         }
       },
     );
@@ -1009,5 +1072,217 @@ flow(
       });
       r.status(200);
     });
+  },
+);
+
+// ─────────────── TRG-16 — kortix.yaml `imports:` end to end ────────────────────
+
+const IMPORTED_WEEKLY = `# weekly report — declared in an imported file
+triggers:
+  - slug: weekly-report
+    name: Weekly report
+    type: cron
+    enabled: true
+    cron: "0 0 15 * * 0"
+    timezone: UTC
+    prompt: |-
+      Build the weekly report.
+
+      STEP 1 - check sent items.
+`;
+
+const IMPORTED_DOCKETS = `triggers:
+  - slug: docket-monitor
+    name: Docket monitor
+    type: cron
+    enabled: false
+    cron: "0 0 9 * * 1-5"
+    timezone: UTC
+    prompt: check the docket
+`;
+
+type ImportedTriggerRow = { slug: string; path: string; enabled: boolean };
+
+flow(
+  'TRG-16',
+  {
+    domain: 'triggers',
+    // The split manifest reaches the project the way a user's does: a real
+    // `kortix ship` push through the git proxy. No API route writes a file.
+    requires: ['managedGitPush'],
+    timeoutMs: 600_000,
+    routes: [
+      'GET /v1/accounts/me',
+      'POST /v1/projects/provision',
+      'POST /v1/projects/:projectId/git-token',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/files/content',
+    ],
+  },
+  async (ctx) => {
+    const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg16') });
+    const sb = new CliSandbox('trg16');
+    ctx.track('cli-sandbox', sb.cwd);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let projectId = '';
+    let rootText = '';
+
+    const readFile = async (path: string): Promise<string> => {
+      const r = await owner.get('/v1/projects/:projectId/files/content', {
+        params: { projectId },
+        query: { path },
+      });
+      r.status(200);
+      return r.json<{ content: string }>().content;
+    };
+    const listTriggers = async (): Promise<{ triggers: ImportedTriggerRow[]; errors: unknown[] }> => {
+      const r = await owner.get('/v1/projects/:projectId/triggers', { params: { projectId } });
+      r.status(200);
+      return r.json<{ triggers: ImportedTriggerRow[]; errors: unknown[] }>();
+    };
+
+    try {
+      const init = await sb.run(['init', 'imports-fixture', '-y']);
+      if (init.exitCode !== 0) throw new Error(`init failed: ${init.all}`);
+      sb.enter('imports-fixture');
+      const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+      if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+
+      await ctx.step(
+        'split the manifest: root declares `imports: [.kortix/triggers/]`, two nested files declare the triggers → `kortix validate` exit 0',
+        async () => {
+          rootText = `${sb.readFile('kortix.yaml').trimEnd()}\nimports:\n  - .kortix/triggers/\n`;
+          sb.writeFile('kortix.yaml', rootText);
+          sb.writeFile('.kortix/triggers/reports/weekly.yaml', IMPORTED_WEEKLY);
+          sb.writeFile('.kortix/triggers/dockets.yaml', IMPORTED_DOCKETS);
+          const r = await sb.run(['validate', '--json']);
+          throwIfCliInfraFailure(r, 'validate');
+          if (r.exitCode !== 0) throw new Error(`validate rejected the split manifest: ${r.all}`);
+        },
+      );
+
+      await ctx.step(
+        'a slug declared in two files → `kortix validate` exit 1 naming both files; removing the clash restores exit 0',
+        async () => {
+          sb.writeFile(
+            '.kortix/triggers/clash.yaml',
+            IMPORTED_DOCKETS.replace('docket-monitor', 'weekly-report'),
+          );
+          const bad = await sb.run(['validate', '--json']);
+          if (bad.exitCode !== 1) throw new Error(`expected exit 1, got ${bad.exitCode}: ${bad.all}`);
+          if (
+            !bad.stdout.includes('.kortix/triggers/clash.yaml') ||
+            !bad.stdout.includes('.kortix/triggers/reports/weekly.yaml')
+          ) {
+            throw new Error(`duplicate-slug error does not name both files: ${bad.stdout}`);
+          }
+          sb.writeFile('.kortix/triggers/clash.yaml', 'triggers: []\n');
+          const good = await sb.run(['validate', '--json']);
+          if (good.exitCode !== 0) throw new Error(`validate still failing: ${good.all}`);
+        },
+      );
+
+      await ctx.step('`kortix ship` pushes the split manifest → exit 0, project linked', async () => {
+        const r = await sb.run(['ship', '-y', '-m', 'ke2e: split manifest'], { timeoutMs: 120_000 });
+        throwIfCliInfraFailure(r, 'ship');
+        if (r.exitCode !== 0) throw new Error(`ship failed: ${r.all}`);
+        const link = JSON.parse(sb.readFile('.kortix/link.json')) as { project_id?: string };
+        if (!link.project_id) throw new Error('ship wrote no project_id');
+        projectId = link.project_id;
+        ctx.track('project', projectId);
+      });
+
+      await ctx.step(
+        'GET /triggers lists the imported triggers with no errors, each `path` naming its declaring file',
+        async () => {
+          const listed = await waitFor(listTriggers, {
+            until: (v) => v.triggers.some((t) => t.slug === 'weekly-report'),
+            timeoutMs: 60_000,
+            intervalMs: 2_000,
+            description: 'imported triggers visible through the API',
+          });
+          if (listed.errors.length > 0) {
+            throw new Error(`trigger parse errors: ${JSON.stringify(listed.errors)}`);
+          }
+          const paths = Object.fromEntries(listed.triggers.map((t) => [t.slug, t.path]));
+          if (
+            paths['weekly-report'] !== '.kortix/triggers/reports/weekly.yaml#triggers.weekly-report' ||
+            paths['docket-monitor'] !== '.kortix/triggers/dockets.yaml#triggers.docket-monitor'
+          ) {
+            throw new Error(`imported triggers report the wrong declaring file: ${JSON.stringify(paths)}`);
+          }
+        },
+      );
+
+      await ctx.step(
+        'PATCH an imported trigger {enabled:false} → 200; only its declaring file changes, kortix.yaml is byte-identical',
+        async () => {
+          const r = await owner.patch(
+            '/v1/projects/:projectId/triggers/:slug',
+            { enabled: false },
+            { params: { projectId, slug: 'weekly-report' } },
+          );
+          r.status(200);
+          const weekly = await waitFor(() => readFile('.kortix/triggers/reports/weekly.yaml'), {
+            until: (text) => /enabled: false/.test(text),
+            timeoutMs: 60_000,
+            intervalMs: 2_000,
+            description: 'the imported file carries the edit',
+          });
+          if (!weekly.includes('STEP 1 - check sent items.')) {
+            throw new Error(`the edit damaged the imported prompt: ${weekly}`);
+          }
+          const root = await readFile('kortix.yaml');
+          if (root !== rootText) throw new Error(`kortix.yaml was rewritten:\n${root}`);
+          if (root.includes('weekly-report')) {
+            throw new Error('the imported trigger was flattened into kortix.yaml');
+          }
+          if ((await readFile('.kortix/triggers/dockets.yaml')) !== IMPORTED_DOCKETS) {
+            throw new Error('a sibling imported file was rewritten');
+          }
+        },
+      );
+
+      await ctx.step(
+        'POST a new trigger → 201, written to kortix.yaml; POST a slug an imported file declares → 409; list stays free of duplicates',
+        async () => {
+          const body = {
+            name: 'Brand new',
+            slug: 'brand-new',
+            type: 'cron',
+            cron: '0 0 3 * * *',
+            timezone: 'UTC',
+            prompt_template: 'new',
+          };
+          (await owner.post('/v1/projects/:projectId/triggers', body, { params: { projectId } })).status(201);
+          (
+            await owner.post(
+              '/v1/projects/:projectId/triggers',
+              { ...body, name: 'Dup', slug: 'docket-monitor' },
+              { params: { projectId } },
+            )
+          ).status(409);
+          const root = await waitFor(() => readFile('kortix.yaml'), {
+            until: (text) => text.includes('brand-new'),
+            timeoutMs: 60_000,
+            intervalMs: 2_000,
+            description: 'the new trigger lands in the root manifest',
+          });
+          if (!root.includes('.kortix/triggers/')) throw new Error('the root lost its imports');
+          const listed = await listTriggers();
+          const slugs = listed.triggers.map((t) => t.slug);
+          if (listed.errors.length > 0 || new Set(slugs).size !== slugs.length) {
+            throw new Error(`duplicates or errors after the write: ${JSON.stringify(listed)}`);
+          }
+          for (const slug of ['weekly-report', 'docket-monitor', 'brand-new']) {
+            if (!slugs.includes(slug)) throw new Error(`missing ${slug}: ${JSON.stringify(slugs)}`);
+          }
+        },
+      );
+    } finally {
+      sb.dispose();
+    }
   },
 );

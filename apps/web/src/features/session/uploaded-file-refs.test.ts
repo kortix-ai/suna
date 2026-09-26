@@ -1,24 +1,29 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { SessionPromptPart } from '@kortix/sdk';
+
 import { parseFileReferences } from '@/features/session/message-parsing';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import {
   buildOptimisticPromptTextWithUploads,
-  buildPromptPartsWithUploads,
-  DATA_URL_ATTACHMENTS_MAX_BYTES,
   MAX_UPLOAD_FILENAME_BYTES,
   optimisticUploadedFileRef,
+  promptFileParts,
   sanitizeUploadFilename,
-  stageFirstPromptAttachments,
-  UploadBatchError,
+  sentAttachmentsOf,
   uploadedFileRefXml,
-  UPLOADS_DIR,
-  type UploadFileForPrompt,
 } from './uploaded-file-refs';
 
-function localFile(name: string, type = 'text/plain'): Extract<AttachedFile, { kind: 'local' }> {
+const UPLOADS = '/workspace/uploads';
+
+function localFile(
+  name: string,
+  type = 'text/plain',
+  uploadId?: string,
+): Extract<AttachedFile, { kind: 'local' }> {
   return {
     kind: 'local',
+    ...(uploadId ? { uploadId } : {}),
     file: new File(['hello'], name, { type }),
     localUrl: 'blob:test',
     isImage: type.startsWith('image/'),
@@ -82,70 +87,6 @@ describe('uploaded file references', () => {
     expect(byteLength(cjk) + 37).toBeLessThanOrEqual(255);
   });
 
-  test('builds text refs from actual returned upload paths', async () => {
-    const uploadCalls: Array<{ originalName: string; targetPath?: string; filename?: string }> = [];
-    const upload: UploadFileForPrompt = async (file, targetPath, filename) => {
-      uploadCalls.push({ originalName: (file as File).name, targetPath, filename });
-      return [{ path: `${targetPath}/actual.zip`, size: 5 }];
-    };
-
-    const result = await buildPromptPartsWithUploads(
-      'analyze this',
-      [localFile('Project Veyris #1.zip', 'application/zip')],
-      upload,
-    );
-
-    expect(uploadCalls).toEqual([
-      {
-        originalName: 'Project Veyris #1.zip',
-        targetPath: UPLOADS_DIR,
-        filename: 'Project Veyris #1.zip',
-      },
-    ]);
-    expect(result.remoteParts).toEqual([]);
-    expect(result.text).toContain('analyze this');
-    expect(result.text).toContain(`path="${UPLOADS_DIR}/actual.zip"`);
-    expect(result.text).toContain('filename="Project Veyris #1.zip"');
-  });
-
-  test('the SERVER path wins, even when it is nothing like the name we sent', async () => {
-    // The daemon writes with `wx` and never overwrites: a name already present
-    // in the session lands as `report-<suffix>.pdf`. Any client prediction is
-    // wrong for every re-upload, so only the returned path may reach the prompt.
-    const result = await buildPromptPartsWithUploads(
-      'read it',
-      [localFile('report.pdf')],
-      async () => [{ path: `${UPLOADS_DIR}/report-mgk2x1-a3f9b201.pdf`, size: 5 }],
-    );
-
-    expect(result.text).toContain(`path="${UPLOADS_DIR}/report-mgk2x1-a3f9b201.pdf"`);
-    expect(result.text).not.toContain(`path="${UPLOADS_DIR}/report.pdf"`);
-  });
-
-  test('keeps remote files as file parts without uploading them', async () => {
-    const result = await buildPromptPartsWithUploads('read remote', [remoteFile()], async () => {
-      throw new Error('should not upload remote files');
-    });
-
-    expect(result.text).toBe('read remote');
-    expect(result.remoteParts).toEqual([
-      {
-        type: 'file',
-        mime: 'application/pdf',
-        url: 'https://files.example/remote.pdf',
-        filename: 'remote.pdf',
-      },
-    ]);
-  });
-
-  test('fails before producing optimistic file references when upload has no path', async () => {
-    await expect(
-      buildPromptPartsWithUploads('send', [localFile('missing.txt')], async () => [
-        { path: '', size: 5 },
-      ]),
-    ).rejects.toThrow('did not return a file path');
-  });
-
   test('escapes XML attributes in generated refs', () => {
     expect(
       uploadedFileRefXml({
@@ -168,7 +109,7 @@ describe('uploaded file references', () => {
       'already &amp; escaped.txt',
       '报告 & 财报.pdf',
     ]) {
-      const path = `${UPLOADS_DIR}/${filename}`;
+      const path = `${UPLOADS}/${filename}`;
       const xml = uploadedFileRefXml({ path, mime: 'text/plain', filename });
       const { files, cleanText } = parseFileReferences(`look\n\n${xml}`);
 
@@ -180,11 +121,22 @@ describe('uploaded file references', () => {
     }
   });
 
-  test('an optimistic ref carries no path — only a per-attachment id', () => {
-    const ref = optimisticUploadedFileRef(localFile('a b.txt'), 2);
-    expect(ref.path).toBe('');
-    expect(ref.pendingId).toBe('upl_2');
-    expect(ref.filename).toBe('a b.txt');
+  test('a handle-backed optimistic ref carries its attachment identity, no path and no pending id', () => {
+    expect(optimisticUploadedFileRef(localFile('a b.png', 'image/png', 'upload-2'))).toEqual({
+      path: '',
+      mime: 'image/png',
+      filename: 'a b.png',
+      attachment: 'upload-2',
+    });
+  });
+
+  test('the submitted list names each file by identity, name and type', () => {
+    expect(
+      sentAttachmentsOf([localFile('shot.png', '', 'upload-0'), remoteFile('remote.pdf')]),
+    ).toEqual([
+      { id: 'upload-0', filename: 'shot.png', mime: 'image/png' },
+      { filename: 'remote.pdf', mime: 'application/pdf' },
+    ]);
   });
 
   test('a remote attachment needs no upload, so it keeps its path', () => {
@@ -197,47 +149,32 @@ describe('uploaded file references', () => {
 
   test('builds optimistic refs before upload completes', () => {
     const text = buildOptimisticPromptTextWithUploads('look at these', [
-      localFile('Screenshot 2026.png', 'image/png'),
+      localFile('Screenshot 2026.png', 'image/png', 'upload-0'),
     ]);
 
     expect(text).toContain('look at these');
     expect(text).toContain('filename="Screenshot 2026.png"');
-    expect(text).toContain('pending="upl_0"');
+    expect(text).toContain('attachment="upload-0"');
+    expect(text).not.toContain('pending=');
     // No guessed path. The daemon assigns it, and it is frequently not this.
     expect(text).toContain('path=""');
-    expect(text).not.toContain(`path="${UPLOADS_DIR}`);
+    expect(text).not.toContain(`path="${UPLOADS}`);
   });
 
-  test('two attachments whose names sanitize alike get DIFFERENT ids', () => {
-    // Three pasted screenshots are all named `image.png` (clipboard-files.ts),
-    // and `my report.pdf` / `my/report.pdf` both used to predict
-    // `/workspace/uploads/my_report.pdf`. The transcript keys uploads by that
-    // value, so identical predictions became duplicate React keys.
+  test('three same-named attachments keep three identities', () => {
+    // Three pasted screenshots are all named `image.png` (clipboard-files.ts).
+    // The transcript keys a sent tile by its identity, never by its name.
     const text = buildOptimisticPromptTextWithUploads('three shots', [
-      localFile('image.png', 'image/png'),
-      localFile('image.png', 'image/png'),
-      localFile('image.png', 'image/png'),
+      localFile('image.png', 'image/png', 'upload-a'),
+      localFile('image.png', 'image/png', 'upload-b'),
+      localFile('image.png', 'image/png', 'upload-c'),
     ]);
 
     const { files } = parseFileReferences(text);
-    expect(files.map((f) => f.pending)).toEqual(['upl_0', 'upl_1', 'upl_2']);
-    expect(new Set(files.map((f) => f.pending)).size).toBe(3);
+    expect(files.map((f) => f.attachment)).toEqual(['upload-a', 'upload-b', 'upload-c']);
   });
 
-  test('optimistic and real refs disagree about the path, and the real one is used', async () => {
-    const file = localFile('image.png', 'image/png');
-    const optimistic = parseFileReferences(buildOptimisticPromptTextWithUploads('shot', [file]));
-    const settled = await buildPromptPartsWithUploads('shot', [file], async () => [
-      { path: `${UPLOADS_DIR}/image-mgk2x1-a3f9b201.png`, size: 5 },
-    ]);
-
-    expect(optimistic.files[0].path).toBe('');
-    expect(parseFileReferences(settled.text).files[0].path).toBe(
-      `${UPLOADS_DIR}/image-mgk2x1-a3f9b201.png`,
-    );
-  });
-
-  test('an empty browser mime falls back to the extension, not octet-stream', async () => {
+  test('an empty browser mime falls back to the extension, not octet-stream', () => {
     // `.md`, `.csv` and some platforms' `.png` arrive with `type === ''`. The
     // transcript gates the picture on `mime.startsWith('image/')`, so the same
     // PNG was a thumbnail in the composer and a generic icon in the transcript.
@@ -248,198 +185,54 @@ describe('uploaded file references', () => {
     expect(optimisticUploadedFileRef(localFile('blob.qqq', '')).mime).toBe(
       'application/octet-stream',
     );
-
-    const settled = await buildPromptPartsWithUploads(
-      'look',
-      [localFile('shot.png', '')],
-      async () => [{ path: `${UPLOADS_DIR}/shot.png`, size: 5 }],
-    );
-    expect(settled.text).toContain('mime="image/png"');
-  });
-
-  test('one failed upload does not discard the ones that succeeded', async () => {
-    const uploaded: string[] = [];
-    const upload: UploadFileForPrompt = async (file) => {
-      const name = (file as File).name;
-      if (name === 'bad.pdf') throw new Error('Upload failed (413): Payload Too Large');
-      uploaded.push(name);
-      return [{ path: `${UPLOADS_DIR}/${name}`, size: 5 }];
-    };
-
-    const files = [localFile('a.txt'), localFile('bad.pdf'), localFile('c.txt')];
-    const error = (await buildPromptPartsWithUploads('send', files, upload).catch(
-      (e) => e,
-    )) as UploadBatchError;
-
-    // `Promise.all` short-circuited, so the siblings' bytes were already on disk
-    // with nothing tracking them. Every attempt is accounted for now.
-    expect(uploaded).toEqual(['a.txt', 'c.txt']);
-    expect(error).toBeInstanceOf(UploadBatchError);
-    expect(error.failures).toEqual([
-      { filename: 'bad.pdf', reason: 'Upload failed (413): Payload Too Large' },
-    ]);
-    // The message NAMES the file and the reason — "Upload failed" alone leaves
-    // the user guessing which of three attachments to remove.
-    expect(error.message).toContain('bad.pdf');
-    expect(error.message).toContain('413');
-    expect(error.uploaded.map((f) => f.filename)).toEqual(['a.txt', 'c.txt']);
-
-    // The retry re-uploads ONLY the file that failed. The daemon never
-    // overwrites, so re-sending the survivors would have orphaned a suffixed
-    // duplicate of each, per attempt.
-    const retry = await buildPromptPartsWithUploads('send', files, async (file) => [
-      { path: `${UPLOADS_DIR}/${(file as File).name}`, size: 5 },
-    ]);
-    expect(uploaded).toEqual(['a.txt', 'c.txt']);
-    expect(retry.text).toContain(`path="${UPLOADS_DIR}/a.txt"`);
-    expect(retry.text).toContain(`path="${UPLOADS_DIR}/bad.pdf"`);
-    expect(retry.text).toContain(`path="${UPLOADS_DIR}/c.txt"`);
-  });
-
-  test('every failure in a batch is named, not just the first', async () => {
-    const files = [localFile('one.txt'), localFile('two.txt')];
-    const error = (await buildPromptPartsWithUploads('send', files, async (file) => {
-      throw new Error(`no route to ${(file as File).name}`);
-    }).catch((e) => e)) as UploadBatchError;
-
-    expect(error).toBeInstanceOf(UploadBatchError);
-    expect(error.failures.map((f) => f.filename)).toEqual(['one.txt', 'two.txt']);
-    expect(error.message).toContain('one.txt — no route to one.txt');
-    expect(error.message).toContain('two.txt — no route to two.txt');
   });
 });
 
-describe('stageFirstPromptAttachments', () => {
-  // Every byte is read before the session is even created, so this is dead
-  // time the user spends staring at a busy composer. Reading the files one
-  // after another made it the SUM of five reads; they are independent.
-  test('reads the batch in parallel, not one file after another', async () => {
-    const order: string[] = [];
-    const slowFile = (name: string, delayMs: number) =>
-      ({
-        kind: 'local' as const,
-        localUrl: `blob:${name}`,
-        isImage: false,
-        file: {
-          name,
-          size: 4,
-          type: 'text/plain',
-          arrayBuffer: async () => {
-            order.push(`start:${name}`);
-            await new Promise((r) => setTimeout(r, delayMs));
-            order.push(`end:${name}`);
-            return new Uint8Array([1, 2, 3, 4]).buffer;
-          },
-          // biome-ignore lint/suspicious/noExplicitAny: minimal File stand-in
-        } as any,
-      });
-
-    await stageFirstPromptAttachments([slowFile('a.txt', 40), slowFile('b.txt', 5)]);
-
-    // Both reads are in flight before either finishes. Sequential reading
-    // would give start:a, end:a, start:b, end:b.
-    expect(order.slice(0, 2)).toEqual(['start:a.txt', 'start:b.txt']);
+describe('promptFileParts', () => {
+  const ready = (id: string, filename: string): SessionPromptPart => ({
+    type: 'file',
+    attachment_id: id,
+    filename,
+    mime: 'text/plain',
   });
 
-  // The cap is knowable from `File.size` alone. Reading 9 MB and THEN refusing
-  // it spends the whole cost of the thing being refused.
-  test('refuses an oversized batch without reading a single byte', async () => {
-    let reads = 0;
-    const huge = {
-      kind: 'local' as const,
-      localUrl: 'blob:huge',
-      isImage: false,
-      file: {
-        name: 'huge.bin',
-        size: 20 * 1024 * 1024,
-        type: 'application/octet-stream',
-        arrayBuffer: async () => {
-          reads += 1;
-          return new ArrayBuffer(0);
-        },
-        // biome-ignore lint/suspicious/noExplicitAny: minimal File stand-in
-      } as any,
-    };
-
-    await expect(stageFirstPromptAttachments([huge])).rejects.toThrow(/after the session starts/i);
-    expect(reads).toBe(0);
-  });
-
-  test('keeps the attachments in the order they were attached', async () => {
-    const file = (name: string) =>
-      ({
-        kind: 'local' as const,
-        localUrl: `blob:${name}`,
-        isImage: false,
-        file: {
-          name,
-          size: 2,
-          type: 'text/plain',
-          arrayBuffer: async () => new Uint8Array([65, 66]).buffer,
-          // biome-ignore lint/suspicious/noExplicitAny: minimal File stand-in
-        } as any,
-      });
-
-    const parts = await stageFirstPromptAttachments([file('1.txt'), file('2.txt'), file('3.txt')]);
-    expect(parts.map((p) => p.filename)).toEqual(['1.txt', '2.txt', '3.txt']);
-  });
-
-  const local = (name: string, bytes: Uint8Array, type = 'image/png'): AttachedFile => ({
-    kind: 'local',
-    file: new File([bytes as unknown as BlobPart], name, { type }),
-    localUrl: 'blob:x',
-    isImage: type.startsWith('image/'),
-  });
-
-  test('a local file becomes a data-URL file part; a remote one rides as-is', async () => {
-    const parts = await stageFirstPromptAttachments([
-      local('shot.png', new Uint8Array([1, 2, 3])),
-      {
-        kind: 'remote',
-        url: 'https://files.test/a.pdf',
-        filename: 'a.pdf',
-        mime: 'application/pdf',
-        isImage: false,
-      },
-    ]);
-
-    expect(parts).toEqual([
-      {
-        type: 'file',
-        mime: 'image/png',
-        url: `data:image/png;base64,${Buffer.from([1, 2, 3]).toString('base64')}`,
-        filename: 'shot.png',
-      },
-      { type: 'file', mime: 'application/pdf', url: 'https://files.test/a.pdf', filename: 'a.pdf' },
-    ]);
-  });
-
-  test('stages multiple workspace files and one native image in original order', async () => {
-    const parts = await stageFirstPromptAttachments([
-      local('bundle.zip', new Uint8Array([80, 75, 3, 4]), 'application/zip'),
-      local('README.md', new TextEncoder().encode('# Readme'), 'text/markdown'),
-      local('shot.png', new Uint8Array([1, 2, 3]), 'image/png'),
-    ]);
-
-    expect(parts.map((part) => [part.filename, part.mime])).toEqual([
-      ['bundle.zip', 'application/zip'],
-      ['README.md', 'text/markdown'],
-      ['shot.png', 'image/png'],
-    ]);
-    expect(parts.every((part) => part.url.startsWith(`data:${part.mime};base64,`))).toBe(true);
-  });
-
-  test('refuses a batch over the cap with copy that names the way out', async () => {
-    const big = local(
-      'big.bin',
-      new Uint8Array(DATA_URL_ATTACHMENTS_MAX_BYTES + 1),
-      'application/octet-stream',
+  test('composer files take their ready handles and remote files ride as URL parts, in attachment order', () => {
+    const parts = promptFileParts(
+      [
+        localFile('first.txt', 'text/plain', 'local-first'),
+        remoteFile('second.pdf'),
+        localFile('third.txt', 'text/plain', 'local-third'),
+      ],
+      [ready('att-first', 'first.txt'), ready('att-third', 'third.txt')],
     );
-    await expect(stageFirstPromptAttachments([big])).rejects.toThrow(/after the session starts/i);
+
+    expect(parts.map((part) => part.filename)).toEqual(['first.txt', 'second.pdf', 'third.txt']);
+    expect(parts.map((part) => part.attachment_id ?? part.url)).toEqual([
+      'att-first',
+      'https://files.example/remote.pdf',
+      'att-third',
+    ]);
+    // Handle-only: no bytes and no data URL ride the prompt.
+    expect(JSON.stringify(parts)).not.toContain('data:');
   });
 
-  test('no files → no parts', async () => {
-    expect(await stageFirstPromptAttachments(undefined)).toEqual([]);
-    expect(await stageFirstPromptAttachments([])).toEqual([]);
+  test('a local file with no ready handle is refused: Send never uploads bytes itself', () => {
+    expect(() => promptFileParts([localFile('legacy.txt')], [])).toThrow(
+      'A staged attachment is missing its completed upload handle',
+    );
+    expect(() => promptFileParts([localFile('a.txt', 'text/plain', 'local-a')], [])).toThrow(
+      'A staged attachment is missing its completed upload handle',
+    );
+  });
+
+  test('a ready handle that no file claims means the selection changed', () => {
+    expect(() => promptFileParts([], [ready('att-a', 'a.txt')])).toThrow(
+      'Attachment selection changed before Send. Try again.',
+    );
+  });
+
+  test('no files → no parts', () => {
+    expect(promptFileParts(undefined, [])).toEqual([]);
+    expect(promptFileParts([], [])).toEqual([]);
   });
 });

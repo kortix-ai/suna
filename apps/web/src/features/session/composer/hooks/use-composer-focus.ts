@@ -29,6 +29,12 @@ function isVisible(el: HTMLElement | null): el is HTMLElement {
   return !!el && el.offsetParent !== null;
 }
 
+function hasOpenFocusOverlay(): boolean {
+  return Array.from(document.querySelectorAll<HTMLElement>(
+    '[data-slot="popover-content"],[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]',
+  )).some((element) => element.getClientRects().length > 0);
+}
+
 export interface UseComposerFocusOptions {
   /** The focusable editor root. */
   ref: RefObject<HTMLElement | null>;
@@ -77,13 +83,13 @@ export function useComposerFocus({
     const el = ref.current;
     if (!el) return;
     if (isVisible(el)) {
-      el.focus();
+      if (!hasOpenFocusOverlay()) el.focus();
       return;
     }
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          ref.current?.focus();
+          if (!hasOpenFocusOverlay()) ref.current?.focus();
           observer.disconnect();
         }
       },
@@ -109,6 +115,10 @@ export function useComposerFocus({
         rafId = null;
       }
       const tryFocus = (retries: number) => {
+        if (hasOpenFocusOverlay()) {
+          rafId = null;
+          return;
+        }
         const el = ref.current;
         if (isVisible(el)) {
           el.focus();

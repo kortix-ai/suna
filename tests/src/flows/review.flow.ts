@@ -5,6 +5,9 @@
  * submit + act + bulk validation surfaces, and the access boundaries — all against
  * real handlers, without creating durable rows (validation paths only, like the
  * change-requests flow). Unknown :reviewItemId → 404; bad enums → 400.
+ *
+ * Review Center is on for every project: no step enables a feature flag first,
+ * and RV-1 pins that `review_center` is no longer a flag the API accepts.
  */
 import { flow } from '../core/flow';
 
@@ -22,15 +25,15 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step('OWNER enables Review Center for the project → 200', async () => {
+    await ctx.step('Review Center is not a feature flag: toggling review_center → 400 unknown flag', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).patch(
         '/v1/projects/:projectId/features',
-        { feature: 'review_center', enabled: true },
+        { feature: 'review_center', enabled: false },
         { params: { projectId: p.id } },
       );
-      r.status(200);
+      r.status(400);
     });
-    await ctx.step('OWNER lists review items → 200 with envelope', async () => {
+    await ctx.step('OWNER lists review items with no flag override → 200 with envelope', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/review/items', { params: { projectId: p.id } });
@@ -58,20 +61,11 @@ flow(
   {
     domain: 'review',
     routes: [
-      'PATCH /v1/projects/:projectId/features',
       'GET /v1/projects/:projectId/review/items/:reviewItemId',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step('OWNER enables Review Center for the project → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).patch(
-        '/v1/projects/:projectId/features',
-        { feature: 'review_center', enabled: true },
-        { params: { projectId: p.id } },
-      );
-      r.status(200);
-    });
     await ctx.step('unknown reviewItemId → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -88,20 +82,11 @@ flow(
   {
     domain: 'review',
     routes: [
-      'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/review/items',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step('OWNER enables Review Center for the project → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).patch(
-        '/v1/projects/:projectId/features',
-        { feature: 'review_center', enabled: true },
-        { params: { projectId: p.id } },
-      );
-      r.status(200);
-    });
     await ctx.step('missing title → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -140,20 +125,11 @@ flow(
   {
     domain: 'review',
     routes: [
-      'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/review/items/:reviewItemId/act',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step('OWNER enables Review Center for the project → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).patch(
-        '/v1/projects/:projectId/features',
-        { feature: 'review_center', enabled: true },
-        { params: { projectId: p.id } },
-      );
-      r.status(200);
-    });
     await ctx.step('invalid verdict → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -182,20 +158,11 @@ flow(
   {
     domain: 'review',
     routes: [
-      'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/review/bulk',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step('OWNER enables Review Center for the project → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).patch(
-        '/v1/projects/:projectId/features',
-        { feature: 'review_center', enabled: true },
-        { params: { projectId: p.id } },
-      );
-      r.status(200);
-    });
     await ctx.step('missing ids → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

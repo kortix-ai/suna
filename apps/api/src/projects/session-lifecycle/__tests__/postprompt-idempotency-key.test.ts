@@ -17,7 +17,7 @@
 // content hash" — so this alone restores both-deliver semantics without
 // touching the dedupe module itself.
 //
-// Same mocking caveat as the sibling engine.ts test files: `mock.module` is
+// Same mocking caveat as the sibling session-lifecycle test files: `mock.module` is
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -122,13 +122,14 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   // The landing proof requeues a prompt the runtime never showed (fresh
-  // attempt, fresh idempotency key). `engine.ts` imports it by name, so every
+  // attempt, fresh idempotency key). `queued-continue.ts` imports it by name, so every
   // store mock has to carry it or the engine import fails outright. Nothing in
   // this file fails a landing.
   requeueUnlandedPrompt: async () => {
     throw new Error('not expected: this test never fails a landing proof');
   },
-  markCommandFailed: async (commandId: string, message: string) => {
+  markInboxDeliveryStarted: async () => {},
+  markCommandFailed: async ({ commandId }: { commandId: string }, message: string) => {
     failedCalls.push({ commandId, message });
   },
   markCommandQueued: async () => {
@@ -141,7 +142,7 @@ mock.module('../store', () => ({
   markCommandForwarded: async () => {
     throw new Error('not expected: a prompt with no wire id must not stay open');
   },
-  markCommandSucceeded: async (commandId: string, result: unknown) => {
+  markCommandSucceeded: async ({ commandId }: { commandId: string }, result: unknown) => {
     succeededCalls.push({ commandId, result });
   },
   // `inbox-rows.ts` imports this at module load, so the mock has to carry it or
@@ -163,10 +164,10 @@ mock.module('../../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => null,
 }));
 
-// The wake path now converges the box before every delivery (engine.ts
+// The wake path now converges the box before every delivery (continue-session.ts
 // `continueSession`): it reads the service key and ingress and calls
 // `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
-// the wire, not about the sync (see continue-session-env-sync.test.ts).
+// the wire, not about the sync (see continue-session-runtime-env.test.ts).
 mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'svc-key-1',
 }));
@@ -177,7 +178,8 @@ mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
 
-const { executeQueuedContinue, continueSession } = await import('../engine');
+const { executeQueuedContinue } = await import('../queued-continue');
+const { continueSession } = await import('../continue-session');
 
 function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecycleCommandRow {
   const now = new Date('2026-08-16T00:00:00.000Z');
@@ -246,6 +248,20 @@ describe('F2 — postPrompt Idempotency-Key', () => {
     await executeQueuedContinue(baseRow({ commandId: 'cmd-c' }));
 
     expect(capturedIdempotencyKeys).toEqual(['cmd-c', 'cmd-c']);
+  });
+
+  // A row that already went out once: the proxy still holds the previous
+  // attempt's 10-minute dedupe claim, so reusing the key would answer the
+  // replacement delivery `200 {"deduplicated": true}` and deliver nothing.
+  test('a row that already went out sends a key suffixed with its delivery attempt', async () => {
+    await executeQueuedContinue(
+      baseRow({
+        commandId: 'cmd-d',
+        payload: { text: 'please approve and continue', deliveryAttempt: 2 },
+      }),
+    );
+
+    expect(capturedIdempotencyKeys).toEqual(['cmd-d:r2']);
   });
 
   test('a direct (non-queued) continueSession call with no commandId still sends a key', async () => {

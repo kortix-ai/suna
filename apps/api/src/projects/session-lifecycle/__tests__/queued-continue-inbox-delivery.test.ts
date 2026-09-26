@@ -14,13 +14,15 @@
 //     transcript shows an assistant reply under that message, the turn ran and
 //     re-sending it would run the user's message a second time.
 //
-// Same mocking caveat as the sibling engine.ts test files: `mock.module` is
+// Same mocking caveat as the sibling session-lifecycle test files: `mock.module` is
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
-import { mintWireMessageId, wireIdTime } from '../../wire-message-id';
+import { drizzle } from 'drizzle-orm/pg-proxy';
+import type { SQL } from 'drizzle-orm';
+import { isWireIdAheadOf, mintWireMessageId, wireIdTime } from '../../wire-message-id';
 
 const SESSION_ID = 'sess-inbox-delivery-1';
 const ACCOUNT_ID = 'acct-1';
@@ -47,10 +49,14 @@ const NEWER_TRANSCRIPT_ID = mintWireMessageId({ nowMs: NOW_MS - 60_000, random: 
  */
 const OPENCODE_MINTED_ID = `msg_${(((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0'))}AbCdEfGhIjKlMn`;
 
+let completeDuringRequeue = false;
+let deliveryStarts: string[] = [];
 let requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
+let unverifiedRequeues: Array<{ commandId: string; availableAt: Date }> = [];
 let unlandedRequeues: Array<{ commandId: string; reason: string }> = [];
 let unlandedBudgetLeft = 2;
 let sessionRow: Record<string, unknown> | null = null;
+let projectMetadataExpression: SQL | undefined;
 /** The session's one box, as the turn-authority read sees it. Null = no box. */
 let boxRow: { status: string; metadata: Record<string, unknown> | null } | null = null;
 /** The newest id the inbox's OWN rows say this session has already delivered,
@@ -58,6 +64,7 @@ let boxRow: { status: string; metadata: Record<string, unknown> | null } | null 
 let deliveredFloor: bigint | null = null;
 let transcript: Array<Record<string, unknown>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
+let quickQueueControlRequests: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
 let capturedKeys: string[] = [];
 const seenKeys = new Set<string>();
 let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
@@ -93,7 +100,7 @@ let legacyRepairMarkerFailuresRemaining = 0;
 let legacyPendingLoads = 0;
 let promptFailuresRemaining = 0;
 let promptDeduplicationsRemaining = 0;
-let promptResponsePlan: Array<'failed' | 'deduplicated'> = [];
+let promptResponsePlan: Array<'failed' | 'deduplicated' | 'permanent-refusal'> = [];
 // Models the sandbox edge DISCARDING an oversized body while answering ok: the
 // POST is captured, but the runtime never holds that message. Scoped to the
 // FIRST posted id, so the delivery's retry lands and the test does not have to
@@ -111,6 +118,7 @@ let postDelayMs = 0;
 // every claimed row is `running` until the drain releases the tail.
 const simulatedInFlightCommands = new Set<string>();
 
+let pauseAfterPosts: number | null = null;
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
@@ -122,7 +130,11 @@ mock.module('../../../shared/db', () => ({
     select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => {
+          if (projection?.projectMetadata) projectMetadataExpression = projection.projectMetadata as SQL;
           const limit = async () => {
+            if (projection && 'result' in projection && 'payload' in projection) {
+              return [{ result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
+            }
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             if (table === sessionSandboxes) return boxRow ? [boxRow] : [];
@@ -234,6 +246,11 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
         if (idempotencyKey) seenKeys.add(idempotencyKey);
       };
       const plannedResponse = promptResponsePlan.shift();
+      // A permanent runtime refusal: any 4xx the classifier treats as terminal
+      // (`throwIfPromptRefused` — not 404/408/409/429). The old fixture answered
+      // 409 CONNECTOR_CONNECTION_REQUIRED, which no route emits since the
+      // session connector gate was retired (2026-09-16); a 409 is retryable now.
+      if (plannedResponse === 'permanent-refusal') return Response.json({ code: 'PROMPT_REJECTED', message: 'The runtime rejected this prompt.' }, { status: 422 });
       if (plannedResponse === 'failed') return new Response(null, { status: 500 });
       if (plannedResponse === 'deduplicated') {
         remember();
@@ -291,7 +308,7 @@ mock.module('../store', () => ({
       };
     }
   },
-  requeueUnlandedPrompt: async (commandId: string, reason: string) => {
+  requeueUnlandedPrompt: async ({ commandId }: { commandId: string }, reason: string) => {
     unlandedRequeues.push({ commandId, reason });
     simulatedInFlightCommands.delete(commandId);
     if (unlandedBudgetLeft <= 0) return { requeued: false, refusals: 2 };
@@ -299,8 +316,14 @@ mock.module('../store', () => ({
     return { requeued: true, refusals: 2 - unlandedBudgetLeft };
   },
   MAX_LANDING_RETRIES: 2,
-  requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
+  markInboxDeliveryStarted: async ({ commandId }: { commandId: string }) => { deliveryStarts.push(commandId); },
+  requeueUnverifiedRedelivery: async ({ commandId }: { commandId: string }, availableAt: Date) => {
+    unverifiedRequeues.push({ commandId, availableAt });
+    simulatedInFlightCommands.delete(commandId);
+  },
+  requeueForAdmission: async ({ commandId }: { commandId: string }, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
+    if (completeDuringRequeue) boxRow = { status: 'active', metadata: { activeTurns: {} } };
     simulatedInFlightCommands.delete(commandId);
   },
   claimCreateSessionCommand: async () => {
@@ -319,7 +342,7 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async (
-    commandId: string,
+    { commandId }: { commandId: string },
     message: string,
     options?: { retryable?: boolean },
   ) => {
@@ -328,10 +351,10 @@ mock.module('../store', () => ({
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
-  markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
+  markCommandForwarded: async ({ commandId }: { commandId: string }, sessionId: string, wireMessageId: string) => {
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
   },
-  markCommandSucceeded: async (commandId: string, result: unknown) => {
+  markCommandSucceeded: async ({ commandId }: { commandId: string }, result: unknown) => {
     events.push('command-succeeded');
     succeededCalls.push({ commandId, result });
   },
@@ -350,21 +373,27 @@ mock.module('../../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
 
-// The wake path now converges the box before every delivery (engine.ts
+// The wake path converges the box before every delivery (continue-session.ts
 // `continueSession`): it reads the service key and ingress and calls
-// `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
-// the wire, not about the sync (see continue-session-env-sync.test.ts).
+// `syncSandboxEnvForPrompt`. The order of that sync is proven in
+// continue-session-runtime-env.test.ts; this file records whether it ran.
+let serviceKeyAvailable = true;
+let envSyncCalls = 0;
 mock.module('../../../platform/service-key', () => ({
-  serviceKeyForExternalId: async () => 'svc-key-1',
+  serviceKeyForExternalId: async () => (serviceKeyAvailable ? 'svc-key-1' : null),
 }));
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {},
+  syncSandboxEnvForPrompt: async () => {
+    envSyncCalls += 1;
+  },
 }));
 
 mock.module('../runtime-prompt-file', () => ({
+  // The materializer imports it for handle-backed parts; these rows carry none.
+  importRuntimePromptAttachment: async () => null,
   writeRuntimePromptFile: async (input: {
     targetPath: string;
     filename: string;
@@ -381,7 +410,8 @@ mock.module('../runtime-prompt-file', () => ({
   },
 }));
 
-const { drainSessionLifecycleQueue, executeQueuedContinue } = await import('../engine');
+const { drainSessionLifecycleQueue } = await import('../drain');
+const { executeQueuedContinue } = await import('../queued-continue');
 
 /** Every `redeliveredMessageId` the drain persisted, read out of the jsonb
  *  merge parameter the UPDATE bound. */
@@ -433,7 +463,14 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 }
 
 beforeEach(() => {
+  serviceKeyAvailable = true;
+  envSyncCalls = 0;
+  projectMetadataExpression = undefined;
+  pauseAfterPosts = null;
   requeues = [];
+  unverifiedRequeues = [];
+  completeDuringRequeue = false;
+  deliveryStarts = [];
   unlandedRequeues = [];
   unlandedBudgetLeft = 2;
   sessionRow = {
@@ -451,6 +488,7 @@ beforeEach(() => {
   deliveredFloor = null;
   transcript = [];
   capturedBodies = [];
+  quickQueueControlRequests = [];
   capturedKeys = [];
   seenKeys.clear();
   succeededCalls = [];
@@ -482,8 +520,16 @@ beforeEach(() => {
   maxActivePosts = 0;
   postDelayMs = 0;
   simulatedInFlightCommands.clear();
-  globalThis.fetch = (async (url: string | URL) => {
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
     const href = String(url);
+    if (href.endsWith('/kortix/abort/after-tool')) {
+      quickQueueControlRequests.push({
+        url: href,
+        method: init?.method ?? 'GET',
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      });
+      return Response.json({ armed: true }, { status: 202 });
+    }
     // The staged-revert guard reads the session row; the re-mint and the
     // answered check read the message list.
     if (href.includes('/message')) {
@@ -494,6 +540,64 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  // A box whose env cannot be converged would run the prompt against a stale
+  // gateway URL, stale secrets and a stale model catalog. It waits instead.
+  test('a box whose service key cannot be read is not delivered blind — the prompt stays queued', async () => {
+    serviceKeyAvailable = false;
+    expect(await executeQueuedContinue(baseRow())).toBe('queued');
+    expect(envSyncCalls).toBe(0);
+    expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('the project flag lookup correlates with the outer session under Drizzle single-table rendering', async () => {
+    expect(await executeQueuedContinue(baseRow())).toBe('succeeded');
+    expect(projectMetadataExpression).toBeDefined();
+    const query = drizzle(async () => ({ rows: [] }))
+      .select({ projectMetadata: projectMetadataExpression! })
+      .from(projectSessions)
+      .toSQL();
+    expect(query.sql).toContain('p.project_id = "kortix"."project_sessions"."project_id"');
+  });
+
+  test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
+    boxRow = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    expect(await executeQueuedContinue(row)).toBe('queued');
+    expect(requeues).toHaveLength(1);
+    expect(quickQueueControlRequests).toEqual([{
+      url: 'https://sandbox.test/kortix/abort/after-tool',
+      method: 'POST',
+      body: { prompt_id: 'cmd-1', opencode_session_id: OC_SESSION_ID,
+        turn_message_id: 'msg_other' },
+    }]);
+    expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('Stop during a transient delivery failure prevents another POST', async () => {
+    promptResponsePlan = ['failed'];
+    pauseAfterPosts = 1;
+    expect(await executeQueuedContinue(baseRow())).toBe('queued');
+    expect(capturedBodies).toHaveLength(1);
+    expect(payloadPatches.some((patch) => patch.status === 'queued' && patch.lockedBy === null)).toBe(true);
+    expect(failedCalls).toHaveLength(0);
+  });
+
+  test('a permanent runtime refusal fails once and retains the actionable error', async () => {
+    promptResponsePlan = ['permanent-refusal'];
+    expect(await executeQueuedContinue(baseRow())).toBe('failed');
+    expect(capturedBodies).toHaveLength(1);
+    expect(failedCalls.at(-1)).toMatchObject({
+      message: 'The runtime rejected this prompt.',
+      options: { retryable: false },
+    });
+  });
+
   test('materializes non-native staged files before prompt_async', async () => {
     const outcome = await executeQueuedContinue(
       baseRow({
@@ -1110,10 +1214,63 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(wireIdTime(sent)!).toBeGreaterThan(openCodeId);
   });
 
-  test('a PROMPT ALREADY ANSWERED is never re-sent, redelivery or not', async () => {
-    // The already-answered guard is not a redelivery-only concern: every
-    // re-mint path re-reads the transcript, and the same assistant reply proves
-    // the same thing on all of them.
+  test('a redelivery whose answered check cannot read the transcript is not re-sent blind', async () => {
+    // 2026-09-17, local: a live turn was settled `runtime_gone` and its prompt
+    // redelivered. The transcript held two replies to it, but the full read
+    // failed and the guard failed open, so the user saw the prompt twice.
+    globalThis.fetch = (async (url: string | URL) => {
+      const href = String(url);
+      if (href.includes('/message')) return new Response('upstream timeout', { status: 504 });
+      return new Response(JSON.stringify({ id: OC_SESSION_ID }), { status: 200 });
+    }) as typeof fetch;
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: {
+          ...baseRow().payload,
+          remintOnDelivery: true,
+          redeliveries: 1,
+          redeliveredMessageIds: [NEWER_TRANSCRIPT_ID],
+        },
+      }),
+    );
+
+    expect(outcome).toBe('queued');
+    expect(capturedBodies).toEqual([]);
+    expect(unverifiedRequeues).toHaveLength(1);
+    expect(unverifiedRequeues[0].availableAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  test('an answered check that stays unreadable is bounded, so the prompt is not stranded', async () => {
+    globalThis.fetch = (async (url: string | URL) => {
+      const href = String(url);
+      if (href.includes('/message')) return new Response('upstream timeout', { status: 504 });
+      return new Response(JSON.stringify({ id: OC_SESSION_ID }), { status: 200 });
+    }) as typeof fetch;
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: { ...baseRow().payload, remintOnDelivery: true, redeliveries: 1 },
+        result: { answer_check_failures: 3 },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(unverifiedRequeues).toEqual([]);
+    expect(capturedBodies).toHaveLength(1);
+  });
+
+  // The already-answered guard is not a redelivery-only concern: every
+  // re-mint path re-reads the transcript, and an assistant reply under the
+  // message proves the turn ran. Sending it again would run the user's prompt,
+  // and spend a real LLM turn, twice.
+  test.each([
+    [
+      'a promoted re-mint',
+      { payload: { remintOnDelivery: true }, result: { promoted: true } },
+    ],
+    ['a reaper redelivery', { payload: { redeliveries: 1 }, result: {} }],
+  ])('a PROMPT ALREADY ANSWERED is never re-sent: %s', async (_label, row) => {
     transcript = [
       { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
       {
@@ -1127,10 +1284,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     ];
 
     const outcome = await executeQueuedContinue(
-      baseRow({
-        payload: { ...baseRow().payload, remintOnDelivery: true },
-        result: { promoted: true },
-      }),
+      baseRow({ payload: { ...baseRow().payload, ...row.payload }, result: row.result }),
     );
 
     expect(outcome).toBe('succeeded');
@@ -1227,6 +1381,42 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(wireIdTime(sent)!).toBeGreaterThan(firstDelivered);
   });
 
+  // `kortix sessions send` ≤ 2026-09 minted the HIGH 12 hex digits of the id
+  // clock: ~40 days ahead of every id OpenCode writes. POST stamps such a row
+  // `remintOnDelivery`; the drain must then place it against the transcript and
+  // must never let the far-future value act as a floor.
+  const CLI_HIGH_BITS_ID = `msg_${((BigInt(NOW_MS) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli03`;
+
+  test('a far-future CLI id goes out re-placed just above the transcript, not ~40 days ahead', async () => {
+    transcript = [{ info: { id: OPENCODE_MINTED_ID, role: 'assistant', parentID: 'msg_other' } }];
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: { ...baseRow().payload, wireMessageId: CLI_HIGH_BITS_ID, remintOnDelivery: true },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    const sent = capturedBodies[0].messageID as string;
+    expect(sent).not.toBe(CLI_HIGH_BITS_ID);
+    expect(isWireIdAheadOf(sent, NOW_MS)).toBe(false);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(OPENCODE_MINTED_ID)!);
+  });
+
+  test('a far-future id on an earlier row does not veto the lift above the transcript', async () => {
+    deliveredFloor = wireIdTime(CLI_HIGH_BITS_ID);
+    transcript = [{ info: { id: OPENCODE_MINTED_ID, role: 'assistant', parentID: 'msg_other' } }];
+
+    const outcome = await executeQueuedContinue(
+      baseRow({ result: { admission_reason: 'older_prompt_pending' } }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    const sent = capturedBodies[0].messageID as string;
+    expect(isWireIdAheadOf(sent, NOW_MS)).toBe(false);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(OPENCODE_MINTED_ID)!);
+  });
+
   test('a STOPPED box holds no turn, so an idle send still keeps its id', async () => {
     // Authority dies with the runtime — the same predicate `GET .../turn`
     // serves from. Re-minting here would spend a transcript read on every send
@@ -1242,33 +1432,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const outcome = await executeQueuedContinue(baseRow());
     expect(outcome).toBe('succeeded');
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
-  });
-
-  test('a redelivery whose prompt was ALREADY ANSWERED is not sent again', async () => {
-    // The delivery record proves only that the acceptance write failed. An
-    // assistant reply under this message proves the turn ran, so redelivering
-    // would run the user's prompt — and spend a real LLM turn — twice.
-    transcript = [
-      { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
-      {
-        info: {
-          id: NEWER_TRANSCRIPT_ID,
-          role: 'assistant',
-          parentID: SUBMITTED_WIRE_ID,
-          time: { completed: NOW_MS - 30_000 },
-        },
-      },
-    ];
-
-    const outcome = await executeQueuedContinue(
-      baseRow({ payload: { ...baseRow().payload, redeliveries: 1 } }),
-    );
-
-    expect(outcome).toBe('succeeded');
-    expect(capturedBodies).toEqual([]);
-    expect(succeededCalls).toEqual([
-      { commandId: 'cmd-1', result: { status: 'skipped', reason: 'already_answered' } },
-    ]);
   });
 
   test('a redelivery whose prompt is still UNANSWERED goes out under a fresh id', async () => {
@@ -1337,7 +1500,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       { commandId: 'cmd-2', reason: 'older_prompt_pending' },
     ]);
     // AND THE DELIVERY PATH KICKS NOTHING. Promotion belongs to the turn-end
-    // relay (`routes/r4.ts`), which is the only place that knows the answer is
+    // relay (`routes/turn-stream.ts`), which is the only place that knows the answer is
     // finished. Promoting on accepted delivery instead made the next row due
     // while this turn was still running — the merge that let two queued
     // messages share one answer — and it was a lost wake besides: the row was
@@ -1417,7 +1580,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     expect(promotionCalls).toEqual([]);
 
     // B and C go out on the turn-end relay's targeted drain, one per turn —
-    // `routes/r4.ts` awaits `promoteNextInboxRow` and kicks exactly this.
+    // `routes/turn-stream.ts` awaits `promoteNextInboxRow` and kicks exactly this.
     await drainSessionLifecycleQueue({ idempotencyKey: 'queue-b' });
     await drainSessionLifecycleQueue({ idempotencyKey: 'queue-c' });
 
@@ -1431,4 +1594,31 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       'queue-c',
     ]);
   });
+});
+
+
+test('a turn ending during admission requeue immediately wakes the head again', async () => {
+  boxRow = { status: 'active', metadata: { activeTurns: {
+    't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+      messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+  } } };
+  completeDuringRequeue = true;
+  promotionResult = 'queue-resumed';
+  targetedClaims.set('queue-resumed', [baseRow({ result: { admission_reason: 'turn_active' } })]);
+  expect(await executeQueuedContinue(baseRow())).toBe('queued');
+  await Bun.sleep(20);
+  expect(promotionCalls).toEqual([SESSION_ID]);
+  expect(claimInputs).toContainEqual(expect.objectContaining({ idempotencyKey: 'queue-resumed' }));
+  expect(capturedBodies).toHaveLength(1);
+  expect(deliveryStarts).toEqual(['cmd-1']);
+});
+
+test('a refused claim never announces delivery', async () => {
+  boxRow = { status: 'active', metadata: { activeTurns: {
+    't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+      messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+  } } };
+  expect(await executeQueuedContinue(baseRow())).toBe('queued');
+  expect(deliveryStarts).toEqual([]);
+  expect(promotionCalls).toEqual([]);
 });

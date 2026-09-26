@@ -105,7 +105,7 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
   // A DOWN RUNTIME IS NOT A FAILED DELIVERY. This loop stops re-trying a dead
   // box in-line — that part was always right — but the outcome it reports has
   // to say WHY, because the drain turns 'failed' into a dead-letter on the
-  // first attempt. Essentia 2026-08-26: a queued prompt delivered while the box
+  // first attempt. SampleCo 2026-08-26: a queued prompt delivered while the box
   // was unreachable went `state:failed, attempts:1` and was never re-tried when
   // the box came back minutes later.
   test('reopen reports a parked runtime → unreachable (stop retrying HERE, keep the prompt)', async () => {
@@ -130,14 +130,65 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
     expect(outcome).toBe('unreachable');
   });
 
-  test('a MISSING session stays terminal — there is nothing to come back to', async () => {
+  // THE PATH TO THE BOX IS DOWN, AND THE BOX ITSELF LOOKS FINE. `reopen` keeps
+  // answering `ready` — the session row IS ready, the sandbox IS running — but
+  // every POST comes back 502 from the proxy. That used to spend the deadline
+  // and report 'pending', which `executeQueuedContinue` retries on the
+  // 5-attempt dead-letter budget: the user's message was destroyed ~5 minutes
+  // in. Prod 2026-09-15/16, a Platinum control plane that refused every POST
+  // while GETs served normally, did exactly that at ~48 prompts/hour.
+  test('the daemon is never reached though the stage stays ready → unreachable, not pending', async () => {
+    let sends = 0;
     const outcome = await deliverWithRetry({
       opened: ready('ext-1', 'oc-1'),
-      reopen: async () => null,
+      reopen: async () => ready('ext-1', 'oc-1'),
+      send: async () => { sends++; return 'unreachable'; },
+      now: stepNow(1000),
+      sleepFn: noSleep,
+    });
+    expect(outcome).toBe('unreachable');
+    expect(sends).toBeGreaterThan(1);
+  });
+
+  // The daemon ANSWERING and refusing is a different thing from nobody
+  // answering. It is reachable, so re-opening the session can heal it, and a
+  // spent deadline is still 'pending'.
+  test('a daemon that answers and refuses stays pending — reachable is not unreachable', async () => {
+    const outcome = await deliverWithRetry({
+      opened: ready('ext-1', 'oc-1'),
+      reopen: async () => ready('ext-1', 'oc-1'),
       send: async () => false,
       now: stepNow(1000),
       sleepFn: noSleep,
     });
-    expect(outcome).toBe('no-session');
+    expect(outcome).toBe('pending');
+  });
+
+  // Flap: the path comes back and the next attempt lands. Nothing about the
+  // earlier 502s may cost the prompt its delivery.
+  test('an unreachable attempt followed by an accepted one delivers', async () => {
+    let n = 0;
+    const outcome = await deliverWithRetry({
+      opened: ready('ext-1', 'oc-1'),
+      reopen: async () => ready('ext-1', 'oc-1'),
+      send: async () => (++n < 3 ? 'unreachable' : true),
+      now: stepNow(1000),
+      sleepFn: noSleep,
+    });
+    expect(outcome).toBe('delivered');
+  });
+
+  // The freshest verdict wins: the path was down, then the daemon came back and
+  // refused on its own terms. That is reachable, so 'pending'.
+  test('the LAST attempt decides the verdict', async () => {
+    let n = 0;
+    const outcome = await deliverWithRetry({
+      opened: ready('ext-1', 'oc-1'),
+      reopen: async () => ready('ext-1', 'oc-1'),
+      send: async () => (++n < 3 ? 'unreachable' : false),
+      now: stepNow(1000),
+      sleepFn: noSleep,
+    });
+    expect(outcome).toBe('pending');
   });
 });

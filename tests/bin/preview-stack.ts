@@ -21,6 +21,11 @@ const sha = required('PREVIEW_SHA');
 const secretsFile = resolve(required('PREVIEW_SECRETS_FILE'));
 const secrets = JSON.parse(await readFile(secretsFile, 'utf8')) as Record<string, string>;
 const envPath = join(instanceDir, '.env');
+// Optional: the Platinum URL pairs with a PLATINUM_API_KEY in the secrets file.
+const platinumApiUrl = process.env.PLATINUM_API_URL?.trim() || undefined;
+// Optional: the host sandbox's name, from the bootstrap. An older bootstrap
+// does not export it, and the stack then keeps its background workers off.
+const instanceId = process.env.PREVIEW_INSTANCE_ID?.trim() || undefined;
 const configured = applyPreviewEnvironment(
   await readFile(envPath, 'utf8'),
   {
@@ -29,6 +34,8 @@ const configured = applyPreviewEnvironment(
     apiImage: `kortix/kortix-api:pr-${sha}`,
     gatewayImage: `kortix/kortix-gateway:pr-${sha}`,
     frontendImage: `kortix/kortix-frontend:pr-${sha}`,
+    ...(platinumApiUrl ? { platinumApiUrl } : {}),
+    ...(instanceId ? { instanceId } : {}),
   },
   secrets,
 );
@@ -49,4 +56,6 @@ await writeFile(
   { mode: 0o644 },
 );
 
-console.log(`[preview-stack] configured origin=${origin} sha=${sha}`);
+console.log(
+  `[preview-stack] configured origin=${origin} sha=${sha} instance=${instanceId ?? 'none (workers off)'}`,
+);

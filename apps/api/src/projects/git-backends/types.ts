@@ -11,6 +11,17 @@ export type GitScope = 'read' | 'write';
 export interface UpstreamGit {
   url: string;
   headers: Record<string, string>;
+  /**
+   * Set when this upstream NEEDS a credential and none could be produced —
+   * carries the `GitAuthUnavailableReason` from `resolveProjectGitAuth`.
+   *
+   * Typed as a string here to keep this leaf module free of a back-import from
+   * `projects/lib/git`. Consumers must fail closed rather than send the
+   * request: a private repository answers a credential-less fetch with
+   * `404 Repository not found.`, which is indistinguishable from a deleted
+   * repository and sends people hunting for the wrong problem.
+   */
+  credentialUnavailable?: string;
 }
 
 export interface GitConnectionRef {

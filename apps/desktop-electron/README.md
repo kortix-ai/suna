@@ -49,6 +49,43 @@ At runtime you can also switch via the native **Kortix → Frontend URL** menu
 launches (stored in `userData/frontend_url`). `KORTIX_DESKTOP_USER_DATA=<dir>`
 runs against an isolated profile instead of the real one.
 
+### First launch: choose a Kortix instance
+
+A new profile asks which instance to connect to before any page loads. The
+window is `src/instance-chooser.js` + `assets/instance-chooser.html`; URL rules
+and the reachability check are `src/instance-rules.js`; `frontend_url`, the
+first-launch marker, and URL precedence are `src/instance-store.js`.
+
+- **Kortix Cloud** — the URL baked in at build time (`kortix.com` for prod,
+  `dev.kortix.com` for dev builds). Nothing is written to `frontend_url`, so the
+  app keeps following the baked default.
+- **Self-hosted** — the URL the user types. A bare host gets `https://` (a bare
+  `localhost` gets `http://`), a `/` path becomes `/projects`, and query and
+  fragment are dropped. URLs with a username or password are rejected. The app
+  sends `HEAD` with no credentials and an 8 s timeout; any HTTP status counts as
+  reachable. A network error shows inline, with **Continue Anyway** for hosts
+  that are only reachable on a VPN. The URL is saved to `frontend_url`.
+
+Rules:
+
+- "New profile" = `userData` is missing or empty at process start. The shell
+  then writes `userData/instance_setup_pending` and removes it once the user
+  chooses. Quitting the chooser asks again on the next launch.
+- Existing installs have a non-empty `userData` and are never asked.
+- `KORTIX_DESKTOP_URL` or a saved `frontend_url` skips the chooser, so
+  `pnpm dev` and the native e2e journey never see it.
+
+The same window opens from **Frontend URL → Custom URL…**, and when the app
+origin fails to load (`did-fail-load` on the main frame): the title reads
+**Can't reach \<host\>**, with **Try Again** or a different instance. To see the
+first-launch chooser locally, launch without `KORTIX_DESKTOP_URL` on an empty
+profile:
+
+```bash
+pnpm --filter @kortix/desktop-electron run setup
+KORTIX_DESKTOP_USER_DATA="$(mktemp -d)" pnpm --filter @kortix/desktop-electron exec electron .
+```
+
 ### The dev/staging environment password (HTTP Basic)
 
 `dev.kortix.com` and `staging.kortix.com` sit behind one shared HTTP Basic
@@ -67,8 +104,10 @@ in `src/basic-auth.js`):
    drops the remembered copy and reopens the dialog with an error. Cancel leaves
    the bare 401 page, like Chrome; reload asks again.
 
-The credential is only ever sent to the configured app origin. Any other host
-(sandbox previews, iframes) that returns a Basic challenge is refused.
+Origin credentials are sent only to the configured app origin. Any other
+origin challenge from a sandbox preview or iframe is refused. Proxy challenges
+open the same dialog, but use a separate credential entry keyed by proxy host
+and port. The app-origin environment variables never answer a proxy challenge.
 **Kortix → Frontend URL → Forget Saved Environment Password** clears the
 remembered credential for the current host.
 
@@ -152,7 +191,7 @@ runs **unchanged** on either shell:
 | Deep links (`kortix://`) | deep-link plugin | `setAsDefaultProtocolClient` + `open-url`/`second-instance` |
 | Nav gate (in-app vs browser) | `on_navigation` (also fires for iframes) | `will-navigate` (top frame only) |
 | Window dragging | JS `startDragging` shim | native `-webkit-app-region` CSS |
-| Maximized persistence | window-state plugin (maximized only) | `userData/window_state.json` (maximized only) |
+| Window-state persistence | window-state plugin (maximized only) | `userData/window_state.json` (bounds and maximized state; off-screen bounds recenter) |
 | Launch size | ~85% display, clamped | identical |
 | Startup gap | blank window | branded splash window |
 | Auto-update | ✗ none (manual re-download) | ✓ electron-updater (GitHub releases) |

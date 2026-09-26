@@ -135,17 +135,15 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
   );
   const projectCan = useCallback((action: ProjectAction) => caps[action]?.allowed === true, [caps]);
 
-  const reviewEnabled = project?.experimental?.review_center ?? false;
-
   const sections = useMemo(() => {
-    const all = projectSettingsSections({ reviewEnabled }, tI18nComplete);
+    const all = projectSettingsSections(tI18nComplete);
     if (!capsResolved) return all;
     return all.filter((s) => isCustomizeSectionVisible(s.gate, projectCan));
-  }, [reviewEnabled, capsResolved, projectCan, tI18nComplete]);
+  }, [capsResolved, projectCan, tI18nComplete]);
 
   const requested = parseProjectSettingsSection(searchParams.get('section'));
-  // A section named in the URL but hidden (flag off, or an explicit permission
-  // deny) falls back to the first one this caller can actually open, so a
+  // A section named in the URL but hidden (an explicit permission deny) falls
+  // back to the first one this caller can actually open, so a
   // stale link lands on a real pane instead of an empty column.
   const active: ProjectSettingsSectionKey =
     (requested && sections.some((s) => s.key === requested) ? requested : undefined) ??
@@ -161,9 +159,7 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
 
   // "Needs you" count for the Review row — the SAME shared inbox summary the
   // sidebar Review pill and the per-session dots read, so they cannot drift.
-  const reviewNeedsYou = useReviewSessionSummary(projectId, {
-    enabled: reviewEnabled,
-  }).totalNeedsYou;
+  const reviewNeedsYou = useReviewSessionSummary(projectId).totalNeedsYou;
 
   // The one-shot Invite intent, set by the command palette before it routes
   // here. Reactive, so consuming it re-renders every `useSettingsNav()` reader.

@@ -1,11 +1,12 @@
-import { eq } from 'drizzle-orm';
-import { projectSecrets } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
+import { accountSecretResources, projectSecrets } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
   encryptProjectSecret,
   resolveProjectSecretForConsumer,
 } from '../../projects/secrets';
 import { recordAuditEvent } from '../../shared/audit';
+import { encryptAccountSecret } from '../../secrets/account-resource';
 import {
   CodexRefreshError,
   OPENAI_AUTH_BASE,
@@ -26,6 +27,7 @@ const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
 interface SecretRow {
+  storage: 'project' | 'account_resource';
   accountId: string;
   secretId: string;
   ownerUserId: string | null;
@@ -37,6 +39,9 @@ interface SecretRow {
 interface CodexCredentialContext {
   accountId?: string;
   sessionId?: string | null;
+  /** Whose personal CODEX_AUTH_JSON override applies (spec 2026-09-22 §2.3).
+   *  Absent = `userId` (legacy); null = the shared row only. */
+  principalUserId?: string | null;
 }
 
 async function loadCodexRow(
@@ -49,13 +54,14 @@ async function loadCodexRow(
     accountId: context.accountId,
     sessionId: context.sessionId,
     actorUserId: userId,
-    principalUserId: userId,
+    principalUserId: context.principalUserId === undefined ? userId : context.principalUserId,
     name: CODEX_AUTH_JSON_SECRET_NAME,
     consumer: 'llm_gateway',
   });
   return resolved
     ? {
         ...resolved,
+        storage: 'project',
         actorUserId: userId,
         sessionId: context.sessionId ?? null,
       }
@@ -88,13 +94,17 @@ async function refreshAndPersist(
     const next = applyRefresh(tokens, current, Date.now());
     if (!next) throw new CodexRefreshError('refresh response missing access token', response.status);
 
-    await db
-      .update(projectSecrets)
-      .set({
+    if (row.storage === 'account_resource') {
+      await db.update(accountSecretResources).set({
+        valueEnc: encryptAccountSecret(row.accountId, JSON.stringify({ openai: next })),
+        updatedAt: new Date(),
+      }).where(and(eq(accountSecretResources.accountId, row.accountId), eq(accountSecretResources.secretId, row.secretId)));
+    } else {
+      await db.update(projectSecrets).set({
         valueEnc: encryptProjectSecret(projectId, JSON.stringify({ openai: next })),
         updatedAt: new Date(),
-      })
-      .where(eq(projectSecrets.secretId, row.secretId));
+      }).where(eq(projectSecrets.secretId, row.secretId));
+    }
 
     await recordAuditEvent({
       accountId: row.accountId,
@@ -109,7 +119,7 @@ async function refreshAndPersist(
       metadata: {
         identifier: CODEX_AUTH_JSON_SECRET_NAME,
         consumer: 'llm_gateway',
-        value_source: row.ownerUserId ? 'personal' : 'shared',
+        value_source: row.storage === 'account_resource' ? 'account_resource' : row.ownerUserId ? 'personal' : 'shared',
         upstream_status: response.status,
       },
     });
@@ -133,7 +143,7 @@ async function refreshAndPersist(
       metadata: {
         identifier: CODEX_AUTH_JSON_SECRET_NAME,
         consumer: 'llm_gateway',
-        value_source: row.ownerUserId ? 'personal' : 'shared',
+        value_source: row.storage === 'account_resource' ? 'account_resource' : row.ownerUserId ? 'personal' : 'shared',
         ...(upstreamStatus === undefined ? {} : { upstream_status: upstreamStatus }),
       },
     });
@@ -163,6 +173,25 @@ export async function resolveCodexCredential(
   const row = await loadCodexRow(projectId, userId, context);
   if (!row) return null;
 
+  return resolveCodexRowCredential(projectId, row, fetchImpl);
+}
+
+/** The caller already resolved the session pool with member and grant checks.
+ * Refresh writes back only the selected account resource, never a project row. */
+export async function resolveCodexAccountCredential(input: {
+  projectId: string; accountId: string; sessionId: string | null; userId: string;
+  secretId: string; value: string;
+}, fetchImpl: FetchImpl = (request, init) => fetch(request, init)): Promise<CodexCredential | null> {
+  return resolveCodexRowCredential(input.projectId, {
+    storage: 'account_resource', accountId: input.accountId, secretId: input.secretId,
+    ownerUserId: input.userId, value: input.value, actorUserId: input.userId,
+    sessionId: input.sessionId,
+  }, fetchImpl);
+}
+
+async function resolveCodexRowCredential(
+  projectId: string, row: SecretRow, fetchImpl: FetchImpl,
+): Promise<CodexCredential | null> {
   let stored = parseCodexAuth(row.value);
   if (!stored?.access) return null;
 

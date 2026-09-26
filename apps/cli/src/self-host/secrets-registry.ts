@@ -150,8 +150,7 @@ export const SECRET_DEFS: SecretDef[] = [
   // LLM — NOT init-required: BYOK via the frontend's model picker after
   // `start`, not collected by the CLI.
   { key: 'OPENROUTER_API_KEY', category: 'llm', kind: 'operator', required: false },
-  { key: 'AWS_BEDROCK_API_KEY', category: 'llm', kind: 'operator', required: false },
-  { key: 'AWS_BEDROCK_REGION', category: 'llm', kind: 'operator', required: false },
+  { key: 'MORPH_API_KEY', category: 'llm', kind: 'operator', required: false },
 
   // Connectors
   { key: 'COMPOSIO_API_KEY', category: 'connectors', kind: 'operator', required: false },
@@ -240,8 +239,13 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   SUPABASE_SERVICE_ROLE_KEY: ['supabase-kong', 'supabase-realtime', 'supabase-storage', 'supabase-meta', 'supabase-functions', 'kortix-api'],
   DASHBOARD_USERNAME: ['supabase-kong'],
   DASHBOARD_PASSWORD: ['supabase-kong'],
-  S3_PROTOCOL_ACCESS_KEY_ID: ['supabase-storage'],
-  S3_PROTOCOL_ACCESS_KEY_SECRET: ['supabase-storage'],
+  // `kortix-api` too: the API's object store writes config archives through
+  // Supabase Storage's S3 protocol endpoint with this pair
+  // (assets/kortix-compose.yml, KORTIX_CONFIG_ARCHIVE_S3_*). A rotation that
+  // restarted only `supabase-storage` would leave the API signing with the
+  // old pair.
+  S3_PROTOCOL_ACCESS_KEY_ID: ['supabase-storage', 'kortix-api'],
+  S3_PROTOCOL_ACCESS_KEY_SECRET: ['supabase-storage', 'kortix-api'],
   SECRET_KEY_BASE: ['supabase-realtime', 'supabase-supavisor'],
   REALTIME_DB_ENC_KEY: ['supabase-realtime'],
   VAULT_ENC_KEY: ['supabase-supavisor'],
@@ -290,8 +294,7 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
 
   // LLM
   OPENROUTER_API_KEY: ['kortix-api'],
-  AWS_BEDROCK_API_KEY: ['kortix-api'],
-  AWS_BEDROCK_REGION: ['kortix-api'],
+  MORPH_API_KEY: ['kortix-api'],
 
   // Connectors
   COMPOSIO_API_KEY: ['kortix-api'],
@@ -316,6 +319,7 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   KORTIX_PREVIEW_BASE_DOMAIN: ['kortix-api', 'caddy'],
   KORTIX_PREVIEW_ALLOW_DIRECT_EDGE: ['kortix-api'],
   KORTIX_APPS_ALLOW_DIRECT_EDGE: ['kortix-api'],
+  KORTIX_FRONTEND_MEMORY_LIMIT: ['frontend'],
 
   // Internal tokens
   GATEWAY_INTERNAL_TOKEN: ['kortix-api', 'llm-gateway'],

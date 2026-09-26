@@ -31,6 +31,9 @@ export class CliError extends Error {
     message: string,
     public code: string = 'CLI_ERROR',
     public exitCode: number = 1,
+    /** Structured fields merged into the error envelope (`reason`, `status`, …)
+     *  so a caller can branch on them without parsing the message. */
+    public details: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = 'CliError';
@@ -39,7 +42,7 @@ export class CliError extends Error {
 
 export function handleError(err: unknown): never {
   if (err instanceof CliError) {
-    out({ ok: false, error: err.message, code: err.code });
+    out({ ok: false, error: err.message, code: err.code, ...err.details });
     process.exit(err.exitCode);
   }
   out({ ok: false, error: err instanceof Error ? err.message : String(err) });

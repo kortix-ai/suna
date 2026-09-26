@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils';
 import { isToolPart, type Part, type ToolPart } from '@/ui';
 import { CaretRightIcon, ChatTeardropTextIcon } from '@phosphor-icons/react';
 import { memo } from 'react';
-import { normalizeActivityToolName } from '../session-activity-groups';
+import { isQuestionTool } from '../session-activity-groups';
 
 interface QuestionInput {
   question: string;
@@ -48,7 +48,7 @@ function readAnswers(part: ToolPart): string[][] {
  */
 export function isAnsweredQuestionPart(part: Part): part is ToolPart {
   if (!isToolPart(part)) return false;
-  if (normalizeActivityToolName(part.tool) !== 'question') return false;
+  if (!isQuestionTool(part.tool)) return false;
   return readQuestions(part).length > 0 && readAnswers(part).length > 0;
 }
 
@@ -91,7 +91,7 @@ function AnsweredQuestionStepImpl({ part, bare }: { part: ToolPart; bare?: boole
             return (
               <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
-                  <UnifiedMarkdown content={q.question} />
+                  <UnifiedMarkdown content={q.question} trust="agent" />
                 </div>
                 <p className="text-foreground text-sm font-medium text-pretty">{answerText}</p>
               </div>

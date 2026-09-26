@@ -1,3 +1,6 @@
+import { isWireIdAheadOf } from '../../projects/wire-message-id';
+import { clientAbortTarget } from '../client-abort';
+import { markTurnStopRequested } from '../../projects/sandbox-turn-lifecycle';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -7,16 +10,16 @@ import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
-import {
-  PromptConnectorPreflightUnresolved,
-  type PromptConnectorVerdict,
-  missingPromptConnectorConnections,
-} from '../../projects/lib/prompt-connector-preflight';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
-import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
+import {
+  agentLaunchableInProject,
+  remintGrantForAgentSwitch,
+} from '../../projects/lib/session-token-grant';
+import { dropUndeclaredPromptAgent } from '../undeclared-prompt-agent';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
+import { ingressTargetUrl } from '../../platform/providers/ingress-url';
 import { recordSessionActivity } from '../../projects/session-activity';
 import {
   createExtendThrottle,
@@ -34,12 +37,13 @@ import {
 import { config } from '../../config';
 import { previewCorsHeaders } from '../preview-hosts';
 import { appCookieHeader } from '../preview-session';
+import { isProviderIngressAuthFailure } from '../provider-auth';
 import {
   PREVIEW_STATE_HEADER,
   previewStatePage,
   type PreviewState,
 } from '../preview-state-page';
-import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
+import { canAccessPreviewSandbox, canAccessSandboxSession, takeSessionAccessRefusal } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
   invalidatePreviewLink,
@@ -78,16 +82,18 @@ import {
 } from '../prompt-wire-id-repair';
 import {
   PROXY_RETRY_BUDGET_MS,
+  PROXY_RETRY_DELAYS_MS,
+  isFileImportRequest,
   isLongTurnCompletionRequest,
   isUploadRequest,
   proxyAttemptTimeoutMs,
 } from '../preview-retry-budget';
 import {
   claimPromptDelivery,
+  deliveryKeyIdentifiesOneSubmission,
   isNonIdempotentSessionWrite,
   promptDeliveryKey,
   releasePromptDelivery,
-  shouldClaimPromptDelivery,
 } from '../prompt-dedupe';
 import {
   PROXY_HOP_HEADER,
@@ -178,6 +184,7 @@ export {
   secretGrantErrorResponse,
   shouldSyncProjectEnvBeforeProxy,
 } from '../pre-prompt-env-sync';
+import { convergeBeforeTurnStart } from '../../projects/lib/turn-start-convergence';
 export type { PrePromptEnvSyncDeps } from '../pre-prompt-env-sync';
 
 // One deadline write per minute per box for HUMAN preview traffic. Mirrors
@@ -547,79 +554,6 @@ async function agentSwitchRefusal(
   );
 }
 
-/**
- * The refusal body, or null to let the turn through.
- *
- * The shape is byte-identical to what session CREATE returns for the same two
- * codes (projects/routes/project-sessions.ts). That is a contract, not a coincidence: one
- * client classifier has to read both, and a renamed field here degrades to a
- * card that says "a connector is missing" without naming which.
- */
-async function connectorGateRefusal(
-  record: {
-    accountId: string;
-    projectId: string;
-    sessionId: string;
-    agentName?: string | null;
-  },
-  requestedAgent: string | null,
-  origin?: string,
-): Promise<Response | null> {
-  let verdict: PromptConnectorVerdict;
-  try {
-    verdict = await missingPromptConnectorConnections({
-      accountId: record.accountId,
-      projectId: record.projectId,
-      sessionId: record.sessionId,
-      sessionAgent: record.agentName ?? DEFAULT_AGENT_SENTINEL,
-      requestedAgent,
-    });
-  } catch (err) {
-    if (err instanceof PromptConnectorPreflightUnresolved) {
-      // 503, never 409. We failed to ESTABLISH the answer; saying "connect your
-      // Gmail" off a transient git read would be a confident lie, and the client
-      // retries a 503 while it never retries a 4xx.
-      console.warn(
-        `[PREVIEW] Connector pre-flight unresolved for ${record.sessionId}: ${err.message}`,
-      );
-      return jsonProxyError(
-        { error: err.message, code: 'CONNECTOR_REQUIREMENTS_UNRESOLVED' },
-        503,
-        origin,
-      );
-    }
-    throw err;
-  }
-  if (verdict.ok) return null;
-
-  if (verdict.kind === 'unavailable') {
-    return jsonProxyError(
-      {
-        error:
-          verdict.aliases.length === 1
-            ? `Required connection "${verdict.aliases[0]}" is unavailable`
-            : `Required connections ${verdict.aliases.map((a) => `"${a}"`).join(', ')} are unavailable`,
-        code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
-        connectors: verdict.aliases,
-      },
-      409,
-      origin,
-    );
-  }
-  return jsonProxyError(
-    {
-      // `message` as well as `error`: the SDK prefers `message` and otherwise
-      // substitutes a generic "Failed to send message", which would bury this.
-      error: 'Create the required connections before continuing this session.',
-      message: 'Create the required connections before continuing this session.',
-      code: 'CONNECTOR_CONNECTION_REQUIRED',
-      connector_connections: verdict.connections,
-    },
-    409,
-    origin,
-  );
-}
-
 // A prompt's explicit `agent` only constitutes a prohibited switch when it would
 // run a DIFFERENT *concrete* agent than the one this session's connector token was
 // minted for. That — and only that — is the escalation the policy prevents (see
@@ -775,21 +709,23 @@ export function shouldAutoResumeStoppedSandbox(
  * agent (a POST) or restarted the session.
  *
  * A terminal ATTACH is the same class of intent as a session mutation: a human
- * opened the panel or pressed "Reconnect now". The client marks exactly those
- * two connects with `wake=1` and NEVER marks its automatic backoff retries, so
- * the "passive resurrection" the resume policy exists to prevent (polling,
- * hydration, background reconnects) still cannot wake a box.
+ * opened the panel or pressed a control. The client marks that attach with
+ * `wake=1` and keeps the mark on its retries only until the attach opens. The
+ * wake is asynchronous and the row stays `stopped` until the provider confirms
+ * the box, so each marked dial during the wake is refused with 503 and the
+ * client dials again. Once an attach has opened the client stops marking, so a
+ * socket that drops because the box parked (the "passive resurrection" the
+ * resume policy exists to prevent) still cannot wake it.
  *
  * Pure + exported so the gate is unit-tested without provisioning a box.
  */
 export function shouldWakeStoppedSandboxForWsAttach(
   status: string,
   remainingPath: string,
-  opts: { wakeRequested: boolean; accessKind?: string },
+  opts: { wakeRequested: boolean },
 ): boolean {
   if (status !== 'stopped') return false;
   if (!opts.wakeRequested) return false;
-  if (opts.accessKind && opts.accessKind !== 'principal') return false;
   return classifyPtyWebSocketPath(remainingPath) !== null;
 }
 /**
@@ -916,6 +852,24 @@ export async function forwardToSandbox(
       boundCredentialSessionId,
     }))
   ) {
+    // Name the branch. See `takeSessionAccessRefusal`: six branches can refuse
+    // here and the constant message named none of them, which is why 6,970
+    // server-side delivery refusals in 48h were undiagnosable.
+    const refusal = takeSessionAccessRefusal({
+      sessionId: record.sessionId,
+      userId,
+      callerSessionId: callerSessionId ?? null,
+      boundCredentialSessionId,
+    });
+    console.warn('[preview] session access refused', {
+      userId,
+      port: upstreamPort,
+      ...(refusal ?? {
+        sessionId: record.sessionId,
+        projectId: record.projectId,
+        detail: 'no recorded verdict (served from the visibility cache)',
+      }),
+    });
     throw new HTTPException(403, {
       message: 'Not authorized to access this session',
     });
@@ -965,6 +919,44 @@ export async function forwardToSandbox(
   //     that was refused.
   // The three existing early returns further down all sit after the claim and
   // have exactly that defect; this one deliberately does not join them.
+  // INC-2026-09-15. Before ANY gate reads the body's agent — authorization, the
+  // connector gate, the env sync, the token re-mint — an agent this session's
+  // project does not declare is removed from the body. Every consumer below
+  // then sees the session's own agent. Sandbox-authored turns included: they
+  // skip the authorization gate, which is exactly why the name must be gone
+  // before the re-mint reads it. See `undeclared-prompt-agent.ts`.
+  // A client asking OpenCode to abort is a stop somebody REQUESTED. Record it on
+  // the open turn before the abort is forwarded: the end frame that follows is
+  // the same "Aborted" as an abort nobody asked for. A sandbox-authored call is
+  // the agent acting, not a person, so it is left to read as what it is.
+  const abortedOpencodeSessionId = sandboxAuthored
+    ? null
+    : clientAbortTarget(upstreamPort, method, remainingPath);
+  if (abortedOpencodeSessionId) {
+    await markTurnStopRequested(record.sessionId, 'UserStop', {
+      opencodeSessionId: abortedOpencodeSessionId,
+    });
+  }
+
+  if (shouldSyncProjectEnvBeforeProxy(upstreamPort, method, remainingPath)) {
+    const guardProjectId = record.projectId;
+    const checked = await dropUndeclaredPromptAgent({
+      body: requestBody,
+      headers: incomingHeaders,
+      projectId: record.projectId,
+      sessionId: record.sessionId,
+      sandboxId,
+      path: remainingPath,
+      sessionAgent: record.agentName ?? DEFAULT_AGENT_SENTINEL,
+      sandboxAuthored,
+      userId: userId ?? null,
+      userAgent: incomingHeaders.get('user-agent'),
+      isLaunchable: (agentName) => agentLaunchableInProject(guardProjectId, agentName),
+      log: (event) =>
+        console.error('[PREVIEW] dropped an agent this project does not declare from a turn-start body', event),
+    });
+    requestBody = checked.body;
+  }
   if (!sandboxAuthored && isConnectorGatedTurn(upstreamPort, method, remainingPath)) {
     const promptAgent = requestedPromptAgent(requestBody, incomingHeaders);
     // Authorization FIRST. The connector gate below reads this agent's manifest,
@@ -973,8 +965,10 @@ export async function forwardToSandbox(
     const unauthorized = await agentSwitchRefusal(record, promptAgent, userId, sandboxId, origin);
     ptl.mark('agent-switch');
     if (unauthorized) return unauthorized;
-    const refusal = await connectorGateRefusal(record, promptAgent, origin);
-    if (refusal) return refusal;
+    // The connector pre-flight that used to run here is gone. See
+    // `SessionScopeInputSchema` in @kortix/api-contract: a turn is never refused
+    // for an unconnected connector, because the refusal was unclearable from the
+    // product. The connector call denies and hands back a connect link instead.
   }
   if (record.status !== 'active') {
     // A stopped-but-resumable box wakes only on explicit user intent. Session
@@ -994,9 +988,9 @@ export async function forwardToSandbox(
         console.warn(`[sandbox-proxy] auto-resume failed for ${resumeExternalId}:`, err);
         return false;
       });
-      // Re-read: the resume flips the row → 'active' (this call or a concurrent
-      // one). The box boots in the background; the wake/retry loop below tolerates
-      // the gap and forwards once it's up (and subsequent client retries recover).
+      // Re-read. The resume only claims the wake: the row stays 'stopped' until
+      // the provider confirms the box, so this request usually returns the 503
+      // below and the client's retry forwards once the row is 'active'.
       const resumed = await loadSandbox(sandboxId);
       if (resumed) record = resumed;
     }
@@ -1018,6 +1012,33 @@ export async function forwardToSandbox(
   }
   const serviceKey = record.serviceKey;
 
+  // ── C9 — a prompt on a box that is behind converges FIRST, then runs ─────
+  // THE one funnel: the HTTP proxy and the server-side prompt queue both
+  // arrive here, and `isTurnStartRequest` covers the OpenCode ports (4096/
+  // 4097) as well as 8000 — `shouldSyncProjectEnvBeforeProxy` below is
+  // port-8000-only and would leave a hole.
+  //
+  // The position is load-bearing. This runs BEFORE `claimPromptDelivery` and
+  // before the first upstream fetch, so an OpenCode swap here cannot lose a
+  // claimed or delivered prompt, and it cannot burn an Idempotency-Key. It
+  // never ends a running turn: the convergence refuses mid-turn.
+  //
+  // A box already on the project's current config costs nothing — see
+  // `convergeBeforeTurnStart`, which answers from two memos with no network
+  // call at all in that case.
+  if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
+    const converged = await convergeBeforeTurnStart(record.sessionId);
+    ptl.mark('config-converge');
+    if (converged.decision !== 'current' && converged.decision !== 'skipped') {
+      console.log('[PREVIEW] turn-start config convergence', {
+        session_id: record.sessionId,
+        decision: converged.decision,
+        outcome: converged.outcome,
+        ms: converged.ms,
+      });
+    }
+  }
+
   // Dedupe OpenCode prompt delivery up-front. Claim a stable key before the retry
   // loop so a duplicate inbound prompt cannot enqueue the user message twice.
   //
@@ -1029,24 +1050,29 @@ export async function forwardToSandbox(
   const idempotencyKey = incomingHeaders.get('idempotency-key');
   // Non-idempotent (never re-sent by us) and dedupe-claimed (a later lookalike
   // is short-circuited) are DIFFERENT guarantees — see
-  // `shouldClaimPromptDelivery`. A command body has no client-unique field, so
-  // claiming one on content alone silently swallows a deliberate re-run.
-  if (promptDelivery && shouldClaimPromptDelivery(remainingPath, !!idempotencyKey?.trim())) {
-    promptDedupeKey = promptDeliveryKey({
+  // `deliveryKeyIdentifiesOneSubmission`. A body with no client-unique field
+  // yields a content hash, and claiming on that silently swallows a deliberate
+  // re-send: the same sentence, the same command, the same /compact.
+  if (promptDelivery) {
+    const key = promptDeliveryKey({
       idempotencyKey,
       sandboxId,
       sessionId: record.sessionId,
       body: requestBody,
     });
-    if (!claimPromptDelivery(promptDedupeKey)) {
-      return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+    if (deliveryKeyIdentifiesOneSubmission(key)) {
+      promptDedupeKey = key;
+      if (!claimPromptDelivery(key)) {
+        return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+      }
     }
-    // Stamped HERE, and only here: past the dedupe claim, so a re-sent prompt
-    // cannot double-count, and outside the retry loop below, so a wake retry
-    // cannot either. This is the sidebar's authoritative "last activity" —
-    // unlike the opencode_sessions snapshot scheduled further down, it needs no
-    // sandbox round-trip, so a session stays correctly dated even when the box
-    // is unreachable. See projects/session-activity.ts.
+    // Stamped for EVERY turn-creating POST, claimed or not: a prompt the proxy
+    // cannot dedupe is still the user acting on this session. Past the claim,
+    // so a re-sent prompt cannot double-count, and outside the retry loop
+    // below, so a wake retry cannot either. This is the sidebar's authoritative
+    // "last activity" — unlike the opencode_sessions snapshot scheduled further
+    // down, it needs no sandbox round-trip, so a session stays correctly dated
+    // even when the box is unreachable. See projects/session-activity.ts.
     void recordSessionActivity({
       sessionId: record.sessionId,
       projectId: record.projectId,
@@ -1117,14 +1143,8 @@ export async function forwardToSandbox(
   };
 
   // 2. Forward with auto-wake retry.
-  const MAX_RETRIES = 3;
-  // Short early delays so a transient post-restore RX stall (CH virtio-net misses
-  // the first RX interrupt → daemon briefly unreachable ~1s) clears on the next
-  // attempt instead of stretching to seconds. The old [2000,5000,8000] turned a
-  // ~1s stall into the multi-second session-list lag observed in-browser
-  // (opencode-listed +5578ms, 2026-06-14). Later delays stay progressive for a
-  // genuinely cold-booting port.
-  const RETRY_DELAYS_MS = [250, 1000, 3000];
+  const RETRY_DELAYS_MS = PROXY_RETRY_DELAYS_MS;
+  const MAX_RETRIES = RETRY_DELAYS_MS.length;
   let wakeTriggered = false;
   // Only a CONFIRMED-dead provider signal (box stopped/archived) errors the row.
   // A transient unreachable / RX stall must NEVER error a sandbox whose daemon
@@ -1139,7 +1159,12 @@ export async function forwardToSandbox(
   // already wrote does not get absorbed — it lands a SECOND file. With this loop
   // retrying up to 4 times and the SDK retrying up to 3 on top, one user action
   // could deposit up to 12 copies and still report failure.
-  const uploadDelivery = isUploadRequest({ method, path: remainingPath });
+  // An attachment import is the same class: the daemon downloads the file and
+  // does not observe a disconnect, so a replay downloads it a second time. Only
+  // on the daemon port — `/file/import` elsewhere is the user's own route.
+  const uploadDelivery =
+    isUploadRequest({ method, path: remainingPath }) ||
+    isFileImportRequest({ method, path: remainingPath, port: upstreamPort });
   // Requests whose body must never be sent twice.
   const nonReplayableWrite = promptDelivery || uploadDelivery;
   // False until this request reaches the non-idempotent upstream fetch.
@@ -1168,6 +1193,7 @@ export async function forwardToSandbox(
   // at all (out of budget on the first pass) is the provider-edge case too — we
   // have no evidence about the box.
   let lastAttemptHop: ProxyHop = 'provider_ingress';
+  let providerCredentialsRefreshed = false;
 
   // The one SSE endpoint proxied per sandbox. Its streams get a byte-counting
   // passthrough (below), and a previous stream that answered 200 without EVER
@@ -1195,7 +1221,7 @@ export async function forwardToSandbox(
       ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
-      const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
+      const targetUrl = ingressTargetUrl(ingress, remainingPath + queryString);
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
@@ -1268,21 +1294,28 @@ export async function forwardToSandbox(
       // read keeps the client's id); runs after every refusal point and before
       // the ledger begins, so the identity recorded is the one delivered. Once
       // per request: a retry attempt keeps the placement the first computed.
+      // The inbox drain already placed its id and says so with a header — one
+      // fewer round-trip. Any client can send that header, so it skips only
+      // the READ: an id far ahead of the clock (the pre-fix CLI's high-bits
+      // mint) is re-minted on the id alone either way.
+      const clientWireId = promptBodyMessageId(requestBody);
+      const placedByInbox = incomingHeaders.get(WIRE_ID_PLACED_HEADER) === '1';
       if (
         promptDelivery &&
         !sandboxAuthored &&
         effectiveMessageId === null &&
         isPromptWireIdRepairPath(remainingPath) &&
-        // The inbox drain already placed it — one fewer round-trip.
-        incomingHeaders.get(WIRE_ID_PLACED_HEADER) !== '1' &&
         // No client id, nothing to place — OpenCode mints, and the read is
         // skipped entirely so a plain body pays nothing.
-        promptBodyMessageId(requestBody) !== null
+        clientWireId !== null &&
+        (!placedByInbox || isWireIdAheadOf(clientWireId, Date.now()))
       ) {
         const readUrl =
           previewUrl.replace(/\/$/, '') +
           promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
-        const newestKnownTime = await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
+        const newestKnownTime = placedByInbox
+          ? null
+          : await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
         ptl.mark('wire-id-read');
         const placed = repairPromptWireId({
           body: requestBody,
@@ -1400,6 +1433,7 @@ export async function forwardToSandbox(
         proxyAttemptTimeoutMs(budgetRemainingMs, {
           method,
           path: remainingPath,
+          port: upstreamPort,
         }),
       );
       let upstream: Response;
@@ -1446,6 +1480,27 @@ export async function forwardToSandbox(
         clearTimeout(connectTimer);
       }
       ptl.mark('upstream');
+
+      // A resumed Daytona sandbox can reject a cached preview token. Its edge
+      // answers either JSON 401 or a login redirect; neither is the daemon's
+      // signed-context refusal. Drop every transport's cached link for this
+      // port and refresh once for reads. Never replay a write here.
+      if (await isProviderIngressAuthFailure(record.provider, upstream)) {
+        await upstream.body?.cancel().catch(() => {});
+        invalidatePreviewLink(sandboxId, port);
+        if (!providerCredentialsRefreshed && (method === 'GET' || method === 'HEAD') && attempt < MAX_RETRIES) {
+          providerCredentialsRefreshed = true;
+          continue;
+        }
+        await abandonTurnLifecycle();
+        // The provider rejected authentication before the daemon received it.
+        if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
+        return jsonProxyError({
+          error: 'sandbox provider authentication unavailable',
+          code: 'sandbox_provider_auth_unavailable',
+          retry: true,
+        }, 503, origin);
+      }
 
       if (upstream.status >= 300 && upstream.status < 400) {
         await abandonTurnLifecycle();
@@ -1879,7 +1934,6 @@ export async function resolvePreviewWsUpstream(opts: {
     if (
       shouldWakeStoppedSandboxForWsAttach(record.status, remainingPath, {
         wakeRequested: opts.wakeRequested === true,
-        accessKind: 'principal',
       })
     ) {
       const resumeExternalId = record.externalId;
@@ -1887,8 +1941,10 @@ export async function resolvePreviewWsUpstream(opts: {
         console.warn(`[preview-ws] auto-resume failed for ${resumeExternalId}:`, err);
         return false;
       });
-      // The resume flips the row to 'active' immediately; the box finishes
-      // booting in the background and the client's next retry connects.
+      // The resume only CLAIMS the wake: the row stays 'stopped' until the
+      // provider confirms the box, which measured 16-31 s locally and ~60 s on
+      // dev. Until then this returns 503 and the client dials again; a browser
+      // sees each refusal as 1006 and asks `GET /kortix/pty` for the reason.
       const resumed = await loadSandbox(sandboxId);
       if (resumed) record = resumed;
     }
@@ -1910,7 +1966,9 @@ export async function resolvePreviewWsUpstream(opts: {
     providerHeaders: ingress.headers,
   });
 
-  const upstreamUrl = new URL(wsBase + remainingPath + queryString);
+  const upstreamUrl = new URL(
+    ingressTargetUrl({ url: wsBase, queryToken: ingress.queryToken }, remainingPath + queryString),
+  );
   if (ingress.websocket?.userContextQueryParam) {
     const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
     if (signedContext) {
@@ -2029,18 +2087,6 @@ preview.all('/:sandboxId/:port/*', async (c) => {
     undefined, // redirectPrefix → default `/v1/p/{sandbox}/{port}`
     publicOrigin,
   );
-});
-
-// Requests without a trailing path (e.g. /:sandboxId/:port) → normalize.
-preview.all('/:sandboxId/:port', async (c) => {
-  const sandboxId = c.req.param('sandboxId');
-  const port = c.req.param('port');
-  const url = new URL(c.req.url);
-  // The app is mounted at /v1/p (see apps/api/src/index.ts), so a Location
-  // built from the route-relative path drops the mount and sends the browser to
-  // `https://<api>/<sandbox>/<port>/` — a 404. Mirrors the sibling normalizer in
-  // routes/public-share.ts.
-  return c.redirect(`/v1/p/${sandboxId}/${port}/${url.search}`, 301);
 });
 
 export { preview };

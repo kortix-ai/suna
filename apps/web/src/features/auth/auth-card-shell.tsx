@@ -14,6 +14,7 @@ import { CaretLeftIcon as ChevronLeft } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 
+import { useDesktopBackTarget } from '@/components/desktop/desktop-back-button';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import { AuthMobileLogo } from '@/features/auth/auth-primitives';
 import { openExternalRoute } from '@/lib/desktop';
@@ -68,10 +69,16 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
   );
 }
 
-/** The quiet page frame every auth surface shares: mark, centered column, legal footer. */
+/**
+ * The quiet page frame every auth surface shares: mark, centered column, legal
+ * footer. The frame has no sidebar and many of its screens have no in-page
+ * exit; the root layout's `DesktopBackButton` is their exit on the desktop
+ * shell. `backHref` tells that Back where this flow started.
+ */
 export function AuthFrame({
   children,
   footerVariant = 'default',
+  backHref,
 }: {
   children: React.ReactNode;
   /**
@@ -80,7 +87,13 @@ export function AuthFrame({
    * page does not jump when the column above it swaps.
    */
   footerVariant?: AuthLegalFooterVariant | 'none';
+  /**
+   * Where Back goes, when the page knows where its flow started. Without it,
+   * Back returns to the previous in-app page, else the app home.
+   */
+  backHref?: string;
 }) {
+  useDesktopBackTarget(backHref);
   return (
     <div className="bg-background relative flex min-h-svh flex-col">
       <AuthMobileLogo />

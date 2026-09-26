@@ -1,7 +1,8 @@
-import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
-
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -61,10 +62,7 @@ const HELP = help`Usage: kortix review <subcommand> [options]
 The project's review inbox — everything waiting on a human decision: change
 requests, connector tool calls a policy gated for approval, and the outputs,
 decisions and batches agents submit for sign-off. Mirrors the dashboard's
-Review Center.
-
-Gated by the \`review_center\` feature flag. Turn it on with
-\`kortix projects features enable review_center\`.
+Review Center. On for every project.
 
 Subcommands:
   ls [--segment <s>] [--kind <k>]   List inbox items. Default: every segment.
@@ -119,21 +117,11 @@ Examples:
 `;
 
 export async function runReview(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   try {
@@ -150,8 +138,7 @@ export async function runReview(argv: string[]): Promise<number> {
     f.agent = takeFlagValue(rest, ['--agent']);
     f.session = takeFlagValue(rest, ['--session']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
@@ -182,10 +169,10 @@ async function reviewLs(
   json: boolean,
 ): Promise<number> {
   if (f.segment && !(SEGMENTS as readonly string[]).includes(f.segment)) {
-    return invalid(`--segment must be one of ${SEGMENTS.join(', ')}`);
+    return fail(`--segment must be one of ${SEGMENTS.join(', ')}`);
   }
   if (f.kind && !(KINDS as readonly string[]).includes(f.kind)) {
-    return invalid(`--kind must be one of ${KINDS.join(', ')}`);
+    return fail(`--kind must be one of ${KINDS.join(', ')}`);
   }
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
@@ -201,7 +188,7 @@ async function reviewLs(
       `/projects/${ctx.projectId}/review/items${qs ? `?${qs}` : ''}`,
     );
   } catch (err) {
-    return reviewApiError(err);
+    return surfaceApiError(err);
   }
 
   if (json) {
@@ -263,7 +250,7 @@ async function reviewShow(
       item = resp.review_item;
     }
   } catch (err) {
-    return reviewApiError(err);
+    return surfaceApiError(err);
   }
 
   if (json) {
@@ -313,7 +300,7 @@ async function reviewAct(
   if (!verdictArg) return missing(`a verdict: ${VERDICTS.join(' | ')}`);
   const verdict = verdictArg as Verdict;
   if (!(VERDICTS as readonly string[]).includes(verdict)) {
-    return invalid(`verdict must be one of ${VERDICTS.join(', ')}`);
+    return fail(`verdict must be one of ${VERDICTS.join(', ')}`);
   }
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
@@ -395,10 +382,7 @@ async function reviewAct(
         );
         return 0;
       }
-      process.stderr.write(
-        `${status.err(`A change request takes approve, reject, or changes — not "${verdict}".`)}\n`,
-      );
-      return 2;
+      return fail(`A change request takes approve, reject, or changes — not "${verdict}".`);
     }
 
     // ── A native row.
@@ -415,7 +399,7 @@ async function reviewAct(
     );
     return 0;
   } catch (err) {
-    return reviewApiError(err);
+    return surfaceApiError(err);
   }
 }
 
@@ -428,7 +412,7 @@ async function reviewBulk(
   if (!verdictArg) return missing(`a verdict: ${VERDICTS.join(' | ')}`);
   const verdict = verdictArg as Verdict;
   if (!(VERDICTS as readonly string[]).includes(verdict)) {
-    return invalid(`verdict must be one of ${VERDICTS.join(', ')}`);
+    return fail(`verdict must be one of ${VERDICTS.join(', ')}`);
   }
   if (ids.length === 0) return missing('at least one review item id');
 
@@ -447,7 +431,7 @@ async function reviewBulk(
       updated = resp.updated;
       items = resp.review_items;
     } catch (err) {
-      return reviewApiError(err);
+      return surfaceApiError(err);
     }
   }
 
@@ -486,22 +470,22 @@ async function reviewSubmit(
 ): Promise<number> {
   if (!f.kind) return missing(`--kind ${SUBMIT_KINDS.join('|')}`);
   if (!(SUBMIT_KINDS as readonly string[]).includes(f.kind)) {
-    return invalid(`--kind must be one of ${SUBMIT_KINDS.join(', ')}`);
+    return fail(`--kind must be one of ${SUBMIT_KINDS.join(', ')}`);
   }
   if (!f.title) return missing('--title "<text>"');
   if (f.risk && !(RISKS as readonly string[]).includes(f.risk)) {
-    return invalid(`--risk must be one of ${RISKS.join(', ')}`);
+    return fail(`--risk must be one of ${RISKS.join(', ')}`);
   }
   let detail: Record<string, unknown> | undefined;
   if (f.detail !== undefined) {
     try {
       const parsed: unknown = JSON.parse(f.detail);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return invalid('--detail must be a JSON object');
+        return fail('--detail must be a JSON object');
       }
       detail = parsed as Record<string, unknown>;
     } catch {
-      return invalid('--detail must be valid JSON');
+      return fail('--detail must be valid JSON');
     }
   }
 
@@ -523,7 +507,7 @@ async function reviewSubmit(
       ...(sessionId ? { session_id: sessionId } : {}),
     });
   } catch (err) {
-    return reviewApiError(err);
+    return surfaceApiError(err);
   }
 
   if (json) {
@@ -574,35 +558,9 @@ export function planBulk(ids: Iterable<string>): BulkPlan {
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-/**
- * Surface an API error, adding the one command that clears a `feature_disabled`
- * 403. The server's prose points at the dashboard's Settings → Feature flags;
- * a CLI caller needs the CLI verb.
- */
-function reviewApiError(err: unknown): number {
-  const code = (err as { body?: { code?: unknown } } | null)?.body?.code;
-  const exit = surfaceApiError(err);
-  if (code === FEATURE_DISABLED_CODE) {
-    process.stderr.write(
-      `  ${C.dim}Turn it on: ${C.reset}${C.cyan}kortix projects features enable review_center${C.reset}\n`,
-    );
-  }
-  return exit;
-}
-
 function riskCell(risk: string): string {
   if (risk === 'high') return `${C.red}high${C.reset}`;
   if (risk === 'medium') return `${C.yellow}medium${C.reset}`;
   if (risk === 'low') return `${C.faded}low${C.reset}`;
   return `${C.faded}none${C.reset}`;
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
-}
-
-function invalid(message: string): number {
-  process.stderr.write(`${status.err(message)}\n`);
-  return 2;
 }

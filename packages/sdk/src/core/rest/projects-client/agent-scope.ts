@@ -5,7 +5,7 @@ import { unwrap } from './shared';
 // Bind specific secrets + connectors to an agent by writing its
 // `agents.<name>.env` / `.connectors` allowlists into kortix.yaml. Members
 // assigned to that agent (Members → Resource access) inherit exactly this set.
-// Manager-gated server-side. `kortix_cli` is deliberately not settable here.
+// Manager-gated server-side. `kortix_permissions` is deliberately not settable here.
 
 /** `'all'` = every item the launcher can see; a list = allowlist; `[]` = none. */
 export type AgentGrantSet = string[] | 'all';

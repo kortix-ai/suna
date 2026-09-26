@@ -5,7 +5,10 @@ import {
   UPLOADED_FILE_READ_RETRY_DELAY_MS,
   fileReadRetryDelayMs,
   isUploadedWorkspacePath,
+  sandboxWakingRefetchInterval,
   shouldRetryFileRead,
+  SANDBOX_PARKED_REFETCH_INTERVAL_MS,
+  SANDBOX_WAKING_REFETCH_INTERVAL_MS,
 } from './file-read-retry';
 
 describe('file read retry policy', () => {
@@ -94,5 +97,46 @@ describe('file read retry policy', () => {
     );
     expect(fileReadRetryDelayMs(0, '/workspace/src/report.pdf')).toBe(1000);
     expect(fileReadRetryDelayMs(4, '/workspace/src/report.pdf')).toBe(5000);
+  });
+});
+
+/**
+ * The viewer's re-read poll had the same false premise the Files listing did:
+ * "keep polling until the box is active and the file loads on its own". A
+ * BOOTING box does come up on its own. A PARKED one resumes only on the next
+ * SEND, and the API refuses every read meant to wake it — so against a parked
+ * box this interval never ends.
+ */
+describe('sandboxWakingRefetchInterval', () => {
+  const notReady = new Error('sandbox not ready (status: stopped)');
+  const realFailure = new Error('ENOENT: no such file');
+
+  test('a booting box keeps re-reading — the file really does arrive', () => {
+    expect(sandboxWakingRefetchInterval(notReady, false)).toBe(
+      SANDBOX_WAKING_REFETCH_INTERVAL_MS,
+    );
+  });
+
+  test('a PARKED box takes the slow lane — it still recovers when a send wakes it', () => {
+    expect(sandboxWakingRefetchInterval(notReady, true)).toBe(
+      SANDBOX_PARKED_REFETCH_INTERVAL_MS,
+    );
+  });
+
+  test('parked is slower than booting, and never off — a dead wait is not a fix', () => {
+    expect(SANDBOX_PARKED_REFETCH_INTERVAL_MS).toBeGreaterThan(
+      SANDBOX_WAKING_REFETCH_INTERVAL_MS,
+    );
+    expect(sandboxWakingRefetchInterval(notReady, true)).not.toBe(false);
+  });
+
+  test('an ordinary read failure never polls, parked or not', () => {
+    expect(sandboxWakingRefetchInterval(realFailure, false)).toBe(false);
+    expect(sandboxWakingRefetchInterval(realFailure, true)).toBe(false);
+  });
+
+  test('no error means nothing to poll for', () => {
+    expect(sandboxWakingRefetchInterval(null, false)).toBe(false);
+    expect(sandboxWakingRefetchInterval(undefined, true)).toBe(false);
   });
 });

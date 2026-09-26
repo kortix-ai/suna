@@ -267,11 +267,10 @@ describe('ComposerUnderbar — the denied roster looks like an ordinary picker',
  * an `AuthProvider` for `useRuntimeSessions`). The constant is the single thing
  * the shell `<div>` reads, so editing it is the only way to reintroduce this.
  *
- * The line these draw is ZERO, not "responsive". A breakpoint that TRIMS the
- * gutter is a legitimate optical call — `md:pr-1` compensates for the
- * action-panel chevron rail on desktop, see `COMPOSER_SHELL_CLASS`'s comment —
- * and a test that banned every breakpoint would simply be deleted the next time
- * someone needs one. A breakpoint that zeroes it is the bug, every time.
+ * The line these draw is ZERO, not "responsive". A breakpoint that TRIMS one
+ * side can be a legitimate optical call against a known asymmetry, and a test
+ * that banned every breakpoint would simply be deleted the next time someone
+ * needs one. A breakpoint that zeroes it is the bug, every time.
  */
 describe('COMPOSER_SHELL_CLASS — no viewport width can zero the gutter', () => {
   const classes = COMPOSER_SHELL_CLASS.split(/\s+/).filter(Boolean);
@@ -299,8 +298,8 @@ describe('COMPOSER_SHELL_CLASS — no viewport width can zero the gutter', () =>
   });
 
   test('a breakpoint may trim a side, never both sides at once', () => {
-    // `md:pr-1` trims one edge against a known asymmetry in the layout (the
-    // chevron rail). A breakpoint-scoped `px-*` overrides BOTH edges, which is
+    // A one-side trim (`md:pr-*`) may answer a known asymmetry in the layout.
+    // A breakpoint-scoped `px-*` overrides BOTH edges, which is
     // the shape that hid the whole gutter last time — if a future change needs
     // that, it needs a container query, not a media query.
     const bothSides = classes.filter((c) => /^(max-)?(sm|md|lg|xl|2xl):px-/.test(c));

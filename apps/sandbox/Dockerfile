@@ -94,12 +94,14 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \
+        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \
         texlive-latex-extra texlive-latex-recommended \
-    && rm -rf /var/lib/apt/lists/*
+        bat bc fd-find file fzf git-lfs htop iputils-ping jq less lsof moreutils nano netcat-openbsd openssh-client patch procps ripgrep rsync sqlite3 tree unzip wget xz-utils zip zstd \
+    && rm -rf /var/lib/apt/lists/* \
+    && (command -v fd >/dev/null || ln -s "$(command -v fdfind)" /usr/local/bin/fd) && (command -v bat >/dev/null || ln -s "$(command -v batcat)" /usr/local/bin/bat) && rg --version >/dev/null && fd --version >/dev/null && bat --version >/dev/null && jq --version >/dev/null && fzf --version >/dev/null
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \
@@ -237,27 +239,39 @@ RUN mkdir -p /opt/kortix/opencode-config-deps \
     && rm -rf /tmp/opencode-deps-bundle-check
 
 USER root
-COPY --from=builder /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent /usr/local/bin/kortix-agent
+# Modes and ownership are set BY THE COPY, never by a later chmod/chown.
+# A RUN that changes a file's mode or owner copies that file into a NEW layer,
+# so the old `chmod +x … && chown -R /opt/kortix …` at the bottom of this block
+# rewrote the 106 MB CLI, the compiled agent and the whole managed-skills tree
+# a second time — 288 MB of pure duplication in every sandbox image, measured
+# with `docker history`. `--chmod`/`--chown` apply it in the layer that already
+# carries the bytes.
+COPY --from=builder --chmod=755 /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent /usr/local/bin/kortix-agent
 # The admin CLI every in-sandbox agent reaches for: `kortix cr open`,
 # `kortix secrets`, `kortix sessions`, … Pre-authenticated at runtime via the
 # project-scoped token the platform injects (KORTIX_TOKEN).
-COPY --from=cli-builder /cli/kortix /usr/local/bin/kortix
+COPY --from=cli-builder --chown=kortix:kortix --chmod=755 /cli/kortix /usr/local/bin/kortix
 # Always-latest managed Kortix skills (kortix-cli + the kortix-* family). The
 # agent server overlays these into every session's OpenCode skills dir at boot
 # (see injected-skills.ts) so no project ever goes stale on Kortix internals.
-COPY --from=cli-builder /cli/managed-skills /opt/kortix/managed-skills
-COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
+COPY --from=cli-builder --chown=kortix:kortix /cli/managed-skills /opt/kortix/managed-skills
+COPY --chmod=755 apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
 COPY apps/sandbox/MACHINE.md /MACHINE.md
 # Channel shims delegate Connector calls to the compiled `kortix` CLI.
-COPY apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
+COPY --chown=kortix:kortix --chmod=755 apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
 # The daemon converges the CLI in place at /usr/local/bin/kortix (runtime-assets.ts
-# DEFAULT_CLI_PATH) and runs as kortix: the file must belong to that user or every
-# box reports `cli: failed` (EACCES) on its first convergence pass.
-RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \
-    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
+# DEFAULT_CLI_PATH) and runs as kortix. It writes a temp file next to the target
+# and renames it, so the permission it needs comes from the DIRECTORY — owning
+# only the file left every digest mismatch failing EACCES with `cli: failed`.
+# The second command pins OpenCode's own autoupdate off for every caller in the
+# box, not just the daemon's OPENCODE_CONFIG child. Both live in
+# packages/shared/src/sandbox/platform-binaries.ts, which asserts them on all
+# three image definitions.
+RUN bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
     && kortix --version \
-    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral \
-    && chown kortix:kortix /usr/local/bin/kortix
+    && chown kortix:kortix /usr/local/bin /usr/local/bin/kortix \
+    && mkdir -p /home/kortix/.config/opencode && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \
+    && chown -R kortix:kortix /workspace /ephemeral
 
 # Platform-owned secret delivery. The daemon writes live project secrets to
 # /dev/shm/kortix/agent-env.sh (tmpfs — never on the persisted disk); these

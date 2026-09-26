@@ -11,8 +11,10 @@
  * teams/file-proxy initiateTeamsUpload) share one source of truth and unit tests
  * can exercise it without mocking the token-attaching fetch path.
  */
+// Only the Teams connector's own Traffic Manager profile: `*.trafficmanager.net`
+// profile names are registrable by any Azure customer.
 const ALLOWED_SERVICE_HOST =
-  /(^|\.)(botframework\.com|botframework\.us|trafficmanager\.net|azurewebsites\.net)$/i;
+  /(^smba\.trafficmanager\.net|(^|\.)botframework\.com|(^|\.)botframework\.us|(^|\.)azurewebsites\.net)$/i;
 
 /**
  * Returns the validated, https service URL, or `null` if the host is not a

@@ -26,7 +26,7 @@
  *
  * LAYER 2 — GRANTABLE SCOPES. Everything above the binding is an ordinary
  * capability leaf (`GitRefScope`), held through a project role or listed in an
- * agent's `kortix_cli`. A denial names the leaf that would permit it and the
+ * agent's `kortix_permissions`. A denial names the leaf that would permit it and the
  * CALLER resolves it, so a project that deliberately wants an agent pushing
  * beyond its own branch says so in `kortix.yaml`, reviewed and merged, visible
  * in `kortix grants ls` — instead of it being the silent default it used to be.
@@ -70,7 +70,14 @@ import { isDelete, type RefUpdate } from './receive-pack';
  */
 export type GitPrincipal =
   /** A session's sandbox token, or an account token scoped to that session. */
-  | { kind: 'session'; sessionId: string; branch: string }
+  | {
+      kind: 'session';
+      sessionId: string;
+      branch: string;
+      /** Identity and credential used for the IAM ceiling on wider ref access. */
+      userId?: string | null;
+      tokenId?: string | null;
+    }
   /** A monitor box's sandbox token — no session row by design. */
   | { kind: 'monitor' }
   /**

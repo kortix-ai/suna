@@ -1,5 +1,7 @@
 import { createDb, type Database } from '@kortix/db';
 import { config } from '../config';
+import { contextualDatabase } from './db-context';
+import { beginStage } from '../lib/server-timing';
 
 const globalForDb = globalThis as typeof globalThis & {
   __kortixApiDb?: Database;
@@ -38,9 +40,13 @@ function getDb(): Database {
     return globalForDb.__kortixApiDb;
   }
 
-  globalForDb.__kortixApiDb = createDb(config.DATABASE_URL);
+  // Every statement on the request pool feeds `Server-Timing: db;dur=…;desc="n=…"`
+  // (lib/server-timing.ts). Outside a request the hook is a no-op.
+  globalForDb.__kortixApiDb = createDb(config.DATABASE_URL, undefined, {
+    onQuery: () => beginStage('db'),
+  });
   globalForDb.__kortixApiDbUrl = config.DATABASE_URL;
   return globalForDb.__kortixApiDb;
 }
 
-export const db: Database = getDb();
+export const { db, transaction: withDbTransaction, afterCommit: afterDbCommit } = contextualDatabase(getDb());

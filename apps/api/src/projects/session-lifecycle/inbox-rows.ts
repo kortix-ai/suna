@@ -1,6 +1,7 @@
 import { sessionLifecycleCommands } from '@kortix/db';
-import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import { inboxOrderBy } from './inbox-order';
 import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
 
@@ -8,7 +9,7 @@ import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './stor
  * The inbox's row operations — everything `GET/DELETE/retry/hold …/prompts`
  * does to `kortix.session_lifecycle_commands`.
  *
- * They live here rather than inline in `routes/r8.ts` for one reason: every one
+ * They live here rather than inline in `routes/session-prompts.ts` for one reason: every one
  * of them has to carry the INBOX SCOPE, and a scope that is re-typed at four
  * call sites is a scope that will be forgotten at one of them. It already was:
  * `continue_session` is also how triggers, Slack and approval-resume deliver,
@@ -78,20 +79,30 @@ export type InboxPromptDeletion =
   | { outcome: 'delivering' }
   | { outcome: 'missing' };
 
+export async function deleteInboxRowsWithAttachmentGrace(predicate: SQL | undefined) {
+  return db.transaction(async (tx) => {
+    const rows = await tx.delete(sessionLifecycleCommands).where(predicate).returning();
+    for (const row of rows) {
+      if ((row.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
+        const { retainPromptAttachmentsForUndo } = await import('../prompt-attachments');
+        await retainPromptAttachmentsForUndo(tx, row);
+      }
+    }
+    return rows;
+  });
+}
+
 export async function deleteInboxPrompt(
   sessionId: string,
   promptId: string,
 ): Promise<InboxPromptDeletion> {
-  const deleted = await db
-    .delete(sessionLifecycleCommands)
-    .where(
+  const deleted = await deleteInboxRowsWithAttachmentGrace(
       and(
         eq(sessionLifecycleCommands.commandId, promptId),
         inboxScope(sessionId),
         inArray(sessionLifecycleCommands.status, ['queued', 'failed', 'dead_lettered']),
       ),
-    )
-    .returning();
+    );
   if (deleted[0]) return { outcome: 'deleted', row: deleted[0] };
 
   // A STOP-PAUSED row is the user's to remove, and a separate statement so the
@@ -102,17 +113,14 @@ export async function deleteInboxPrompt(
   // button. Nothing is going to deliver it (the hold is what took it out of the
   // drain's way) and only removing it takes it off the user's screen, so a
   // refusal there is a control that cannot work.
-  const stopPaused = await db
-    .delete(sessionLifecycleCommands)
-    .where(
+  const stopPaused = await deleteInboxRowsWithAttachmentGrace(
       and(
         eq(sessionLifecycleCommands.commandId, promptId),
         inboxScope(sessionId),
         eq(sessionLifecycleCommands.status, 'succeeded'),
         sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true'`,
       ),
-    )
-    .returning();
+    );
   if (stopPaused[0]) return { outcome: 'deleted', row: stopPaused[0] };
 
   // Separate the two "no row was removed" cases: a row that is on the wire
@@ -316,6 +324,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
     const running = await db
       .update(sessionLifecycleCommands)
       .set({
+        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"held": true}'::jsonb`,
         payload: sql`${sessionLifecycleCommands.payload} || '{"stopPausedOnDelivery": true, "remintOnDelivery": true}'::jsonb`,
         updatedAt: new Date(),
       })
@@ -359,7 +368,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
     .where(
       and(
         inboxScope(sessionId),
-        eq(sessionLifecycleCommands.status, 'queued'),
+        inArray(sessionLifecycleCommands.status, ['queued', 'running']),
         sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'`,
       ),
     )
@@ -428,8 +437,29 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
   return released.length + requeued.length;
 }
 
-/** Release without asserting anything about whether a hold was set. */
-export function releaseInboxHold(sessionId: string): Promise<number> {
+/**
+ * Release without asserting anything about whether a hold was set.
+ *
+ * EVERY prompt POST calls this, and without a Stop the three ordered UPDATEs it
+ * runs match no rows at all — three round trips to change nothing. One read of
+ * the union of their predicates answers whether any of them can touch a row;
+ * when nothing is held there is nothing to release, so the writes are skipped.
+ * When something IS held the original three run, in their original order.
+ */
+export async function releaseInboxHold(sessionId: string): Promise<number> {
+  const [marked] = await db
+    .select({ commandId: sessionLifecycleCommands.commandId })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        inboxScope(sessionId),
+        sql`(COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'
+          OR COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'
+          OR COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true')`,
+      ),
+    )
+    .limit(1);
+  if (!marked) return 0;
   return holdInboxPrompts(sessionId, false);
 }
 
@@ -490,7 +520,7 @@ export async function claimDueSessionInboxSiblings(input: {
         status: 'running',
         attempts: row.attempts + 1,
         lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + 5 * 60_000),
+        lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
         updatedAt: now,
       })
       .where(

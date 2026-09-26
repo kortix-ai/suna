@@ -26,7 +26,9 @@ export async function postReviewCard(
 
   // Close out the in-flight plan, then post the card below it. The button click
   // resumes the session via spawnAgentTurn, the same way a question answer does.
-  await finalizeTurn(handle, {});
+  // NOT "Task complete" — the agent is waiting for a decision, not finished.
+  // Teams carried the identical bug; both are fixed together.
+  await finalizeTurn(handle, { title: 'Waiting for your decision', unfinished: true });
   await deleteTurn(sessionId);
 
   const webUrl = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);

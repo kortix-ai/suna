@@ -1,6 +1,6 @@
 // Pure SCIM serializer/filter helpers — no DB, safe to run standalone.
 import { describe, expect, test } from 'bun:test';
-import { buildInviteUser, buildUser, isUnsupportedFilter, parseFilter } from '../scim/app';
+import { buildInviteUser, buildUser, isUnsupportedFilter, parseFilter, listResponse } from '../scim/app';
 
 describe('parseFilter', () => {
   test('parses the supported `attr eq "value"` form (with whitespace)', () => {
@@ -136,5 +136,22 @@ describe('SCIM deprovision releases the seat', () => {
 
   test('the module actually imports it', () => {
     expect(SCIM_USERS_SRC).toContain("from '../billing/services/seat-management'");
+  });
+});
+
+
+describe('SCIM pagination limits', () => {
+  const users = Array.from({ length: 201 }, (_, id) => ({ id }));
+  test('caps the first page at 200 and preserves the directory total', () => {
+    const page = listResponse(users, { count: 1000 });
+    expect(page.totalResults).toBe(201);
+    expect(page.itemsPerPage).toBe(200);
+    expect(page.Resources.at(-1)).toEqual({ id: 199 });
+    expect(listResponse(users, { startIndex: 201 }).Resources).toEqual([{ id: 200 }]);
+  });
+  test('supports a zero count and offsets beyond the directory', () => {
+    expect(listResponse(users, { count: 0 }).Resources).toEqual([]);
+    expect(listResponse(users, { startIndex: 202 }).Resources).toEqual([]);
+    expect(listResponse(users, { startIndex: 0, count: 1 }).startIndex).toBe(1);
   });
 });

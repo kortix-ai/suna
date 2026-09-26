@@ -9,7 +9,8 @@ import {
   type ProjectRole,
 } from '../projects/access';
 import { normalizeProjectRole as parseProjectRole } from '../iam/roles';
-import { iamActionForProjectAccess, isUuid } from '../projects/lib/access';
+import { iamActionForProjectAccess } from '../projects/lib/access';
+import { isUuid } from '../shared/validate';
 
 describe('isUuid project-id guard', () => {
   test.each([

@@ -2,7 +2,7 @@
  * Read/write helpers for the v2 `agents.<name>` GOVERNANCE block (spec
  * docs/specs/2026-07-05-agent-first-config-unification.md §2.2, redirected
  * 2026-07-05 — "one home per concern"). `AgentBlockV2` here is governance
- * ONLY: connectors/secrets/skills/kortix_cli/workspace/enabled. OpenCode
+ * ONLY: connectors/secrets/skills/kortix_permissions/repository_access/enabled. OpenCode
  * BEHAVIOR (mode/model/temperature/top_p/steps/variant/color/hidden/
  * permission/prompt) lives entirely in the agent's own native
  * `.kortix/opencode/agents/<name>.md` frontmatter + body — see
@@ -14,7 +14,7 @@
  *
  * Distinct from `../agents.ts` (`AgentSpec` / `extractAgents`): that module
  * resolves the platform GRANT the session token carries (a narrower view —
- * connectors/secrets/kortix_cli reduced to the wire `AgentGrant` shape).
+ * connectors/secrets/kortix_permissions reduced to the wire `AgentGrant` shape).
  * This module instead reads/writes the agent's declared governance block
  * verbatim so the editor can present (and persist) the complete governance
  * field space, not just the grant subset. Pure — no I/O; callers own
@@ -90,6 +90,36 @@ export function normalizeRequiredConnectorAliases(
   return { ok: true, block };
 }
 
+/**
+ * Canonicalize the deprecated `kortix_cli` key to `kortix_permissions` (same
+ * value). Both present with different values is an error — the manifest
+ * validator rejects that too. Mirrors `normalizeRequiredConnectorAliases`.
+ */
+export function normalizeKortixPermissionAliases(
+  source: Record<string, unknown>,
+): NormalizeRequiredConnectorsResult {
+  const legacy = source.kortix_cli;
+  if (legacy === undefined) return { ok: true, block: source };
+  const canonical = source.kortix_permissions;
+  const block = { ...source };
+  delete block.kortix_cli;
+  if (canonical === undefined || canonical === null) {
+    block.kortix_permissions = legacy;
+    return { ok: true, block };
+  }
+  const key = (v: unknown) => {
+    const r = resolveGrantSet(v, 'none');
+    return Array.isArray(r) ? JSON.stringify([...new Set(r)].sort()) : r;
+  };
+  if (key(canonical) !== key(legacy)) {
+    return {
+      ok: false,
+      error: 'kortix_cli must match kortix_permissions when both fields are present (kortix_cli is the deprecated alias)',
+    };
+  }
+  return { ok: true, block };
+}
+
 function pruneRequiredConnectors(block: Record<string, unknown>): void {
   const required = block.connectors_required;
   if (!Array.isArray(required)) return;
@@ -137,12 +167,38 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   }
   const normalized = normalizeRequiredConnectorAliases(entry as Record<string, unknown>);
   if (!normalized.ok) return normalized;
+  const permissions = normalizeKortixPermissionAliases(normalized.block);
+  if (!permissions.ok) return permissions;
+  const repository = normalizeRepositoryAccess(permissions.block, true);
+  if (!repository.ok) return repository;
   return {
     ok: true,
     schemaVersion: 2,
-    block: normalized.block as AgentBlockV2,
+    block: repository.block as AgentBlockV2,
     defaultAgent,
   };
+}
+
+/** Canonicalize supported legacy modes without granting access or enabling legacy read. */
+function normalizeRepositoryAccess(block: Record<string, unknown>, reading = false): NormalizeRequiredConnectorsResult {
+  const next = { ...block };
+  if (next.repository_access !== undefined && typeof next.repository_access !== 'boolean') {
+    return { ok: false, error: 'repository_access must be a boolean' };
+  }
+  if (next.workspace !== undefined) {
+    if (!['runtime', 'read', 'branch'].includes(String(next.workspace))) {
+      return { ok: false, error: 'workspace must be runtime, read, or branch' };
+    }
+    const access = next.workspace === 'branch';
+    if (next.repository_access !== undefined && next.repository_access !== access) {
+      return { ok: false, error: 'repository_access conflicts with workspace' };
+    }
+    if (next.workspace !== 'read' || next.repository_access !== undefined || reading) {
+      next.repository_access ??= access;
+      delete next.workspace;
+    }
+  }
+  return { ok: true, block: next };
 }
 
 export type ApplyAgentBlockResult =
@@ -168,13 +224,19 @@ function applyAgentMapBlock(
   ) {
     return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
   }
-  const normalized = normalizeRequiredConnectorAliases(block);
+  const normalizedConnectors = normalizeRequiredConnectorAliases(block);
+  if (!normalizedConnectors.ok) return normalizedConnectors;
+  const normalized = normalizeKortixPermissionAliases(normalizedConnectors.block);
   if (!normalized.ok) return normalized;
   pruneRequiredConnectors(normalized.block);
   const nextAgents: Record<string, unknown> = {
     ...(rawAgents as Record<string, unknown> | undefined),
   };
-  nextAgents[agentName] = normalized.block;
+  const repository = normalizeRepositoryAccess(normalized.block);
+  if (!repository.ok) return repository;
+  // Older API replicas ignore repository_access. Keep their deny signal during rollout and rollback.
+  if (repository.block.repository_access === false) repository.block.workspace = 'runtime';
+  nextAgents[agentName] = repository.block;
   const nextRaw = { ...manifest.raw, agents: nextAgents };
 
   const result = validateManifest(nextRaw, manifest.format);
@@ -230,7 +292,7 @@ export function applyDefaultAgentV2(
  * replace, upsert-by-name — same "read whole file, mutate one entry,
  * validate, commit" shape as `applyAgentScope`), and shape-validate the
  * RESULT through the real `validateManifest` before the caller commits —
- * a malformed permission tree, unknown enum, or ungrantable `kortix_cli`
+ * a malformed permission tree, unknown enum, or ungrantable `kortix_permissions`
  * action is a clean rejection here, never a broken manifest on disk.
  *
  * Refuses outright on a v1 manifest — the full v2 field space (permission
@@ -276,6 +338,8 @@ export function applyAgentScopeV2(
     env?: string[] | 'all';
     connectors?: string[] | 'all';
     connectorsRequired?: string[];
+    /** Kortix App slugs, same grant-set shape as `connectors`. */
+    apps?: string[] | 'all';
   },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
   if (manifest.schemaVersion !== 2) {
@@ -312,6 +376,11 @@ export function applyAgentScopeV2(
     if (scope.connectors === 'all') merged.connectors = 'all';
     else if (scope.connectors.length === 0) delete merged.connectors;
     else merged.connectors = scope.connectors;
+  }
+  if (scope.apps !== undefined) {
+    if (scope.apps === 'all') merged.apps = 'all';
+    else if (scope.apps.length === 0) delete merged.apps;
+    else merged.apps = scope.apps;
   }
   if (scope.connectorsRequired !== undefined) {
     const required = Array.from(new Set(scope.connectorsRequired));

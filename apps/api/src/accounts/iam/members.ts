@@ -41,13 +41,14 @@ import {
   EffectiveBatchResultSchema,
   isResourceType,
 } from './app';
-import { auditIam, readBody } from './helpers';
+import { auditIam } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 
 /**
  * WHICH principal `/effective` answers about, and with WHICH credential.
  *
  * Probing YOURSELF returns the verdict of the real gate — same Actor, same
- * credential, so an agent session's probe now folds its `kortix_cli` grant and
+ * credential, so an agent session's probe now folds its `kortix_permissions` grant and
  * its token's project scope exactly like the route it is asking about. That
  * divergence (`authorize(targetUserId, accountId, action, target)` with the
  * acting token dropped) is why the UI could offer a control the API then 403'd.
@@ -99,7 +100,7 @@ iamRouter.openapi(
   const targetUserId = c.req.param('userId');
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   // Accept camelCase or snake_case, but the field MUST be present and an
   // actual boolean. The previous `=== true` coercion meant a PATCH that
   // omitted the field (or sent a non-boolean) silently set
@@ -471,7 +472,7 @@ iamRouter.openapi(
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const rawProbes = body.probes ?? body.queries;
   if (!Array.isArray(rawProbes)) {
     return c.json({ error: 'probes must be an array' }, 400);

@@ -29,8 +29,6 @@ import Loading from '@/components/ui/loading';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
-import { ProjectFilesProvider } from '@/features/project-files/context';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
@@ -57,6 +55,7 @@ import {
 import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-status-mark';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
+import { useSessionOpenIntent } from '@/features/workspace/project-sidebar/session-open-intent';
 import { useMediaQuery } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import {
@@ -71,13 +70,12 @@ import {
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
   listChangeRequests,
-  listProjectSessions,
   restartProjectSession,
   stopProjectSession,
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { qk, useProjectSessions } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
@@ -209,14 +207,26 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   );
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
-  const [selectedChangeRequestId, setSelectedChangeRequestId] = useState<string | null>(null);
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
-    refetchInterval: (query) =>
+  // Paged, not the whole inventory. This list is the always-mounted poller: it
+  // re-fetches every 5s while any loaded row is still provisioning, so its cost
+  // per tick is the cost of the whole surface. Unbounded, a 12,617-session
+  // project shipped a multi-megabyte body on every one of those ticks and the
+  // app became unusable. `useProjectSessions` bounds it to the rows the viewer
+  // has actually asked to see — see `@kortix/sdk/react/use-project-sessions`.
+  const {
+    sessions,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useProjectSessions(projectId, {
+    refetchInterval: (loaded) =>
       projectSessionsRefetchInterval({
-        sessions: query.state.data as ProjectSession[] | undefined,
+        sessions: loaded,
         hasOpenSession: Boolean(activeSessionId),
       }),
     // Focus IS the cross-tab signal this list has: a session started in
@@ -224,11 +234,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // other way to appear here before the 60s open-session poll. The
     // sessions page already refetches on focus for the same reason.
     refetchOnWindowFocus: true,
-    ...contract('inventory'),
   });
 
   // The brief is a session record, not a Review Center inbox. It therefore
-  // loads every CR state even when the Review Center feature flag is disabled.
+  // loads every CR state, not only the ones awaiting review.
   const { data: changeRequestData } = useQuery({
     queryKey: changeRequestKeys.list(projectId, 'all'),
     queryFn: () => listChangeRequests(projectId, 'all'),
@@ -238,11 +247,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   });
 
   // Review Center is one coherent system: the per-session row indicators, the
-  // footer "Review" pill, and the Customize rail all read the SAME inbox summary
-  // and gate on the SAME flag. When the flag is off the summary query never runs,
-  // so no indicators render and nothing polls.
-  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
-  const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
+  // footer "Review" pill, and the Customize rail all read the SAME inbox summary.
+  const reviewSummary = useReviewSessionSummary(projectId);
 
   // Grouping, ordering, and the two multi-select facets all live in the
   // persisted session-filter store (keyed by project) — see SessionFilterMenu,
@@ -285,7 +291,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // Unsorted on purpose: nothing here reads the order. The two consumers are
   // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
   // sorting twice per render bought nothing.
-  const sessions = useMemo(() => data ?? [], [data]);
   const changeRequestsBySession = useMemo(
     () => groupChangeRequestsBySession(changeRequestData?.change_requests ?? [], sessions),
     [changeRequestData?.change_requests, sessions],
@@ -362,6 +367,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         order: orderMode,
         reviewCountBySession: reviewSummary.needsYouBySession,
         hiddenSections,
+        ownerLabels: { you: t('filter.ownerValue.you'), unknown: t('filter.ownerValue.unknown') },
       },
       tI18nComplete,
     );
@@ -410,8 +416,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
             changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
             canShowHoverCard={canShowSessionHoverCard}
-            reviewEnabled={reviewEnabled}
-            onOpenChangeRequest={setSelectedChangeRequestId}
             onDelete={(id, label) => setSessionToDelete({ id, label })}
             onShare={(s) => setSessionToShare(s)}
             onRename={(id, name) => setSessionToRename({ id, name })}
@@ -426,18 +430,45 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             }
           />
           {children.length > 0 && isActive && (
-            <div className="border-border ml-3.5 border-l-2 pl-2">
+            // `ml-4` puts the trunk's local x=0 exactly under the parent's
+            // icon center (px-2 + half of size-4, both 2 tokens = 4 tokens
+            // total). No padding on this wrapper: padding here would shift an
+            // absolutely-positioned child's own `left:0` inward with it (it
+            // resolves against the padding box), throwing off the trunk.
+            //
+            // The trunk is ONE span for the whole block, not one per row: N
+            // separate `top-4 bottom-0` segments stacked edge-to-edge should
+            // in theory touch with zero gap, but sub-pixel rounding at each
+            // row boundary showed up as visible hairline breaks.
+            //
+            // The trunk stops at the TOP of the last row (each row is a fixed
+            // `h-8`, so that is `(N - 1) * 8` tokens). The last row's own
+            // elbow draws the rest and curves away. Running the trunk to the
+            // last row's center instead leaves a straight tail below the
+            // point where the elbow starts to curve.
+            <div className="relative ml-4">
+              {children.length > 1 && (
+                <span
+                  aria-hidden
+                  className="border-border pointer-events-none absolute top-0 left-0 border-l-2"
+                  style={{ height: `calc(var(--spacing) * ${(children.length - 1) * 8})` }}
+                />
+              )}
               {children.map((child) => {
                 const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
                 const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
                 return (
-                  <ProjectSubsessionRow
-                    key={child.id}
-                    title={child.title || 'Sub-session'}
-                    href={childHref}
-                    isActive={activeChild}
-                    updatedAt={child.updated_at}
-                  />
+                  <div key={child.id} className="relative h-8">
+                    <SubAgentConnector />
+                    <div style={{ marginLeft: SUB_AGENT_CONNECTOR_RUN }}>
+                      <ProjectSubsessionRow
+                        title={child.title || 'Sub-session'}
+                        href={childHref}
+                        isActive={activeChild}
+                        updatedAt={child.updated_at}
+                      />
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -467,14 +498,45 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               <div key={group.session.session_id} className="space-y-px">
                 {renderSessionNode(group.session, false)}
                 {group.children.length > 0 && (
-                  <div className="border-border ml-3.5 space-y-1 border-l-2 pl-1">
-                    {group.children.map((child) => renderSessionNode(child, true))}
+                  // Same `ml-4` reasoning as the opencode sub-session block
+                  // above. A spawned child can render its own sub-sessions
+                  // beneath its row, so child blocks have no fixed height:
+                  // every child except the last draws a trunk segment down
+                  // its whole block, and the last child's elbow ends the line.
+                  <div className="ml-4">
+                    {group.children.map((child, index) => (
+                      <div key={child.session_id} className="relative">
+                        {index < group.children.length - 1 && (
+                          <span
+                            aria-hidden
+                            className="border-border pointer-events-none absolute top-0 bottom-0 left-0 border-l-2"
+                          />
+                        )}
+                        <SubAgentConnector />
+                        <div style={{ marginLeft: SUB_AGENT_CONNECTOR_RUN }}>
+                          {renderSessionNode(child, true)}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             ))}
           </SessionListSection>
         ))}
+        {hasNextPage && (
+          <div className="px-2 pt-1 pb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground h-6 w-full justify-center px-2 text-xs"
+              disabled={isFetchingNextPage}
+              onClick={() => fetchNextPage()}
+            >
+              {isFetchingNextPage ? t('loadingMore') : t('loadMore')}
+            </Button>
+          </div>
+        )}
       </FadedScrollArea>
     );
   }
@@ -515,15 +577,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
       />
-
-      {!reviewEnabled && (
-        <ProjectFilesProvider value={{ projectId, ref: '' }}>
-          <ChangeRequestDetailDialog
-            crId={selectedChangeRequestId}
-            onClose={() => setSelectedChangeRequestId(null)}
-          />
-        </ProjectFilesProvider>
-      )}
     </div>
   );
 }
@@ -627,6 +680,7 @@ function SessionListSection({
     chat: 'chat',
     slack: 'slack',
     telegram: 'telegram',
+    teams: 'teams',
     email: 'email',
     schedule: 'scheduled',
     webhook: 'webhook',
@@ -748,8 +802,6 @@ interface ProjectSessionRowProps {
   reviewCount?: number;
   changeRequests: readonly ChangeRequest[];
   canShowHoverCard: boolean;
-  reviewEnabled: boolean;
-  onOpenChangeRequest: (changeRequestId: string) => void;
   /** Rendered indented under its coordinator — the indent already conveys the
    *  spawn link, so the right-side spawned-by icon is omitted. */
   nested?: boolean;
@@ -773,14 +825,15 @@ function ProjectSessionRow({
   reviewCount = 0,
   changeRequests,
   canShowHoverCard,
-  reviewEnabled,
-  onOpenChangeRequest,
   nested = false,
 }: ProjectSessionRowProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
   const [menuOpen, setMenuOpen] = useState(false);
   const descriptionId = useId();
+  // Start the session's open read (snapshot + row) on intent, so the click
+  // lands on a read that is already on the wire. See `session-open-intent.ts`.
+  const openIntent = useSessionOpenIntent(session.project_id, session.session_id);
 
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
@@ -810,6 +863,7 @@ function ProjectSessionRow({
     <HoverPrefetchLink
       href={href}
       onClick={onNavigate}
+      {...openIntent}
       aria-busy={isSwitching || undefined}
       aria-current={isActive ? 'page' : undefined}
       aria-describedby={descriptionId}
@@ -847,6 +901,72 @@ function ProjectSessionRow({
           {childCount}
         </Badge>
       )}
+
+      {/* Spawned-by · source (Slack/Telegram/email/schedule/webhook) · shared,
+          and whatever markers get added here later. These are ambient state,
+          readable at rest; the `⋯` is the action. They occupy the SAME slot,
+          so hovering the row (or leaving its menu open) hands the slot to the
+          trigger and hides the strip.
+
+          Inside the link, not after it. The link is the hover card's trigger,
+          and HoverCard exports no `Anchor`, so the card positions against the
+          link's right edge. As a sibling, the strip shortened the link by its
+          own width plus the row's `gap-2`: a Slack or shared session's card
+          opened 24-56px inside the sidebar while a plain chat session's card
+          cleared it. In here, every row's link ends at the row's `px-2` edge.
+
+          Hidden with `opacity-0`, never `hidden`/`w-0`: the strip stays in
+          flow at its natural width, so the title's truncation point is fixed
+          and the text cannot reflow as the pointer crosses the row. It goes
+          `pointer-events-none` at the same time — an invisible icon must not
+          swallow a click meant for the trigger above it.
+
+          The trade: those icons' tooltips are unreachable, because reaching
+          an icon means hovering the row, which hides it. Accepted — they are
+          markers to be glanced at, not controls.
+
+          No transition, matching the trigger: the `⋯` appears instantly, and
+          a fade would leave both drawn on top of each other mid-cross. */}
+      {hasIndicators && (
+        <div
+          className={cn(
+            'flex shrink-0 items-center gap-0 transition-none',
+            'max-md:hidden [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden',
+            'group-hover/session-list:pointer-events-none group-hover/session-list:opacity-0',
+            'group-has-data-[state=open]/session-list:pointer-events-none group-has-data-[state=open]/session-list:opacity-0',
+          )}
+          data-session-indicators="true"
+        >
+          {showSpawnedBy && spawnedBy && (
+            <Hint
+              side="top"
+              label={tI18nComplete('text4d67694a7607', { value0: spawnedBy.slice(0, 8) })}
+            >
+              <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
+                <SpawnedBy className="size-3" />
+              </span>
+            </Hint>
+          )}
+          {SourceIcon && (
+            <span
+              className="flex size-4 shrink-0 items-center justify-center"
+              data-session-source="true"
+            >
+              <Hint
+                side="top"
+                label={
+                  source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
+                }
+              >
+                <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+                  <SourceIcon className="size-3" />
+                </span>
+              </Hint>
+            </span>
+          )}
+          <SessionSharedIcon session={session} />
+        </div>
+      )}
     </HoverPrefetchLink>
   );
 
@@ -882,8 +1002,6 @@ function ProjectSessionRow({
             source={source}
             changeRequests={changeRequests}
             projectId={session.project_id}
-            reviewEnabled={reviewEnabled}
-            onOpenChangeRequest={onOpenChangeRequest}
           >
             {sessionLink}
           </SessionBriefHoverCard>
@@ -899,67 +1017,8 @@ function ProjectSessionRow({
           changeRequests={changeRequests}
         />
 
-        {/* Spawned-by · source (Slack/Telegram/email/schedule/webhook) · shared,
-            and whatever markers get added here later. These are ambient state,
-            readable at rest; the `⋯` is the action. They occupy the SAME slot,
-            so hovering the row (or leaving its menu open) hands the slot to the
-            trigger and hides the strip.
-
-            Hidden with `opacity-0`, never `hidden`/`w-0`: the strip stays in
-            flow at its natural width, so the title's truncation point is fixed
-            and the text cannot reflow as the pointer crosses the row. It goes
-            `pointer-events-none` at the same time — an invisible icon must not
-            swallow a click meant for the trigger underneath it.
-
-            The trade: those icons' tooltips are unreachable, because reaching
-            an icon means hovering the row, which hides it. Accepted — they are
-            markers to be glanced at, not controls.
-
-            No transition, matching the trigger: the `⋯` appears instantly, and
-            a fade would leave both drawn on top of each other mid-cross. */}
-        {hasIndicators && (
-          <div
-            className={cn(
-              'flex shrink-0 items-center gap-0 transition-none',
-              'max-md:hidden [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden',
-              'group-hover/session-list:pointer-events-none group-hover/session-list:opacity-0',
-              'group-has-data-[state=open]/session-list:pointer-events-none group-has-data-[state=open]/session-list:opacity-0',
-            )}
-            data-session-indicators="true"
-          >
-            {showSpawnedBy && spawnedBy && (
-              <Hint
-                side="top"
-                label={tI18nComplete('text4d67694a7607', { value0: spawnedBy.slice(0, 8) })}
-              >
-                <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
-                  <SpawnedBy className="size-3" />
-                </span>
-              </Hint>
-            )}
-            {SourceIcon && (
-              <span
-                className="flex size-4 shrink-0 items-center justify-center"
-                data-session-source="true"
-              >
-                <Hint
-                  side="top"
-                  label={
-                    source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
-                  }
-                >
-                  <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
-                    <SourceIcon className="size-3" />
-                  </span>
-                </Hint>
-              </span>
-            )}
-            <SessionSharedIcon session={session} />
-          </div>
-        )}
-
-        {/* Out of flow on purpose. This trigger is a sibling of the link and of
-            the indicator strip, absolutely positioned against the row itself —
+        {/* Out of flow on purpose. This trigger is a sibling of the link (which
+            holds the indicator strip), absolutely positioned against the row —
             it reserves NO width, so the title measures against the full row and
             truncates only at the real edge. It used to sit inside a `relative`
             wrapper at the end of the indicator strip; that wrapper was still a
@@ -1053,6 +1112,30 @@ function ProjectSessionRow({
   );
 }
 
+// Horizontal reach of a sub-agent connector's elbow, shared with the row it
+// points at (see `SubAgentConnector`). The row is given this exact amount as
+// its own `margin-left`, so its box — including its active/hover fill —
+// starts flush where the curve ends, instead of starting at the trunk and
+// painting over the curve that was supposed to lead into it.
+const SUB_AGENT_CONNECTOR_RUN = 'calc(var(--spacing) * 3.5)';
+
+/**
+ * Rounded elbow branching off the shared trunk span (drawn once by the
+ * caller, spanning the whole block) into one child row. Always meets the row
+ * at exactly half of the marker row's `h-8`, so it stays correct whether or
+ * not the child itself renders anything beneath that row (e.g. its own
+ * active sub-sessions nested one level deeper).
+ */
+function SubAgentConnector() {
+  return (
+    <span
+      aria-hidden
+      className="border-border pointer-events-none absolute top-0 left-0 h-4 rounded-bl-md border-b-2 border-l-2"
+      style={{ width: SUB_AGENT_CONNECTOR_RUN }}
+    />
+  );
+}
+
 function ProjectSubsessionRow({
   title,
   href,
@@ -1078,7 +1161,6 @@ function ProjectSubsessionRow({
           isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
         )}
       >
-        <span className="bg-muted-foreground/40 h-1 w-1 shrink-0 rounded-full" />
         <span title={title} className={cn('flex-1 truncate', isActive && 'font-medium')}>
           {title}
         </span>

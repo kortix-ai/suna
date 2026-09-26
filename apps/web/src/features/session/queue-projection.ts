@@ -1,134 +1,198 @@
-import type { SessionPrompt } from '@kortix/sdk';
+import type { QueuedDraft } from '@/stores/queued-draft-store';
+import type { RemovedSessionPrompt, SessionPrompt } from '@kortix/sdk';
 import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
+import type { AttachedFile } from './composer/types';
+import {
+  parseAgentMentionReferences,
+  parseFileMentionReferences,
+  parseFileReferences,
+  parseSessionReferences,
+  stripReplyContexts,
+} from './message-parsing';
 
 /**
- * What the transcript's queued bubbles (`turn/queued-prompt-bubbles.tsx`)
- * render, from the ONE thing that holds a pending message.
+ * What the queued list above the composer (`composer/queued-prompt-list.tsx`)
+ * renders, from the ONE thing that holds a pending message.
  *
  * The server inbox (`GET .../prompts`) is the queue: durable, shared across
- * tabs and devices, ordered and admitted by the control plane. Every prompt
- * goes there.
+ * tabs and devices, ordered and admitted by the control plane. Composer entries
+ * stay here until admitted. Transcript entries are drawn in the conversation.
  *
- * This function used to merge that list with a second, browser-local one, and
- * every row carried its ORIGIN so each action could address the store that
- * actually held it. The browser store is gone — with it the localStorage blob a
- * closed tab lost, the drain that guessed at turn boundaries from a debounced
- * `isBusy`, and the two-lane ordering problem that needed a `serverPromptPending`
- * gate to stop both lanes firing at the same boundary. What is left is a
- * projection of one list, which is why there is no `source` and no `localIds`.
+ * `drafts` are this tab's own queued sends (`queued-draft-store.ts`). They add
+ * the text as typed, the original files, and a row for the upload window before
+ * the inbox has one. They never add a row the inbox has already delivered.
  */
 
+/**
+ * Is this row the session's FIRST prompt? `startSessionWithPrompt` mints
+ * `start_…`; the API's `create.pending_prompt` mints `pending:<session>`
+ * (`apps/api/.../pending-prompt.ts`). That prompt is the turn about to run, and
+ * the transcript draws it (`OptimisticTurn`, synthetic turns) — never the list.
+ */
+export function isFirstPromptRow(prompt: Pick<SessionPrompt, 'client_message_id'>): boolean {
+  const id = prompt.client_message_id ?? '';
+  return id.startsWith('start_') || id.startsWith('pending:');
+}
+
+/**
+ * - `sending`: this tab's send, not yet confirmed by the server. No server id,
+ *   so nothing can be done to it yet.
+ * - `queued`: waiting for its turn (held rows included — see `heldCount`).
+ * - `delivering`: handed to the runtime; its turn is starting. The server
+ *   refuses removal.
+ * - `failed`: delivery gave up; retry or remove.
+ */
+export type QueueRowState = 'sending' | 'queued' | 'delivering' | 'failed';
+
 export interface QueueRow {
+  /** The inbox `prompt_id`, or `draft:<clientMessageId>` before the POST. */
   id: string;
+  clientMessageId: string;
   text: string;
+  attachmentCount: number;
+  state: QueueRowState;
   lastError?: string;
-  /** The row's files, by name and type only — see `projectQueueRows`. */
-  attachments?: ReadonlyArray<{ filename: string; mime: string }>;
-  /** `uploading` while the row is undelivered, `failed` with the row's error. */
-  uploadStatus?: { state: 'uploading' } | { state: 'failed'; message: string };
+  /** The server can still remove this prompt. */
+  removable: boolean;
+  /** Up takes it back into the composer without losing anything. */
+  takeBackEligible: boolean;
 }
 
 export interface QueueProjection {
-  /** Every row still waiting to be answered, in delivery order — including the
-   *  ones already on the wire. */
-  queued: QueueRow[];
-  /** Rows that gave up and offer a retry. */
-  failed: QueueRow[];
-  /** Which of `queued` are on the wire: rendered, but not editable, not
-   *  removable, not reorderable. */
-  inFlightIds: string[];
-  /** The queue is held by a stop — see `holdSessionPrompts`. */
-  held: boolean;
+  /** In delivery order: the server's rows first, then this tab's unsent drafts. */
+  rows: QueueRow[];
+  /** Rows the Stop hold is pausing — counted even when the row is on screen in
+   *  the transcript, so Resume is reachable whenever the server holds anything. */
+  heldCount: number;
+}
+
+/** A prompt's visible words: the transport blocks the send path appends
+ *  (reply context, upload refs, mention refs) stripped back out. */
+export function cleanPromptText(text: string): { text: string; fileCount: number } {
+  const withoutReply = stripReplyContexts(text);
+  const uploads = parseFileReferences(withoutReply);
+  const withoutSessions = parseSessionReferences(uploads.cleanText).cleanText;
+  const withoutFiles = parseFileMentionReferences(withoutSessions).cleanText;
+  const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
+  return { text: withoutAgents.trim(), fileCount: uploads.files.length };
+}
+
+function onScreen(prompt: SessionPrompt, transcriptIds: ReadonlySet<string> | undefined): boolean {
+  if (!transcriptIds) return false;
+  // ANY of the prompt's ids counts. `message_id` moves to the server's
+  // re-minted id when the drain places the prompt; `wire_message_id` is the id
+  // this tab painted; `client_message_id` is the only one that survives both a
+  // re-mint and a reload.
+  return Boolean(
+    (prompt.message_id && transcriptIds.has(prompt.message_id)) ||
+    (prompt.wire_message_id && transcriptIds.has(prompt.wire_message_id)) ||
+    (prompt.client_message_id && transcriptIds.has(prompt.client_message_id)),
+  );
 }
 
 export function projectQueueRows(input: {
-  prompts: SessionPrompt[];
-  /**
-   * Every message id the transcript is already showing — the optimistic bubble
-   * included. A row whose message is on screen as a message is not a queue row.
-   *
-   * Optional so a caller with no transcript (tests, the strip in isolation)
-   * gets the raw projection.
-   */
+  prompts: readonly SessionPrompt[];
+  /** Every message id the transcript is showing. Optional for callers with no
+   *  transcript (tests). */
   transcriptMessageIds?: ReadonlySet<string>;
+  drafts?: readonly QueuedDraft[];
 }): QueueProjection {
-  const queued: QueueRow[] = [];
-  const failed: QueueRow[] = [];
-  const inFlightIds: string[] = [];
-  let held = false;
+  const draftsById = new Map((input.drafts ?? []).map((d) => [d.clientMessageId, d] as const));
+  const rows: QueueRow[] = [];
+  const listed = new Set<string>();
+  let heldCount = 0;
 
   for (const prompt of input.prompts) {
-    const attachments = prompt.attachments ?? [];
-    const row: QueueRow = {
+    if (prompt.client_message_id) listed.add(prompt.client_message_id);
+    if (prompt.reason === 'held' && prompt.state !== 'failed') heldCount += 1;
+    if (isFirstPromptRow(prompt) || prompt.placement === 'transcript') continue;
+    if (onScreen(prompt, input.transcriptMessageIds)) continue;
+
+    const draft = prompt.client_message_id ? draftsById.get(prompt.client_message_id) : undefined;
+    const cleaned = cleanPromptText(prompt.full_text ?? prompt.text);
+    const state: QueueRowState =
+      prompt.state === 'failed'
+        ? 'failed'
+        : prompt.state === 'delivering'
+          ? 'delivering'
+          : isOptimisticSessionPrompt(prompt)
+            ? 'sending'
+            : 'queued';
+    const attachmentCount = draft
+      ? draft.files.length
+      : Math.max(prompt.attachments?.length ?? 0, cleaned.fileCount);
+
+    rows.push({
       id: prompt.prompt_id,
-      text: prompt.text,
-      ...(prompt.last_error ? { lastError: prompt.last_error } : {}),
-      // The row's files, by name — the only thing a bubble can draw for bytes
-      // that are still travelling to the box. On a WARM box the transcript
-      // component mounts within seconds and this list is what stands in for
-      // the message until the runtime echoes it; drawn text-only, a send of
-      // three files read as a send of none (2026-09-04, browser-measured).
-      ...(attachments.length > 0
-        ? {
-            attachments,
-            // `state`, never `last_error` alone — a queued row can carry a
-            // stale error from an attempt the server is about to retry.
-            uploadStatus:
-              prompt.state === 'failed'
-                ? ({ state: 'failed', message: prompt.last_error ?? 'Upload failed' } as const)
-                : ({ state: 'uploading' } as const),
-          }
-        : {}),
-    };
-    if (prompt.reason === 'held') held = true;
-    if (prompt.state === 'failed') {
-      failed.push(row);
-      continue;
-    }
-    // ALREADY ON SCREEN AS A MESSAGE. Every prompt this tab sends is painted
-    // into the transcript on Enter under its wire id (and the store aliases a
-    // re-minted echo back to it), and a foreign row lands there when the
-    // runtime echoes it. The transcript wins; this list is for what is NOT in
-    // it yet. A HELD row in the transcript is no exception any more: its
-    // controls live in the bubble's own meta row (`QueuedPromptControls`).
-    // ANY of the prompt's ids counts: `message_id` moves to the server's
-    // re-minted id the moment the drain places the prompt — before the
-    // runtime echoes it and before the store can alias the echo back — while
-    // the bubble this tab painted still carries `wire_message_id`. Matching
-    // only `message_id` drew the row beside its own bubble for that window.
-    //
-    // `client_message_id` is the THIRD, and it is the only one that survives
-    // BOTH a re-mint and a reload: the two wire ids can be re-minted out from
-    // under a stuck row, and a hard refresh drops the store's in-memory
-    // `message_id`->bubble alias. When a wire-id divergence leaves the answer
-    // on screen under an id the row no longer reports, the stable client id is
-    // what still hides the row — so the "Queued" badge cannot survive a
-    // refresh with its reply already visible. Effective only where the
-    // transcript id set carries the client id.
-    if (
-      (prompt.message_id && input.transcriptMessageIds?.has(prompt.message_id)) ||
-      (prompt.wire_message_id && input.transcriptMessageIds?.has(prompt.wire_message_id)) ||
-      (prompt.client_message_id && input.transcriptMessageIds?.has(prompt.client_message_id))
-    ) {
-      continue;
-    }
-    // A DELIVERING row is a queue row too. The server forwards a prompt typed
-    // mid-turn within seconds, and it then reads `delivering` for the whole of
-    // the turn in front of it — minutes, and the p99 turn is over an hour.
-    // Nothing paints it into the transcript in the meantime
-    // (`willWaitInInbox`), so dropping it here is the user's message vanishing
-    // from the screen. It is listed as in-flight so the row renders INERT:
-    // every action the strip offers is refused by the server for a row it has
-    // already handed to OpenCode.
-    if (prompt.state === 'delivering') inFlightIds.push(prompt.prompt_id);
-    // This tab's own echo, painted on Enter before `POST .../prompts` returned:
-    // there is no server id to remove or promote yet, so it renders inert for
-    // the round-trip and becomes an ordinary row on the response.
-    if (isOptimisticSessionPrompt(prompt)) inFlightIds.push(prompt.prompt_id);
-    // `waiting` is WHY a row has not gone out, not a lane of its own — it
-    // renders beside `queued`, with the hold reported separately.
-    queued.push(row);
+      clientMessageId: prompt.client_message_id,
+      text: draft?.text ?? cleaned.text,
+      attachmentCount,
+      state,
+      ...(state === 'failed' && prompt.last_error ? { lastError: prompt.last_error } : {}),
+      removable: state === 'queued' || state === 'failed',
+      // A row from another tab or from before a reload comes back only when
+      // its text is all there is: its files live as sandbox paths the composer
+      // cannot re-attach.
+      takeBackEligible: state === 'queued' && (Boolean(draft) || attachmentCount === 0),
+    });
   }
 
-  return { queued, failed, inFlightIds, held };
+  // Sends still uploading: the inbox has no row for them yet.
+  for (const draft of input.drafts ?? []) {
+    if (draft.placement === 'transcript' || draft.posted || listed.has(draft.clientMessageId))
+      continue;
+    rows.push({
+      id: `draft:${draft.clientMessageId}`,
+      clientMessageId: draft.clientMessageId,
+      text: draft.text,
+      attachmentCount: draft.files.length,
+      state: 'sending',
+      removable: false,
+      takeBackEligible: false,
+    });
+  }
+
+  return { rows, heldCount };
+}
+
+/**
+ * What Up puts back into the composer, from the prompts the DELETE removed (in
+ * queue order).
+ *
+ * This tab's own drafts come back exactly as typed, with their original files.
+ * A removed prompt with no draft comes back as its visible text only when that
+ * text is the whole prompt. Anything carrying files is returned in `requeue`
+ * instead: the caller re-POSTs it, so a take-back can never silently drop an
+ * attachment.
+ */
+export function composeTakeBack(input: {
+  removed: readonly RemovedSessionPrompt[];
+  drafts: readonly QueuedDraft[];
+}): { text: string; files: AttachedFile[]; requeue: RemovedSessionPrompt[] } {
+  const draftsById = new Map(input.drafts.map((d) => [d.clientMessageId, d] as const));
+  const texts: string[] = [];
+  const files: AttachedFile[] = [];
+  const requeue: RemovedSessionPrompt[] = [];
+
+  for (const removed of input.removed) {
+    const draft = draftsById.get(removed.client_message_id);
+    if (draft) {
+      if (draft.text) texts.push(draft.text);
+      files.push(...draft.files);
+      continue;
+    }
+    const raw = removed.parts
+      .filter((part) => part.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text as string)
+      .join('\n');
+    const cleaned = cleanPromptText(raw);
+    const fileParts = removed.parts.filter((part) => part.type === 'file');
+    if (cleaned.fileCount > 0 || fileParts.length > 0) {
+      requeue.push(removed);
+      continue;
+    }
+    if (cleaned.text) texts.push(cleaned.text);
+  }
+
+  return { text: texts.join('\n'), files, requeue };
 }

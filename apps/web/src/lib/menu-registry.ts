@@ -52,7 +52,6 @@ import {
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
   PaintBrushIcon as PaintBrush,
-  SidebarSimpleIcon as PanelLeftClose,
   PlugIcon as Plug,
   PlusIcon as Plus,
   QuestionIcon as QuestionMark,
@@ -69,6 +68,7 @@ import {
   ImagesSquareIcon as WallpaperIcon,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
+import { SidebarToggle as PanelLeftClose } from '@/features/icon/icons/sidebar-toggle';
 
 // ============================================================================
 // Types
@@ -409,13 +409,17 @@ export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: 'nav-projects',
-    // "Switch workspace", not "Projects". The product retired the noun
-    // (`features/workspace/workspace-vocabulary.test.ts`) everywhere except
-    // here, so the palette was the one surface still answering a question the
-    // rest of the app had stopped asking — and a bare noun does not say the
-    // row DOES anything, which is why it read as a list rather than as the
-    // switcher it opens.
-    label: 'Switch workspace',
+    // "Switch project", not "Projects": a bare noun does not say the row DOES
+    // anything, which is why it read as a list rather than as the switcher it
+    // opens. The verb stays; only the noun changed.
+    //
+    // It said "Switch workspace" until the product settled on ONE noun
+    // (`features/workspace/workspace-vocabulary.test.ts`). "Project" won
+    // because it is the load-bearing one — the URL (`/projects/<id>`), the API
+    // (`/v1/projects`), the CLI (`kortix projects`), `kortix.yaml` and the DB
+    // all say it, and renaming those would break a published SDK's public
+    // surface and every existing link.
+    label: 'Switch project',
     icon: FolderGit2,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -697,7 +701,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-members',
-    label: 'Workspace members',
+    label: 'Project members',
     icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -778,9 +782,6 @@ export const menuRegistry: MenuItemDef[] = [
     // Its own capability tab since 2026-09-02, beside Agents and Triggers.
     href: '/projects/{projectId}/customize/review',
     requiresProject: true,
-    // Same gate the tab carries (`visibleCapabilityTabs` hides Review while
-    // `review_center` is off), so the row cannot outlive the page.
-    requiresFlag: 'review_center',
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },
   {
@@ -1046,11 +1047,8 @@ export const menuRegistry: MenuItemDef[] = [
   //
   // `account-referrals` is gone for a different reason: `referrals` is not a
   // member of `SettingsTab` at all, so it fell through to `general` — a
-  // mislabelled destination. Its only live surface, `ReferralModal`, mounts
-  // inside `UserMenu` -> `AppHeader`, i.e. only under `/accounts/**`, and
-  // nothing calls `useReferralDialog().openDialog()`. Pointing a palette
-  // entry at it would reproduce the "store with no renderer" defect this
-  // change exists to remove.
+  // mislabelled destination. The API has no referral routes, and the web
+  // referral modal was removed with them.
   // ──────────────────────────────────────────────────────────────────────────
   // `pref-general` is gone. It declared `settingsTab: 'general'` — the project
   // WORKSPACE tab — which is a `?section=` on `/projects/[id]/customize/settings` now, not

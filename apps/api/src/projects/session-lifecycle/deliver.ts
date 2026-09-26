@@ -15,7 +15,7 @@ import type { SessionDeliveryOutcome } from './types';
 // construction — `apps/api/src/sandbox-proxy/prompt-dedupe.ts`'s claim,
 // reached through the SAME `forwardToSandbox` call `send` makes, absorbs them.
 // A 'pending' RETURN from this function is a different case: the CALLER
-// (`executeQueuedContinue` in `engine.ts`) may re-invoke this whole loop later,
+// (`executeQueuedContinue` in `queued-continue.ts`) may re-invoke this whole loop later,
 // from a fresh queued-command drain. That re-invocation's no-blind-repost
 // guarantee is documented on `executeQueuedContinue`, not here — this file has
 // no knowledge of the caller's retry cadence.
@@ -23,6 +23,27 @@ const DELIVER_DEADLINE_MS = 45_000;
 const DELIVER_RETRY_INTERVAL_MS = 1_500;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * What one hand-off attempt proved.
+ *
+ *  `true`          — the runtime holds the prompt.
+ *  `false`         — the daemon ANSWERED and refused. It is reachable, so
+ *                    `reopen` can heal it (the rotated opencode session 404).
+ *  `'unreachable'` — nobody answered FOR the runtime: the proxy returned
+ *                    502/503/504, or the fetch threw/timed out. Nothing about
+ *                    the prompt is wrong and re-opening the session cannot fix
+ *                    it — the path to the box is down.
+ *
+ * The third case used to be folded into `false`, so a spent deadline always
+ * reported 'pending', which `executeQueuedContinue` retries on the 5-attempt
+ * dead-letter budget: ~5 minutes, then the user's message is destroyed. Prod
+ * 2026-09-15/16, a Platinum control-plane fault that refused every POST while
+ * GETs served normally, dead-lettered queued prompts at ~48/hour under
+ * "Not sent — delivery outcome pending". A down path to the box is exactly
+ * what the `unreachable` ladder exists for.
+ */
+export type SendOutcome = boolean | 'unreachable';
 
 export interface DeliveryTarget {
   stage: string;
@@ -38,7 +59,7 @@ export interface DeliveryTarget {
 export async function deliverWithRetry(input: {
   opened: DeliveryTarget;
   reopen: () => Promise<DeliveryTarget | null>;
-  send: (externalId: string, opencodeSessionId: string) => Promise<boolean>;
+  send: (externalId: string, opencodeSessionId: string) => Promise<SendOutcome>;
   sessionId?: string;
   now?: () => number;
   sleepFn?: (ms: number) => Promise<void>;
@@ -52,18 +73,27 @@ export async function deliverWithRetry(input: {
 
   let current = input.opened;
   const deadline = now() + deadlineMs;
+  // What the most recent attempt proved. The deadline below is reached
+  // immediately after an attempt, so the last verdict is the freshest evidence
+  // of why the hand-off is not landing.
+  let lastOutcome: SendOutcome = false;
   for (;;) {
     if (current.externalId && current.opencodeSessionId) {
-      if (await input.send(current.externalId, current.opencodeSessionId)) return 'delivered';
+      lastOutcome = await input.send(current.externalId, current.opencodeSessionId);
+      if (lastOutcome === true) return 'delivered';
     }
     if (now() >= deadline) {
+      const unreachable = lastOutcome === 'unreachable';
       console.warn('[session-lifecycle] could not deliver prompt before deadline', {
         sessionId: input.sessionId,
         stage: current.stage,
         hasExternalId: !!current.externalId,
         hasOpencodeSession: !!current.opencodeSessionId,
+        // The two answers differ by minutes of patience for the user's
+        // message — see SendOutcome.
+        outcome: unreachable ? 'unreachable' : 'pending',
       });
-      return 'pending';
+      return unreachable ? 'unreachable' : 'pending';
     }
     await sleepFn(intervalMs);
     const healed = await input.reopen();

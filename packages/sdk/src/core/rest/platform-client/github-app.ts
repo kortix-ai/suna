@@ -29,6 +29,35 @@ export interface GitHubAppStatus {
    *  flow always sets both together, but `setGitHubAppFromExisting` can leave
    *  this false if an operator pastes App creds without OAuth credentials. */
   oauth_configured: boolean;
+  /**
+   * Which source owns the App IDENTITY (appId, private key, OAuth client,
+   * state secret, webhook secret). `'env'` = the deployment's
+   * `KORTIX_GITHUB_APP_*` / `GITHUB_APP_*` variables. `'db'` = the
+   * `github_app_identity` platform setting written by the in-app setup flow.
+   * `'none'` = no complete identity. The two sources are never mixed: a
+   * complete env identity wins whole, otherwise a complete db row is used
+   * whole.
+   */
+  identity_source: 'env' | 'db' | 'none';
+  /**
+   * Which source owns the instance GIT BACKEND (the owner plus either an
+   * installation id or a token). Resolved all-or-nothing per source, so a
+   * stored owner can never pair with an env token.
+   */
+  backend_source: 'env' | 'db' | 'none';
+  /**
+   * Whether this instance's identity and backend may be changed from the UI.
+   * False when either half is env-managed; every mutation route then answers
+   * `409 instance_identity_is_env_managed`.
+   */
+  mutable: boolean;
+  /**
+   * The App's install URL, built from the slug derived from `GET /app`.
+   * Null when no slug could be derived or configured.
+   */
+  install_url: string | null;
+  /** The env variable names that own this instance when `mutable` is false. */
+  env_owned_by: string[];
 }
 
 /** Whether a GitHub App is configured for this platform, and (if so) which one. */

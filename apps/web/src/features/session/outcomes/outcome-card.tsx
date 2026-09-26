@@ -60,7 +60,10 @@ export const OutcomeCard = memo(function OutcomeCard({
   index,
   onOpen,
   icon,
+  media,
+  titleClassName,
   actionVariant = 'outline',
+  pending = false,
   className,
 }: {
   outcome: Outcome;
@@ -77,6 +80,19 @@ export const OutcomeCard = memo(function OutcomeCard({
    */
   icon?: Icon;
   /**
+   * Replaces the tinted glyph tile entirely, for a row whose subject has its own
+   * picture. `setup-links/setup-link-button.tsx` passes the Kortix ↔ app
+   * handshake (two logos), which a single `Icon` cannot draw. Takes precedence
+   * over `icon`.
+   */
+  media?: React.ReactNode;
+  /**
+   * Extra classes on the title text. The default is one truncated line; the
+   * connect card lets its title wrap to two lines on a narrow card, where the
+   * app and project names are the whole point of the row.
+   */
+  titleClassName?: string;
+  /**
    * The action button's variant. Defaults to `outline`, which is right for the
    * transcript: an outcome row is a RECORD, and a filled button on every one of
    * them would turn a scannable list into a wall of calls to action.
@@ -87,6 +103,15 @@ export const OutcomeCard = memo(function OutcomeCard({
    * rather than a record of something already done.
    */
   actionVariant?: React.ComponentProps<typeof Button>['variant'];
+  /**
+   * The row exists but its action does not yet. The button renders disabled
+   * and the row reports `aria-busy`, in the same footprint as the finished
+   * row, so nothing moves when the action arrives.
+   *
+   * `setup-links/setup-link-button.tsx` sets it while the setup link's URL is
+   * still streaming: a click then would open a modal for a partial token.
+   */
+  pending?: boolean;
   className?: string;
 }) {
   const Glyph = icon ?? OUTCOME_ICON[outcome.kind];
@@ -95,7 +120,7 @@ export const OutcomeCard = memo(function OutcomeCard({
   // is typed `Url`, which does not accept `undefined`, and TypeScript cannot
   // carry a `!!x` check on one variable across to another. Holding the value
   // itself is what makes the branch below type-safe.
-  const linkHref = outcome.action.intent === 'link' ? outcome.action.href : undefined;
+  const linkHref = outcome.action.intent === 'link' && !pending ? outcome.action.href : undefined;
 
   return (
     <Item
@@ -103,6 +128,7 @@ export const OutcomeCard = memo(function OutcomeCard({
       size="sm"
       data-testid={`outcome-card-${outcome.kind}`}
       data-outcome-id={outcome.id}
+      aria-busy={pending || undefined}
       style={{ animationDelay: `${Math.min(index, STAGGER_CAP) * STAGGER_MS}ms` }}
       className={cn('border-border gap-3 border py-2.5 transition-colors', className)}
     >
@@ -124,15 +150,17 @@ export const OutcomeCard = memo(function OutcomeCard({
           'group-has-[[data-slot=item-description]]/item:self-center',
         )}
       >
-        <span
-          className={cn(
-            'flex size-9 shrink-0 items-center justify-center rounded-sm ring-1',
-            tint.ring,
-            tint.bg,
-          )}
-        >
-          <Glyph weight="fill" className={cn('size-5', tint.fg)} />
-        </span>
+        {media ?? (
+          <span
+            className={cn(
+              'flex size-9 shrink-0 items-center justify-center rounded-sm ring-1',
+              tint.ring,
+              tint.bg,
+            )}
+          >
+            <Glyph weight="fill" className={cn('size-5', tint.fg)} />
+          </span>
+        )}
       </ItemMedia>
 
       {/*
@@ -150,7 +178,9 @@ export const OutcomeCard = memo(function OutcomeCard({
       */}
       <ItemContent className="min-w-0 gap-0.5">
         <ItemTitle className="w-full">
-          <span className="truncate">{truncateOutcomeTitle(outcome.title)}</span>
+          <span className={cn('truncate', titleClassName)}>
+            {truncateOutcomeTitle(outcome.title)}
+          </span>
         </ItemTitle>
         <ItemDescription className="truncate text-xs">{outcomeMetaLine(outcome)}</ItemDescription>
       </ItemContent>
@@ -167,6 +197,7 @@ export const OutcomeCard = memo(function OutcomeCard({
             variant={actionVariant}
             size="sm"
             className="active:scale-[0.96]"
+            disabled={pending}
             onClick={() => onOpen(outcome)}
           >
             {outcome.action.label}

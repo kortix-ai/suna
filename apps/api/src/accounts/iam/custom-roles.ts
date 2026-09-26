@@ -32,7 +32,8 @@ import {
   invalidateIamCacheForRole,
 } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
+import { auditIam, isUniqueViolation, requireEntitlement } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 import { listAgentServiceAccounts, ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import { loadConfigWithFiles } from '../../projects/lib/project-resources';
 import { ACTION_CATALOG_WIRE, validateActions } from './role-presets';
@@ -277,7 +278,7 @@ iamRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const key = typeof body.key === 'string' ? body.key.trim() : '';
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!/^[a-z0-9_]{2,64}$/.test(key)) {
@@ -339,7 +340,7 @@ iamRouter.openapi(
     const role = await loadCustomRole(accountId, roleId);
     if (!role) return c.json({ error: 'role not found' }, 404);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if (typeof body.name === 'string') {
       if (!body.name.trim() || body.name.length > 128) return c.json({ error: 'invalid name' }, 400);
@@ -450,7 +451,7 @@ iamRouter.openapi(
     const role = await loadCustomRole(accountId, roleId);
     if (!role) return c.json({ error: 'role not found' }, 404);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const v = await validateActions(body.actions ?? [], role.scopeType === 'account' ? 'account' : 'project');
     if (!v.ok) return c.json({ error: v.error }, 400);
 
@@ -625,7 +626,7 @@ iamRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const parsed = await parsePolicyInput(accountId, body);
     if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status);
 
@@ -717,7 +718,7 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_DELETE);
     // No entitlement gate: bulk policy revocation is cleanup, always allowed.
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const ids = Array.isArray(body.policy_ids) ? body.policy_ids.filter((x: unknown): x is string => typeof x === 'string') : [];
     if (ids.length === 0) return c.json({ deleted: 0 });
     const writer = await actorOf(c, accountId);
@@ -755,7 +756,7 @@ iamRouter.openapi(
     const existing = await resolveBindingId(accountId, policyId);
     if (!existing) return c.json({ error: 'policy not found' }, 404);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     // Re-validate the scope/role/effect/expiry using the same rules as create,
     // re-using the existing principal (PATCH never moves a policy to a new
     // principal — delete + create for that).
@@ -809,7 +810,7 @@ iamRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const entries = Array.isArray(body.policies) ? (body.policies as Array<Record<string, unknown>>) : [];
     // Resolve role keys → ids once (custom roles only; built-ins aren't bindable).
     const customRoles = await db.select().from(iamRoles).where(eq(iamRoles.accountId, accountId));

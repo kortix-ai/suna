@@ -1,7 +1,8 @@
 'use client';
 
-import { CreditCardIcon, KeyIcon } from '@phosphor-icons/react';
+import { CreditCardIcon, ImageBrokenIcon, KeyIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
+import { useState, type ReactNode } from 'react';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
@@ -107,63 +108,103 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
   const t = useTranslations('sessionUi.modelGate');
   const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
     useModelConnectionGate(EMPTY_MODELS);
-  const reduceMotion = useReducedMotion();
 
   return (
     <>
       {modal}
-      <AnimatePresence initial={false}>
-        {show && (
-          <m.div
-            key="model-connection-bar"
-            initial={reduceMotion ? { opacity: 0 } : { height: 0 }}
-            animate={
-              reduceMotion
-                ? { opacity: 1, transition: { duration: 0.2 } }
-                : { height: 'auto', transition: BAR_ENTER }
-            }
-            exit={
-              reduceMotion
-                ? { opacity: 0, transition: { duration: 0.15 } }
-                : { height: 0, transition: BAR_EXIT }
-            }
-            className="relative z-0 -mt-4 overflow-hidden"
-          >
-            <m.div
-              initial={reduceMotion ? false : { y: '-100%' }}
-              animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
-              exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
-              // `border-t-0`: the card's own bottom border is the seam. Drawing
-              // one here too would put a second hairline under a card that
-              // already has one. `rounded-b-xl` matches the card's radius so
-              // the two share one silhouette; the top corners are square
-              // because they live behind the card and are never seen.
-              className="border-border bg-muted rounded-b-xl border border-t-0 pt-4"
-            >
-              <div className="flex items-center justify-between gap-3 px-3 py-1.5">
-                <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
-                  <KeyIcon className="size-3.5 shrink-0" />
-                  <span className="truncate">
-                    {t('barTitle')}
-                    <span className="hidden sm:inline"> — {t('barDescription')}</span>
-                  </span>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {showUpgradeOption && (
-                    <Button type="button" variant="ghost" size="xs" onClick={openUpgrade}>
-                      <CreditCardIcon className="size-3.5 shrink-0" />
-                      {t('upgrade')}
-                    </Button>
-                  )}
-                  <Button type="button" size="xs" onClick={() => openConnectProvider('providers')}>
-                    {t('connectModel')}
-                  </Button>
-                </div>
-              </div>
-            </m.div>
-          </m.div>
-        )}
-      </AnimatePresence>
+      <ComposerTray show={show} trayKey="model-connection-bar">
+        <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
+          <KeyIcon className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {t('barTitle')}
+            <span className="hidden sm:inline"> — {t('barDescription')}</span>
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {showUpgradeOption && (
+            <Button type="button" variant="ghost" size="xs" onClick={openUpgrade}>
+              <CreditCardIcon className="size-3.5 shrink-0" />
+              {t('upgrade')}
+            </Button>
+          )}
+          <Button type="button" size="xs" onClick={() => openConnectProvider('providers')}>
+            {t('connectModel')}
+          </Button>
+        </div>
+      </ComposerTray>
     </>
+  );
+}
+
+/**
+ * One line under the card when the selected model cannot read an attached image
+ * (`modelRejectingAttachedImages`). Send is refused with the same words. The same
+ * tray as `ModelConnectionBar`; the composer never shows both at once.
+ */
+export function ImagesUnsupportedBar({ modelName }: { modelName: string | null }) {
+  const t = useTranslations('sessionUi.modelGate');
+  // Keeps the last name through the exit animation, which runs after `modelName` clears.
+  const [shownName, setShownName] = useState(modelName);
+  if (modelName && modelName !== shownName) setShownName(modelName);
+
+  return (
+    <ComposerTray show={modelName !== null} trayKey="images-unsupported-bar">
+      <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
+        <ImageBrokenIcon className="size-3.5 shrink-0" />
+        <span className="truncate">
+          {t('imagesUnsupported', { model: shownName ?? '' })}
+          <span className="hidden sm:inline"> — {t('imagesUnsupportedHint')}</span>
+        </span>
+      </div>
+    </ComposerTray>
+  );
+}
+
+/** The tray both strips share. See `ModelConnectionBar` for why it hangs behind the card. */
+function ComposerTray({
+  show,
+  trayKey,
+  children,
+}: {
+  show: boolean;
+  trayKey: string;
+  children: ReactNode;
+}) {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <AnimatePresence initial={false}>
+      {show && (
+        <m.div
+          key={trayKey}
+          initial={reduceMotion ? { opacity: 0 } : { height: 0 }}
+          animate={
+            reduceMotion
+              ? { opacity: 1, transition: { duration: 0.2 } }
+              : { height: 'auto', transition: BAR_ENTER }
+          }
+          exit={
+            reduceMotion
+              ? { opacity: 0, transition: { duration: 0.15 } }
+              : { height: 0, transition: BAR_EXIT }
+          }
+          className="relative z-0 -mt-4 overflow-hidden"
+        >
+          <m.div
+            initial={reduceMotion ? false : { y: '-100%' }}
+            animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
+            exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
+            // `border-t-0`: the card's own bottom border is the seam. Drawing
+            // one here too would put a second hairline under a card that
+            // already has one. `rounded-b-xl` matches the card's radius so
+            // the two share one silhouette; the top corners are square
+            // because they live behind the card and are never seen.
+            className="border-border bg-muted rounded-b-xl border border-t-0 pt-4"
+          >
+            <div className="flex items-center justify-between gap-3 px-3 py-1.5">{children}</div>
+          </m.div>
+        </m.div>
+      )}
+    </AnimatePresence>
   );
 }

@@ -9,6 +9,13 @@ import { TunnelErrorCode, type TunnelCapability } from 'agent-tunnel';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext } from './auth';
+import { readJsonObject } from '../../shared/http-body';
+import { isPlainObject } from '../../shared/json';
+
+const ApprovePermissionRequestBodySchema = z.object({
+  scope: z.record(z.string(), z.any()).optional(),
+  expiresAt: z.string().optional(),
+});
 
 type SSEWriter = (event: string, data: unknown) => void;
 const sseSubscribers = new Map<string, Set<SSEWriter>>();
@@ -148,12 +155,7 @@ export function createPermissionRequestsRouter() {
         params: z.object({ requestId: z.string() }),
         body: {
           content: {
-            'application/json': {
-              schema: z.object({
-                scope: z.record(z.string(), z.any()).optional(),
-                expiresAt: z.string().optional(),
-              }),
-            },
+            'application/json': { schema: ApprovePermissionRequestBodySchema },
           },
         },
       },
@@ -171,7 +173,13 @@ export function createPermissionRequestsRouter() {
     async (c: any) => {
       const { accountId, authorizedAccountIds, ownerClause } = await getTunnelOwnerContext(c);
       const requestId = c.req.param('requestId');
-      const body = await c.req.json().catch(() => ({}));
+      // The route validator runs only for a JSON content-type, so the handler
+      // parses the body with the same schema.
+      const parsed = ApprovePermissionRequestBodySchema.safeParse(await readJsonObject(c));
+      if (!parsed.success) {
+        return c.json({ error: 'scope must be an object and expiresAt a string' }, 400);
+      }
+      const { scope: scopeInput, expiresAt: expiresAtInput } = parsed.data;
       const rateCheck = tunnelRateLimiter.check('permGrant', accountId);
       if (!rateCheck.allowed) {
         return c.json(
@@ -220,9 +228,10 @@ export function createPermissionRequestsRouter() {
         return c.json({ error: `Capability is not enabled: ${request.capability}` }, 409);
       }
 
-      const scope = body.scope || request.requestedScope || {};
+      const storedScope: unknown = request.requestedScope;
+      const scope = scopeInput ?? (isPlainObject(storedScope) ? storedScope : {});
       let sanitizedScope: Record<string, unknown> = {};
-      if (scope && Object.keys(scope).length > 0) {
+      if (Object.keys(scope).length > 0) {
         const scopeResult = validateScopeInput(request.capability, scope);
         if (!scopeResult.valid) {
           return c.json({ error: `Invalid scope: ${scopeResult.error}` }, 400);
@@ -231,8 +240,8 @@ export function createPermissionRequestsRouter() {
       }
 
       let expiresAt: Date | null = null;
-      if (body.expiresAt !== undefined) {
-        expiresAt = new Date(body.expiresAt);
+      if (expiresAtInput !== undefined) {
+        expiresAt = new Date(expiresAtInput);
         if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date()) {
           return c.json({ error: 'expiresAt must be a valid future timestamp' }, 400);
         }
@@ -322,10 +331,15 @@ export function createPermissionRequestsRouter() {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
 
-      await db
+      const [denied] = await db
         .update(tunnelPermissionRequests)
         .set({ status: 'denied', updatedAt: new Date() })
-        .where(eq(tunnelPermissionRequests.requestId, requestId));
+        .where(and(
+          eq(tunnelPermissionRequests.requestId, requestId),
+          eq(tunnelPermissionRequests.status, 'pending'),
+        ))
+        .returning({ requestId: tunnelPermissionRequests.requestId });
+      if (!denied) return c.json({ error: 'Request already resolved' }, 409);
 
       return c.json({ success: true });
     },

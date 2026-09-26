@@ -125,8 +125,9 @@ describe('ApiClient', () => {
   });
 
   test('assertBillingActive throws when inactive', async () => {
-    const c = client(async () => jsonResponse({ active: false, message: 'no subscription' }));
-    await expect(c.assertBillingActive('a1')).rejects.toThrow('no subscription');
+    const c = client(async () => jsonResponse({ active: false, reason: 'insufficient_credits', message: 'no credits' }));
+    const error = await c.assertBillingActive('a1').catch((caught) => caught);
+    expect(error).toMatchObject({ message: 'no credits', reason: 'insufficient_credits' });
   });
 
   test('assertBillingActive resolves when active', async () => {
@@ -154,14 +155,89 @@ describe('ApiClient', () => {
     await expect(c.authenticate('tok')).rejects.toBeInstanceOf(ApiUnavailableError);
   });
 
+  // A control-plane call that is SLOW (no response at all before the per-attempt
+  // budget) must be retried, exactly like one that fails fast with a 5xx.
+  //
+  // It was not: `withRetry` settles a timed-out attempt with a `TimeoutError`,
+  // and `isRetryable` only accepted `ApiUnavailableError`, so `maxAttempts: 3`
+  // was dead code for the one failure mode retries exist for. The un-retried
+  // `TimeoutError` then escaped `authorize()` in simple-handler.ts (the only
+  // un-guarded hook call in the pipeline) and surfaced as an opaque
+  // `503 gateway_error "Gateway unavailable"`.
+  //
+  // Measured on staging 2026-09-16: 2 of 30 identical requests answered
+  // 503 gateway_error at 5.14 s and 5.15 s (the 5 s per-attempt budget), the
+  // other 28 answered 400 provider_disabled in 2.0-3.2 s. That is the
+  // GW-ACCESS-1 release-gate flake (runs 35012251397, 35036053187).
+  test('retries a control-plane call that exceeds the per-attempt timeout', async () => {
+    let calls = 0;
+    const fetchImpl: FetchLike = async () => {
+      calls += 1;
+      // Attempt 1 never answers — a slow API, not a refused connection.
+      if (calls === 1) return new Promise<Response>(() => {});
+      return jsonResponse({ ok: true, principal });
+    };
+    const c = createApiClient({
+      baseUrl: 'https://api.test',
+      token: 'secret',
+      fetchImpl,
+      timeoutMs: 20,
+    });
+    expect(await c.authorize('tok')).toEqual({ ok: true, principal });
+    expect(calls).toBe(2);
+  });
+
+  test('gives up after maxAttempts when every attempt times out', async () => {
+    let calls = 0;
+    const fetchImpl: FetchLike = async () => {
+      calls += 1;
+      return new Promise<Response>(() => {});
+    };
+    const c = createApiClient({
+      baseUrl: 'https://api.test',
+      token: 'secret',
+      fetchImpl,
+      timeoutMs: 20,
+    });
+    await expect(c.authorize('tok')).rejects.toBeInstanceOf(Error);
+    expect(calls).toBe(3);
+  });
+
+  // The counterpart of the rule above. A settlement write has nobody waiting on
+  // it, and a timed-out attempt the API actually committed would be charged
+  // twice by a repeat (recordGatewayUsage inserts a usage row and deducts
+  // credits; neither is keyed by request id at that layer). Writes therefore
+  // keep the narrow policy: retry a refused or 5xx-answered attempt, never a
+  // silent one.
+  test('does NOT retry a settlement write that times out', async () => {
+    let calls = 0;
+    const fetchImpl: FetchLike = async () => {
+      calls += 1;
+      return new Promise<Response>(() => {});
+    };
+    const c = createApiClient({
+      baseUrl: 'https://api.test',
+      token: 'secret',
+      fetchImpl,
+      timeoutMs: 20,
+    });
+    await expect(
+      c.recordUsage({ requestId: 'req_1' } as unknown as Parameters<typeof c.recordUsage>[0]),
+    ).rejects.toBeInstanceOf(Error);
+    expect(calls).toBe(1);
+  });
+
   test('authorize returns the combined gate result (ok)', async () => {
     let seenPath: string | undefined;
-    const c = client(async (url) => {
+    let seenBody: unknown;
+    const c = client(async (url, init) => {
       seenPath = new URL(url).pathname;
+      seenBody = JSON.parse(String(init?.body));
       return jsonResponse({ ok: true, principal });
     });
     const result = await c.authorize('tok');
     expect(seenPath).toBe('/internal/gateway/authorize');
+    expect(seenBody).toEqual({ token: 'tok', deferBilling: true });
     expect(result).toEqual({ ok: true, principal });
   });
 

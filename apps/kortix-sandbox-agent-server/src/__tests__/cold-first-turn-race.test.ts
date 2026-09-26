@@ -1,25 +1,27 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-import { startOpencodeEventLoop } from '../opencode-events'
-import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../main'
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
+import { startOpencodeEventLoop } from '../harness/open-code/events'
+import {
+  __resetRelayedTurnSignatures,
+  reconcileFinishedFirstTurn,
+  relayTurnEndToApi,
+} from '../harness/open-code/boot'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/lifecycle'
+import { writeOpenCodeSessionPin } from '../harness/open-code/runtime-state'
 
-// Deterministic reproduction of the COLD-first-turn event-loss race using the
-// REAL daemon primitives (startOpencodeEventLoop + dispatch + relayTurnEndToApi +
-// reconcileFinishedFirstTurn) against a faithful mock opencode that mimics the
-// two behaviors that create the race:
-//   (1) /event is a live SSE stream with NO REPLAY/BACKFILL — a session.idle
-//       emitted before any subscriber connects is GONE (exactly opencode's
-//       behavior, per opencode-events.ts + the root cause).
-//   (2) A trivial first turn reaches session.idle FAST (a few ms after prompt).
-//
-// It drives BOTH orderings and shows the observable divergence on the SLACK
-// turn-end relay path (the only finalizer for a turn ended without `slack send`):
-//   • PRE-FIX ordering (prompt THEN subscribe, as prod's startSessionRuntime ran):
-//     the fast idle fires in the unsubscribed gap → LOST → ZERO turn-end relays.
-//   • FIXED ordering (subscribe-before-prompt + reconcile-on-connect): the turn
-//     finalizes EXACTLY ONCE regardless of whether idle beat the subscribe.
+// The COLD-first-turn event-loss race, driven through the REAL daemon
+// primitives (startOpencodeEventLoop + dispatch + relayTurnEndToApi +
+// reconcileFinishedFirstTurn) against a mock opencode with the two behaviors
+// that create it:
+//   (1) /event is a live SSE stream with NO REPLAY — a session.idle emitted
+//       before any subscriber connects is gone (OpenCode's behavior).
+//   (2) A trivial first turn reaches session.idle a few ms after the prompt.
+// Boot subscribes before it delivers the prompt (boot-source-guards.test.ts);
+// the reconcile-on-connect below is the backstop for a residual gap.
 
 const ROOT = 'ses_root'
 const WORKSPACE = '/workspace'
@@ -89,6 +91,7 @@ function startMockOpencode() {
   return {
     baseUrl: `http://127.0.0.1:${server.port}`,
     subscribers: () => subscribers,
+    emitIdle,
     firePrompt: () => fetch(`http://127.0.0.1:${server.port}/session/${ROOT}/prompt_async`, { method: 'POST' }),
     stop: () => server.stop(true),
   }
@@ -119,6 +122,7 @@ function fakeCfg(baseUrl: string): Config {
 }
 
 let saved: Record<string, string | undefined> = {}
+let stateDir: string
 beforeEach(() => {
   __resetRelayedTurnSignatures()
   saved = {
@@ -127,13 +131,17 @@ beforeEach(() => {
     KORTIX_SESSION_ID: process.env.KORTIX_SESSION_ID,
     KORTIX_TOKEN: process.env.KORTIX_TOKEN,
     KORTIX_API_URL: process.env.KORTIX_API_URL,
+    KORTIX_RUNTIME_STATE_DIR: process.env.KORTIX_RUNTIME_STATE_DIR,
   }
+  stateDir = mkdtempSync(join(tmpdir(), 'kortix-cold-first-turn-'))
+  process.env.KORTIX_RUNTIME_STATE_DIR = stateDir
 })
 afterEach(() => {
   for (const [k, v] of Object.entries(saved)) {
     if (v === undefined) delete process.env[k]
     else process.env[k] = v
   }
+  rmSync(stateDir, { recursive: true, force: true })
 })
 function slackEnv(apiUrl: string) {
   process.env.SLACK_CHANNEL_ID = 'C1'
@@ -144,87 +152,35 @@ function slackEnv(apiUrl: string) {
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-describe('cold-first-turn event-loss race — pre-fix ordering DROPS, fixed ordering CATCHES', () => {
-  // PRE-FIX: fire the prompt, THEN subscribe (the exact ordering prod's
-  // startSessionRuntime ran before this fix). The trivial turn's session.idle
-  // fires ~30ms later, before the subscribe completes → LOST → no finalize.
-  test('PRE-FIX ordering: fast trivial first turn is LOST (zero turn-end relays)', async () => {
+describe('reconcile-on-connect', () => {
+  test('a first turn that completed before the subscribe finalizes exactly once, even when its idle arrives late', async () => {
     const oc = startMockOpencode()
     const api = startMockApi()
     slackEnv(api.url)
+    writeOpenCodeSessionPin(ROOT)
     const opencode = fakeOpencode(oc.baseUrl)
     const cfg = fakeCfg(oc.baseUrl)
     const onSessionIdle = (id: string) => void relayTurnEndToApi(id, 'idle', opencode, cfg)
     try {
-      // 1. prompt fired FIRST (turn will complete ~30ms later)
-      await oc.firePrompt()
-      // 2. subscription started AFTER — model the real gap; the idle emits while
-      //    subscribers === 0 (nobody listening) and is dropped with no replay.
-      await sleep(60) // let the turn complete (idle emitted into the void)
-      const loop = startOpencodeEventLoop(opencode, cfg, { onSessionIdle })
-      await loop.connected
-      await sleep(200) // give any (nonexistent) replay a chance
-      loop.stop()
-      expect(oc.subscribers()).toBeGreaterThanOrEqual(0)
-      // The idle fired before anyone subscribed → NEVER relayed → Slack turn frozen.
-      expect(api.ends()).toBe(0)
-    } finally {
-      loopCleanup(oc, api)
-    }
-  })
-
-  // FIXED: subscribe-before-prompt. The subscription is live before the turn is
-  // launched, so the fast idle is CAUGHT and relayed exactly once.
-  test('FIXED ordering (subscribe-before-prompt): fast trivial first turn FINALIZES once', async () => {
-    const oc = startMockOpencode()
-    const api = startMockApi()
-    slackEnv(api.url)
-    const opencode = fakeOpencode(oc.baseUrl)
-    const cfg = fakeCfg(oc.baseUrl)
-    const onSessionIdle = (id: string) => void relayTurnEndToApi(id, 'idle', opencode, cfg)
-    try {
-      // 1. subscribe FIRST and wait until it's live
-      const loop = startOpencodeEventLoop(opencode, cfg, { onSessionIdle })
-      await loop.connected
-      expect(oc.subscribers()).toBe(1)
-      // 2. NOW fire the prompt — idle will be caught by the live subscription
-      await oc.firePrompt()
-      await sleep(200)
-      loop.stop()
-      expect(api.ends()).toBe(1) // caught + relayed exactly once
-    } finally {
-      loopCleanup(oc, api)
-    }
-  })
-
-  // FIXED backstop: even if the idle somehow fires in a residual gap BEFORE the
-  // subscribe (worst case), reconcile-on-connect reads the completed turn and
-  // finalizes it — so the turn finalizes exactly once independent of timing.
-  // reconcileFinishedFirstTurn's only step beyond this is resolving the pinned
-  // root id from the pin FILE (root-only path on this host); its effective action
-  // — "on connect, relay the completed root turn" — is exercised here directly,
-  // AND collapsed with the natural (dropped) idle by the per-turn dedup.
-  test('FIXED reconcile-on-connect: turn that completed BEFORE subscribe still finalizes exactly once', async () => {
-    const oc = startMockOpencode()
-    const api = startMockApi()
-    slackEnv(api.url)
-    const opencode = fakeOpencode(oc.baseUrl)
-    const cfg = fakeCfg(oc.baseUrl)
-    const onSessionIdle = (id: string) => void relayTurnEndToApi(id, 'idle', opencode, cfg)
-    try {
-      // Turn completes BEFORE any subscribe (its live idle is lost to the void).
+      // The turn completes before any subscriber: its live idle is lost.
       await oc.firePrompt()
       await sleep(60)
-      expect(api.ends()).toBe(0) // dropped so far — exactly the race
-      // Now subscribe; onConnected relays the completed root turn (the reconcile).
+      expect(api.ends()).toBe(0)
+
+      // Production wiring: onConnected reconciles the pinned root's finished turn.
       const loop = startOpencodeEventLoop(opencode, cfg, {
         onSessionIdle,
-        onConnected: () => void relayTurnEndToApi(ROOT, 'idle', opencode, cfg),
+        onConnected: () => void reconcileFinishedFirstTurn(opencode, cfg),
       })
       await loop.connected
       await sleep(200)
+      expect(api.ends()).toBe(1)
+
+      // A late natural idle for the same turn is collapsed by the per-turn dedup.
+      oc.emitIdle()
+      await sleep(200)
       loop.stop()
-      expect(api.ends()).toBe(1) // reconcile finalized the missed turn, exactly once
+      expect(api.ends()).toBe(1)
     } finally {
       loopCleanup(oc, api)
     }

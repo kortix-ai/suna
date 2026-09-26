@@ -25,6 +25,7 @@ ID, and the branch name are the same value. See
 | `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session or updates metadata |
 | `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
 | `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
+| `s.configState()` | `GET …/sessions/:sid/config` | Reads config freshness (`stale`) and the config release state (`release`) |
 | `s.reloadConfig(input?)` | `POST …/sessions/:sid/reload` | Recompiles agent config and replaces the runtime after validation |
 | `s.reloadConfigStream(input, onEvent)` | `POST …/sessions/:sid/reload-stream` | Runs the same reload and emits server-confirmed progress phases |
 | `s.stop()` | `POST …/sessions/:sid/stop` | Stops the runtime; the session stays |
@@ -34,11 +35,28 @@ ID, and the branch name are the same value. See
 | `s.scope()` | `GET …/sessions/:sid/scope` | Reads stored secret narrowing and materialized connection bindings |
 | `s.rescope(input)` | `PUT …/sessions/:sid/scope` | Replaces supplied scope fields for the next prompt or tool call |
 | `s.commit(input?)` | — | Commits the agent's work |
+| `s.providerSecretPool.get(providerId)` | `GET …/provider-secret-pools/:providerId` | Reads selected account secret IDs |
+| `s.providerSecretPool.list()` | `GET …/provider-secret-pools` | Lists configured pools, including empty pools, and reports `can_edit` |
+| `s.providerSecretPool.set(providerId, secretIds)` | `PUT …/provider-secret-pools/:providerId` | Replaces the selection; `null` restores the project default |
 
 :::warning
   `s.delete()` deletes the session and its runtime. This cannot be undone. To pause a session
   without losing it, call `s.stop()` instead.
 :::
+
+With `pooled_provider_secrets` and `llm_gateway` enabled, a session can select
+several available account secrets for one provider. Create a project-scoped resource through
+`kortix.accounts.secretResources.create(accountId, { project_id: projectId, ...input })`.
+Every project member can use it by default. Restrict it with
+`.setAccess(accountId, secretId, 'members', userIds)`. Reads return metadata and grants, never
+the secret value. After a provider `429` before output starts, the gateway
+tries another selected key.
+
+```ts
+await s.providerSecretPool.set('anthropic', [primarySecretId, backupSecretId]);
+const selected = await s.providerSecretPool.get('anthropic');
+await s.providerSecretPool.set('anthropic', null); // inherit project default
+```
 
 Use the streamed method when the caller displays reload progress:
 
@@ -53,13 +71,58 @@ The phases are `checking-session`, `refreshing-workspace`, `compiling-config`,
 `refreshing-workspace` when `refresh_repo` is `false`. The
 `applying-config` phase includes the daemon's validated runtime replacement.
 
+`s.configState()` returns `release` when the API supports config releases.
+Its type is `SessionConfigRelease`. The reload results carry the same object.
+
+```ts
+const { stale, release } = await s.configState();
+if (release?.fallback_reason) {
+  // The desired config failed on the box. An earlier config runs the session.
+  console.warn(release.fallback_reason, release.running_release_id);
+} else if (stale === true) {
+  // Moves the session onto the base branch's current config AND
+  // fast-forwards its /workspace checkout. `workspace_checkout` says what
+  // happened to the checkout; `detail` words both halves.
+  const result = await s.reloadConfig();
+  console.log(result.workspace_checkout, result.detail);
+}
+```
+
+`stale` is tri-state. `null` means Kortix could not tell. Test `stale === true`,
+never `!stale`. An older API omits `release`. See
+[Config convergence](/docs/work/runtime#config-convergence).
+
 Three more read methods round out the handle:
 
 - `s.previews()` — candidate preview ports the runtime exposes.
 - `s.publicShares.list()` / `.create(input)` / `.revoke(shareId)` — public share links.
 - `s.audit(limit?)` — the session's audit trail of agent actions.
+- `s.attachments.upload(file, options?)` — save a private file before startup when `session_transcript_history` is enabled. Maximum 50 MiB. Returns a stable URL for a prompt file part.
+- `s.attachments.read(attachmentId, signal?)` — read saved bytes as a `Blob` without starting the sandbox.
 - `s.transcript(options?)` — a compact server-side transcript (text and tool calls, no tool inputs or outputs). This works with a project-scoped session token.
+- `s.transcriptSync(options?)` — the transcript the server saves at the end of every turn, as OpenCode message envelopes. It answers while the sandbox is stopped or still waking, without starting it. Pass `limit` (at most 500) for the newest window, and a window's `next_cursor` as `before` to read the one older than it. `source` is `mirror`; `complete` is true only when the window holds every saved message and the saved copy reaches the session's first message.
 - `s.voiceTranscript(options?)` — this session's live voice-call transcript (spoken turns plus `ask_kortix`/`run_command` worker tool calls). Returns an empty list when the session has no live call, not a 404.
+
+### Files a session stored
+
+`findSessionAttachments(messages)` lists every stored file a transcript
+references, in order and each once: a user's upload, a `<file>` reference in a
+prompt, or the copy saved history keeps of a file the agent showed. It reads a
+live transcript and a saved one alike, and never throws on a malformed one.
+
+```ts
+import { findSessionAttachments } from '@kortix/sdk'
+
+const saved = await s.transcriptSync({ limit: 500 })
+for (const file of findSessionAttachments(saved.messages)) {
+  const blob = await s.attachments.read(file.attachment_id) // no sandbox needed
+  console.log(file.filename, file.role, blob.size)
+}
+```
+
+Each result is `{ url, attachment_id, filename, mime, message_id, role }`.
+`role` is `user` for an upload and `assistant` for a file the agent showed;
+`mime` is null for the latter, and the bytes carry their own type.
 
 ## Readiness is a handshake
 
@@ -96,6 +159,11 @@ OpenCode session in the host. Kortix creates and persists the root session.
 OpenCode query caches and transcript controllers are scoped to the sandbox
 runtime, so equal OpenCode ids from different sandboxes do not share cache
 entries.
+
+Pending message retries keep their originating sandbox URL when you switch
+sessions. A `404` or `410` message response stops automatic retries without
+clearing the transcript. An explicit reconciliation can retry the read and
+restore normal synchronization after a successful response.
 
 ## Send a prompt
 
@@ -367,6 +435,107 @@ never carries `retriable: false`.
 `failure.evidence` names the check that produced the negative, when it ran, and
 when the server retries. Every `/start` failure carries it.
 
+## Prompt attachments
+
+Upload local files when users add them to a composer. Private uploads belong to
+the project and do not require a running session.
+
+```tsx
+import { usePromptAttachments } from '@kortix/sdk/react';
+
+const uploads = usePromptAttachments(projectId);
+// File picker, paste, and drop handlers call uploads.add(file) or uploads.addMany(files).
+// Render uploads.attachments. Refuse Send only while an attachment is `error` or `aborted`.
+
+async function submit() {
+  const ids = uploads.attachments.map((item) => item.id);
+  uploads.submit(ids); // Send never waits: the composer clears and uploads continue.
+  paintMessage(text, ids);
+  try {
+    const parts = await uploads.whenReady(ids);
+    await kortix.session(projectId, sessionId).prompts.create({
+      clientMessageId,
+      messageId,
+      parts: [{ type: 'text', text }, ...parts],
+    });
+    uploads.forget(ids);
+  } catch {
+    uploads.reclaim(ids);
+  }
+}
+```
+
+`whenReady(ids, { signal })` resolves once every upload is ready, in `ids` order.
+It rejects when an upload fails, is aborted or removed, or `signal` aborts.
+`submit(ids)` hands the entries to that send: they leave `attachments`, stop
+counting toward the limits, and keep uploading after the composer unmounts.
+Call `forget(ids)` after the POST succeeds, or `reclaim(ids)` to return them to
+the composer after a failed send.
+The resolved file part contains `attachment_id`, `filename`, and `mime`.
+It contains no URL or file bytes. The server binds and materializes the upload.
+Use these parts on platform session creation, warm-session start, or prompt inbox
+routes. Do not pass private handles directly to OpenCode runtime `sendParts`.
+Legacy platform file parts with `url` still work.
+
+Each item has a stable `id`, the original `file` reference, `receivedBytes`, and
+a status: `pending`, `uploading`, `processing`, `ready`, `error`, or `aborted`.
+Bytes sent determine progress. The controller publishes a progress snapshot only
+for a whole-percent change, at most ten per second per upload. `processing` can
+remain at 100% until the server completes the upload. Limits are 50 MiB per
+file, 100 MiB per message, and 20 files. Files must be nonempty. Two files
+upload concurrently by default.
+
+`retry(id)` resumes the same handle. After `attachment_size_mismatch` or
+`attachment_failed` the server keeps no usable handle, so `retry(id)` uploads the
+File again as a new attachment. An expired upload cannot retry: `retry(id)`
+throws, and the item error carries code `attachment_expired`. `abort(id)` cancels
+unfinished work.
+`remove(id)` removes the entry, aborts its upload, and resolves at once. The
+server DELETE is best-effort and never rejects; an upload it cannot delete
+expires after 24 hours.
+`forget(ids)` releases entries without deleting server objects.
+The hook aborts listed work on unmount or project change and deletes its uploads
+best-effort: no send holds them, and drafts keep no handle. Handed-off uploads
+continue.
+
+Selections live in memory only. Never persist File objects, blob URLs, signed
+URLs, or upload handles in a draft. Abandoned uploads expire after 24 hours.
+
+Framework-free hosts use `kortix.project(projectId).attachments.createController()`
+with the same methods. Subscribe through `subscribe(listener)` and read
+`getSnapshot()`. Call `dispose()` when the composer closes.
+Direct callers can use `attachments.upload(file, { signal, onProgress, onUpload,
+resume })` and `attachments.delete(attachmentId)`.
+Retain `onUpload` metadata for manual same-ID resumption.
+
+The server selects the transport in the handle's `upload` field:
+
+- `kind: 'direct'` is the default. The SDK sends the whole file in one `PUT` to
+  `upload.url` with `upload.headers` and no Authorization header. With
+  `XMLHttpRequest` (browsers, React Native), progress reports sent bytes. With
+  `fetch`, progress reports 0 and then the full size. An expired URL, or one that
+  Storage refuses with 400, 401, or 403, is re-signed once for the same
+  `attachment_id`. A `409` from Storage means an earlier attempt stored the file.
+- `kind: 'chunked'` sends sequential authenticated `PUT`s of `upload.chunk_size`
+  bytes. The SDK accepts any positive `chunk_size`. Only a deployment whose edge
+  drops large request bodies selects this mode.
+
+Completion verifies the stored size and SHA-256. If completion answers `409
+attachment_not_uploaded`, `onUpload` reports the direct handle with
+`received_bytes: 0`, so `retry(id)` or a resume sends the file again.
+Initiation, the upload, and completion retry timeouts, network errors, 429, and
+5xx with jittered exponential backoff. The budget is 60 seconds from the first
+failure, so a long upload that fails late still retries. Completion also retries
+`attachment_processing`, with a five-minute budget. Initiation never retries 402
+(a `BillingError`: the account cannot run) or 429 `attachment_budget_exceeded` (40
+unfinished uploads or 500 MiB of unsent uploads for the user; unused uploads
+expire within 24 hours). The server answers or refuses one completion within 105
+seconds. Each completion request allows 120 seconds. Caller aborts never retry.
+
+A sent attachment's reference is released 1 hour after its prompt is delivered,
+and when its session or project is deleted. The next maintenance sweep then
+removes the file, and its `attachment_id` can no longer be sent.
+
 ## Files
 
 `s.files` reads and writes the session's sandbox: `list`, `read`, `readBlob`,
@@ -454,8 +623,8 @@ try {
 | ---------------------- | ---------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
 | `ApiError`             | `Error`    | Default for any failed request: bad status, network failure, timeout, or abort | `status`, `code`, `detail`, `response`, `url`, `endpoint`, `timeout` |
 | `AuthError`            | `ApiError` | `getToken` returned `null`. Kortix never sent the request                      | `code` is always `'NO_SESSION'`                                      |
-| `BillingError`         | `Error`    | HTTP `402`. The only billing error class                                       | `status` (`402`), `detail.message`                                   |
-| `RequestTooLargeError` | `Error`    | HTTP `431`. Usually too many files in one request                              | `detail.suggestion`                                                  |
+| `BillingError`         | `ApiError` | HTTP `402`. The only billing error class                                       | `status` (`402`), `code`, `detail.message`                           |
+| `RequestTooLargeError` | `ApiError` | HTTP `431`. Usually too many files in one request                              | `detail.suggestion`                                                  |
 | `SessionNotReadyError` | `Error`    | A runtime accessor ran before `ensureReady()`                                  | `name` is `'SessionNotReadyError'`                                   |
 
 `ApiError.name` is `'ApiError'` by default. Two cases override it:
@@ -465,11 +634,13 @@ try {
 
 For any other failure, `status` holds the HTTP status code. `code` comes from the backend's `error_code`, or falls back to the status as a string. `message` is an enumerable own property on `ApiError`, so it survives `JSON.stringify` and object spread.
 
+Kortix sends a request that receives `401` once more with a fresh token from `getToken()`, when that token differs from the one it sent. A request with a one-shot stream body is not resent.
+
 Kortix retries some requests before your code sees an error. If a `GET` or `HEAD` request returns `502`, `503`, or `504`, Kortix retries it up to 2 times, with a 250ms then 500ms delay. A transient transport failure on a `GET` or `HEAD` — a network error, not a status code — is retried the same way. A retry that succeeds never reaches `onError`. Kortix never retries `POST`, `PUT`, `PATCH`, or `DELETE` requests, or a `500` response.
 
 Kortix throws `AuthError` on the client, before it sends a request, when `getToken()` returns `null`. `AuthError` extends `ApiError`, so `err instanceof ApiError` still matches. Check `err instanceof AuthError`, or `err.code === 'NO_SESSION'`, to treat "not signed in" as a separate case from a backend failure.
 
-Kortix throws `BillingError` for every HTTP `402` response: out of credits, over a plan limit, or another billing gate. `detail.message` holds the reason from the backend.
+Kortix throws `BillingError` for every HTTP `402` response: out of credits, over a plan limit, or another billing gate. `detail.message` holds the reason from the backend, and `code` holds the backend's machine code (for example `app_budget_exceeded`). `BillingError` extends `ApiError`, so check `BillingError` first when you handle both.
 
 Kortix throws `RequestTooLargeError` for HTTP `431`. This usually means the request carried too many files. `detail.suggestion` holds a ready-to-show hint for the user.
 

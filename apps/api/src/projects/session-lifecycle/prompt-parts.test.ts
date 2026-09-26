@@ -8,6 +8,69 @@ import {
 } from './prompt-parts';
 
 describe('sanitizeInboxPromptParts', () => {
+  test('accepts an opaque staged attachment without URL or caller metadata', () => {
+    expect(sanitizeInboxPromptParts([
+      { type: 'file', attachment_id: '123e4567-e89b-42d3-a456-426614174000' },
+    ])).toEqual({ parts: [
+      { type: 'file', attachment_id: '123e4567-e89b-42d3-a456-426614174000' },
+    ] });
+  });
+  // The 20-file cap belongs to staged attachment handles. A CLI or SDK prompt
+  // of legacy data-URL file parts keeps the part and byte caps it always had.
+  test('admits 25 legacy data-URL file parts', () => {
+    const parts = Array.from({ length: 25 }, (_, index) => ({
+      type: 'file',
+      mime: 'image/png',
+      url: 'data:image/png;base64,AAAA',
+      filename: `shot-${index}.png`,
+    }));
+    const result = sanitizeInboxPromptParts(parts);
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(result.parts).toHaveLength(25);
+  });
+
+  test('refuses 21 attachment handles', () => {
+    const parts = Array.from({ length: 21 }, (_, index) => ({
+      type: 'file',
+      attachment_id: `123e4567-e89b-42d3-a456-${String(index).padStart(12, '0')}`,
+    }));
+    expect(sanitizeInboxPromptParts(parts)).toEqual({
+      error: 'attachments supports at most 20 files',
+    });
+  });
+
+  test('treats attachment_id: null as an absent field', () => {
+    expect(
+      sanitizeInboxPromptParts([
+        {
+          type: 'file',
+          attachment_id: null,
+          mime: 'image/png',
+          url: 'data:image/png;base64,AAAA',
+          filename: 'shot.png',
+        },
+      ]),
+    ).toEqual({
+      parts: [
+        { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AAAA', filename: 'shot.png' },
+      ],
+    });
+  });
+
+  test('refuses an attachment_id that is not a UUID', () => {
+    expect(
+      sanitizeInboxPromptParts([{ type: 'file', attachment_id: 'not-a-uuid' }]),
+    ).toEqual({ error: 'attachment_id must be a UUID' });
+  });
+
+  test('accepts an attachment_id of any uuid version', () => {
+    const attachment_id = 'a7100000-0000-0000-0000-000000000001';
+    expect(sanitizeInboxPromptParts([{ type: 'file', attachment_id }])).toEqual({
+      parts: [{ type: 'file', attachment_id }],
+    });
+  });
+
   test('keeps the known fields of text and file parts, drops everything else', () => {
     const result = sanitizeInboxPromptParts([
       { type: 'text', text: 'hello', evil: 'dropped' },
@@ -190,7 +253,7 @@ test('a malformed staged native image is refused at the door', () => {
     { type: 'text', text: 'hi' },
     { type: 'file', mime: 'image/jpeg', filename: 'p.jpg', url: 'data:image/jpeg;base64,not*base64' },
   ]);
-  expect('error' in out).toBe(true);
+  expect(out).toEqual({ error: 'file "p.jpg" has malformed staged data' });
 });
 
 test('a native image that is a remote URL is still admitted', () => {
@@ -199,4 +262,11 @@ test('a native image that is a remote URL is still admitted', () => {
     { type: 'file', mime: 'image/jpeg', filename: 'p.jpg', url: 'https://box.test/p.jpg' },
   ]);
   expect('error' in out).toBe(false);
+});
+
+test('accepts stored non-native files and rejects malformed private references', () => {
+  const url = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+  const file = { type: 'file' as const, filename: 'notes.txt', mime: 'text/plain', url };
+  expect(sanitizeInboxPromptParts([file])).toEqual({ parts: [file] });
+  expect(sanitizeInboxPromptParts([{ ...file, url: url + '/../private' }])).toHaveProperty('error');
 });

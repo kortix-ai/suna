@@ -137,7 +137,10 @@ export interface FilePart {
   id: string;
   mime: string;
   filename: string;
-  url: string;
+  /** Absent on an optimistic send's part until the server echo replaces it (COR-185). */
+  url?: string;
+  /** The picked file on the device: an optimistic send's thumbnail (COR-185). Never on a server part. */
+  localUri?: string;
 }
 
 export interface AgentPart {
@@ -208,8 +211,13 @@ export interface PermissionRequest {
   sessionID: string;
   tool?: { messageID: string; callID: string };
   permission: string;
+  /** Legacy v1 field name; the wire payload (and `always`) is v2 — see `patterns`. */
   input: Record<string, any>;
   metadata?: Record<string, any>;
+  /** The concrete match patterns being gated (e.g. the bash command), v2's replacement for `input`. */
+  patterns?: string[];
+  /** Reply values the runtime already carries an "always" grant for. */
+  always?: string[];
 }
 
 export interface QuestionRequest {

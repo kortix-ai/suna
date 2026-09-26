@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { QueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import type {
   AssistantMessage,
   Message,
@@ -75,7 +75,9 @@ const { qk } = await import('../query-keys');
 const { useSyncStore } = await import('../../browser/stores/sync-store');
 const { useDiagnosticsStore } = await import('../../browser/stores/diagnostics-store');
 const { opencodeKeys } = await import('../use-opencode-sessions');
-const { fileListKeys, gitStatusKeys, fileContentKeys } = await import('../file-keys');
+const { fileListKeys, gitStatusKeys, fileContentKeys, binaryBlobKeys } = await import(
+  '../file-keys'
+);
 const { ptyKeys } = await import('../use-opencode-pty');
 
 // ============================================================================
@@ -99,6 +101,10 @@ function buildHandler(
     projectId?: string;
     reconcileSessionTail?: Parameters<typeof createEventHandler>[0]['reconcileSessionTail'];
     userPartsGraceMs?: number;
+    /** Wire the REAL sync-store reducer instead of the spy, exactly as
+     *  production does, for tests whose contract depends on the order in
+     *  which the reducer and `handle-event.ts` see the same event. */
+    realSyncStore?: boolean;
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -133,7 +139,12 @@ function buildHandler(
   const handleEvent = createEventHandler({
     queryClient,
     client,
-    applySyncEvent: applySyncEvent.fn,
+    applySyncEvent: overrides.realSyncStore
+      ? (event) => {
+          applySyncEvent.fn(event);
+          useSyncStore.getState().applyEvent(event as never);
+        }
+      : applySyncEvent.fn,
     stopCompaction: stopCompaction.fn,
     addPermission: addPermission.fn,
     removePermission: removePermission.fn,
@@ -690,6 +701,23 @@ describe('kortix session title mirroring', () => {
 // ============================================================================
 
 describe('session.status', () => {
+  test('idle status reconciles the transcript without a prior busy frame', () => {
+    const reconciled: string[] = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID) => {
+        reconciled.push(sessionID);
+      },
+    });
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.status',
+      properties: { sessionID: 'ses_1', status: { type: 'idle' } },
+    });
+
+    expect(reconciled).toEqual(['ses_1']);
+  });
+
   test('busy → idle fires notifyTaskComplete and invalidates git/file caches', () => {
     const { handleEvent, queryClient } = buildHandler();
     useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
@@ -824,7 +852,140 @@ describe('vcs diff invalidation', () => {
   });
 });
 
+// ============================================================================
+// An open file viewer holds an ACTIVE query on the file it shows. When the
+// agent's turn settles, that query must go stale and refetch, so the viewer
+// shows what the agent wrote — not the version from before the turn.
+// ============================================================================
+
+describe('turn end refreshes open file viewers', () => {
+  const url = 'http://sandbox.test';
+
+  /** Mounts a real observer, like a rendered viewer, and returns the query. */
+  function mountViewerQuery(queryClient: QueryClient, queryKey: readonly unknown[]) {
+    const observer = new QueryObserver(queryClient, {
+      queryKey,
+      queryFn: async () => 'content',
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    queryClient.setQueryData(queryKey, 'before the turn');
+    return {
+      query: () => queryClient.getQueryCache().find({ queryKey, exact: true })!,
+      unsubscribe,
+    };
+  }
+
+  const settleEvents = [
+    {
+      name: 'session.status busy → idle',
+      event: {
+        id: 'evt_1',
+        type: 'session.status',
+        properties: { sessionID: 'ses_1', status: { type: 'idle' } },
+      },
+    },
+    {
+      name: 'session.idle',
+      event: { id: 'evt_1', type: 'session.idle', properties: { sessionID: 'ses_1' } },
+    },
+  ] as const;
+
+  for (const { name, event } of settleEvents) {
+    test(`${name} invalidates the open text and binary file queries`, () => {
+      const { handleEvent, queryClient } = buildHandler();
+      useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
+      const text = mountViewerQuery(queryClient, fileContentKeys.file(url, '/report.md'));
+      const blob = mountViewerQuery(queryClient, binaryBlobKeys.file(url, '/deck.pptx'));
+      expect(text.query().state.isInvalidated).toBe(false);
+
+      handleEvent(event as Parameters<typeof handleEvent>[0]);
+
+      expect(text.query().state.isInvalidated).toBe(true);
+      expect(blob.query().state.isInvalidated).toBe(true);
+      text.unsubscribe();
+      blob.unsubscribe();
+    });
+  }
+
+  // Production wires the real reducer, which writes the new status BEFORE
+  // `handle-event.ts` looks for the transition. Reading the previous status
+  // after that write saw 'idle' every time, so none of the turn-end work ran
+  // in the app: no file refresh, no Changes refresh, no task-complete notice.
+  for (const { name, event } of settleEvents) {
+    test(`${name} through the REAL sync-store reducer still refreshes the open file`, () => {
+      const { handleEvent, queryClient } = buildHandler({ realSyncStore: true });
+      useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
+      const text = mountViewerQuery(queryClient, fileContentKeys.file(url, '/fire.md'));
+
+      handleEvent(event as Parameters<typeof handleEvent>[0]);
+
+      expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: 'idle' });
+      expect(text.query().state.isInvalidated).toBe(true);
+      expect(notifications).toEqual([
+        { kind: 'task-complete', sessionId: 'ses_1', sessionTitle: undefined },
+      ]);
+      text.unsubscribe();
+    });
+  }
+
+  test('a file closed mid-turn is marked stale too, so reopening it refetches', () => {
+    const { handleEvent, queryClient } = buildHandler();
+    useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
+    const key = fileContentKeys.file(url, '/closed.md');
+    queryClient.setQueryData(key, 'before the turn'); // cached, no observer
+
+    handleEvent({ id: 'evt_1', type: 'session.idle', properties: { sessionID: 'ses_1' } });
+
+    expect(queryClient.getQueryCache().find({ queryKey: key, exact: true })!.state.isInvalidated).toBe(
+      true,
+    );
+  });
+
+  test('idle → idle leaves open file queries alone — nothing ran, nothing changed', () => {
+    const { handleEvent, queryClient } = buildHandler();
+    useSyncStore.getState().setStatus('ses_1', { type: 'idle' });
+    const text = mountViewerQuery(queryClient, fileContentKeys.file(url, '/report.md'));
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.status',
+      properties: { sessionID: 'ses_1', status: { type: 'idle' } },
+    });
+
+    expect(text.query().state.isInvalidated).toBe(false);
+    text.unsubscribe();
+  });
+
+  test('file.edited invalidates an open binary file query too', () => {
+    const { handleEvent, queryClient } = buildHandler();
+    const blob = mountViewerQuery(queryClient, binaryBlobKeys.file(url, '/deck.pptx'));
+
+    handleEvent({ id: 'evt_1', type: 'file.edited', properties: { file: '/deck.pptx' } });
+
+    expect(blob.query().state.isInvalidated).toBe(true);
+    blob.unsubscribe();
+  });
+});
+
 describe('session.idle', () => {
+  test('reconciles the transcript when the busy frame was missed', () => {
+    const reconciled: string[] = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID) => {
+        reconciled.push(sessionID);
+      },
+    });
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.idle',
+      properties: { sessionID: 'ses_1' },
+    });
+
+    expect(reconciled).toEqual(['ses_1']);
+  });
+
   test('busy → idle fires notifyTaskComplete', () => {
     const { handleEvent } = buildHandler();
     useSyncStore.getState().setStatus('ses_1', {

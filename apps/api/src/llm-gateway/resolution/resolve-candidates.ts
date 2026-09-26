@@ -1,3 +1,8 @@
+import { getProjectModelAccess } from '../../repositories/project-model-access';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
+import { resolveDefaultCodexAccountSecret, resolveSessionProviderSecrets } from '../../secrets/account-resource';
+import { modelAccessAllows, modelAccessProvider } from '../model-access';
+import { toWireModel } from './effective';
 import {
   type AuthedPrincipal,
   GatewayResolutionError,
@@ -10,7 +15,7 @@ import {
   getProjectSecretValueForConsumer,
   resolveProjectSecretsForConsumer,
 } from '../../projects/secrets';
-import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
+import { CodexRefreshError, resolveCodexAccountCredential, resolveCodexCredential } from '../credentials/codex';
 import { capabilitiesForModel } from '../models/catalog-models';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
@@ -22,8 +27,7 @@ import {
   normalizeBedrockInferenceProfileRegion,
   stripBedrockInferenceProfilePrefix,
 } from './descriptors';
-
-const PLATFORM_FEE_MARKUP = 0.1;
+import { isAwsRegion } from './aws-region';
 
 // Bedrock is the one native-transport BYOK provider whose credential is
 // multi-field (see apps/web/src/lib/llm-providers.ts's env-vars-per-provider
@@ -35,39 +39,6 @@ const PLATFORM_FEE_MARKUP = 0.1;
 // SigV4 signing path lands (see transports/bedrock/request.ts's
 // TODO(bedrock-sigv4)); only the bearer token + region are read here today.
 const BEDROCK_REGION_ENV_VAR = 'AWS_REGION';
-
-// Tier resolution is the SHARED 30s-TTL cache in billing/services/entitlements
-// (getCachedAccountTier) — this used to keep its own independent cache/Map
-// here, so the BYOK fee-waiver decision below and the managed-model free-tier
-// gate a few lines later could each see a different (stale-vs-fresh) tier for
-// up to 30s after an upgrade/downgrade, resolved at different wall-clock
-// instants. One cache, one invalidation point (entitlements.
-// invalidateCachedAccountTier) removes that skew. `getCachedAccountTier`
-// itself takes an injectable `now` (defaults to Date.now()) so the 30s TTL
-// boundary stays unit-testable without a real wall-clock sleep — this is a
-// thin re-export, not a second implementation.
-export const resolveCachedAccountTier = getCachedAccountTier;
-
-// Managed-models entitlement, same shared snapshot cache. Trial overlay and
-// the operator `managed_models_override` are applied inside — never derive
-// this from a tier string here (that is exactly the conflation the comment
-// below warns about).
-export const resolveCachedManagedModels = accountMayUseManagedModels;
-
-// A managed model to fall over to when a BYOK key hits a limit (429/402/403).
-// Gated on the managed gateway being on + the managed provider being on (CLOUD-
-// ONLY) + a configured, resolvable fallback model. getRuntimeManagedModel()/
-// managedCandidates() are themselves empty when KORTIX_MANAGED_PROVIDER_ENABLED
-// is off, so a self-host naturally has no managed fallback — the explicit check
-// here is redundant belt-and-suspenders (never a silent fallback to Kortix's
-// shared credentials), not load-bearing on its own.
-function byokFallbackCandidates(): UpstreamDescriptor[] {
-  if (!config.LLM_GATEWAY_ENABLED || !config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
-  const fallbackId = config.LLM_GATEWAY_BYOK_FALLBACK_MODEL;
-  if (!fallbackId) return [];
-  const managed = getRuntimeManagedModel(fallbackId);
-  return managed ? managedCandidates(managed) : [];
-}
 
 const PLAN_UPGRADE_SUGGESTION =
   'Upgrade your plan to use this model, or choose a model available on your current plan.';
@@ -84,7 +55,7 @@ const BRING_YOUR_OWN_KEY_SUGGESTION =
   'This plan does not include managed models. Add your own provider key to use ' +
   'this model, or pick a model your key covers.';
 
-export function noManagedModelsError(model: string, tierIsPaid: boolean): GatewayResolutionError {
+function noManagedModelsError(model: string, tierIsPaid: boolean): GatewayResolutionError {
   return tierIsPaid
     ? new GatewayResolutionError(
         'plan_upgrade_required',
@@ -111,9 +82,25 @@ export function noManagedModelsError(model: string, tierIsPaid: boolean): Gatewa
 export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
+  options?: { providerSecretPools?: Record<string, string[]>; probe?: boolean },
 ): Promise<UpstreamDescriptor[]> {
-  const effectiveModel = model;
+  const effectiveModel = toWireModel(model);
+  // Whose PERSONAL keys apply (spec 2026-09-22 §2.3): absent = the token user
+  // (legacy); null = none (agent-principal session with no on-behalf-of human).
+  const personalUserId = principal.personalUserId === undefined ? principal.userId : principal.personalUserId;
+  const access = principal.projectId
+    ? await getProjectModelAccess(principal.projectId)
+    : { disabledProviders: [], disabledModels: [] };
+  if (!modelAccessAllows(access, effectiveModel)) {
+    const providerDisabled = access.disabledProviders.includes(modelAccessProvider(effectiveModel));
+    throw new GatewayResolutionError(
+      providerDisabled ? 'provider_disabled' : 'model_disabled',
+      providerDisabled ? 'This provider is disabled for this project.' : 'This model is disabled for this project.',
+      'Choose an enabled model, or ask a project manager to enable it in Models.',
+    );
+  }
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
+  const prospectiveIds = options?.providerSecretPools?.[provider];
 
   if (provider === 'codex') {
     if (!principal.projectId) {
@@ -123,11 +110,82 @@ export async function resolveCandidates(
         'Connect your ChatGPT/Codex account in project settings, then retry.',
       );
     }
+    const pooledEnabled = await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets');
+    const selectedPool = (prospectiveIds !== undefined || principal.sessionId) && principal.userId && pooledEnabled
+      ? await resolveSessionProviderSecrets({
+          accountId: principal.accountId, projectId: principal.projectId,
+          ...(prospectiveIds !== undefined ? { secretIds: prospectiveIds } : { sessionId: principal.sessionId! }),
+          ...(options?.probe ? { advanceIndex: false } : {}),
+          userId: principal.userId, grantUserId: personalUserId, providerId: 'codex', name: 'CODEX_AUTH_JSON',
+        })
+      : null;
+    if (selectedPool?.configured) {
+      if (Array.isArray(principal.agentGrant?.env) &&
+        !principal.agentGrant.env.some((name) => name.toUpperCase() === 'CODEX_AUTH_JSON')) {
+        throw new GatewayResolutionError('provider_not_connected',
+          'The running agent cannot use ChatGPT connections.',
+          'Add CODEX_AUTH_JSON to the agent secret grant, or choose another agent.');
+      }
+      if (!selectedPool.secrets.length) {
+        throw new GatewayResolutionError(
+          selectedPool.coolingDown ? 'provider_pool_rate_limited' : 'provider_not_connected',
+          selectedPool.coolingDown ? 'All selected ChatGPT connections are cooling down.' :
+            'No usable ChatGPT connection is selected for this session.',
+          'Select a granted ChatGPT connection in session settings.', selectedPool.retryAfterSeconds,
+        );
+      }
+      const candidates = [];
+      let expired = false;
+      for (const secret of selectedPool.secrets) {
+        try {
+          const accountCredential = await resolveCodexAccountCredential({
+            projectId: principal.projectId, accountId: principal.accountId,
+            sessionId: principal.sessionId ?? null, userId: principal.userId,
+            secretId: secret.secretId, value: secret.value,
+          });
+          if (!accountCredential) { expired = true; continue; }
+          candidates.push({ ...codexDescriptor(accountCredential, effectiveModel),
+            credentialRef: secret.secretId, poolSecretId: secret.secretId });
+        } catch (err) {
+          if (!(err instanceof CodexRefreshError)) throw err;
+          expired = true;
+        }
+      }
+      if (candidates.length) return candidates;
+      throw new GatewayResolutionError(expired ? 'provider_reauth_required' : 'provider_not_connected',
+        expired ? 'The selected ChatGPT connections need reconnection.' : 'No ChatGPT connection is available.',
+        'Reconnect a selected ChatGPT account or select another granted connection.');
+    }
+    if (pooledEnabled && personalUserId && !principal.keyId) {
+      const personal = await resolveDefaultCodexAccountSecret(principal.accountId, principal.projectId, personalUserId);
+      if (personal) {
+        if (Array.isArray(principal.agentGrant?.env) &&
+          !principal.agentGrant.env.some((name) => name.toUpperCase() === 'CODEX_AUTH_JSON')) {
+          throw new GatewayResolutionError('provider_not_connected',
+            'The running agent cannot use ChatGPT connections.',
+            'Add CODEX_AUTH_JSON to the agent secret grant, or choose another agent.');
+        }
+        try {
+          const credential = await resolveCodexAccountCredential({
+            projectId: principal.projectId, accountId: principal.accountId,
+            sessionId: principal.sessionId ?? null, userId: principal.userId,
+            secretId: personal.secretId, value: personal.value,
+          });
+          if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId }];
+        } catch (err) {
+          if (!(err instanceof CodexRefreshError)) throw err;
+        }
+        throw new GatewayResolutionError('provider_reauth_required',
+          'Your ChatGPT connection needs reconnection.',
+          'Reconnect your ChatGPT account in Models, then retry.');
+      }
+    }
     let credential: Awaited<ReturnType<typeof resolveCodexCredential>>;
     try {
       credential = await resolveCodexCredential(principal.projectId, principal.userId, undefined, {
         accountId: principal.accountId,
         sessionId: principal.sessionId,
+        principalUserId: personalUserId,
       });
     } catch (err) {
       if (err instanceof CodexRefreshError) {
@@ -161,8 +219,6 @@ export async function resolveCandidates(
   let byokFailure: GatewayResolutionError | null = null;
 
   if (byok && principal.projectId) {
-    // Provider keys are always project-wide (shared) — there is no
-    // per-user/private key concept. See getProjectSecretValue.
     const readGatewaySecret = (name: string) =>
       getProjectSecretValueForConsumer({
         projectId: principal.projectId!,
@@ -172,37 +228,48 @@ export async function resolveCandidates(
         name,
         consumer: 'llm_gateway',
       });
-    const keys = await resolveProjectSecretsForConsumer({
-      projectId: principal.projectId,
-      accountId: principal.accountId,
-      sessionId: principal.sessionId,
-      actorUserId: principal.userId,
-      name: byok.envVar,
-      consumer: 'llm_gateway',
-    });
+    const selectedPool = (prospectiveIds !== undefined || principal.sessionId) && principal.userId &&
+      await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets')
+      ? await resolveSessionProviderSecrets({
+          accountId: principal.accountId,
+          projectId: principal.projectId,
+          ...(prospectiveIds !== undefined ? { secretIds: prospectiveIds } : { sessionId: principal.sessionId! }),
+          ...(options?.probe ? { advanceIndex: false } : {}),
+          userId: principal.userId,
+          grantUserId: personalUserId,
+          providerId: provider,
+          name: byok.envVar,
+        })
+      : null;
+    if (selectedPool?.configured && Array.isArray(principal.agentGrant?.env) &&
+      !principal.agentGrant.env.some((identifier) => identifier.toUpperCase() === byok.envVar.toUpperCase())) {
+      throw new GatewayResolutionError('provider_not_connected',
+        `The running agent cannot use ${provider} keys.`,
+        `Add ${byok.envVar} to the agent's secret grant, or choose another agent.`);
+    }
+    const keys = selectedPool?.configured
+      ? selectedPool.secrets.map((secret) => ({ identifier: secret.secretId, value: secret.value }))
+      : await resolveProjectSecretsForConsumer({
+          projectId: principal.projectId,
+          accountId: principal.accountId,
+          sessionId: principal.sessionId,
+          actorUserId: principal.userId,
+          name: byok.envVar,
+          consumer: 'llm_gateway',
+        });
+    if (selectedPool?.configured && keys.length === 0) {
+      throw new GatewayResolutionError(
+        selectedPool.coolingDown ? 'provider_pool_rate_limited' : 'provider_not_connected',
+        selectedPool.coolingDown
+          ? `All selected ${provider} keys are cooling down after rate limits.`
+          : `No usable ${provider} key is selected for this session.`,
+        selectedPool.coolingDown
+          ? 'Retry after the provider cooldown, or select another granted key.'
+          : 'Select a granted key in session settings.',
+        selectedPool.retryAfterSeconds,
+      );
+    }
     if (keys.length > 0) {
-      const tier = config.KORTIX_BILLING_INTERNAL_ENABLED
-        ? await resolveCachedAccountTier(principal.accountId)
-        : 'self-hosted';
-      // TWO DIFFERENT QUESTIONS. Conflating them is what let a credit plan reach
-      // managed inference through the back door.
-      //
-      // 1. Does this account pay the BYOK platform fee? Free accounts do not;
-      //    every paid account does, including the v3 credit plans.
-      //    `tier` here is the RESOLVED plan key (getCachedAccountTier reads the
-      //    shared billing resolver: trial overlay and per-seat self-heal
-      //    applied), so a trial of a paid plan pays the fee for the trial
-      //    window and a stale-tier per-seat team is not waived by accident.
-      //    Deliberately plan-KEY equality with 'free', not "free family": an
-      //    unprovisioned account (`none`) has always paid this fee, and
-      //    widening the waiver to it is a pricing decision, not a refactor.
-      const isFreeTier = config.KORTIX_BILLING_INTERNAL_ENABLED && tier === 'free';
-      // 2. May this account use MANAGED inference at all? `models: []` says no
-      //    for Starter/Team/Scale even though they are paid, so this cannot be a
-      //    `tier === 'free'` check — it has to be the same entitlement predicate
-      //    the direct managed path uses (trial + operator override included).
-      //    Billing disabled (self-hosted) keeps the fallback, as before.
-      const mayUseManagedModels = await resolveCachedManagedModels(principal.accountId);
       const resolvedModelId = effectiveModel.slice(provider.length + 1);
       // Capability flags from the catalog (models.dev enrichment) so the
       // transport can decide which params a reasoning-restricted model
@@ -217,7 +284,16 @@ export async function resolveCandidates(
       // Bedrock's project-scoped region also feeds the AI-SDK engine's Bedrock
       // provider (descriptor.region); resolve it once for both baseUrl + region.
       const bedrockRegion =
-        byok.kind === 'bedrock' ? await readGatewaySecret(BEDROCK_REGION_ENV_VAR) : undefined;
+        byok.kind === 'bedrock'
+          ? (await readGatewaySecret(BEDROCK_REGION_ENV_VAR))?.trim() || undefined
+          : undefined;
+      if (bedrockRegion && !isAwsRegion(bedrockRegion)) {
+        throw new GatewayResolutionError(
+          'provider_not_connected',
+          `The project's AWS_REGION secret is not an AWS region name.`,
+          'Set AWS_REGION to a region such as us-east-1, or remove it to use us-east-1.',
+        );
+      }
       const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
       // Bedrock invoke id: normalize a wrong-geography cross-region
       // inference-profile prefix (e.g. a `jp.` pick that got stored as an
@@ -236,9 +312,11 @@ export async function resolveCandidates(
         ...(bedrockRegion ? { region: bedrockRegion } : {}),
         apiKey: value,
         credentialRef: identifier,
-        billingMode:
-          config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
-        markup: isFreeTier ? 0 : PLATFORM_FEE_MARKUP,
+        ...(selectedPool?.configured ? { poolSecretId: identifier } : {}),
+        // BYOK bills the provider account directly. Kortix records provider
+        // spend for observability but never debits Kortix credits.
+        billingMode: 'none',
+        markup: 0,
         resolvedModel: invokeModelId,
         // Bedrock-only: the id used to INVOKE stays the full cross-region
         // inference-profile id (resolvedModel above, region-normalized) — only
@@ -254,18 +332,9 @@ export async function resolveCandidates(
         reasoning: capabilities.reasoning,
         temperature: capabilities.temperature,
       }));
-      // Queue a managed model behind the BYOK key: if the user's key hits a
-      // rate-limit / quota / billing error, the failover loop falls over to it
-      // (billed as Kortix credits) so the turn doesn't die.
-      //
-      // Only for accounts entitled to managed models. Otherwise a plan that
-      // includes no inference could reach it by having its own key rate-limit —
-      // serving managed tokens the plan forbids, and skipping the wallet
-      // admission gate on the way, since that gate is bypassed for exactly the
-      // tiers this fallback would be serving.
-      return mayUseManagedModels
-        ? [...byokDescriptors, ...byokFallbackCandidates()]
-        : byokDescriptors;
+      // Never append a Kortix-managed fallback. A failed BYOK key must fail as
+      // BYOK; it must not silently convert the request into a Kortix charge.
+      return byokDescriptors;
     }
     // No shared key configured for this project — provider keys are always
     // project-wide, so there's no other place to look.
@@ -287,6 +356,10 @@ export async function resolveCandidates(
   // key; it never falls through here.
   const managed = getRuntimeManagedModel(effectiveModel);
   if (managed && config.LLM_GATEWAY_ENABLED && config.KORTIX_MANAGED_PROVIDER_ENABLED) {
+    if (access.disabledProviders.includes('kortix')) {
+      throw new GatewayResolutionError('provider_disabled', 'Kortix Managed Models are disabled for this project.',
+        'Choose a model from an enabled provider, or enable Kortix Managed Models in Models.');
+    }
     if (principal.freeModelsOnly) {
       throw new GatewayResolutionError(
         'plan_upgrade_required',
@@ -295,10 +368,14 @@ export async function resolveCandidates(
       );
     }
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-      if (!(await resolveCachedManagedModels(principal.accountId))) {
+      // Both reads go through the one billing cache in entitlements (30s TTL,
+      // one invalidation point), so the entitlement and the tier that picks
+      // the refusal copy cannot disagree. The trial overlay and the operator
+      // `managed_models_override` apply inside `accountMayUseManagedModels`.
+      if (!(await accountMayUseManagedModels(principal.accountId))) {
         // A v3 credit plan lands here too — it pays, it just doesn't bundle
         // managed inference. Telling that customer to "upgrade" is wrong.
-        const tier = await resolveCachedAccountTier(principal.accountId);
+        const tier = await getCachedAccountTier(principal.accountId);
         throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
       }
     }
@@ -306,8 +383,7 @@ export async function resolveCandidates(
     if (candidates.length) return candidates;
     // managed=true and every gate passed, but managedCandidates() itself found
     // no usable transport credential (an operator-side misconfiguration, e.g.
-    // KORTIX_MANAGED_PROVIDER_ENABLED on without AWS_BEDROCK_API_KEY/
-    // OPENROUTER_API_KEY set) — falls through to the deployment-disabled
+    // KORTIX_MANAGED_PROVIDER_ENABLED on without OPENROUTER_API_KEY set) — falls through to the deployment-disabled
     // message below, which is the closest accurate reason a caller can act on.
   }
 

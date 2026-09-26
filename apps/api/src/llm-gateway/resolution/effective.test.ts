@@ -67,23 +67,23 @@ describe('toWireModel / toOpencodeModelRef', () => {
     expect(toWireModel('glm-5.3-flash')).toBe('glm-5.3-flash');
   });
 
+  test('maps stored Morph-prefixed managed ids to the new Kortix ids', () => {
+    expect(toWireModel('morph-dsv41flash')).toBe('deepseek-v4.1-flash');
+    expect(toWireModel('kortix/morph-kimik3')).toBe('kimi-k3');
+    expect(toOpencodeModelRef('kortix/morph-kimik3-fast')).toBe('kortix/kimi-k3-fast');
+    expect(toWireModel('morph-dsv4flash')).toBe('deepseek-v4-flash-0731');
+    expect(toWireModel('deepseek-v4-flash')).toBe('deepseek-v4-flash-0731');
+  });
+
   test('puts every gateway model under the kortix OpenCode provider', () => {
     expect(toOpencodeModelRef('glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
-    expect(toOpencodeModelRef('deepseek-v4-flash')).toBe('kortix/deepseek-v4-flash');
+    expect(toOpencodeModelRef('deepseek-v4-flash')).toBe('kortix/deepseek-v4-flash-0731');
     expect(toOpencodeModelRef('claude-opus-4.8')).toBe('kortix/claude-opus-4.8');
     expect(toOpencodeModelRef('kortix/glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
     expect(toOpencodeModelRef('anthropic/claude-sonnet-4.6')).toBe(
       'kortix/anthropic/claude-sonnet-4.6',
     );
     expect(toOpencodeModelRef('codex/gpt-5.6-sol')).toBe('kortix/codex/gpt-5.6-sol');
-  });
-
-  test('round-trips a managed id through wire → opencode', () => {
-    expect(toOpencodeModelRef(toWireModel('kortix/glm-5.3-flash'))).toBe('kortix/glm-5.3-flash');
-    expect(toWireModel(toOpencodeModelRef('codex/gpt-5.6-sol'))).toBe('codex/gpt-5.6-sol');
-    expect(toWireModel(toOpencodeModelRef('anthropic/claude-sonnet-4.6'))).toBe(
-      'anthropic/claude-sonnet-4.6',
-    );
   });
 });
 
@@ -117,13 +117,16 @@ describe('degradeUnservableDefault — stale default guard', () => {
     expect(await degradeUnservableDefault(undefined, { hasProject: true }, neverProbe)).toBeNull();
   });
 
-  test('managed default is trusted without a probe (bare id and kortix/ ref)', async () => {
-    expect(await degradeUnservableDefault('glm-5.3-flash', { hasProject: true }, neverProbe)).toBe(
-      'glm-5.3-flash',
-    );
+  test('managed default is trusted without a probe or a fallback (bare id and kortix/ ref)', async () => {
+    const neverFallback = () => {
+      throw new Error('fallback must not be called for a trusted managed ref');
+    };
     expect(
-      await degradeUnservableDefault('kortix/deepseek-v4-flash', { hasProject: true }, neverProbe),
-    ).toBe('kortix/deepseek-v4-flash');
+      await degradeUnservableDefault('glm-5.3-flash', { hasProject: true }, neverProbe, neverFallback),
+    ).toBe('glm-5.3-flash');
+    expect(
+      await degradeUnservableDefault('kortix/deepseek-v4.1-flash', { hasProject: true }, neverProbe, neverFallback),
+    ).toBe('kortix/deepseek-v4.1-flash');
   });
 
   test('BYOK default with no project context degrades to platform, no probe', async () => {
@@ -152,12 +155,6 @@ describe('degradeUnservableDefault — stale default guard', () => {
         { hasProject: true },
         async () => false,
       ),
-    ).toBeNull();
-  });
-
-  test('unservable default + no fallback supplied → platform (omitting fallback preserves old behavior exactly)', async () => {
-    expect(
-      await degradeUnservableDefault('openrouter/some-model', { hasProject: true }, async () => false),
     ).toBeNull();
   });
 
@@ -199,14 +196,5 @@ describe('degradeUnservableDefault — stale default guard', () => {
         neverFallback,
       ),
     ).toBe('anthropic/claude-opus-4-8');
-  });
-
-  test('a managed default never calls probe or fallback', async () => {
-    const neverFallback = () => {
-      throw new Error('fallback must not be called for a trusted managed ref');
-    };
-    expect(await degradeUnservableDefault('glm-5.3-flash', { hasProject: true }, neverProbe, neverFallback)).toBe(
-      'glm-5.3-flash',
-    );
   });
 });

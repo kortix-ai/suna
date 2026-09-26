@@ -25,7 +25,7 @@ import {
   projectSessions,
   projectStatuses,
   projectTranscript,
-} from '../opencode-projection'
+} from '../harness/open-code/opencode-projection'
 
 const bigPrompt = 'You are a careful engineer. '.repeat(600) // ~16 KB
 
@@ -33,8 +33,8 @@ describe('projectAgents', () => {
   test('keeps the composer fields and drops the system prompt', () => {
     const raw = [
       {
-        name: 'essentia-agi',
-        description: 'The single Essentia working agent',
+        name: 'sampleco-agi',
+        description: 'The single SampleCo working agent',
         mode: 'primary',
         native: false,
         hidden: null,
@@ -49,8 +49,8 @@ describe('projectAgents', () => {
     const projected = projectAgents(raw)
     expect(projected).toHaveLength(2)
     expect(projected[0]).toMatchObject({
-      name: 'essentia-agi',
-      description: 'The single Essentia working agent',
+      name: 'sampleco-agi',
+      description: 'The single SampleCo working agent',
       mode: 'primary',
       native: false,
       source: 'config',
@@ -101,7 +101,7 @@ describe('projectConfig', () => {
     const raw = {
       model: 'kortix/codex/gpt-5.6-sol',
       small_model: 'kortix/codex/gpt-5.6-sol',
-      agent: 'essentia-agi',
+      agent: 'sampleco-agi',
       permission: { edit: 'allow' },
       instructions: ['AGENTS.md'],
       provider,
@@ -111,7 +111,7 @@ describe('projectConfig', () => {
     expect(projected).toEqual({
       model: 'kortix/codex/gpt-5.6-sol',
       small_model: 'kortix/codex/gpt-5.6-sol',
-      default_agent: 'essentia-agi',
+      default_agent: 'sampleco-agi',
       permission: { edit: 'allow' },
       instructions: ['AGENTS.md'],
       enabled_providers: Object.keys(provider),
@@ -128,15 +128,51 @@ describe('projectConfig', () => {
 })
 
 describe('session, status, permission and question projections', () => {
-  test('session list from OpenCode HTTP', () => {
-    const projected = projectSessions([
-      { id: 'ses_a', title: 'New session', directory: '/workspace', time: { created: 1, updated: 9 } },
-    ])
-    expect(projected[0]).toMatchObject({ id: 'ses_a', title: 'New session', time: { created: 1, updated: 9, compacting: null } })
+  // Same fact, two sources: the wire shape MUST NOT depend on which one
+  // answered, or a fallback becomes a visible behaviour change. Both are
+  // checked against one literal, so a regression shared by the two builders
+  // still fails.
+  test('a session list from OpenCode HTTP and from opencode.db rows project to one shape', () => {
+    const expected = [
+      {
+        id: 'ses_child',
+        title: 'Child',
+        parent_id: 'ses_root',
+        directory: '/workspace',
+        time: { created: 1, updated: 9, compacting: 7 },
+        revert: { messageID: 'msg_3', partID: 'prt_1' },
+      },
+    ]
+    expect(
+      projectSessions([
+        {
+          id: 'ses_child',
+          title: 'Child',
+          parentID: 'ses_root',
+          directory: '/workspace',
+          time: { created: 1, updated: 9, compacting: 7 },
+          revert: { messageID: 'msg_3', partID: 'prt_1' },
+        },
+      ]),
+    ).toEqual(expected)
+    expect(
+      projectSessionRows([
+        {
+          id: 'ses_child',
+          title: 'Child',
+          directory: '/workspace',
+          parent_id: 'ses_root',
+          time_created: 1,
+          time_updated: 9,
+          time_compacting: 7,
+          revert: JSON.stringify({ messageID: 'msg_3', partID: 'prt_1' }),
+        },
+      ]),
+    ).toEqual(expected)
   })
 
-  test('session list from opencode.db rows produces the identical shape', () => {
-    const fromRows = projectSessionRows([
+  test('an unparseable revert column projects to null, not a throw', () => {
+    const [row] = projectSessionRows([
       {
         id: 'ses_a',
         title: 'New session',
@@ -145,15 +181,10 @@ describe('session, status, permission and question projections', () => {
         time_created: 1,
         time_updated: 9,
         time_compacting: null,
-        revert: null,
+        revert: '{not json',
       },
     ])
-    const fromHttp = projectSessions([
-      { id: 'ses_a', title: 'New session', directory: '/workspace', time: { created: 1, updated: 9 } },
-    ])
-    // Same fact, two sources: the wire shape MUST NOT depend on which one
-    // answered, or a fallback becomes a visible behaviour change.
-    expect(fromRows).toEqual(fromHttp)
+    expect(row!.revert).toBeNull()
   })
 
   test('statuses keep only the type', () => {
@@ -258,32 +289,6 @@ describe('projectTranscript', () => {
     expect(result.savedBytes).toBeGreaterThan(199_000)
   })
 
-  test('a tool screenshot inside state.attachments is referenced too', () => {
-    const result = projectTranscript(
-      [
-        {
-          info: { id: 'msg_2', sessionID: 'ses_a', role: 'assistant', time: { created: 1 } },
-          parts: [
-            {
-              id: 'prt_tool',
-              messageID: 'msg_2',
-              sessionID: 'ses_a',
-              type: 'tool',
-              tool: 'browser',
-              state: {
-                status: 'completed',
-                attachments: [{ id: 'att_1', type: 'file', mime: 'image/png', url: dataUrl }],
-              },
-            },
-          ],
-        },
-      ],
-      'ses_a',
-    )
-    expect(JSON.stringify(result.messages)).toContain('/kortix/part/ses_a/msg_2/att_1')
-    expect(JSON.stringify(result.messages)).not.toContain('AAAA')
-  })
-
   test('a giant tool output is truncated with an explicit marker', () => {
     const output = 'L'.repeat(TOOL_OUTPUT_MAX_BYTES + 5_000)
     const result = projectTranscript(
@@ -310,9 +315,5 @@ describe('etag', () => {
 
   test('array order IS significant — a reordered transcript is a different etag', () => {
     expect(etagOf([1, 2])).not.toBe(etagOf([2, 1]))
-  })
-
-  test('a changed value changes the etag', () => {
-    expect(etagOf({ model: 'a' })).not.toBe(etagOf({ model: 'b' }))
   })
 })

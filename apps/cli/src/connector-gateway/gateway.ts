@@ -78,8 +78,17 @@ export async function callWithApprovalHandoff<T = unknown>(
   connector: string,
   action: string,
   args: Record<string, unknown>,
+  options: { account?: string | null } = {},
 ): Promise<ConnectorCallResult<T>> {
-  return client.call<T>(`${connector}.${action}`, args);
+  // Only forward a real name. `parseExecArgs` turns a bare `--account` into the
+  // string 'true', which is a flag typo, not an account — sending it would deny
+  // the call with a confusing "no account named true".
+  const account = options.account?.trim();
+  return client.call<T>(
+    `${connector}.${action}`,
+    args,
+    account && account !== 'true' ? { account } : {},
+  );
 }
 
 export interface ConnectLinkResult {
@@ -108,6 +117,11 @@ export interface SecretLinkResult {
   names: string[];
   scope: string;
   expires_at: string;
+  /** Present only when this session's agent will not receive some names. */
+  agent?: string;
+  withheld?: Array<{ name: string; reason: 'agent_grant' | 'session_allowlist' }>;
+  /** The server's one-paragraph fix for `withheld`, ready to relay. */
+  withheld_fix?: string;
 }
 
 /**
@@ -131,6 +145,16 @@ export async function mintConnectLink(opts: {
   slug: string;
   expiresInMinutes?: number;
   projectOverride?: string;
+  /**
+   * WHO the account this link creates belongs to: `me` (the human who opens
+   * the link, the server-side default) or `project` (shared with every member,
+   * which the API gates on project.connector.write).
+   *
+   * Sent only when named. A shipped CLI talks to whatever API version its host
+   * runs and the connect-request body is `.strict()`, so an unrequested `owner`
+   * would 400 every connect against an API that predates the field.
+   */
+  owner?: 'me' | 'project';
 }): Promise<ConnectLinkResult> {
   if (!opts.slug) throw new CliError('connector slug is required', 'USAGE');
   const { client, projectId } = connectorProjectContext(opts.projectOverride);
@@ -140,6 +164,7 @@ export async function mintConnectLink(opts: {
       {
         slug: opts.slug,
         ...(opts.expiresInMinutes ? { expires_in_minutes: opts.expiresInMinutes } : {}),
+        ...(opts.owner ? { owner: opts.owner } : {}),
       },
     );
     if (link?.url) {
@@ -167,7 +192,9 @@ export async function mintConnectLink(opts: {
     sessionId?: string;
     connectionId?: string;
     requestId?: string;
-  }>(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(opts.slug)}/connect`, {});
+  }>(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(opts.slug)}/connect`, {
+    ...(opts.owner ? { owner: opts.owner } : {}),
+  });
   return {
     provider: result.provider ?? 'unknown',
     url: result.connectUrl ?? null,

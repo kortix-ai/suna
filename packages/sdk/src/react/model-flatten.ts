@@ -159,17 +159,24 @@ export function flattenModels(
       // Narrow `model` itself (not a copy) so the loose-shape-only fields
       // (`reasoning`, `tool_call`, `modalities`) are safe to read below.
       let capabilities: FlatModel['capabilities'];
+      // `vision` gates whether the composer refuses an attached image, so a
+      // catalog that says NOTHING about modalities must stay `undefined`. A
+      // custom or self-hosted provider carries no signal, and reading that
+      // silence as `false` would block images on a model that can read them.
       if (hasCapabilities(model)) {
         const caps = model.capabilities;
         capabilities = {
           reasoning: caps.reasoning ?? false,
-          vision: caps.input?.image ?? false,
+          vision: caps.input ? (caps.input.image ?? false) : undefined,
           toolcall: caps.toolcall ?? false,
         };
       } else {
+        const modalityInput = model.modalities?.input;
         capabilities = {
           reasoning: model.reasoning ?? false,
-          vision: model.modalities?.input?.includes('image') ?? (model as WithGatewayFields).attachment ?? false,
+          vision: modalityInput
+            ? modalityInput.includes('image')
+            : (model as WithGatewayFields).attachment,
           toolcall: model.tool_call ?? false,
         };
       }

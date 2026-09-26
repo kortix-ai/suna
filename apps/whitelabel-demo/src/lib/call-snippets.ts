@@ -71,7 +71,6 @@ export const CALL_SNIPPET_IDS = [
   'approval.resolve',
   'secret.upsert',
   'secret.delete',
-  'connector.connect-link',
 ] as const;
 
 export type CallSnippetId = (typeof CALL_SNIPPET_IDS)[number];
@@ -208,7 +207,7 @@ function connectionsList(ctx: SnippetContext): CallSnippet {
     notes: [
       'Runs SERVER-side (`src/app/api/connections/route.ts`), and the browser never gets the raw reply: `selectBindableConnections` narrows it first, so the picker cannot offer an option that would fail at create.',
       'Only project connections (`owner_type: "project"`, `status: "active"`) survive that filter. A wrapper acts under one credential for many end users and has no personal upstream identity, so a connection a member authorized for themselves is not its to spend — and a revoked one binds fine and then fails at the first tool call.',
-      'An alias with nothing bindable is still returned, carrying its reason, so the picker can say "a teammate has to share this one" instead of pretending the connector does not exist. There is deliberately no "connect it yourself" button: the interactive flow that would is refused 403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY for a wrapper credential.',
+      'An alias with nothing bindable is still returned, carrying its reason, so the picker can say "a teammate has to share this one" instead of pretending the connector does not exist. There is deliberately no "connect it yourself" button: a wrapper credential has no personal upstream identity, so it can never complete an interactive connect flow for a member-owned account.',
       'The chosen `connection_id` is sent in `connector_bindings`. The scope endpoint can replace it later.',
     ],
   };
@@ -443,7 +442,7 @@ function approvalResolve(ctx: SnippetContext): CallSnippet {
     notes: [
       'A decision covers exactly the call that asked for it. The `session` / `session_all` scopes were removed: a grant keyed on (session, connector, action) ignores the ARGUMENTS, so approving a send to one recipient silently pre-authorised a send to any other. To run a tool unattended, author an `always_run` policy rule instead.',
       'The pending set is read from the per-SESSION audit, not the project-wide approval inbox: in wrapper mode one operator credential makes every call, so the inbox would hand this browser other end-users’ execution ids — and an execution id is all this route needs.',
-      'Some refusals cannot be retried with the same credential at all; they need a decision from a signed-in person. A wrapper has no personal upstream identity, which is also why `require_connectors` is refused 403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY.',
+      'Some refusals cannot be retried with the same credential at all; they need a decision from a signed-in person. A wrapper has no personal upstream identity, which is also why a connector call denied `connector_not_connected` for a member-owned account can never be resolved by this credential — only a teammate connecting their own account, or the project sharing one, fixes it.',
     ],
   };
 }
@@ -500,30 +499,12 @@ function secretDelete(ctx: SnippetContext): CallSnippet {
   };
 }
 
-function connectorConnectLink(ctx: SnippetContext): CallSnippet {
-  const slug = ctx.connector ?? PLACEHOLDER.connector;
-
-  return {
-    id: 'connector.connect-link',
-    title: 'Mint a connect link for a required connector',
-    summary:
-      'The remedy behind a 409 CONNECTOR_CONNECTION_REQUIRED — for the shared connectors it can fix.',
-    sdk: `await kortix.project(projectId).setupLinks.requestConnector({ slug: '${slug}' });`,
-    http: {
-      kind: 'rest',
-      method: 'POST',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/connect-requests`,
-      body: { slug },
-    },
-    serverInjected: [],
-    notes: [
-      'Session create refuses BEFORE any sandbox boots when a connector the session declares has no usable connection: 409 CONNECTOR_CONNECTION_REQUIRED (the connector exists, nothing is connected to it) or 409 REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE (the alias is not a connector on this project at all). Classify both — the second is a manifest change, not something anyone can connect their way out of.',
-      'The refusal body carries `connector_connections`, each with an `authorization_strategy`, and that field decides who can fix it. `project` means one shared connection serves everyone, which is what this call mints a link for. `user` means the connection must belong to the account the session runs as — a wrapper runs every end user under ONE credential, so no end user can satisfy it, and this call refuses a `user` connector outright with 409 CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH.',
-      'The returned `url` is a Kortix-hosted page with a short-lived token. Whoever opens it connects the account, so it is shared with the person who should own that connection, not published — and it does the one thing a wrapper credential can never do on an end user’s behalf: sign in as somebody.',
-      'Pipedream-backed connectors only. A deployment with no Pipedream answers 501, and a connector that is not connected through Pipedream answers 404 — both worth surfacing verbatim rather than retrying.',
-    ],
-  };
-}
+// `connector.connect-link` (kortix.project().setupLinks.requestConnector())
+// was removed with `ConnectRequiredCard`: the create-time connector pre-flight
+// it minted a remedy link for can no longer occur (`require_connectors` is
+// inert), so the button it backed had nothing left to be a remedy for. The
+// call-time gate's remedy is `connect_url` on the `connector_not_connected`
+// denial, surfaced by the transcript's `SetupLinkButton` — not a snippet here.
 
 const BUILDERS: Record<CallSnippetId, (ctx: SnippetContext) => CallSnippet> = {
   'project.provision': projectProvision,
@@ -538,7 +519,6 @@ const BUILDERS: Record<CallSnippetId, (ctx: SnippetContext) => CallSnippet> = {
   'approval.resolve': approvalResolve,
   'secret.upsert': secretUpsert,
   'secret.delete': secretDelete,
-  'connector.connect-link': connectorConnectLink,
 };
 
 /** One action's snippet, filled in with whatever the screen actually knows. */

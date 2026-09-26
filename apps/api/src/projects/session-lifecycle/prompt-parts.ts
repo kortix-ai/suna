@@ -1,7 +1,7 @@
 /**
  * The one sanitizer for prompt parts entering the durable inbox.
  *
- * Two producers accept caller-supplied parts — `POST .../prompts` (r8.ts) and
+ * Two producers accept caller-supplied parts — `POST .../prompts` (session-prompts.ts) and
  * `pending_prompt` on session create / warm claim (lib/sessions.ts,
  * warm-sessions.ts) — and both must apply the same repairs and the same caps,
  * or the create path becomes the way around the prompt route's limits.
@@ -12,9 +12,10 @@
  * not a blob store.
  */
 
-import { isModelNativeAttachmentMime } from '@kortix/shared';
+import { isModelNativeAttachmentMime, parseSessionAttachmentRef, MAX_PROMPT_ATTACHMENT_FILES } from '@kortix/shared';
 import { parseStagedPromptDataUrl } from './prompt-attachment-materializer';
 import type { PromptPartWire } from './store';
+import { isUuid } from '../../shared/validate';
 
 export const PROMPT_MAX_PARTS = 64;
 export const PROMPT_TEXT_PREVIEW_CHARS = 2000;
@@ -42,11 +43,21 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
     ...(typeof part?.text === 'string' ? { text: part.text } : {}),
     ...(typeof part?.mime === 'string' ? { mime: part.mime.trim() } : {}),
     ...(typeof part?.url === 'string' ? { url: part.url.trim() } : {}),
+    // `null` reads as absent: clients that serialize an empty handle as null
+    // sent it before handles existed, and the field was dropped then.
+    ...(part?.attachment_id == null ? {} : { attachment_id: part.attachment_id }),
     ...(typeof part?.filename === 'string' ? { filename: part.filename } : {}),
     ...(typeof part?.name === 'string' ? { name: part.name } : {}),
     ...(part?.source === undefined ? {} : { source: part.source }),
   }));
   const text = flattenPromptText(parts);
+  // The file cap is the staged-attachment cap, so it counts handles only.
+  // Legacy data-URL and URL file parts keep the part and byte caps.
+  const ids = parts.filter((part) => part.type === 'file' && part.attachment_id !== undefined).map((part) => part.attachment_id);
+  if (ids.length > MAX_PROMPT_ATTACHMENT_FILES) {
+    return { error: `attachments supports at most ${MAX_PROMPT_ATTACHMENT_FILES} files` };
+  }
+  if (new Set(ids).size !== ids.length) return { error: 'duplicate attachment_id' };
   if (!text && !parts.some((part) => part.type !== 'text')) {
     return { error: 'parts must carry text' };
   }
@@ -68,10 +79,20 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
 
 function validateFilePart(part: PromptPartWire): string | null {
   if (part.type !== 'file') return null;
+  if (part.attachment_id !== undefined) {
+    if (!isUuid(part.attachment_id)) {
+      return 'attachment_id must be a UUID';
+    }
+    if (part.url !== undefined) return 'attachment_id cannot be combined with URL data';
+    return null;
+  }
   const filename = part.filename?.trim() || 'File';
   const mime = part.mime?.trim();
   const url = part.url?.trim();
   if (!mime || !url) return `file "${filename}" is missing MIME or URL data`;
+  if (url.startsWith('kortix-attachment:')) {
+    return parseSessionAttachmentRef(url) ? null : `file "${filename}" has an invalid attachment reference`;
+  }
   const staged = url.toLowerCase().startsWith('data:');
   // A native file may arrive as a remote URL (already in the box) or staged
   // as a data: URL. A staged one is parsed HERE: past the inline budget the

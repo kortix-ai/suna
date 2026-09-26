@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { getManagedModel } from '@kortix/llm-catalog';
+
+import { codexModelIds } from '../models/codex-models';
 
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
@@ -20,14 +23,26 @@ describe('gateway fallback policy configuration', () => {
     }]);
   });
 
-  test('rejects malformed JSON and malformed policy shapes', () => {
+  test('rejects malformed JSON', () => {
     expect(() => parseFallbackPolicies('{not json')).toThrow('must be valid JSON');
-    expect(() => parseFallbackPolicies(JSON.stringify([{
-      id: '',
-      models: [],
-      fallbackModels: ['ok'],
-      fallbackOn: 'sometimes',
-    }]))).toThrow();
+  });
+
+  // One fault per row, from a valid base, so each rule is proven on its own.
+  const valid = { id: 'policy', models: ['vendor/model-a'], fallbackModels: ['vendor/model-b'], fallbackOn: 'transient' };
+  test.each([
+    ['an empty id', { id: '' }, 'id'],
+    ['no owned model', { models: [] }, 'models'],
+    ['an empty owned model id', { models: [''] }, 'models'],
+    ['an empty fallback model id', { fallbackModels: [''] }, 'fallbackModels'],
+    ['an unknown fallbackOn', { fallbackOn: 'sometimes' }, 'fallbackOn'],
+  ])('rejects %s', (_name, fault, field) => {
+    let issues: Array<{ path: Array<string | number> }> = [];
+    try {
+      parseFallbackPolicies(JSON.stringify([{ ...valid, ...fault }]));
+    } catch (err) {
+      issues = JSON.parse((err as Error).message);
+    }
+    expect(issues.map((issue) => issue.path[1])).toEqual([field]);
   });
 
   test('rejects ambiguous ownership of one model by multiple policies', () => {
@@ -47,12 +62,16 @@ describe('gateway fallback policy configuration', () => {
     ]))).toThrow('shared/model');
   });
 
-  test('routes the platform default to an independent managed fallback', () => {
-    expect(parseFallbackPolicies(DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES)).toContainEqual({
-      id: 'platform-default-resilience',
-      models: ['glm-5.3-flash'],
-      fallbackModels: ['deepseek-v4-flash'],
-      fallbackOn: 'transient',
-    });
+  // The shipped default must route only to ids the platform can serve, and a
+  // fallback must never be the model it backs up.
+  test('the default policies route between servable models, never a model to itself', () => {
+    const policies = parseFallbackPolicies(DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES);
+    expect(policies.length).toBeGreaterThan(0);
+    const servable = (id: string) =>
+      getManagedModel(id) !== undefined || (id.startsWith('codex/') && codexModelIds().includes(id.slice(6)));
+    for (const policy of policies) {
+      expect([...policy.models, ...policy.fallbackModels].filter((id) => !servable(id))).toEqual([]);
+      expect(policy.fallbackModels.filter((id) => policy.models.includes(id))).toEqual([]);
+    }
   });
 });

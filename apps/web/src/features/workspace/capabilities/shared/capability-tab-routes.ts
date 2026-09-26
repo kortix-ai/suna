@@ -66,8 +66,8 @@ export interface CapabilityTab {
  * Review — an inbox, not configuration — moved up onto this bar as its own
  * tab. `settings-tabs.ts` redirects every retired `/config?section=` link.
  *
- * Review is the one flag-gated tab (`review_center`); `visibleCapabilityTabs`
- * in `capability-tabs.tsx` hides it while the flag is off.
+ * No tab is flag-gated. Review was until Review Center graduated out of the
+ * flag system.
  */
 export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'agent', label: 'Agents' },

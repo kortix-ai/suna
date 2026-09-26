@@ -1,5 +1,5 @@
 // Main exports
-export { createDb, type Database } from './client';
+export { createDb, instrumentSql, type Database, type DbHooks } from './client';
 export * as schema from './schema';
 
 // Re-export frequently used schemas and types for convenience
@@ -20,12 +20,12 @@ export {
   accounts,
   accountMembers,
   accountMemberships,
+  accountScimUsers,
   accountInvitations,
   accountGithubInstallations,
   accountGithubInstallationStates,
   accountRoleEnum,
   accountsRelations,
-  accountMembersRelations,
   accountGithubInstallationsRelations,
   auditEvents,
   auditSessionSequences,
@@ -38,9 +38,15 @@ export {
   projects,
   projectGitConnections,
   projectGitCredentials,
+  projectSnapshotArchives,
+  configReleases,
+  configReleaseFailures,
   projectMembers,
   projectAccessRequests,
   projectSecrets,
+  accountSecretResources,
+  accountSecretGrants,
+  sessionProviderSecretPools,
   projectSessionSecretHandles,
   projectSecretHandleStatusEnum,
   projectSecretConsumerEnum,
@@ -95,7 +101,6 @@ export {
   projectsRelations,
   projectGitConnectionsRelations,
   projectGitCredentialsRelations,
-  projectMembersRelations,
   projectSecretsRelations,
   projectSessionsRelations,
   projectSessionRuntimeContextsRelations,
@@ -220,8 +225,11 @@ export {
   connectorPolicies,
   connectorProjectPolicies,
   connectorProjectSettings,
+  connectorSyncFences,
   connectorCalls,
   connectorAttachments,
+  promptAttachments,
+  promptAttachmentReferences,
   sessionToolApprovals,
   connectorsRelations,
   connectorActionsRelations,
@@ -229,7 +237,8 @@ export {
   connectorProjectPoliciesRelations,
   connectorProjectSettingsRelations,
 } from './schema/kortix';
-export type { AgentGrant } from './schema/kortix';
+export type { AgentGrant, StoredAgentGrant } from './schema/kortix';
+export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
@@ -248,11 +257,9 @@ export type {
   Account,
   AccountMember,
   NewAccount,
-  NewAccountMember,
   Project,
   NewProject,
   ProjectMember,
-  NewProjectMember,
   ProjectSecret,
   NewProjectSecret,
   ChatChannelBinding,
@@ -290,3 +297,5 @@ export type {
   GatewayBudget,
   NewGatewayBudget,
 } from './types';
+
+export { userProviderConnections, projectUserProviderConnections, sessionUserProviderConnections } from './schema/kortix';

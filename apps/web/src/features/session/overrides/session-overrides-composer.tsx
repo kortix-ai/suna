@@ -5,12 +5,15 @@ import { useMemo } from 'react';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
 import { useProjectSession } from '@kortix/sdk/react';
 
+import { ProviderPoolDraftBoundary } from './provider-pool-draft-context';
 import { SessionOverridesToolbar, type SessionOverrideSlot } from './session-overrides-toolbar';
 
 export interface SessionOverridesComposerProps {
   projectId: string;
   sessionId?: string;
   onCommittedDraft?: (commit: SessionScopeCommit | undefined) => void;
+  providerSecretPools?: Record<string, string[]>;
+  onProviderSecretPoolsChange?: (selection: Record<string, string[]>) => void;
 
   /**
    * The agent this session runs as. NOT rendered as a row — it is the key the
@@ -53,6 +56,8 @@ export function SessionOverridesComposer({
   projectId,
   sessionId,
   onCommittedDraft,
+  providerSecretPools,
+  onProviderSecretPoolsChange,
   selectedAgent,
   sandboxSlot,
 }: SessionOverridesComposerProps) {
@@ -67,13 +72,18 @@ export function SessionOverridesComposer({
   );
 
   return (
-    <SessionOverridesToolbar
-      projectId={projectId}
-      sessionId={sessionId}
-      agentName={selectedAgent ?? undefined}
-      onCommittedDraft={onCommittedDraft}
-      sandbox={sandbox}
-      sandboxSlot={sandboxSlot}
-    />
+    <ProviderPoolDraftBoundary identity={`${projectId}/${sessionId ?? 'new'}`}>
+      <SessionOverridesToolbar
+        key={`${projectId}/${sessionId ?? 'new'}`}
+        projectId={projectId}
+        sessionId={sessionId}
+        agentName={selectedAgent ?? undefined}
+        onCommittedDraft={onCommittedDraft}
+        providerSecretPools={providerSecretPools}
+        onProviderSecretPoolsChange={onProviderSecretPoolsChange}
+        sandbox={sandbox}
+        sandboxSlot={sandboxSlot}
+      />
+    </ProviderPoolDraftBoundary>
   );
 }

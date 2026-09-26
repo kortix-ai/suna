@@ -76,7 +76,8 @@ function collectRoutes(dir: string, segments: string[] = [], out: string[][] = [
   return out;
 }
 
-const APP_DIR = join(import.meta.dir, '..', 'app');
+// Every page lives under app/[locale]; its URL is the path below that segment.
+const APP_DIR = join(import.meta.dir, '..', 'app', '[locale]');
 const ROUTES = collectRoutes(APP_DIR);
 
 /**
@@ -160,14 +161,16 @@ describe('every capability tab has a palette row', () => {
   });
 });
 
-describe('the flag-gated capability tab', () => {
-  test('Review carries the same flag its tab does', () => {
+describe('the Review capability tab', () => {
+  test('Review has a palette row, and like its tab it carries no flag', () => {
     // `/projects/<id>/config` and its `?section=` rows are gone (2026-09-02);
     // its configuration sections are Settings-overlay tabs, whose palette rows
     // are DERIVED from the rail and covered by `command-palette.test.tsx`.
-    // Review is the one section that became a capability tab, and its row
-    // must hide exactly when the tab does.
-    expect(rowFor(capabilityTabHref(PROJECT_TOKEN, 'review'))?.requiresFlag).toBe('review_center');
+    // Review is the one section that became a capability tab. Review Center
+    // graduated out of the flag system, so its row must never hide behind one.
+    const row = rowFor(capabilityTabHref(PROJECT_TOKEN, 'review'));
+    expect(row).toBeDefined();
+    expect(row?.requiresFlag).toBeUndefined();
   });
 });
 

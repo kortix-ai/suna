@@ -23,9 +23,9 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { isAccountCreationRestricted } from '@/lib/config';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { type KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
@@ -166,10 +166,15 @@ export function AccountListContent() {
           void queryClient.invalidateQueries({
             queryKey: qk.projects.scope(),
           });
-          // The landing door, NOT the remembered project: that cookie names a
-          // project in the account being left.
+          // `/new` scoped to the account just created — NOT the landing door.
+          // The door opens the remembered project in ANY account
+          // (`decideDoor`), so a brand-new empty account falls through to
+          // some other account's project, and
+          // `projects/start/page.tsx` then heals the persisted selection to
+          // THAT account — undoing the switch above. Same destination the
+          // sidebar's create row uses, so both paths land in one place.
           forgetPushedEntry();
-          router.replace(PROJECT_LANDING_PATH);
+          router.replace(newWorkspacePathForAccount(account.account_id));
         }}
       />
     </>

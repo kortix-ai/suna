@@ -1,3 +1,4 @@
+import { resolveHarness } from './harness/harness'
 import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, extname, join, normalize } from 'node:path'
 
@@ -54,7 +55,6 @@ const ALLOWED_ROOTS = ['/workspace', '/tmp']
  */
 const DENIED_PATH_SEGMENTS = [
   '/.config/',
-  '/.local/share/opencode/',
   '/.ssh/',
   '/.aws/',
   '/.gnupg/',
@@ -119,7 +119,7 @@ function isDenied(absPath: string): boolean {
   // `absPath` is normalized, so a traversal has collapsed before it gets here
   // and cannot smuggle a denied segment past this.
   const probe = `${absPath}/`
-  return DENIED_PATH_SEGMENTS.some((segment) => probe.includes(segment))
+  return [...DENIED_PATH_SEGMENTS, ...resolveHarness().environment.protectedPathSegments].some((segment) => probe.includes(segment))
 }
 
 function underAny(absPath: string, roots: readonly string[]): boolean {

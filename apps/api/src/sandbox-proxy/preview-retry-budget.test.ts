@@ -1,170 +1,132 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 
 import {
   PROXY_ATTEMPT_TIMEOUT_MS,
+  PROXY_RETRY_BUDGET_MS,
+  isFileImportRequest,
   isLongTurnCompletionRequest,
   proxyAttemptTimeoutMs,
 } from './preview-retry-budget';
 
-// `POST /session/:id/message` is OpenCode's synchronous, blocking turn
-// endpoint: it doesn't emit response headers until the whole reasoning +
-// tool-call turn is done. It must get the same "remaining budget, not the
-// generic 15s connect cap" treatment as a multipart upload, or a perfectly
-// healthy 20-40s turn gets aborted and its non-idempotent body gets resent.
+// The daemon answers `POST /file/import` only after download, fsync and rename,
+// bounded by its own IMPORT_TIMEOUT_MS. A shorter proxy attempt aborts a healthy
+// import. That the import is never replayed is proven on the forward path
+// (routes/forward.test.ts).
+describe('/file/import', () => {
+  const daemonFiles = readFileSync(
+    new URL('../../../kortix-sandbox-agent-server/src/routes/files.ts', import.meta.url),
+    'utf8',
+  );
+  const daemonImportTimeoutMs = Number(
+    /const IMPORT_TIMEOUT_MS = ([\d_]+)/.exec(daemonFiles)?.[1]?.replaceAll('_', ''),
+  );
+
+  test('a daemon /file/import attempt outlasts the daemon\'s own import timeout', () => {
+    expect(daemonImportTimeoutMs).toBeGreaterThan(PROXY_ATTEMPT_TIMEOUT_MS);
+    const request = { method: 'POST', path: '/file/import', port: 8000 };
+    expect(isFileImportRequest(request)).toBe(true);
+    // The first attempt starts with the whole budget; the import still gets more
+    // than the daemon's own bound, so the daemon always answers or aborts first.
+    expect(proxyAttemptTimeoutMs(PROXY_RETRY_BUDGET_MS, request)).toBeGreaterThan(
+      daemonImportTimeoutMs,
+    );
+    expect(proxyAttemptTimeoutMs(PROXY_RETRY_BUDGET_MS - 20_000, request)).toBeGreaterThan(
+      daemonImportTimeoutMs,
+    );
+    // Only the import POST: a GET or a lookalike path keeps the generic cap.
+    expect(
+      proxyAttemptTimeoutMs(PROXY_RETRY_BUDGET_MS, { method: 'GET', path: '/file/import', port: 8000 }),
+    ).toBe(PROXY_ATTEMPT_TIMEOUT_MS);
+    expect(
+      proxyAttemptTimeoutMs(PROXY_RETRY_BUDGET_MS, { method: 'POST', path: '/file/imports', port: 8000 }),
+    ).toBe(PROXY_ATTEMPT_TIMEOUT_MS);
+  });
+
+  // Only the daemon serves `/file/import`. The user's own server on another port
+  // may expose the same path, and that request keeps the generic cap and budget.
+  test('/file/import on a non-daemon port, or with no port, is an ordinary request', () => {
+    for (const request of [
+      { method: 'POST', path: '/file/import', port: 3000 },
+      { method: 'POST', path: '/file/import', port: 4096 },
+      { method: 'POST', path: '/file/import' },
+    ]) {
+      expect(isFileImportRequest(request)).toBe(false);
+      expect(proxyAttemptTimeoutMs(PROXY_RETRY_BUDGET_MS, request)).toBe(PROXY_ATTEMPT_TIMEOUT_MS);
+      expect(proxyAttemptTimeoutMs(5_000, request)).toBe(5_000);
+    }
+  });
+});
+
+// `message`, `command` and `summarize` are OpenCode's blocking turn endpoints:
+// the response is emitted only when the whole turn (or summary) is done. Capped
+// at the generic 15s connect window, a healthy 20-40s turn is aborted and its
+// non-idempotent body re-POSTed. `/command` was missing until 2026-08-11 (one
+// `/webapp` submit became four identical user messages); `/summarize` until
+// 2026-08-26 (every compaction died as `503 upstream unreachable`).
 describe('isLongTurnCompletionRequest', () => {
-  test('POST /session/:id/message matches', () => {
-    expect(isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/message' })).toBe(
-      true,
-    );
-    expect(isLongTurnCompletionRequest({ method: 'post', path: '/session/abc-123/message' })).toBe(
-      true,
-    );
-    expect(
-      isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/message?x=1' }),
-    ).toBe(true);
-  });
-
-  test('GET (fetch transcript) does not match, only the blocking POST does', () => {
-    expect(isLongTurnCompletionRequest({ method: 'GET', path: '/session/abc123/message' })).toBe(
-      false,
-    );
-  });
-
-  test('the async sibling endpoint does not match — it already returns immediately', () => {
-    expect(
-      isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/prompt_async' }),
-    ).toBe(false);
-  });
-
-  test('an unrelated path with "/message" elsewhere does not match', () => {
-    expect(
-      isLongTurnCompletionRequest({ method: 'POST', path: '/not-session/abc123/message' }),
-    ).toBe(false);
-    expect(isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/messages' })).toBe(
-      false,
-    );
+  test.each([
+    ['POST', '/session/abc123/message', true],
+    ['post', '/session/abc-123/message', true],
+    ['POST', '/session/abc123/message?x=1', true],
+    ['POST', '/session/abc123/command', true],
+    ['post', '/session/abc-123/command', true],
+    ['POST', '/session/abc123/command?x=1', true],
+    ['POST', '/session/abc123/summarize', true],
+    ['post', '/session/abc-123/summarize', true],
+    ['POST', '/session/abc123/summarize?x=1', true],
+    // A transcript read, and the async sibling that returns immediately.
+    ['GET', '/session/abc123/message', false],
+    ['GET', '/session/abc123/command', false],
+    ['GET', '/session/abc123/summarize', false],
+    ['POST', '/session/abc123/prompt_async', false],
+    // Lookalike paths.
+    ['POST', '/not-session/abc123/message', false],
+    ['POST', '/session/abc123/messages', false],
+    ['POST', '/session/abc123/commands', false],
+    ['POST', '/not-session/abc123/command', false],
+    ['POST', '/session/abc123/summarizes', false],
+    ['POST', '/not-session/abc123/summarize', false],
+  ])('%s %s blocks for the whole turn: %p', (method, path, blocks) => {
+    expect(isLongTurnCompletionRequest({ method, path })).toBe(blocks);
   });
 });
 
 describe('proxyAttemptTimeoutMs', () => {
-  test('an ordinary GET is capped at the generic 15s connect window', () => {
-    expect(proxyAttemptTimeoutMs(40_000, { method: 'GET', path: '/session/abc123/status' })).toBe(
-      PROXY_ATTEMPT_TIMEOUT_MS,
+  // The generic window, shrunk to whatever budget remains, with a 1s floor so
+  // the last attempt still gets a chance.
+  test.each([
+    [50_000, 15_000],
+    [40_000, 15_000],
+    [15_000, 15_000],
+    [10_000, 10_000],
+    [2_500, 2_500],
+    [800, 1_000],
+    [0, 1_000],
+    [-5_000, 1_000],
+  ])('an ordinary request with %p ms of budget left gets %p ms', (remaining, attempt) => {
+    expect(proxyAttemptTimeoutMs(remaining)).toBe(attempt);
+    expect(proxyAttemptTimeoutMs(remaining, { method: 'GET', path: '/session/abc123/status' })).toBe(
+      attempt,
     );
   });
 
-  test('with no request info at all, still caps at the generic window', () => {
-    expect(proxyAttemptTimeoutMs(40_000)).toBe(PROXY_ATTEMPT_TIMEOUT_MS);
+  // A blocking turn and an upload get ~the whole remaining budget, not the 15s
+  // cap, but never more than remains, and never less than the 1s floor.
+  test.each([
+    ['POST', '/session/abc123/message'],
+    ['POST', '/session/abc123/command'],
+    ['POST', '/session/abc123/summarize'],
+    ['POST', '/file/upload'],
+  ])('%s %s gets the remaining budget, bounded and floored', (method, path) => {
+    expect(proxyAttemptTimeoutMs(40_000, { method, path })).toBe(39_500);
+    expect(proxyAttemptTimeoutMs(PROXY_RETRY_BUDGET_MS, { method, path })).toBe(
+      PROXY_RETRY_BUDGET_MS - 500,
+    );
+    expect(proxyAttemptTimeoutMs(5_000, { method, path })).toBe(4_500);
+    expect(proxyAttemptTimeoutMs(200, { method, path })).toBe(1_000);
   });
 
-  test('a blocking session-message POST gets ~the whole remaining budget, not the 15s cap', () => {
-    expect(proxyAttemptTimeoutMs(40_000, { method: 'POST', path: '/session/abc123/message' })).toBe(
-      39_500,
-    );
-  });
-
-  test('an upload keeps its existing remaining-budget treatment (no regression)', () => {
-    expect(proxyAttemptTimeoutMs(40_000, { method: 'POST', path: '/file/upload' })).toBe(39_500);
-  });
-
-  test('a blocking session-message POST never drops below the 1s floor', () => {
-    expect(proxyAttemptTimeoutMs(200, { method: 'POST', path: '/session/abc123/message' })).toBe(
-      1_000,
-    );
-  });
-
-  test('a blocking session-message POST is still bounded by whatever budget remains', () => {
-    // Near the end of the outer 50s budget, the exempted class must shrink
-    // with it — it never gets MORE than the remaining wall-clock budget, only
-    // the generic 15s floor is what it's exempt from.
-    expect(proxyAttemptTimeoutMs(5_000, { method: 'POST', path: '/session/abc123/message' })).toBe(
-      4_500,
-    );
-    expect(
-      proxyAttemptTimeoutMs(5_000, { method: 'POST', path: '/session/abc123/message' }),
-    ).toBeLessThan(PROXY_ATTEMPT_TIMEOUT_MS);
-  });
-});
-
-// ── Regression: `/command` is a blocking turn too ──────────────────────────
-//
-// A `/` slash-command goes to `POST /session/:id/command`, NOT
-// `/session/:id/message`. OpenCode holds that response open for the whole turn
-// exactly like `/message` does, but the matcher only listed `/message` — so a
-// command got the generic 15s connect cap, the abort looked like a stalled
-// connection, and the retry loop re-POSTed the SAME non-idempotent command up
-// to 4 times. Observed 2026-08-11 in session 9f6b0d87: one `/webapp` submit
-// produced 4 identical user messages, 11.0s / 11.8s / 13.7s apart.
-describe('isLongTurnCompletionRequest — slash commands', () => {
-  test('POST /session/:id/command matches (it blocks for the whole turn)', () => {
-    expect(isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/command' })).toBe(
-      true,
-    );
-    expect(isLongTurnCompletionRequest({ method: 'post', path: '/session/abc-123/command' })).toBe(
-      true,
-    );
-    expect(
-      isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/command?x=1' }),
-    ).toBe(true);
-  });
-
-  test('GET does not match, and neither does a lookalike path', () => {
-    expect(isLongTurnCompletionRequest({ method: 'GET', path: '/session/abc123/command' })).toBe(
-      false,
-    );
-    expect(isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/commands' })).toBe(
-      false,
-    );
-    expect(
-      isLongTurnCompletionRequest({ method: 'POST', path: '/not-session/abc123/command' }),
-    ).toBe(false);
-  });
-
-  test('a command POST gets ~the whole remaining budget, not the 15s cap', () => {
-    expect(proxyAttemptTimeoutMs(40_000, { method: 'POST', path: '/session/abc123/command' })).toBe(
-      39_500,
-    );
-  });
-});
-
-// ── Regression: `/summarize` (compaction) is a blocking turn too ───────────
-//
-// Same omission as `/command`, one endpoint over: OpenCode holds the response
-// to `POST /session/:id/summarize` open until the ENTIRE summary turn is done —
-// routinely 30s+ with a large model over a long transcript. Missing from this
-// matcher it got the generic 15s cap here and the daemon's 10s cap inside the
-// sandbox, so EVERY compaction died as
-// `503 {"error":"upstream unreachable","details":"The operation was aborted."}`
-// — and the retry loop then re-POSTed the non-idempotent summarize, stacking
-// failed summary attempts in the transcript. Observed 2026-08-26 on /compact.
-describe('isLongTurnCompletionRequest — summarize (compaction)', () => {
-  test('POST /session/:id/summarize matches (it blocks for the whole summary turn)', () => {
-    expect(isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/summarize' })).toBe(
-      true,
-    );
-    expect(
-      isLongTurnCompletionRequest({ method: 'post', path: '/session/abc-123/summarize' }),
-    ).toBe(true);
-    expect(
-      isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/summarize?x=1' }),
-    ).toBe(true);
-  });
-
-  test('GET does not match, and neither does a lookalike path', () => {
-    expect(isLongTurnCompletionRequest({ method: 'GET', path: '/session/abc123/summarize' })).toBe(
-      false,
-    );
-    expect(
-      isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/summarizes' }),
-    ).toBe(false);
-    expect(
-      isLongTurnCompletionRequest({ method: 'POST', path: '/not-session/abc123/summarize' }),
-    ).toBe(false);
-  });
-
-  test('a summarize POST gets ~the whole remaining budget, not the 15s cap', () => {
-    expect(
-      proxyAttemptTimeoutMs(40_000, { method: 'POST', path: '/session/abc123/summarize' }),
-    ).toBe(39_500);
-  });
+  // The 60 s ALB idle cut is proven on the route, on a fake clock against a
+  // hanging upstream: e2e-preview-proxy "when every upstream hangs".
 });

@@ -19,6 +19,7 @@ import { useBillingReturnUrl } from '@/features/billing/billing-return';
 import { CreditTopupSection } from '@/features/billing/credit-topup-section';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { UPGRADE_MODAL_PLANS, type UpgradeModalPlanId } from '@/features/billing/pricing-plans';
+import { useUpgradeModalHost } from '@/features/billing/use-upgrade-modal-host';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import {
   invalidateAccountState,
@@ -395,6 +396,11 @@ function CreditTopUpModal({
 }
 
 export function GlobalUpgradeModal() {
+  const selected = useUpgradeModalHost();
+  return selected ? <GlobalUpgradeModalContent /> : null;
+}
+
+function GlobalUpgradeModalContent() {
   const {
     isOpen,
     closeUpgradeDialog,

@@ -184,6 +184,20 @@ describe('Agent Tunnel CLI', () => {
     expect(r.json!.size).toBe(11);
   });
 
+  test('fs_upload refuses an older agent response without checksum proof', async () => {
+    const source = resolve(import.meta.dir, '../../../../tests/fixtures/tunnel-integrity.xlsx');
+    const r = await runCli('fs_upload', JSON.stringify({ source, path: '/tmp/report.xlsx' }));
+    expect(r.exitCode).toBe(1);
+    expect(r.json?.success).toBe(false);
+    expect(r.json?.error).toContain('Destination verification failed');
+  });
+
+  test('fs_upload rejects a missing source before calling the server', async () => {
+    const r = await runCli('fs_upload', JSON.stringify({ path: '/tmp/report.xlsx' }));
+    expect(r.exitCode).toBe(1);
+    expect(r.json?.error).toBe('source is required');
+  });
+
   test('fs_list returns entries', async () => {
     const r = await runCli('fs_list', '{"path":"/tmp"}');
     expect(r.exitCode).toBe(0);

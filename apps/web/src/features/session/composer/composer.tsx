@@ -1,17 +1,19 @@
 'use client';
 
 import { errorToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
-import type { Agent, Command, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
-import { useRuntimeSessions } from '@kortix/sdk/react';
-import {
-  ArrowBendDoubleUpLeftIcon,
-  ArrowUpLeftIcon as ArrowUpLeft,
-  WarningIcon,
-} from '@phosphor-icons/react';
+import type {
+  Agent,
+  Command,
+  MessageWithParts,
+  ProviderListResponse,
+  UsePromptAttachmentsResult,
+} from '@kortix/sdk/react';
+import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
+import { ArrowUpLeftIcon as ArrowUpLeft, WarningIcon } from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
-import { useTranslations } from '@/i18n/use-translations';
 import type { RefObject } from 'react';
 import {
   lazy,
@@ -27,14 +29,16 @@ import {
 } from 'react';
 import { extractClipboardFiles } from '../clipboard-files';
 import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
-import { resolveComposerResetOnSend } from '../composer-reset';
+import { resolveComposerResetOnSend, type ComposerSendReset } from '../composer-reset';
+import { disownSentAttachmentPreviews, revokeUnsentPreview } from '../sent-attachment-previews';
 import {
   isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   resolveAvailableSelectedModel,
+  modelRejectingAttachedImages,
 } from '../model-availability';
-import { ModelConnectionBar } from '../model-connection-gate';
+import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
 import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
@@ -45,8 +49,20 @@ import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { Close } from '@/features/icon/icons/close';
 import { AnimatedComposerPlaceholder } from './animated-placeholder';
+import { handleBillingError } from '@/lib/error-handler';
+import {
+  attachedFileUploadId,
+  attachmentsBlockSend,
+  captureAttachmentSubmission,
+  dispatchLatched,
+  type DispatchOutcome,
+  planAttachmentReplacement,
+  runComposerSend,
+  stageComposerFiles,
+  takeNewBillingRefusals,
+  type AttachmentSubmission,
+} from './attachment-submission';
 import { AttachmentTiles } from './attachment-tiles';
 import {
   draftWillRunCommand,
@@ -54,10 +70,17 @@ import {
   readCommandChipLabel,
 } from './command-attachments';
 import {
+  appendComposerQuote,
+  type ComposerQuote,
+  extractReplyQuotes,
   planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
+  planQuoteRequests,
+  type QuoteRequest,
+  removeComposerQuote,
   resolveEditorPlaceholder,
+  restoreComposerQuotes,
   shouldApplyPrefill,
   shouldFocusEditorFromPadding,
   textToDocument,
@@ -70,14 +93,19 @@ import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, localizedSlashActions, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
+import { QuoteList } from './quote-list';
 import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile, TrackedMention } from './types';
 
 /** A draft captured out of the editor at Enter time — see `createSubmitLatch`. */
 interface StashedDraft {
+  placement: 'transcript' | 'composer';
   content: ReturnType<ComposerEditorHandle['getContent']>;
   doc: JSONContent | null;
   files: AttachedFile[];
+  /** The reply quotes, taken out of the list with the draft. */
+  quotes: ComposerQuote[];
+  attachmentSubmission: AttachmentSubmission;
 }
 
 export interface SessionChatInputProps {
@@ -85,7 +113,15 @@ export interface SessionChatInputProps {
     text: string,
     files?: AttachedFile[],
     mentions?: TrackedMention[],
+    attachments?: AttachmentSubmission,
+    placement?: 'transcript' | 'composer',
   ) => void | Promise<void>;
+  /**
+   * A host-owned upload controller. Pass one when this composer can remount
+   * while a send still holds its uploads (the boot shell's first send).
+   * Defaults to a controller owned by this composer.
+   */
+  promptAttachments?: UsePromptAttachmentsResult;
   isBusy?: boolean;
   /**
    * The session is working, per the ONE projection (`useSessionWorking`).
@@ -179,6 +215,7 @@ export interface SessionChatInputProps {
    * marketing-demo composers rely on.
    */
   draftScope?: DraftScope | null;
+  draftActive?: boolean;
   disabled?: boolean;
   /**
    * A line shown in a bar directly ABOVE the composer card. Used for "this
@@ -196,11 +233,23 @@ export interface SessionChatInputProps {
    * shortly.
    */
   onNoticeRetry?: () => void;
-  clearOnSend?: boolean;
+  /** What send does to this composer — see `ComposerSendReset`. */
+  clearOnSend?: ComposerSendReset;
   modelRequired?: boolean;
   modelsLoading?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
+  /**
+   * A functional hint that replaces the rotating placeholder while it is set —
+   * the session passes "Press ↑ to edit queued messages" while entries are
+   * queued. Lock copy (a pending question or approval) still wins.
+   */
+  hint?: string;
+  /**
+   * Up with the caret on the editor's first visual row. Returns whether it
+   * acted; `false` keeps Up as an ordinary caret move.
+   */
+  onArrowUpAtStart?: () => boolean;
   prefill?: {
     text: string;
     id: number;
@@ -277,8 +326,23 @@ export interface SessionChatInputProps {
 
   cardClassName?: string;
 
-  replyTo?: { text: string } | null;
-  onClearReply?: () => void;
+  /**
+   * Reply quotes to add — transcript selections the user clicked "Reply" on,
+   * oldest first. Id-keyed like `prefill`: each id appends ONE quote to the
+   * list drawn above the input (`QuoteList`), in array order. Accepted at any
+   * time, question lock and disabled editor included: the list never touches
+   * the editor document. A quote already in the list is not added twice, and
+   * the same id is never applied twice. The next normal send carries every
+   * quote as a leading `<reply_context>` line (`withReplyQuotes`).
+   */
+  quoteRequests?: readonly QuoteRequest[];
+  /**
+   * Called with the ids just applied — the consume half of the handoff, same
+   * contract as `onPrefillApplied`. A holder removes those ids on this
+   * (`acknowledgeQuoteRequests`) so a later remount of the composer cannot
+   * apply them again.
+   */
+  onQuoteRequestsApplied?: (requestIds: number[]) => void;
   lockForQuestion?: boolean;
   lockForApproval?: boolean;
   onCustomAnswer?: (text: string) => void;
@@ -291,8 +355,8 @@ export interface SessionChatInputProps {
 
 /**
  * The composer's outer shell — max width, centering, and the horizontal gutter
- * everything in the composer (notice bar, reply bar, card, under-row, model
- * connection bar) is measured from.
+ * everything in the composer (notice bar, card, under-row, model connection
+ * bar) is measured from.
  *
  * The BASE gutter is `px-4` and it carries no breakpoint, deliberately. This
  * was `px-2 sm:px-0`, and `sm:` is a VIEWPORT query answering a CONTAINER
@@ -318,31 +382,23 @@ export interface SessionChatInputProps {
  * narrower than either max-width — every panel-open case — the card's edges
  * land on exactly the same rails as the messages above it.
  *
- * `md:pr-1` is Jay's optical trim and is NOT the old bug returning — do not
- * "clean it up". It trims the RIGHT gutter to 4px from `md` up because on
- * desktop the chat column already ends in the action-panel column's chevron
- * rail (`session-action-panel-column.tsx`: `gap-2` + a `size-7` button + `mr-1`
- * when collapsed, ~40px), so a full 16px on top of that read as a composer
- * pushed left. The distinction that matters: a breakpoint may TRIM this gutter,
- * it may never ZERO it — zero is what let the card touch the panel divider, and
- * `composer-underbar.test.tsx` guards exactly that line.
+ * The gutter is equal on both sides. It used to carry `md:pr-1`, a right-side
+ * trim against the collapsed action-panel chevron rail, which then took ~37px
+ * of the row's width. That rail now takes no width (`COLLAPSED_RAIL_OFFSET` in
+ * `session-action-panel-column.tsx`), so the trim only shifted the card 5.5px
+ * right of center. A breakpoint may never ZERO this gutter — zero is what let
+ * the card touch the panel divider, and `composer-underbar.test.tsx` guards
+ * exactly that line.
  *
- * Known limit of the trim, left as-is on purpose: the chevron rail it
- * compensates for is not always there. The panel column is `hidden` while a
- * detail panel (browser, terminal, files, preview) is up, and it never mounts
- * on project-home / instant-session-shell. In those states the right gutter is
- * 4px against a 16px left. Worth a look if the composer ever reads
- * right-shifted with a browser tab open; harmless otherwise.
- *
- * Beyond that trim, do not add breakpoints. If this needs to respond to width,
+ * Do not add breakpoints. If this needs to respond to width,
  * it has to be a container query on the chat column, not a media query — the
  * media query cannot see the panel, which is the whole reason it broke before.
  */
-export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
+export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4';
 
 /**
- * The inset strip above the card that hosts `inputSlot` — the approval notice,
- * the permission notice, and `QuestionPrompt`.
+ * The inset strip above the card that hosts `inputSlot` — the queued messages,
+ * the approval notice, the permission notice, and `QuestionPrompt`.
  *
  * `items-center` is load-bearing and it BITES: a flex column sizes each child
  * to its content unless the child says otherwise, so anything mounted here that
@@ -360,6 +416,7 @@ const EMPTY_COMMANDS: Command[] = [];
 const EMPTY_MODELS: FlatModel[] = [];
 const EMPTY_VARIANTS: string[] = [];
 const EMPTY_SLASH_FILES: SlashFile[] = [];
+const NO_QUOTE_REQUESTS: readonly QuoteRequest[] = [];
 
 /** Stable identities for the command-chip subscription below. */
 const NO_SUBSCRIPTION = () => {};
@@ -391,6 +448,7 @@ function setDocumentWithoutStealingFocus(
 
 function ComposerImpl({
   onSend,
+  promptAttachments: hostPromptAttachments,
   isBusy = false,
   sessionWorking,
   runtimeReady = true,
@@ -417,6 +475,7 @@ function ComposerImpl({
   sessionId,
   projectId,
   draftScope = null,
+  draftActive = true,
   disabled = false,
   notice = null,
   onNoticeRetry,
@@ -425,6 +484,8 @@ function ComposerImpl({
   modelsLoading = false,
   autoFocus,
   placeholder = 'Ask anything…',
+  hint,
+  onArrowUpAtStart,
   prefill = null,
   onPrefillApplied,
   attachRequestId = null,
@@ -437,8 +498,8 @@ function ComposerImpl({
   underbarPlacement = 'below',
   slashMenuPlacement = 'above',
   cardClassName,
-  replyTo,
-  onClearReply,
+  quoteRequests = NO_QUOTE_REQUESTS,
+  onQuoteRequestsApplied,
   lockForQuestion = false,
   lockForApproval = false,
   onCustomAnswer,
@@ -449,7 +510,10 @@ function ComposerImpl({
   parentClassName,
 }: SessionChatInputProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tModelGate = useTranslations('sessionUi.modelGate');
+  const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tThreads = useTranslations('threads');
 
   const dockId = `composer-slash-dock-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
@@ -460,6 +524,60 @@ function ComposerImpl({
   useEffect(() => {
     attachedFilesRef.current = attachedFiles;
   }, [attachedFiles]);
+  /**
+   * The reply quotes, in send order — the card above the input. Not part of
+   * the editor document: a send prepends them (`planDraftSubmission`).
+   * `quotesRef` is the synchronous mirror, for the same reader
+   * `attachedFilesRef` exists for, and `setQuoteList` writes both.
+   */
+  const [quotes, setQuotes] = useState<ComposerQuote[]>([]);
+  const quotesRef = useRef<ComposerQuote[]>([]);
+  const nextQuoteIdRef = useRef(0);
+  const setQuoteList = useCallback(
+    (update: (current: ComposerQuote[]) => ComposerQuote[]) => {
+      const next = update(quotesRef.current);
+      if (next === quotesRef.current) return;
+      quotesRef.current = next;
+      setQuotes(next);
+    },
+    [],
+  );
+  /** Append quote texts, each with a fresh local id. Blank and repeated texts are skipped. */
+  const appendQuoteTexts = useCallback(
+    (texts: readonly string[]) => {
+      setQuoteList((current) =>
+        texts.reduce((list, text) => {
+          const next = appendComposerQuote(list, text, `quote-${nextQuoteIdRef.current + 1}`);
+          if (next !== list) nextQuoteIdRef.current += 1;
+          return next;
+        }, current),
+      );
+    },
+    [setQuoteList],
+  );
+  /** Put quotes that left with a draft back at the head of the list (`restoreComposerQuotes`). */
+  const restoreQuoteTexts = useCallback(
+    (texts: readonly string[]) => {
+      setQuoteList((current) =>
+        restoreComposerQuotes(current, texts, () => `quote-${++nextQuoteIdRef.current}`),
+      );
+    },
+    [setQuoteList],
+  );
+  const handleRemoveQuote = useCallback(
+    (id: string) => setQuoteList((current) => removeComposerQuote(current, id)),
+    [setQuoteList],
+  );
+  const quoteTexts = useMemo(() => quotes.map((quote) => quote.text), [quotes]);
+  const quoteListLabels = useMemo(
+    () => ({
+      count: tThreads('quoteCount', { count: quotes.length }),
+      expand: tThreads('expandQuotes'),
+      collapse: tThreads('collapseQuotes'),
+      remove: tHardcodedUi.raw('componentsSessionSessionChatInput.removeQuoteAriaLabel') as string,
+    }),
+    [tThreads, tHardcodedUi, quotes.length],
+  );
   const [isDragOver, setIsDragOver] = useState(false);
   const [isEmpty, setIsEmpty] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -470,6 +588,28 @@ function ComposerImpl({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   const savedDocBeforeQuestionRef = useRef<JSONContent | null>(null);
+  // A host that owns the controller leaves this composer's own one idle: hooks
+  // run unconditionally, and a controller without a project does nothing.
+  const ownPromptAttachments = usePromptAttachments(hostPromptAttachments ? null : projectId);
+  const promptAttachments = hostPromptAttachments ?? ownPromptAttachments;
+  const promptAttachmentsRef = useRef(promptAttachments);
+  useEffect(() => {
+    promptAttachmentsRef.current = promptAttachments;
+  }, [promptAttachments]);
+  const activeSubmissionIdsRef = useRef(new Set<string>());
+  const {
+    addMany: addPromptAttachments,
+    attachments: promptAttachmentItems,
+    remove: removePromptAttachment,
+    retry: retryPromptAttachment,
+  } = promptAttachments;
+  // A plan or credit refusal at attach (402) opens the billing path once per refusal. The tile
+  // keeps saying why; Retry cannot fix it.
+  const seenBillingRefusalsRef = useRef(new WeakSet<object>());
+  useEffect(() => {
+    const [refusal] = takeNewBillingRefusals(promptAttachmentItems, seenBillingRefusalsRef.current);
+    if (refusal) handleBillingError(refusal, tI18nComplete);
+  }, [promptAttachmentItems, tI18nComplete]);
 
   const editorRef = useRef<ComposerEditorHandle | null>(null);
   const [editorElement, setEditorElement] = useState<HTMLElement | null>(null);
@@ -489,18 +629,24 @@ function ComposerImpl({
    * was added by the person in this mount and outranks a stored list. Local
    * attachments were never storable, so nothing is restored for them.
    */
-  const handleDraftRestore = useCallback((draft: StoredDraft) => {
-    setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
-    if (draft.files.length > 0) {
-      setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
-    }
-  }, []);
+  const handleDraftRestore = useCallback(
+    (draft: StoredDraft) => {
+      setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
+      if (draft.files.length > 0) {
+        setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
+      }
+      restoreQuoteTexts(draft.quotes ?? []);
+    },
+    [restoreQuoteTexts],
+  );
 
   const { handleDocChange, clearSavedDraft } = useComposerDraft({
+    active: draftActive,
     scope: draftScope,
     editorRef,
     editorReady: editorElement != null,
     attachedFiles,
+    quotes: quoteTexts,
     hasPrefill: !!prefill,
     onRestore: handleDraftRestore,
   });
@@ -515,15 +661,33 @@ function ComposerImpl({
   const editorDisabled = disabled || lockForApproval;
   const inlineUnderbar = underbarPlacement === 'inline';
 
-  const appendAttachedFiles = useCallback((files: Iterable<File>) => {
-    const newFiles: AttachedFile[] = [];
-    for (const file of files) {
-      const localUrl = URL.createObjectURL(file);
-      newFiles.push({ kind: 'local', file, localUrl, isImage: isImageFile(file) });
-    }
-    if (newFiles.length === 0) return;
-    setAttachedFiles((prev) => [...prev, ...newFiles]);
-  }, []);
+  const appendAttachedFiles = useCallback(
+    (files: Iterable<File>) => {
+      try {
+        const newFiles = stageComposerFiles(Array.from(files), {
+          addMany: addPromptAttachments,
+          createObjectURL: (file) => URL.createObjectURL(file),
+          isImage: isImageFile,
+        });
+        if (newFiles.length === 0) return;
+        const next = [...attachedFilesRef.current, ...newFiles];
+        attachedFilesRef.current = next;
+        setAttachedFiles(next);
+      } catch (error) {
+        errorToast(error instanceof Error ? error.message : tComposerAttachments('couldNotAttach'));
+      }
+    },
+    [addPromptAttachments, tComposerAttachments],
+  );
+
+  useEffect(
+    () => () => {
+      for (const file of attachedFilesRef.current) {
+        if (file.kind === 'local') revokeUnsentPreview(file.localUrl);
+      }
+    },
+    [],
+  );
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -600,13 +764,31 @@ function ComposerImpl({
     [appendAttachedFiles, disabled, lockForQuestion, dragHasFiles],
   );
 
-  const removeAttachedFile = useCallback((index: number) => {
-    setAttachedFiles((prev) => {
-      const removed = prev[index];
-      if (removed?.kind === 'local') URL.revokeObjectURL(removed.localUrl);
-      return prev.filter((_, i) => i !== index);
-    });
-  }, []);
+  const removeAttachedFile = useCallback(
+    (index: number) => {
+      const removed = attachedFilesRef.current[index];
+      if (!removed) return;
+      if (removed.kind === 'local') revokeUnsentPreview(removed.localUrl);
+      const next = attachedFilesRef.current.filter((_, i) => i !== index);
+      attachedFilesRef.current = next;
+      setAttachedFiles(next);
+      const uploadId = attachedFileUploadId(removed);
+      // Aborts a running upload. The server DELETE is best-effort; this never rejects.
+      if (uploadId) void removePromptAttachment(uploadId);
+    },
+    [removePromptAttachment],
+  );
+
+  const retryAttachedFile = useCallback(
+    (id: string) => {
+      try {
+        retryPromptAttachment(id);
+      } catch (error) {
+        errorToast(error instanceof Error ? error.message : tComposerAttachments('couldNotRetry'));
+      }
+    },
+    [retryPromptAttachment, tComposerAttachments],
+  );
 
   useEffect(() => {
     if (!editorElement) return;
@@ -804,6 +986,12 @@ function ComposerImpl({
     modelRequired,
     selectedModel: availableSelectedModel,
     lockForQuestion,
+    // The same two "not in yet" flags `noModelsConnected` below reads. Without
+    // them this refused every send made before the catalog landed — project
+    // home paints a focusable composer ~1.1s after navigation, while
+    // `/model-picker`, `/detail` and `/model-defaults` are all still in flight.
+    modelsLoading,
+    entitlementsPending,
   });
   const noModelsConnected =
     modelRequired &&
@@ -811,7 +999,10 @@ function ComposerImpl({
     !modelsLoading &&
     !entitlementsPending &&
     (!availableSelectedModel || !hasSelectableModels);
-  const canSubmit = !isEmpty || attachedFiles.length > 0;
+  // Quotes alone are a message — but not an answer: a question-locked send
+  // takes only the typed text, so quotes cannot enable it there.
+  const canSubmit =
+    !isEmpty || attachedFiles.length > 0 || (!lockForQuestion && quotes.length > 0);
   /**
    * No agent may run this prompt. Refused here rather than at the server:
    * `lockForQuestion` is exempt because answering an open question is not a new
@@ -819,6 +1010,17 @@ function ComposerImpl({
    */
   const agentUnavailable = noAccessibleAgents && !lockForQuestion;
   const submitDisabled = disabled || modelUnavailable || agentUnavailable || lockForApproval;
+  /** A failed upload refuses Send. The Send control's tooltip says why. */
+  const attachmentFailed = attachmentsBlockSend(promptAttachmentItems);
+  /** The selected model cannot read an attached image: the tray under the card and Send say so. */
+  const modelRejectingImages = modelRejectingAttachedImages({
+    files: attachedFiles,
+    models,
+    selectedModel: availableSelectedModel,
+  });
+  const imagesUnsupportedReason = modelRejectingImages
+    ? `${tModelGate('imagesUnsupported', { model: modelRejectingImages })} — ${tModelGate('imagesUnsupportedHint')}`
+    : null;
   /**
    * A `/` command cannot carry the attached files, so this state refuses the
    * submit and says why — before anything is sent and before anything is
@@ -856,23 +1058,67 @@ function ComposerImpl({
     ) {
       return;
     }
+    // `<reply_context>` blocks in the prefill (a failed send coming back, a
+    // rewind, a queued message taken back) go to the quote list, never into
+    // the document as raw XML the next send would wrap again. They lead the
+    // list, ahead of quotes already there, in both modes: a replace prefill
+    // replaces the typed text, but it does not throw away quotes the user
+    // collected.
+    const incoming = extractReplyQuotes(prefillText);
     if (prefillMode === 'merge') {
       const merged = planPrefillMerge({
-        prefillDoc: textToDocument(prefillText),
-        prefillIsEmpty: prefillText.length === 0,
+        prefillDoc: textToDocument(incoming.text),
+        prefillIsEmpty: incoming.text.length === 0,
         currentDoc: editorRef.current?.getDocument() ?? EMPTY_DOCUMENT,
         currentIsEmpty: editorRef.current?.isEmpty() ?? true,
       });
       if (merged) editorRef.current?.setDocument(merged);
     } else {
-      editorRef.current?.setContent(prefillText);
+      editorRef.current?.setContent(incoming.text);
     }
+    restoreQuoteTexts(incoming.quotes);
     if (prefillFiles?.length) {
-      setAttachedFiles((current) =>
-        prefillMode === 'merge'
-          ? mergeFailedSubmissionFiles(current, prefillFiles)
-          : [...prefillFiles],
-      );
+      try {
+        const liveIds = new Set(
+          promptAttachmentsRef.current.attachments.map((attachment) => attachment.id),
+        );
+        const localToStage = prefillFiles.filter(
+          (file): file is Extract<AttachedFile, { kind: 'local' }> =>
+            file.kind === 'local' && (!file.uploadId || !liveIds.has(file.uploadId)),
+        );
+        const newlyStaged = stageComposerFiles(
+          localToStage.map((file) => file.file),
+          {
+            addMany: addPromptAttachments,
+            createObjectURL: (file) => URL.createObjectURL(file),
+            isImage: isImageFile,
+          },
+        );
+        let localIndex = 0;
+        const prepared = prefillFiles.map((file): AttachedFile => {
+          if (file.kind === 'remote') return file;
+          if (file.uploadId && liveIds.has(file.uploadId)) return file;
+          return newlyStaged[localIndex++]!;
+        });
+        const current = attachedFilesRef.current;
+        const next =
+          prefillMode === 'merge' ? mergeFailedSubmissionFiles(current, prepared) : prepared;
+        if (prefillMode !== 'merge') {
+          const replacement = planAttachmentReplacement(
+            current,
+            next,
+            activeSubmissionIdsRef.current,
+          );
+          for (const uploadId of replacement.idsToRemove) void removePromptAttachment(uploadId);
+          for (const url of replacement.urlsToRevoke) revokeUnsentPreview(url);
+        }
+        attachedFilesRef.current = next;
+        setAttachedFiles(next);
+      } catch (error) {
+        errorToast(
+          error instanceof Error ? error.message : tComposerAttachments('couldNotAttach'),
+        );
+      }
     }
     editorRef.current?.focus();
     // Reported AFTER the text is in the editor, in the same statement run — a
@@ -884,7 +1130,17 @@ function ComposerImpl({
     // re-run the effect whenever the caller re-created it, and a `merge` prefill
     // applied twice appends its text twice.
     onPrefillAppliedRef.current?.(prefillId as number);
-  }, [prefillId, prefillText, prefillFiles, prefillMode, editorElement]);
+  }, [
+    prefillId,
+    prefillText,
+    prefillFiles,
+    prefillMode,
+    editorElement,
+    addPromptAttachments,
+    removePromptAttachment,
+    tComposerAttachments,
+    restoreQuoteTexts,
+  ]);
 
   useEffect(() => {
     if (lockForQuestion) {
@@ -898,6 +1154,25 @@ function ComposerImpl({
       savedDocBeforeQuestionRef.current = null;
     }
   }, [lockForQuestion]);
+
+  // Each quote request appends to the list, at once — locked, disabled or
+  // not, editor mounted or not. The list is not the editor document, so the
+  // question lock's save/restore of that document cannot touch it.
+  const appliedQuoteRequestIdsRef = useRef(new Set<number>());
+  const onQuoteRequestsAppliedRef = useRef(onQuoteRequestsApplied);
+  useEffect(() => {
+    onQuoteRequestsAppliedRef.current = onQuoteRequestsApplied;
+  }, [onQuoteRequestsApplied]);
+  useEffect(() => {
+    const pending = planQuoteRequests({
+      requests: quoteRequests,
+      appliedIds: appliedQuoteRequestIdsRef.current,
+    });
+    if (pending.length === 0) return;
+    for (const request of pending) appliedQuoteRequestIdsRef.current.add(request.id);
+    appendQuoteTexts(pending.map((request) => request.text));
+    onQuoteRequestsAppliedRef.current?.(pending.map((request) => request.id));
+  }, [quoteRequests, appendQuoteTexts]);
 
   /**
    * The model popover's open state, hoisted out of `ModelSelector` so the `/`
@@ -1023,8 +1298,10 @@ function ComposerImpl({
     [cycleAgent, onCompactClick, onContextClick],
   );
 
+  const submitPlacementRef = useRef<'transcript' | 'composer'>('transcript');
   const dispatchSubmission = useCallback(
-    async (stash?: StashedDraft) => {
+    async (stash?: StashedDraft): Promise<DispatchOutcome> => {
+      const placement = stash?.placement ?? submitPlacementRef.current;
       // Ahead of the model check: with no agent to run it, the model this prompt
       // would have used is not the user's problem.
       if (agentUnavailable) {
@@ -1037,6 +1314,8 @@ function ComposerImpl({
         });
         return;
       }
+      // Enter as well as the disabled Send: the tray under the card says why.
+      if (modelRejectingImages) return;
 
       // What refuses EVERY submission — a prompt, a `/` command, and a custom
       // answer alike. `hasActiveQuestion` is deliberately not consulted here: an
@@ -1060,11 +1339,17 @@ function ComposerImpl({
       // submitted as captured; the live editor belongs to whatever the user
       // typed since.
       const draft = stash ? stash.content : editorRef.current?.getContent();
-      const filesNow = stash ? stash.files : attachedFiles;
+      const filesNow = stash ? stash.files : attachedFilesRef.current;
+      const quotesNow = stash ? stash.quotes : quotesRef.current;
+      // Every quote leads the message, or the command args, as its own
+      // `<reply_context>` line. A question's custom answer below reads
+      // `draft.text`, so it never carries them.
       const plan = planDraftSubmission({
         commandName: draft?.commandName,
         text: draft?.text ?? '',
         commands: commands ?? [],
+        commandSplit: draft?.commandSplit,
+        quotes: quotesNow.map((quote) => quote.text),
       });
       if (plan.kind === 'command') {
         // A command cannot deliver the attached files, and the code below is
@@ -1121,22 +1406,24 @@ function ComposerImpl({
           );
           return;
         }
-        onCommand?.(plan.command, plan.args, draft?.commandSplit);
+        onCommand?.(plan.command, plan.args, plan.split);
         // The command is on its way; the draft that produced it is spent.
         // Deliberately NOT on either refusal path above (`guard.kind ===
         // 'refuse'`, `blocker`) — those keep the text in the editor on
         // purpose, so its draft has to survive with it.
         clearSavedDraft();
-        if (clearOnSend && !stash) {
+        // The same reset rule the message path uses, so a `'text-only'` host
+        // (project home) empties its box here too WITHOUT revoking preview URLs
+        // the next surface still draws from.
+        const commandReset = resolveComposerResetOnSend(clearOnSend, attachedFilesRef.current);
+        if (commandReset.clear && !stash) {
           editorRef.current?.clear();
-          setAttachedFiles((prev) => {
-            for (const file of prev) {
-              if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
-            }
-            return [];
-          });
+          setQuoteList(() => []);
+          for (const url of commandReset.urlsToRevoke) revokeUnsentPreview(url);
+          attachedFilesRef.current = [];
+          setAttachedFiles([]);
         }
-        return;
+        return 'sent';
       }
 
       if (lockForQuestion) {
@@ -1144,7 +1431,8 @@ function ComposerImpl({
         if (trimmed && onCustomAnswer) {
           onCustomAnswer(trimmed);
           if (!stash) editorRef.current?.clear();
-          return;
+          // The answer takes only the text; a stash gets its files back.
+          return 'answered';
         }
         if (onQuestionAction) {
           onQuestionAction();
@@ -1157,6 +1445,12 @@ function ComposerImpl({
       const trimmed = plan.text;
       if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
 
+      // Send never waits for an upload: the selection is handed to this send
+      // now. Only a failed upload refuses, and the Send control says why.
+      const attachmentSubmission =
+        stash?.attachmentSubmission ?? captureAttachmentSubmission(filesNow, promptAttachments);
+      if (!attachmentSubmission) return;
+
       const filesToSend = filesNow.length > 0 ? [...filesNow] : undefined;
       const mentionsToSend = content.mentions.length > 0 ? [...content.mentions] : undefined;
       const submittedDoc = stash ? stash.doc : (editorRef.current?.getDocument() ?? null);
@@ -1165,60 +1459,81 @@ function ComposerImpl({
       const reset = resolveComposerResetOnSend(clearOnSend, filesNow);
       if (reset.clear && !stash) {
         editorRef.current?.clear();
+        setQuoteList(() => []);
         attachedFilesRef.current = [];
         setAttachedFiles([]);
       }
 
-      try {
-        await onSend(trimmed, filesToSend, mentionsToSend);
-        for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
-        // AFTER the await, so a send that throws keeps its draft. Explicit,
-        // NOT derived from `reset.clear`: the project-home composer passes
-        // `clearOnSend={false}` because its send navigates it away
-        // (`composer-reset.ts`), so keying this off the editor clearing would
-        // strand a stale home draft forever. The catch below puts the text
-        // back in the editor, which re-saves the draft through the ordinary
-        // debounce — nothing to restore by hand.
-        clearSavedDraft();
-      } catch {
-        const currentDoc = editorRef.current?.getDocument() ?? null;
-        const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
-        const sentFiles = filesToSend ?? [];
+      // At hand-off, BEFORE the host runs: a send with uploads posts later, and a
+      // reload in that window must not restore the sent draft. Explicit, NOT
+      // derived from `reset.clear`: a composer can hand a send off without
+      // emptying itself (`clearOnSend={false}`) and its saved draft still has
+      // to go. A refused send saves the draft again in `onFailed`.
+      clearSavedDraft();
+      // The host paints the message, then returns. A send with uploads returns
+      // right after the paint (`deliverAfterPaint`), so the next Send never waits
+      // behind them. The host releases the uploads after its POST; a send it keeps
+      // on screen as failed still holds them for its Retry.
+      await runComposerSend({
+        submission: attachmentSubmission,
+        controller: promptAttachments,
+        active: activeSubmissionIdsRef.current,
+        send: () =>
+          onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission, placement),
+        onSent: () => {
+          for (const url of reset.urlsToRevoke) revokeUnsentPreview(url);
+        },
+        onFailed: () => {
+          // The host refused the send before anything durable happened. Its uploads
+          // are back in the tray, and the draft returns: a failed file shows its
+          // Retry; a ready one sends again without re-upload.
+          const currentDoc = editorRef.current?.getDocument() ?? null;
+          const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
+          const sentFiles = filesToSend ?? [];
 
-        const plan = planFailedSendRecovery({
-          clearOnSend,
-          submittedDoc,
-          submittedIsEmpty,
-          currentDoc,
-          currentIsEmpty,
-          currentAttachedFiles: attachedFiles,
-          sentFiles,
-        });
-        if (plan?.restoreDoc) {
-          setDocumentWithoutStealingFocus(editorRef.current, plan.restoreDoc);
-        }
-        if (plan) {
-          setAttachedFiles(
-            (current) =>
-              planFailedSendRecovery({
-                clearOnSend,
-                submittedDoc,
-                submittedIsEmpty,
-                currentDoc,
-                currentIsEmpty,
-                currentAttachedFiles: current,
-                sentFiles,
-              })?.attachedFiles ?? current,
-          );
-        }
-      }
+          const plan = planFailedSendRecovery({
+            // `reset.clear`, not `clearOnSend`: recovery is owed to every
+            // composer that EMPTIED itself, and `'text-only'` (project home)
+            // now does while still being neither `true` nor `false`. Keying it
+            // on the raw prop returned `null` there and left a refused send
+            // with an empty box and no draft to get back.
+            clearOnSend: reset.clear,
+            submittedDoc,
+            submittedIsEmpty,
+            currentDoc,
+            currentIsEmpty,
+            currentAttachedFiles: attachedFilesRef.current,
+            sentFiles,
+          });
+          if (plan?.restoreDoc) {
+            setDocumentWithoutStealingFocus(editorRef.current, plan.restoreDoc);
+          }
+          if (plan) {
+            attachedFilesRef.current = plan.attachedFiles;
+            setAttachedFiles(plan.attachedFiles);
+          }
+          // The quotes left the list with this send (a direct send cleared
+          // it, a stash took them); they lead it again.
+          if (reset.clear || stash) restoreQuoteTexts(quotesNow.map((quote) => quote.text));
+          // The tray draws these files again, so the sent cache no longer owns their pictures.
+          disownSentAttachmentPreviews(sentFiles);
+          // The draft was cleared at hand-off; the editor holds it again, so save it. Only where
+          // Send cleared the editor — a composer that kept its draft on screen (`clearOnSend`
+          // false) never lost it, and a connector-gate Retry that sends it later must not bring
+          // it back as a saved draft.
+          const restoredDoc = editorRef.current?.getDocument();
+          if (reset.clear && restoredDoc)
+            handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);
+        },
+      });
+      return 'sent';
     },
     [
       agentUnavailable,
       modelUnavailable,
+      modelRejectingImages,
       lockForApproval,
       disabled,
-      attachedFiles,
       commands,
       lockForQuestion,
       submitDisabled,
@@ -1229,9 +1544,13 @@ function ComposerImpl({
       runtimeReady,
       onCommand,
       clearSavedDraft,
+      handleDocChange,
+      setQuoteList,
+      restoreQuoteTexts,
       onCustomAnswer,
       onQuestionAction,
       onSend,
+      promptAttachments,
     ],
   );
 
@@ -1244,7 +1563,7 @@ function ComposerImpl({
    *
    * Created ONCE and dispatching through a ref: the latch's in-flight state
    * must survive re-renders (a fresh latch mid-send would reopen the
-   * double-fire window), while the deferred re-run must read the CURRENT
+   * double-fire window), while each later submit must read the CURRENT
    * dispatch closure, not the one from the render that created the latch.
    */
   const dispatchSubmissionRef = useRef(dispatchSubmission);
@@ -1252,38 +1571,92 @@ function ComposerImpl({
     dispatchSubmissionRef.current = dispatchSubmission;
   });
   const submitLatchRef = useRef<(() => Promise<void>) | null>(null);
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback((placement: 'transcript' | 'composer' = 'transcript') => {
+    submitPlacementRef.current = placement;
+    // A stash whose dispatch no host took comes back as it left: merged into
+    // whatever the user typed since, with its files back in the tray.
+    const restoreStashedDraft = (stash: StashedDraft, withText: boolean) => {
+      // The stash handed its pictures to the sent cache at capture. The tray draws them again.
+      disownSentAttachmentPreviews(stash.files);
+      // A question answer takes only the text, so the quotes come back
+      // whatever the outcome.
+      restoreQuoteTexts(stash.quotes.map((quote) => quote.text));
+      const editor = editorRef.current;
+      const plan = planFailedSendRecovery({
+        clearOnSend: true,
+        submittedDoc: withText ? stash.doc : null,
+        submittedIsEmpty: !withText,
+        currentDoc: editor?.getDocument() ?? null,
+        currentIsEmpty: editor?.isEmpty() ?? true,
+        currentAttachedFiles: attachedFilesRef.current,
+        sentFiles: stash.files,
+      });
+      if (!plan) return;
+      if (plan.restoreDoc) setDocumentWithoutStealingFocus(editor, plan.restoreDoc);
+      attachedFilesRef.current = plan.attachedFiles;
+      setAttachedFiles(plan.attachedFiles);
+    };
     // Lazy-created at the first submit (never during render, which the
     // compiler's ref rules forbid) and reused forever after.
     submitLatchRef.current ??= createSubmitLatch<StashedDraft>(
-      (stash) => dispatchSubmissionRef.current(stash),
+      (stash) =>
+        dispatchLatched(
+          stash,
+          (current) => dispatchSubmissionRef.current(current),
+          promptAttachmentsRef.current,
+          restoreStashedDraft,
+        ),
       // Typed text is what marks a re-entrant submit as a distinct message
       // worth stashing; a double-fire arrives with the editor already
       // cleared. The stash takes the draft OUT of the editor right now — the
       // user sees the message leave on Enter, exactly as a direct send — and
-      // submits it unchanged once the in-flight send settles. Files ride
+      // submits it immediately, even while another acceptance is pending. Files ride
       // along from the synchronous mirror, not from React state that may not
       // have flushed.
       () => {
         const editor = editorRef.current;
         const content = editor?.getContent();
+        // Typed text only. Quotes alone do not arm the stash: a question-locked
+        // double-fire keeps its quotes in the list, and would run the question
+        // action twice. A quote-only Enter mid-send is ignored; the quotes stay.
         if (!editor || !content || !content.text.trim()) return null;
+        const quotes = quotesRef.current;
         const doc = editor.getDocument() ?? null;
         const files = attachedFilesRef.current;
+        // Handed off before the editor clears. A failed upload keeps the draft
+        // in the editor, where the Send control says why.
+        const attachmentSubmission = captureAttachmentSubmission(files, promptAttachmentsRef.current);
+        if (!attachmentSubmission) return null;
         editor.clear();
+        setQuoteList(() => []);
         attachedFilesRef.current = [];
         setAttachedFiles([]);
-        return { content, doc, files };
+        return {
+          content,
+          doc,
+          files,
+          quotes,
+          attachmentSubmission,
+          placement: submitPlacementRef.current,
+        };
       },
     );
     return submitLatchRef.current();
+    // `restoreQuoteTexts` and `setQuoteList` are stable (`useCallback` over
+    // refs), so the handler stays created once, like its other ref inputs.
   }, []);
+
+  // A question lock owns the editor: Up there is a caret move, never a take-back.
+  const handleArrowUpAtStart = useCallback(
+    () => (lockForQuestion ? false : (onArrowUpAtStart?.() ?? false)),
+    [lockForQuestion, onArrowUpAtStart],
+  );
 
   const editorPlaceholder = resolveEditorPlaceholder({
     lockForApproval,
     lockForQuestion,
     questionButtonLabel,
-    placeholder,
+    placeholder: hint ?? placeholder,
   });
 
   /**
@@ -1294,15 +1667,15 @@ function ComposerImpl({
    * IS active the editor gets `''`, so its `::before` renders empty and two
    * placeholders never paint at once (see animated-placeholder.tsx).
    */
-  const animatePlaceholder = isEmpty && !editorDisabled && !lockForQuestion;
+  const animatePlaceholder = isEmpty && !editorDisabled && !lockForQuestion && !hint;
 
   /**
    * Whether the inset strip above the card has anything to show. Gated on
    * actual CONTENT, never on `sessionId`: that was truthy in every session, so
    * the strip's padded, bordered shell rendered as an empty rounded sliver
-   * floating above the notice bar whenever it was empty. The prompt queue no
-   * longer lives here — queued prompts are drawn in the transcript
-   * (`turn/queued-prompt-bubbles.tsx`).
+   * floating above the notice bar whenever it was empty. A session's queued
+   * messages render here, as the first child of `inputSlot`
+   * (`queued-prompt-list.tsx`).
    */
   const showQueueStrip = Boolean(threadContext || inputSlot);
 
@@ -1338,6 +1711,23 @@ function ComposerImpl({
       {slashMenuPlacement === 'above' && <div id={dockId} />}
 
       {/*
+        The reply quotes, as their own card above everything else in the
+        stack — the queued-messages card's chrome and mount. `QuoteList`
+        renders nothing for an empty list, and `empty:hidden` then drops this
+        wrapper and its margin.
+      */}
+      <div className="mb-2 w-full empty:hidden">
+        {/* Keyed on emptiness: an emptied card remounts, so the next quote
+            always opens it expanded, whatever the user collapsed last time. */}
+        <QuoteList
+          key={quotes.length === 0 ? 'empty' : 'quotes'}
+          quotes={quotes}
+          labels={quoteListLabels}
+          onRemove={handleRemoveQuote}
+        />
+      </div>
+
+      {/*
         The stack above the card. Each layer owns its OWN top rounding rather
         than leaning on a wrapper clip: the old `overflow-hidden rounded-t-xl`
         on this wrapper only rounded whichever child happened to be topmost,
@@ -1347,7 +1737,7 @@ function ComposerImpl({
         (queue strip at 96%, first full-width bar, the card itself); a layer
         the SAME width as the one above stays square and shares the divider.
       */}
-      {(notice || replyTo || showQueueStrip) && (
+      {(notice || showQueueStrip) && (
         <div className="relative isolate flex w-full flex-col items-center justify-center">
           {/*
             ONE element carries both the strip's chrome (bg, border, padding)
@@ -1373,7 +1763,7 @@ function ComposerImpl({
                   <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
                   <span className="min-w-0 flex-1 truncate text-left">
                     {tHardcodedUi.raw('i18nComplete.text09b4cb469c91')}{' '}
-                    <span className="text-foreground/80 font-medium">
+                    <span className="text-foreground font-medium">
                       {threadContext.parentTitle}
                     </span>
                   </span>
@@ -1408,38 +1798,6 @@ function ComposerImpl({
               )}
             </div>
           )}
-
-          {replyTo && (
-            // `w-full`, or the `items-center` column shrinks this bar to its
-            // content width. Rounded only when no notice sits above it — the
-            // notice is the same width, so under one this bar is a flush
-            // continuation, not a new edge.
-            <div
-              className={cn(
-                'bg-sidebar border-border flex w-full items-center gap-2 border border-b-0 px-3 py-1',
-                !notice && 'rounded-t-xl',
-              )}
-            >
-              <ArrowBendDoubleUpLeftIcon className="text-muted-foreground size-4 shrink-0" />
-              <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-                {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}
-              </span>
-              {onClearReply && (
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  type="button"
-                  onClick={onClearReply}
-                  className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
-                  aria-label={tHardcodedUi.raw(
-                    'componentsSessionSessionChatInput.line2078JsxAttrAriaLabelClearReply',
-                  )}
-                >
-                  <Close className="size-3" />
-                </Button>
-              )}
-            </div>
-          )}
         </div>
       )}
 
@@ -1462,7 +1820,7 @@ function ComposerImpl({
           'motion-reduce:transition-none',
           cardClassName,
           isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
-          (replyTo || notice) && 'rounded-t-none',
+          notice && 'rounded-t-none',
         )}
       >
         {/* What the dimmed card is asking for. Without it the drag state said
@@ -1482,14 +1840,19 @@ function ComposerImpl({
         <div
           className={cn(
             'relative z-[1] flex w-full flex-col overflow-visible',
-            'transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
+            'transition-opacity duration-(--duration-normal) ease-[cubic-bezier(0.23,1,0.32,1)]',
             'motion-reduce:transition-none',
             isDragOver && 'opacity-30',
           )}
         >
           {/* Inline chips: thread context, todos, queue — unified spacing */}
 
-          <AttachmentTiles files={attachedFiles} onRemove={removeAttachedFile} />
+          <AttachmentTiles
+            files={attachedFiles}
+            uploads={promptAttachmentItems}
+            onRemove={removeAttachedFile}
+            onRetry={retryAttachedFile}
+          />
 
           {/*
             The `/` command + attachments refusal. Directly under the tiles it
@@ -1562,6 +1925,7 @@ function ComposerImpl({
                   placeholder={animatePlaceholder ? '' : editorPlaceholder}
                   disabled={editorDisabled}
                   onSubmit={handleSubmit}
+                  onArrowUpAtStart={onArrowUpAtStart ? handleArrowUpAtStart : undefined}
                   onEmptyChange={setIsEmpty}
                   onDocChange={handleDocChange}
                   agents={agents}
@@ -1580,9 +1944,7 @@ function ComposerImpl({
             <input
               ref={fileInputRef}
               type="file"
-              accept={tHardcodedUi.raw(
-                'componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml',
-              )}
+              accept="image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar"
               multiple
               className="hidden"
               onChange={handleFileSelect}
@@ -1636,11 +1998,18 @@ function ComposerImpl({
               questionCanAct={questionCanAct}
               hasText={!isEmpty}
               canSubmit={canSubmit}
-              submitDisabled={submitDisabled || commandAttachmentPlan.kind === 'refuse'}
+              submitDisabled={
+                submitDisabled ||
+                attachmentFailed ||
+                modelRejectingImages !== null ||
+                commandAttachmentPlan.kind === 'refuse'
+              }
+              attachmentFailed={attachmentFailed}
+              attachmentUnsupported={imagesUnsupportedReason}
               disabled={disabled}
               modelUnavailable={modelUnavailable}
               agentUnavailable={agentUnavailable}
-              onSubmit={handleSubmit}
+              onSubmit={() => handleSubmit()}
             />
           </div>
         </div>
@@ -1656,6 +2025,7 @@ function ComposerImpl({
         the overlap and only the tray's exposed strip shows.
       */}
       <ModelConnectionBar show={noModelsConnected} />
+      <ImagesUnsupportedBar modelName={noModelsConnected ? null : modelRejectingImages} />
 
       {/*
         Attach + agent + context ring, in a row UNDER the card — not in the
@@ -1686,7 +2056,7 @@ function ComposerImpl({
         `mt-2.5` is the same gap the menu's own `mb-2.5` gives the `'above'`
         dock — there the margin faces the card, here it faces away, so the
         gap moves to the dock. The horizontal inset mirrors the shell's
-        `px-4 md:pr-1` gutter so the menu stays flush with the card edges.
+        `px-4` gutter so the menu stays flush with the card edges.
         Empty (menu closed) it has zero height and intercepts nothing.
 
         `z-99` only beats siblings inside THIS shell (the card is
@@ -1696,7 +2066,7 @@ function ComposerImpl({
         would cover the menu again — they must stay unstacked.
       */}
       {slashMenuPlacement === 'below' && (
-        <div id={dockId} className="absolute top-full right-4 left-4 z-99 mt-3.5 md:right-1" />
+        <div id={dockId} className="absolute top-full right-4 left-4 z-99 mt-3.5" />
       )}
     </div>
   );

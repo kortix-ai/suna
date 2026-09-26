@@ -13,6 +13,7 @@ import {
 } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { isAgentPrincipalActor } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 
@@ -22,38 +23,28 @@ import { and, eq, or } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
-  UUID_V4_REGEX,
   hasOwn,
   normalizeString,
-  readBody,
   requestAuditContext,
   serializeSession,
 } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 import { createSession, deleteSession } from '../session-lifecycle';
+import { validateProviderSecretPool } from './provider-secret-pools';
+import { requireFeatureFlag } from '../../feature-flags/gate';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory } from '../lib/session-list';
-
-const SERVER_MANAGED_SESSION_METADATA_KEYS = [
-  'deletedAt',
-  'deletedBy',
-  'opencode_model',
-  'opencode_model_source',
-  'source',
-  'trigger_kind',
-  'trigger_slug',
-  'name',
-  'title_source',
-] as const;
-
-const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
-  ...SERVER_MANAGED_SESSION_METADATA_KEYS,
-  'workspace_mode',
-  'sandbox_slug',
-] as const;
+import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
+import {
+  PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
+  SERVER_MANAGED_SESSION_METADATA_KEYS,
+} from '../lib/session-metadata-keys';
 
 function serverManagedSessionMetadataKey(
   value: unknown,
@@ -87,7 +78,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const serverManagedMetadataKey = serverManagedSessionMetadataKey(body.metadata);
   if (serverManagedMetadataKey) {
     return c.json(
@@ -143,6 +134,22 @@ projectsApp.openapi(
   // approved. Managers and owners keep the manifest default untouched.
   if (!launchAgent && agentAccess.memberTier && agentAccess.agentName) {
     body.agent_name = agentAccess.agentName;
+  }
+  if (body.provider_secret_pools !== undefined) {
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'pooled_provider_secrets');
+    if (gate) return gate;
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json({ error: 'Provider pools require the LLM gateway' }, 409);
+    }
+    for (const [providerId, ids] of Object.entries(body.provider_secret_pools as Record<string, string[]>)) {
+      const invalid = await validateProviderSecretPool({
+        accountId: loaded.row.accountId, projectId, repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch, manifestPath: loaded.row.manifestPath,
+        agentName: normalizeString(body.agent_name) ?? agentAccess.agentName ?? 'default', userId: loaded.userId,
+        providerId, ids,
+      });
+      if (invalid) return c.json({ error: invalid.error }, invalid.status);
+    }
   }
   // Bound the client-supplied idempotency key at intake. It's stored in a unique
   // btree (index entry limit ~2704 bytes), so an oversized header would surface
@@ -237,6 +244,11 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
         query: z.object({
           scope: z.enum(['visible', 'project']).optional(),
+          // The list is a keyset PAGE, not the whole inventory. See
+          // `lib/session-inventory.ts` for why, and `X-Next-Cursor` below for
+          // how a caller walks it.
+          limit: z.coerce.number().int().min(1).max(SESSION_PAGE_MAX_LIMIT).optional(),
+          cursor: z.string().optional(),
         }),
       },
     responses: {
@@ -249,7 +261,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const scope = (c.req.valid('query').scope ?? 'visible') as ProjectSessionListScope;
+  const query = c.req.valid('query');
+  const scope = (query.scope ?? 'visible') as ProjectSessionListScope;
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -261,7 +274,10 @@ projectsApp.openapi(
     userId: loaded.userId,
     effectiveRole: loaded.effectiveRole,
     scope,
+    limit: query.limit,
+    cursor: query.cursor ?? null,
     boundCredentialSessionId: callerKortixSessionId(c),
+    agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
     probeManageCapability: () =>
       projectCapabilityAllowed(
         c,
@@ -299,15 +315,23 @@ projectsApp.openapi(
   });
 
   // The sidebar re-fetches this list several times per session open (six in the
-  // measured Essentia corpus, 2026-08-26) and the answer is usually byte-identical
+  // measured SampleCo corpus, 2026-08-26) and the answer is usually byte-identical
   // between them. A weak ETag lets those repeats end as a 304 with no body.
   // `no-cache` — not `no-store` — is what makes a client revalidate rather than
   // serve a stale inventory: the response is private and always re-validated,
   // it just does not have to be re-transferred.
   const serialized = JSON.stringify(body);
-  const etag = `W/"${Bun.hash(serialized).toString(36)}-${body.length}"`;
+  // The cursor is part of the response identity: two pages of the same length
+  // whose rows happen to hash alike must not 304 each other into the wrong
+  // continuation. Hash it with the body.
+  const etag = `W/"${Bun.hash(`${inventory.nextCursor ?? ''}:${serialized}`).toString(36)}-${body.length}"`;
   c.header('Cache-Control', 'private, no-cache');
   c.header('ETag', etag);
+  // The page's continuation token. Absent means this is the last page. It rides
+  // a header so the 200 body stays the bare `Session[]` array every existing
+  // client already parses — adding an envelope would have broken all of them.
+  if (inventory.nextCursor) c.header('X-Next-Cursor', inventory.nextCursor);
+  c.header('Access-Control-Expose-Headers', 'X-Next-Cursor');
   if (c.req.header('if-none-match') === etag) return c.body(null, 304);
   c.header('Content-Type', 'application/json');
   return c.body(serialized, 200);
@@ -332,7 +356,7 @@ projectsApp.openapi(
   async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -381,9 +405,9 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -469,9 +493,9 @@ projectsApp.openapi(
   async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -500,7 +524,7 @@ projectsApp.openapi(
   // metadata.deletedAt / deletedBy are SERVER-MANAGED soft-delete markers.
   // deleteSession() is the only legitimate writer; they are consumed by
   // isSessionVisibleTo (session-inventory.ts — hides the session from every member's
-  // list), the continue-session guard (session-lifecycle/engine.ts:236 —
+  // list), the continue-session guard (session-lifecycle/continue-session.ts `continueSession` —
   // returns 'no-session' so queued Slack/trigger follow-ups 404), and the
   // sandbox reaper (sandbox-reaper.ts:477 — tombstones the live box).
   // Letting a client forge either via PATCH lets any project member hide
@@ -602,7 +626,7 @@ projectsApp.openapi(
   async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -625,7 +649,6 @@ projectsApp.openapi(
     sessionId,
     accountId: loaded.row.accountId,
     userId: loaded.userId,
-    metadata: visible.row.metadata,
   });
   if ('error' in result) return c.json({ error: result.error }, result.status as any);
   return c.json(result);

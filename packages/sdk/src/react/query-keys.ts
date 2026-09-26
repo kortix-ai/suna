@@ -120,6 +120,15 @@ export const qk = {
      */
     list: (userId: string | null | undefined) =>
       [...qk.accounts.scope(), userId ?? 'anonymous'] as const,
+
+    /**
+     * The invites pending for one user's email (`listMyAccountInvites`).
+     * Under `scope()` on purpose: joining an invite changes the account
+     * list, and that invalidation targets `scope()`, so the joined invite
+     * drops out of this list in the same refetch.
+     */
+    myInvites: (userId: string | null | undefined) =>
+      [...qk.accounts.scope(), 'my-invites', userId ?? 'anonymous'] as const,
   },
 
   projects: {
@@ -186,6 +195,9 @@ export const qk = {
      */
     modelPicker: (id: string) => [...qk.project.config(id), 'models'] as const,
 
+    /** Persisted provider/model inference restrictions and the effective default. */
+    modelAccess: (projectId: string) => [...qk.project.scope(projectId), 'model-access'] as const,
+
     /**
      * Invalidation prefix for the WHOLE sessions family: the list, in every
      * scope, and every individual session/message beneath it. Never pass
@@ -234,6 +246,25 @@ export const qk = {
       [...qk.project.sessionsScope(id), 'list', scope] as const,
 
     /**
+     * The PAGED session list — `useInfiniteQuery` over
+     * `listProjectSessionsPage`. A separate slot from `sessions(...)` because
+     * the two hold different SHAPES: this one caches
+     * `{ pages: ProjectSessionPage[], pageParams }`, that one caches a bare
+     * `ProjectSession[]`. react-query does not tag a cache entry with the hook
+     * that wrote it, so sharing one key between `useQuery` and
+     * `useInfiniteQuery` hands each hook the other's shape and both render
+     * garbage.
+     *
+     * It still nests under `sessionsScope(id)`, so the existing prefix
+     * invalidation every mutation already performs
+     * (`invalidateQueries({ queryKey: qk.project.sessionsScope(id) })`)
+     * reaches the paged list too. That is the point of the shared prefix — a
+     * new slot must not need a second invalidation nobody remembers to add.
+     */
+    sessionsPaged: (id: string, scope: 'visible' | 'project' = 'visible') =>
+      [...qk.project.sessionsScope(id), 'list-paged', scope] as const,
+
+    /**
      * One session, by id. Nests directly under the scope-LESS
      * `sessionsScope` prefix, not under a specific `sessions(id, scope)`
      * slot: a session is not "owned" by whichever list scope happened to
@@ -269,12 +300,16 @@ export const qk = {
     /** One connector's config — `getConnectorConfig(id, slug)`. */
     connectorConfig: (id: string, slug: string) =>
       [...qk.project.connectors(id), slug] as const,
-    /** One connector's OAuth2 authorization discovery —
-     *  `discoverConnectionOAuth2Resource(id, connectionId)`. Keyed by connector
-     *  slug, not connection id: the probe reads the connector's server, and the
-     *  connection is created on demand to scope it. */
-    connectorOAuth2Discovery: (id: string, slug: string) =>
-      [...qk.project.connectorConfig(id, slug), 'oauth2-discovery'] as const,
+    /** One connection's OAuth2 authorization discovery —
+     *  `discoverConnectionOAuth2Resource(id, connectionId)`. The result carries
+     *  the connection id it ran against, and one-click OAuth starts on that id,
+     *  so pass `connection` (the connection id, or a stable stand-in for one not
+     *  created yet): two connections of one connector must not share an entry.
+     *  Without it, the key is the per-connector prefix every entry sits under. */
+    connectorOAuth2Discovery: (id: string, slug: string, connection?: string) =>
+      connection === undefined
+        ? ([...qk.project.connectorConfig(id, slug), 'oauth2-discovery'] as const)
+        : ([...qk.project.connectorConfig(id, slug), 'oauth2-discovery', connection] as const),
 
     access: (id: string) => [...qk.project.scope(id), 'access'] as const,
     accessRequests: (id: string) => [...qk.project.access(id), 'requests'] as const,

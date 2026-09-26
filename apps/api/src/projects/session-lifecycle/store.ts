@@ -1,9 +1,20 @@
-import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
+import { deadLetterCause } from './dead-letter-cause';
 import { type SQL, and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { currentInstanceId } from '../instance-scope';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
-import { inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
+import { inboxLaneSql, inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
+import { transitionSession } from './status-transitions';
+import {
+  type CommandLease,
+  LIFECYCLE_CLAIM_LOCK_MS,
+  logLeaseLost,
+  ownedByLease,
+} from './command-lease';
+import { randomUUID } from 'node:crypto';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -63,7 +74,7 @@ export function withRemintedWireId(id: string): SQL {
     coalesce(${sessionLifecycleCommands.payload}->'redeliveredMessageIds', '[]'::jsonb) || ${JSON.stringify([id])}::jsonb)`;
 }
 
-export function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
+function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
   return {
     body: command.body,
     requestingPrincipalType: command.requestingPrincipalType,
@@ -86,6 +97,7 @@ export interface PromptPartWire {
   text?: string;
   mime?: string;
   url?: string;
+  attachment_id?: string;
   filename?: string;
   name?: string;
   source?: unknown;
@@ -173,6 +185,7 @@ export interface QueuedContinueSessionPayload {
   /** The sender tab's clock at Enter — the SEND order across surfaces whose
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
+  placement?: 'transcript' | 'composer';
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
 }
@@ -204,6 +217,7 @@ export interface EnqueueContinueSessionCommandInput {
   /** The sender tab's clock at Enter — the SEND order across surfaces whose
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
+  placement?: 'transcript' | 'composer';
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
 }
@@ -223,6 +237,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.remintOnDelivery ? { remintOnDelivery: true } : {}),
     ...(typeof input.clientSentAtMs === 'number' ? { clientSentAtMs: input.clientSentAtMs } : {}),
     ...(input.parts ? { parts: input.parts } : {}),
+    ...(input.placement ? { placement: input.placement } : {}),
     ...(input.overrides ? { overrides: input.overrides } : {}),
   };
   return {
@@ -254,6 +269,23 @@ export async function enqueueContinueSessionCommand(
   input: EnqueueContinueSessionCommandInput,
 ): Promise<EnqueuedContinueSessionCommand> {
   const values = buildContinueSessionCommandValues(input);
+  // Legacy callers retain their existing write path. Handle-bearing prompts
+  // atomically commit both the queue row and the storage references.
+  if (input.parts?.some((part) => part.attachment_id)) {
+    return db.transaction(async (tx) => {
+      const [row] = await tx.insert(sessionLifecycleCommands).values(values)
+        .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey }).returning();
+      if (row) {
+        const { bindPromptAttachments } = await import('../prompt-attachments');
+        await bindPromptAttachments(tx, row);
+        return { row, deduped: false };
+      }
+      const [existing] = await tx.select().from(sessionLifecycleCommands)
+        .where(eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey!)).limit(1);
+      if (!existing || existing.projectId !== input.projectId || existing.accountId !== input.accountId || existing.actorUserId !== input.actorUserId) throw new Error('Prompt idempotency conflict');
+      return { row: existing, deduped: true };
+    });
+  }
   if (!input.idempotencyKey) {
     const [row] = await db.insert(sessionLifecycleCommands).values(values).returning();
     return { row, deduped: false };
@@ -349,6 +381,43 @@ export async function markLegacyInlineAttachmentsRepaired(sessionId: string): Pr
  */
 export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
 
+/** True when a lease write matched its row; logs the loss otherwise. */
+function appliedUnderLease(lease: CommandLease, write: string, rows: unknown[]): boolean {
+  if (rows.length > 0) return true;
+  logLeaseLost(lease, write);
+  return false;
+}
+
+/**
+ * Put back a REDELIVERY whose already-answered check could not read the
+ * transcript. A prompt that was posted before may already have its answer on
+ * record; re-sending it blind shows the user the same prompt twice. The row
+ * waits and counts the failure; after `MAX_ANSWER_CHECK_FAILURES` (queued-continue.ts)
+ * the drain sends it anyway, so an unreadable box cannot strand the prompt.
+ */
+export async function requeueUnverifiedRedelivery(
+  lease: CommandLease,
+  availableAt: Date,
+): Promise<boolean> {
+  const rows = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'queued',
+      availableAt,
+      lockedBy: null,
+      lockedUntil: null,
+      attempts: sql`GREATEST(${sessionLifecycleCommands.attempts} - 1, 0)`,
+      result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
+        || '{"admission_reason": "answer_unverified"}'::jsonb
+        || jsonb_build_object('answer_check_failures',
+             COALESCE((${sessionLifecycleCommands.result}->>'answer_check_failures')::int, 0) + 1)`,
+      updatedAt: new Date(),
+    })
+    .where(ownedByLease(lease))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return appliedUnderLease(lease, 'requeueUnverifiedRedelivery', rows);
+}
+
 /** How many times a prompt the runtime accepted-but-never-wrote is re-sent
  *  under a fresh key before it is dead-lettered for the user to retry. */
 export const MAX_LANDING_RETRIES = 2;
@@ -365,7 +434,7 @@ export const MAX_LANDING_RETRIES = 2;
  * Returns false when the retry budget is spent; the caller dead-letters.
  */
 export async function requeueUnlandedPrompt(
-  commandId: string,
+  lease: CommandLease,
   reason: string,
   availableAt: Date,
 ): Promise<{ requeued: boolean; refusals: number }> {
@@ -387,7 +456,7 @@ export async function requeueUnlandedPrompt(
     })
     .where(
       and(
-        eq(sessionLifecycleCommands.commandId, commandId),
+        ownedByLease(lease),
         sql`COALESCE((${sessionLifecycleCommands.result}->>'landing_refusals')::int, 0) < ${MAX_LANDING_RETRIES}`,
       ),
     )
@@ -396,12 +465,21 @@ export async function requeueUnlandedPrompt(
   return { requeued: rows.length > 0, refusals };
 }
 
+/** Publish delivery only after the worker passes admission. */
+export async function markInboxDeliveryStarted(lease: CommandLease): Promise<void> {
+  await db.update(sessionLifecycleCommands).set({
+    result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
+      || ${JSON.stringify({ delivery_started_at: new Date().toISOString() })}::jsonb`,
+    updatedAt: new Date(),
+  }).where(ownedByLease(lease));
+}
+
 export async function requeueForAdmission(
-  commandId: string,
+  lease: CommandLease,
   reason: InboxAdmissionReason,
   availableAt: Date,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .update(sessionLifecycleCommands)
     .set({
       status: 'queued',
@@ -416,7 +494,9 @@ export async function requeueForAdmission(
       payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId));
+    .where(ownedByLease(lease))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return appliedUnderLease(lease, 'requeueForAdmission', rows);
 }
 
 /**
@@ -462,15 +542,31 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
   return next.idempotencyKey ?? null;
 }
 
-export async function claimCreateSessionCommand(
+/**
+ * The row a create claim inserts. An inline create is claimed `running` by
+ * THIS process, so it carries the same lock a drained row does: without one,
+ * `locked_until` stays NULL, the reclaim arm (`locked_until <= now - grace`)
+ * never matches it, and a pod that dies mid-create leaves the idempotency key
+ * answering `pending` for ever.
+ */
+function buildCreateSessionCommandValues(
   command: CreateSessionCommand,
   opts: { initialStatus: 'queued' | 'running'; reason?: string | null },
-): Promise<{ row: SessionLifecycleCommandRow; existing: boolean }> {
-  const now = new Date();
-  const values = {
+  now: Date,
+) {
+  const inlineLock =
+    opts.initialStatus === 'running'
+      ? {
+          // Unique per claim: the lock owner is the lease's fencing token.
+          lockedBy: `session-lifecycle-inline:${process.pid}:${randomUUID()}`,
+          lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
+        }
+      : {};
+  return {
     commandType: 'create_session',
     source: command.source,
     status: opts.initialStatus,
+    ...inlineLock,
     projectId: command.project.projectId,
     accountId: command.project.accountId,
     actorUserId: command.userId,
@@ -480,10 +576,43 @@ export async function claimCreateSessionCommand(
     availableAt: now,
     updatedAt: now,
   };
+}
+
+export async function claimCreateSessionCommand(
+  command: CreateSessionCommand,
+  opts: { initialStatus: 'queued' | 'running'; reason?: string | null },
+): Promise<{ row: SessionLifecycleCommandRow; existing: boolean }> {
+  const values = buildCreateSessionCommandValues(command, opts, new Date());
 
   if (!command.idempotencyKey) {
+    const pending = command.body.pending_prompt as { parts?: PromptPartWire[] } | undefined;
+    if (pending?.parts?.some((part) => part.attachment_id)) {
+      return db.transaction(async (tx) => {
+        const [row] = await tx.insert(sessionLifecycleCommands).values(values).returning();
+        const { bindPromptAttachments } = await import('../prompt-attachments');
+        await bindPromptAttachments(tx, row);
+        return { row, existing: false };
+      });
+    }
     const [row] = await db.insert(sessionLifecycleCommands).values(values).returning();
     return { row, existing: false };
+  }
+
+  const pending = command.body.pending_prompt as { parts?: PromptPartWire[] } | undefined;
+  if (pending?.parts?.some((part) => part.attachment_id)) {
+    return db.transaction(async (tx) => {
+      const [row] = await tx.insert(sessionLifecycleCommands).values(values)
+        .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey }).returning();
+      if (row) {
+        const { bindPromptAttachments } = await import('../prompt-attachments');
+        await bindPromptAttachments(tx, row);
+        return { row, existing: false };
+      }
+      const [existing] = await tx.select().from(sessionLifecycleCommands)
+        .where(eq(sessionLifecycleCommands.idempotencyKey, command.idempotencyKey!)).limit(1);
+      if (!existing) throw new Error('Create command idempotency conflict');
+      return { row: existing, existing: true };
+    });
   }
 
   const inserted = await db
@@ -576,11 +705,11 @@ export async function markCommandQueued(
 }
 
 export async function markCommandSucceeded(
-  commandId: string,
+  lease: CommandLease,
   result: Record<string, unknown>,
   sessionId?: string | null,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .update(sessionLifecycleCommands)
     .set({
       status: 'succeeded',
@@ -590,7 +719,9 @@ export async function markCommandSucceeded(
       lockedUntil: null,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId));
+    .where(ownedByLease(lease))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return appliedUnderLease(lease, 'markCommandSucceeded', rows);
 }
 
 /**
@@ -633,10 +764,10 @@ export async function markCommandSucceeded(
  * hold in force.
  */
 export async function markCommandForwarded(
-  commandId: string,
+  lease: CommandLease,
   sessionId: string,
   wireMessageId: string,
-): Promise<void> {
+): Promise<boolean> {
   const forwarded = {
     status: 'forwarded',
     forwarded_at: new Date().toISOString(),
@@ -645,7 +776,7 @@ export async function markCommandForwarded(
     // attempt actually used.
     forwarded_message_id: wireMessageId,
   };
-  await db
+  const rows = await db
     .update(sessionLifecycleCommands)
     .set({
       status: 'succeeded',
@@ -662,11 +793,13 @@ export async function markCommandForwarded(
       lockedUntil: null,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId));
+    .where(ownedByLease(lease))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return appliedUnderLease(lease, 'markCommandForwarded', rows);
 }
 
 export async function markCommandFailed(
-  commandId: string,
+  lease: CommandLease,
   error: string,
   opts: {
     retryable: boolean;
@@ -689,15 +822,28 @@ export async function markCommandFailed(
       lastError: error,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId))
+    .where(ownedByLease(lease))
     .returning();
-  if (retry || !row) return;
+  if (!row) {
+    logLeaseLost(lease, 'markCommandFailed');
+    return;
+  }
+  if (retry) return;
 
   // Dead-lettered = this command's work is being ABANDONED. That used to be a
   // console.warn deep in the drain — invisible to alerting while the user's
   // session sat "queued — agent picking up" forever. Make it a real error.
   const payload = (row.payload ?? {}) as Record<string, unknown>;
-  logger.error('[session-lifecycle] command dead-lettered — giving up after retries', {
+  // Severity follows the CAUSE — see `deadLetterCause`. A terminal
+  // customer-state refusal (out of credits, a model the account is not
+  // entitled to, a workspace mode its manifest forbids) is not a platform
+  // fault and must not page; 96% of prod's dead letters are that, dominated by
+  // cron triggers firing into accounts that cannot pay. Everything else keeps
+  // the error level it was deliberately given.
+  const cause = deadLetterCause(error);
+  const log = cause === 'customer_state' ? logger.warn : logger.error;
+  log('[session-lifecycle] command dead-lettered — giving up after retries', {
+    cause,
     command_id: row.commandId,
     command_type: row.commandType,
     source: row.source,
@@ -721,20 +867,13 @@ export async function markCommandFailed(
     // Park the target session 'failed': findReusableTriggerSession skips failed
     // sessions, so a `session_mode = "reuse"` trigger's next fire creates a
     // FRESH session instead of re-aiming prompts at a wedged one — the proven
-    // lossless self-heal. Status re-check in the UPDATE predicate (same pattern
-    // as reconcileStuckActiveSessions) so a concurrent transition isn't
-    // clobbered by a stale dead-letter.
+    // lossless self-heal. The `fail` transition re-checks the status and the
+    // tombstone in its own UPDATE, so a stale dead-letter cannot clobber a
+    // concurrent transition or touch a deleted session.
     try {
-      await db
-        .update(projectSessions)
-        .set({
-          status: 'failed',
-          error: `prompt delivery dead-lettered: ${error}`.slice(0, 1000),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(eq(projectSessions.sessionId, row.sessionId), ne(projectSessions.status, 'failed')),
-        );
+      await transitionSession('fail', row.sessionId, {
+        error: `prompt delivery dead-lettered: ${error}`.slice(0, 1000),
+      });
     } catch (err) {
       console.warn('[session-lifecycle] failed to park session after dead-letter', {
         sessionId: row.sessionId,
@@ -780,7 +919,7 @@ const RUNTIME_UNREACHABLE_BACKOFF_MS = [30_000, 120_000, 480_000] as const;
 /** Set by {@link parkPromptForUnreachableRuntime} on a row waiting for a box. */
 export const RUNTIME_UNREACHABLE_REASON = 'runtime_unreachable';
 
-export function runtimeUnreachableRetries(payload: unknown): number {
+function runtimeUnreachableRetries(payload: unknown): number {
   const value = (payload as { runtimeUnreachableRetries?: unknown } | null)
     ?.runtimeUnreachableRetries;
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
@@ -810,7 +949,7 @@ export function runtimeUnreachableRetries(payload: unknown): number {
  * `markCommandFailed`, which owns the alerting and the session-park policy.
  */
 export async function parkPromptForUnreachableRuntime(
-  commandId: string,
+  lease: CommandLease,
   error: string,
   opts: { sessionId?: string | null; now?: Date } = {},
 ): Promise<{ parked: boolean; retries: number }> {
@@ -818,7 +957,7 @@ export async function parkPromptForUnreachableRuntime(
   const [current] = await db
     .select({ payload: sessionLifecycleCommands.payload })
     .from(sessionLifecycleCommands)
-    .where(eq(sessionLifecycleCommands.commandId, commandId))
+    .where(eq(sessionLifecycleCommands.commandId, lease.commandId))
     .limit(1);
   if (!current) return { parked: false, retries: 0 };
 
@@ -860,17 +999,12 @@ export async function parkPromptForUnreachableRuntime(
         to_jsonb(${retries}::int))`,
       updatedAt: now,
     })
-    .where(
-      and(
-        eq(sessionLifecycleCommands.commandId, commandId),
-        ne(sessionLifecycleCommands.status, 'dead_lettered'),
-      ),
-    )
+    .where(ownedByLease(lease))
     .returning({ commandId: sessionLifecycleCommands.commandId });
   if (!row) return { parked: false, retries: spent };
 
   logger.info('[session-lifecycle] prompt parked — runtime unreachable, will re-attempt', {
-    command_id: commandId,
+    command_id: lease.commandId,
     session_id: opts.sessionId ?? null,
     runtime_retries: retries,
     max_retries: MAX_RUNTIME_UNREACHABLE_RETRIES,
@@ -948,11 +1082,19 @@ export async function claimDueLifecycleCommands(input: {
 }): Promise<SessionLifecycleCommandRow[]> {
   const now = input.now ?? new Date();
   const staleRunningBefore = new Date(now.getTime() - LIFECYCLE_RUNNING_RECLAIM_GRACE_MS);
+  const instanceId = currentInstanceId();
   const rows = await db
     .select()
     .from(sessionLifecycleCommands)
     .where(
       and(
+        // Do not claim a peer worktree's rows and postpone them before its own
+        // worker can see them. Deployed replicas have no instance scope.
+        instanceId ? sql`NOT EXISTS (
+          SELECT 1 FROM ${sessionSandboxes} AS box
+          WHERE box.session_id = ${qualifiedColumn(sessionLifecycleCommands.sessionId)}
+            AND COALESCE(box.metadata->>'instanceId', '') NOT IN ('', ${instanceId})
+        )` : undefined,
         or(
           and(
             eq(sessionLifecycleCommands.status, 'queued'),
@@ -977,6 +1119,7 @@ export async function claimDueLifecycleCommands(input: {
     )
     .orderBy(
       asc(sessionLifecycleCommands.availableAt),
+      asc(inboxLaneSql),
       asc(inboxSentAtSql),
       asc(inboxWireIdSql),
       asc(sessionLifecycleCommands.commandId),
@@ -990,8 +1133,9 @@ export async function claimDueLifecycleCommands(input: {
       .set({
         status: 'running',
         attempts: row.attempts + 1,
+        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'delivery_started_at'`,
         lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + 5 * 60_000),
+        lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
         updatedAt: now,
       })
       // CAS on the exact state this row was read in — its status AND its lock

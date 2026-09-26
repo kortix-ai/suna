@@ -15,6 +15,8 @@ Kortix supports three trigger types.
 
 You define triggers in the project manifest, `kortix.yaml`. Each trigger holds a prompt that renders as the fired session's first message. Runtime state — such as the last fire time and status — lives outside the manifest, in the database. Firing a trigger does not create a commit.
 
+A project with many triggers can keep them out of the root file. List a directory under [`imports:`](/docs/project/manifest#imports), then put each trigger, or each group, in its own YAML file below it. Every page and command here works the same way on a split manifest. An edit is written to the file that declares the trigger.
+
 Creating, updating, or deleting a trigger through the API, SDK, or dashboard writes directly to the default branch. It does not go through a [change request](/docs/work/change-requests) (CR). Editing `kortix.yaml` inside a session and running `kortix ship` follows the normal branch and CR flow instead.
 
 ## Set up a cron trigger

@@ -1,5 +1,7 @@
 'use client';
 
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -30,17 +32,18 @@ import {
   selectHiddenSections,
   selectOrderMode,
   selectSourceFilters,
+  selectAccessFilters,
+  selectOwnerFilters,
   selectStatusFilters,
   useSessionFilterStore,
 } from '@/stores/session-filter-store';
 import {
   deleteProjectSession,
-  listProjectSessions,
   restartProjectSession,
   stopProjectSession,
   type ProjectSession,
 } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { qk, useProjectSessions } from '@kortix/sdk/react';
 import { CaretRightIcon, ChatIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
@@ -178,6 +181,7 @@ function SessionsSection({
 
 export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSidebar = useTranslations('sidebar');
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -192,30 +196,36 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   );
   const creatingSession = useIsCreatingProjectSession(projectId);
 
-  const sessionsQuery = useQuery({
+  // The 'project' scope is manager-only: the API answers 403 "Project manager
+  // access is required to list every session" unless the caller holds
+  // `project.members.manage`. A plain member opened this page onto that error
+  // while the sidebar listed their sessions fine. They read the default
+  // 'visible' scope — the same list the sidebar shows. The request waits for
+  // the probe so a manager does not fetch both scopes.
+  const manage = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  const sessionsQuery = useProjectSessions(projectId, {
+    enabled: !manage.isLoading,
     // 'project' scope: the manager-only lifecycle inventory — a
     // DIFFERENT server request than the default 'visible' scope every other
     // reader uses. It includes accessible warm and soft-deleted rows, but never
     // sessions the manager cannot open. It MUST carry its own scope segment in
-    // the key (see qk.project.sessions' doc comment). Sharing the default-scope key here
-    // is the exact bug this file existed to fix.
-    queryKey: qk.project.sessions(projectId, 'project'),
-    queryFn: () => listProjectSessions(projectId, { scope: 'project' }),
+    // the key (see qk.project.sessionsPaged' doc comment). Sharing the
+    // default-scope key here is the exact bug this file existed to fix.
+    scope: manage.allowed ? 'project' : 'visible',
     // The shared policy, not a local copy of the provisioning rule. This view
     // stopped polling the moment every session settled, so a title written
     // seconds later (server-side, with no event — see `sessionTitleHasLanded`)
     // was invisible here until the window regained focus, while the sidebar
     // and header had already moved on. Three surfaces, three policies, one
     // name: that divergence IS the bug.
-    refetchInterval: (query) =>
+    refetchInterval: (loaded) =>
       projectSessionsRefetchInterval({
-        sessions: query.state.data as ProjectSession[] | undefined,
+        sessions: loaded,
         hasOpenSession: false,
       }),
     // The poll stops once every session settles, so without this a session
     // deleted from another surface would linger here indefinitely.
     refetchOnWindowFocus: true,
-    ...contract('inventory'),
   });
 
   const invalidateSessions = useCallback(() => {
@@ -226,7 +236,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
   }, [projectId, queryClient]);
 
-  const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
+  const sessions = sessionsQuery.sessions;
 
   // Typing stays on the fast path: the input updates from `search` every
   // keystroke, while the list below re-filters from the deferred copy. On a
@@ -249,6 +259,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const orderMode = useSessionFilterStore(selectOrderMode(projectId, SURFACE));
   const statusFilters = useSessionFilterStore(selectStatusFilters(projectId, SURFACE));
   const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId, SURFACE));
+  const ownerFilters = useSessionFilterStore(selectOwnerFilters(projectId, SURFACE));
+  const accessFilters = useSessionFilterStore(selectAccessFilters(projectId, SURFACE));
   const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId, SURFACE));
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId, SURFACE));
   const collapsedSectionSet = useMemo(() => new Set(collapsedSections), [collapsedSections]);
@@ -256,9 +268,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const resetFilters = useSessionFilterStore((s) => s.resetFilters);
 
   // Review Center feeds `status` grouping's `needs-you` section and the menu's
-  // Show list. Same flag gate as the sidebar: flag off, query never runs.
-  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
-  const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
+  // Show list — the same inbox summary the sidebar reads.
+  const reviewSummary = useReviewSessionSummary(projectId);
 
   const visibleSessions = useMemo(
     () =>
@@ -269,8 +280,18 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         deferredSearch,
         tI18nComplete,
         searchIndex,
+        { owners: ownerFilters, access: accessFilters },
       ),
-    [sessions, statusFilters, sourceFilters, deferredSearch, tI18nComplete, searchIndex],
+    [
+      sessions,
+      statusFilters,
+      sourceFilters,
+      ownerFilters,
+      accessFilters,
+      deferredSearch,
+      tI18nComplete,
+      searchIndex,
+    ],
   );
 
   const grouped = useMemo(
@@ -282,10 +303,15 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           order: orderMode,
           reviewCountBySession: reviewSummary.needsYouBySession,
           hiddenSections,
+          ownerLabels: {
+            you: tSidebar('filter.ownerValue.you'),
+            unknown: tSidebar('filter.ownerValue.unknown'),
+          },
         },
         tI18nComplete,
       ),
     [
+      tSidebar,
       visibleSessions,
       groupMode,
       orderMode,
@@ -624,6 +650,20 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                         })}
                       </SessionsSection>
                     ))}
+                    {sessionsQuery.hasNextPage && (
+                      <div className="flex justify-center pb-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={sessionsQuery.isFetchingNextPage}
+                          onClick={() => sessionsQuery.fetchNextPage()}
+                        >
+                          {sessionsQuery.isFetchingNextPage
+                            ? tSidebar('loadingMore')
+                            : tSidebar('loadMoreSessions')}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </FadedScrollArea>
               </div>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { extractGatewayErrorDetails, unwrapError } from './errors';
+import { extractGatewayErrorDetails, rawErrorText, unwrapError } from './errors';
 
 // The gateway's structured error envelope — mirrors gatewayErrorBody()
 // (packages/llm-gateway/src/pipeline/error-response.ts) exactly, both the
@@ -270,6 +270,37 @@ describe('unwrapError — a message that is itself a serialized body is unwrappe
     expect(unwrapError(html)).toBe('502 Bad Gateway');
   });
 
+  // CodeQL js/bad-tag-filter: `<\/script>` does not match a close tag with
+  // whitespace before the bracket, which HTML permits. The script body then
+  // survives the strip and lands in the user's transcript row.
+  test('a close tag with whitespace still strips the script body out of the visible text', () => {
+    const html = '<html><body><script >alert(1)</script >Service unavailable</body></html>';
+    expect(unwrapError(html)).toBe('Service unavailable');
+  });
+
+  test('the same holds for style, and for an uppercase close tag', () => {
+    const html = '<html><body><STYLE>.a{color:red}</STYLE >Gateway timeout</body></html>';
+    expect(unwrapError(html)).toBe('Gateway timeout');
+  });
+
+  // CodeQL js/polynomial-redos: `<title[^>]*>` and `<script[\s\S]*?<\/script>`
+  // each rescan the tail from every match position, so an error page that is a
+  // long run of unclosed tags costs O(n^2). The body is attacker-influenced —
+  // it is whatever an upstream gateway returned — so this must stay linear.
+  test('a pathological unclosed-tag body is parsed in linear time, not quadratically', () => {
+    const hostile = `<html>${'<title'.repeat(30_000)}`;
+    const started = Date.now();
+    unwrapError(hostile);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  test('the same bound holds for a long run of unclosed script tags', () => {
+    const hostile = `<html><body>${'<script'.repeat(30_000)}`;
+    const started = Date.now();
+    unwrapError(hostile);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   test('a body with no recognizable sentence never renders "[object Object]" or empty', () => {
     // A code or status is still a sentence's worth of information — say it.
     expect(unwrapError({ status: 500 })).toBe('Request failed with status 500');
@@ -291,5 +322,67 @@ describe('extractGatewayErrorDetails — a gateway body serialized into data.mes
     expect(details?.provider).toBe('openai');
     expect(details?.code).toBe('provider_not_connected');
     expect(details?.requestId).toBe('req_abc123');
+  });
+});
+
+// The AI SDK's `JSONParseError` text when a streamed chunk fails to parse —
+// here several `chat.completion.chunk` bodies arrived in one SSE event. The
+// message embeds the whole unparsed text, so a transcript that prints it
+// verbatim shows a wall of JSON instead of the failure.
+function chunk(content: string, model = 'glm-5.3-flash') {
+  return JSON.stringify({
+    id: 'chatcmpl-00000000-0000-4000-8000-000000000000',
+    choices: [{ index: 0, delta: { reasoning_content: content }, finish_reason: null }],
+    created: 1700000000,
+    model,
+    object: 'chat.completion.chunk',
+  });
+}
+const STREAM_PARSE_TEXT =
+  `JSON parsing failed: Text: ${chunk('58')} ${chunk('90 USD')} ${chunk('USD).')}. ` +
+  'Error message: JSON Parse error: Unable to parse JSON string';
+
+describe('unwrapError — unparseable stream chunks', () => {
+  test('names the model instead of printing the chunks', () => {
+    expect(unwrapError(STREAM_PARSE_TEXT)).toBe(
+      'The response from glm-5.3-flash could not be read.',
+    );
+  });
+
+  test('reads through the AI SDK class prefix and the OpenCode envelope', () => {
+    expect(
+      unwrapError({
+        name: 'UnknownError',
+        data: { message: `AI_JSONParseError: ${STREAM_PARSE_TEXT}` },
+      }),
+    ).toBe('The response from glm-5.3-flash could not be read.');
+  });
+
+  test('falls back to a model-neutral sentence when the text names no model', () => {
+    expect(
+      unwrapError('JSON parsing failed: Text: {"choices":[. Error message: Unexpected end of JSON input'),
+    ).toBe('The model response could not be read.');
+  });
+});
+
+describe('rawErrorText — the technical text behind the sentence', () => {
+  test('returns the original text when unwrapError summarized it', () => {
+    expect(rawErrorText(STREAM_PARSE_TEXT)).toBe(STREAM_PARSE_TEXT);
+    expect(rawErrorText({ name: 'UnknownError', data: { message: STREAM_PARSE_TEXT } })).toBe(
+      STREAM_PARSE_TEXT,
+    );
+  });
+
+  test('returns a serialized body when the error is structured', () => {
+    expect(rawErrorText({ name: 'APIError', data: { message: '{"message":"Rate limited"}' } })).toBe(
+      '{"message":"Rate limited"}',
+    );
+  });
+
+  test('undefined when the raw text adds nothing to the sentence', () => {
+    expect(rawErrorText({ message: 'boom' })).toBeUndefined();
+    expect(rawErrorText('Error: something broke')).toBeUndefined();
+    expect(rawErrorText(null)).toBeUndefined();
+    expect(rawErrorText('')).toBeUndefined();
   });
 });

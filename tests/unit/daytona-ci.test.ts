@@ -72,6 +72,10 @@ describe('Daytona CI worker plan', () => {
     expect(script).toContain('.kortix-ci-warm-ready');
     expect(script).toContain('daytona-warm.exit');
     expect(script).toContain('modprobe "$module"');
+    expect(script).toContain('if ! modprobe "$module"; then');
+    expect(script).toContain('docker readiness will decide');
+    expect(script).toContain("timeout 180 sh -c 'until docker info");
+    expect(script).toContain('\ndocker info >/dev/null\n');
     expect(script).toContain('pkill -TERM -x dockerd');
     expect(script).toContain('pgrep -x containerd');
     expect(script).toContain('rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes');

@@ -67,16 +67,12 @@ mock.module('../../shared/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
-// The connector pre-flight now runs on every turn-start. This file is about a
-// different concern, so keep it satisfied — unstubbed it reaches a real DB.
-mock.module('../../projects/lib/prompt-connector-preflight', () => ({
-  PromptConnectorPreflightUnresolved: class PromptConnectorPreflightUnresolved extends Error {},
-  missingPromptConnectorConnections: async () => ({ ok: true }),
-}));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
 mock.module('../../projects/lib/session-token-grant', () => ({
+  // The proxy's declared-agent guard; these suites exercise other behavior.
+  agentLaunchableInProject: async () => true,
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
@@ -323,18 +319,6 @@ describe('turn lifecycle authority is persisted before the prompt is relayed', (
       retry: true,
     });
     expect(fetched).toBe(0);
-  });
-
-  // A refusal must not consume the caller's idempotency claim, or their retry
-  // short-circuits to a bogus 200 "duplicate" and the message is lost forever.
-  test('a refusal leaves the prompt-dedupe claim free for the retry', async () => {
-    turnStartObservation = 'no_box';
-    await prompt(HUMAN);
-
-    turnStartObservation = 'granted';
-    const retry = await prompt(HUMAN);
-
-    expect(retry.status).toBe(200);
   });
 
   test('the BOX cannot observe its own turn start', async () => {

@@ -3,6 +3,11 @@ import type { projectSessions } from '@kortix/db';
 
 import {
   mergeSessionOwnerIdentities,
+  SESSION_PAGE_DEFAULT_LIMIT,
+  SESSION_PAGE_MAX_LIMIT,
+  cursorForRow,
+  decodeSessionCursor,
+  encodeSessionCursor,
   selectSessionRowsForViewer,
 } from './session-inventory';
 
@@ -44,6 +49,41 @@ function row(
 const subject = { userId: VIEWER_ID, groupIds: [] };
 
 describe('selectSessionRowsForViewer', () => {
+  test('account session oversight widens the manager inventory to other members\' private sessions', () => {
+    const privateOther = row('private-other', { createdBy: OTHER_ID });
+    const restrictedOther = row('restricted-other', { createdBy: OTHER_ID, visibility: 'restricted' });
+    const base = {
+      rows: [privateOther, restrictedOther],
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map(),
+    };
+
+    const withOversight = selectSessionRowsForViewer({ ...base, scope: 'project', accountSessionOversight: true });
+    expect(withOversight.items.map((item) => item.row.sessionId)).toEqual(['private-other', 'restricted-other']);
+
+    const withoutOversight = selectSessionRowsForViewer({ ...base, scope: 'project', accountSessionOversight: false });
+    expect(withoutOversight.items).toEqual([]);
+  });
+
+  test('account session oversight never widens the default sidebar scope', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('private-other', { createdBy: OTHER_ID })],
+      scope: 'visible',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map(),
+      accountSessionOversight: true,
+    });
+    expect(selected.items).toEqual([]);
+  });
+
   test('manager project scope hides inaccessible rows and keeps accessible unavailable and soft-deleted rows', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const stoppedWithoutRuntime = row('stopped-lost', { status: 'stopped' });
@@ -149,6 +189,13 @@ describe('selectSessionRowsForViewer', () => {
   test('visible scope preserves the existing visibility and resumability filters', () => {
     const own = row('own');
     const privateOther = row('private-other', { createdBy: OTHER_ID });
+    // A session migrated from the old runtime: status `completed`, no runtime
+    // row. An allowlist of live statuses would drop it from the list.
+    const migrated = row('migrated', {
+      status: 'completed',
+      createdBy: OTHER_ID,
+      visibility: 'project',
+    });
     const stoppedLost = row('stopped-lost', { status: 'stopped' });
     const stoppedResumable = row('stopped-resumable', { status: 'stopped' });
     const deleted = row('deleted', {
@@ -156,7 +203,7 @@ describe('selectSessionRowsForViewer', () => {
     });
 
     const selected = selectSessionRowsForViewer({
-      rows: [own, privateOther, stoppedLost, stoppedResumable, deleted],
+      rows: [own, privateOther, migrated, stoppedLost, stoppedResumable, deleted],
       scope: 'visible',
       canManageProject: false,
       subject,
@@ -169,8 +216,10 @@ describe('selectSessionRowsForViewer', () => {
     expect(selected.authorized).toBe(true);
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
       'own',
+      'migrated',
       'stopped-resumable',
     ]);
+    expect(selected.items.find((item) => item.row.sessionId === 'migrated')?.canAccess).toBe(true);
   });
 });
 
@@ -429,5 +478,155 @@ describe('runtime status map tolerates a superset', () => {
 
     expect(selected.items).toHaveLength(1);
     expect(selected.items[0]!.runtimeStatus).toBeNull();
+  });
+});
+
+const SCOPE = { projectId: 'P1', viewerId: 'U1' };
+
+describe('session list cursor', () => {
+  test('round-trips a position through the sealed encoding', () => {
+    const updatedAt = new Date('2026-09-16T10:11:12.345Z');
+    const encoded = encodeSessionCursor({ updatedAt, sessionId: 'S1' }, SCOPE);
+    const decoded = decodeSessionCursor(encoded, SCOPE);
+    expect(decoded?.sessionId).toBe('S1');
+    expect(decoded?.updatedAt.toISOString()).toBe(updatedAt.toISOString());
+  });
+
+  test('is URL-safe — it travels in a query string', () => {
+    const encoded = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T10:11:12.345Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    expect(encoded).toBe(encodeURIComponent(encoded));
+  });
+
+  test('carries neither the session id nor the timestamp in the clear', () => {
+    // The scan position can name a row the viewer may NOT see — that is the
+    // whole point of sealing it. A cursor that merely base64-encoded the tuple
+    // disclosed a private session's id and last-activity time to anyone who
+    // could read their own URL.
+    const updatedAt = new Date('2026-09-16T10:11:12.345Z');
+    const encoded = encodeSessionCursor({ updatedAt, sessionId: 'HIDDEN-SESSION' }, SCOPE);
+    expect(encoded).not.toContain('HIDDEN-SESSION');
+    expect(encoded).not.toContain('2026-09-16');
+    // …and not after an undo of every encoding a client could try.
+    const decodedText = Buffer.from(encoded, 'base64url').toString('latin1');
+    expect(decodedText).not.toContain('HIDDEN-SESSION');
+  });
+
+  test('a cursor does not open for another viewer or another project', () => {
+    const encoded = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    expect(decodeSessionCursor(encoded, { projectId: 'P1', viewerId: 'U2' })).toBeNull();
+    expect(decodeSessionCursor(encoded, { projectId: 'P2', viewerId: 'U1' })).toBeNull();
+    expect(decodeSessionCursor(encoded, SCOPE)?.sessionId).toBe('S1');
+  });
+
+  test('a session id containing the separator survives the round trip', () => {
+    // The payload is split on the FIRST separator, so only the timestamp half
+    // is bounded by it. A split on the last one would truncate this id.
+    const sessionId = 'weird|id|with|pipes';
+    const decoded = decodeSessionCursor(
+      encodeSessionCursor({ updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId }, SCOPE),
+      SCOPE,
+    );
+    expect(decoded?.sessionId).toBe(sessionId);
+  });
+
+  test('anything this scope did not seal decodes to null, never a throw', () => {
+    // A bad cursor starts the list from the top. It must not fail the request:
+    // the value reaches us from a client and is not trusted input.
+    expect(decodeSessionCursor(null, SCOPE)).toBeNull();
+    expect(decodeSessionCursor(undefined, SCOPE)).toBeNull();
+    expect(decodeSessionCursor('', SCOPE)).toBeNull();
+    expect(decodeSessionCursor('not-sealed-at-all!!', SCOPE)).toBeNull();
+    expect(decodeSessionCursor('v1.aaa.bbb.ccc', SCOPE)).toBeNull();
+    expect(decodeSessionCursor('v2.aaa.bbb.ccc', SCOPE)).toBeNull();
+    // A tampered ciphertext fails the GCM tag rather than yielding a position.
+    const real = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    const [v, iv, tag, ct] = real.split('.');
+    expect(decodeSessionCursor([v, iv, tag, `${ct}AA`].join('.'), SCOPE)).toBeNull();
+  });
+
+  test('a truncated GCM tag is refused, not merely unlikely to verify', () => {
+    // `setAuthTag` accepts 4, 8 and 12..15-byte tags — all legal GCM lengths.
+    // The tag comes from the client, so without an explicit length check a
+    // forged cursor with a 4-byte tag needs ~2^32 attempts rather than 2^128.
+    const real = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    const [v, iv, tag, ct] = real.split('.');
+    const full = Buffer.from(tag, 'base64url');
+    expect(full.length).toBe(16);
+    for (const shortLen of [4, 8, 12, 15]) {
+      const truncated = full.subarray(0, shortLen).toString('base64url');
+      expect(decodeSessionCursor([v, iv, truncated, ct].join('.'), SCOPE)).toBeNull();
+    }
+  });
+
+  test('a nonce of the wrong length is refused', () => {
+    const real = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    const [v, iv, tag, ct] = real.split('.');
+    expect(Buffer.from(iv, 'base64url').length).toBe(12);
+    const shortIv = Buffer.from(iv, 'base64url').subarray(0, 8).toString('base64url');
+    expect(decodeSessionCursor([v, shortIv, tag, ct].join('.'), SCOPE)).toBeNull();
+  });
+
+  test('cursorForRow names the row it is given', () => {
+    const updatedAt = new Date('2026-09-16T10:11:12.345Z');
+    expect(
+      decodeSessionCursor(cursorForRow({ updatedAt, sessionId: 'S9' }, SCOPE), SCOPE)?.sessionId,
+    ).toBe('S9');
+  });
+
+  test('the page ceiling is at or above the default', () => {
+    // A default above the ceiling would clamp every unparameterized request.
+    expect(SESSION_PAGE_DEFAULT_LIMIT).toBeLessThanOrEqual(SESSION_PAGE_MAX_LIMIT);
+    expect(SESSION_PAGE_DEFAULT_LIMIT).toBeGreaterThan(0);
+  });
+});
+
+describe('selectSessionRowsForViewer — agent principal (spec §2)', () => {
+  test("an agent session lists its own session, its children and project sessions, never the launcher's private ones", () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [
+        row('agent-own'),
+        row('agent-child', { metadata: { spawned_by_session: 'agent-own' } }),
+        row('launcher-private'),
+        row('shared', { visibility: 'project' }),
+      ],
+      scope: 'visible',
+      canManageProject: false,
+      subject: { userId: VIEWER_ID, groupIds: [] },
+      grantsBySession: new Map(),
+      callerSessionId: 'agent-own',
+      boundCredentialSessionId: 'agent-own',
+      runtimeStatusBySession: new Map(),
+      agentPrincipal: true,
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['agent-own', 'agent-child', 'shared']);
+  });
+
+  test('the same credential without the flag keeps the launcher-keyed listing', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('agent-own'), row('launcher-private')],
+      scope: 'visible',
+      canManageProject: false,
+      subject: { userId: VIEWER_ID, groupIds: [] },
+      grantsBySession: new Map(),
+      callerSessionId: 'agent-own',
+      boundCredentialSessionId: 'agent-own',
+      runtimeStatusBySession: new Map(),
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['agent-own', 'launcher-private']);
   });
 });

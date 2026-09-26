@@ -120,6 +120,35 @@ describe('handleCall — happy path', () => {
     expect(res.status).toBe('ok');
     expect(fetchCalls[0]!.headers.Authorization).toBeUndefined();
   });
+
+  // The transcript must always be able to answer "whose account sent that" —
+  // the resolved connection's identity (connection-access.ts) rides on the
+  // GatewayConnector the deps resolved and is echoed on every ok result.
+  test('ok result echoes which account ran it', async () => {
+    const { deps } = makeDeps({
+      connector: {
+        ...STRIPE,
+        connectionId: 'conn-row-1',
+        connectionLabel: 'Work Stripe',
+        connectionOwnerType: 'member',
+      },
+    });
+    const res = await handleCall(deps, baseInput);
+    expect(res).toMatchObject({
+      status: 'ok',
+      account: { connection_id: 'conn-row-1', label: 'Work Stripe', owner_type: 'member' },
+    });
+  });
+
+  // No resolved connection (a public/no-auth connector, or a Computers profile
+  // keyed on tunnelIds rather than a connection row) means no account to name —
+  // the field must be absent, not a fabricated placeholder.
+  test('ok result omits account when the connector resolved no connection', async () => {
+    const { deps } = makeDeps();
+    const res = await handleCall(deps, baseInput);
+    expect(res.status).toBe('ok');
+    expect((res as { account?: unknown }).account).toBeUndefined();
+  });
 });
 
 describe('handleCall — denials', () => {
@@ -136,6 +165,19 @@ describe('handleCall — denials', () => {
     expect(await handleCall(deps, baseInput)).toEqual({
       status: 'denied',
       reason: 'action_not_found',
+    });
+  });
+
+  // THE RULE: several accounts reachable, none named, none pinned → the
+  // gateway is reason-agnostic — it surfaces whatever `explainMissingConnector`
+  // answers verbatim, so `account_required` passes through exactly like
+  // `connector_not_connected`/`connector_disabled` already do.
+  test('account_required passes through from explainMissingConnector verbatim', async () => {
+    const { deps } = makeDeps({ connector: null });
+    deps.explainMissingConnector = async () => 'account_required';
+    expect(await handleCall(deps, baseInput)).toEqual({
+      status: 'denied',
+      reason: 'account_required',
     });
   });
 

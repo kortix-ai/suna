@@ -6,7 +6,7 @@ const USER_ID = '33333333-3333-4333-8333-333333333333';
 const SESSION_ID = 'session-1';
 const SECRET_ID = '44444444-4444-4444-8444-444444444444';
 const audits: Array<Record<string, unknown>> = [];
-const updates: Array<Record<string, unknown>> = [];
+const updates: Array<{ table: unknown; value: Record<string, unknown> }> = [];
 
 let resolvedValue: string | null = JSON.stringify({
   openai: { type: 'oauth', access: 'codex-access', expires: Date.now() + 60 * 60_000 },
@@ -24,27 +24,15 @@ const resolveProjectSecretForConsumer = mock(async () =>
 );
 
 mock.module('../../projects/secrets', () => ({
-  decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   resolveProjectSecretForConsumer,
 }));
 
 mock.module('../../shared/db', () => ({
   db: {
-    select: () => ({
-      from: () => ({
-        where: async () => [
-          {
-            secretId: SECRET_ID,
-            ownerUserId: USER_ID,
-            valueEnc: resolvedValue,
-          },
-        ],
-      }),
-    }),
-    update: () => ({
+    update: (table: unknown) => ({
       set: (value: Record<string, unknown>) => {
-        updates.push(value);
+        updates.push({ table, value });
         return { where: async () => [] };
       },
     }),
@@ -57,7 +45,8 @@ mock.module('../../shared/audit', () => ({
   },
 }));
 
-const { CodexRefreshError, resolveCodexCredential } = await import('./codex');
+const { accountSecretResources, projectSecrets } = await import('@kortix/db');
+const { CodexRefreshError, resolveCodexCredential, resolveCodexAccountCredential } = await import('./codex');
 
 describe('resolveCodexCredential consumer boundary', () => {
   beforeEach(() => {
@@ -112,7 +101,7 @@ describe('resolveCodexCredential consumer boundary', () => {
         sessionId: SESSION_ID,
       }),
     ).toEqual({ access: 'new-access', accountId: undefined });
-    expect(updates).toHaveLength(1);
+    expect(updates.map((update) => update.table)).toEqual([projectSecrets]);
     expect(audits).toEqual([
       expect.objectContaining({
         action: 'secret.consumer.refreshed',
@@ -127,6 +116,24 @@ describe('resolveCodexCredential consumer boundary', () => {
     ]);
     expect(JSON.stringify(audits)).not.toContain('new-access');
     expect(JSON.stringify(audits)).not.toContain('refresh-token');
+  });
+
+  test('refreshes a selected account OAuth resource in its own encrypted row', async () => {
+    const authJson = JSON.stringify({ openai: {
+      type: 'oauth', access: 'old-account-access', refresh: 'account-refresh', expires: 0,
+    } });
+    const fetchImpl = mock(async () => Response.json({ access_token: 'new-account-access', expires_in: 3600 }));
+    expect(await resolveCodexAccountCredential({
+      projectId: PROJECT_ID, accountId: ACCOUNT_ID, sessionId: SESSION_ID,
+      userId: USER_ID, secretId: SECRET_ID, value: authJson,
+    }, fetchImpl)).toEqual({ access: 'new-account-access', accountId: undefined });
+    expect(updates.map((update) => update.table)).toEqual([accountSecretResources]);
+    const ciphertext = String(updates[0]?.value.valueEnc);
+    expect(ciphertext.startsWith('v1:')).toBe(true);
+    expect(ciphertext).not.toContain('new-account-access');
+    expect(ciphertext).not.toContain('account-refresh');
+    expect(audits[0]).toMatchObject({ resourceId: SECRET_ID, metadata: { value_source: 'account_resource' } });
+    expect(JSON.stringify(audits)).not.toContain('account-refresh');
   });
 
   test('records a failed refresh without credential material', async () => {

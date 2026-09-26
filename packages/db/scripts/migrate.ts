@@ -9,14 +9,17 @@ import { join } from 'node:path';
  * (dotenv/config/ts-node/…) that bun's resolver rejects differently than node's.
  * The library `runner()` has none of that — it's the same battle-tested engine
  * the CLI wraps. ALL migration logic (advisory lock, the pgmigrations tracking
- * table, per-migration transactions, dry-run, fake) is node-pg-migrate's.
+ * table, per-migration transactions, fake) is node-pg-migrate's. `status` is
+ * the exception: it reads the ledger itself (migration-status.ts), because the
+ * runner's `dryRun` is not read-only.
  *
  *   bun scripts/migrate.ts up                 apply pending
- *   bun scripts/migrate.ts status             list pending (dry-run, no writes)
+ *   bun scripts/migrate.ts status             list pending; read-only (never the runner)
  *   bun scripts/migrate.ts down [--count=N]   roll back N (default 1)
  *   bun scripts/migrate.ts fake               mark pending as applied without running (baseline)
  *   bun scripts/migrate.ts bootstrap          fresh-DB: install non-kortix prereqs, then `up`
  *   bun scripts/migrate.ts local-up           loopback-only; tolerate cross-worktree ledger order
+ *   bun scripts/migrate.ts preview-up         preview-only; tolerate persistent branch ledger order
  *
  * DB URL: $DATABASE_URL, or --target=<env> (reads <ENV>_DB_URL / DATABASE_URL
  * from apps/api/.env so secrets never go through the shell).
@@ -24,6 +27,7 @@ import { join } from 'node:path';
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 import { repairLocalAuditV2Ledger } from './local-audit-v2-ledger-repair';
+import { repairEarlyAppliedMigrations } from './early-applied-migration-repair';
 import { dropLocalInvalidIndexes } from './local-invalid-index-repair';
 import {
   migrationLedgerRepairConnectorName,
@@ -32,6 +36,7 @@ import {
 import { repairLocalWarmSessionIndex } from './local-warm-session-index-repair';
 import { withMigrationDeadlockRetry } from './migration-retry';
 import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
+import { readMigrationStatus } from './migration-status';
 import { migrationBootstrapsPrerequisites, migrationCheckOrder } from './migration-target';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '..', 'migrations');
@@ -59,6 +64,13 @@ function resolveUrl(argv: string[]): string {
     const v = readEnvKey(DOTENV, key);
     if (!v) {
       console.error(`--target=${target}: ${key} not set in apps/api/.env`);
+      process.exit(1);
+    }
+    if (v.startsWith('encrypted:')) {
+      console.error(
+        `--target=${target}: ${key} in apps/api/.env is dotenvx-encrypted. ` +
+          'Pass the decrypted URL as $DATABASE_URL instead (packages/db/MIGRATIONS.md, "Commands").',
+      );
       process.exit(1);
     }
     return v;
@@ -200,7 +212,7 @@ async function selfHostBootstrapIfFresh(databaseUrl: string): Promise<void> {
 async function main() {
   const [cmd = 'up', ...rest] = process.argv.slice(2);
   const databaseUrl = resolveUrl(rest);
-  const checkOrder = migrationCheckOrder(cmd, databaseUrl);
+  const checkOrder = migrationCheckOrder(cmd, databaseUrl, process.env.KORTIX_PREVIEW_MIGRATION);
   const countArg = rest.find((a) => a.startsWith('--count='))?.slice('--count='.length);
   const runtimeMigrations = materializeMigrationRuntimeDirectory(MIGRATIONS_DIR);
 
@@ -240,6 +252,13 @@ async function main() {
     }
   };
 
+  const releaseEarlyAppliedMigrations = async () => {
+    const released = await repairEarlyAppliedMigrations(databaseUrl, runtimeMigrations.path);
+    for (const name of released) {
+      console.warn(`[migrate] released early-applied ${name}; it re-runs after its predecessors.`);
+    }
+  };
+
   const applyPendingMigrations = () => withMigrationDeadlockRetry(
     () => runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY }),
     {
@@ -257,6 +276,7 @@ async function main() {
       case 'up':
         await autoBaselineIfNeeded(base, databaseUrl);
         await repairAppliedMigrationRenames();
+        await releaseEarlyAppliedMigrations();
         await applyPendingMigrations();
         return;
       case 'local-up': {
@@ -277,13 +297,16 @@ async function main() {
           );
         }
         await repairAppliedMigrationRenames();
+        await releaseEarlyAppliedMigrations();
         await applyPendingMigrations();
         return;
       }
+      case 'preview-up':
       case 'bootstrap':
         // Fresh-DB convenience for self-host: prereqs → then `up`.
         await autoBaselineIfNeeded(base, databaseUrl);
         await repairAppliedMigrationRenames();
+        await releaseEarlyAppliedMigrations();
         await applyPendingMigrations();
         return;
       case 'fake':
@@ -297,16 +320,18 @@ async function main() {
         });
         return;
       case 'status': {
-        const pending = await runner({
-          ...base,
-          direction: 'up',
-          count: Number.POSITIVE_INFINITY,
-          dryRun: true,
+        // Never node-pg-migrate's runner here: its `dryRun` still calls each
+        // pending migration's up(), and statements up() runs through
+        // pgm.db.query() commit. See migration-status.ts.
+        const { pending } = await readMigrationStatus({
+          databaseUrl,
+          migrationsDir: runtimeMigrations.path,
+          checkOrder,
         });
         if (pending.length === 0) console.log('Up to date — no pending migrations.');
         else {
           console.log(`${pending.length} pending migration(s):`);
-          for (const m of pending) console.log(`  pending  ${m.name}`);
+          for (const name of pending) console.log(`  pending  ${name}`);
         }
         if (pending.length > 0) process.exitCode = 1;
         return;

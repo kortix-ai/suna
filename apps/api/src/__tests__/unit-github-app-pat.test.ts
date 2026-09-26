@@ -1,24 +1,20 @@
 /**
- * Unit tests for the two additions that let self-host configure managed-git
- * WITHOUT the manifest flow (platform/routes/github-app.ts):
+ * Write-time validation for the two setup routes that do not use the manifest
+ * flow (platform/routes/github-app.ts):
  *
- *   - `resolveManagedGitSource` — the pure precedence rule behind
- *     `GET /status`'s `source` field (App-DB > App-env > PAT).
- *   - `verifyPastedGithubAppInstallation` — validates an operator-pasted
- *     GitHub App (app id + private key + installation id) against GitHub
- *     BEFORE it's stored (POST /app), the same "fail loudly here, not at the
- *     first project creation" principle as exchangeManifestCode.
+ *   - `verifyPastedGithubAppInstallation` — proves a pasted App (app id +
+ *     private key + installation id) owns that installation, and resolves the
+ *     owner Kortix will store with it, BEFORE anything is written.
+ *   - `verifyRepoAdminToken` — proves a token can create AND delete a
+ *     repository under the owner, the write managed git actually needs.
  *
- * No DB access in this file (same "no mock.module" style as
- * unit-github-app-manifest.test.ts) — the PAT DB round-trip itself lives in
- * platform/services/managed-github-app.test.ts, and the DB-first/env-fallback
- * accessor flip lives in unit-github-app-isconfigured.test.ts.
+ * Source resolution itself is covered by
+ * platform/services/instance-git-config.test.ts.
  */
 import { describe, expect, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
 import {
   resolveInstallationOwnerType,
-  resolveManagedGitSource,
   verifyPastedGithubAppInstallation,
   verifyRepoAdminToken,
 } from '../platform/routes/github-app';
@@ -36,61 +32,6 @@ describe('resolveInstallationOwnerType', () => {
     expect(resolveInstallationOwnerType(undefined)).toBe('Organization');
     expect(resolveInstallationOwnerType('Bot')).toBe('Organization');
     expect(resolveInstallationOwnerType('')).toBe('Organization');
-  });
-});
-
-describe('resolveManagedGitSource', () => {
-  test('none when nothing is configured', () => {
-    expect(
-      resolveManagedGitSource({
-        dbAppConfigured: false,
-        envAppConfigured: false,
-        patConfigured: false,
-      }),
-    ).toBe('none');
-  });
-
-  test('pat when only a token is configured', () => {
-    expect(
-      resolveManagedGitSource({
-        dbAppConfigured: false,
-        envAppConfigured: false,
-        patConfigured: true,
-      }),
-    ).toBe('pat');
-  });
-
-  test('a PAT wins over an env App — it is what the git backend actually uses', () => {
-    // managedGithubToken() short-circuits managedAdminAuth/mintManagedWriteToken.
-    // Prod 2026-09-07: a PAT stored via POST /pat during the provisioning
-    // outage was live, but /status still said "env".
-    expect(
-      resolveManagedGitSource({
-        dbAppConfigured: false,
-        envAppConfigured: true,
-        patConfigured: true,
-      }),
-    ).toBe('pat');
-  });
-
-  test('a PAT wins over a DB App as well — POST /app clears a stored PAT, but an env PAT still short-circuits a DB App', () => {
-    expect(
-      resolveManagedGitSource({
-        dbAppConfigured: true,
-        envAppConfigured: true,
-        patConfigured: true,
-      }),
-    ).toBe('pat');
-  });
-
-  test('DB App wins over an env App when no PAT is configured', () => {
-    expect(
-      resolveManagedGitSource({
-        dbAppConfigured: true,
-        envAppConfigured: true,
-        patConfigured: false,
-      }),
-    ).toBe('db');
   });
 });
 

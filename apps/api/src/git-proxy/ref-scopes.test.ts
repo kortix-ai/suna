@@ -36,7 +36,7 @@ beforeEach(() => {
 });
 
 const SESSION_ID = 'sess-1';
-const session: GitPrincipal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID };
+const session: GitPrincipal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID, userId: 'u1', tokenId: 'tok-1' };
 const monitor: GitPrincipal = { kind: 'monitor' };
 const user: GitPrincipal = { kind: 'user', userId: 'u1', tokenId: 'tok-1' };
 const internal: GitPrincipal = { kind: 'internal' };
@@ -57,6 +57,25 @@ const ANY: GitRefScope = 'project.gitops.ref.any';
 const DEL: GitRefScope = 'project.gitops.ref.delete';
 
 describe('principalHoldsRefScope — session', () => {
+  test('a wildcard grant cannot exceed the effective IAM role', async () => {
+    iamAllows = false;
+    const c = ctxWithGrant({ agent: 'main', permissions: 'all' });
+    expect(await principalHoldsRefScope(c, session, PROJECT, ANY)).toBe(false);
+    expect(await principalHoldsRefScope(c, session, PROJECT, DEL)).toBe(false);
+    expect(iamAsked).toEqual([ANY, DEL]);
+  });
+
+  test('an explicit ref grant cannot exceed the effective IAM role', async () => {
+    iamAllows = false;
+    expect(await principalHoldsRefScope(ctxWithGrant({ agent: 'main', permissions: [ANY] }), session, PROJECT, ANY)).toBe(false);
+  });
+
+  test('a session without a launching identity cannot widen', async () => {
+    const unbound: GitPrincipal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID };
+    expect(await principalHoldsRefScope(ctxWithGrant({ agent: 'main', permissions: 'all' }), unbound, PROJECT, ANY)).toBe(false);
+    expect(iamAsked).toEqual([]);
+  });
+
   test('an UNGOVERNED project (null grant) does NOT widen a session', async () => {
     const c = ctxWithGrant(null);
     expect(await principalHoldsRefScope(c, session, PROJECT, ANY)).toBe(false);
@@ -64,24 +83,24 @@ describe('principalHoldsRefScope — session', () => {
   });
 
   test('a governed project that did not list the leaf does not widen either', async () => {
-    const c = ctxWithGrant({ agent: 'main', kortixCli: ['project.gitops.push'] });
+    const c = ctxWithGrant({ agent: 'main', permissions: ['project.gitops.push'] });
     expect(await principalHoldsRefScope(c, session, PROJECT, ANY)).toBe(false);
   });
 
   test('an explicitly listed leaf widens exactly that leaf', async () => {
-    const c = ctxWithGrant({ agent: 'main', kortixCli: ['project.gitops.push', ANY] });
+    const c = ctxWithGrant({ agent: 'main', permissions: ['project.gitops.push', ANY] });
     expect(await principalHoldsRefScope(c, session, PROJECT, ANY)).toBe(true);
     expect(await principalHoldsRefScope(c, session, PROJECT, DEL)).toBe(false);
   });
 
   test('a wildcard grant widens both', async () => {
-    const c = ctxWithGrant({ agent: 'main', kortixCli: 'all' });
+    const c = ctxWithGrant({ agent: 'main', permissions: 'all' });
     expect(await principalHoldsRefScope(c, session, PROJECT, ANY)).toBe(true);
     expect(await principalHoldsRefScope(c, session, PROJECT, DEL)).toBe(true);
   });
 
   test('an empty list is deny, not wildcard', async () => {
-    const c = ctxWithGrant({ agent: 'main', kortixCli: [] });
+    const c = ctxWithGrant({ agent: 'main', permissions: [] });
     expect(await principalHoldsRefScope(c, session, PROJECT, ANY)).toBe(false);
   });
 });
@@ -116,7 +135,7 @@ describe('principalHoldsRefScope — other principals', () => {
   });
 
   test('a monitor holds nothing — there is no principal behind it', async () => {
-    const c = ctxWithGrant({ agent: 'main', kortixCli: 'all' });
+    const c = ctxWithGrant({ agent: 'main', permissions: 'all' });
     expect(await principalHoldsRefScope(c, monitor, PROJECT, ANY)).toBe(false);
     expect(await principalHoldsRefScope(c, monitor, PROJECT, DEL)).toBe(false);
   });
@@ -128,20 +147,20 @@ describe('denialsAfterScopes', () => {
   const structural: Denial = { ref: 'refs/heads/main', reason: 'floor' };
 
   test('a structural denial stands even under a wildcard grant', async () => {
-    const c = ctxWithGrant({ agent: 'main', kortixCli: 'all' });
+    const c = ctxWithGrant({ agent: 'main', permissions: 'all' });
     expect(await denialsAfterScopes(c, session, PROJECT, [structural])).toEqual([structural]);
   });
 
   test('a scoped denial is lifted by the matching grant', async () => {
-    const c = ctxWithGrant({ agent: 'main', kortixCli: [ANY] });
+    const c = ctxWithGrant({ agent: 'main', permissions: [ANY] });
     expect(await denialsAfterScopes(c, session, PROJECT, [scoped])).toEqual([]);
   });
 
   test('a COMPOUND denial needs every leaf — holding one is not enough', async () => {
     const compound: Denial = { ref: 'refs/heads/x', reason: 'nope', requires: [ANY, DEL] };
-    const onlyAny = ctxWithGrant({ agent: 'main', kortixCli: [ANY] });
+    const onlyAny = ctxWithGrant({ agent: 'main', permissions: [ANY] });
     expect(await denialsAfterScopes(onlyAny, session, PROJECT, [compound])).toEqual([compound]);
-    const both = ctxWithGrant({ agent: 'main', kortixCli: [ANY, DEL] });
+    const both = ctxWithGrant({ agent: 'main', permissions: [ANY, DEL] });
     expect(await denialsAfterScopes(both, session, PROJECT, [compound])).toEqual([]);
   });
 
@@ -150,7 +169,7 @@ describe('denialsAfterScopes', () => {
   });
 
   test('a mixed push keeps the structural denial and drops the granted one', async () => {
-    const c = ctxWithGrant({ agent: 'main', kortixCli: [ANY] });
+    const c = ctxWithGrant({ agent: 'main', permissions: [ANY] });
     expect(await denialsAfterScopes(c, session, PROJECT, [scoped, structural])).toEqual([structural]);
   });
 

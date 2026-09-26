@@ -1,5 +1,8 @@
-import { backendApi } from '../../http/api-client';
-import { unwrap } from './shared';
+/**
+ * Project templates. The API never mounted `/v1/templates`; these exports
+ * remain for import compatibility until the next major.
+ */
+import { retiredEndpointError } from '../../http/api/errors';
 
 export interface TemplateInput {
   key: string;
@@ -41,17 +44,15 @@ export interface TemplateInstallResult {
   trigger_slugs: string[];
 }
 
-/** Public — template detail + a requirement preview (built against an empty project). */
-export async function getTemplate(id: string): Promise<TemplateDetail> {
-  return unwrap(await backendApi.get<TemplateDetail>(`/templates/${encodeURIComponent(id)}`));
+/** @deprecated The API does not serve templates. Always rejects with `ENDPOINT_RETIRED`. */
+export async function getTemplate(_id: string): Promise<TemplateDetail> {
+  throw retiredEndpointError('getTemplate');
 }
 
-/** Apply a template into a project: renders inputs, merges the manifest, commits. */
+/** @deprecated The API does not serve templates. Always rejects with `ENDPOINT_RETIRED`. */
 export async function installTemplate(
-  id: string,
-  body: { project_id: string; inputs: Record<string, string> },
+  _id: string,
+  _body: { project_id: string; inputs: Record<string, string> },
 ): Promise<TemplateInstallResult> {
-  return unwrap(
-    await backendApi.post<TemplateInstallResult>(`/templates/${encodeURIComponent(id)}/install`, body),
-  );
+  throw retiredEndpointError('installTemplate');
 }

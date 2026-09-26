@@ -29,6 +29,7 @@ import {
   pushVerifiedSeed,
 } from './managed-repo-seed';
 import { normalizeStarterTemplateId } from './starter';
+import { GitHubApiError } from './github';
 import {
   buildProjectSeedFiles,
   buildProjectSeedFilesFromItem,
@@ -71,7 +72,8 @@ import {
 } from './lib/provision-idempotency';
 import { normalizeProjectGlyph } from './lib/project-glyph';
 import { normalizeProjectIcon } from './lib/project-icon';
-import { PROJECT_NAME_MAX_LENGTH, normalizeString, readBody, serializeProject } from './lib/serializers';
+import { PROJECT_NAME_MAX_LENGTH, normalizeString, serializeProject } from './lib/serializers';
+import { readJsonObject } from '../shared/http-body';
 import { setContextField } from '../lib/request-context';
 import { kickProjectTemplatePrebuilds } from '../snapshots/builder';
 import type { AccountRole, ProjectRole } from './access';
@@ -103,6 +105,28 @@ export type ProvisionResultStatus = 201 | 400 | 403 | 409 | 502 | 503;
 export interface ProvisionResult {
   status: ProvisionResultStatus;
   body: unknown;
+  /** Response headers the route must send, e.g. `Retry-After`. */
+  headers?: Record<string, string>;
+}
+
+/**
+ * Map a managed repository create failure to the provision answer.
+ *
+ * A GitHub rate limit (secondary limits block repository creation for minutes)
+ * is `503` + `Retry-After` + `code: GITHUB_RATE_LIMITED`, so a caller can back
+ * off for the time GitHub asked. Every other failure stays `502` with the
+ * provider's reason, as before.
+ */
+export function createRepoFailureResult(error: unknown): ProvisionResult {
+  const message = (error as Error)?.message || 'Failed to provision managed repo';
+  if (error instanceof GitHubApiError && error.retryAfterSeconds !== undefined) {
+    return {
+      status: 503,
+      body: { error: message, code: 'GITHUB_RATE_LIMITED', retry_after_seconds: error.retryAfterSeconds },
+      headers: { 'Retry-After': String(error.retryAfterSeconds) },
+    };
+  }
+  return { status: 502, body: { error: message } };
 }
 
 export interface ProvisionContext {
@@ -124,7 +148,7 @@ export interface ProvisionContext {
  * a caller (either route) can still 403 before any provisioning work starts.
  */
 export async function buildProvisionContext(c: any): Promise<ProvisionContext> {
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const scope = await resolveProjectAccount(c, body);
   return { c, body, scope };
 }
@@ -339,9 +363,14 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
       projectId,
       accountId: scope.accountId,
       slug: repoSlug,
-      message,
+      // NOT `message`: that key is the log line's own text, so the provider's
+      // reason was overwritten and never reached Better Stack (2026-09-16).
+      error: message,
+      ...(error instanceof GitHubApiError && error.retryAfterSeconds !== undefined
+        ? { retry_after_seconds: error.retryAfterSeconds }
+        : {}),
     });
-    return { status: 502, body: { error: message } };
+    return createRepoFailureResult(error);
   }
 
   const authMethod = provider === 'github' ? 'github_app' : 'managed';

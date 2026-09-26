@@ -1,27 +1,23 @@
 'use client';
 
 import { InfoBanner } from '@/components/ui/info-banner';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { successToast } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import type { SessionScope } from '@kortix/sdk';
 import {
   CpuIcon as Cpu,
   KeyIcon as KeyRound,
-  PlugIcon as PlugZap,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
+import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
-  SessionConnectorsEditor,
   SessionSecretsEditor,
 } from '@/features/session/scope/session-scope-control';
 import {
   createSessionScopeDraft,
-  resetSessionConnectorBindings,
   resetSessionSecrets,
-  sessionConnectorsAreOverridden,
-  sessionConnectorsSummary,
   sessionSecretsAreOverridden,
   sessionSecretsSummary,
   type SessionScopeCommit,
@@ -34,8 +30,25 @@ import {
   getSessionScopeAvailability,
 } from '@/features/session/scope/session-scope-toolbar';
 import { useSessionScope } from '@/features/session/scope/use-session-scope';
+import { useFeatureFlag, useSessionProviderSecretPools } from '@kortix/sdk/react';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 
 import { SessionOverridesControl, type SessionOverrideRow } from './session-overrides-control';
+import { useProviderPoolEditingState } from './provider-pool-draft-context';
+import { effectiveProviderPools, updateProviderPoolDraft } from './provider-pool-draft';
+
+// The pooled-key editors read the full LLM provider catalog (`lib/llm-providers`
+// → the bundled models.dev snapshot). They render only when the user opens the
+// "Provider keys" row, so they load then — not with every composer.
+const ProviderSecretPoolEditor = dynamic(
+  () => import('./provider-secret-pool-editor').then((mod) => mod.ProviderSecretPoolEditor),
+  { ssr: false },
+);
+const NewProviderSecretPoolEditor = dynamic(
+  () => import('./provider-secret-pool-editor').then((mod) => mod.NewProviderSecretPoolEditor),
+  { ssr: false },
+);
 
 const unavailableCatalog: SessionScopeSelectionCatalog = {
   secrets: { status: 'unavailable' },
@@ -67,6 +80,8 @@ export interface SessionOverridesToolbarProps {
    */
   agentName?: string;
   onCommittedDraft?: (commit: SessionScopeCommit | undefined) => void;
+  providerSecretPools?: Record<string, string[]>;
+  onProviderSecretPoolsChange?: (selection: Record<string, string[]>) => void;
   /** Create-time only. Shown so the session's environment is not a mystery. */
   sandbox?: { slug: string | null; provider: string | null };
   /**
@@ -116,10 +131,24 @@ export function SessionOverridesToolbar({
   sessionId,
   agentName,
   onCommittedDraft,
+  providerSecretPools,
+  onProviderSecretPoolsChange,
   sandbox,
   sandboxSlot,
 }: SessionOverridesToolbarProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPooled = useTranslations('pooledSecrets');
+  const pooledSecretsEnabled = useFeatureFlag(projectId, 'pooled_provider_secrets').enabled;
+  const llmGatewayEnabled = useFeatureFlag(projectId, 'llm_gateway').enabled;
+  const providerPools = useSessionProviderSecretPools(
+    pooledSecretsEnabled && llmGatewayEnabled ? projectId : null, sessionId,
+  );
+  // `project.secret.read` is a manager-tier leaf. Without it the catalog reads
+  // `unavailable`, and the row only ever said "Secret access is unavailable" —
+  // an axis the viewer can neither see nor change. Drop it on a SETTLED denial;
+  // a failed catalog read for someone who IS allowed keeps its row.
+  const secretRead = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
+  const secretsDenied = !secretRead.isLoading && !secretRead.allowed;
   const { scope, catalog, saveScope, isLoading, isScopeLoading } = useSessionScope({
     projectId,
     sessionId,
@@ -145,6 +174,15 @@ export function SessionOverridesToolbar({
     draft: {},
   });
   const [retroactive, setRetroactive] = useState<boolean | undefined>();
+  const { providerDrafts, setProviderDrafts, saveError, setSaveError, saving, setSaving, savingRef } = useProviderPoolEditingState();
+  const providerPoolDraft = useMemo(() => sessionId
+    ? effectiveProviderPools(providerPools.data?.pools ?? [], providerDrafts)
+    : providerSecretPools ?? {}, [sessionId, providerPools.data?.pools, providerDrafts, providerSecretPools]);
+  const hasProviderChanges = Object.keys(providerDrafts).length > 0;
+  const onProviderDraftChange = useCallback((provider: string, selection: string[] | null) => {
+    setSaveError(null);
+    setProviderDrafts((current) => updateProviderPoolDraft(current, provider, selection, providerPools.data?.pools ?? []));
+  }, [providerPools.data?.pools, setProviderDrafts, setSaveError]);
 
   useEffect(() => {
     if (!catalog || !initializationKey) return;
@@ -163,11 +201,24 @@ export function SessionOverridesToolbar({
   const saveDisabled =
     !initialized ||
     !hasAvailableScopeAxis(activeCatalog) ||
-    (Boolean(sessionId) && (!scope || isScopeLoading));
+    (Boolean(sessionId) && (!scope || isScopeLoading)) ||
+    (hasProviderChanges && (providerPools.isError || providerPools.isLoading || !providerPools.data?.can_edit));
 
   const handleSave = useCallback(async (): Promise<boolean> => {
-    if (!catalog || !initialized) return false;
+    if (!catalog || !initialized || savingRef.current) return false;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError(null);
     try {
+      for (const [providerId, secretIds] of Object.entries(providerDrafts)) {
+        await providerPools.setPool.mutateAsync({ providerId, secretIds });
+        setProviderDrafts((current) => {
+          if (current[providerId] !== secretIds) return current;
+          const next = { ...current };
+          delete next[providerId];
+          return next;
+        });
+      }
       const result = await commitSessionScopeDraft({
         sessionId,
         draft: draftState.draft,
@@ -185,11 +236,21 @@ export function SessionOverridesToolbar({
       }
       return true;
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('textb9dc64b38ee1'));
+      const message = error instanceof Error ? error.message : tI18nComplete.raw('textb9dc64b38ee1');
+      setSaveError(message);
       return false;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   }, [
     catalog,
+    providerDrafts,
+    providerPools.setPool,
+    setProviderDrafts,
+    setSaveError,
+    setSaving,
+    savingRef,
     draftState.draft,
     initializationKey,
     initialized,
@@ -204,11 +265,12 @@ export function SessionOverridesToolbar({
     (next: SessionScopeDraft) => setDraftState((current) => ({ ...current, draft: next })),
     [],
   );
-  const controlsDisabled = isLoading || (Boolean(sessionId) && !scope);
+  const controlsDisabled = saving || isLoading || (Boolean(sessionId) && !scope);
+  const selectedProviderKeyCount = Object.values(providerPoolDraft).reduce((count, ids) => count + ids.length, 0);
 
   const rows = useMemo(() => {
     const list: SessionOverrideRow[] = [];
-    list.push({
+    if (!secretsDenied) list.push({
       id: 'secrets',
       name: 'Secrets',
       icon: KeyRound,
@@ -228,28 +290,34 @@ export function SessionOverridesToolbar({
       ),
       onReset: () => onChange(resetSessionSecrets(draft)),
     });
-    list.push({
-      id: 'connectors',
-      name: 'Connectors',
-      icon: PlugZap,
-      hint: tI18nComplete.raw('textaea537d63c8c'),
-      summary:
-        activeCatalog.connector_connections.status === 'ready'
-          ? sessionConnectorsSummary(draft)
-          : 'Unavailable',
-      overridden: sessionConnectorsAreOverridden(draft),
-      description: tI18nComplete.raw('text11022f38d525'),
-      resetLabel: 'Reset to agent default',
-      editor: (
-        <SessionConnectorsEditor
-          draft={draft}
-          catalog={activeCatalog}
-          disabled={controlsDisabled || saveScope.isPending}
-          onChange={onChange}
-        />
-      ),
-      onReset: () => onChange(resetSessionConnectorBindings(draft, activeCatalog)),
-    });
+    // NO Connectors axis. A session used to pin one connection per connector
+    // here, and check a connector that had nothing connected — which recorded a
+    // requirement the next turn refused on, with no way to authorize from the
+    // card it showed. Credentials are not a session-minting decision: the agent
+    // may use every account it is entitled to and names one at call time
+    // (`kortix connectors call --account`, `accounts` to see them).
+    if (pooledSecretsEnabled) {
+      list.push({
+        id: 'provider-keys',
+        name: tPooled('providerKeys'),
+        icon: KeyRound,
+        hint: tPooled('chooseSharedKeys'),
+        summary: sessionId ? providerPools.isError ? tPooled('keysLoadError')
+          : providerPools.isLoading ? tPooled('loadingKeys')
+          : Object.keys(providerPoolDraft).length
+            ? tPooled(selectedProviderKeyCount === 1 ? 'selectedOne' : 'selectedKeys', { count: selectedProviderKeyCount })
+            : tPooled('projectDefaultShort') : Object.keys(providerPoolDraft).length
+          ? tPooled(selectedProviderKeyCount === 1 ? 'selectedOne' : 'selectedKeys', { count: selectedProviderKeyCount })
+          : tPooled('projectDefaultShort'),
+        overridden: Object.keys(providerPoolDraft).length > 0,
+        description: tPooled('rateLimitDescription'),
+        editor: !llmGatewayEnabled
+          ? <p className="text-muted-foreground text-xs">{tPooled('enableGateway')}</p>
+          : sessionId
+          ? <ProviderSecretPoolEditor projectId={projectId} sessionId={sessionId} drafts={providerDrafts} onChange={onProviderDraftChange} saving={saving} />
+          : <NewProviderSecretPoolEditor projectId={projectId} selection={providerPoolDraft} onChange={onProviderSecretPoolsChange ?? (() => {})} />,
+      });
+    }
     if (sandboxSlot) {
       // Pre-create: the template is still a real choice.
       list.push({
@@ -299,22 +367,44 @@ export function SessionOverridesToolbar({
     }
     return list;
   }, [
+    secretsDenied,
     activeCatalog,
     controlsDisabled,
     draft,
     onChange,
+    pooledSecretsEnabled,
+    llmGatewayEnabled,
+    providerPoolDraft,
+    providerDrafts,
+    onProviderDraftChange,
+    saving,
+    providerPools.isError,
+    providerPools.isLoading,
+    onProviderSecretPoolsChange,
+    selectedProviderKeyCount,
+    projectId,
+    sessionId,
     sandbox,
     sandboxSlot,
     saveScope.isPending,
     tI18nComplete,
+    tPooled,
   ]);
+
+  // Nothing left to change (a member in an existing session: the sandbox row is
+  // read-only and fixed at create). A gear that opens onto a Save button and
+  // "Changes apply to the next prompt" over nothing editable is a dead end.
+  if (rows.every((row) => row.readOnly)) return null;
 
   return (
     <SessionOverridesControl
       rows={rows}
       disabled={controlsDisabled}
-      saving={saveScope.isPending}
+      saving={saving}
+      pendingNote={hasProviderChanges ? tPooled('unsavedChanges') : undefined}
+      error={saveError}
       saveDisabled={saveDisabled}
+      hideSave={!rows.some((row) => row.id === 'secrets' || row.id === 'provider-keys')}
       notice={
         retroactive === false ? (
           <InfoBanner

@@ -8,7 +8,7 @@
 // duplication the refactor deleted on the server.
 //
 // The rule the help text states everywhere: people, groups and service accounts
-// get ROLES; agents get Kortix CLI SCOPES in kortix.yaml. A session can only do
+// get ROLES; agents get Kortix PERMISSIONS in kortix.yaml. A session can only do
 // what both allow.
 import type { ApiClient } from './api/client.ts';
 import { status } from './style.ts';

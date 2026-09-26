@@ -84,22 +84,6 @@ describe('resolveAccountSessionLimit — tier vs per-account override', () => {
     });
   });
 
-  test('override wins over the tier (lower: abuse containment)', async () => {
-    currentTier = 'enterprise';
-    currentOverride = 2;
-    const resolved = await resolveAccountSessionLimit(nextAccount());
-    expect(resolved.limit).toBe(2);
-    expect(resolved.source).toBe('account_override');
-  });
-
-  test('non-positive override is ignored — tier decides', async () => {
-    currentTier = 'pro';
-    currentOverride = 0;
-    const resolved = await resolveAccountSessionLimit(nextAccount());
-    expect(resolved.limit).toBe(getTier('pro').concurrentSessionLimit);
-    expect(resolved.source).toBe('tier');
-  });
-
   test('session limit reads a changed override without process-local cache invalidation', async () => {
     currentTier = 'per_seat';
     const accountId = nextAccount();

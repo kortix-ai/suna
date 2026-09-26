@@ -20,7 +20,15 @@ export interface TokenRetryOptions {
 	invalidateBetweenAttempts?: boolean;
 }
 
-const CLIENT_SOURCES = new Set(['api', 'cli', 'mobile', 'web']);
+/**
+ * The surfaces a host may report in `X-Kortix-Client`. Kept in lockstep with
+ * `KortixPlatformConfig['clientSource']` (`core/http/config.ts`) — a value in
+ * one and not the other is either an unreachable union member or a header the
+ * SDK silently drops. The backend stores whatever arrives in
+ * `kortix.session_audit_events.client_reported_source` (a plain `text` column)
+ * after its own format check, so this set is the only allowlist in the path.
+ */
+const CLIENT_SOURCES = new Set(['api', 'cli', 'mobile', 'tui', 'web']);
 
 export function normalizeClientSource(value?: string): string | null {
 	const normalized = value?.trim().toLowerCase();
@@ -64,7 +72,7 @@ export async function withTokenRetry(
  *
  * 30s was both, and the second role broke sessions: a transcript page that was
  * 7-19 MB of inline attachment bytes took 23-30 s to arrive and was killed at
- * exactly 30.00 s — then retried, and killed again, forever (essentia,
+ * exactly 30.00 s — then retried, and killed again, forever (sampleco,
  * 2026-08-24, network panel: five reads in a row at 29.23-30.08 s). The bytes
  * are gone now (`stripInlineAttachmentBytes`), which is the real fix; this
  * ceiling is raised so the next large-but-legitimate response is not
@@ -108,32 +116,6 @@ export function withDefaultTimeout(
 		return AbortSignal.any([callerSignal, timeoutSignal]);
 	}
 	return callerSignal;
-}
-
-/**
- * Build a Headers object from request input + init, injecting the auth token
- * as a Bearer Authorization header (unless one is already present).
- */
-export function buildAuthHeaders(
-	input: RequestInfo | URL,
-	init?: RequestInit,
-	token?: string | null,
-	clientSource?: string,
-): Headers {
-	const headers = new Headers(input instanceof Request ? input.headers : undefined);
-	if (init?.headers) {
-		new Headers(init.headers).forEach((value, key) => {
-			headers.set(key, value);
-		});
-	}
-	if (token && !headers.has('Authorization')) {
-		headers.set('Authorization', `Bearer ${token}`);
-	}
-	const normalizedClientSource = normalizeClientSource(clientSource);
-	if (normalizedClientSource && !headers.has('X-Kortix-Client')) {
-		headers.set('X-Kortix-Client', normalizedClientSource);
-	}
-	return headers;
 }
 
 /**

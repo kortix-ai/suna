@@ -1,6 +1,9 @@
 export const CODEX_AUTH_SECRET_NAME = 'CODEX_AUTH_JSON';
 
 const DEFAULT_CODEX_MODEL_IDS = [
+  'gpt-6-astra',
+  'gpt-6-sol',
+  'gpt-6-luna',
   'gpt-5.6-sol',
   'gpt-5.6-terra',
   'gpt-5.6-luna',

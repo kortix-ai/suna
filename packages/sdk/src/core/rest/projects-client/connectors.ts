@@ -25,6 +25,17 @@ export interface ConnectorCatalogEntry {
   provider: string;
   status: string;
   actions: ConnectorAction[];
+  /**
+   * The accounts THIS caller may run this connector as, default first.
+   *
+   * One connector can hold the project's shared account and each member's own
+   * — this is the signal that a connector is not single-account, without a
+   * separate {@link listConnectorAccounts} round trip. Undefined on a server
+   * that predates this field.
+   */
+  accounts?: ConnectorAccount[];
+  /** Label of the account an unnamed call resolves to, or null if none. */
+  default_account?: string | null;
 }
 
 /** One callable connector action, identified by `<connector>.<action>`. */
@@ -48,6 +59,14 @@ export interface ConnectorCallResult<T = unknown> {
   approval_url?: string | null;
   approval_summary?: string | null;
   approval_instructions?: string | null;
+  /**
+   * The account this call actually ran as.
+   *
+   * Echoed on every successful call, including one that named no account, so a
+   * transcript can show WHICH identity acted instead of leaving the reader to
+   * guess which of a connector's accounts resolution picked.
+   */
+  account?: { connection_id: string; label: string; owner_type: string };
 }
 
 export interface ConnectorAttachmentUploadInput {
@@ -55,6 +74,11 @@ export interface ConnectorAttachmentUploadInput {
   contentType: string;
   contentDisposition?: 'attachment' | 'inline';
   contentId?: string;
+  /**
+   * Slug of the connector the file is for, e.g. `microsoft-graph`. The caller
+   * must be able to use that connector. Omit it for the native Email channel.
+   */
+  connector?: string;
 }
 
 export interface ConnectorAttachmentUploadResult {
@@ -65,6 +89,13 @@ export interface ConnectorAttachmentUploadResult {
   content_id?: string;
   size: number;
   expires_at: string;
+  /**
+   * The value to place in call arguments, e.g. as a Microsoft Graph
+   * `body.message.attachments[]` element or as a `contentBytes` string. The
+   * gateway replaces it with the file server-side. Absent from servers that
+   * predate it; build `{ $kortix_attachment: attachment_id }` yourself there.
+   */
+  ref?: { $kortix_attachment: string };
 }
 
 function connectorGatewayPath(projectId: string | undefined, suffix: string): string {
@@ -133,18 +164,66 @@ function parseConnectorTool(tool: string): { connector: string; action: string }
   return { connector, action };
 }
 
+/** One account a connector can run as. See {@link listConnectorAccounts}. */
+export interface ConnectorAccount {
+  connection_id: string;
+  /** Human-facing name. What `ConnectorCallOptions.account` matches on. */
+  label: string;
+  owner_type: string;
+  /** True for the account an unselected call resolves to. */
+  is_default: boolean;
+  /** Who the account was authorized as. `null` (or absent, on older servers) when unknown. */
+  connected_as?: string | null;
+}
+
+export interface ConnectorCallOptions {
+  /**
+   * Which account to run this call as — a connection label or id from
+   * {@link listConnectorAccounts}, or one of the two selector words: `me` (the
+   * caller's own default private account) and `project` (the default account
+   * shared with the whole project). Omit for the connector's default account,
+   * which is how every call behaved before a connector could expose more than
+   * one.
+   *
+   * A named account is never silently substituted: if it does not match one
+   * this caller is entitled to, the call is denied with `connector_not_connected`
+   * and the denial lists the names that were available.
+   */
+  account?: string | null;
+}
+
 export async function callConnector<T = unknown>(
   projectId: string | undefined,
   tool: string,
   args: Record<string, unknown> = {},
+  options: ConnectorCallOptions = {},
 ): Promise<ConnectorCallResult<T>> {
   const { connector, action } = parseConnectorTool(tool);
+  const account = options.account?.trim();
   return unwrap(
     await backendApi.post<ConnectorCallResult<T>>(
       connectorGatewayPath(projectId, 'call'),
-      { connector, action, args },
+      // The key is omitted rather than sent as null: the gateway reads its
+      // presence, and an explicit null would read as "an account was named".
+      { connector, action, args, ...(account ? { account } : {}) },
     ),
   );
+}
+
+/**
+ * The accounts this caller may run `slug` as, default first.
+ *
+ * Resolved through the same principal a call uses, so every account listed is
+ * one a call can actually use — never one the gateway would then refuse.
+ */
+export async function listConnectorAccounts(
+  projectId: string | undefined,
+  slug: string,
+): Promise<ConnectorAccount[]> {
+  const response = await backendApi.get<{ connector: string; accounts: ConnectorAccount[] }>(
+    connectorGatewayPath(projectId, `connectors/${encodeURIComponent(slug)}/accounts`),
+  );
+  return unwrap(response).accounts ?? [];
 }
 
 function connectorResponseMessage(body: unknown, status: number): string {
@@ -181,6 +260,9 @@ export async function uploadConnectorAttachment(
   if (input.contentId?.trim()) {
     headers['X-Kortix-Attachment-Content-Id'] = encodeURIComponent(input.contentId.trim());
   }
+  if (input.connector?.trim()) {
+    headers['X-Kortix-Attachment-Connector'] = encodeURIComponent(input.connector.trim());
+  }
 
   const backendUrl = trimTrailingSlashes(platformConfig().backendUrl);
   const endpoint = connectorGatewayPath(projectId, 'attachments');
@@ -213,6 +295,12 @@ export async function uploadConnectorAttachment(
   return body as ConnectorAttachmentUploadResult;
 }
 
+/**
+ * @deprecated A connector-wide owner MODE no longer exists. Ownership is per
+ * account (`Connection.owner_type`), chosen when the account is connected —
+ * see {@link ConnectorConnectOwner}. The type stays exported and the values
+ * stay on the wire as a derived summary; nothing branches on them any more.
+ */
 export type ConnectorAuthorizationStrategy = 'project' | 'user';
 
 export interface AdminConnector {
@@ -237,7 +325,12 @@ export interface AdminConnector {
    *  unification.md §2.5). A `shared` connector with no credential set
    *  (`secretSet: false`) needs reconnecting. */
   credentialMode: 'shared';
-  /** Exclusive owner model for connections under this connector. */
+  /**
+   * @deprecated A derived summary, not a setting: `'user'` when the connector
+   * has member-owned accounts and no project-owned one, else `'project'`.
+   * Nothing enforces it — a connector can hold both kinds at once. Read
+   * `owner_type` on the accounts themselves ({@link listConnectorAccounts}).
+   */
   authorizationStrategy: ConnectorAuthorizationStrategy;
   /** Authentication shape required when a member adds a private credential. */
   requestAuthType?: ConnectorRequestAuthType;
@@ -334,6 +427,13 @@ interface ConnectionFields {
   status: 'active' | 'revoked' | 'error';
   is_default: boolean;
   metadata: Record<string, unknown>;
+  /**
+   * Who the account was authorized as: an email, a login, or a display name,
+   * read from the provider when the authorization finalized. `null` (or
+   * absent, on older servers) when the provider exposes none or no account
+   * is authorized yet.
+   */
+  connected_as?: string | null;
 }
 
 export interface Connection extends ConnectionFields {
@@ -746,6 +846,21 @@ export async function setDefaultConnection(projectId: string, connectionId: stri
   );
 }
 
+/**
+ * Rename a connection. Only the label changes: the authorized account, the
+ * owner, the default flag, and the provider state stay as they are, so no
+ * re-authorization is needed. The server refuses `me`, `project`, UUID-shaped
+ * labels (400), and a label another account of the same owner already has,
+ * compared case-insensitively (409).
+ */
+export async function renameConnection(projectId: string, connectionId: string, label: string) {
+  return unwrap(
+    await backendApi.put<Connection>(`/projects/${projectId}/connections/${connectionId}/label`, {
+      label,
+    }),
+  );
+}
+
 /** Managed connector providers that can issue a hosted Connect Link. */
 export type ConnectorConnectProvider = 'composio' | 'pipedream';
 
@@ -849,6 +964,12 @@ export async function setConnectorCredentialMode(projectId: string, slug: string
   );
 }
 
+/**
+ * @deprecated A no-op server-side since the owner mode was removed: the route
+ * still answers 200 so an older client is never 400'd, but it changes nothing.
+ * To create an account under a specific owner, pass `owner` to
+ * {@link connectorConnect} instead.
+ */
 export async function setConnectorAuthorizationStrategy(
   projectId: string,
   slug: string,
@@ -996,17 +1117,37 @@ export async function setConnectorName(projectId: string, slug: string, name: st
 }
 
 /**
+ * Who a newly authorized account belongs to.
+ *
+ * `me` is the signed-in human's own account — reachable only by them, and only
+ * in a private session. `project` is the account shared with everyone the
+ * connector is granted to, and creating one needs `project.connector.write`.
+ */
+export type ConnectorConnectOwner = 'project' | 'me';
+
+export interface ConnectorConnectOptions {
+  /** Owner for the account this authorization creates. Defaults to `me`. */
+  owner?: ConnectorConnectOwner;
+}
+
+/**
  * Start a hosted authorization for a project connector.
  *
  * Provider-neutral: the API picks Composio or Pipedream. `pipedreamConnect` is
  * the original name for this exact route and stays exported — renaming it would
  * be a breaking change for published consumers.
  */
-export async function connectorConnect(projectId: string, slug: string) {
+export async function connectorConnect(
+  projectId: string,
+  slug: string,
+  options: ConnectorConnectOptions = {},
+) {
   return unwrap(
     await backendApi.post<ConnectorConnectResult>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
-      {},
+      // Omitted rather than null when unset: the API reads the key's presence
+      // to apply its own default, and an old client sends no key at all.
+      options.owner ? { owner: options.owner } : {},
     ),
   );
 }
@@ -1294,6 +1435,54 @@ export async function listConnectToolkits(
   };
 }
 
+/** One browse section of the hosted toolkit catalog. */
+export interface ConnectSection {
+  /** The provider's category slug. `listConnectToolkits({ category: key })` opens it. */
+  key: string;
+  label: string;
+  /** The category's TRUE size — not `toolkits.length`. A heading states this. */
+  total: number;
+  toolkits: ConnectToolkit[];
+}
+
+/** A category of the hosted toolkit catalog, with its size. */
+export interface ConnectCategory {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface ConnectSectionsPage {
+  provider: 'composio';
+  /** The largest categories, each a fixed top slice by usage. */
+  sections: ConnectSection[];
+  /** Every category, largest first. */
+  categories: ConnectCategory[];
+}
+
+/**
+ * The hosted toolkit catalog's browse page: a fixed top slice of each of the
+ * largest categories, each with the category's true total, in one request.
+ *
+ * The Composio counterpart of `listPipedreamSections`. Sections are grouped
+ * server-side from the complete catalog, so a heading's count never describes
+ * only the toolkits a single loaded page happened to contain.
+ */
+export async function listConnectSections(
+  projectId: string,
+  opts?: { perCategory?: number; maxCategories?: number },
+) {
+  const params = new URLSearchParams();
+  if (opts?.perCategory) params.set('perCategory', String(opts.perCategory));
+  if (opts?.maxCategories) params.set('maxCategories', String(opts.maxCategories));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<ConnectSectionsPage>(
+      `/connectors/projects/${projectId}/connect/sections${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
 export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
 
 export interface DiscoverConnector {
@@ -1362,14 +1551,82 @@ export type DiscoverIntegrationsPage = DiscoverConnectorsPage;
 /** @deprecated Use `DiscoverConnectorDetail`. */
 export type DiscoverIntegrationDetail = DiscoverConnectorDetail;
 
-export async function listDiscoverConnectors(projectId: string, q?: string, cursor?: string) {
+export interface DiscoverConnectorsQuery {
+  q?: string;
+  cursor?: string;
+  /** A browse-section key from `listDiscoverSections`. The page then holds
+   *  exactly the connectors that section counted, picks first. */
+  category?: string;
+  limit?: number;
+}
+
+/**
+ * A page of the Discover catalogue. Accepts the original positional
+ * `(projectId, q, cursor)` form or a query object carrying a category filter.
+ */
+export async function listDiscoverConnectors(
+  projectId: string,
+  qOrQuery?: string | DiscoverConnectorsQuery,
+  cursor?: string,
+) {
+  const query: DiscoverConnectorsQuery =
+    typeof qOrQuery === 'string' || qOrQuery === undefined
+      ? { ...(qOrQuery ? { q: qOrQuery } : {}), ...(cursor ? { cursor } : {}) }
+      : qOrQuery;
   const params = new URLSearchParams();
-  if (q) params.set('q', q);
-  if (cursor) params.set('cursor', cursor);
+  if (query.q) params.set('q', query.q);
+  if (query.category) params.set('category', query.category);
+  if (query.cursor) params.set('cursor', query.cursor);
+  if (query.limit) params.set('limit', String(query.limit));
   const qs = params.toString();
   return unwrap(
     await backendApi.get<DiscoverConnectorsPage>(
       `/connectors/projects/${projectId}/discover/connectors${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+/** One browse section of the Discover catalogue. */
+export interface DiscoverSection {
+  /** The section key. `listDiscoverConnectors({ category: key })` opens it. */
+  key: string;
+  label: string;
+  /** The section's TRUE size — not `items.length`. A heading states this. */
+  total: number;
+  items: DiscoverConnector[];
+}
+
+/** A Discover browse section, with its size. */
+export interface DiscoverCategory {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface DiscoverSectionsPage {
+  /** The top of the whole catalogue by popularity. */
+  popular: DiscoverConnector[];
+  /** The leading sections in browse order, each a fixed top slice. */
+  sections: DiscoverSection[];
+  /** Every section in browse order. */
+  categories: DiscoverCategory[];
+}
+
+/**
+ * The Discover browse page in one request: Popular, then a fixed top slice of
+ * each section with the section's true total across the complete catalogue.
+ */
+export async function listDiscoverSections(
+  projectId: string,
+  opts?: { perCategory?: number; maxCategories?: number },
+) {
+  const params = new URLSearchParams();
+  if (opts?.perCategory) params.set('perCategory', String(opts.perCategory));
+  if (opts?.maxCategories) params.set('maxCategories', String(opts.maxCategories));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<DiscoverSectionsPage>(
+      `/connectors/projects/${projectId}/discover/sections${qs ? `?${qs}` : ''}`,
     ),
   );
 }
@@ -1426,17 +1683,43 @@ export async function setConnectorSecretBinding(
   );
 }
 
+export interface ConnectorFinalizeOptions {
+  /**
+   * Owner scope of the account to finalize. Must MATCH the owner the paired
+   * `connectorConnect` used: the route defaults an absent value to `me`, so
+   * finalizing a `project` authorization without this polls the caller's own
+   * member connection and never reports the shared account active.
+   */
+  owner?: ConnectorConnectOwner;
+  /**
+   * Finalize this exact connection. Omitted, the route resolves the most
+   * recently updated connection in the owner scope — correct for a connect this
+   * client just started, but a caller that already knows the connection should
+   * name it rather than rely on recency.
+   */
+  connectionId?: string;
+}
+
 /**
  * Poll a hosted authorization until the provider reports an active account.
  *
  * On success the API tells the session that requested the connector, so the
  * agent resumes without anyone typing "done".
  */
-export async function connectorFinalize(projectId: string, slug: string) {
+export async function connectorFinalize(
+  projectId: string,
+  slug: string,
+  options: ConnectorFinalizeOptions = {},
+) {
+  // Each key is omitted rather than sent as null when unset: the API reads a
+  // key's PRESENCE to apply its own default, and an older client sends neither.
+  const body: Record<string, string> = {};
+  if (options.owner) body.owner = options.owner;
+  if (options.connectionId) body.connection_id = options.connectionId;
   return unwrap(
     await backendApi.post<ConnectorFinalizeResult>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
-      {},
+      body,
     ),
   );
 }

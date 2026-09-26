@@ -17,6 +17,12 @@ process.exit(0);
 const FAKE_WORKER = `
 import { createServer } from 'node:http';
 createServer((req, res) => {
+  // Only the health route exists on the worker. Answering every path with 200
+  // made a late second claim look accepted once the worker owned the port.
+  if (!req.url?.startsWith('/kortix/health')) {
+    res.writeHead(404).end();
+    return;
+  }
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify({
     ok: true,
@@ -113,8 +119,11 @@ describe('pi worker park server', () => {
     expect(claim.status).toBe(200);
 
     // Single-accept: a second claim is refused — 409 while the park server is
-    // still draining, or a connection error once it has already closed the
-    // port for the worker. Both prove the box can never serve two sessions.
+    // still draining, a connection error once it has closed the port, or 404
+    // once the worker already owns the port (the worker has no claim route).
+    // All three prove the box can never serve two sessions. A 200 never does.
+    // On a fast runner the handoff finishes between the two requests: run
+    // 35537795611 got the worker's blanket 200 here and failed.
     const second = await fetch(`${base}/kortix/claim`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-park-token': 'park-tok' },
@@ -123,7 +132,7 @@ describe('pi worker park server', () => {
       (res) => res.status,
       () => 'refused',
     );
-    expect([409, 'refused']).toContain(second as never);
+    expect([409, 404, 'refused']).toContain(second as never);
 
     // The worker takes over the SAME port with the claim env applied.
     interface WorkerHealth {

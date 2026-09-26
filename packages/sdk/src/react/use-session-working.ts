@@ -8,6 +8,7 @@ import { useSyncStore } from '../browser/stores/sync-store';
 import {
   type SessionTurn,
   type SessionTurnEnded,
+  type SessionTurnFailure,
   getSessionTurn,
 } from '../core/rest/projects-client/sessions';
 import {
@@ -20,6 +21,9 @@ import {
   workingExpiryAtMs,
 } from '../core/session/working';
 import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
+import { createTickSingleFlight } from '../core/session/single-flight';
+import type { SessionTurnOutcome } from '../core/session/turn-end-cause';
+import { TURN_END_SETTLE_MS } from '../core/session/turn-end-settle';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
 
@@ -71,6 +75,7 @@ export function streamTurnPhase(status: SessionStatus | undefined): 'idle' | 'ac
 export interface SessionTurnObservation {
   turns: SessionTurn[];
   last_ended?: SessionTurnEnded;
+  recent_failures?: SessionTurnFailure[];
   atMs: number;
 }
 
@@ -206,14 +211,36 @@ export async function readSessionTurnObservation(
     // The stamp is the bundle's `observed_at` — the instant the SERVER took the
     // reading — never arrival, for the same reason the direct read below stamps
     // before the request and not after it.
-    if (turn) return { turns: turn.turns, last_ended: turn.last_ended, atMs: turn.atMs };
+    if (turn) {
+      return {
+        turns: turn.turns,
+        last_ended: turn.last_ended,
+        recent_failures: turn.recent_failures,
+        atMs: turn.atMs,
+      };
+    }
   }
-  // Stamped BEFORE the request. An answer is only as fresh as the moment
-  // it was asked, and a slow proxy hop must not make a stale read look new.
-  const atMs = Date.now();
-  const status = await getSessionTurn(projectId, sessionId);
-  return { turns: status.turns ?? [], last_ended: status.last_ended, atMs };
+  // ONE request per session per tick. Three components mount the `/turn`
+  // query and each one's status-phase effect invalidates it in the same
+  // commit; TanStack's cancel-and-refire then issued three requests the wire
+  // never aborted (staging HAR 2026-09-23: identical triples, same ms). A
+  // trigger in a LATER tick still gets a read of its own — see
+  // `createTickSingleFlight`.
+  return turnReads(`${projectId}/${sessionId}`, async () => {
+    // Stamped BEFORE the request. An answer is only as fresh as the moment
+    // it was asked, and a slow proxy hop must not make a stale read look new.
+    const atMs = Date.now();
+    const status = await getSessionTurn(projectId, sessionId);
+    return {
+      turns: status.turns ?? [],
+      last_ended: status.last_ended,
+      recent_failures: status.recent_failures,
+      atMs,
+    };
+  });
 }
+
+const turnReads = createTickSingleFlight<SessionTurnObservation>();
 
 export function useSessionWorking(
   projectId: string,
@@ -413,7 +440,54 @@ export function useSessionWorking(
 
   // Stable identity while the ANSWER is unchanged, so consumers that memoize on
   // it are not re-run once per render just because `now` moved.
-  const identity = `${projection.state}|${projection.source}|${projection.turnId}|${projection.since}|${projection.serverOpenTurnToken}`;
+  const identity = `${projection.state}|${projection.pendingDelivery ?? false}|${projection.source}|${projection.turnId}|${projection.since}|${projection.serverOpenTurnToken}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => projection, [identity]);
+}
+
+/**
+ * Why this session's turns ended, read from the `/turn` cache entry
+ * `useSessionWorking` keeps fresh. A cache reader: it never fetches, so mounting
+ * it adds no request and no poll timer. Every field is `undefined` until the
+ * owner has read. Feed it to `turnEndNotice` or `turnEndCause`.
+ *
+ * One nudge: when the newest reading lists a failure with no cause that ended
+ * inside `TURN_END_SETTLE_MS`, the cause may be one frame behind. The hook then
+ * invalidates the entry once the window has passed, so the OWNER reads again —
+ * otherwise the turn stays silent until the next idle poll.
+ */
+export function useSessionTurnOutcome(projectId: string, sessionId: string): SessionTurnOutcome {
+  const queryClient = useQueryClient();
+  const query = useQuery<SessionTurnObservation>({
+    queryKey: qk.project.sessionTurn(projectId, sessionId),
+    queryFn: () => readSessionTurnObservation(projectId, sessionId, { bundle: false }),
+    enabled: false,
+  });
+  const lastEnded = query.data?.last_ended;
+  const recentFailures = query.data?.recent_failures;
+  const atMs = query.data?.atMs;
+
+  const settleInMs = useMemo(() => {
+    if (typeof atMs !== 'number') return null;
+    let wait: number | null = null;
+    for (const failure of recentFailures ?? []) {
+      if (failure.error || !failure.ended_at) continue;
+      const remaining = TURN_END_SETTLE_MS - (atMs - Date.parse(failure.ended_at));
+      if (remaining > 0 && (wait === null || remaining > wait)) wait = remaining;
+    }
+    return wait;
+  }, [recentFailures, atMs]);
+
+  useEffect(() => {
+    if (settleInMs === null) return;
+    const timer = setTimeout(() => {
+      void queryClient.invalidateQueries({ queryKey: qk.project.sessionTurn(projectId, sessionId) });
+    }, settleInMs);
+    return () => clearTimeout(timer);
+  }, [settleInMs, queryClient, projectId, sessionId]);
+
+  return useMemo(
+    () => ({ last_ended: lastEnded, recent_failures: recentFailures, atMs }),
+    [lastEnded, recentFailures, atMs],
+  );
 }

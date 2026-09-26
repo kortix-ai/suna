@@ -1,6 +1,4 @@
-import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { agentConfigEtag } from './compile-agent-config';
-import { workspaceModeAllowsFullRepository } from './session-sandbox-metadata';
 
 export interface SessionRuntimeEnvInput {
   projectId: string;
@@ -13,9 +11,7 @@ export interface SessionRuntimeEnvInput {
   frontendUrl?: string;
   opencodeModel?: string | null;
   /** Project file delivery mode selected by the session's agent. */
-  workspaceMode?: WorkspaceModeV2 | null;
-  /** Enables the rollback-safe fresh-session Git fast path. */
-  fastColdBootEnabled?: boolean;
+  repositoryAccess?: boolean;
   /** Experimental compiled checkout and OpenCode launcher rollout mode. */
   compiledBootMode?: 'off' | 'shadow' | 'prefer' | 'required';
   /** True only for a newly-created session branch that still equals base. */
@@ -38,15 +34,43 @@ export interface SessionRuntimeEnvInput {
    * checkout exists and only falls back to the serial boot without a hint.
    */
   opencodeConfigDir?: string | null;
+  /**
+   * S3 config provider rollout mode for THIS session (platform env, or the
+   * project's `metadata.project_snapshot_mode` canary override). `git`/absent
+   * emits nothing, so the daemon never attempts S3.
+   */
+  projectSnapshotMode?: 'git' | 'prefer-s3' | 'require-s3';
+  /**
+   * `<commit-sha>:<archive-sha256>:<archive-bytes>` for a prepared archive at
+   * `baseSha`. Identity only — never a URL or a credential. The daemon fetches
+   * the short-lived download descriptor from the Git proxy with KORTIX_TOKEN.
+   */
+  projectSnapshotPin?: string | null;
+  /**
+   * The download descriptor for that archive, presigned at session create
+   * (base64 JSON of the same body `GET …/project-snapshot` serves: object
+   * URLs, digests, sizes, expiry). Short-lived and read-only, like the
+   * KORTIX_TOKEN next to it. With it the daemon's first attempt is one direct
+   * GET from the object store; without it (or once it expires) the daemon
+   * fetches a fresh descriptor from the Git proxy.
+   */
+  projectSnapshotDescriptor?: string | null;
   /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
   compiledAgentConfig?: string | null;
+  /**
+   * The agent harness the sandbox daemon boots, from the manifest's `runtime:`
+   * field. `pi` emits `KORTIX_HARNESS=pi` (pi-agent-core in-process in the
+   * daemon); `opencode`/omitted emits nothing, so an OpenCode session's env is
+   * byte-for-byte unchanged. The daemon's `resolveHarness` rejects any other id.
+   */
+  harness?: 'opencode' | 'pi';
 }
 
 /**
  * The sandbox audit relay's emission contract
- * (apps/kortix-sandbox-agent-server/src/opencode-audit-relay.ts) is read from
+ * (apps/kortix-sandbox-agent-server/src/harness/open-code/opencode-audit-relay.ts) is read from
  * the SANDBOX environment. A self-host operator can set these in compose; a
  * hosted sandbox has no such file, so the API forwards its own values when an
  * operator sets them. Only these four names cross, and only when non-empty —
@@ -76,7 +100,7 @@ export function auditRelayEnvPassthrough(
 }
 
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
-  const allowsFullRepository = workspaceModeAllowsFullRepository(input.workspaceMode);
+  const allowsFullRepository = input.repositoryAccess ?? true;
   const compiledBootMode = input.compiledBootMode ?? 'off';
   const compiledBootEnabled = compiledBootMode !== 'off';
   const projectGitEnv: Record<string, string> = allowsFullRepository
@@ -90,7 +114,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
   // A brand-new session's branch IS the base tip: the daemon creates it
   // locally and materializes from the baked scaffold + the API's delta, so no
   // in-sandbox `git fetch` runs at all. This used to hide behind the
-  // fast-cold-boot / compiled-boot experiments; measured 2026-08-27 on dev,
+  // compiled-boot experiment; measured 2026-08-27 on dev,
   // the two proxied fetches it removes cost 5.4 s + 2.6 s of a 7.9 s
   // `repo-materialized`, measured on dev 2026-08-27.
   const fastGitBootEnv: Record<string, string> =
@@ -122,20 +146,36 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     allowsFullRepository && input.restoreSessionBranch
       ? { KORTIX_SESSION_BRANCH_RESTORE: '1' }
       : {};
+  // Fresh, full-repository sessions only: a resumed session keeps its own
+  // workspace, and a restricted workspace mode receives no repository at all —
+  // the archive would disclose files that mode withholds.
+  const snapshotMode = input.projectSnapshotMode ?? 'git';
+  const projectSnapshotEnv: Record<string, string> =
+    allowsFullRepository && input.freshSession && snapshotMode !== 'git'
+      ? {
+          KORTIX_PROJECT_SNAPSHOT_MODE: snapshotMode,
+          ...(input.projectSnapshotPin ? { KORTIX_PROJECT_SNAPSHOT_PIN: input.projectSnapshotPin } : {}),
+          ...(input.projectSnapshotPin && input.projectSnapshotDescriptor
+            ? { KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: input.projectSnapshotDescriptor }
+            : {}),
+        }
+      : {};
   return {
     ...projectGitEnv,
     ...fastGitBootEnv,
     ...opencodeConfigDirHintEnv,
     ...restoreGitEnv,
+    ...projectSnapshotEnv,
     ...auditRelayEnvPassthrough(),
-    ...(input.fastColdBootEnabled ? { KORTIX_OPENCODE_BINARY_PREFETCH: '1' } : {}),
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: input.apiUrl,
     KORTIX_PROJECT_AUTO_CLONE: allowsFullRepository ? '1' : '0',
-    ...(input.workspaceMode ? { KORTIX_WORKSPACE_MODE: input.workspaceMode } : {}),
+    KORTIX_REPOSITORY_ACCESS: allowsFullRepository ? '1' : '0',
+    // Which harness kortixd boots. Absent = OpenCode (the daemon default).
+    ...(input.harness === 'pi' ? { KORTIX_HARNESS: 'pi' } : {}),
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
@@ -145,7 +185,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (connector MCP / gateway provider / Slack overlays still apply on
-    // top — see apps/kortix-sandbox-agent-server/src/opencode.ts). Per-call
+    // top — see apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts). Per-call
     // The resolved session model (KORTIX_OPENCODE_MODEL above), or an explicit
     // model on a prompt request, still wins over this compiled fallback.
     ...(input.compiledAgentConfig

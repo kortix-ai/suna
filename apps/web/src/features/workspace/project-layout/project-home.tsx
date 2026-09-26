@@ -10,6 +10,7 @@ import type { DraftScope } from '@/features/session/composer/draft/composer-draf
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useIsMobile } from '@/hooks/utils';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
@@ -18,6 +19,7 @@ import {
   listProjectSandboxes,
   type SandboxTemplate,
 } from '@kortix/sdk';
+import type { AttachmentSubmission } from '@/features/session/composer/attachment-submission';
 import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
@@ -55,7 +57,8 @@ export function ProjectHome({
     text: string,
     files: AttachedFile[] | undefined,
     options?: ProjectHomeSendOptions,
-  ) => void;
+    attachments?: AttachmentSubmission,
+  ) => void | Promise<void>;
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -84,7 +87,7 @@ export function ProjectHome({
 
   const showSandboxPicker = sandboxItems.length >= 1;
   // `GET /projects/:id/access-requests` asserts project.members.manage
-  // (`apps/api/src/projects/routes/r6.ts`), so firing it for a plain member is
+  // (`apps/api/src/projects/routes/access-requests.ts`), so firing it for a plain member is
   // a guaranteed 403 for a bell they could never act on anyway. Probe the leaf
   // first and keep the query disabled until it says yes — `showErrors: false`
   // only silenced the toast, the request still went out and still failed.
@@ -121,21 +124,40 @@ export function ProjectHome({
     : null;
 
   const handleSend = useCallback(
-    (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
-      onSend(text, files, {
-        ...options,
-        ...(metaSelected
-          ? { sandbox_slug: META_SANDBOX_SLUG }
-          : selectedSlug
-            ? { sandbox_slug: selectedSlug }
-            : {}),
-      });
-    },
+    (
+      text: string,
+      files: AttachedFile[] | undefined,
+      options: ComposerOptions,
+      attachments?: AttachmentSubmission,
+    ) =>
+      onSend(
+        text,
+        files,
+        {
+          ...options,
+          ...(metaSelected
+            ? { sandbox_slug: META_SANDBOX_SLUG }
+            : selectedSlug
+              ? { sandbox_slug: selectedSlug }
+              : {}),
+        },
+        attachments,
+      ),
     [metaSelected, selectedSlug, onSend],
   );
 
+  const isMobile = useIsMobile();
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
+
+  // Send rejects on failure so the composer keeps its attachment handles.
+  // These callers have no composer draft; the session hook shows the error.
+  const sendOutsideComposer = useCallback(
+    (text: string, options: ComposerOptions) => {
+      void Promise.resolve(handleSend(text, undefined, options)).catch(() => undefined);
+    },
+    [handleSend],
+  );
 
   useEffect(() => {
     if (!pendingPrefill) return;
@@ -147,17 +169,17 @@ export function ProjectHome({
     // the command palette) omits the flag and keeps the old prefill-only
     // behavior below.
     if (pendingPrefill.autoSend) {
-      handleSend(pendingPrefill.text, undefined, {});
+      sendOutsideComposer(pendingPrefill.text, {});
       return;
     }
     setPrefill({ text: pendingPrefill.text, id: Date.now() });
-  }, [pendingPrefill, projectId, consumePrefill, handleSend]);
+  }, [pendingPrefill, projectId, consumePrefill, sendOutsideComposer]);
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
-      handleSend(`/${cmd.name}${args ? ` ${args}` : ''}`, undefined, options);
+      sendOutsideComposer(`/${cmd.name}${args ? ` ${args}` : ''}`, options);
     },
-    [handleSend],
+    [sendOutsideComposer],
   );
 
   const applySuggestion = (s: string) => {
@@ -197,6 +219,11 @@ export function ProjectHome({
       <SidebarToggle placement="floating" />
       <AccessRequestsBell count={pendingAccessCount} to={accessRequestsTo} />
 
+      {/* No bubble or "Thinking" row is painted here on send. The page stays
+          the welcome screen with the sentence held in the composer until the
+          create resolves and the session route opens; the instant shell draws
+          the first turn there (`useFirstPromptPreviewStore`). Painting the turn
+          here left a slow or stuck create looking like a live session. */}
       <ProjectHomeWelcomeBody
         projectId={projectId}
         onPickSuggestion={applySuggestion}
@@ -212,17 +239,19 @@ export function ProjectHome({
             isSending={busy}
             disabled={busy}
             // The home composer navigates to the new session on send — don't
-            // clear it first (that only flashes an empty box before the route
-            // swaps, and would drop the text on a gated send). The message
-            // rides across via the start-stash and reappears as the instant
-            // shell's optimistic turn.
+            // clear it first (that would drop the text on a gated send). The
+            // message rides across via `create.pending_prompt` and reappears
+            // as the instant shell's optimistic turn.
             clearOnSend={false}
             autoFocus
-            // A hero composer floating mid-page has no column for a second
-            // rail to align to, so the attach/agent/context controls ride on
-            // the toolbar itself, ahead of the model selector. The session
-            // page keeps the default row beneath the card.
-            underbarPlacement="inline"
+            // Desktop: a hero composer floating mid-page has no column for a
+            // second rail to align to, so the attach/agent/context controls
+            // ride on the toolbar itself, ahead of the model selector.
+            // Mobile: the toolbar is too narrow to hold them next to the
+            // model selector — the labels overlap — so it uses the session
+            // page's layout, with those controls on their own row beneath
+            // the card.
+            underbarPlacement={isMobile ? 'below' : 'inline'}
             // Hero composer mid-page: the `/` menu opens BELOW the card, into
             // the empty lower half, instead of shoving the heading up.
             slashMenuPlacement="below"

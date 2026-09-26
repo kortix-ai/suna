@@ -1,0 +1,36 @@
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+
+import { UNKNOWN_DAEMON_ROUTE_ERROR, shareUpstreamResult } from './share-upstream';
+
+describe('shareUpstreamResult', () => {
+  // 501, not 502: the edge middleware in `index.ts` rewrites every 502 into a
+  // retryable 503 with Retry-After, and retrying cannot add a missing route.
+  test('a daemon without share routes answers 501, not a sandbox-not-found 404', () => {
+    expect(shareUpstreamResult(404, { error: UNKNOWN_DAEMON_ROUTE_ERROR })).toEqual({
+      status: 501,
+      body: { error: 'This sandbox does not support share links' },
+    });
+  });
+
+  test('any other daemon answer passes through unchanged', () => {
+    expect(shareUpstreamResult(404, { error: 'share token not found' })).toEqual({
+      status: 404,
+      body: { error: 'share token not found' },
+    });
+    expect(shareUpstreamResult(200, { token: 't1' })).toEqual({ status: 200, body: { token: 't1' } });
+  });
+
+  // The marker is the daemon's catch-all body. A rename there must fail here.
+  test('the marker matches the daemon /kortix catch-all', () => {
+    const proxy = readFileSync(
+      new URL('../../../kortix-sandbox-agent-server/src/proxy.ts', import.meta.url),
+      'utf8',
+    );
+    // The catch-all line answers 404 with exactly this error string, whatever
+    // its handler variable is called.
+    const catchAll = proxy.split('\n').find((line) => line.includes("kortixRouter.all('*'"));
+    expect(catchAll).toContain(`'${UNKNOWN_DAEMON_ROUTE_ERROR}'`);
+    expect(catchAll).toMatch(/\b404\)/);
+  });
+});

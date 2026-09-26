@@ -150,31 +150,42 @@ export async function resolveExternalIdFromHostLabel(label: string): Promise<str
  * when no row exists. Fresh on every call (status must not be cached); the
  * service key it finds is cached as a side-effect for `resolveServiceKey`.
  */
+/**
+ * The one query behind `loadSandbox`. Its behavior on real rows is proven in
+ * `__tests__/integration-correlated-subquery-isolation.test.ts`.
+ *
+ * The session's agent comes from a typed LEFT JOIN — never a raw `sql`
+ * subquery. INC-2026-09-15: the subquery that used to live here rendered its
+ * correlation unqualified (`where "session_id" = "session_id"`, true for every
+ * row), so every proxied request got the agent of the first tuple of
+ * `project_sessions` — an agent of another customer — and agent-less
+ * prompts re-pointed session tokens at it. `project_sessions.session_id` is the
+ * primary key, so the join never multiplies rows.
+ */
+function sandboxRecordQuery(condition: SQL) {
+  return db
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      externalId: sessionSandboxes.externalId,
+      sessionId: sessionSandboxes.sessionId,
+      agentName: projectSessions.agentName,
+      projectId: sessionSandboxes.projectId,
+      accountId: sessionSandboxes.accountId,
+      provider: sessionSandboxes.provider,
+      status: sessionSandboxes.status,
+      baseUrl: sessionSandboxes.baseUrl,
+      config: sessionSandboxes.config,
+    })
+    .from(sessionSandboxes)
+    .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
+    .where(condition)
+    .orderBy(...preferredSandboxOrder())
+    .limit(1);
+}
+
 export async function loadSandbox(externalId: string): Promise<SandboxRecord | null> {
-  const columns = {
-    sandboxId: sessionSandboxes.sandboxId,
-    externalId: sessionSandboxes.externalId,
-    sessionId: sessionSandboxes.sessionId,
-    agentName: sql<string | null>`(
-      select ${projectSessions.agentName}
-      from ${projectSessions}
-      where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
-      limit 1
-    )`,
-    projectId: sessionSandboxes.projectId,
-    accountId: sessionSandboxes.accountId,
-    provider: sessionSandboxes.provider,
-    status: sessionSandboxes.status,
-    baseUrl: sessionSandboxes.baseUrl,
-    config: sessionSandboxes.config,
-  };
   const selectOne = async (condition: SQL) => {
-    const [match] = await db
-      .select(columns)
-      .from(sessionSandboxes)
-      .where(condition)
-      .orderBy(...preferredSandboxOrder())
-      .limit(1);
+    const [match] = await sandboxRecordQuery(condition);
     return match ?? null;
   };
 
@@ -335,7 +346,7 @@ export async function wakeSandbox(externalId: string): Promise<void> {
     // Read the provider state BEFORE starting: a box that was actually stopped
     // comes back with no runtime, and every turn open on it is over. Without
     // this the fresh runtime's first idle read closed such turns `completed`
-    // and the interrupted prompt was never redelivered (Essentia 2026-08-25).
+    // and the interrupted prompt was never redelivered (SampleCo 2026-08-25).
     const before =
       typeof provider.getStatus === 'function'
         ? await provider.getStatus(externalId).catch(() => 'unknown' as const)

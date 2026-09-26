@@ -2,7 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { configureKortix } from '../../http/config';
-import { validateToken } from './accounts';
+import { listMyAccountInvites, validateToken } from './accounts';
 
 let calls: { url: string; method: string }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -60,4 +60,30 @@ test('AccountDetail no longer declares the dead iam_v2_enabled dual-model switch
   const source = readFileSync(join(import.meta.dir, 'accounts.ts'), 'utf8');
   const offending = source.split('\n').filter((line) => line.includes('iam_v2_enabled'));
   expect(offending).toEqual([]);
+});
+
+test('listMyAccountInvites hits GET /account-invites and returns the invites array', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      invites: [
+        {
+          invite_id: 'inv-1',
+          account_id: 'acc-1',
+          account_name: 'Acme',
+          initial_role: 'member',
+          inviter_email: 'owner@acme.com',
+          created_at: '2026-09-21T00:00:00.000Z',
+          expires_at: '2026-10-05T00:00:00.000Z',
+          projects: [{ project_id: 'p-1', name: 'Launch', role: 'member' }],
+        },
+      ],
+    },
+  };
+  const invites = await listMyAccountInvites();
+  expect(last().url).toMatch(/\/account-invites$/);
+  expect(last().method).toBe('GET');
+  expect(invites).toHaveLength(1);
+  expect(invites[0]?.account_name).toBe('Acme');
+  expect(invites[0]?.projects[0]?.name).toBe('Launch');
 });

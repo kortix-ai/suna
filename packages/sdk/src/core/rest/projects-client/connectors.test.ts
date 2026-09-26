@@ -17,9 +17,11 @@ import {
   getDiscoverConnector,
   listAllConnections,
   listConnections,
+  listConnectSections,
   listConnectToolkits,
   listConnectors,
   listDiscoverConnectors,
+  listDiscoverSections,
   listPipedreamApps,
   listPipedreamSections,
   listSessionConnectRequests,
@@ -49,6 +51,12 @@ import {
   startConnectionOAuth2DeviceAuthorization,
   syncConnectors,
   updateConnectionCredential,
+  callConnector,
+  listConnectorAccounts,
+  type ConnectorCallResult,
+  type ConnectorConnectOptions,
+  type ConnectorConnectOwner,
+  renameConnection,
 } from './connectors';
 
 const canonicalConnectionType: import('./connectors').Connection = {
@@ -274,6 +282,26 @@ test('connection methods use the canonical connection route contract', async () 
   expect(last().url).toContain('/connections/connection-1/activate');
   await setDefaultConnection('P1', 'connection-1');
   expect(last().url).toContain('/connections/connection-1/default');
+
+  nextResponse = {
+    status: 200,
+    body: {
+      connection_id: 'connection-1',
+      connector_alias: 'gmail',
+      owner_type: 'project',
+      owner_id: null,
+      label: 'Support inbox',
+      status: 'active',
+      is_default: true,
+      metadata: {},
+      connected_as: 'support@example.test',
+    },
+  };
+  const renamed = await renameConnection('P1', 'connection-1', 'Support inbox');
+  expect(last()).toMatchObject({ method: 'PUT', body: { label: 'Support inbox' } });
+  expect(last().url).toContain('/projects/P1/connections/connection-1/label');
+  expect(renamed.label).toBe('Support inbox');
+  expect(renamed.connected_as).toBe('support@example.test');
 
   nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
   await ensureProjectConnectorConnection('P1', 'gmail');
@@ -685,6 +713,43 @@ test('listConnectToolkits GETs the Composio-first toolkit catalog with paginatio
   expect(result.hasMore).toBe(true);
 });
 
+test('listConnectSections GETs the Composio browse page with true category totals', async () => {
+  const gmail = {
+    slug: 'gmail',
+    name: 'Gmail',
+    logo: null,
+    description: 'Email',
+    categories: ['email'],
+    isNoAuth: false,
+    connected: false,
+  };
+  nextResponse = {
+    status: 200,
+    body: {
+      provider: 'composio',
+      sections: [{ key: 'email', label: 'email', total: 58, toolkits: [gmail] }],
+      categories: [{ key: 'email', label: 'email', count: 58 }],
+    },
+  };
+
+  const result = await listConnectSections('P1', { perCategory: 6, maxCategories: 12 });
+
+  expect(last().method).toBe('GET');
+  expect(last().url).toContain('/connectors/projects/P1/connect/sections?');
+  expect(last().url).toContain('perCategory=6');
+  expect(last().url).toContain('maxCategories=12');
+  expect(result.provider).toBe('composio');
+  // `total` is the category's size, not `toolkits.length` — 58 over one card.
+  expect(result.sections).toEqual([{ key: 'email', label: 'email', total: 58, toolkits: [gmail] }]);
+  expect(result.categories).toEqual([{ key: 'email', label: 'email', count: 58 }]);
+});
+
+test('listConnectSections GETs without a query string when unparameterised', async () => {
+  nextResponse = { status: 200, body: { provider: 'composio', sections: [], categories: [] } };
+  await listConnectSections('P1');
+  expect(last().url).toMatch(/\/connectors\/projects\/P1\/connect\/sections$/);
+});
+
 test('listPipedreamApps GETs with q + cursor as query params when given', async () => {
   nextResponse = {
     status: 200,
@@ -787,6 +852,51 @@ test('listDiscoverConnectors GETs a searchable cursor page', async () => {
   expect(last().url).toContain('q=notion+admin');
   expect(last().url).toContain('cursor=48');
   expect(last().method).toBe('GET');
+});
+
+test('listDiscoverConnectors accepts a query object with a category filter and page size', async () => {
+  nextResponse = { status: 200, body: { items: [], total: 70, hasMore: true, nextCursor: '24' } };
+  const result = await listDiscoverConnectors('P1', {
+    q: 'pay',
+    category: 'finance',
+    cursor: '48',
+    limit: 24,
+  });
+  expect(last().url).toContain('/connectors/projects/P1/discover/connectors?');
+  expect(last().url).toContain('q=pay');
+  expect(last().url).toContain('category=finance');
+  expect(last().url).toContain('cursor=48');
+  expect(last().url).toContain('limit=24');
+  expect(result.total).toBe(70);
+});
+
+test('listDiscoverSections GETs the Discover browse page with true category totals', async () => {
+  const stripe = { id: 'mcp/stripe', slug: 'stripe', name: 'Stripe', categories: ['payments'] };
+  nextResponse = {
+    status: 200,
+    body: {
+      popular: [stripe],
+      sections: [{ key: 'finance', label: 'Finance', total: 116, items: [stripe] }],
+      categories: [{ key: 'finance', label: 'Finance', count: 116 }],
+    },
+  };
+
+  const result = await listDiscoverSections('P1', { perCategory: 6, maxCategories: 12 });
+
+  expect(last().method).toBe('GET');
+  expect(last().url).toContain('/connectors/projects/P1/discover/sections?');
+  expect(last().url).toContain('perCategory=6');
+  expect(last().url).toContain('maxCategories=12');
+  // `total` is the category's size, not `items.length` — 116 over one card.
+  expect(result.sections[0]?.total).toBe(116);
+  expect(result.popular.map((item) => item.slug)).toEqual(['stripe']);
+  expect(result.categories).toEqual([{ key: 'finance', label: 'Finance', count: 116 }]);
+});
+
+test('listDiscoverSections GETs without a query string when unparameterised', async () => {
+  nextResponse = { status: 200, body: { popular: [], sections: [], categories: [] } };
+  await listDiscoverSections('P1');
+  expect(last().url).toMatch(/\/connectors\/projects\/P1\/discover\/sections$/);
 });
 
 test('getDiscoverConnector GETs detail by encoded catalogue id', async () => {
@@ -975,6 +1085,36 @@ test('connectorConnect and connectorFinalize are the provider-neutral names for 
   expect(finalized.connected).toBe(true);
 });
 
+test('connectorFinalize can finalize the PROJECT-owned account the connect started', async () => {
+  // The route defaults an absent `owner` to `me` (`parseConnectorConnectOwner`),
+  // so a finalize with no owner polls the CALLER's member connection. A connect
+  // sent with `owner: 'project'` therefore had no matching finalize on this
+  // surface at all: the poll could only ever report the wrong account, and the
+  // caller waited out the full Connect Link timeout.
+  nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
+  await connectorFinalize('P1', 'gmail', { owner: 'project' });
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect/finalize');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ owner: 'project' });
+});
+
+test('connectorFinalize can pin the poll to one exact connection', async () => {
+  // Without a selector the route resolves the most recently updated row in the
+  // owner scope. Naming the connection removes that recency race when the
+  // caller already knows which account it reconciled.
+  nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
+  await connectorFinalize('P1', 'gmail', { owner: 'project', connectionId: 'connection-7' });
+  expect(last().body).toEqual({ owner: 'project', connection_id: 'connection-7' });
+});
+
+test('connectorFinalize still sends an empty body when given no options', async () => {
+  // Backwards compatible: every published caller passes two arguments, and the
+  // route must keep applying its own `me` default for them.
+  nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
+  await connectorFinalize('P1', 'gmail', {});
+  expect(last().body).toEqual({});
+});
+
 test('connect surfaces the already-connected verdict the popup flow branches on', () => {
   // `runConnectLinkFlow` reads `response.connected` to skip the hosted page for a
   // no-auth toolkit and for an account that is already live. The field was
@@ -988,4 +1128,116 @@ test('connect surfaces the already-connected verdict the popup flow branches on'
   };
   expect(noAuth.connected).toBe(true);
   expect(needsAuth.connected).toBe(false);
+});
+
+/**
+ * Account selection. One connector can hold the project's shared account and
+ * each member's own, and the agent may use any of them — so a call has to be
+ * able to say WHICH, and a caller has to be able to find out what the choices
+ * are. Before this, resolution silently took the first entitled account and
+ * the only way to influence it was a per-session dropdown in the composer.
+ */
+test('callConnector sends no account key when the caller names none', async () => {
+  nextResponse = { status: 200, body: { ok: true, data: { id: 1 } } };
+  await callConnector('P1', 'gmail.send_email', { to: 'a@b.c' });
+  expect(calls[0].url).toBe('http://test.local/connectors/projects/P1/call');
+  expect(calls[0].body).toEqual({
+    connector: 'gmail',
+    action: 'send_email',
+    args: { to: 'a@b.c' },
+  });
+});
+
+test('callConnector forwards the chosen account so the gateway runs as it', async () => {
+  nextResponse = { status: 200, body: { ok: true, data: { id: 1 } } };
+  await callConnector('P1', 'gmail.send_email', { to: 'a@b.c' }, { account: 'Personal' });
+  expect(calls[0].body).toEqual({
+    connector: 'gmail',
+    action: 'send_email',
+    args: { to: 'a@b.c' },
+    account: 'Personal',
+  });
+});
+
+test('listConnectorAccounts reads the accounts a call may run as', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      connector: 'gmail',
+      accounts: [
+        { connection_id: 'c-1', label: 'Work', owner_type: 'project', is_default: true },
+        { connection_id: 'c-2', label: 'Personal', owner_type: 'member', is_default: false },
+      ],
+    },
+  };
+  const accounts = await listConnectorAccounts('P1', 'gmail');
+  expect(calls[0].url).toBe('http://test.local/connectors/projects/P1/connectors/gmail/accounts');
+  expect(calls[0].method).toBe('GET');
+  expect(accounts.map((account) => account.label)).toEqual(['Work', 'Personal']);
+  // Default first, because that is the one an unselected call resolves to.
+  expect(accounts[0].is_default).toBe(true);
+});
+
+/**
+ * Owner is a choice made at connect time, not a connector-wide mode.
+ *
+ * `authorization_strategy` made the two owner types mutually exclusive per
+ * connector, and a `user`-strategy connector reached no connect flow at all —
+ * the refusal that had no remedy. The caller now states who the new account
+ * belongs to: `me` (the signed-in human's own) or `project` (shared).
+ */
+test('connectorConnect sends no owner when the caller names none', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/x' } };
+  await connectorConnect('P1', 'gmail');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect');
+  expect(last().method).toBe('POST');
+  // Omitted rather than null: the API reads the key's presence to pick its default.
+  expect(last().body).toEqual({});
+});
+
+test('connectorConnect forwards the owner the new account is created under', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/x' } };
+  await connectorConnect('P1', 'gmail', { owner: 'project' });
+  expect(last().body).toEqual({ owner: 'project' });
+
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/y' } };
+  await connectorConnect('P1', 'gmail', { owner: 'me' });
+  expect(last().body).toEqual({ owner: 'me' });
+});
+
+test('pipedreamConnect, the published alias, carries the owner too', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/z' } };
+  await pipedreamConnect('P1', 'gmail', { owner: 'me' });
+  expect(last().body).toEqual({ owner: 'me' });
+});
+
+test('a call result echoes the account it ran as', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      ok: true,
+      data: { id: 1 },
+      account: { connection_id: 'c-2', label: 'Personal', owner_type: 'member' },
+    },
+  };
+  // A transcript has to be able to show WHICH identity sent the mail, including
+  // when the caller named no account and resolution picked one.
+  const result: ConnectorCallResult<{ id: number }> = await callConnector(
+    'P1',
+    'gmail.send_email',
+    { to: 'a@b.c' },
+  );
+  expect(result.account).toEqual({
+    connection_id: 'c-2',
+    label: 'Personal',
+    owner_type: 'member',
+  });
+  expect(result.account?.owner_type).toBe('member');
+});
+
+test('ConnectorConnectOwner is the two words every connect surface accepts', () => {
+  const owners: ConnectorConnectOwner[] = ['project', 'me'];
+  const options: ConnectorConnectOptions = { owner: 'project' };
+  expect(owners).toEqual(['project', 'me']);
+  expect(options.owner).toBe('project');
 });

@@ -1,4 +1,5 @@
-import { locales } from '@/i18n/catalog.mjs';
+import { defaultLocale, locales } from '@/i18n/catalog.mjs';
+import { isNonPagePath, localizedPathname, unverifiedSessionLocale } from '@/i18n/routing';
 import {
   authorizeEnvironment,
   deriveEnvironmentAccessCookie,
@@ -24,6 +25,10 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 type Locale = (typeof locales)[number];
+
+// next-intl reads this request header when a surface has no `[locale]` root
+// param (Server Actions, Route Handlers). See i18n/request.ts.
+const NEXT_INTL_LOCALE_HEADER = 'X-NEXT-INTL-LOCALE';
 
 // Public application surfaces that support explicit locale routing for SEO
 // and unauthenticated language verification (/de/about, /sr/pricing, etc.).
@@ -197,6 +202,11 @@ const DESKTOP_ALLOWED_ROUTES = [
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  // These are probes for server files, not product routes. A plain response also
+  // avoids rendering the translated application shell for sensitive-file probes.
+  if (/^\/(?:\.env(?:[./]|$)|\.git(?:\/|$)|package\.json$|etc\/passwd$)/i.test(pathname)) {
+    return new NextResponse('Not found', { status: 404 });
+  }
 
   // Dev and staging run behind one shared HTTP Basic credential. Read through
   // dynamic keys so the standalone container uses ECS runtime values instead of
@@ -306,7 +316,11 @@ export async function middleware(request: NextRequest) {
     pathname.includes('.') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/monitoring') || // Sentry error tracking tunnel (Better Stack)
-    pathname.startsWith('/_betterstack') // Better Stack browser telemetry proxy
+    pathname.startsWith('/_betterstack') || // Better Stack browser telemetry proxy
+    // Route Handlers, next.config rewrite sources (/scim, /ingest), and the
+    // static /docs site: none is a page under app/[locale], so none may be
+    // rewritten onto a locale. See i18n/routing.ts.
+    isNonPagePath(pathname)
   ) {
     return finalizeEnvironmentAccess(NextResponse.next());
   }
@@ -434,10 +448,15 @@ export async function middleware(request: NextRequest) {
     });
 
     if (isRemainingPathMarketing) {
-      // Rewrite /de to /, etc.
+      // /de/pricing is already the internal path app/[locale]/…/pricing with
+      // locale=de. Rewrite onto its normalized form (/de/ -> /de) and name the
+      // locale for Server Actions. Static per-locale HTML; no identity lookup.
       const requestHeaders = new Headers(request.headers);
       requestHeaders.set('x-locale', locale);
-      const response = NextResponse.rewrite(new URL(remainingPath, request.url), {
+      requestHeaders.set(NEXT_INTL_LOCALE_HEADER, locale);
+      const target = request.nextUrl.clone();
+      target.pathname = localizedPathname(locale, remainingPath);
+      const response = NextResponse.rewrite(target, {
         request: { headers: requestHeaders },
       });
       // Keep the locale response header for diagnostics and cache inspection.
@@ -448,10 +467,69 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // Every unprefixed page URL is rewritten onto app/[locale]. The locale is the
+  // verified profile locale when this request resolves an identity, else the
+  // profile locale read (unverified) from the session cookie, else English.
+  // The cookie read only picks the language of a page that is identical for
+  // every visitor; it never grants anything. A path that still carries a
+  // locale-looking first segment here (/de/projects) is not a localized route:
+  // it rewrites under the locale (/en/de/projects) and renders not-found, as
+  // it always did.
+  const cookieLocale = (): Locale =>
+    unverifiedSessionLocale(request.cookies.getAll(), KORTIX_SUPABASE_AUTH_COOKIE) ??
+    defaultLocale;
+  const rewriteToLocale = (locale: Locale, base?: NextResponse) => {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-locale', locale);
+    requestHeaders.set(NEXT_INTL_LOCALE_HEADER, locale);
+    const target = request.nextUrl.clone();
+    target.pathname = localizedPathname(locale, pathname);
+    const response = NextResponse.rewrite(target, { request: { headers: requestHeaders } });
+    if (base) {
+      // Carry refreshed/cleared Supabase cookies and headers set on the base.
+      for (const cookie of base.cookies.getAll()) response.cookies.set(cookie);
+      const link = base.headers.get('Link');
+      if (link) response.headers.set('Link', link);
+    }
+    response.headers.set('x-locale', locale);
+    return response;
+  };
+
   if (
     STATIC_PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))
   ) {
-    return finalizeEnvironmentAccess(NextResponse.next());
+    return finalizeEnvironmentAccess(rewriteToLocale(cookieLocale()));
+  }
+
+  // Self-host: when the landing/marketing site is disabled
+  // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE — default ON for self-host), the WHOLE
+  // marketing surface is deactivated: the homepage and every marketing route
+  // bounce straight to the app — authenticated users to /projects, everyone
+  // else to /auth. Functional public routes (/docs, /legal, /support,
+  // /marketplace, /share, …) are unaffected. Read via process.env directly —
+  // NEXT_PUBLIC_ vars are inlined at build time, so in Docker containers they'd
+  // carry the image's placeholder value; the runtime container env
+  // (KORTIX_PUBLIC_/NEXT_PUBLIC_ set at `docker run`) is what must win here,
+  // same convention as the Supabase vars below.
+  const disableLandingPage =
+    (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE ||
+      process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
+  const isMarketingContent =
+    pathname === '/' ||
+    SELF_HOST_MARKETING_ONLY.some(
+      (route) => pathname === route || pathname.startsWith(`${route}/`),
+    );
+  const isPublicRoute = PUBLIC_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(route + '/'),
+  );
+
+  // Identity only where it changes the response: protected routes, `/` (a
+  // signed-in visitor goes to a project), and marketing pages a self-host has
+  // disabled (the bounce target depends on the session). Every other public
+  // page is the same for everyone: static HTML, no Supabase round trip, no
+  // token refresh. The browser client refreshes its own session.
+  if (isPublicRoute && pathname !== '/' && !(disableLandingPage && isMarketingContent)) {
+    return finalizeEnvironmentAccess(rewriteToLocale(cookieLocale()));
   }
 
   // Create a single Supabase client instance that we'll reuse
@@ -603,25 +681,8 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // Self-host: when the landing/marketing site is disabled
-  // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE — default ON for self-host), the WHOLE
-  // marketing surface is deactivated: the homepage and every marketing route
-  // bounce straight to the app — authenticated users to /projects, everyone
-  // else to /auth. Functional public routes (/docs, /legal, /support,
-  // /marketplace, /share, …) are unaffected. Read via process.env directly —
-  // NEXT_PUBLIC_ vars are inlined at build time, so in Docker containers they'd
-  // carry the image's placeholder value; the runtime container env
-  // (KORTIX_PUBLIC_/NEXT_PUBLIC_ set at `docker run`) is what must win here,
-  // same convention as the Supabase vars below.
-  const disableLandingPage =
-    (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE ||
-      process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
+  // Self-host with the landing page disabled (see disableLandingPage above).
   if (disableLandingPage) {
-    const isMarketingContent =
-      pathname === '/' ||
-      SELF_HOST_MARKETING_ONLY.some(
-        (route) => pathname === route || pathname.startsWith(`${route}/`),
-      );
     if (isMarketingContent) {
       return finalizeEnvironmentAccess(
         redirectPreservingSession(new URL(user ? defaultLandingPath : '/auth', request.url)),
@@ -629,16 +690,27 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Allow all public routes — but return supabaseResponse (not NextResponse.next())
-  // so that any cookie updates from getUser() token refresh are preserved.
-  // Returning a fresh NextResponse.next() would discard refreshed auth cookies,
-  // causing the session to break on the next navigation.
-  if (PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
+  // Public routes that reach this point resolved an identity (`/`, or a
+  // disabled self-host marketing page). Carry supabaseResponse's cookies into
+  // the locale rewrite so a getUser() token refresh is preserved. Dropping them
+  // would break the session on the next navigation.
+  if (isPublicRoute) {
     if (pathname === '/') {
       supabaseResponse.headers.set('Link', AGENT_DISCOVERY_LINK_HEADER);
     }
-    return finalizeEnvironmentAccess(supabaseResponse);
+    return finalizeEnvironmentAccess(rewriteToLocale(cookieLocale(), supabaseResponse));
   }
+
+  // Protected routes render in the verified profile locale.
+  const signedInLocale = (): Locale => {
+    const profileLocale = user?.user_metadata?.locale;
+    if (typeof profileLocale === 'string') {
+      const base = profileLocale.toLowerCase().split(/[-_]/)[0];
+      if (locales.includes(profileLocale as Locale)) return profileLocale as Locale;
+      if (base && locales.includes(base as Locale)) return base as Locale;
+    }
+    return cookieLocale();
+  };
 
   // Everything else requires authentication - reuse the user we already fetched
   try {
@@ -670,10 +742,10 @@ export async function middleware(request: NextRequest) {
       return finalizeEnvironmentAccess(bounceResponse);
     }
 
-    return finalizeEnvironmentAccess(supabaseResponse);
+    return finalizeEnvironmentAccess(rewriteToLocale(signedInLocale(), supabaseResponse));
   } catch (error) {
     console.error('Middleware error:', error);
-    return finalizeEnvironmentAccess(supabaseResponse);
+    return finalizeEnvironmentAccess(rewriteToLocale(signedInLocale(), supabaseResponse));
   }
 }
 
@@ -684,10 +756,13 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public folder assets
+     * - public folder assets: images, media, fonts, wasm, JSON data, JS/CSS
+     *   (Basic-auth-free on dev/staging, like images always were)
+     * - docs (static Blume site in public/docs; Markdown negotiation for it is
+     *   a next.config rewrite on the Accept header)
      * - monitoring (Sentry/Better Stack error tracking tunnel)
      * - _betterstack (Better Stack browser telemetry proxy)
      */
-    '/((?!_next/static|_next/image|favicon.ico|monitoring|_betterstack|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|monitoring|_betterstack|docs(?:/|$)|.*\\.(?:svg|png|jpg|jpeg|JPEG|gif|webp|avif|ico|wasm|json|woff2?|ttf|otf|js|mjs|css|map|mp4|webm|mp3|zip)$).*)',
   ],
 };

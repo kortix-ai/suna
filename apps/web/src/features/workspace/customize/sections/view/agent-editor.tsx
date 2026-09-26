@@ -72,7 +72,7 @@ export {
   AGENT_MODE_HELP,
   AGENT_MODE_LABEL,
   AGENT_MODES,
-  KORTIX_CLI_CATALOG,
+  KORTIX_PERMISSIONS_CATALOG,
   PERMISSION_ACTION_LABEL,
   PERMISSION_ACTION_ONLY_GROUP_LABEL,
   PERMISSION_ACTION_ONLY_KEYS,
@@ -83,9 +83,6 @@ export {
   PERMISSION_RULE_KEYS,
   THEME_COLOR_SWATCH,
   THEME_COLORS,
-  WORKSPACE_MODE_HELP,
-  WORKSPACE_MODE_LABEL,
-  WORKSPACE_MODES,
 } from './agent-editor-catalog';
 
 /**
@@ -281,9 +278,14 @@ export type AgentConfigSectionGroup = (typeof AGENT_CONFIG_SECTION_GROUPS)[numbe
  *
  * General is the agent itself and who runs it: overview, identity, people,
  * triggers. Access is one topic per grant set — skills, connectors, secrets,
- * project actions — each its own page (Marko, 2026-09-03: "split up ACCESS
- * … into its own standalone menu items on the left & we can have nicer UX/UI
- * for each"). Runtime is what a session runs on: model, tools, workspace.
+ * Apps, project actions — each its own page (Marko, 2026-09-03: "split up
+ * ACCESS … into its own standalone menu items on the left & we can have nicer
+ * UX/UI for each"). Runtime is what a session runs on: model, tools,
+ * workspace.
+ *
+ * `apps` is listed here unconditionally — this module is pure data — and the
+ * PAGE drops it when the project's `apps` feature flag is off, so a project
+ * without Kortix Apps never sees a grant page for them.
  */
 export const AGENT_CONFIG_SECTIONS = [
   { key: 'overview', label: 'Overview', group: 'General' },
@@ -293,7 +295,8 @@ export const AGENT_CONFIG_SECTIONS = [
   { key: 'skills', label: 'Skills', group: 'Access' },
   { key: 'connectors', label: 'Connectors', group: 'Access' },
   { key: 'secrets', label: 'Secrets', group: 'Access' },
-  { key: 'actions', label: 'Project actions', group: 'Access' },
+  { key: 'apps', label: 'Apps', group: 'Access' },
+  { key: 'actions', label: 'Kortix permissions', group: 'Access' },
   { key: 'model', label: 'Model', group: 'Runtime' },
   { key: 'tools', label: 'Tools', group: 'Runtime' },
   { key: 'workspace', label: 'Workspace', group: 'Runtime' },
@@ -335,6 +338,8 @@ export function AgentConfigSections({
   skills,
   connectors,
   secrets,
+  apps,
+  authority,
 }: {
   section: AgentConfigSectionKey;
   editor: AgentDraft;
@@ -352,6 +357,12 @@ export function AgentConfigSections({
   skills?: React.ReactNode;
   connectors?: React.ReactNode;
   secrets?: React.ReactNode;
+  /** Which Kortix Apps the agent may open. Page-owned only: the picker needs
+   *  the project's App list, which no checklist fallback has. */
+  apps?: React.ReactNode;
+  /** What the agent can do once its Kortix permissions meet its IAM ceiling —
+   *  a page-owned card under the Kortix permissions checklist. */
+  authority?: React.ReactNode;
 }) {
   const { draft, oc, set, setOc } = editor;
   // Every section is a card (`EditorSectionStyle` 'panel'), so a tab holding
@@ -374,8 +385,15 @@ export function AgentConfigSections({
         return (
           secrets ?? <SecretsSection draft={draft} set={set} options={options.secretOptions} />
         );
+      case 'apps':
+        return <>{apps}</>;
       case 'actions':
-        return <ProjectActionsSection draft={draft} set={set} />;
+        return (
+          <>
+            <ProjectActionsSection draft={draft} set={set} />
+            {authority}
+          </>
+        );
       case 'triggers':
         return <>{triggers}</>;
       case 'model':

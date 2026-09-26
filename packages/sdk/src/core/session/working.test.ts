@@ -67,7 +67,7 @@ describe('projectWorking', () => {
     // producers send none: `postPrompt` omits `messageID` for triggers, Slack /
     // Teams / Telegram, approval-resume and email, and `buildSessionCommandInput`
     // omits it for EVERY `/` command including `/compact`. `GET .../turn` then
-    // answers `message_id: null` (`r8.ts` — the field is `z.string().nullable()`)
+    // answers `message_id: null` (`session-runtime.ts` — the field is `z.string().nullable()`)
     // for a turn that is very much running. Reporting the open turn off that
     // field answered "the control plane holds nothing" for that whole class.
     // `turn_token` is minted for every turn and is never null.
@@ -287,6 +287,7 @@ describe('projectWorking', () => {
     });
 
     expect(projection).toEqual({
+      pendingDelivery: true,
       state: 'working',
       source: 'optimistic',
       turnId: 'msg_42',
@@ -352,6 +353,7 @@ describe('projectWorking', () => {
     });
 
     expect(projection).toEqual({
+      pendingDelivery: true,
       state: 'working',
       source: 'server',
       turnId: null,
@@ -375,6 +377,7 @@ describe('projectWorking', () => {
     });
 
     expect(projection).toEqual({
+      pendingDelivery: true,
       state: 'working',
       source: 'server',
       turnId: 'msg_new',
@@ -1235,6 +1238,7 @@ describe('projectWorking — a row the server took off the queue means a turn is
         nowMs: T0 + 500,
       }),
     ).toEqual({
+      pendingDelivery: true,
       state: 'working',
       source: 'server',
       turnId: null,
@@ -1369,4 +1373,102 @@ describe('projectWorking — a row the server took off the queue means a turn is
     expect(projection.state).toBe('working');
     expect(projection.turnId).toBe('msg_01');
   });
+});
+
+
+describe('pending delivery is not model execution', () => {
+  test('a polled waiting inbox keeps Stop available without claiming a response', () => {
+    const result = projectWorking({ optimistic: null, server: { turns: [], atMs: T0 },
+      stream: { type: 'idle', atMs: T0 }, inbox: { pending: 1, atMs: T0 }, nowMs: T0 });
+    expect(result.state).toBe('working');
+    expect(result.pendingDelivery).toBe(true);
+  });
+  test('an unacknowledged send is pending delivery', () => {
+    expect(projectWorking({ optimistic: { messageId: 'm', atMs: T0 },
+      server: null, stream: null, nowMs: T0 }).pendingDelivery).toBe(true);
+  });
+  test('runtime activity remains a response while another prompt waits', () => {
+    const result = projectWorking({ optimistic: null, server: { turns: [], atMs: T0 },
+      stream: { type: 'busy', atMs: T0 + 1 }, inbox: { pending: 1, atMs: T0 }, nowMs: T0 + 1 });
+    expect(result.state).toBe('working');
+    expect(result.pendingDelivery).not.toBe(true);
+  });
+  test('an active turn is a response even with pending inbox rows', () => {
+    const result = projectWorking({ optimistic: null, server: { turns: [turn()], atMs: T0 },
+      stream: null, inbox: { pending: 1, atMs: T0 }, nowMs: T0 });
+    expect(result.pendingDelivery).not.toBe(true);
+  });
+});
+
+test('reserved delivery authority is not an active agent turn', () => {
+  expect(projectWorking({ optimistic: null,
+    server: { turns: [turn({ state: 'delivering' })], atMs: T0 },
+    stream: null, nowMs: T0 }).pendingDelivery).toBe(true);
+});
+
+test('an active turn takes precedence over a reserved queued turn', () => {
+  const result = projectWorking({ optimistic: null, server: { turns: [
+    turn({ state: 'delivering', message_id: 'queued' }), turn({ message_id: 'running' }),
+  ], atMs: T0 }, stream: null, nowMs: T0 });
+  expect(result.turnId).toBe('running');
+  expect(result.pendingDelivery).not.toBe(true);
+});
+
+test('a stale busy frame cannot turn a newer empty turn read into Thinking', () => {
+  const result = projectWorking({ optimistic: null,
+    server: { turns: [], atMs: T0 + 1000 },
+    stream: { type: 'busy', atMs: T0 }, inbox: { pending: 1, atMs: T0 + 1000 }, nowMs: T0 + 1000 });
+  expect(result.pendingDelivery).toBe(true);
+});
+
+describe('Stop suppresses observations taken before its acknowledgement', () => {
+  test('old runtime output cannot bring back Thinking while Stop is in flight', () => {
+    expect(projectWorking({ optimistic: null, abort: { atMs: T0 + 10, settledAtMs: null },
+      server: { turns: [turn()], atMs: T0 }, stream: null, activity: { atMs: T0 }, nowMs: T0 + 20 }).state).toBe('idle');
+  });
+  test('an old busy frame cannot bring back Thinking while Stop is in flight', () => {
+    expect(projectWorking({ optimistic: null, abort: { atMs: T0 + 10, settledAtMs: null },
+      server: null, stream: { type: 'busy', atMs: T0 }, nowMs: T0 + 20 }).state).toBe('idle');
+  });
+  test('a pre-hold inbox read cannot undo an in-flight Stop', () => {
+    expect(projectWorking({ optimistic: null, abort: { atMs: T0 + 10, settledAtMs: null },
+      server: null, stream: null, inbox: { pending: 1, atMs: T0 }, nowMs: T0 + 20 }).state).toBe('idle');
+  });
+});
+
+test('fresh output after cancellation settles still exposes an agent that is running', () => {
+  expect(projectWorking({ optimistic: null, abort: { atMs: T0, settledAtMs: T0 + 100 },
+    server: null, stream: null, activity: { atMs: T0 + 200 }, nowMs: T0 + 200 }).state).toBe('working');
+});
+
+test('an unanswered Stop cannot hide continued runtime activity forever', () => {
+  const nowMs = T0 + OPTIMISTIC_ABORT_MAX_MS + 1;
+  expect(projectWorking({ optimistic: null, abort: { atMs: T0, settledAtMs: null },
+    server: null, stream: null, activity: { atMs: nowMs }, nowMs }).state).toBe('working');
+});
+
+
+test('runtime activity retains the newly active turn while its inbox snapshot still says delivering', () => {
+  const projection = projectWorking({
+    optimistic: null,
+    server: { turns: [turn({ message_id: 'next', started_at: new Date(T0 + 200).toISOString() })], atMs: T0 + 300 },
+    stream: { type: 'idle', atMs: T0 + 100 },
+    activity: { atMs: T0 + 250 },
+    inbox: { pending: 1, atMs: T0 + 150 },
+    nowMs: T0 + 350,
+  });
+  expect(projection).toMatchObject({ state: 'working', source: 'stream', turnId: 'next' });
+  expect(projection.pendingDelivery).not.toBe(true);
+});
+
+test('activity after completion does not reuse the ended turn or a delivery reservation', () => {
+  for (const candidate of [turn(), turn({ state: 'delivering', started_at: new Date(T0 + 200).toISOString() })]) {
+    expect(projectWorking({
+      optimistic: null,
+      server: { turns: [candidate], atMs: T0 + 300 },
+      stream: { type: 'idle', atMs: T0 + 100 },
+      activity: { atMs: T0 + 250 },
+      nowMs: T0 + 350,
+    }).turnId).toBeNull();
+  }
 });

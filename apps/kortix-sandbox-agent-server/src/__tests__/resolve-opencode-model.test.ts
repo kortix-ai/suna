@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { buildInitialPromptBody, resolveOpencodeModel } from '../main'
+import { buildInitialPromptBody, resolveOpencodeModel } from '../harness/open-code/boot'
 
 const ORIGINAL_MODEL = process.env.KORTIX_OPENCODE_MODEL
 const ORIGINAL_LLM_BASE_URL = process.env.KORTIX_LLM_BASE_URL
@@ -22,56 +22,49 @@ afterEach(() => {
 })
 
 describe('resolveOpencodeModel', () => {
-  test('normalizes prefixed native OpenCode Zen free models for prompt_async', () => {
-    process.env.KORTIX_OPENCODE_MODEL = 'opencode/deepseek-v4-flash-free'
+  // Native mode: no gateway env at all. Ambient KORTIX_LLM_* in the shell or a
+  // prior test would silently switch these rows to gateway mode.
+  test.each([
+    ['a prefixed OpenCode Zen model', 'opencode/deepseek-v4-flash-free', { providerID: 'opencode', modelID: 'deepseek-v4-flash-free' }],
+    ['a bare OpenCode Zen id', 'deepseek-v4-flash-free', { providerID: 'opencode', modelID: 'deepseek-v4-flash-free' }],
+    ['a provider/model override', 'anthropic/claude-sonnet-4-6', { providerID: 'anthropic', modelID: 'claude-sonnet-4-6' }],
+    // A pin stored while the gateway was ON can survive a live toggle to
+    // native mode: a nested ref unwraps to the provider it wraps.
+    ['a stale kortix/<provider>/<model> pin', 'kortix/anthropic/claude-sonnet-4-6', { providerID: 'anthropic', modelID: 'claude-sonnet-4-6' }],
+  ])('native mode resolves %s', (_name, model, expected) => {
+    delete process.env.KORTIX_LLM_BASE_URL
+    delete process.env.KORTIX_LLM_PROXY_URL
+    process.env.KORTIX_OPENCODE_MODEL = model
 
-    expect(resolveOpencodeModel()).toEqual({
-      providerID: 'opencode',
-      modelID: 'deepseek-v4-flash-free',
-    })
+    expect(resolveOpencodeModel()).toEqual(expected)
   })
 
-  test('accepts bare native OpenCode Zen free model ids', () => {
-    process.env.KORTIX_OPENCODE_MODEL = 'deepseek-v4-flash-free'
+  test('native mode drops a stale bare kortix/<managed-id> pin', () => {
+    // A bare managed id has no native provider; OpenCode's own default applies
+    // instead of a prompt against the nonexistent `kortix` provider.
+    delete process.env.KORTIX_LLM_BASE_URL
+    delete process.env.KORTIX_LLM_PROXY_URL
+    process.env.KORTIX_OPENCODE_MODEL = 'kortix/glm-5.3-flash'
 
-    expect(resolveOpencodeModel()).toEqual({
-      providerID: 'opencode',
-      modelID: 'deepseek-v4-flash-free',
-    })
+    expect(resolveOpencodeModel()).toBeUndefined()
   })
 
-  test('keeps normal provider/model overrides as OpenCode model objects', () => {
-    process.env.KORTIX_OPENCODE_MODEL = 'anthropic/claude-sonnet-4-6'
+  // Gateway mode keeps the whole wire ref as the Kortix model id: `codex` read
+  // as an OpenCode provider answers ModelNotFound.
+  test.each(['codex/gpt-5.6-sol', 'anthropic/claude-sonnet-4-6'])(
+    'gateway mode routes the wire model %j through the Kortix provider',
+    (model) => {
+      delete process.env.KORTIX_LLM_PROXY_URL
+      process.env.KORTIX_LLM_BASE_URL = 'https://api.kortix.test/v1/llm'
+      process.env.KORTIX_TOKEN = 'test-key'
+      process.env.KORTIX_OPENCODE_MODEL = model
 
-    expect(resolveOpencodeModel()).toEqual({
-      providerID: 'anthropic',
-      modelID: 'claude-sonnet-4-6',
-    })
-  })
+      expect(resolveOpencodeModel()).toEqual({ providerID: 'kortix', modelID: model })
+    },
+  )
 
-  test('routes a Codex wire model through the Kortix provider in gateway mode', () => {
-    process.env.KORTIX_LLM_BASE_URL = 'https://api.kortix.test/v1/llm'
-    process.env.KORTIX_TOKEN = 'test-key'
-    process.env.KORTIX_OPENCODE_MODEL = 'codex/gpt-5.6-sol'
-
-    expect(resolveOpencodeModel()).toEqual({
-      providerID: 'kortix',
-      modelID: 'codex/gpt-5.6-sol',
-    })
-  })
-
-  test('routes a BYOK wire model through the Kortix provider in gateway mode', () => {
-    process.env.KORTIX_LLM_BASE_URL = 'https://api.kortix.test/v1/llm'
-    process.env.KORTIX_TOKEN = 'test-key'
-    process.env.KORTIX_OPENCODE_MODEL = 'anthropic/claude-sonnet-4-6'
-
-    expect(resolveOpencodeModel()).toEqual({
-      providerID: 'kortix',
-      modelID: 'anthropic/claude-sonnet-4-6',
-    })
-  })
-
-  test('routes a bare managed model through the Kortix provider in gateway mode', () => {
+  test('routes a bare managed model through the Kortix provider when only the LLM proxy is set', () => {
+    delete process.env.KORTIX_LLM_BASE_URL
     process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:4319'
     process.env.KORTIX_OPENCODE_MODEL = 'glm-5.3-flash'
 
@@ -89,55 +82,6 @@ describe('resolveOpencodeModel', () => {
       providerID: 'kortix',
       modelID: 'codex/gpt-5.6-sol',
     })
-  })
-
-  // A pin stored while the gateway was ON can survive a live toggle to native
-  // mode. Nested refs unwrap; a bare managed id has no native provider and is
-  // dropped so OpenCode's own default applies — never a prompt against the
-  // nonexistent `kortix` provider.
-  test('native mode unwraps a stale kortix/<provider>/<model> pin', () => {
-    delete process.env.KORTIX_LLM_BASE_URL
-    delete process.env.KORTIX_LLM_PROXY_URL
-    process.env.KORTIX_OPENCODE_MODEL = 'kortix/anthropic/claude-sonnet-4-6'
-
-    expect(resolveOpencodeModel()).toEqual({
-      providerID: 'anthropic',
-      modelID: 'claude-sonnet-4-6',
-    })
-  })
-
-  test('native mode drops a stale bare kortix/<managed-id> pin', () => {
-    delete process.env.KORTIX_LLM_BASE_URL
-    delete process.env.KORTIX_LLM_PROXY_URL
-    process.env.KORTIX_OPENCODE_MODEL = 'kortix/glm-5.3-flash'
-
-    expect(resolveOpencodeModel()).toBeUndefined()
-  })
-
-  // Regression guard for the agent-first compiler (compile-agent-config.ts):
-  // the compiled agent map can now bake a default `model` onto an agent (or
-  // the top-level config), but that's ONLY a fallback for when no explicit
-  // model is passed on a request. KORTIX_OPENCODE_MODEL (an explicit session/
-  // trigger override, resolved server-side from DB model-preferences) is
-  // threaded through as the literal `model` on the boot prompt call — this
-  // resolver must keep working exactly as before, independent of whatever
-  // KORTIX_COMPILED_AGENT_CONFIG carries, so that explicit override still
-  // wins over the manifest agent's declarative default.
-  test('is unaffected by a server-compiled agent config being present alongside it', () => {
-    process.env.KORTIX_OPENCODE_MODEL = 'anthropic/claude-opus-4-8'
-    process.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify({
-      model: 'anthropic/claude-sonnet-5',
-      agent: { support: { model: 'anthropic/claude-sonnet-5' } },
-    })
-
-    try {
-      expect(resolveOpencodeModel()).toEqual({
-        providerID: 'anthropic',
-        modelID: 'claude-opus-4-8',
-      })
-    } finally {
-      delete process.env.KORTIX_COMPILED_AGENT_CONFIG
-    }
   })
 })
 
@@ -163,15 +107,6 @@ describe('buildInitialPromptBody', () => {
         modelID: 'anthropic/claude-sonnet-4-6',
       },
       agent: 'asana-refresher',
-    })
-  })
-
-  test('omits the legacy default agent sentinel', () => {
-    delete process.env.KORTIX_OPENCODE_MODEL
-    process.env.KORTIX_AGENT_NAME = 'default'
-
-    expect(buildInitialPromptBody('Run.')).toEqual({
-      parts: [{ type: 'text', text: 'Run.' }],
     })
   })
 })

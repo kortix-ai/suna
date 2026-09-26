@@ -57,7 +57,7 @@
  *     created by a step that never read this prompt. When it is there, the
  *     drain deletes the stranded message and delivers again, above it. The
  *     same predicate runs at turn end for every still-open forwarded prompt
- *     (`routes/r4.ts` `turn-stream` `end`) — the safety net for a verify read
+ *     (`routes/turn-stream.ts` `turn-stream` `end`) — the safety net for a verify read
  *     that failed.
  *
  * Pure over its inputs so the golden cases are assertable without a box.
@@ -344,11 +344,6 @@ export function boxClockSkewMs(sessionId: string, nowMs = Date.now()): number | 
     return null;
   }
   return entry.skewMs;
-}
-
-/** Test seam. */
-export function resetBoxClockSkewForTests(): void {
-  skewBySession.clear();
 }
 
 /**

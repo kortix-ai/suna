@@ -49,7 +49,7 @@ const directoryMeta: Record<string, FolderMetaDefinition> = {
 // The only ids fumadocs used to render under the "---Develop---" separator.
 // This membership is not recorded anywhere else — it is the one piece of
 // structure this config genuinely adds on top of content/docs/meta.ts.
-const developIds = new Set(['cli', 'sdk', 'backend']);
+const developIds = new Set(['cli', 'tui', 'sdk', 'backend']);
 
 const rootPages = resolveMeta(rootMeta).pages ?? [];
 

@@ -66,11 +66,19 @@ import {
   updateProjectAccess,
   updateProjectGroupGrant,
   type AccountRole,
+  type AssignmentInput,
   type ProjectAgentResourceItem,
   type ProjectRole,
 } from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
-import { ArrowElbowDownRightIcon, KeyIcon, PlugIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
+import {
+  ArrowElbowDownRightIcon,
+  KeyIcon,
+  PlugIcon,
+  PlusIcon,
+  RobotIcon,
+  XIcon,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 
@@ -103,7 +111,10 @@ export type AccessDialogScope =
   | { kind: 'group'; groupId: string; groupName: string };
 
 export interface AccessDialogPrincipal {
-  type: 'member' | 'group';
+  /** `agent` = an agent's service account. Its project role is the agent's
+   *  CEILING: the agent acts with its Kortix permissions within that role,
+   *  minus the human-only permissions (spec 2026-09-22 agents as principals). */
+  type: 'member' | 'group' | 'agent';
   id: string;
   label: string;
   avatar?: ReactNode;
@@ -138,6 +149,15 @@ export function fixedPrincipalsOf(mode: AccessDialogMode): AccessDialogPrincipal
   if (mode.kind === 'bulk-role' || mode.kind === 'bulk-group') return mode.principals;
   if (mode.kind === 'edit' || mode.kind === 'attach') return [mode.principal];
   return [];
+}
+
+export function agentAccessProjectId(
+  scope: AccessDialogScope,
+  mode: AccessDialogMode,
+  selectedProjectId: string,
+): string | undefined {
+  if (mode.kind === 'attach') return selectedProjectId || undefined;
+  return scope.kind === 'project' ? scope.projectId || undefined : undefined;
 }
 
 export interface AccessDialogResult {
@@ -427,6 +447,8 @@ export function AccessDialog({
   onDone,
 }: AccessDialogProps) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tCommon = useI18nTranslations('common');
+  const tAgents = useI18nTranslations('agentPrincipals');
   const queryClient = useQueryClient();
   const roleScope = roleScopeFor(scope);
   const projectId = scope.kind === 'project' ? scope.projectId : undefined;
@@ -461,7 +483,10 @@ export function AccessDialog({
   const setAgents = (next: AgentSelection | ((prev: AgentSelection) => AgentSelection)) =>
     setDraft((d) => ({ ...d, agents: typeof next === 'function' ? next(d.agents) : next }));
   const setExpires = (next: string) => setDraft((d) => ({ ...d, expires: next }));
-  const setAttachProjectId = (next: string) => setDraft((d) => ({ ...d, attachProjectId: next }));
+  const setAttachProjectId = (next: string) =>
+    setDraft((d) =>
+      next === d.attachProjectId ? d : { ...d, attachProjectId: next, agents: ALL_AGENTS },
+    );
   const setProjectGrants = (next: ProjectGrantRow[]) =>
     setDraft((d) => ({ ...d, projectGrants: next }));
   const setProjectAccessOpen = (next: boolean) =>
@@ -485,14 +510,26 @@ export function AccessDialog({
   // Not for a project admin: the manager tier uses every agent regardless of
   // grants (`objectUsable` in `apps/api/src/iam/authorize.ts`), so a picker
   // under that role would write rows that change nothing.
+  const agentProjectId = agentAccessProjectId(scope, mode, attachProjectId);
+  // An agent principal's role is its ceiling — "which agents may it use" is
+  // a question about people, so the object picker never applies to one.
+  const editingAgent = mode.kind === 'edit' && mode.principal.type === 'agent';
+  const selectedAgentPrincipals = principals.agentIds ?? [];
+  const onlyAgentsSelected =
+    mode.kind === 'grant' &&
+    selectedAgentPrincipals.length > 0 &&
+    principals.memberIds.length + principals.groupIds.length + principals.inviteEmails.length === 0;
+  const showAgentCeilingNote = editingAgent || selectedAgentPrincipals.length > 0;
   const showAgents =
-    scope.kind === 'project' &&
-    (mode.kind === 'grant' || mode.kind === 'edit') &&
-    builtin !== 'manager';
+    !!agentProjectId &&
+    (mode.kind === 'grant' || mode.kind === 'edit' || mode.kind === 'attach') &&
+    builtin !== 'manager' &&
+    !editingAgent &&
+    !onlyAgentsSelected;
   const resourceGrantsQuery = useQuery({
-    queryKey: qk.project.resourceGrants(projectId ?? ''),
-    queryFn: () => listProjectResourceGrants(projectId as string),
-    enabled: open && showAgents && !!projectId,
+    queryKey: qk.project.resourceGrants(agentProjectId ?? ''),
+    queryFn: () => listProjectResourceGrants(agentProjectId as string),
+    enabled: open && showAgents,
     ...contract('inventory'),
   });
   const projectAgents = useMemo<ProjectAgentResourceItem[]>(
@@ -622,6 +659,24 @@ export function AccessDialog({
     for (const row of rows) await revokeAssignment(accountId, row.assignment_id);
   }
 
+  /** Bind a project role to an agent's service account: the agent's ceiling.
+   *  A built-in role goes by key (ids differ per deployment), a custom role by
+   *  id. One row; the server owns the escalation check. */
+  function assignAgentCeiling(
+    serviceAccountId: string,
+    pid: string,
+    roleId: string | null,
+    projectBuiltin: ProjectRole,
+    expiresIso: string | undefined,
+  ) {
+    return createAssignment(accountId, {
+      principal: { type: 'service_account', id: serviceAccountId },
+      ...(roleId ? { roleId } : { roleKey: projectBuiltin }),
+      scope: { type: 'project', id: pid },
+      ...(expiresIso ? { expiresAt: expiresIso } : {}),
+    } as AssignmentInput);
+  }
+
   /** Drop the principal's existing custom-role assignment at this scope.
    *  `current.assignmentId` is the row the roster handed us; without it, fall
    *  back to a filtered read so an older cached row cannot strand a grant. */
@@ -730,6 +785,13 @@ export function AccessDialog({
         },
       });
     }
+    for (const serviceAccountId of principals.agentIds ?? []) {
+      tasks.push({
+        principalId: serviceAccountId,
+        kind: 'other',
+        run: () => assignAgentCeiling(serviceAccountId, pid, roleId, projectBuiltin, expiresIso),
+      });
+    }
     for (const email of principals.inviteEmails) {
       tasks.push({
         principalId: email,
@@ -780,6 +842,22 @@ export function AccessDialog({
     const pid = scope.projectId;
     const nextBuiltin = (baselineBuiltinRole('project', role) ?? 'member') as ProjectRole;
 
+    // An agent's ceiling is ONE assignment row: replace it whole.
+    if (principal.type === 'agent') {
+      return [
+        {
+          principalId: principal.id,
+          kind: 'other',
+          run: async () => {
+            if (!diff.roleChanged && !diff.expiryChanged) return;
+            if (current.assignmentId) await revokeAssignment(accountId, current.assignmentId);
+            await assignAgentCeiling(principal.id, pid, roleId, nextBuiltin, expiresIso);
+          },
+        },
+      ];
+    }
+
+    const principalType: 'member' | 'group' = principal.type;
     return [
       {
         principalId: principal.id,
@@ -801,15 +879,15 @@ export function AccessDialog({
               await revokeCustomRole('member', principal.id, pid, current.assignmentId);
             }
             if (roleId) {
-              await assignCustomRole(principal.type, principal.id, roleId, pid, expiresIso);
+              await assignCustomRole(principalType, principal.id, roleId, pid, expiresIso);
             }
           }
           // Object-assignment diff — one row per (principal, project, agent).
           for (const resourceId of diff.agentsAdded) {
-            await assignAgent(principal.type, principal.id, pid, resourceId, expiresIso);
+            await assignAgent(principalType, principal.id, pid, resourceId, expiresIso);
           }
           for (const resourceId of diff.agentsRemoved) {
-            await unassignAgent(principal.type, principal.id, pid, resourceId);
+            await unassignAgent(principalType, principal.id, pid, resourceId);
           }
         },
       },
@@ -829,6 +907,9 @@ export function AccessDialog({
           await attachGroupToProject(attachProjectId, mode.principal.id, nextBuiltin, expiresIso);
           if (roleId) {
             await assignCustomRole('group', mode.principal.id, roleId, attachProjectId, expiresIso);
+          }
+          for (const agentId of effectiveAgentIds(nextBuiltin, roleId, agents, projectAgents)) {
+            await assignAgent('group', mode.principal.id, attachProjectId, agentId, expiresIso);
           }
         },
       },
@@ -964,6 +1045,12 @@ export function AccessDialog({
       if (mode.kind !== 'edit') return;
       const { principal } = mode;
       if (scope.kind === 'account') return removeAccountMember(accountId, principal.id);
+      if (scope.kind === 'project' && principal.type === 'agent') {
+        if (mode.current.assignmentId) {
+          return revokeAssignment(accountId, mode.current.assignmentId);
+        }
+        return;
+      }
       if (scope.kind === 'project') {
         return principal.type === 'group'
           ? detachGroupFromProject(scope.projectId, principal.id)
@@ -989,6 +1076,7 @@ export function AccessDialog({
       : null;
   const canSubmit =
     !pending &&
+    (!showAgents || (resourceGrantsQuery.isSuccess && !resourceGrantsQuery.isFetching)) &&
     (mode.kind === 'grant'
       ? selectedCount > 0
       : mode.kind === 'attach'
@@ -1034,7 +1122,13 @@ export function AccessDialog({
                       : { kind: 'account', accountId }
                   }
                   selection="multi"
-                  kinds={scope.kind === 'project' ? ['member', 'group'] : ['member']}
+                  kinds={
+                    scope.kind === 'project'
+                      ? canManageRoles
+                        ? ['member', 'group', 'agent']
+                        : ['member', 'group']
+                      : ['member']
+                  }
                   allowInvite={scope.kind !== 'group'}
                   excludeUserIds={excludeUserIds}
                   value={principals}
@@ -1124,10 +1218,30 @@ export function AccessDialog({
               </Field>
             ) : null}
 
+            {scope.kind === 'project' && showAgentCeilingNote ? (
+              <InfoBanner tone="neutral" icon={RobotIcon} title={tAgents('ceilingNoteTitle')}>
+                <span data-testid="agent-ceiling-note">{tAgents('ceilingNote')}</span>
+              </InfoBanner>
+            ) : null}
+
             {/* 4. Agents (project scope) */}
             {showAgents ? (
               <Field className="gap-1.5">
                 <FieldLabel>{tI18nComplete.raw('text279b44d2ab4b')}</FieldLabel>
+                {resourceGrantsQuery.isError ? (
+                  <InfoBanner
+                    tone="destructive"
+                    action={
+                      <Button size="sm" variant="outline" onClick={() => void resourceGrantsQuery.refetch()}>
+                        {tCommon('retry')}
+                      </Button>
+                    }
+                  >
+                    {resourceGrantsQuery.error.message}
+                  </InfoBanner>
+                ) : resourceGrantsQuery.isLoading ? (
+                  <Skeleton className="h-6 w-full rounded-md" />
+                ) : null}
                 <Tabs
                   value={agents.mode}
                   onValueChange={(next) =>
@@ -1300,6 +1414,7 @@ export function AccessDialog({
 
 function FixedPrincipals({ principals }: { principals: AccessDialogPrincipal[] }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAgents = useI18nTranslations('agentPrincipals');
   return (
     <ul className="space-y-2">
       {principals.map((principal) => (
@@ -1310,6 +1425,8 @@ function FixedPrincipals({ principals }: { principals: AccessDialogPrincipal[] }
           {principal.avatar ??
             (principal.type === 'group' ? (
               <EntityAvatar label={principal.label} size="sm" />
+            ) : principal.type === 'agent' ? (
+              <EntityAvatar icon={RobotIcon} label={principal.label} size="sm" />
             ) : (
               <UserAvatar email={principal.label} size="sm" />
             ))}
@@ -1322,6 +1439,10 @@ function FixedPrincipals({ principals }: { principals: AccessDialogPrincipal[] }
           {principal.type === 'group' ? (
             <Badge variant="outline" size="sm">
               {tI18nComplete.raw('text34ca0e766088')}
+            </Badge>
+          ) : principal.type === 'agent' ? (
+            <Badge variant="outline" size="sm">
+              {tAgents('agentBadge')}
             </Badge>
           ) : null}
         </li>
@@ -1342,7 +1463,7 @@ function ScopeLine({
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <Icon className="text-muted-foreground/70 size-3.5 shrink-0" />
-      <span className="text-muted-foreground text-[11px] font-medium">{label}</span>
+      <span className="text-muted-foreground text-xs font-medium">{label}</span>
       {items.map((name) => (
         <Badge key={name} variant="outline" size="xs" className="font-mono">
           {name}
@@ -1371,12 +1492,12 @@ export function BlastRadiusPreview({
     <div className="border-border/60 bg-muted/30 space-y-2 rounded-md border p-3">
       <div className="flex items-center gap-1.5">
         <ArrowElbowDownRightIcon className="text-muted-foreground/70 size-3.5 shrink-0" />
-        <span className="text-foreground/80 text-xs font-medium">
+        <span className="text-foreground text-xs font-medium">
           {tI18nComplete.raw('text4fb37eec9d1d')}
         </span>
       </div>
       {nothingExtra ? (
-        <p className="text-muted-foreground text-[11px] leading-relaxed">
+        <p className="text-muted-foreground text-xs leading-relaxed">
           {tI18nComplete.raw('text7cbab07cd223')}
         </p>
       ) : (
@@ -1397,7 +1518,7 @@ export function BlastRadiusPreview({
               />
             ) : null}
           </div>
-          <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
+          <p className="text-muted-foreground text-xs leading-relaxed">
             {tI18nComplete.raw('text4b25aab8909e')}
           </p>
         </>

@@ -96,3 +96,28 @@ test('ApprovalLinkDetails exposes whether every action parameter is reviewable',
 
   expect(details.review_complete).toBe(true);
 });
+
+test('requestProjectConnector mints a shared-account link when the owner is the project', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      kind: 'connector',
+      url: 'https://app.local/connect/tok',
+      slug: 'github',
+      app: 'github',
+      expires_at: '2026-01-01',
+    },
+  };
+  // The public /connect/<token> page shows which account it creates, so the
+  // minting side has to be able to say. Unset still means the human's own.
+  await requestProjectConnector('P1', { slug: 'github', owner: 'project' });
+  expect(last().body).toEqual({
+    slug: 'github',
+    owner: 'project',
+    expires_in_minutes: undefined,
+  });
+
+  await requestProjectConnector('P1', { slug: 'github' });
+  expect(last().body).toEqual({ slug: 'github', expires_in_minutes: undefined });
+  expect(Object.keys(last().body as Record<string, unknown>)).not.toContain('owner');
+});

@@ -31,6 +31,24 @@ export interface UpstreamDescriptor {
   apiKey: string;
   /** Stable non-secret identifier for credentials that share one provider. */
   credentialRef?: string;
+  /** Set only for an explicitly selected account-secret pool member. */
+  poolSecretId?: string;
+  /**
+   * Provider failover. When the first candidate sets this, a failed dispatch
+   * (thrown error or non-2xx before any output) moves the same request to the
+   * next candidate that also sets it, in order. Kortix-managed models set it on
+   * the primary provider and its fallbacks. BYOK never sets it: a failed BYOK
+   * key must fail as BYOK.
+   */
+  failover?: boolean;
+  /**
+   * The provider name clients see instead of `provider`. When set, every
+   * client-visible surface — response bodies, SSE events, headers, error
+   * bodies, usage events, and request traces — names this provider and the
+   * routed model, never the upstream or its model id. Kortix-managed models
+   * set it to `kortix`.
+   */
+  publicProvider?: string;
   billingMode: BillingMode;
   markup: number;
   appName?: string;

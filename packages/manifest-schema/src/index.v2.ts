@@ -13,7 +13,8 @@
  * near the top of `index.ts`.
  *
  * Dependency direction: this file imports the small set of leaf helpers it
- * needs (`isTable`, `expectStringOrAbsent`, `validateGrantList`, the
+ * needs (`isTable`, `expectStringOrAbsent`, `validateGrantList`,
+ * `validateKortixPermissionFields`, the
  * `ManifestIssue` type) from `./index`, and every enum/regex from
  * `./constants`. `index.ts` in turn imports this file's v2 dispatch
  * functions (`validateRuntimeV2`, `validateAgentsV2`, `validateDefaultAgentV2`,
@@ -40,7 +41,7 @@ import {
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
-import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList } from './index';
+import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList, validateKortixPermissionFields } from './index';
 
 // ─── kortix_version 2 types ───────────────────────────────────────────────
 //
@@ -52,11 +53,13 @@ import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList } 
 /** Full OpenCode `AgentConfig.mode` parity — https://opencode.ai/config.json `$defs.AgentConfig`. */
 export type AgentModeV2 = 'primary' | 'subagent' | 'all';
 
-/** Kortix governance field — validated only in this phase; enforcement is Phase 4. */
+/** @deprecated Use AgentBlockV2.repository_access. Retained for existing manifests. */
 export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
 
-/** Session runtimes. `pi` boots the compiled pi worker (behind the project's
- *  `pi_worker` feature flag); anything else — including absence — keeps the
+/** Session runtimes — which agent harness a session boots inside its sandbox.
+ *  `pi` runs pi-agent-core in-process in the sandbox daemon (`KORTIX_HARNESS=pi`);
+ *  with the project's `pi_worker` feature flag it instead boots the split
+ *  worker/environment topology. Anything else — including absence — keeps the
  *  OpenCode path byte-for-byte. Reserved room for `claude` later. */
 export type RuntimeV2 = 'opencode' | 'pi';
 
@@ -141,7 +144,7 @@ export interface AgentBlockV2 {
   secrets?: GrantSetV2;
   /** Which of the project's `.kortix/opencode/skills/*` this agent may invoke —
    *  same grant-set shape as connectors/secrets (names | "all" | "none"), v2
-   *  deny-by-default when omitted. Unlike connectors/secrets/kortix_cli (pure
+   *  deny-by-default when omitted. Unlike connectors/secrets/kortix_permissions (pure
    *  Kortix governance with no runtime representation), `skills` DOES compile
    *  to something OpenCode understands: the runtime compiler
    *  (compile-agent-config.ts) maps it onto the agent's `permission.skill`, so
@@ -149,7 +152,25 @@ export interface AgentBlockV2 {
    *  something the author has to express by hand-writing glob rules in the
    *  agent's own frontmatter. */
   skills?: GrantSetV2;
+  /** Which of the project's Kortix Apps (by App slug) an agent-session
+   *  credential may open when the App's access mode is `restricted` or
+   *  `private` (spec 2026-09-22 §2.5). Same grant-set shape as connectors
+   *  (slugs | "all" | "none"), deny-by-default when omitted. A `project`-mode
+   *  App needs only `project.app.read` in `kortix_permissions`; a `public` App
+   *  admits everyone; a `password` App never admits a Kortix credential.
+   *  Enforced by the App gate only while the project's `agent_principal`
+   *  flag is on. The validator cannot see whether the project has Apps
+   *  enabled (a DB feature flag), so it checks shape only. */
+  apps?: GrantSetV2;
+  /** The project permissions (`project.*` IAM actions) this agent's session
+   *  token may exercise — intersected with the launcher's project role. */
+  kortix_permissions?: GrantSetV2;
+  /** @deprecated Input alias for `kortix_permissions` (the pre-rename key).
+   *  Accepted with a validation warning; must match when both are set. */
   kortix_cli?: GrantSetV2;
+  /** Whether new sessions receive repository access. Defaults to true. */
+  repository_access?: boolean;
+  /** @deprecated branch = true, runtime = false; read requires an explicit choice. */
   workspace?: WorkspaceModeV2;
 }
 
@@ -555,9 +576,18 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   // No fixed catalog to check entries against (skill names are project-defined,
   // like connectors) — same shape/validation, no `checkAction`.
   validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false, 2);
+  validateAppGrantList(entry.apps, `${where}.apps`, issues);
   // v2 clean break: a LEGACY_TOLERATED action is a hard error here, not a
   // warning (see `validateGrantList`'s doc comment).
-  validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true, 2);
+  validateKortixPermissionFields(entry, where, issues, 2);
+
+  if (entry.repository_access !== undefined && typeof entry.repository_access !== 'boolean') {
+    issues.push({ path: `${where}.repository_access`, message: 'must be a boolean.', severity: 'error' });
+  }
+  if (typeof entry.repository_access === 'boolean' && entry.workspace !== undefined &&
+      entry.repository_access !== (entry.workspace === 'branch')) {
+    issues.push({ path: `${where}.repository_access`, message: 'repository_access conflicts with workspace.', severity: 'error' });
+  }
 
   if (entry.workspace !== undefined) {
     const w = typeof entry.workspace === 'string' ? entry.workspace.trim() : '';
@@ -569,6 +599,25 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
       });
     }
   }
+}
+
+/** `agents.<name>.apps` — the grant-set shape rules, plus each entry must be
+ *  an App slug (or the `*` wildcard). App slugs are project-defined, so there
+ *  is no catalog to check membership against here. */
+function validateAppGrantList(value: unknown, where: string, issues: ManifestIssue[]): void {
+  const before = issues.length;
+  validateGrantList(value, where, 'apps', issues, false, 2);
+  if (issues.length !== before || !Array.isArray(value)) return;
+  value.forEach((item, k) => {
+    const slug = typeof item === 'string' ? item.trim() : '';
+    if (slug !== '*' && !SLUG_RE.test(slug)) {
+      issues.push({
+        path: `${where}[${k}]`,
+        message: `"${slug}" is not a valid App slug (lowercase letters, digits, dashes, underscores).`,
+        severity: 'error',
+      });
+    }
+  });
 }
 
 /** Result of scanning the v2 `agents:` map, for cross-validation by callers. */

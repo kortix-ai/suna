@@ -71,6 +71,21 @@ data "aws_secretsmanager_secret" "env" {
   name = "kortix-staging-env"
 }
 
+# ── Project snapshot object store (S3 config provider) ────────────────────────
+# Private bucket the API's leader worker publishes prebuilt project snapshots
+# to, and sandboxes read through short-lived presigned GETs. The name is
+# deterministic on purpose: the task names it through the non-secret
+# KORTIX_PROJECT_SNAPSHOT_S3_BUCKET / _S3_REGION overrides in the deploy
+# workflow (see .github/workflows/deploy-<env>.yml and
+# docs/runbooks/project-snapshot-s3.md#aws). Applying this creates the bucket
+# and the task-role grant only; naming it in the task env starts the producer;
+# KORTIX_PROJECT_SNAPSHOT_MODE / a project's metadata turns consumption on.
+module "project_snapshots" {
+  source = "../../modules/project-snapshots-bucket"
+  name   = "${local.name}-project-snapshots"
+  tags   = local.tags
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -89,10 +104,12 @@ module "api" {
   environment = merge(var.api_environment, {
     LLM_GATEWAY_PROXY_TARGET = "https://gateway-staging-ecs-fargate.kortix.com"
   })
-  secrets                 = var.api_secrets
-  secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
-  ses_send_region         = "us-east-2"
-  ses_send_identity_names = ["kortix.com", "kortix.ai"]
+  secrets                     = var.api_secrets
+  secrets_blob_arn            = data.aws_secretsmanager_secret.env.arn
+  ses_send_region             = "us-east-2"
+  ses_send_identity_names     = ["kortix.com", "kortix.ai"]
+  project_snapshots_enabled   = true
+  project_snapshot_bucket_arn = module.project_snapshots.bucket_arn
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
@@ -161,7 +178,7 @@ module "gateway" {
   # 2 GiB gives admission a 1 GiB budget (memory-budget.ts takes 50%), i.e.
   # ~341 MiB of concurrent wire bytes at the measured 3x amplification. The old
   # 512 MiB (dev) / 1 GiB (staging, prod) sat right on top of the size that
-  # OOM-killed the Essentia gateway on a single 28 MB request.
+  # OOM-killed the SampleCo gateway on a single 28 MB request.
   #
   # Capacity comes from REPLICAS, not from one big task: the gateway is
   # stateless and ALBRequestCountPerTarget already scales it. min_capacity is

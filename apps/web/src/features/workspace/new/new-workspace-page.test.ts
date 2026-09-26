@@ -101,9 +101,15 @@ describe('/new page: no invented constraints', () => {
 });
 
 describe('/new page: escape hatch for a user with zero workspaces', () => {
-  test('shows the create-into AccountPicker (email fallback) next to a Log out control, unconditionally rendered', () => {
-    expect(code).toContain('<AccountPicker');
-    expect(code).toContain('fallbackLabel={user?.email}');
+  test('a Back link to the project selector sits ahead of the form, and Log out beside it', () => {
+    // Log out alone was the only way off `/new` on the web; a user with an
+    // invalid form read it as "you cannot leave" (dev, 2026-09-17). The exit
+    // is a plain link to the project selector, rendered ahead of the <form> so
+    // it is reachable regardless of form state.
+    expect(code).toContain("t('actions.back')");
+    expect(code).toContain('href="/projects"');
+    const formIndex = code.indexOf('<form');
+    expect(code.indexOf("t('actions.back')")).toBeLessThan(formIndex);
     expect(code).toContain("t('actions.logOut')");
     // `performSignOut()`, not the old bare `void signOut()`. Spelled in full on
     // purpose: `signOut()` is a SUBSTRING of `performSignOut()`, so the previous
@@ -118,14 +124,45 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     expect(code).toContain(
       "const signOutLabel = signingOut ? t('actions.signingOut') : t('actions.logOut')",
     );
+  });
 
-    // Rendered ahead of the <form>, not gated behind form state — a user
-    // blocked by an invalid/incomplete form must still be able to leave.
+  test('the create-into account is a field IN the form, above the repository fields', () => {
+    // It decides where the project lands and which GitHub connections the
+    // Git account picker can offer, so it sits with them — not in the page's
+    // far corner, where a multi-account user missed it and was told nothing
+    // was connected (dev, 2026-09-17).
+    expect(code).toContain('<AccountPicker');
+    expect(code).toContain('fallbackLabel={user?.email}');
     const formIndex = code.indexOf('<form');
     const pickerIndex = code.indexOf('<AccountPicker');
-    expect(formIndex).toBeGreaterThan(0);
-    expect(pickerIndex).toBeGreaterThan(0);
-    expect(pickerIndex).toBeLessThan(formIndex);
+    const advancedIndex = code.indexOf('<AdvancedFields');
+    expect(pickerIndex).toBeGreaterThan(formIndex);
+    expect(pickerIndex).toBeLessThan(advancedIndex);
+  });
+
+  // The desktop shell has no browser toolbar. Without this control, Log out was
+  // the only way off `/new` there.
+  test('on desktop, a Close control after Log out returns to the project selector', () => {
+    const logOutAt = code.indexOf('{signOutLabel}');
+    const closeAt = code.indexOf('<DesktopCloseButton');
+    expect(logOutAt).toBeGreaterThan(0);
+    // Extreme right: rendered after Log out, in the same top row.
+    expect(closeAt).toBeGreaterThan(logOutAt);
+    expect(closeAt).toBeLessThan(code.indexOf('<AnimatePresence'));
+
+    const close = code.match(/<DesktopCloseButton[\s\S]*?\/>/)?.[0];
+    expect(close).toContain("router.replace('/projects')");
+    expect(code).toContain("from '@/components/desktop/desktop-close-button'");
+  });
+
+  test('the top row sits below the title-bar band on desktop', () => {
+    // The band holds the macOS traffic lights and the Win/Linux controls. The
+    // email used to sit directly under the lights.
+    const row = code.match(/<div className="[^"]*absolute inset-x-0 top-3[^"]*"/)?.[0];
+    expect(row).toBeDefined();
+    expect(row).toContain('kx-desktop-band-row');
+    // The old side indents and their gutter variable are gone.
+    expect(row).not.toContain('--kx-band-row-gutter');
   });
 });
 
@@ -314,17 +351,19 @@ describe('/new page: layout shape (design is a release gate here)', () => {
 });
 
 describe('/new page: AccountPicker wiring', () => {
-  test('renders AccountPicker in the top bar, wired to the CREATABLE accounts list and state.accountId', () => {
+  test('renders AccountPicker as a form field, wired to the CREATABLE accounts list and state.accountId', () => {
     const pickers = code.match(/<AccountPicker[\s\S]*?\/>/g) ?? [];
     expect(pickers).toHaveLength(1);
     const picker = pickers[0]!;
 
-    // Lives ahead of the form — top-bar escape / identity chrome, not a form
-    // field. Same filter + state wiring as before.
+    // Lives IN the form, above the repository fields — it decides where the
+    // project lands and which GitHub connections the Git account picker can
+    // offer (it moved out of the top bar on 2026-09-17, where a multi-account
+    // user missed it). Same filter + state wiring as before.
     const formIndex = code.indexOf('<form');
     const pickerIndex = code.indexOf('<AccountPicker');
-    expect(pickerIndex).toBeGreaterThan(0);
-    expect(pickerIndex).toBeLessThan(formIndex);
+    expect(pickerIndex).toBeGreaterThan(formIndex);
+    expect(pickerIndex).toBeLessThan(code.indexOf('<AdvancedFields'));
 
     // Review round 1, Important 3: `accounts` is ALWAYS the REAL
     // `creatableAccounts` list — the page used to hand AccountPicker a
@@ -443,7 +482,7 @@ describe('/new page: foreign-accounts-list state (B3)', () => {
 
 describe('/new page: exports', () => {
   test('exports NewWorkspacePage', () => {
-    expect(code).toContain('export function NewWorkspacePage()');
+    expect(code).toContain('export function NewWorkspacePage(');
   });
 });
 
@@ -483,8 +522,10 @@ describe('/new page: WorkspaceHandoff wiring', () => {
     expect(code).not.toContain('phase');
     expect(code).not.toContain('provision-progress');
     expect(code).not.toContain('provision-phases');
-    expect(code).toContain(
-      'const { create, status, error: createError, retry, canRetry } = useCreateWorkspace();',
+    // Multi-line since `limitReached` joined the destructure (2026-09-17);
+    // the pin is on WHICH names the page takes from the hook, not the wrap.
+    expect(code.replace(/\s+/g, ' ')).toContain(
+      'const { create, status, error: createError, retry, canRetry, limitReached, } = useCreateWorkspace();',
     );
   });
 

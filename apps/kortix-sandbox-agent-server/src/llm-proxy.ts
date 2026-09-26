@@ -128,7 +128,7 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
         // Model streams can run minutes. 0 = no idle timeout.
         idleTimeout: 0,
         // Bun's default body ceiling is 128 MiB. A vision-heavy turn can be
-        // larger than that BEFORE the window below shrinks it (Essentia
+        // larger than that BEFORE the window below shrinks it (SampleCo
         // 2026-08-25: 118 inline screenshots); the whole point of windowing
         // here is that such a body never reaches the network, so accept it.
         maxRequestBodySize: 2 * 1024 * 1024 * 1024,
@@ -150,6 +150,9 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
             if (!STRIP_REQ_HEADERS.has(k.toLowerCase())) headers.set(k, v)
           })
           headers.set('authorization', `Bearer ${tok}`)
+          // Bun fetch decodes the upstream body. Prevent a compressed response
+          // from retaining an incompatible content-encoding across this hop.
+          headers.set('accept-encoding', 'identity')
 
           try {
             // Model requests are windowed HERE, before they leave the sandbox
@@ -179,7 +182,8 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
             const outHeaders = new Headers()
             upstreamRes.headers.forEach((v, k) => {
               const lk = k.toLowerCase()
-              if (lk === 'transfer-encoding' || lk === 'connection') return
+              // fetch decompresses the body. Do not make the caller decode it again.
+              if (['transfer-encoding', 'connection', 'content-encoding', 'content-length'].includes(lk)) return
               outHeaders.set(k, v)
             })
             return new Response(upstreamRes.body, {

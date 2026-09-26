@@ -4,7 +4,7 @@ import { unwrap } from './shared';
 // ── Full v2 agent-config editor (the "agent builder", agent-first spec §2.2,
 // redirected 2026-07-05 — "one home per concern") ──
 // Round-trips the agent's TWO homes as one wire shape: `block` (governance —
-// connectors/secrets/skills/kortix_cli/workspace/enabled, written to
+// connectors/secrets/skills/kortix_permissions/repository_access/enabled, written to
 // kortix.yaml) and `block.opencode` (OpenCode BEHAVIOR — mode/model/
 // temperature/top_p/steps/variant/color/hidden/permission/prompt, written to
 // the agent's own native `.kortix/opencode/agents/<name>.md` frontmatter +
@@ -61,7 +61,18 @@ export interface AgentConfigBlock {
   connectors_personal?: string[];
   secrets?: AgentGrantSetV2;
   skills?: AgentGrantSetV2;
+  /** Kortix Apps (by App slug) this agent may open when the App is
+   *  `restricted` or `private`. Deny by default. A `project`-mode App needs
+   *  only `project.app.read` in `kortix_permissions`. */
+  apps?: AgentGrantSetV2;
+  /** Kortix permissions: the `project.*` actions this agent may exercise. */
+  kortix_permissions?: AgentGrantSetV2;
+  /** @deprecated Renamed to `kortix_permissions`. Servers accept it as an input
+   *  alias and answer with `kortix_permissions`. Removed in the next major. */
   kortix_cli?: AgentGrantSetV2;
+  /** Whether new sessions can access the project repository. Defaults to true. */
+  repository_access?: boolean;
+  /** @deprecated Use repository_access. Legacy read requires an explicit choice. */
   workspace?: 'runtime' | 'read' | 'branch';
   opencode?: OpencodeAgentConfig;
 }
@@ -86,7 +97,7 @@ export async function getAgentConfig(projectId: string, agentName: string) {
   );
   return {
     ...response,
-    block: response.block ? canonicalizeRequiredConnectors(response.block) : null,
+    block: response.block ? canonicalizeAgentBlock(response.block) : null,
   };
 }
 
@@ -95,7 +106,7 @@ export async function updateAgentConfig(
   agentName: string,
   block: AgentConfigBlock,
 ) {
-  const canonicalBlock = canonicalizeRequiredConnectors(block);
+  const canonicalBlock = canonicalizeAgentBlock(block, true);
   const response = unwrap(
     await backendApi.put<{
       ok: boolean;
@@ -106,8 +117,23 @@ export async function updateAgentConfig(
   );
   return {
     ...response,
-    block: response.block ? canonicalizeRequiredConnectors(response.block) : null,
+    block: response.block ? canonicalizeAgentBlock(response.block) : null,
   };
+}
+
+function canonicalizeAgentBlock(block: AgentConfigBlock, writing = false): AgentConfigBlock {
+  const next = canonicalizeRequiredConnectors(block);
+  if (next.workspace === undefined) return next;
+  const legacyAccess = next.workspace === 'branch';
+  if (next.repository_access !== undefined && next.repository_access !== legacyAccess) {
+    throw new Error('repository_access conflicts with workspace');
+  }
+  if (writing && next.workspace === 'read' && next.repository_access === undefined) {
+    throw new Error('Legacy read is unavailable. Set repository_access explicitly.');
+  }
+  next.repository_access ??= legacyAccess;
+  delete next.workspace;
+  return next;
 }
 
 function normalizeConnectorList(values: string[]): string[] {

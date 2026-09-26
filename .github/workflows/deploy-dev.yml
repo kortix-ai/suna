@@ -16,7 +16,8 @@ name: Deploy Dev
 #                   the dedicated kortix-dev-web ECS Fargate service at
 #                   dev.kortix.com. Vercel is disabled for main.
 #   - CLI         → 4 cross-compiled binaries published to the mutable
-#                   `dev-latest` GitHub prerelease (default API base dev-api).
+#                   `dev-latest` GitHub prerelease (default API base dev-api),
+#                   plus the 4 `kortix-tui` binaries `kortix tui` downloads.
 #
 # Desktop is intentionally NOT here — it's an Electron shell that changes
 # rarely and needs slow signed macOS/Windows runners, so it lives in its own
@@ -47,11 +48,6 @@ on:
           - changed   # only surfaces stale vs what dev currently runs (fast — the default)
           - all       # force-rebuild + redeploy every surface
           - frontend  # frontend only
-      enable_fast_cold_boot:
-        description: Enable staged fast cold boot (requires surface=all)
-        type: boolean
-        required: true
-        default: false
       allow_deletes:
         description: Permit reviewed Terraform deletes during a manual rollback
         type: boolean
@@ -94,11 +90,6 @@ jobs:
       apps_router: ${{ steps.outputs.outputs.apps_router }}
       terraform: ${{ steps.outputs.outputs.terraform }}
     steps:
-      - name: Validate fast cold boot activation
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && inputs.surface != 'all' }}
-        run: |
-          echo "::error::Activation requires surface=all so the API and sandbox runtime deploy together."
-          exit 1
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -182,6 +173,9 @@ jobs:
               - 'VERSION'
             cli:
               - 'apps/cli/**'
+              # `kortix tui` downloads kortix-tui from this same release, so the
+              # TUI binaries are built and published by the CLI job.
+              - 'apps/tui/**'
               - 'packages/starter/**'
               - 'scripts/install.sh'
               - 'pnpm-lock.yaml'
@@ -553,8 +547,48 @@ jobs:
       # is also the complete rollback. Keep the fast-boot flag false for the
       # first kpp2 rollout. Automatic pushes remain false. A deliberate manual
       # surface=all dispatch can enable it after the rollout gates pass.
+      #
+      # KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/REGION name the bucket Terraform owns
+      # in infra/terraform/environments/dev (module.project_snapshots; the task
+      # role's grant comes with it). Naming the bucket turns on the PRODUCER
+      # (the leader worker prepares snapshots). Removing the two keys (or an
+      # unapplied Terraform) leaves the API on the Git path: the config
+      # validates the bucket as optional and the worker idles.
+      # docs/runbooks/project-snapshot-s3.md#aws
+      #
+      # KORTIX_PROJECT_SNAPSHOT_MODE=prefer-s3 makes S3 the default for every
+      # dev project. A fresh session boots from the prepared archive for its
+      # base SHA. It boots from Git when the session is not fresh, when no
+      # archive is ready for that SHA yet (that session queues the build), or
+      # when the S3 download fails (up to 3 attempts inside 45 s). The only
+      # failures that do not fall back are `denied` (the API refused the
+      # sandbox token, which Git would also refuse) and `cancelled`. A project's
+      # metadata.project_snapshot_mode overrides this value. Rollback: "git".
+      #
+      # KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE presigns sandbox downloads for
+      # <bucket>.s3-accelerate.amazonaws.com (transfer_acceleration = true on
+      # the bucket module in infra/terraform/environments/dev keeps the endpoint
+      # active). Measured OFF on 2026-09-16 (PR #7303): the accelerated endpoint
+      # made the daemon's boot-time download close short on 14 of 20 Platinum
+      # boots (0 of 30 plain), and each retry cost more than the ~300 ms the
+      # clean accelerated download saved. Re-enable only after the daemon
+      # resumes a short body in place (PR #7399).
+      #
+      # KORTIX_CONFIG_ARCHIVE_S3_* points the API's ONE object store
+      # (apps/api/src/object-store/s3.ts) at the SAME bucket for config release
+      # archives, under the `config-releases/` prefix
+      # (KORTIX_CONFIG_ARCHIVE_S3_PREFIX, default). Own keys, not the snapshot
+      # ones, so naming a config bucket never starts the snapshot producer.
+      # Credentials: the task role, which already holds PutObject/GetObject on
+      # the objects and ListBucket on the bucket.
+      # KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT=0 hands retention to the
+      # bucket's lifecycle rule (expiration_days = 30 in
+      # infra/terraform/modules/project-snapshots-bucket): that role has NO
+      # s3:DeleteObject, and expiry is safe because the archive is a cache the
+      # API rebuilds from its Git mirror.
+      # docs/specs/config-releases.md#store
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_FAST_COLD_BOOT_ENABLED":"${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && 'true' || 'false' }}","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2"}
+        {"CONFIG_RELEASES_ENABLED":"true","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -1062,9 +1096,29 @@ jobs:
               --outfile="artifacts/kortix-$t" \
               apps/cli/src/index.ts
           done
+          # The TUI is NOT in the `kortix` binary — `kortix tui` downloads
+          # kortix-tui from this same release on first use
+          # (apps/cli/src/tui-bin.ts). Same targets, same version string, so the
+          # launcher's <version> lookup always finds its match.
+          # OPENTUI_LIBC is baked so a Linux target embeds one libc variant
+          # instead of both (-6.3 MB on linux-x64); see apps/tui/bundle/_build.sh.
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            echo "↻ building kortix-tui-$t (cli $CLI_VERSION)"
+            bun build \
+              --compile \
+              --minify \
+              --target="bun-$t" \
+              --define="process.env.OPENTUI_LIBC=\"glibc\"" \
+              --outfile="artifacts/kortix-tui-$t" \
+              apps/tui/src/index.tsx
+          done
           cd artifacts
           chmod +x kortix-*
           sha256sum kortix-* > SHA256SUMS
+          # One `.sha256` beside each TUI asset: the launcher verifies the
+          # download against it before the file becomes executable, and fetching
+          # 100 bytes beats fetching the whole SHA256SUMS list.
+          for f in kortix-tui-*; do sha256sum "$f" > "$f.sha256"; done
           ls -lh
 
       - name: Smoke test (native linux-x64)
@@ -1079,6 +1133,14 @@ jobs:
             artifacts/kortix-darwin-x64
             artifacts/kortix-linux-x64
             artifacts/kortix-linux-arm64
+            artifacts/kortix-tui-darwin-arm64
+            artifacts/kortix-tui-darwin-x64
+            artifacts/kortix-tui-linux-x64
+            artifacts/kortix-tui-linux-arm64
+            artifacts/kortix-tui-darwin-arm64.sha256
+            artifacts/kortix-tui-darwin-x64.sha256
+            artifacts/kortix-tui-linux-x64.sha256
+            artifacts/kortix-tui-linux-arm64.sha256
             artifacts/SHA256SUMS
           if-no-files-found: error
 

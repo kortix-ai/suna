@@ -2,11 +2,12 @@ import type { Database } from '@kortix/db';
 import { config } from '../config';
 import { DEFAULT_AUDIT_POOL_MAX } from './database-capacity';
 import { db } from './db';
+import { errorSqlstate } from './error-cause';
 
 /**
  * The dedicated audit-write pool.
  *
- * Why a SEPARATE pool (prod incident, Essentia box 2026-08-21): every audit
+ * Why a SEPARATE pool (prod incident, SampleCo box 2026-08-21): every audit
  * insert serializes through a per-session `FOR UPDATE` row lock in the
  * `audit_prepare_event` trigger; under a burst those inserts convoy for 4-24s
  * each. On the SHARED `db` pool that pinned connections the gateway's auth query
@@ -17,7 +18,7 @@ import { db } from './db';
  * The shorter statement_timeout caps how long a blocked audit insert holds its
  * backend, so this pool self-drains every ~10s instead of riding the main 25s.
  *
- * `lock_timeout` (Essentia 2026-08-26): isolation alone did NOT stop the
+ * `lock_timeout` (SampleCo 2026-08-26): isolation alone did NOT stop the
  * convoy. Every audit row takes a per-session row lock in `audit_prepare_event`
  * that is held to COMMIT, so a blocked insert used to sit on one of only
  * DEFAULT_AUDIT_POOL_MAX (2) backends for the full 10s statement_timeout and
@@ -89,7 +90,7 @@ export function auditDb(): Database {
  * `audit_prepare_event` serializes every row of a session behind one
  * `audit_session_sequences` row lock held to COMMIT, so a burst on one session
  * turns into a lock queue. On the audit pool that queue surfaces as 57014
- * (statement_timeout, the Essentia signature: 445 x 500 in 3h, each at ~10s)
+ * (statement_timeout, the SampleCo signature: 445 x 500 in 3h, each at ~10s)
  * or — since `lock_timeout` was added — 55P03 at ~2.5s. Callers must report
  * these as retryable backpressure, never as a 500: a 500 makes the sandbox
  * relay retry a batch that has already been rejected, which feeds the convoy
@@ -100,12 +101,76 @@ const AUDIT_CONTENTION_SQLSTATES = new Set([
   '55P03', // lock_not_available — lock_timeout fired
   '40001', // serialization_failure
   '40P01', // deadlock_detected
+  // ── The database went away, which is also not "this write is wrong". ──
+  //
+  // A restart, failover or connection recycle is the single largest source of
+  // audit write failures in production: `PostgresError: the database system is
+  // shutting down`, 21,102 exceptions across 244 users since 2026-07-04, of
+  // which 19,193 landed on ONE day (2026-08-14) and 142 in a 90-second window
+  // on 2026-09-09. Each one threw, answered 500, and dropped the batch — and a
+  // 500 is precisely what makes the sandbox relay re-send a batch on its flat
+  // retry, which is how the convoy re-forms after every restart.
+  //
+  // Retrying is the correct client behaviour for all of these: the batch is
+  // still in the relay's spool and the database is coming back. Answering 503
+  // with `Retry-After` says exactly that. Only errors that describe the DATA
+  // (a constraint, a bad value, a type) stay 500 — those must keep paging,
+  // because retrying them can never work.
+  '57P01', // admin_shutdown — "terminating connection due to administrator command"
+  '57P02', // crash_shutdown
+  '57P03', // cannot_connect_now — "the database system is shutting down/starting up"
+  '08000', // connection_exception
+  '08003', // connection_does_not_exist
+  '08006', // connection_failure — includes CONNECTION_CLOSED / ECONNREFUSED
+  '53300', // too_many_connections
 ]);
+
+/**
+ * Connection-class failures do not always carry a SQLSTATE.
+ *
+ * `postgres.js` raises `CONNECTION_CLOSED` / `CONNECTION_ENDED` and Node raises
+ * `ECONNREFUSED` / `ECONNRESET` as `code` values that are not SQLSTATEs at all,
+ * and prod carries all of them (`connect ECONNREFUSED 3.11.30.79:5432`, `write
+ * CONNECTION_CLOSED db.…supabase.co:5432`). They mean the same thing as 08006
+ * and must be retryable for the same reason.
+ */
+const AUDIT_TRANSIENT_DRIVER_CODES = new Set([
+  'CONNECTION_CLOSED',
+  'CONNECTION_ENDED',
+  'CONNECTION_DESTROYED',
+  'CONNECTION_CONNECT_TIMEOUT',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EPIPE',
+  'ETIMEDOUT',
+]);
+
+/**
+ * The SQLSTATE behind a Drizzle write failure, or null.
+ *
+ * `DrizzleQueryError` prints the statement and its parameters and nothing else;
+ * the pg error — where `code` lives — is its `cause`, one or more levels down.
+ * A prod log that says only "Failed query: insert into audit_events …" cannot
+ * be triaged: a unique violation, a statement timeout, a dead connection and a
+ * NUL byte in jsonb all look identical. Mirrors `isAuditContentionError`'s walk
+ * so the two always agree about which error they are describing.
+ */
+/**
+ * Kept as the audit-facing name; the walk itself lives in `error-cause` so the
+ * database-free `audit-queue` can use the same rule without importing this
+ * module (it pulls in `./db`, and the queue's tests depend on not doing that).
+ */
+export function auditErrorSqlstate(error: unknown): string | null {
+  return errorSqlstate(error);
+}
 
 export function isAuditContentionError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const code = (error as { code?: unknown }).code;
-  if (typeof code === 'string' && AUDIT_CONTENTION_SQLSTATES.has(code)) return true;
+  if (typeof code === 'string') {
+    if (AUDIT_CONTENTION_SQLSTATES.has(code)) return true;
+    if (AUDIT_TRANSIENT_DRIVER_CODES.has(code)) return true;
+  }
   const cause = (error as { cause?: unknown }).cause;
   return cause != null && cause !== error ? isAuditContentionError(cause) : false;
 }

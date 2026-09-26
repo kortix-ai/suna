@@ -24,8 +24,18 @@
  *    fail an entire batch.
  */
 import { type Database, auditEvents } from '@kortix/db';
+import { withAuditSessionLock } from './audit-session-serial';
+import { errorSqlstate, innermostMessage } from './error-cause';
 
 export type AuditRow = typeof auditEvents.$inferInsert;
+
+/**
+ * How the queue serializes one session's statements against the other
+ * in-process audit writer (the sandbox ingest route). Defaults to the shared
+ * per-session lock; injectable so a test can observe the grouping without the
+ * real mutex. See `audit-session-serial.ts` for why this exists.
+ */
+export type AuditSessionSerializer = (sessionId: string, fn: () => Promise<void>) => Promise<void>;
 
 /** The minimum surface the queue needs from Drizzle — keeps tests db-free. */
 export type AuditInsertClient = Pick<Database, 'insert'>;
@@ -42,10 +52,12 @@ export interface AuditQueueOptions {
   now?: () => number;
   onError?: (error: unknown, rowCount: number) => void;
   onDrop?: (droppedTotal: number, sinceLastLog: number) => void;
+  /** Serializes one session's statement against the in-process ingest writer. */
+  serialize?: AuditSessionSerializer;
 }
 
 export const AUDIT_FLUSH_MS_DEFAULT = 250;
-// 100, lowered from 500 (Essentia convoy fix): each row's BEFORE INSERT trigger
+// 100, lowered from 500 (SampleCo convoy fix): each row's BEFORE INSERT trigger
 // takes a per-session FOR UPDATE lock held to the batch's COMMIT, so a large
 // batch holds every touched session's lock for the whole commit and cross-blocks
 // the other replica. Smaller batches commit sooner. Tunable via KORTIX_AUDIT_FLUSH_MAX.
@@ -71,7 +83,7 @@ export interface AuditQueueStats {
 /**
  * Split one flush snapshot into the statements that will actually run.
  *
- * ONE STATEMENT NEVER SPANS TWO SESSIONS (Essentia convoy, 2026-08-26).
+ * ONE STATEMENT NEVER SPANS TWO SESSIONS (SampleCo convoy, 2026-08-26).
  * `kortix.audit_prepare_event` takes a per-session row lock on
  * `kortix.audit_session_sequences` for every row, and PostgreSQL holds a row
  * lock until COMMIT. A 100-row statement built in arrival order therefore held
@@ -104,6 +116,36 @@ export function statementBatches(rows: AuditRow[], max: number): AuditRow[][] {
   return batches;
 }
 
+/**
+ * What actually went wrong, in one bounded line.
+ *
+ * Passing the error object straight to `console.error` printed a
+ * `DrizzleQueryError`, whose `.message` is the entire generated statement —
+ * 48 column names, 44 placeholders — followed by `params:` and every bound
+ * value. The SQLSTATE that says WHY is not in there at all; it lives on
+ * `.cause` (see the audit-db learning: a wrapper error hides its cause, so
+ * never read `.message`). Prod dropped ~600 audit events over 48 hours and no
+ * line in the log could tell anyone which failure it was.
+ *
+ * Two problems, one fix. The bound values are audit payloads: IP addresses,
+ * user agents, account and project ids. They do not belong in an error log at
+ * all, and they were the reason each of these lines ran to several kilobytes.
+ *
+ * So: the SQLSTATE first, then the innermost cause's own message, truncated.
+ * No statement text, no parameters.
+ */
+export function describeAuditWriteFailure(error: unknown): string {
+  const sqlstate = errorSqlstate(error);
+  const detail = innermostMessage(error) ?? 'no error message available';
+  const trimmed =
+    detail.length > AUDIT_FAILURE_DETAIL_MAX
+      ? `${detail.slice(0, AUDIT_FAILURE_DETAIL_MAX)}…`
+      : detail;
+  return sqlstate ? `sqlstate=${sqlstate} ${trimmed}` : trimmed;
+}
+
+const AUDIT_FAILURE_DETAIL_MAX = 300;
+
 export class AuditQueue {
   private readonly rows: AuditRow[] = [];
   private readonly flushMs: number;
@@ -113,6 +155,7 @@ export class AuditQueue {
   private readonly now: () => number;
   private readonly onError: (error: unknown, rowCount: number) => void;
   private readonly onDrop: (droppedTotal: number, sinceLastLog: number) => void;
+  private readonly serialize: AuditSessionSerializer;
 
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inFlight: Promise<void> | null = null;
@@ -139,8 +182,8 @@ export class AuditQueue {
       options.onError ??
       ((error, rowCount) => {
         console.error(
-          `[audit] Dropped a batch of ${rowCount} events after a write failure:`,
-          error,
+          `[audit] Dropped a batch of ${rowCount} events after a write failure: ` +
+            describeAuditWriteFailure(error),
         );
       });
     this.onDrop =
@@ -150,6 +193,10 @@ export class AuditQueue {
           `[audit] Queue full — dropped ${sinceLastLog} oldest events (${droppedTotal} total). Audit writes are falling behind; raise KORTIX_AUDIT_QUEUE_MAX or investigate database latency.`,
         );
       });
+    // Off the request path: wait for our turn without a timeout. The wait is in
+    // memory, so `lock_timeout` cannot drop the batch the way it did when this
+    // row raced the sandbox ingest for the same session's sequence row lock.
+    this.serialize = options.serialize ?? ((sessionId, fn) => withAuditSessionLock(sessionId, fn));
   }
 
   /**
@@ -228,8 +275,16 @@ export class AuditQueue {
   private async write(snapshot: AuditRow[]): Promise<void> {
     for (const batch of statementBatches(snapshot, this.flushMax)) {
       this.flushes += 1;
-      try {
+      // `statementBatches` guarantees one session per statement, so the first
+      // row names the sequence row lock this insert will take. Session-less
+      // rows take no such lock, so they are written directly.
+      const sessionId = batch[0]?.sessionId ?? null;
+      const insert = async (): Promise<void> => {
         await this.client.insert(auditEvents).values(batch).onConflictDoNothing();
+      };
+      try {
+        if (sessionId) await this.serialize(sessionId, insert);
+        else await insert();
         this.written += batch.length;
       } catch (error) {
         // Re-queuing would amplify whatever stalled the database, and the audit

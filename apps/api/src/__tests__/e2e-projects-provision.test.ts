@@ -194,7 +194,6 @@ mock.module('../projects/git', () => ({
 mock.module("../snapshots/builder", () => ({
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  ensureFastSandboxImage: async () => ({ snapshotName: "kortix-fast-test", slug: "default", contentHash: "f".repeat(64), built: false, isDefault: true, runtimeProfile: "fast" }),
   ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
@@ -359,7 +358,7 @@ mock.module('../shared/db', () => ({
           if (table === projects) updatedProjectSets.push(values);
           // Real drizzle's UPDATE builder is thenable at every chain step
           // (a caller may `.catch()` it directly without `.returning()` —
-          // see r1.ts's best-effort default_agent metadata mirror write, and
+          // see projects.ts's best-effort default_agent metadata mirror write, and
           // the several other `.where(...).catch(() => {})` call sites this
           // mirrors), so this stub must be too: a real Promise (which
           // supplies `.then`/`.catch`) that ALSO exposes `.returning()` for

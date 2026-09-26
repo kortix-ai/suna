@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
-import { ensureInjectedManagedSkills } from '../injected-skills'
+import { ensureInjectedManagedSkills } from '../managed-skills'
 
 const execFileAsync = promisify(execFile)
 

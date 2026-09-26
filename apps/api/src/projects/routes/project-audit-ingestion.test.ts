@@ -183,7 +183,7 @@ describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
 /**
  * The relay's default batch size is this route's own ceiling
  * (`MAX_RELAY_BATCH_SIZE` in
- * apps/kortix-sandbox-agent-server/src/opencode-audit-relay.ts). Pin both ends
+ * apps/kortix-sandbox-agent-server/src/harness/open-code/opencode-audit-relay.ts). Pin both ends
  * of the boundary so raising one without the other cannot ship a 400 into the
  * emission hot path.
  */
@@ -320,7 +320,7 @@ describe('per-session ingest ceiling', () => {
 });
 
 /**
- * The Essentia convoy (2026-08-26): `kortix.audit_prepare_event` locks this
+ * The SampleCo convoy (2026-08-26): `kortix.audit_prepare_event` locks this
  * session's `audit_session_sequences` row for every row inserted, and
  * PostgreSQL holds that lock until COMMIT. One 200-row statement therefore
  * pinned the session for its whole duration, and a rollback threw away all 200
@@ -379,7 +379,7 @@ describe('audit ingest contention', () => {
 
   test('lock contention is a retryable 503, never a 500, and keeps committed rows', async () => {
     // postgres.js surfaces statement_timeout while queued on a row lock as
-    // SQLSTATE 57014 — the exact code Essentia returned 445 times in 3h.
+    // SQLSTATE 57014 — the exact code SampleCo returned 445 times in 3h.
     failStatementAt = {
       index: 1,
       error: Object.assign(new Error('canceling statement due to statement timeout'), {

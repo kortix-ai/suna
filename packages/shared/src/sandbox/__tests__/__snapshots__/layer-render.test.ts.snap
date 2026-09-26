@@ -17,12 +17,14 @@ USER root
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \\
+        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \\
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\
         texlive-latex-extra texlive-latex-recommended \\
-    && rm -rf /var/lib/apt/lists/*
+        bat bc fd-find file fzf git-lfs htop iputils-ping jq less lsof moreutils nano netcat-openbsd openssh-client patch procps ripgrep rsync sqlite3 tree unzip wget xz-utils zip zstd \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && (command -v fd >/dev/null || ln -s "$(command -v fdfind)" /usr/local/bin/fd) && (command -v bat >/dev/null || ln -s "$(command -v batcat)" /usr/local/bin/bat) && rg --version >/dev/null && fd --version >/dev/null && bat --version >/dev/null && jq --version >/dev/null && fzf --version >/dev/null
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \\
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\
@@ -175,7 +177,29 @@ RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
     && kortix --version \\
+    && chown kortix:kortix /usr/local/bin /usr/local/bin/kortix \\
+    && mkdir -p /home/kortix/.config/opencode && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \\
     && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
+
+RUN { \\
+      echo '# Kortix sandbox shell hook. Written by the Kortix runtime layer. Do not edit.'; \\
+      echo '# Debian resets PATH in /etc/profile for login shells: restore the Kortix tool dirs.'; \\
+      echo 'kortix_path_prefix='; \\
+      echo 'for kortix_path_dir in /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin; do'; \\
+      echo '  case ":\${PATH-}:" in'; \\
+      echo '    *":\${kortix_path_dir}:"*) ;;'; \\
+      echo '    *) kortix_path_prefix="\${kortix_path_prefix}\${kortix_path_dir}:" ;;'; \\
+      echo '  esac'; \\
+      echo 'done'; \\
+      echo 'if [ -n "\${PATH-}" ]; then PATH="\${kortix_path_prefix}\${PATH}"; else PATH="\${kortix_path_prefix%:}"; fi'; \\
+      echo 'export PATH'; \\
+      echo 'unset kortix_path_prefix kortix_path_dir'; \\
+      echo '# Live project secrets, written by the kortix-agent daemon on tmpfs.'; \\
+      echo 'if [ -r /dev/shm/kortix/agent-env.sh ]; then . /dev/shm/kortix/agent-env.sh; fi'; \\
+    } > /etc/profile.d/zz-kortix.sh \\
+    && chmod 0644 /etc/profile.d/zz-kortix.sh \\
+    && { grep -qxF 'if [ -r /etc/profile.d/zz-kortix.sh ]; then . /etc/profile.d/zz-kortix.sh; fi' /etc/bash.bashrc 2>/dev/null \\
+         || echo 'if [ -r /etc/profile.d/zz-kortix.sh ]; then . /etc/profile.d/zz-kortix.sh; fi' >> /etc/bash.bashrc; }
 
 ENV KORTIX_WORKSPACE=/workspace
 USER kortix
@@ -201,12 +225,14 @@ USER root
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \\
+        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \\
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\
         texlive-latex-extra texlive-latex-recommended \\
-    && rm -rf /var/lib/apt/lists/*
+        bat bc fd-find file fzf git-lfs htop iputils-ping jq less lsof moreutils nano netcat-openbsd openssh-client patch procps ripgrep rsync sqlite3 tree unzip wget xz-utils zip zstd \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && (command -v fd >/dev/null || ln -s "$(command -v fdfind)" /usr/local/bin/fd) && (command -v bat >/dev/null || ln -s "$(command -v batcat)" /usr/local/bin/bat) && rg --version >/dev/null && fd --version >/dev/null && bat --version >/dev/null && jq --version >/dev/null && fzf --version >/dev/null
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \\
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\
@@ -359,7 +385,29 @@ RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
     && kortix --version \\
+    && chown kortix:kortix /usr/local/bin /usr/local/bin/kortix \\
+    && mkdir -p /home/kortix/.config/opencode && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \\
     && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
+
+RUN { \\
+      echo '# Kortix sandbox shell hook. Written by the Kortix runtime layer. Do not edit.'; \\
+      echo '# Debian resets PATH in /etc/profile for login shells: restore the Kortix tool dirs.'; \\
+      echo 'kortix_path_prefix='; \\
+      echo 'for kortix_path_dir in /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin; do'; \\
+      echo '  case ":\${PATH-}:" in'; \\
+      echo '    *":\${kortix_path_dir}:"*) ;;'; \\
+      echo '    *) kortix_path_prefix="\${kortix_path_prefix}\${kortix_path_dir}:" ;;'; \\
+      echo '  esac'; \\
+      echo 'done'; \\
+      echo 'if [ -n "\${PATH-}" ]; then PATH="\${kortix_path_prefix}\${PATH}"; else PATH="\${kortix_path_prefix%:}"; fi'; \\
+      echo 'export PATH'; \\
+      echo 'unset kortix_path_prefix kortix_path_dir'; \\
+      echo '# Live project secrets, written by the kortix-agent daemon on tmpfs.'; \\
+      echo 'if [ -r /dev/shm/kortix/agent-env.sh ]; then . /dev/shm/kortix/agent-env.sh; fi'; \\
+    } > /etc/profile.d/zz-kortix.sh \\
+    && chmod 0644 /etc/profile.d/zz-kortix.sh \\
+    && { grep -qxF 'if [ -r /etc/profile.d/zz-kortix.sh ]; then . /etc/profile.d/zz-kortix.sh; fi' /etc/bash.bashrc 2>/dev/null \\
+         || echo 'if [ -r /etc/profile.d/zz-kortix.sh ]; then . /etc/profile.d/zz-kortix.sh; fi' >> /etc/bash.bashrc; }
 
 ENV KORTIX_WORKSPACE=/workspace
 USER kortix

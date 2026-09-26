@@ -251,7 +251,6 @@ export function ToolsStep({
               provider: selectedApp.provider,
               connectorName: connection.name,
               connectorSlug: connection.slug,
-              authorizationStrategy: connection.authorizationStrategy,
             },
             { onSuccess: () => setSelectedApp(null) },
           );

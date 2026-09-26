@@ -1,14 +1,28 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  hasOrExpectsTranscript,
   isNewSessionSurface,
   resolveBootPresentation,
+  resolveResumeOverlay,
   resolveSessionOverlay,
   shouldForgetNewSessionHint,
   shouldMountSessionChat,
 } from './session-surface';
 
 describe('isNewSessionSurface', () => {
+  test('a durable first prompt restores the shell after reload without a local hint', () => {
+    const restored = { newSessionHint: false, hasTranscript: false, hasPendingFirstPrompt: true };
+    expect(isNewSessionSurface(restored)).toBe(true);
+    expect(resolveSessionOverlay({ ...restored, shellShowsFirstPrompt: false })).toBe(
+      'new-session-shell',
+    );
+    expect(shouldMountSessionChat({ ...restored, contentAvailable: true, submitted: false })).toBe(
+      true,
+    );
+    expect(isNewSessionSurface({ ...restored, hasTranscript: true })).toBe(false);
+  });
+
   test('a session this tab just created has no transcript and gets the shell', () => {
     expect(isNewSessionSurface({ newSessionHint: true, hasTranscript: false })).toBe(true);
   });
@@ -190,5 +204,37 @@ describe('resolveBootPresentation', () => {
         'full-screen',
       );
     }
+  });
+});
+
+describe('resolveResumeOverlay', () => {
+  test('a saved conversation on its way gets skeleton rows, not the boot screen', () => {
+    expect(resolveResumeOverlay({ savedTranscript: 'loading' })).toBe('saved-skeleton');
+  });
+
+  test('the overlay a painted conversation fades out of stays the skeleton', () => {
+    // The overlay dissolves over the conversation for 300 ms. Swapping it to
+    // the boot screen for that fade would flash the wrong surface.
+    expect(resolveResumeOverlay({ savedTranscript: 'shown' })).toBe('saved-skeleton');
+  });
+
+  test('a session with nothing saved keeps the boot screen', () => {
+    expect(resolveResumeOverlay({ savedTranscript: 'none' })).toBe('boot-loader');
+  });
+});
+
+describe('hasOrExpectsTranscript', () => {
+  test('a saved copy on its way counts, so a stopped box does not replace it with a card', () => {
+    expect(hasOrExpectsTranscript({ hasTranscript: false, savedTranscript: 'loading' })).toBe(true);
+    expect(hasOrExpectsTranscript({ hasTranscript: true, savedTranscript: 'shown' })).toBe(true);
+  });
+
+  test('nothing saved and nothing on screen does not', () => {
+    expect(hasOrExpectsTranscript({ hasTranscript: false, savedTranscript: 'none' })).toBe(false);
+    expect(hasOrExpectsTranscript({ hasTranscript: false, savedTranscript: 'shown' })).toBe(false);
+  });
+
+  test('a transcript on screen always counts', () => {
+    expect(hasOrExpectsTranscript({ hasTranscript: true, savedTranscript: 'none' })).toBe(true);
   });
 });

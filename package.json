@@ -2,7 +2,7 @@
   "name": "kortix",
   "private": true,
   "scripts": {
-    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true; sh scripts/register-merge-drivers.sh 2>/dev/null || true",
     "secrets:check": "bash scripts/check-env-encrypted.sh",
     "dev": "bash scripts/dev-local.sh",
     "preview": "bash scripts/dev-local.sh --build",
@@ -26,6 +26,8 @@
     "build": "pnpm -r run build",
     "cli:bundle": "pnpm --filter @kortix/cli bundle",
     "cli:bundle:all": "pnpm --filter @kortix/cli bundle:all",
+    "tui:bundle": "pnpm --filter @kortix/tui bundle",
+    "tui:bundle:all": "pnpm --filter @kortix/tui bundle:all",
     "nuke": "bash scripts/nuke-local.sh",
     "nuke:start": "bash scripts/nuke-local.sh --start",
     "stripe:listen": "stripe listen --api-key \"$(dotenvx get STRIPE_SECRET_KEY -f apps/api/.env)\" --forward-to http://localhost:8008/v1/billing/webhooks/stripe",
@@ -110,14 +112,14 @@
     },
     "patchedDependencies": {
       "e2b@2.37.0": "patches/e2b@2.37.0.patch",
-      "blume@1.5.3": "patches/blume@1.5.3.patch"
+      "blume@1.5.3": "patches/blume@1.5.3.patch",
+      "shaders@2.5.135": "patches/shaders@2.5.135.patch"
     }
   },
   "version": "1.0.0",
   "description": "<div align=\"center\">",
   "main": "index.js",
   "directories": {
-    "doc": "docs",
     "test": "tests"
   },
   "dependencies": {

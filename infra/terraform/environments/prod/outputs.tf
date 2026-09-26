@@ -25,3 +25,8 @@ output "extra_api_hostnames" {
   description = "Unlocked public API hostnames pointing at the new ALB."
   value       = var.extra_api_hostnames
 }
+
+output "project_snapshot_bucket" {
+  description = "Value for KORTIX_PROJECT_SNAPSHOT_S3_BUCKET in this environment's non-secret task env overrides."
+  value       = module.project_snapshots.bucket_name
+}

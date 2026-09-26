@@ -7,11 +7,61 @@ import {
   type LinkableGitHubInstallationsResponse,
   linkGitHubInstallation,
   linkRepository,
+  replaceProjectRepository,
   listGitHubRepositories,
   listGitHubRepositoryBranches,
   listLinkableGitHubInstallations,
   saveGitHubInstallation,
 } from './github';
+
+test('replaces one project repository with a credential and an expected old URL', async () => {
+  let url = '';
+  let method = '';
+  let body: unknown;
+  globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+    url = String(input instanceof Request ? input.url : input);
+    method = init?.method ?? '';
+    body = JSON.parse(String(init?.body));
+    return Response.json({ project: { project_id: 'proj-1', repo_url: 'https://github.com/acme/new.git' }, git_connection: null });
+  }) as unknown as typeof fetch;
+
+  const result = await replaceProjectRepository({
+    project_id: 'proj-1',
+    repo_url: 'https://github.com/acme/new.git',
+    expected_repo_url: 'https://github.com/acme/old.git',
+    github_token: 'repo-scoped-token',
+  });
+
+  expect(url).toEndWith('/projects/proj-1/git/repository');
+  expect(method).toBe('PUT');
+  expect(body).toEqual({
+    repo_url: 'https://github.com/acme/new.git',
+    expected_repo_url: 'https://github.com/acme/old.git',
+    github_token: 'repo-scoped-token',
+  });
+  expect(result.project.repo_url).toBe('https://github.com/acme/new.git');
+});
+
+test('sends a repository-scoped App grant and shared secret copy without a stored PAT', async () => {
+  let body: any;
+  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    body = JSON.parse(String(init?.body));
+    return Response.json({ project: { project_id: 'proj-1' }, git_connection: null });
+  }) as unknown as typeof fetch;
+  await replaceProjectRepository({
+    project_id: 'proj-1', repo_url: 'https://github.com/acme/new.git',
+    expected_repo_url: 'https://github.com/acme/old.git',
+    installation_id: '123', github_user_token: 'temporary-user-token',
+    copy_shared_secrets_from_project_id: 'source-1',
+    copy_shared_secret_identifiers: ['TS_AUTHKEY'],
+  });
+  expect(body).toMatchObject({
+    installation_id: '123', github_user_token: 'temporary-user-token',
+    copy_shared_secrets_from_project_id: 'source-1',
+    copy_shared_secret_identifiers: ['TS_AUTHKEY'],
+  });
+  expect(body.github_token).toBeUndefined();
+});
 
 let calls: string[] = [];
 
@@ -135,6 +185,7 @@ test('lists only linkable GitHub App installations through the authenticated API
           permissions: { contents: 'write' },
           installation_url: 'https://github.com/settings/installations/84',
           linked: false,
+          linked_to_other_accounts: 2,
         },
       ],
     } satisfies LinkableGitHubInstallationsResponse);
@@ -151,6 +202,9 @@ test('lists only linkable GitHub App installations through the authenticated API
   });
   expect(result.github_login).toBe('markokraemer');
   expect(result.installations[0]?.owner_login).toBe('markokraemer');
+  // How many OTHER accounts already hold this installation — a count only, so a
+  // tenant name can never leak through the picker.
+  expect(result.installations[0]?.linked_to_other_accounts).toBe(2);
 });
 
 test('links a selected verified GitHub App installation without callback state', async () => {
@@ -211,19 +265,45 @@ test('passes bounded repository search options through the typed GitHub surface'
     calls.push(String(input instanceof Request ? input.url : input));
     return Response.json({
       account_id: 'account 1',
-      installation_id: 'pat',
-      owner_login: 'managed-kortix',
+      installation_id: '84',
+      owner_login: 'acme',
       repositories: [],
     } satisfies GitHubRepositoriesResponse);
   }) as unknown as typeof fetch;
 
-  await listGitHubRepositories('account 1', 'pat', {
+  await listGitHubRepositories('account 1', '84', {
     search: 'customer portal',
     limit: 25,
   });
 
   expect(calls).toEqual([
     'http://test.local/v1/projects/github/repositories?' +
-      'account_id=account+1&installation_id=pat&search=customer+portal&limit=25',
+      'account_id=account+1&installation_id=84&search=customer+portal&limit=25',
   ]);
+});
+
+test('imports through the instance git backend with source: managed, never a fake installation id', async () => {
+  let requestBody: unknown;
+  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({
+      project: { project_id: 'project 1' },
+      git_connection: null,
+    });
+  }) as unknown as typeof fetch;
+
+  await linkRepository({
+    account_id: 'acc-1',
+    repo_full_name: 'managed-kortix/customer-portal',
+    source: 'managed',
+  });
+
+  // The instance backend used to be selected with `installation_id: 'pat'`,
+  // a string dressed as a GitHub installation id. The selector is explicit
+  // now and the body carries no installation id at all.
+  expect(requestBody).toEqual({
+    account_id: 'acc-1',
+    repo_full_name: 'managed-kortix/customer-portal',
+    source: 'managed',
+  });
 });

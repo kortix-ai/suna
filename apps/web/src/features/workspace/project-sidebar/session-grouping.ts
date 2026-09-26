@@ -5,7 +5,38 @@ import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 
+import {
+  resolveOwnerFacetOptions,
+  sessionOwnerKey,
+  UNKNOWN_OWNER_KEY,
+} from '../project-sessions/session-owner-filters';
 import { getSessionDisplayTitle, sessionLastActivityAt } from './project-session-list-helpers';
+
+/** Section id for one owner in `owner` grouping mode. */
+export function ownerSectionId(ownerKey: string): string {
+  return `owner:${ownerKey}`;
+}
+
+/**
+ * Owner-mode sections are the one grouping that comes from the DATA, not a
+ * declared constant: there is one section per person. The order is still fixed
+ * and data-independent in shape — the viewer first, then by name, the unknown
+ * owner last (`resolveOwnerFacetOptions`) — so sections never reshuffle as
+ * sessions update.
+ */
+function ownerSections(
+  sessions: readonly ProjectSession[],
+  labels: { you?: string; unknown?: string },
+): Array<{ id: string; label: string }> {
+  return resolveOwnerFacetOptions(sessions, []).map((owner) => ({
+    id: ownerSectionId(owner.value),
+    label: owner.isViewer
+      ? (labels.you ?? owner.name ?? owner.email ?? owner.value)
+      : owner.value === UNKNOWN_OWNER_KEY
+        ? (labels.unknown ?? owner.value)
+        : (owner.name ?? owner.email ?? owner.value),
+  }));
+}
 
 /**
  * General session grouper behind the sidebar's `Grouping ›` / `Ordering ›`
@@ -20,7 +51,7 @@ import { getSessionDisplayTitle, sessionLastActivityAt } from './project-session
  * session, and the review state itself shows on the row's status dot.
  */
 
-export type SessionGroupMode = 'status' | 'activity' | 'source' | 'none';
+export type SessionGroupMode = 'status' | 'activity' | 'source' | 'owner' | 'none';
 export type SessionOrderMode = 'activity' | 'created' | 'name';
 
 export const DEFAULT_SESSION_GROUP_MODE: SessionGroupMode = 'activity';
@@ -29,6 +60,7 @@ export const SESSION_GROUP_MODES: Array<{ value: SessionGroupMode; label: string
   { value: 'status', label: 'Status' },
   { value: 'activity', label: 'Activity' },
   { value: 'source', label: 'Source' },
+  { value: 'owner', label: 'Owner' },
   { value: 'none', label: 'None' },
 ];
 
@@ -84,6 +116,7 @@ const SOURCE_SECTION_ORDER: Array<{ id: string; label: string }> = [
   { id: 'chat', label: 'Chat' },
   { id: 'slack', label: 'Slack' },
   { id: 'telegram', label: 'Telegram' },
+  { id: 'teams', label: 'Teams' },
   { id: 'email', label: 'Email' },
   { id: 'schedule', label: 'Scheduled' },
   { id: 'webhook', label: 'Webhook' },
@@ -164,6 +197,9 @@ export function groupSessions(
     reviewCountBySession: Record<string, number>;
     hiddenSections?: readonly string[];
     now?: number;
+    /** Translated labels for the viewer's and the unknown owner's sections in
+     *  `owner` mode. Every other owner is labelled by name or email. */
+    ownerLabels?: { you?: string; unknown?: string };
   },
   tI18nComplete: UiTranslator,
 ): GroupedSessions {
@@ -216,7 +252,9 @@ export function groupSessions(
         ? activitySections
         : mode === 'source'
           ? sourceSections
-          : allSections;
+          : mode === 'owner'
+            ? ownerSections(sessions, options.ownerLabels ?? {})
+            : allSections;
 
   const buckets = new Map<string, ProjectSession[]>(declared.map((section) => [section.id, []]));
 
@@ -233,7 +271,9 @@ export function groupSessions(
             )
           : mode === 'source'
             ? sessionSource(session, tI18nComplete).kind
-            : 'all';
+            : mode === 'owner'
+              ? ownerSectionId(sessionOwnerKey(session))
+              : 'all';
     buckets.get(bucketId)?.push(session);
   }
 

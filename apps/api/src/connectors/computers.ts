@@ -23,11 +23,6 @@ export function computerLabel(): string {
 /** Legacy aggregate slug. Kept for existing session bindings during migration. */
 export const COMPUTER_SLUG = 'computer';
 
-/** Legacy per-machine slug. Kept only for compatibility and migration. */
-export function computerConnectorSlug(tunnelId: string): string {
-  return `computer-${tunnelId.toLowerCase()}`;
-}
-
 /** One curated computer action — normalized into a `tunnel`-bound NormalizedAction. */
 interface ComputerActionDef {
   /** Connector-relative tool path (the connector namespace tail, e.g. `fs.read`). */
@@ -93,14 +88,15 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     path: 'fs.write',
     method: 'fs.write',
     name: 'Write file',
-    description: 'Write (create or overwrite) a file on the machine. Provide `path` and `content`.',
+    description: 'Write (create or overwrite) a file on the machine. Never transcribe binary base64 from tool output. Use agent-tunnel-cli fs_upload with a local source path, or generate the artifact on the destination. For programmatic binary writes, supply the source SHA-256. The result includes the persisted sha256; size alone does not prove integrity.',
     risk: 'write',
     properties: {
       path: {
         type: 'string',
         description: 'Absolute path of the file to write.',
       },
-      content: { type: 'string', description: 'File contents.' },
+      content: { type: 'string', description: 'File contents. Pass binary bytes programmatically, never through model transcription.' },
+      sha256: { type: 'string', description: 'Optional SHA-256 of the source bytes. A mismatch rejects the write before modifying the destination.' },
       encoding: {
         type: 'string',
         description: 'Encoding of `content`: "utf-8" (default) or "base64".',

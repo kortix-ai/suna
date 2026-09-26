@@ -1,7 +1,9 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 
 import type { PromptPartWire } from './store';
+import { RuntimeRouteUnsupportedError } from './runtime-prompt-file';
 import {
+  type RuntimePromptFileWriteInput,
   INLINE_PROMPT_BUDGET_BYTES,
   PromptAttachmentMaterializationError,
   materializePromptAttachments,
@@ -36,12 +38,216 @@ function materialize(input: Partial<Parameters<typeof materializePromptAttachmen
     sessionId: 'session_1',
     userId: 'user_1',
     materializationKey: 'command_1',
-    writeFile: async (file) => ({ path: file.targetPath, size: file.bytes.byteLength }),
+    writeFile: async (file) => ({
+      path: file.targetPath,
+      size: file.bytes.byteLength,
+    }),
     ...input,
   });
 }
 
 describe('materializePromptAttachments', () => {
+  test('saves every staged first-prompt file before writing it to the runtime', async () => {
+    const events: string[] = [];
+    const url =
+      'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+    const result = await materialize({
+      saveAttachment: async ({ filename, bytes }) => {
+        events.push(`save:${filename}`);
+        expect(bytes.length).toBeGreaterThan(0);
+        return url;
+      },
+      writeFile: async (file) => {
+        events.push(`write:${file.filename}`);
+        return { path: file.targetPath, size: file.bytes.length };
+      },
+    });
+    for (const filename of ['bundle.zip', 'shot.png', 'README.md']) {
+      expect(events.indexOf(`save:${filename}`)).toBeLessThan(events.indexOf(`write:${filename}`));
+    }
+    expect(
+      result
+        .slice(1)
+        .every((part) => part.type === 'text' && part.text?.includes(`attachment="${url}"`)),
+    ).toBe(true);
+  });
+
+  test('storage failure prevents first-prompt delivery and remains retryable', async () => {
+    let writes = 0;
+    await expect(
+      materialize({
+        saveAttachment: async () => {
+          throw new Error('Storage unavailable');
+        },
+        writeFile: async (file) => {
+          writes++;
+          return { path: file.targetPath, size: file.bytes.length };
+        },
+      }),
+    ).rejects.toThrow('Storage unavailable');
+    expect(writes).toBe(0);
+  });
+  test('resolves handles under the command and imports only durable workspace files', async () => {
+    const commandId = '11111111-1111-4111-8111-111111111111';
+    const zipId = '22222222-2222-4222-8222-222222222222';
+    const pngId = '33333333-3333-4333-8333-333333333333';
+    const imports: unknown[] = [];
+    const reads: string[] = [];
+    const result = await materializePromptAttachments({
+      parts: [
+        { type: 'text', text: 'inspect' },
+        { type: 'file', attachment_id: zipId, filename: 'spoof.zip', mime: 'text/plain' },
+        { type: 'file', attachment_id: pngId, filename: 'spoof.png', mime: 'text/plain' },
+      ],
+      externalId: 'sbx_1',
+      sessionId: 'session_1',
+      accountId: 'account_1',
+      projectId: 'project_1',
+      userId: 'user_1',
+      materializationKey: commandId,
+      resolveAttachments: async ({ handles }) =>
+        new Map(
+          handles.map(({ attachmentId, partIndex }) => [
+            partIndex,
+            {
+              attachmentId,
+              filename: attachmentId === zipId ? 'canonical.zip' : 'canonical.png',
+              mime: attachmentId === zipId ? 'application/zip' : 'image/png',
+              size: attachmentId === zipId ? 4 : 3,
+              sha256: 'a'.repeat(64),
+              targetPath: `/workspace/uploads/.kortix-inbox/${commandId}/${partIndex}-canonical`,
+              readBytes: async () => {
+                reads.push(attachmentId);
+                return attachmentId === zipId
+                  ? new Uint8Array([80, 75, 3, 4])
+                  : new Uint8Array([1, 2, 3]);
+              },
+            },
+          ]),
+        ),
+      importAttachment: async (value) => {
+        imports.push(value);
+        return { path: '/workspace/imported', size: 4, sha256: 'a'.repeat(64) };
+      },
+      writeFile: async () => {
+        throw new Error('capable daemon must not receive file bytes');
+      },
+    });
+
+    expect(imports).toEqual([
+      {
+        externalId: 'sbx_1',
+        sessionId: 'session_1',
+        userId: 'user_1',
+        commandId,
+        attachmentId: zipId,
+        partIndex: 1,
+      },
+    ]);
+    expect(reads).toEqual([pngId]);
+    expect(result[1]).toEqual({
+      type: 'text',
+      text: expect.stringContaining('filename="canonical.zip"'),
+    });
+    expect(result[2]).toEqual({
+      type: 'file',
+      filename: 'canonical.png',
+      mime: 'image/png',
+      url: 'data:image/png;base64,AQID',
+    });
+  });
+
+  test('uses verified resolver bytes with the existing writer when the daemon is legacy', async () => {
+    const commandId = '11111111-1111-4111-8111-111111111111';
+    const attachmentId = '22222222-2222-4222-8222-222222222222';
+    const writes: Array<{ targetPath: string; bytes: number[] }> = [];
+    const result = await materializePromptAttachments({
+      parts: [{ type: 'file', attachment_id: attachmentId, filename: 'spoof.zip' }],
+      externalId: 'sbx_legacy_import',
+      sessionId: 'session_1',
+      accountId: 'account_1',
+      projectId: 'project_1',
+      userId: 'user_1',
+      materializationKey: commandId,
+      resolveAttachments: async () =>
+        new Map([
+          [
+            0,
+            {
+              attachmentId,
+              filename: 'canonical.zip',
+              mime: 'application/zip',
+              size: 4,
+              sha256: 'a'.repeat(64),
+              targetPath: `/workspace/uploads/.kortix-inbox/${commandId}/0-canonical.zip`,
+              readBytes: async () => new Uint8Array([80, 75, 3, 4]),
+            },
+          ],
+        ]),
+      importAttachment: async () => null,
+      writeFile: async ({ targetPath, bytes }) => {
+        writes.push({ targetPath, bytes: [...bytes] });
+        return { path: targetPath, size: bytes.byteLength };
+      },
+    });
+
+    expect(writes).toEqual([{
+      targetPath: `/workspace/uploads/.kortix-inbox/${commandId}/0-canonical.zip`,
+      bytes: [80, 75, 3, 4],
+    }]);
+    expect(result[0]?.type).toBe('text');
+    expect(result[0]?.text).toContain('filename="canonical.zip"');
+  });
+
+  test('runs no more than two daemon imports at once', async () => {
+    const commandId = '11111111-1111-4111-8111-111111111111';
+    const attachmentIds = [
+      '22222222-2222-4222-8222-222222222220',
+      '22222222-2222-4222-8222-222222222221',
+      '22222222-2222-4222-8222-222222222222',
+      '22222222-2222-4222-8222-222222222223',
+    ];
+    let active = 0;
+    let maximum = 0;
+    await materializePromptAttachments({
+      parts: attachmentIds.map((attachment_id) => ({ type: 'file', attachment_id })),
+      externalId: 'sbx_bounded_imports',
+      sessionId: 'session_1',
+      accountId: 'account_1',
+      projectId: 'project_1',
+      userId: 'user_1',
+      materializationKey: commandId,
+      resolveAttachments: async ({ handles }) =>
+        new Map(
+          handles.map(({ attachmentId, partIndex }) => [
+            partIndex,
+            {
+              attachmentId,
+              filename: `${partIndex}.zip`,
+              mime: 'application/zip',
+              size: 4,
+              sha256: 'a'.repeat(64),
+              targetPath: `/workspace/uploads/.kortix-inbox/${commandId}/${partIndex}-${partIndex}.zip`,
+              readBytes: async () => new Uint8Array([80, 75, 3, 4]),
+            },
+          ]),
+        ),
+      importAttachment: async () => {
+        active += 1;
+        maximum = Math.max(maximum, active);
+        await Bun.sleep(5);
+        active -= 1;
+        return { path: '/workspace/imported', size: 4, sha256: 'a'.repeat(64) };
+      },
+      writeFile: async () => {
+        throw new Error('capable daemon must not receive file bytes');
+      },
+    });
+
+    expect(maximum).toBe(2);
+    expect(active).toBe(0);
+  });
+
   // A model-native attachment is only worth inlining if the prompt body can
   // still reach the box. Past the budget it is written to the workspace like
   // any other file — a JPEG the runtime never receives is worth less than a
@@ -115,7 +321,7 @@ describe('materializePromptAttachments', () => {
       {
         type: 'file',
         mime: 'image/svg+xml',
-        filename: 'Jay Suthar.svg',
+        filename: 'team-logo.svg',
         url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
       },
       {
@@ -145,7 +351,7 @@ describe('materializePromptAttachments', () => {
     });
 
     expect(writes).toEqual([
-      '/workspace/uploads/.kortix-inbox/command_1/1-Jay Suthar.svg',
+      '/workspace/uploads/.kortix-inbox/command_1/1-team-logo.svg',
       '/workspace/uploads/.kortix-inbox/command_1/2-photo.heic',
     ]);
     // The text survives, the SVG and HEIC become readable file references,
@@ -153,7 +359,7 @@ describe('materializePromptAttachments', () => {
     expect(result[0]).toEqual(undecodable[0]);
     expect(result[1]).toMatchObject({ type: 'text' });
     expect((result[1] as { text: string }).text).toContain('mime="image/svg+xml"');
-    expect((result[1] as { text: string }).text).toContain('filename="Jay Suthar.svg"');
+    expect((result[1] as { text: string }).text).toContain('filename="team-logo.svg"');
     expect(result[2]).toMatchObject({ type: 'text' });
     expect(result[3]).toEqual(undecodable[3]);
   });
@@ -213,25 +419,10 @@ describe('materializePromptAttachments', () => {
 
     expect(error).toBeInstanceOf(PromptAttachmentMaterializationError);
     expect(error.failures).toEqual([
-      { filename: 'bundle.zip', reason: 'file "bundle.zip" has malformed staged data' },
-    ]);
-  });
-
-  test('rejects mismatched MIME metadata', async () => {
-    const error = await materialize({
-      parts: [
-        {
-          type: 'file',
-          mime: 'application/zip',
-          filename: 'bundle.zip',
-          url: 'data:text/plain;base64,UEsDBA==',
-        },
-      ],
-    }).catch((value) => value);
-
-    expect(error).toBeInstanceOf(PromptAttachmentMaterializationError);
-    expect(error.failures).toEqual([
-      { filename: 'bundle.zip', reason: 'file "bundle.zip" has inconsistent MIME metadata' },
+      {
+        filename: 'bundle.zip',
+        reason: 'file "bundle.zip" has malformed staged data',
+      },
     ]);
   });
 
@@ -264,28 +455,166 @@ describe('materializePromptAttachments', () => {
     ]);
   });
 
-  test('turns attachment-only input into file reference parts', async () => {
-    const result = await materialize({
-      parts: [
-        {
-          type: 'file',
-          mime: 'application/zip',
-          filename: 'bundle.zip',
-          url: 'data:application/zip;base64,UEsDBA==',
-        },
-        {
-          type: 'file',
-          mime: 'text/markdown',
-          filename: 'README.md',
-          url: 'data:text/markdown;base64,IyBSZWFkbWU=',
-        },
-      ],
+});
+
+describe('materializePromptAttachments — delivery cost and import fallback', () => {
+  const commandId = '11111111-1111-4111-8111-111111111111';
+  const zipId = '22222222-2222-4222-8222-222222222222';
+  const scope = {
+    externalId: 'sbx_1',
+    sessionId: 'session_1',
+    accountId: 'account_1',
+    projectId: 'project_1',
+    userId: 'user_1',
+    materializationKey: commandId,
+  };
+  const resolvedZip = (attachmentId: string, partIndex: number, reads: string[] = []) => ({
+    attachmentId,
+    filename: `${partIndex}.zip`,
+    mime: 'application/zip',
+    size: 4,
+    sha256: 'a'.repeat(64),
+    targetPath: `/workspace/uploads/.kortix-inbox/${commandId}/${partIndex}-${partIndex}.zip`,
+    readBytes: async () => {
+      reads.push(attachmentId);
+      return new Uint8Array([80, 75, 3, 4]);
+    },
+  });
+
+  test('one metadata query for N attachments', async () => {
+    const ids = [zipId, '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444'];
+    const calls: unknown[] = [];
+    const result = await materializePromptAttachments({
+      ...scope,
+      parts: [{ type: 'text', text: 'three files' }, ...ids.map((attachment_id) => ({ type: 'file' as const, attachment_id }))],
+      resolveAttachments: async (input) => {
+        calls.push(input);
+        return new Map(
+          input.handles.map((handle) => [handle.partIndex, resolvedZip(handle.attachmentId, handle.partIndex)]),
+        );
+      },
+      importAttachment: async () => ({ path: '/workspace/imported', size: 4, sha256: 'a'.repeat(64) }),
+      writeFile: async () => {
+        throw new Error('capable daemon must not receive file bytes');
+      },
     });
 
-    expect(result).toMatchObject([
-      { type: 'text', text: expect.stringContaining('filename="bundle.zip"') },
-      { type: 'text', text: expect.stringContaining('filename="README.md"') },
+    expect(calls).toEqual([
+      {
+        commandId,
+        projectId: 'project_1',
+        accountId: 'account_1',
+        sessionId: 'session_1',
+        handles: ids.map((attachmentId, index) => ({ attachmentId, partIndex: index + 1 })),
+      },
     ]);
+    expect(result.slice(1).map((part) => part.type)).toEqual(['text', 'text', 'text']);
+  });
+
+  test('a handle missing from the batch fails only its own part', async () => {
+    const error = await materializePromptAttachments({
+      ...scope,
+      parts: [
+        { type: 'file', attachment_id: zipId, filename: 'kept.zip' },
+        { type: 'file', attachment_id: '33333333-3333-4333-8333-333333333333', filename: 'gone.zip' },
+      ],
+      resolveAttachments: async () => new Map([[0, resolvedZip(zipId, 0)]]),
+      importAttachment: async () => ({ path: '/workspace/imported', size: 4, sha256: 'a'.repeat(64) }),
+      writeFile: async (file) => ({ path: file.targetPath, size: file.bytes.byteLength }),
+    }).catch((value) => value);
+
+    expect(error).toBeInstanceOf(PromptAttachmentMaterializationError);
+    expect(error.failures).toEqual([
+      { filename: 'gone.zip', reason: 'The command attachment is unavailable.' },
+    ]);
+  });
+
+  test('a non-unsupported import failure falls back to push exactly once', async () => {
+    const imports: unknown[] = [];
+    const reads: string[] = [];
+    const writes: string[] = [];
+    const warnings: unknown[][] = [];
+    const warn = spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warnings.push(args);
+    });
+    try {
+      const result = await materializePromptAttachments({
+        ...scope,
+        parts: [{ type: 'file', attachment_id: zipId }],
+        resolveAttachments: async () => new Map([[0, resolvedZip(zipId, 0, reads)]]),
+        importAttachment: async (value) => {
+          imports.push(value);
+          throw new Error(
+            'runtime import failed (503) at https://storage.example/object/sign/staged-files/x?token=secret',
+          );
+        },
+        writeFile: async (file) => {
+          writes.push(file.targetPath);
+          return { path: file.targetPath, size: file.bytes.byteLength };
+        },
+      });
+
+      expect(imports).toHaveLength(1);
+      expect(reads).toEqual([zipId]);
+      expect(writes).toEqual([`/workspace/uploads/.kortix-inbox/${commandId}/0-0.zip`]);
+      expect(result[0]).toMatchObject({ type: 'text', text: expect.stringContaining('filename="0.zip"') });
+      expect(warnings).toHaveLength(1);
+      expect(JSON.stringify(warnings)).toContain(zipId);
+      expect(JSON.stringify(warnings)).not.toContain('https://');
+      expect(JSON.stringify(warnings)).not.toContain('token=secret');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a failed push fallback is not attempted again', async () => {
+    let writes = 0;
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const error = await materializePromptAttachments({
+        ...scope,
+        parts: [{ type: 'file', attachment_id: zipId }],
+        resolveAttachments: async () => new Map([[0, resolvedZip(zipId, 0)]]),
+        importAttachment: async () => {
+          throw new Error('runtime import failed (500)');
+        },
+        writeFile: async () => {
+          writes += 1;
+          throw new Error('runtime upload failed (500)');
+        },
+      }).catch((value) => value);
+
+      expect(error).toBeInstanceOf(PromptAttachmentMaterializationError);
+      expect(error.failures).toEqual([{ filename: '0.zip', reason: 'runtime upload failed (500)' }]);
+      expect(writes).toBe(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('an unsupported import route does not fall back to push', async () => {
+    let reads = 0;
+    const error = await materializePromptAttachments({
+      ...scope,
+      parts: [{ type: 'file', attachment_id: zipId }],
+      resolveAttachments: async () =>
+        new Map([[0, { ...resolvedZip(zipId, 0), readBytes: async () => { reads += 1; return new Uint8Array([1]); } }]]),
+      importAttachment: async () => {
+        throw new RuntimeRouteUnsupportedError({
+          method: 'POST',
+          route: '/file/import',
+          status: 200,
+          contentType: 'text/html',
+        });
+      },
+      writeFile: async () => {
+        throw new Error('an unsupported daemon must not receive a push');
+      },
+    }).catch((value) => value);
+
+    expect(error).toBeInstanceOf(PromptAttachmentMaterializationError);
+    expect(error.failures[0].reason).toContain('runtime route unsupported');
+    expect(reads).toBe(0);
   });
 });
 
@@ -326,7 +655,12 @@ describe('materializePromptAttachments — review findings 2026-09-05', () => {
       inlineBudgetBytes: 10,
       parts: [
         { type: 'text', text: 'see' },
-        { type: 'file', mime: 'image/png', filename: 'in-box.png', url: 'https://box.test/uploads/in-box.png' },
+        {
+          type: 'file',
+          mime: 'image/png',
+          filename: 'in-box.png',
+          url: 'https://box.test/uploads/in-box.png',
+        },
       ],
       writeFile: async (f) => {
         writes.push(f.targetPath);
@@ -334,7 +668,10 @@ describe('materializePromptAttachments — review findings 2026-09-05', () => {
       },
     });
     expect(writes).toEqual([]);
-    expect(result[1]).toMatchObject({ type: 'file', url: 'https://box.test/uploads/in-box.png' });
+    expect(result[1]).toMatchObject({
+      type: 'file',
+      url: 'https://box.test/uploads/in-box.png',
+    });
   });
 
   test('the legacy repair keeps native images inline via an unbounded budget', async () => {
@@ -344,7 +681,12 @@ describe('materializePromptAttachments — review findings 2026-09-05', () => {
       inlineBudgetBytes: Number.POSITIVE_INFINITY,
       parts: [
         png(INLINE_PROMPT_BUDGET_BYTES * 4),
-        { type: 'file', mime: 'application/zip', filename: 'b.zip', url: 'data:application/zip;base64,UEsDBA==' },
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'b.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
       ],
       writeFile: async (f) => {
         writes.push(f.filename);
@@ -353,4 +695,70 @@ describe('materializePromptAttachments — review findings 2026-09-05', () => {
     });
     expect(writes).toEqual(['b.zip']);
   });
+});
+
+test('stored attachments materialize after wake and retain a preview reference', async () => {
+  const projectId = '11111111-1111-4111-8111-111111111111';
+  const sessionId = '22222222-2222-4222-8222-222222222222';
+  const url = `kortix-attachment://${projectId}/${sessionId}/33333333-3333-4333-8333-333333333333`;
+  const writes: RuntimePromptFileWriteInput[] = [];
+  const result = await materialize({
+    sessionId,
+    parts: [{ type: 'file', mime: 'image/png', filename: 'shot.png', url }],
+    readAttachment: async (scope) => {
+      expect(scope.sessionId).toBe(sessionId);
+      return new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
+    },
+    writeFile: async (input) => {
+      writes.push(input);
+      return { path: input.targetPath, size: input.bytes.length };
+    },
+  });
+  expect(writes).toHaveLength(1);
+  expect([...writes[0].bytes]).toEqual([1, 2, 3]);
+  expect(result[0].type).toBe('text');
+  expect(result[0].text).toContain(`attachment="${url}"`);
+  expect(result[0].text).toContain(writes[0].targetPath);
+});
+
+test('stored attachments cannot be read into another session', async () => {
+  let reads = 0;
+  await expect(
+    materialize({
+      parts: [
+        {
+          type: 'file',
+          mime: 'text/plain',
+          filename: 'notes.txt',
+          url: 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333',
+        },
+      ],
+      readAttachment: async () => {
+        reads++;
+        return new Blob(['private']);
+      },
+    }),
+  ).rejects.toThrow('another session');
+  expect(reads).toBe(0);
+});
+
+test('archives staged handles before import and keeps their canonical metadata', async () => {
+  const storedUrl = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+  const calls: string[] = [];
+  const result = await materializePromptAttachments({
+    parts: [{ type: 'file', attachment_id: 'handle', filename: 'spoof', mime: 'wrong' }],
+    externalId: 'box', sessionId: 'session', userId: 'user', accountId: 'account', projectId: 'project', materializationKey: 'command',
+    resolveAttachments: async () => new Map([[0, {
+      attachmentId: 'handle', filename: 'canonical.png', mime: 'image/png', size: 3, sha256: 'a'.repeat(64), targetPath: '/workspace/uploads/canonical.png',
+      readBytes: async () => { calls.push('read'); return new Uint8Array([1, 2, 3]); },
+    }]]),
+    saveAttachment: async (file) => {
+      expect(file).toEqual({ index: 0, filename: 'canonical.png', mime: 'image/png', bytes: new Uint8Array([1, 2, 3]) });
+      calls.push('save'); return storedUrl;
+    },
+    importAttachment: async () => { calls.push('import'); return null; },
+    writeFile: async (file) => { calls.push('write'); return { path: file.targetPath, size: file.bytes.length }; },
+  });
+  expect(calls).toEqual(['read', 'save', 'import', 'write']);
+  expect(result[0]?.text).toContain(`attachment="${storedUrl}"`);
 });

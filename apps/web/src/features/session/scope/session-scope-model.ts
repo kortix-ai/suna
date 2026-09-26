@@ -6,6 +6,14 @@ import type {
   SessionScopeInput,
 } from '@kortix/sdk';
 
+/**
+ * No `require_connectors` here. A session used to declare connectors it
+ * REQUIRES up front — a `user`-strategy ("Private") connector had no
+ * self-serve connect flow, so that refusal had no button and the composer sat
+ * on "Thinking" indefinitely. The connector CALL denies instead now
+ * (`connector_not_connected`, with a `connect_url` a human can act on) — see
+ * `ConnectorRequiredNotice`'s removal and `SetupLinkButton`.
+ */
 export interface SessionScopeDraft {
   secrets?: string[] | null;
   connector_bindings?: Record<string, { connection_id: string }>;
@@ -16,19 +24,6 @@ export interface SessionScopeDraft {
    * disconnected rows while preserving an explicit user deselection.
    */
   connector_bindings_inherited?: boolean;
-  /**
-   * Connectors this session REQUIRES but has no connection for yet.
-   *
-   * A binding is "use THIS connection", so a connector with nothing connected
-   * had nowhere to be recorded and the checkbox was simply greyed out — you
-   * could not say "this session needs Gmail" until Gmail already worked. Naming
-   * it here makes the next turn stop at a connect prompt instead of letting the
-   * agent find out mid-answer.
-   *
-   * Only ever holds aliases with no binding: once one is chosen the binding
-   * carries the requirement, and the two must not disagree about the same alias.
-   */
-  require_connectors?: string[];
 }
 
 export type SessionScopeGrant = 'all' | 'none' | readonly string[] | null | undefined;
@@ -136,7 +131,6 @@ export function createSessionScopeDraft(
     // replacement — freezing project defaults into an override, and turning an
     // empty resolve into an explicit zero-connector session.
     draft.connector_bindings_inherited = scope.connector_bindings_configured !== true;
-    draft.require_connectors = [...(scope.required_connectors ?? [])];
   }
   return draft;
 }
@@ -182,9 +176,6 @@ export function resetSessionConnectorBindings(
     ...draft,
     connector_bindings: defaultConnectorBindingsPreview(catalog),
     connector_bindings_inherited: true,
-    // A requirement is an override too: it stops the next turn until the alias
-    // is connected. Resetting the axis clears it with the bindings.
-    require_connectors: [],
   };
 }
 
@@ -211,11 +202,7 @@ export function sessionSecretsSummary(draft: SessionScopeDraft): string {
 export function sessionConnectorsSummary(draft: SessionScopeDraft): string {
   if (draft.connector_bindings === undefined) return 'Unchanged';
   if (draft.connector_bindings_inherited === true) return SESSION_SCOPE_CONNECTORS_INHERITED_LABEL;
-  const bound = new Set(Object.keys(draft.connector_bindings));
-  // A required-but-unconnected alias is selected too — it has no connection to
-  // bind, which is precisely why it is recorded separately.
-  const required = (draft.require_connectors ?? []).filter((alias) => !bound.has(alias));
-  const count = bound.size + required.length;
+  const count = Object.keys(draft.connector_bindings).length;
   return count === 0 ? 'None allowed' : `${count} selected`;
 }
 
@@ -242,13 +229,12 @@ export function createNewSessionScopeDraft(
     draft.secrets = null;
   }
   if (catalog.connector_connections.status === 'ready') {
-    // Preview every strategy-compatible default that the agent grant exposes.
-    // The inherited marker keeps an untouched session on server-side resolution,
-    // which filters stale or disconnected rows. A user change clears the marker
-    // and turns the draft into a complete fail-closed replacement.
+    // Preview every default connection the agent grant exposes. The inherited
+    // marker keeps an untouched session on server-side resolution, which
+    // filters stale or disconnected rows. A user change clears the marker and
+    // turns the draft into a complete fail-closed replacement.
     draft.connector_bindings = defaultConnectorBindingsPreview(catalog);
     draft.connector_bindings_inherited = true;
-    draft.require_connectors = [];
   }
   return draft;
 }
@@ -256,13 +242,12 @@ export function createNewSessionScopeDraft(
 /**
  * Is this replacement exactly the state a FRESH session is born with?
  *
- * A just-created (or warm, never-prompted) session starts as: secrets
- * `null` (inherit the grant), no connector-binding override, no required
- * connectors. The overrides toolbar auto-initializes a draft in that same
- * shape for every new-session composer — untouched or not — so every send
- * used to pay a scope read + write whose only effect was re-writing the
- * defaults. Measured on dev 2026-08-24: GET 0.8s + PUT 2.3s, serial, between
- * warm-claim and /start, on every untouched send.
+ * A just-created (or warm, never-prompted) session starts as: secrets `null`
+ * (inherit the grant), no connector-binding override. The overrides toolbar
+ * auto-initializes a draft in that same shape for every new-session composer —
+ * untouched or not — so every send used to pay a scope read + write whose only
+ * effect was re-writing the defaults. Measured on dev 2026-08-24: GET 0.8s +
+ * PUT 2.3s, serial, between warm-claim and /start, on every untouched send.
  *
  * `createScopedSession` asks this with a replacement built WITHOUT a previous
  * scope, which is exactly the session-creation situation: the previous scope
@@ -271,7 +256,6 @@ export function createNewSessionScopeDraft(
 export function scopeReplacementIsFreshDefault(replacement: SessionScopeInput): boolean {
   if (Object.hasOwn(replacement, 'connector_bindings')) return false;
   if (Object.hasOwn(replacement, 'secrets') && replacement.secrets !== null) return false;
-  if ((replacement.require_connectors ?? []).length > 0) return false;
   return true;
 }
 
@@ -305,16 +289,6 @@ export function buildSessionScopeReplacement(
     } else if (connectorBindings !== undefined) {
       replacement.connector_bindings = cloneBindings(connectorBindings);
     }
-  }
-  const required = Object.hasOwn(draft, 'require_connectors')
-    ? draft.require_connectors
-    : previousScope?.required_connectors;
-  if (availability.connector_bindings && required !== undefined) {
-    // An alias that ended up with a binding is already required by that binding.
-    // Sending it in both would have the server hold the same requirement twice
-    // and, worse, keep requiring it after the binding is later removed.
-    const bound = new Set(Object.keys(connectorBindings ?? {}));
-    replacement.require_connectors = (required ?? []).filter((alias) => !bound.has(alias));
   }
   return replacement;
 }
@@ -359,16 +333,21 @@ export function buildSessionScopeSelectionCatalog(
             connectorGrantIncludes(input.grants?.connectors, connector.slug),
         )
         .map((connector) => {
-          const ownerType = connector.authorizationStrategy === 'user' ? 'member' : 'project';
           return {
             slug: connector.slug,
             name: connector.name,
             authorization_strategy: connector.authorizationStrategy,
+            // Every account this connector can run as: the project's shared
+            // accounts, plus the caller's own. `listConnections` already scopes
+            // member rows to the caller, so this can never surface another
+            // member's private account. Not an either/or on the connector's
+            // (deprecated) `authorizationStrategy` any more — a project and a
+            // member account can coexist on the same connector.
             connections: connections
               .filter(
                 (connection) =>
                   connection.connector_alias === connector.slug &&
-                  connection.owner_type === ownerType &&
+                  (connection.owner_type === 'project' || connection.owner_type === 'member') &&
                   connection.status === 'active',
               )
               .sort(

@@ -6,37 +6,35 @@ const source = readFileSync(join(import.meta.dir, 'connector-settings.tsx'), 'ut
 
 /**
  * Source-assertion tripwires, in the shape of
- * `connector-tools.write-path.test.ts`. Two things on this tab cannot be
+ * `connector-tools.write-path.test.ts`. One thing on this tab cannot be
  * proven by a rendered-output test without a full react-query + mutation
- * harness, and both are load-bearing:
+ * harness, and it is load-bearing: removing a connector must never fire from
+ * the click that opens the dialog — only from `ConfirmDialog`'s own confirm
+ * action.
  *
- * 1. The `lockedReason` string is a legal statement about a real migration
- *    hazard (switching a connector's authorization owner orphans the
- *    connections and permission rules already stored under the old one). It
- *    must never drift from the exact wording, even by a "helpful" rewrite.
- * 2. Removing a connector must never fire from the click that opens the
- *    dialog — only from `ConfirmDialog`'s own confirm action.
+ * The "Connects as" / authorization-owner tests that used to live here
+ * (`lockedReason` wording, `AuthorizationStrategyField` with `hideLabel`) are
+ * REMOVED, not rewritten — that whole control is gone from this tab
+ * (connector-credentials rework). `connector-settings.tsx`'s own docstring:
+ * "The 'Connects as' row is gone... Ownership is now a property of each
+ * account — see the Accounts tab." `ConnectorSettingsProps` is exactly
+ * `{projectId, connector, displayName, onChanged, onRemoved}` now — no
+ * `strategyUpdating`, no `onAuthorizationStrategyChange`.
+ *
+ * `ConnectionSection` (transport config: slug/provider/spec/auth/headers)
+ * moved HERE, direct-provider-only, in the connector-accounts-tab-bug
+ * follow-up: `connector-accounts.tsx` used to gate `ConnectionsList` on
+ * `isManagedConnectorProvider` and fall every direct provider (openapi/http/
+ * mcp/graphql/…) through to `ConnectionSection` instead of its account list.
+ * Accounts now always renders `ConnectionsList`; this tab is the only place
+ * left that mounts the transport form.
  */
 describe('connector settings write path', () => {
-  test('the authorization lockedReason is byte-identical to the reviewed wording', () => {
-    const lockedReason =
-      'Set when the connector was added. To change it, remove the connector and add it again — saved connections and tool rules are lost.';
-    expect(source).toContain("raw('text2c8a38c525f7')");
-    expect(source).toContain(lockedReason);
-  });
-
-  test('the owner is explained exactly once — no paragraph restating the field', () => {
-    // The tab used to print a `Label`, a paragraph naming BOTH owners (one of
-    // which is unreachable, the value is locked), the field's own row
-    // description and the lockedReason — four statements of one fact. The
-    // section label plus the field is the whole explanation now.
-    expect(source).toContain("raw('textfa065317dfc5')");
-    expect(source).not.toContain('Project — one account everyone uses');
-    const section = source.slice(
-      source.indexOf("raw('textfa065317dfc5')"),
-      source.indexOf('</section>'),
-    );
-    expect(section).not.toMatch(/<p\b/);
+  test('carries no authorization-strategy control any more', () => {
+    expect(source).not.toContain('AuthorizationStrategyField');
+    expect(source).not.toContain('strategyUpdating');
+    expect(source).not.toContain('onAuthorizationStrategyChange');
+    expect(source).not.toContain('lockedReason');
   });
 
   test('the danger row never mutates directly — only ConfirmDialog does', () => {
@@ -68,11 +66,22 @@ describe('connector settings write path', () => {
     expect(source).toContain('size="sm"');
   });
 
-  test('the credential form is not duplicated here — ConnectionSection is never imported', () => {
-    // Both are exported from connectors-view.tsx and already mounted on
-    // connector-accounts.tsx. Importing either here would render the same
-    // credential/config form on two tabs at once.
-    expect(source).not.toMatch(/import\s*\{[^}]*\bConnectionSection\b/);
+  test('ConnectionSection is imported and mounted, gated to direct providers only', () => {
+    // Managed (Composio/Pipedream), channel, and computer connectors have no
+    // transport config of their own — Accounts (`ConnectionsList`,
+    // `ChannelConnectionSection`, `ComputerConnectorAccount`) covers them.
+    expect(source).toMatch(/import\s*\{[^}]*\bConnectionSection\b/);
+    expect(source).toContain('const isDirectProvider =');
+    expect(source).toContain(
+      '!isManagedConnectorProvider(connector.provider) && !isChannel && !isComputer',
+    );
+    expect(source).toMatch(/\{isDirectProvider \? \(\s*<ConnectionSection/);
+  });
+
+  test('the credential/config form is not duplicated — ChannelConnectionSection is never imported here', () => {
+    // Channel connectors keep their own connect flow on the Accounts tab
+    // (`ChannelConnectionSection`, mounted from `connector-accounts.tsx`).
+    // Importing it here too would render the same form on two tabs at once.
     expect(source).not.toMatch(/import\s*\{[^}]*\bChannelConnectionSection\b/);
   });
 
@@ -85,35 +94,5 @@ describe('connector settings write path', () => {
       )
       .filter((name) => readFileSync(join(root, name), 'utf8').includes('deleteConnector('));
     expect(callers).toEqual(['connectors/detail/connector-settings.tsx']);
-  });
-
-  test('the field is called with hideLabel, so "Connects as" stays the only label', () => {
-    // "Connects as" is the plain-language section label; `hideLabel`
-    // (asserted structurally against `connector-connection-modal.tsx` in
-    // `connector-authorization-lock.test.ts`) suppresses
-    // `AuthorizationStrategyField`'s own "Authorization owner" label so the
-    // two never stack. Scoped to the call site itself, not the whole file —
-    // the surrounding comments legitimately name "Authorization owner" in
-    // prose to explain why it is suppressed.
-    expect(source).toContain('Connects as');
-    const fieldBlock = source.slice(
-      source.indexOf('<AuthorizationStrategyField'),
-      source.indexOf('/>', source.indexOf('<AuthorizationStrategyField')) + 2,
-    );
-    expect(fieldBlock).toContain('hideLabel');
-  });
-
-  test('the write path is documented as unreachable by design, not by accident', () => {
-    // Restores the hazard note the legacy `connectors-view.tsx` carried
-    // (`onAuthorizationStrategyChange`, `disabled`, `pending` stay fully
-    // wired to the real mutation while the field is locked; only
-    // `lockedReason` forces it off, and re-enabling editing later is
-    // deleting that one prop).
-    const fieldBlock = source.slice(
-      source.indexOf('<AuthorizationStrategyField'),
-      source.indexOf('/>', source.indexOf('<AuthorizationStrategyField')),
-    );
-    expect(fieldBlock).toMatch(/unreachable.*design/i);
-    expect(fieldBlock).toContain('deleting that one prop');
   });
 });

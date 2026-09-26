@@ -5,8 +5,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 
+import { TITLEBAR_CONTROL_CLASS } from '@/components/desktop/titlebar-control';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
@@ -38,7 +40,7 @@ import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useGatewayCatalogSync } from '@kortix/sdk/react';
-import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({
@@ -73,7 +75,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   const resolvedSidebarOpen = initialSidebarOpen ?? readSidebarOpenCookie();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, bootstrapError } = useAuth();
 
   const { data: projectDetail, error: projectDetailError } = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -223,6 +225,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     if (activeSessionId) openTab(projectId, activeSessionId);
   }, [projectId, activeSessionId, openTab]);
 
+  if (bootstrapError) return <ProjectPendingScreen />;
+
   if (authLoading || !user) {
     return <div className="bg-background min-h-screen" />;
   }
@@ -281,15 +285,26 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
         'bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden',
         isExpanded && 'border-border border-l',
       )}
+      // The sidebar navigates and the toggle below owns the band's corner, so
+      // the window's desktop Back (root layout) steps aside on every project view.
+      data-kx-titlebar-owner=""
     >
       {/* Collapsed: an invisible strip on the viewport's left edge summons
           the sidebar as a hover flyout; it self-hides while docked open. */}
       <SidebarEdgePeek />
+      {/* Some project views start with content instead of a titlebar row. Give
+          those views the same native drag band without covering controls on
+          views that already own the band. CSS disables this fallback whenever
+          the active view contains `.kx-titlebar-row`. */}
+      <div aria-hidden="true" className="kx-project-shell-drag-region" />
       {/* Mobile: the sidebar is a sheet with no docked affordance, and view
           headers come and go (sessions render theirs only once booted) — so
           the opener lives here, always mounted, on every project view. The
           session header indents its leading buttons past it below md. */}
 
+      {/* Page headers can share z-50 with this fixed control. Paint the
+          control after them so their macOS drag regions cannot take its click. */}
+      {children}
       {desktopShell && !isExpanded && (
         <Hint
           label={
@@ -317,7 +332,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             // are generated from one table — see globals.css and
             // apps/desktop-electron/src/window-chrome.js. They also carry the
             // Win/Linux values, so there is no platform branch here.
-            className="text-muted-foreground hover:text-foreground duration-normal fixed top-[var(--kx-titlebar-control-top)] left-[var(--kx-titlebar-control-left)] z-50 flex h-[var(--kx-titlebar-control-size)] w-[var(--kx-titlebar-control-size)] shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96]"
+            className={cn(TITLEBAR_CONTROL_CLASS, 'flex w-[var(--kx-titlebar-control-size)]')}
           >
             <PanelLeft className="cn-rtl-flip size-4" />
           </Button>
@@ -327,7 +342,6 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
           draws its own, in its own layout, gated by
           useShowPageSidebarOpener(). Only the desktop shell needs a
           shell-level one, because only there is the corner owned by the OS. */}
-      {children}
     </div>
   );
 };

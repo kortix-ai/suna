@@ -8,6 +8,22 @@ import {
 } from './session-composer-readiness';
 
 describe('sessionComposerReadiness', () => {
+  test('a submitted prompt replaces the idle notice while its computer starts', () => {
+    expect(sessionComposerReadiness({
+      runtimeReady: false,
+      connection: 'waking',
+      pendingPrompt: true,
+    })).toEqual({
+      ready: false,
+      notice: 'Starting your computer… your message will send automatically.',
+      retryable: false,
+    });
+  });
+
+  test('a pending prompt cannot hide a startup failure or keep the ready notice visible', () => {
+    expect(sessionComposerReadiness({ runtimeReady: false, pendingPrompt: true, unreachable: true }).retryable).toBe(true);
+    expect(sessionComposerReadiness({ runtimeReady: true, pendingPrompt: true }).notice).toBeNull();
+  });
   // The connection projection replaces the settle TIMER this file used to
   // carry. A timer was the same mistake in miniature: it guessed how long to
   // stay quiet instead of asking whether anything was actually wrong. Now the
@@ -392,4 +408,8 @@ describe('resolveLastTurnWorking', () => {
       resolveLastTurnWorking({ isChildSession: true, projectionBusy: true, rawSlotBusy: false }),
     ).toBe(false);
   });
+});
+
+test('a queued send does not ask the user to send another message to wake the session', () => {
+  expect(sessionComposerReadiness({ runtimeReady: false, connection: 'waking', pendingDelivery: true }).notice).toBeNull();
 });

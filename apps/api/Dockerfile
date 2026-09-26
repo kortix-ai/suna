@@ -158,6 +158,20 @@ COPY packages/sdk/package.json ./packages/sdk/
 RUN corepack enable pnpm && \
     pnpm install --filter ./${SERVICE}... --filter kortix --shamefully-hoist --prod=false --ignore-scripts
 
+# The Supabase CLI is a LOCAL-DEV tool. `--prod=false` above is load-bearing —
+# the API runs TypeScript directly and the migration runner (node-pg-migrate,
+# pg) sits in the ROOT devDependencies — but it also drags in `supabase`, whose
+# platform package vendors a ~50 MB Go binary. Nothing in apps/api or
+# packages/db imports it; only scripts/dev-local.sh and scripts/nuke-local.sh
+# invoke it, and neither runs in this image. It was carrying 14 high-severity
+# Go CVEs into every scan of the runtime image (Trivy, 2026-09-16:
+# CVE-2026-56862/56860/56859/56858/56853/46600/39821/33818/56865/56864/17106/
+# 33748/33747/71556) for code this image never executes. Drop it.
+RUN rm -rf node_modules/supabase \
+           node_modules/@supabase/cli-* \
+           node_modules/.pnpm/supabase@* \
+           node_modules/.pnpm/@supabase+cli-*
+
 # Sources, after the install layer. `.dockerignore` excludes `**/node_modules`,
 # so these COPYs merge over the installed tree without clobbering what pnpm
 # just wrote. Keep this list identical to the manifest list above.
@@ -224,6 +238,7 @@ COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
 # Kortix cloud applies them in the deploy pipeline's migrate-db job instead.
 COPY --from=deps /app/packages/db/migrations ./packages/db/migrations
 COPY --from=deps /app/packages/db/scripts/migrate.ts ./packages/db/scripts/migrate.ts
+COPY --from=deps /app/packages/db/scripts/early-applied-migration-repair.ts ./packages/db/scripts/early-applied-migration-repair.ts
 COPY --from=deps /app/packages/db/scripts/local-audit-v2-ledger-repair.ts ./packages/db/scripts/local-audit-v2-ledger-repair.ts
 COPY --from=deps /app/packages/db/scripts/local-invalid-index-repair.ts ./packages/db/scripts/local-invalid-index-repair.ts
 COPY --from=deps /app/packages/db/scripts/local-warm-session-index-repair.ts ./packages/db/scripts/local-warm-session-index-repair.ts
@@ -231,6 +246,8 @@ COPY --from=deps /app/packages/db/scripts/migration-target.ts ./packages/db/scri
 COPY --from=deps /app/packages/db/scripts/migration-ledger-repair.ts ./packages/db/scripts/migration-ledger-repair.ts
 COPY --from=deps /app/packages/db/scripts/migration-retry.ts ./packages/db/scripts/migration-retry.ts
 COPY --from=deps /app/packages/db/scripts/migration-runtime-overrides.ts ./packages/db/scripts/migration-runtime-overrides.ts
+COPY --from=deps /app/packages/db/scripts/migration-status.ts ./packages/db/scripts/migration-status.ts
+COPY --from=deps /app/packages/db/scripts/catalog.ts ./packages/db/scripts/catalog.ts
 # Non-kortix bootstrap (basejump + credit RPCs + signup triggers) for FRESH
 # self-host databases. `migrate.ts bootstrap` applies this before `up` when
 # basejump is absent (no-op on provisioned cloud/dev DBs).
@@ -271,8 +288,6 @@ COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-am
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
-COPY apps/sandbox/MACHINE.fast.md ./apps/sandbox/MACHINE.fast.md
-COPY apps/sandbox/lazy-tools ./apps/sandbox/lazy-tools
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
 COPY packages/sdk ./packages/sdk
 

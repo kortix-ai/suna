@@ -280,7 +280,7 @@ function ListRow({
                 <Folder className="text-muted-foreground size-4 shrink-0" />
               ) : (
                 getFileIcon(node.name, {
-                  className: tHardcodedUi.raw('i18nComplete.text4f3ce4e17d38'),
+                  className: 'size-4 shrink-0 text-muted-foreground',
                   variant: 'monochrome',
                 })
               )}

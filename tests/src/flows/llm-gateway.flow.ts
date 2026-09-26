@@ -1,5 +1,8 @@
 import { flow } from '../core/flow';
 import { Client } from '../core/client';
+import { log } from '../core/log';
+import { sleep } from '../core/poll';
+import { subscribe } from '../fixtures/billing';
 
 flow('GW-1', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /health'] }, async (ctx) => {
   const gw = new Client(ctx.env.gatewayUrl);
@@ -50,7 +53,7 @@ flow(
   async (ctx) => {
     const body = {
       principal: { accountId: '00000000-0000-4000-a000-000000000000' },
-      input: { requestedModel: 'glm-5.3-flash' },
+      input: { requestedModel: 'morph-dsv41flash' },
     };
     await ctx.step('no internal token → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/internal/gateway/resolve-route', body);
@@ -148,6 +151,7 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
+      'PATCH /v1/projects/:projectId/experimental',
       'GET /v1/projects/:projectId/llm-catalog',
       'GET /v1/projects/:projectId/llm-catalog/providers',
     ],
@@ -178,15 +182,21 @@ flow(
       });
     }
 
-    await ctx.step('OWNER → 200 on the model-level catalog', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
+    await ctx.step('enabled catalog retains published rates for ChatGPT picker rows', async () => {
+      (await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/experimental',
+        { feature: 'llm_gateway', enabled: true },
+        { params },
+      )).status(200);
+      const response = await ctx.client.as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/llm-catalog', { params });
-      // /llm-catalog is gated by the project's llm_gateway flag. On a fresh
-      // fixture project the flag may be off → 404 (catalog disabled), or on
-      // → 200 with a `{models:...}` body. Either is a valid boundary; a 500
-      // is the only real failure.
-      r.status([200, 404]);
+      response.status(200);
+      const models = response.json<{ models: Record<string, { cost?: Record<string, unknown> }> }>().models;
+      const subscription = models['codex/gpt-5.6-sol']?.cost;
+      const api = models['openai/gpt-5.6-sol']?.cost;
+      if (!(Number(api?.input) > 0) || JSON.stringify(subscription) !== JSON.stringify(api)) {
+        throw new Error(`ChatGPT picker must retain published API rate context: ${JSON.stringify(subscription)}`);
+      }
     });
 
     await ctx.step('OWNER → 200 with a provider catalog on /providers', async () => {
@@ -305,12 +315,12 @@ flow(
     const params = { projectId: project.id };
     const policy = {
       defaultModel: 'codex/gpt-5.6-sol',
-      visionModel: 'glm-5.3-flash',
-      defaultFallback: { models: ['glm-5.3-flash'], fallbackOn: 'any-error' },
+      visionModel: 'morph-dsv41flash',
+      defaultFallback: { models: ['morph-dsv41flash'], fallbackOn: 'any-error' },
       rules: [
         {
           model: 'openai/gpt-5.5',
-          fallbackModels: ['glm-5.3-flash'],
+          fallbackModels: ['morph-dsv41flash'],
           fallbackOn: 'transient',
         },
       ],
@@ -367,7 +377,7 @@ flow(
         .body()
         .has('$.project', savedProject)
         .has('$.effective.defaultModel', 'codex/gpt-5.6-sol')
-        .has('$.effective.defaultFallback.models', ['glm-5.3-flash']);
+        .has('$.effective.defaultFallback.models', ['morph-dsv41flash']);
 
       const read = await ctx.client
         .as(ctx.P.OWNER)
@@ -388,10 +398,10 @@ flow(
         .body()
         .has('$.route.policyId', 'project:default')
         .has('$.route.primaryModel', 'codex/gpt-5.6-sol')
-        .has('$.route.fallbackModels', ['glm-5.3-flash'])
+        .has('$.route.fallbackModels', ['morph-dsv41flash'])
         .has('$.route.fallbackOn', 'any-error')
         .has('$.models[0].model', 'codex/gpt-5.6-sol')
-        .has('$.models[1].model', 'glm-5.3-flash')
+        .has('$.models[1].model', 'morph-dsv41flash')
         .exists('$.models[0].available')
         .exists('$.models[1].available');
 
@@ -407,7 +417,7 @@ flow(
         .body()
         .has('$.route.policyId', 'project:exact:openai/gpt-5.5')
         .has('$.route.primaryModel', 'openai/gpt-5.5')
-        .has('$.route.fallbackModels', ['glm-5.3-flash'])
+        .has('$.route.fallbackModels', ['morph-dsv41flash'])
         .has('$.route.fallbackOn', 'transient');
     });
 
@@ -457,3 +467,198 @@ flow(
     });
   },
 );
+
+flow('GW-ACCESS-1', {
+  domain: 'llm-gateway',
+  routes: [
+    'GET /v1/projects/:projectId/model-access',
+    'PUT /v1/projects/:projectId/model-access',
+    'PATCH /v1/projects/:projectId/experimental',
+    'PUT /v1/projects/:projectId/gateway/routing-policy',
+    'POST /v1/projects/:projectId/gateway/keys',
+    'GET /v1/projects/:projectId/model-picker',
+    'POST /v1/llm/chat/completions',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  const member = await team.addMember('member');
+  const project = await team.project();
+  await team.grantProjectRole(project.id, member.userId!, 'user');
+  const params = { projectId: project.id };
+  const path = '/v1/projects/:projectId/model-access';
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const gateway = new Client(ctx.env.gatewayUrl);
+  let key = '';
+  const set = (target: 'provider' | 'model', id: string, enabled: boolean) =>
+    owner.put(path, { target, id, enabled }, { params });
+  const request = (model: string) => gateway.withBearer(key, 'PROJECT_GATEWAY_KEY')
+    .post('/v1/llm/chat/completions', { model, messages: [{ role: 'user', content: 'Reply OK' }], max_tokens: 4 });
+
+  await ctx.step('new project has no explicit restrictions and uses a non-managed default', async () => {
+    (await owner.patch('/v1/projects/:projectId/experimental', { feature: 'llm_gateway', enabled: true }, { params })).status(200);
+    (await owner.put('/v1/projects/:projectId/gateway/routing-policy', {
+      defaultModel: 'codex/gpt-5.6-sol', visionModel: null, defaultFallback: null, rules: [],
+    }, { params })).status(200);
+    (await owner.get(path, { params })).status(200).body()
+      .has('$.disabledProviders', []).has('$.disabledModels', []).has('$.enforced', true);
+    const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'model access verification' }, { params });
+    minted.status(200).body().exists('$.secret_key');
+    key = minted.json<{ secret_key: string }>().secret_key;
+  });
+  await ctx.step('anonymous and nonmember requests cannot read or change access', async () => {
+    for (const actor of [ctx.P.ANON, ctx.P.NONMEMBER]) {
+      (await ctx.client.as(actor).get(path, { params })).status(actor === ctx.P.ANON ? 401 : [403, 404]);
+      (await ctx.client.as(actor).put(path, { target: 'provider', id: 'openai', enabled: false }, { params }))
+        .status(actor === ctx.P.ANON ? 401 : [403, 404]);
+    }
+    (await ctx.client.as(member).get(path, { params })).status(200);
+    (await ctx.client.as(member).put(path, { target: 'provider', id: 'openai', enabled: false }, { params })).status(403);
+  });
+  await ctx.step('default model and provider are protected without writing a restriction', async () => {
+    (await set('provider', 'codex', false)).status(409).body().has('$.code', 'cannot_disable_default');
+    (await set('model', 'kortix/codex/gpt-5.6-sol', false)).status(409).body().has('$.code', 'cannot_disable_default');
+    (await owner.get(path, { params })).status(200).body().has('$.disabledProviders', []).has('$.disabledModels', []);
+  });
+  await ctx.step('managed disable persists and blocks a direct managed request', async () => {
+    (await set('provider', 'kortix', false)).status(200).body().has('$.disabledProviders', ['kortix']);
+    (await owner.get(path, { params })).status(200).body().has('$.disabledProviders', ['kortix']);
+    (await request('morph-dsv41flash')).status(400).body().has('$.error.code', 'provider_disabled');
+    const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
+    picker.status(200);
+    for (const [id, model] of Object.entries(picker.json<any>().models)) {
+      if (!id.includes('/') && (model as any).enabled !== false) throw new Error(`Disabled managed model remains enabled: ${id}`);
+    }
+  });
+  await ctx.step('concurrent provider and model changes both persist', async () => {
+    const responses = await Promise.all([set('provider', 'openai', false), set('model', 'custom-test/model', false)]);
+    responses.forEach((response) => response.status(200));
+    (await owner.get(path, { params })).status(200).body()
+      .has('$.disabledProviders', ['kortix', 'openai']).has('$.disabledModels', ['custom-test/model']);
+    (await request('openai/future-model')).status(400).body().has('$.error.code', 'provider_disabled');
+    (await request('custom-test/model')).status(400).body().has('$.error.code', 'model_disabled');
+  });
+  await ctx.step('re-enabling a provider preserves individual model restrictions', async () => {
+    (await set('provider', 'custom-test', false)).status(200);
+    (await set('provider', 'custom-test', true)).status(200).body().has('$.disabledModels', ['custom-test/model']);
+    (await request('custom-test/model')).status(400).body().has('$.error.code', 'model_disabled');
+    (await set('model', 'kortix/custom-test/model', true)).status(200).body().has('$.disabledModels', []);
+    (await request('custom-test/model')).status(400).body().has('$.error.code', 'model_not_found');
+  });
+  await ctx.step('invalid changes and selecting a disabled default leave policy unchanged', async () => {
+    (await owner.put(path, { target: 'provider', id: 'bad/provider', enabled: false }, { params })).status(400);
+    (await set('model', 'auto', false)).status(400);
+    (await owner.put('/v1/projects/:projectId/gateway/routing-policy', {
+      defaultModel: 'openai/gpt-5.5', visionModel: null, defaultFallback: null, rules: [],
+    }, { params })).status(409).body().has('$.code', 'model_disabled');
+    (await owner.get(path, { params })).status(200).body().has('$.defaultModel', 'codex/gpt-5.6-sol');
+  });
+  await ctx.step('re-enable clears provider restrictions and preserves the project gateway flag', async () => {
+    (await set('provider', 'openai', true)).status(200);
+    (await set('provider', 'kortix', true)).status(200);
+    (await owner.get(path, { params })).status(200).body()
+      .has('$.disabledProviders', []).has('$.disabledModels', []).has('$.enforced', true);
+  });
+});
+
+// A 64 × 64 red PNG. Every managed model reads it as "red" (verified
+// 2026-09-23 on each pinned endpoint).
+const RED_SQUARE_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAS0lEQVR42u3PQQkAAAgAsetfWiP4FgYrsKZeS0BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEDgsqnc8OJg6Ln3AAAAAElFTkSuQmCC';
+
+// A picker that offers a managed model its endpoint refuses is a silent
+// outage: the member picks it and every turn fails. This flow sends each
+// managed model the deployment serves one text-and-image request through the
+// gateway, with a subscribed account and the deployment's provider key. It
+// makes real model calls, so it runs on previews and the staging gate; the
+// local profile has no provider key and excludes it through `stripe`.
+flow('GW-MANAGED-1', {
+  domain: 'llm-gateway',
+  requires: ['stripe'],
+  timeoutMs: 300_000,
+  routes: [
+    'PATCH /v1/projects/:projectId/experimental',
+    'POST /v1/projects/:projectId/gateway/keys',
+    'GET /v1/projects/:projectId/model-picker',
+    'POST /v1/llm/chat/completions',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  const owner = ctx.client.as(ctx.P.OWNER);
+  await ctx.step('a subscribed account is entitled to the managed lineup', async () => {
+    await subscribe(ctx.env, owner, team.id);
+  });
+  const project = await team.project();
+  const params = { projectId: project.id };
+  let key = '';
+  await ctx.step('the project turns on the gateway and mints a gateway key', async () => {
+    (await owner.patch('/v1/projects/:projectId/experimental', { feature: 'llm_gateway', enabled: true }, { params }))
+      .status(200);
+    const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'managed lineup' }, { params });
+    minted.status(200).body().exists('$.secret_key');
+    key = minted.json<{ secret_key: string }>().secret_key;
+  });
+
+  let managed: string[] = [];
+  await ctx.step('the picker offers Kimi K3, DeepSeek V4.1 Flash and GLM 5.3 Flash as image-capable managed models, and no OpenAI or Anthropic model', async () => {
+    const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
+    picker.status(200);
+    const models = picker.json<{ models: Record<string, { name?: string; attachment?: boolean; enabled?: boolean }> }>()
+      .models;
+    managed = Object.keys(models).filter((id) => !id.includes('/'));
+    for (const [id, name] of [
+      ['kimi-k3', 'Kimi K3 2.8T'],
+      ['deepseek-v4.1-flash', 'DeepSeek V4.1 Flash'],
+      ['glm-5.3-flash', 'GLM 5.3 Flash'],
+    ] as const) {
+      const model = models[id];
+      if (!model || model.name !== name || model.attachment !== true || model.enabled === false) {
+        throw new Error(`picker does not offer ${id} as an enabled image-capable managed model: ${JSON.stringify(model)}`);
+      }
+    }
+    const vendor = managed.filter((id) => /^(gpt|claude|o\d)/.test(id));
+    if (vendor.length > 0) throw new Error(`picker offers OpenAI or Anthropic models as managed: ${vendor.join(', ')}`);
+  });
+
+  // An upstream 429 is capacity, not configuration: the route exists and the
+  // key is accepted. On the first preview run of this flow (2026-09-23),
+  // glm-5.3-flash answered 429 "temporarily rate-limited upstream" from its
+  // shared pool while the other managed models answered. A throttled
+  // model is retried, then logged; every other outcome fails.
+  await ctx.step('every managed model the picker offers answers a text-and-image request, or is throttled upstream', async () => {
+    const gateway = new Client(ctx.env.gatewayUrl).withBearer(key, 'PROJECT_GATEWAY_KEY');
+    const ask = async (model: string) => {
+      let status = 0;
+      let detail = '';
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const res = await gateway.post('/v1/llm/chat/completions', {
+          model,
+          max_tokens: 400,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: 'What color is this square? Reply with one lowercase word.' },
+              { type: 'image_url', image_url: { url: RED_SQUARE_PNG } },
+            ],
+          }],
+        });
+        status = res.statusCode;
+        detail = status === 200
+          ? String(res.json<{ choices?: Array<{ message?: { content?: unknown } }> }>().choices?.[0]?.message?.content ?? '')
+          : res.text().slice(0, 200);
+        if (![429, 502, 503, 504].includes(status)) break;
+        if (attempt < 3) await sleep(3_000 * attempt);
+      }
+      return { model, status, detail };
+    };
+    const results = await Promise.all(managed.map(ask));
+    const answered = results.filter((r) => r.status === 200 && /\bred\b/i.test(r.detail));
+    const throttled = results.filter((r) => r.status === 429);
+    for (const r of throttled) log.warn(`GW-MANAGED-1: ${r.model} throttled upstream after 3 attempts: ${r.detail}`);
+    const failed = results.filter((r) => !answered.includes(r) && !throttled.includes(r));
+    if (failed.length > 0) {
+      throw new Error(`managed models that did not answer:\n${failed.map((r) => `${r.model}: HTTP ${r.status} ${r.detail}`).join('\n')}`);
+    }
+    if (answered.length === 0) throw new Error('no managed model answered; every model was throttled');
+  });
+});
+

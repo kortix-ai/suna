@@ -92,7 +92,6 @@ mock.module('../shared/account-limits', () => ({
     source: 'tier',
   }),
   resolveAccountTier: async () => 'free',
-  accountEntitledToLlmGateway: async () => true,
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   clearAccountLimitCache: () => {},
 }));
@@ -153,7 +152,6 @@ mock.module('../projects/git', () => ({
 mock.module('../snapshots/builder', () => ({
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
-  ensureFastSandboxImage: async () => ({ snapshotName: 'kortix-fast-test', slug: 'default', contentHash: 'f'.repeat(64), built: false, isDefault: true, runtimeProfile: 'fast' }),
   ensureMetaSandboxImage: async () => ({ snapshotName: 'kortix-meta-test', slug: 'meta', contentHash: 'b'.repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: 'kortix-default-test', slug: 'default' }),
   listSnapshotBuilds: async () => [],

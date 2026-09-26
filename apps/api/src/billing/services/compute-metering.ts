@@ -11,13 +11,13 @@
 //       ├─ hibernate / user-stop / wake / restart hooks
 //       │     │
 //       │     ├─ pauseComputeSession (finalize cost, debit, mark stopped)
-//       │     └─ resumeComputeSession (open new row when sandbox starts again)
+//       │     └─ reopenComputeForSandbox (open new row when sandbox starts again)
 //       │
 //       └─ remove → endComputeSession (finalize, no resume)
 //
-// Cron tick (tickRunningComputeCharges) runs every 15 minutes and partially
-// bills any session whose last_billed_at is > 1 hour ago, so a missed close
-// hook can never silently accrue 24h+ of uncharged compute.
+// The maintenance tick (tickRunningComputeCharges) runs every 5 minutes and
+// partially bills any session whose last_billed_at is at least 5 minutes old,
+// so a missed close hook can never silently accrue uncharged compute.
 
 import {
   appDeployments,
@@ -27,7 +27,7 @@ import {
   sandboxComputeSessions,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { config } from '../../config';
 import {
   type ProviderName,
@@ -36,6 +36,7 @@ import {
 } from '../../platform/providers';
 import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
 import { db } from '../../shared/db';
+import { isUniqueViolation } from '../../shared/postgres-errors';
 import {
   type SandboxSpec,
   claimComputeWindow,
@@ -52,17 +53,30 @@ import {
   computeLivenessGraceMs,
   lastAliveAtOf,
 } from './compute-liveness';
-import { settleCredits } from './settle-credits';
+import { wallet } from '../wallet';
 import {
   DEFAULT_COMPUTE_RATE_MULTIPLIER,
   clampComputeRateMultiplier,
 } from './entitlement-overrides';
-import { accountMetersCompute } from './tiers';
+import { LEGACY_PAID_TIERS_UNMETERED, accountRowMetersCompute } from './tiers';
 
 /** Kept in lockstep with accountMetersCompute() — see tier-facts.ts. */
 const METERED_BILLING_MODELS = ['per_seat', 'credit'] as const;
 
-const PARTIAL_BILL_INTERVAL_MS = 60 * 60 * 1000; // 1h
+/**
+ * SQL form of `accountRowMetersCompute()`: a metered model, or any row that is
+ * not a legacy paid plan. `tier` is coalesced because `NULL NOT IN (...)` is
+ * NULL, which would drop a row the TypeScript predicate meters.
+ */
+const accountRowMetersComputeSql = () =>
+  or(
+    inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
+    notInArray(sql`coalesce(${creditAccounts.tier}, '')`, [...LEGACY_PAID_TIERS_UNMETERED]),
+  );
+
+// Match the project-maintenance cadence so active compute appears on Billing
+// without waiting for a stop hook or a full hour.
+const PARTIAL_BILL_INTERVAL_MS = 5 * 60 * 1000;
 // Bounded like every other periodic sweep in this codebase (REAP_BATCH_SIZE in
 // sandbox-reaper.ts, findStaleActiveSessions' default) so one pass can never
 // stampede a large backlog of reconcile candidates into a burst of provider/DB
@@ -138,19 +152,19 @@ async function computeRateMultiplierFor(accountId: string): Promise<number> {
 
 /**
  * Open a metering row when a sandbox transitions to `active`.
- * No-op for legacy accounts — they continue to be billed via the flat machine
- * tier model in COMPUTE_TIERS.
+ * No-op for a legacy PAID plan only (see `accountRowMetersCompute`). Every
+ * other account, free and trial included, pays for compute from its wallet.
  */
 export async function startComputeSession(opts: StartComputeOpts): Promise<string | null> {
   // Hard gate: self-hosted / billing-disabled deploys never meter compute, even
   // if a credit_accounts row has a metered billing_model (stale data).
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
   const account = await getCreditAccount(opts.accountId);
-  // `accountMetersCompute`, NOT `isPerSeatAccount`. Per-seat used to be the only
-  // metered model, so the gate was written as an identity check; read literally
-  // it grants every other model free compute. The v3 `credit` plans are metered
-  // too — that omission would have been an unbilled hole through the new tiers.
-  if (!accountMetersCompute(account?.billingModel)) return null;
+  // `accountRowMetersCompute`, NOT a check on `billing_model` alone. The column
+  // defaults to 'legacy', so a model-only gate hands free compute to every
+  // account that never completed a checkout — free accounts and admin trials.
+  // Only a legacy PAID plan is exempt. See tier-facts.ts.
+  if (!accountRowMetersCompute(account)) return null;
 
   // If a row is already open (e.g. duplicate hook), reuse it.
   const existing = await getOpenComputeSession(opts.sandboxId);
@@ -177,7 +191,10 @@ export async function startComputeSession(opts: StartComputeOpts): Promise<strin
     workloadType: opts.workloadType ?? 'session',
     appRuntimeId: opts.appRuntimeId ?? null,
   }).catch(async (err) => {
-    if ((err as { code?: string })?.code !== '23505') throw err;
+    // `uniq_sandbox_compute_sessions_one_open`: a concurrent start opened the
+    // row between the read above and this insert. Reuse it. Drizzle wraps the
+    // driver error, so the SQLSTATE is read through the cause chain.
+    if (!isUniqueViolation(err)) throw err;
     return getOpenComputeSession(opts.sandboxId);
   });
   return row?.id ?? null;
@@ -196,7 +213,7 @@ async function settleComputeWindow(
 ): Promise<'settled' | 'contended' | 'debit_failed' | 'no_window'> {
   const lastBilled = new Date(row.lastBilledAt);
   // THE CLAMP — never bill past the last control-plane observation that the box
-  // was alive, plus the provider's own auto-stop ceiling. A sandbox physically
+  // was alive, plus the billing grace. A sandbox physically
   // cannot outlive that, so anything beyond it is billing a box that no longer
   // exists (measured 2026-07-29: one row had accrued 829 hours this way, and
   // 54% of an affected customer's compute bill was time the box provably could
@@ -259,29 +276,29 @@ async function settleComputeWindow(
 
   // Settle the wallet. These seconds are already consumed — the sandbox ran —
   // so this is a SETTLEMENT, not an admission, and it records even when the
-  // wallet cannot cover it (see settleCredits). Auto-topup still fires.
+  // wallet cannot cover it (see wallet.settle). Auto-topup still fires.
   //
   // The release path below is now a genuine error path rather than the steady
   // state it used to be: a drained account no longer bounces every window
   // forever, it records the overdraft once and blocks the next admission.
   try {
-    await settleCredits(
-      row.accountId,
-      windowCost,
+    await wallet.settle({
+      accountId: row.accountId,
+      amount: windowCost,
       // The multiplier is named in the description only when it is not list
       // price, so a custom-priced debit is self-explaining in the ledger and an
       // ordinary one reads exactly as it always has.
-      `Sandbox compute · ${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
+      description: `Sandbox compute · ${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
         rateMultiplier === DEFAULT_COMPUTE_RATE_MULTIPLIER ? '' : ` · ${rateMultiplier}× rate`
       }`,
-      'compute_debit',
+      kind: 'compute_debit',
       // Derived from WHAT is billed — this session and this window end — so a
       // retry after a lost response produces the same key and replays instead
       // of charging again. The CAS claim above already stops two settlers from
       // both billing; this covers the single settler that never learned its own
       // debit succeeded.
-      `compute:${row.id}:${claimedEnd.toISOString()}`,
-    );
+      key: { request: `compute:${row.id}:${claimedEnd.toISOString()}` },
+    });
   } catch (err) {
     // No longer reachable for a merely-drained wallet (settlement overdrafts
     // instead of refusing). Retained for the real failures that remain — a
@@ -310,7 +327,7 @@ async function settleComputeWindow(
  * The next runtime start will open a fresh row via startComputeSession.
  *
  * `windowEnd` bills through an EARLIER, affirmatively-evidenced instant instead
- * of `now` — used by the billing-invariant sweep (projects/sandbox-reaper.ts
+ * of `now` — used by the billing-invariant sweep (compute-invariant-sweep.ts
  * `reconcileOrphanComputeSessions`) when it finds a row that has been open long
  * after the box actually died: a box whose sandbox row we flipped to `stopped`
  * 34 days ago must be billed through that flip, not through the moment we
@@ -392,20 +409,11 @@ export async function markComputeSessionAlive(sandboxId: string, at = new Date()
 }
 
 /**
- * Sandbox is being woken from a stopped state. Open a new row.
- * Caller passes the current spec — spec may have changed if the project
- * manifest was edited between the stop and the wake.
- */
-export async function resumeComputeSession(opts: StartComputeOpts): Promise<string | null> {
-  return startComputeSession(opts);
-}
-
-/**
  * Reopen metering for a hibernated sandbox being resumed in place (the
  * stopped→active wake path). Reuses the spec from the sandbox's most recent
  * window so the resumed compute bills exactly like the original run, without
  * re-resolving the project manifest on the hot reopen path. No-op when billing
- * is disabled / the account isn't per-seat / a row is already open
+ * is disabled / the account does not meter compute / a row is already open
  * (startComputeSession is idempotent on an open row).
  */
 export async function reopenComputeForSandbox(
@@ -460,7 +468,7 @@ export interface ReconcileMissingComputeResult {
  *
  * This sweeps every `active` sandbox with no currently-open compute row and
  * reopens one via `reopenComputeForSandbox`, which already applies the
- * `accountMetersCompute` gate (no-op for `legacy` accounts — never reimplemented
+ * `accountRowMetersCompute` gate (no-op for a legacy paid plan — never reimplemented
  * here) and reuses the sandbox's last known spec so a reconciled window bills
  * at the same rate the sandbox always has. Idempotent: `startComputeSession`
  * underneath is a no-op if a row already raced open between the SELECT below
@@ -470,18 +478,17 @@ export interface ReconcileMissingComputeResult {
  * decision, not something this sweep silently charges for.
  */
 /**
- * Candidate query, exported so its predicate can be asserted directly rather
- * than through a mock that reimplements the filtering.
+ * Candidate query.
  *
- * The `per_seat` inner join is load-bearing, not defence-in-depth: a `legacy`
- * account can NEVER be metered (`startComputeSession` returns early), so every
- * active legacy box matches "no open window" permanently. Without this filter an
- * unordered `LIMIT` fills with legacy rows on every pass and the per-seat rows
+ * The metered-account inner join is load-bearing, not defence-in-depth: a legacy
+ * paid plan can NEVER be metered (`startComputeSession` returns early), so every
+ * active box on one matches "no open window" permanently. Without this filter an
+ * unordered `LIMIT` fills with those rows on every pass and the metered rows
  * this sweep exists for are never reached — a no-op that costs a round-trip per
  * row. The inner join also drops accounts with no `credit_accounts` row at all,
- * which is the same fail-closed outcome as the `accountMetersCompute` gate below.
+ * which is the same fail-closed outcome as the `accountRowMetersCompute` gate below.
  */
-export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
+function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
   return db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
@@ -495,9 +502,9 @@ export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_S
       creditAccounts,
       and(
         eq(creditAccounts.accountId, sessionSandboxes.accountId),
-        // Mirrors accountMetersCompute() — every metered billing model, not just
-        // per-seat. A model missing here silently stops being charged.
-        inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
+        // Mirrors accountRowMetersCompute(). An account missing here silently
+        // stops being charged.
+        accountRowMetersComputeSql(),
       ),
     )
     .leftJoin(
@@ -520,7 +527,7 @@ export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_S
  * billable only while it is the active deployment, its desired state is
  * running, and the runtime row itself is running.
  */
-export function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
+function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
   return db
     .select({
       sandboxId: appRuntimes.runtimeId,
@@ -546,7 +553,7 @@ export function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATC
       creditAccounts,
       and(
         eq(creditAccounts.accountId, appRuntimes.accountId),
-        inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
+        accountRowMetersComputeSql(),
       ),
     )
     .leftJoin(
@@ -656,8 +663,8 @@ export async function reconcileMissingComputeSessions(
 }
 
 /**
- * Cron entry point. Every 15 minutes: find sessions that have been billing for
- * over an hour without a hook firing, settle a partial window. Prevents a
+ * Maintenance entry point. Every 5 minutes: settle active sessions whose
+ * current billing window is at least one maintenance interval old. Prevents a
  * missed close from accumulating uncharged compute indefinitely. Also runs the
  * missing-compute-session reconciler (see `reconcileMissingComputeSessions`)
  * in the same pass — the natural periodic hook for both safety nets.

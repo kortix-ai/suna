@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { Client } from "pg";
 import {
   LOCAL_AUTH_EMAIL_HOOK_SECRET,
+  LOCAL_STRIPE_WEBHOOK_SECRET,
   LOCAL_FLOW_INTERNAL_SERVICE_KEY,
   localWebUrl,
   type LocalSupabaseEnvironment,
@@ -133,6 +135,8 @@ export function parseSupabaseEnvironment(
         "ANON_KEY",
         "SERVICE_ROLE_KEY",
         "JWT_SECRET",
+        "S3_PROTOCOL_ACCESS_KEY_ID",
+        "S3_PROTOCOL_ACCESS_KEY_SECRET",
       ].includes(key)
     )
       continue;
@@ -194,6 +198,67 @@ function localSupabaseCommand(topology: LocalTopology): string[] {
   return args;
 }
 
+/**
+ * One probe's output as a single reportable line, or null when it found
+ * nothing. `ss` always prints its `State Recv-Q …` header, so a lone header
+ * means the port is free — reporting it would be noise that reads like a
+ * holder.
+ */
+export function formatPortProbe(port: number, tool: string, out: string): string | null {
+  const rows = out
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !/^State\s+Recv-Q/.test(line));
+  return rows.length > 0 ? `  ${port} ${tool}: ${rows.join(" | ")}` : null;
+}
+
+/** The host ports the local Supabase stack binds. */
+const SUPABASE_PORTS = [54321, 54322, 54323, 54324] as const;
+
+/**
+ * Who holds the Supabase ports, read at the moment `supabase start` fails.
+ *
+ * `supabase start` reports only `address already in use` and the container it
+ * could not bind — never what already had the port. That is why this failure
+ * has been diagnosed three times by inference and fixed twice without
+ * evidence:
+ *
+ *  - 2026-09-21, four runs: stale containers from a lane that skipped its
+ *    teardown. Fixed by stopping on every lane (`tests.yml`).
+ *  - 2026-09-21, run 35630898515: nothing left to delete — the binding simply
+ *    had not been released yet. Fixed by waiting for it (`tests.yml`).
+ *  - 2026-09-22, run 35701536921: the workflow's own sweep ran clean and its
+ *    `::warning::` did NOT fire, so the ports were free when the job started —
+ *    and `supabase start` inside `ke2e` still failed on 54322, 3.1s in.
+ *
+ * The workflow guards the OUTER start. This is the inner one, and nothing has
+ * ever looked at the port here. Read it where it breaks rather than guessing a
+ * fourth time.
+ *
+ * Best effort by design: this runs on an already-failing path, so a missing
+ * `ss`, a missing `docker`, or a slow probe must add nothing but silence.
+ */
+async function describePortHolders(): Promise<string> {
+  const lines: string[] = [];
+  for (const port of SUPABASE_PORTS) {
+    for (const argv of [
+      ["ss", "-ltnp", `sport = :${port}`],
+      ["docker", "ps", "-a", "--filter", `publish=${port}`, "--format", "{{.ID}} {{.Image}} {{.Status}} {{.Ports}}"],
+    ]) {
+      try {
+        const probe = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+        const out = (await new Response(probe.stdout).text()).trim();
+        await probe.exited;
+        const row = formatPortProbe(port, argv[0]!, out);
+        if (row) lines.push(row);
+      } catch {
+        /* the probe is not available here; the failure message stands alone */
+      }
+    }
+  }
+  return lines.length > 0 ? `\nports still held:\n${lines.join("\n")}` : "\nports: nothing is listening on 54321-54324";
+}
+
 export async function ensureLocalSupabase(
   topology: LocalTopology,
   options: { autoStart: boolean },
@@ -221,7 +286,9 @@ export async function ensureLocalSupabase(
   });
   const exitCode = await started.exited;
   if (exitCode !== 0) {
-    throw new Error(`local Supabase start exited with code ${exitCode}`);
+    throw new Error(
+      `local Supabase start exited with code ${exitCode}${await describePortHolders()}`,
+    );
   }
   const environment = await readLocalSupabaseEnvironment(topology);
   return {
@@ -271,6 +338,74 @@ export async function ensureLocalMigrations(
   const exitCode = await migrated.exited;
   if (exitCode !== 0) {
     throw new Error(`local database migration exited with code ${exitCode}`);
+  }
+  await waitForLocalPostgrest(supabase);
+}
+
+export interface PostgrestReadinessDeps {
+  reload?: (dbUrl: string) => Promise<void>;
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+  timeoutMs?: number;
+}
+
+/**
+ * Waits until PostgREST serves the migrated schema.
+ *
+ * `supabase start` on an empty database boots PostgREST before the `kortix`
+ * schema exists. Its first schema-cache load fails (`3F000`) and it retries
+ * with exponential backoff, answering `503 PGRST002` meanwhile. Without this
+ * wait, a flow that calls `/rest/v1` (SEC-K) ran inside that backoff window.
+ * A `reload schema` notification loads the cache at once.
+ *
+ * Returns when the REST gateway is unreachable: the runner itself needs only
+ * Auth and Postgres, and a flow that needs PostgREST reports its own error.
+ */
+export async function waitForLocalPostgrest(
+  supabase: LocalSupabaseEnvironment,
+  deps: PostgrestReadinessDeps = {},
+): Promise<void> {
+  const { API_URL, DB_URL, ANON_KEY } = supabase;
+  if (!API_URL || !DB_URL || !ANON_KEY) return;
+  const reload = deps.reload ?? notifyPostgrestReload;
+  const request = deps.fetch ?? ((url, init) => fetch(url, init));
+  const sleep = deps.sleep ?? ((ms) => Bun.sleep(ms));
+  const now = deps.now ?? Date.now;
+  const timeoutMs = deps.timeoutMs ?? 60_000;
+  const deadline = now() + timeoutMs;
+  let lastBody = "";
+  for (let attempt = 0; ; attempt += 1) {
+    // Re-send every 2 s: a notification that lands while PostgREST
+    // reconnects is lost.
+    if (attempt % 4 === 0) await reload(DB_URL).catch(() => {});
+    let response: Response;
+    try {
+      response = await request(`${API_URL}/rest/v1/`, {
+        headers: { apikey: ANON_KEY },
+        signal: AbortSignal.timeout(5_000),
+      });
+    } catch {
+      return;
+    }
+    if (response.status !== 503) return;
+    lastBody = (await response.text()).slice(0, 200);
+    if (now() >= deadline) {
+      throw new Error(
+        `local PostgREST still answers 503 after ${Math.round(timeoutMs / 1000)}s: ${lastBody}`,
+      );
+    }
+    await sleep(500);
+  }
+}
+
+async function notifyPostgrestReload(dbUrl: string): Promise<void> {
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+  try {
+    await client.query("NOTIFY pgrst, 'reload schema'");
+  } finally {
+    await client.end();
   }
 }
 
@@ -332,6 +467,46 @@ export async function localWebHealthy(webUrl: string): Promise<boolean> {
   }
 }
 
+/**
+ * The environment the deterministic local stack hands its Next dev server.
+ *
+ * Exported as a pure function so the contract is assertable without spawning a
+ * process — see local-web-environment.test.ts.
+ */
+export function localWebEnvironment(options: {
+  webPort: number;
+  webUrl: string;
+  apiUrl: string;
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+}): Record<string, string> {
+  const { webPort, webUrl, apiUrl, supabaseUrl, supabaseAnonKey } = options;
+  return {
+    WEB_PORT: String(webPort),
+    KORTIX_API_PROXY_TARGET: apiUrl.replace(/\/v1$/, ""),
+    NEXT_PUBLIC_BACKEND_URL: apiUrl,
+    KORTIX_PUBLIC_BACKEND_URL: apiUrl,
+    BACKEND_URL: apiUrl,
+    SUPABASE_URL: supabaseUrl,
+    NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+    KORTIX_PUBLIC_SUPABASE_URL: supabaseUrl,
+    SUPABASE_ANON_KEY: supabaseAnonKey,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
+    KORTIX_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
+    NEXT_PUBLIC_APP_URL: webUrl,
+    KORTIX_PUBLIC_APP_URL: webUrl,
+    NEXT_PUBLIC_URL: webUrl,
+    NEXT_PUBLIC_BILLING_ENABLED: "false",
+    // A one-shot test run starts with a cold `.next/dev/cache` and deletes it
+    // afterwards, so Turbopack's dev filesystem cache saves nothing here. It
+    // can still cost the entire browser shard: a failed restore panics outside
+    // turbo-tasks' per-task boundary and aborts the dev server, after which
+    // every remaining spec fails with ERR_CONNECTION_REFUSED and names itself
+    // instead of the real cause. See apps/web/next.config.ts.
+    KORTIX_TURBOPACK_FS_CACHE: "off",
+  };
+}
+
 export async function ensureLocalWeb(
   topology: LocalTopology,
   options: { autoStart: boolean; supabase: LocalSupabaseEnvironment },
@@ -356,21 +531,13 @@ export async function ensureLocalWeb(
       detached: true,
       env: {
         ...process.env,
-        WEB_PORT: String(webPort),
-        KORTIX_API_PROXY_TARGET: topology.apiUrl.replace(/\/v1$/, ""),
-        NEXT_PUBLIC_BACKEND_URL: topology.apiUrl,
-        KORTIX_PUBLIC_BACKEND_URL: topology.apiUrl,
-        BACKEND_URL: topology.apiUrl,
-        SUPABASE_URL: API_URL,
-        NEXT_PUBLIC_SUPABASE_URL: API_URL,
-        KORTIX_PUBLIC_SUPABASE_URL: API_URL,
-        SUPABASE_ANON_KEY: ANON_KEY,
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
-        KORTIX_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
-        NEXT_PUBLIC_APP_URL: webUrl,
-        KORTIX_PUBLIC_APP_URL: webUrl,
-        NEXT_PUBLIC_URL: webUrl,
-        NEXT_PUBLIC_BILLING_ENABLED: "false",
+        ...localWebEnvironment({
+          webPort,
+          webUrl,
+          apiUrl: topology.apiUrl,
+          supabaseUrl: API_URL,
+          supabaseAnonKey: ANON_KEY,
+        }),
       },
       stdin: "ignore",
       stdout: "inherit",
@@ -381,9 +548,27 @@ export async function ensureLocalWeb(
   const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
     if (await localWebHealthy(webUrl)) {
+      // Nothing watches the dev server once it is ready, so a mid-run death
+      // used to reach the report as N unrelated spec failures — each one
+      // blaming itself for an ERR_CONNECTION_REFUSED against a dead port, the
+      // real cause hundreds of lines earlier in a shared stdout. Say it once,
+      // loudly, at the moment it happens.
+      let stopping = false;
+      void web.exited.then((code) => {
+        if (stopping) return;
+        console.error(
+          `[local-stack] the local web server exited with code ${code} while ` +
+            `tests were still running. Every browser spec from this point on ` +
+            `will fail against ${webUrl} with a connection error, whatever ` +
+            `each one reports. Look above this line for the cause.`,
+        );
+      });
       return {
         started: true,
-        stop: async () => stopOwnedStack(web),
+        stop: async () => {
+          stopping = true;
+          await stopOwnedStack(web);
+        },
       };
     }
     if (web.exitCode !== null) {
@@ -419,7 +604,14 @@ export async function ensureLocalStack(
     );
   }
 
-  const { DB_URL, API_URL, SERVICE_ROLE_KEY, JWT_SECRET } = options.supabase;
+  const {
+    DB_URL,
+    API_URL,
+    SERVICE_ROLE_KEY,
+    JWT_SECRET,
+    S3_PROTOCOL_ACCESS_KEY_ID,
+    S3_PROTOCOL_ACCESS_KEY_SECRET,
+  } = options.supabase;
   if (!DB_URL || !API_URL || !SERVICE_ROLE_KEY) {
     throw new Error("local Supabase environment is incomplete");
   }
@@ -440,6 +632,10 @@ export async function ensureLocalStack(
           INTERNAL_KORTIX_ENV: "dev",
           KORTIX_LOCAL_DEV: "1",
           KORTIX_LOCAL_TEST_PROFILE: "1",
+          // Connector flows stand up a loopback upstream (CONN-ATT-1, CONN-EGRESS-1).
+          // Only this exact host is exempt from the connector egress check;
+          // every other private address stays refused.
+          KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
           PORT: String(apiPort),
           KORTIX_APPS_LOCAL: "true",
           KORTIX_APPS_LOCAL_PORT: String(apiPort),
@@ -456,6 +652,22 @@ export async function ensureLocalStack(
           INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
           ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
           KORTIX_SKIP_ENSURE_SCHEMA: "1",
+          // Config archives go through the API's one object store, pointed at
+          // this profile's Supabase Storage S3 endpoint. `--no-env-file` above
+          // means apps/api/.env is NOT read here, so the whole block has to be
+          // explicit — and it is required: billing is on in this profile, so a
+          // missing bucket is a startup error, not a warning.
+          CONFIG_RELEASES_ENABLED: "true",
+          KORTIX_CONFIG_ARCHIVE_S3_BUCKET: "kortix-config-releases",
+          KORTIX_CONFIG_ARCHIVE_S3_REGION: "local",
+          KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
+          KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: "true",
+          ...(S3_PROTOCOL_ACCESS_KEY_ID
+            ? { KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID }
+            : {}),
+          ...(S3_PROTOCOL_ACCESS_KEY_SECRET
+            ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET }
+            : {}),
           SCHEDULER_ENABLED: "false",
           KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
           KORTIX_WORKERS_ENABLED: "false",
@@ -467,7 +679,7 @@ export async function ensureLocalStack(
           DAYTONA_SERVER_URL: "http://127.0.0.1:1",
           DAYTONA_TARGET: "local-test-provider-disabled",
           STRIPE_SECRET_KEY: "sk_test_local_flow_runner_disabled",
-          STRIPE_WEBHOOK_SECRET: "whsec_local_flow_runner_disabled",
+          STRIPE_WEBHOOK_SECRET: LOCAL_STRIPE_WEBHOOK_SECRET,
           PIPEDREAM_WEBHOOK_SECRET: "local-flow-runner-disabled",
           SLACK_CLIENT_ID: "local-flow-runner-disabled",
           SLACK_CLIENT_SECRET: "local-flow-runner-disabled",
@@ -476,7 +688,7 @@ export async function ensureLocalStack(
           LLM_GATEWAY_BASE_URL: "",
           LLM_GATEWAY_PROXY_PORT: String(gatewayPort),
           GATEWAY_INTERNAL_TOKEN: gatewayToken,
-          TUNNEL_ENABLED: "false",
+          TUNNEL_ENABLED: "true",
           TUNNEL_SIGNING_SECRET: "local-flow-runner-tunnel-signing-secret",
           // One connection string configures delivery, exactly as an operator
           // sets it — so the local suite exercises the EMAIL_URL path itself.

@@ -22,7 +22,7 @@ describe('SessionSiteHeader sidebar toggle', () => {
     expect(source).toContain('<SidebarToggle />');
     const toggleAt = source.indexOf('<SidebarToggle />');
     expect(toggleAt).toBeGreaterThan(-1);
-    expect(toggleAt).toBeLessThan(source.indexOf('{headerTitle}'));
+    expect(toggleAt).toBeLessThan(source.indexOf('>{headerTitle}</span>'));
   });
 
   // `sidebarState` survives for the title-bar indent (`sidebarHidden`), not
@@ -41,7 +41,7 @@ describe('SessionSiteHeader sidebar toggle', () => {
 describe('SessionSiteHeader session title', () => {
   test('renders the session name in the leading cluster, after the home button and before leadingAction', () => {
     const homeButtonIndex = source.indexOf('<HouseIcon');
-    const titleIndex = source.indexOf('{headerTitle}');
+    const titleIndex = source.indexOf('>{headerTitle}</span>');
     const leadingActionIndex = source.lastIndexOf('{leadingAction}');
     expect(titleIndex).toBeGreaterThan(-1);
     expect(titleIndex).toBeGreaterThan(homeButtonIndex);
@@ -51,7 +51,7 @@ describe('SessionSiteHeader session title', () => {
   // Without these, a long title just grows the leading cluster and pushes
   // the trailing cluster (config/dev-tools/⋯) off-screen instead of eliding.
   test('the title element carries min-w-0 and truncate, so a long value shrinks instead of expanding the row', () => {
-    const titleIndex = source.indexOf('{headerTitle}');
+    const titleIndex = source.indexOf('>{headerTitle}</span>');
     const titleTagStart = source.lastIndexOf('<span', titleIndex);
     const titleTag = source.slice(titleTagStart, titleIndex);
     expect(titleTag).toContain('min-w-0');
@@ -67,26 +67,48 @@ describe('SessionSiteHeader session title', () => {
     expect(precedingChunk.trim().endsWith('>')).toBe(true);
   });
 
-  test('renders the title and down caret as a padded dropdown trigger', () => {
-    const titleIndex = source.indexOf('{headerTitle}');
-    const triggerStart = source.lastIndexOf('<DropdownMenuTrigger', titleIndex);
-    const trigger = source.slice(
-      triggerStart,
-      source.indexOf('</DropdownMenuTrigger>', titleIndex),
-    );
+  // Split control: the name and the caret are two buttons. A click on the
+  // name edits it in place; only the caret opens the session menu.
+  test('the name is a plain button that starts the inline rename, not a menu trigger', () => {
+    const titleIndex = source.indexOf('>{headerTitle}</span>');
+    const nameButton = source.slice(source.lastIndexOf('<Button', titleIndex), titleIndex);
+    expect(nameButton).toContain('onClick={startRename}');
+    expect(nameButton).toContain('rounded-md');
+    expect(nameButton).toContain('px-2.5');
 
-    expect(triggerStart).toBeGreaterThan(-1);
-    expect(trigger).toContain('rounded-md');
-    expect(trigger).toContain('px-2.5');
-    expect(trigger).toContain('py-1');
+    const triggerStart = source.indexOf('<DropdownMenuTrigger asChild>');
+    expect(triggerStart).toBeGreaterThan(titleIndex);
+  });
+
+  test('the caret is its own menu trigger and never rotates', () => {
+    const triggerStart = source.indexOf('<DropdownMenuTrigger asChild>');
+    const trigger = source.slice(triggerStart, source.indexOf('</DropdownMenuTrigger>'));
+    expect(trigger).toContain('size="icon-sm"');
+    expect(trigger).toContain('aria-label=');
     expect(trigger).toContain('data-[state=open]:bg-card');
     expect(trigger).toContain('<CaretDownIcon');
-    expect(trigger).toContain('group-data-[state=open]:rotate-180');
+    expect(trigger).not.toContain('rotate-180');
+    expect(trigger).not.toContain('{headerTitle}');
+  });
+
+  test('renaming swaps the name for the inline field, which saves through the shared hook', () => {
+    expect(source).toContain('<SessionTitleInput');
+    expect(source).toContain('useRenameSession(');
+    expect(source).toContain('renameMutation.mutate(name)');
+    // One rename surface: the modal is gone from the header.
+    expect(source).not.toContain('<RenameSessionModal');
+  });
+
+  test('the menu Rename item keeps focus in the field Radix would steal back', () => {
+    expect(source).toContain('renameFromMenu.current = true;');
+    const content = source.slice(source.indexOf('<DropdownMenuContent\n'));
+    expect(content).toContain('onCloseAutoFocus');
+    expect(content).toContain('e.preventDefault()');
   });
 
   test('uses the complete action list in the title menu', () => {
     expect(source.split('{sessionActionItems}').length - 1).toBe(1);
-    expect(source).toContain('setRenameOpen(true)');
+    expect(source).toContain('startRename();');
     expect(source).toContain('setShareOpen(true)');
     expect(source).toContain('restartMutation.mutate()');
     expect(source).toContain('reloadConfig.reload()');
@@ -235,11 +257,12 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
  * The stale-config chip, wired.
  *
  * These are wiring assertions, not rendering ones, and they exist because of a
- * specific near-miss: `ConnectorRequiredNotice` shipped correct, passed every
- * unit test, and rendered nothing for weeks — it was mounted with a value the
- * app never populates. Its unit tests all covered the pure copy helper, which
- * was fine the whole time. The lesson is that for this component family the
- * bug lives at the mount, so the mount is what gets pinned.
+ * specific near-miss: a sibling inline card (`ConnectorRequiredNotice`, since
+ * removed — connector-credentials rework) shipped correct, passed every unit
+ * test, and rendered nothing for weeks — it was mounted with a value the app
+ * never populates. Its unit tests all covered the pure copy helper, which was
+ * fine the whole time. The lesson is that for this component family the bug
+ * lives at the mount, so the mount is what gets pinned.
  */
 describe('SessionConfigIndicator wiring', () => {
   test('the chip gets the Kortix session id, never the OpenCode one', () => {

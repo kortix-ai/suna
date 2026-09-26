@@ -10,6 +10,37 @@ describe('buildTeamsManifest', () => {
     expect(m.validDomains).toEqual(['api.kortix.com']);
     expect(m.manifestVersion).toBe('1.16');
   });
+
+  test('requests RSC for channels AND group chats so thread replies reach the bot without a mention', () => {
+    const m = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
+    expect(m.webApplicationInfo).toEqual({ id: 'app-123', resource: 'https://RscBasedStoreApp' });
+    expect(m.authorization.permissions.resourceSpecific).toEqual([
+      { name: 'ChannelMessage.Read.Group', type: 'Application' },
+      // Without this a group-chat reply needs an @-mention every time.
+      { name: 'ChatMessage.Read.Chat', type: 'Application' },
+    ]);
+    // A manifest that changes shape must bump so the catalog takes the upgrade.
+    expect(m.version).not.toBe('1.0.0');
+    expect(m.version).not.toBe('1.2.0');
+  });
+
+  test('the command menu offers /policy', () => {
+    const m = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
+    const titles = m.bots[0]!.commandLists![0]!.commands.map((c) => c.title);
+    expect(titles).toContain('/policy');
+    // Teams' own command menu is where a user looks for the lever that ends a
+    // run; the live card's Stop button is gone as soon as the card scrolls.
+    expect(titles).toContain('/stop');
+    // A chat is one conversation for life; the menu is where a user looks for
+    // a clean slate.
+    expect(titles).toContain('/new');
+  });
+
+  test('a new command in the menu ships under a new version, so the catalog takes it', () => {
+    const m = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
+    // 1.3.0 is the manifest without /new.
+    expect(m.version).not.toBe('1.3.0');
+  });
 });
 
 mock.module('../config', () => ({ config: { MICROSOFT_APP_ID: 'app-123', MICROSOFT_APP_PASSWORD: 'secret' } }));

@@ -30,6 +30,8 @@ Each person in an account holds one account role:
 
 Owner and admin hold manager-equivalent access on every project in the account. A project assignment cannot lower that. To limit an owner or an admin on one project, first change their account role to member.
 
+Manager-equivalent access does not include members' private sessions. An account owner can turn that on for owners and admins with **Admins can open every session** under **Settings → Security**. Only an owner can change it, and every use is audited. See [Session access](/docs/work/sessions#admins-can-open-every-session).
+
 Invite a teammate by email from the account's members page. The invitation is an assignment on a `pending` principal. It becomes a `user` assignment when they accept.
 
 ## Project roles
@@ -66,7 +68,9 @@ Give an assignment an `expires_at` and it stops granting at that instant. The en
 
 ## One vocabulary, two bindings
 
-A person, a group, or an agent gets access from Kortix as **roles** — the assignments described above. An agent carries a **second, separate binding**: the Kortix CLI scopes its manifest declares in `kortix.yaml` under `agents.<name>.kortix_cli`. A session can only do what both allow. The two never widen each other. An agent whose manifest lists `project.secret.read` still reads nothing when the role verdict denies it, and an agent launched by an owner still reads nothing when its manifest does not list the action. Roles are account state; CLI scopes are repository state in the manifest. See [Manifest reference](/docs/project/manifest#agents).
+A person, a group, or an agent gets access from Kortix as **roles** — the assignments described above. An agent carries a **second, separate binding**: the Kortix permissions its manifest declares in `kortix.yaml` under `agents.<name>.kortix_permissions`. A session can only do what both allow. The two never widen each other. An agent whose manifest lists `project.secret.read` still reads nothing when the role verdict denies it, and an agent launched by an owner still reads nothing when its manifest does not list the action. Roles are account state; Kortix permissions are repository state in the manifest. See [Manifest reference](/docs/project/manifest#agents).
+
+The role that counts for an agent session is the role bound to the agent's own service account — its **ceiling** — or the default agent ceiling when none is bound. The role of the person who started the session does not apply. Three permissions (`project.members.manage`, `project.delete`, `project.credentials.issue`) are human-only and never reach an agent. Admins pick an agent as the principal of a project role in the Access hub, under **Agents**. See [Agent permissions](/docs/project/permissions).
 
 ## Custom roles
 
@@ -79,6 +83,23 @@ Custom roles need the enterprise `rbac` entitlement. Without it, assigning one a
 ## Super-admin
 
 Super-admin is not a role. It is a flag on one account membership. It bypasses every permission check, and every bypass is written to the audit log. Roles are the mechanism for ordinary access; super-admin is the audited escape hatch.
+
+The account creator starts as owner and super-admin. When an owner is demoted, the owner role and the super-admin flag go together: the change clears the flag and records `iam.member.super_admin.revoke`. A super-admin flag granted to someone who is not an owner stays until an owner revokes it.
+
+## Single sign-on domain
+
+A SAML identity provider asserts each person's email address. Kortix trusts that address outside your account only for a domain your account has verified. Until then:
+
+- a person signed in through your identity provider still joins your account and gets their groups;
+- their SSO identity matches no invitation from another account, and another account's "add member by email" does not find it;
+- SSO sign-in never merges an existing identity into the SSO identity;
+- **Enforce SSO** has no effect, and password sign-in keeps working for the domain.
+
+To verify the domain, open **Identity** in account settings. The SSO card shows a DNS TXT record: name `_kortix-verification.<your-domain>`, value `kortix-verification=<token>`. Publish it at your DNS provider, then select **Verify domain** (`POST /v1/accounts/:accountId/iam/sso/provider/verify-domain`). One domain belongs to one account: a domain that another account has verified cannot be verified again. Changing the primary domain starts a new, unverified claim.
+
+With a verified domain and **Enforce SSO** on, the web sign-in form, `/v1/access/check-email`, and the headless `/v1/auth/sign-in/password`, `/v1/auth/sign-in/magic-link` and `/v1/auth/verify-otp` routes all refuse the password and email-code paths for that domain (`403 sso_required`).
+
+SSO sign-in never merges an owner or a super-admin into an SSO identity, even on a verified domain. They keep their existing identity, and the SSO identity joins as a separate member.
 
 ## Per-feature access settings
 
@@ -135,6 +156,41 @@ Kortix signs you in with a personal access token (`kortix_pat_...`). It acts as 
 The two live on two surfaces, because they belong to two different owners. Your own API keys are in your settings, at **Settings → API keys** (`/settings/tokens`) — only you see them, and they stop working when your membership does. Service account tokens are account configuration, at **Account → Tokens**, beside the key rules that govern expiry.
 
 See [SDK authentication](/docs/sdk/auth) for the full token model.
+
+## Audit log
+
+The audit log records every request that reaches the API, whether or not the request identified its caller. The server writes one row per HTTP request, WebSocket upgrade, preview request, Git transfer, and SCIM call. Coverage does not depend on the route.
+
+Each row names the caller that the request proved:
+
+| `actor_type` | Caller |
+| --- | --- |
+| `human` | A signed-in person, or a person's token (`source: api_key`). |
+| `agent` | A session's agent credential. The row also names the human the agent acts on behalf of. |
+| `service_account` | A service account token. |
+| `system` | An account API key, a SCIM directory token, an integration webhook with a verified signature, or a Kortix background job (`source: worker`). |
+| `anonymous` | A request with no credential, or with an invalid or forged one. |
+
+A refused request is a row with `outcome: denied`. `metadata.auth` records how the caller authenticated: the token id, never the secret. A Git clone is the action `git.clone`. A push is `git.push`, and `metadata.refs` lists each ref it created, updated, or deleted.
+
+### Actions
+
+Every row has an `action` named `domain.resource.verb`, and a title the web app and `kortix audit ls` show:
+
+| Action | Title | Written by |
+| --- | --- | --- |
+| `gateway.key.revoke` | Revoked LLM gateway key | A request to `DELETE /v1/projects/:projectId/gateway/keys/:keyId`. |
+| `iam.group.create` | Created group | The request that created the group. The row carries the new group in `after`. |
+| `secret.consumer.used` | Used secret | A sandbox that read a secret. |
+| `api.rate_limit.exceeded` | Hit API rate limit | A limiter that refused a request. `metadata.limiter` names it. |
+
+Each API route has exactly one action. A request's row keeps the route template in `metadata.http`, and never the raw path, which can carry a token. When a handler records its own event for the request, with the before and after state, that event is the request's only row. A request that matched no route is `api.route.unmatched`.
+
+Filter by an action prefix: `?action=iam.` on `GET /v1/accounts/:accountId/audit`, `kortix audit ls --action iam.`, or an audit webhook's `--action-prefix`. [Audit log actions](/docs/audit-actions) lists every action and its title. Rows written before 2026-09-24 carry `METHOD /template` as their action and show the same titles.
+
+Kortix background jobs act without a request: they expire grants and tunnel permissions, delete expired session branches, activate App deployments, and move projects between sandbox providers. Their rows have `source: worker`, and `metadata.auth.worker` names the job, for example `tunnel-cleanup` or `app-deployments`. An App deployment's row also names the member who started the deployment as its initiator.
+
+An anonymous request that names one of your projects is written to your log. Select these rows with `actor_type=anonymous`. Anonymous rows are rate-limited on each API process, so a flood of them cannot displace attributed rows. Health probes, CORS preflights, and anonymous traffic to a deployed App are not recorded.
 
 ## Billing
 

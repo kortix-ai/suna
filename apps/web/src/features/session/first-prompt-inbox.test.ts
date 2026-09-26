@@ -22,22 +22,22 @@ function read(relative: string): string {
 }
 
 const shell = read('./instant-session-shell.tsx');
-const projectHome = read('../../app/(app)/projects/[id]/page.tsx');
-const sessionPage = read('../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
+const projectHome = read('../../app/[locale]/(app)/projects/[id]/page.tsx');
+const sessionPage = read('../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
 const configureThread = read('../workspace/customize/use-configure-thread.ts');
 const runUpgrade = read('../workspace/customize/migrate-to-v2/use-run-upgrade.ts');
 
 describe('every first-prompt producer writes a durable row, not a prompt stash', () => {
-  test('instant shell POSTs via startSessionWithPrompt with data-URL attachments', () => {
+  test('instant shell POSTs via startSessionWithPrompt with handle-only attachment parts', () => {
     expect(shell).toContain('startSessionWithPrompt(projectId, sessionId');
-    expect(shell).toContain('stageFirstPromptAttachments(files)');
+    expect(shell).toContain('promptFileParts(files, attachmentParts)');
     expect(shell).toContain("prompt: ''");
     expect(shell).not.toContain('prompt: text');
   });
 
   test('project home hands the prompt (and its attachments) to the create', () => {
     expect(projectHome).toContain('pending_prompt: {');
-    expect(projectHome).toContain('stageFirstPromptAttachments(files)');
+    expect(projectHome).toContain('promptFileParts(files, attachmentParts)');
     // The navigate stash is picks-only.
     expect(projectHome).toContain("prompt: ''");
     expect(projectHome).not.toContain('prompt: text');

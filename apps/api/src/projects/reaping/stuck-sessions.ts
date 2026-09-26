@@ -30,12 +30,14 @@
  * Idempotent; the status guard on UPDATE avoids racing a concurrent real open.
  */
 
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { and, asc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 import { chatTurnStreams, projectSessions, sessionSandboxes, usageEvents } from '@kortix/db';
 import { db } from '../../shared/db';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { config } from '../../config';
+import { transitionSession } from '../session-lifecycle/status-transitions';
 
 const STUCK_SESSION_BATCH = 200;
 
@@ -59,11 +61,11 @@ export async function reconcileStuckActiveSessions(
         inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
         lt(projectSessions.updatedAt, cutoff),
         or(
-          sql`not exists (select 1 from ${sessionSandboxes} sb where sb.session_id = ${projectSessions.sessionId} and sb.status = 'active')`,
+          sql`not exists (select 1 from ${sessionSandboxes} sb where sb.session_id = ${qualifiedColumn(projectSessions.sessionId)} and sb.status = 'active')`,
           sql`(${projectSessions.metadata}->>'deletedAt') is not null`,
         ),
-        sql`not exists (select 1 from ${chatTurnStreams} t where t.session_id = ${projectSessions.sessionId} and t.finalized = false)`,
-        sql`not exists (select 1 from ${usageEvents} u where u.session_id = ${projectSessions.sessionId} and u.created_at > ${cutoff.toISOString()})`,
+        sql`not exists (select 1 from ${chatTurnStreams} t where t.session_id = ${qualifiedColumn(projectSessions.sessionId)} and t.finalized = false)`,
+        sql`not exists (select 1 from ${usageEvents} u where u.session_id = ${qualifiedColumn(projectSessions.sessionId)} and u.created_at > ${cutoff.toISOString()})`,
       ),
     )
     // Oldest-stuck first: an unordered LIMIT is how a row stays outside every
@@ -90,15 +92,9 @@ export async function reconcileStuckActiveSessions(
       }
       // Re-check the status in the UPDATE predicate so we never clobber a session
       // a real open transitioned out from under us between SELECT and UPDATE.
-      const updated = await db
-        .update(projectSessions)
-        .set({ status: 'stopped', updatedAt: now })
-        .where(and(
-          eq(projectSessions.sessionId, c.sessionId),
-          inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
-        ))
-        .returning({ sessionId: projectSessions.sessionId });
-      if (updated.length) result.reconciled += 1;
+      if (await transitionSession('reconcileStuck', c.sessionId, { at: now })) {
+        result.reconciled += 1;
+      }
     } catch (err) {
       result.errors += 1;
       console.warn('[reaper] stuck-session reconcile failed:', { sessionId: c.sessionId, error: err instanceof Error ? err.message : err });

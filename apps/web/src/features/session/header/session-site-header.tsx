@@ -3,7 +3,6 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 
-import { sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -14,20 +13,23 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useSidebar } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
+import { PreviousRepositoryNotice } from '@/features/session/previous-repository-session';
 import {
   SessionConfigIndicator,
   SessionConfigReloadConfirm,
 } from '@/features/session/header/session-config-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
+import { SessionTitleInput } from '@/features/session/header/session-title-input';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
+import { useRenameSession } from '@/features/workspace/project-sidebar/modal/use-rename-session';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
@@ -39,8 +41,8 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
-import { listProjectSessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import { qk, useProjectSession } from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
@@ -57,9 +59,9 @@ import {
   TerminalIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 /** Sandbox surfaces reachable from the header. One list drives both the
  *  desktop segment and the mobile sheet, so growing to 4-5 is a one-line add.
@@ -105,7 +107,13 @@ export function SessionSiteHeader({
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const [renameOpen, setRenameOpen] = useState(false);
+  // The name edits in place: the name button swaps for a field. The menu's
+  // Rename item opens the same field, so there is one rename surface.
+  const [isRenaming, setIsRenaming] = useState(false);
+  // Set by the menu's Rename item. Radix returns focus to the caret trigger
+  // when the menu closes, which would blur, and so save, the field that just
+  // opened; `onCloseAutoFocus` reads this and keeps focus in the field.
+  const renameFromMenu = useRef(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Lifecycle actions (Share / Restart / Delete) operate on the project-level
@@ -115,13 +123,15 @@ export function SessionSiteHeader({
   const projectSessionId = projectRoute?.[2];
   const isProjectSession = !!projectId && !!projectSessionId;
 
-  const { data: projectSessions } = useQuery({
-    queryKey: qk.project.sessions(projectId ?? ''),
-    queryFn: () => listProjectSessions(projectId!),
+  // The header needs ONE session — the one in the URL. It used to fetch the
+  // project's whole session list and find that row in it, which broke the
+  // moment the list became a bounded page: a session older than the first page
+  // is absent from it, and `projectSession` fell back to null — which reads as
+  // "you may not share or stop this", silently hiding Share, Stop and Reload.
+  // The read-by-id is exact at any age.
+  const { data: projectSession = null } = useProjectSession(projectId, projectSessionId, {
     enabled: isProjectSession,
-    ...contract('inventory'),
   });
-  const projectSession = projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
   // Two verdicts, deliberately not one flag. `can_manage_sharing` is the
   // owner's right to change who can open the session; `can_manage_lifecycle`
   // is the manager-tier right to stop/restart/reload it. Reading the first for
@@ -147,6 +157,11 @@ export function SessionSiteHeader({
    * and the instant shell render this header without one.
    */
   const headerTitle = projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle;
+
+  const renameMutation = useRenameSession(projectId ?? '', projectSessionId ?? null);
+  const startRename = () => {
+    if (isProjectSession && projectSession) setIsRenaming(true);
+  };
 
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId!, projectSessionId!),
@@ -190,7 +205,13 @@ export function SessionSiteHeader({
     <>
       {isProjectSession && (
         <>
-          <DropdownMenuItem className="cursor-pointer" onClick={() => setRenameOpen(true)}>
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onSelect={() => {
+              renameFromMenu.current = true;
+              startRename();
+            }}
+          >
             <PencilSimpleIcon />
             {tI18nHardcoded.raw('autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53')}
           </DropdownMenuItem>
@@ -307,21 +328,81 @@ export function SessionSiteHeader({
           >
             <SidebarToggle />
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="text-foreground/80 hover:text-foreground data-[state=open]:bg-card group h-auto min-w-0 shrink justify-start gap-3 rounded-md px-2.5 py-1 transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] has-[>svg]:px-2.5"
+            {/* Split control: the name renames in place, the caret opens the
+                session menu. Two buttons, not one trigger, so a click on the
+                name edits it instead of opening a menu. */}
+            <div className="flex min-w-0 items-center gap-0.5">
+              {isRenaming && projectSession ? (
+                // Starts from the name on screen, not `sessionDisplayLabel`:
+                // that one falls back to a uuid slice for an untitled session.
+                <SessionTitleInput
+                  initialValue={headerTitle}
+                  ariaLabel={tI18nHardcoded.raw(
+                    'autoFeaturesCoWorkerProjectSidebarModalRenameSessionModalJsx265e123d',
+                  )}
+                  onCommit={(name) => {
+                    setIsRenaming(false);
+                    renameMutation.mutate(name);
+                  }}
+                  onCancel={() => setIsRenaming(false)}
+                />
+              ) : !headerTitle ? (
+                // No name yet: `SavedSessionSkeleton` renders this header
+                // before the session row has answered.
+                <Skeleton className="mx-2.5 h-3.5 w-24 py-0 motion-reduce:animate-none" />
+              ) : isProjectSession && projectSession ? (
+                <Hint
+                  side="bottom"
+                  sideOffset={4}
+                  delayDuration={300}
+                  label={tI18nHardcoded.raw(
+                    'autoFeaturesCoWorkerProjectSidebarModalRenameSessionModalJsx265e123d',
+                  )}
                 >
-                  <span className="min-w-0 truncate">{headerTitle}</span>
-                  <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]:rotate-180" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                {sessionActionItems}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={startRename}
+                    className="text-foreground h-7 min-w-0 shrink justify-start rounded-md px-2.5 py-1 transition-[color,background-color] duration-(--duration-normal) ease-out"
+                  >
+                    <span className="min-w-0 truncate">{headerTitle}</span>
+                  </Button>
+                </Hint>
+              ) : (
+                // Share viewer and instant shell: no project session row, so
+                // nothing to rename. The name is plain text.
+                <span className="text-foreground min-w-0 truncate px-2.5 text-sm font-medium">
+                  {headerTitle}
+                </span>
+              )}
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={tI18nHardcoded.raw(
+                      'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
+                    )}
+                    className="text-muted-foreground hover:text-foreground data-[state=open]:bg-card data-[state=open]:text-foreground shrink-0 rounded-md transition-[color,background-color,transform] duration-(--duration-normal) ease-out active:scale-[0.96]"
+                  >
+                    <CaretDownIcon className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="w-56"
+                  onCloseAutoFocus={(e) => {
+                    if (!renameFromMenu.current) return;
+                    renameFromMenu.current = false;
+                    e.preventDefault();
+                  }}
+                >
+                  {sessionActionItems}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
 
             {leadingAction}
           </div>
@@ -441,6 +522,10 @@ export function SessionSiteHeader({
             )}
           </div>
         </div>
+        {/* Floats under this row, anchored to it, so it tracks the titlebar
+            band's height instead of guessing an offset. Null unless the route
+            marked this session as started from a previous repository. */}
+        {isProjectSession && <PreviousRepositoryNotice />}
       </div>
 
       <ExportTranscriptModal
@@ -472,13 +557,6 @@ export function SessionSiteHeader({
                 queryKey: qk.project.sessionsScope(projectId ?? ''),
               })
             }
-          />
-          <RenameSessionModal
-            projectId={projectId!}
-            sessionId={projectSessionId!}
-            currentName={projectSession ? sessionDisplayLabel(projectSession) : ''}
-            open={renameOpen}
-            onOpenChange={setRenameOpen}
           />
           <SessionDeleteModal
             projectId={projectId!}

@@ -19,6 +19,8 @@ import { normalizeAuditClientSource } from '../../shared/audit-client-source';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
+import { requestClientIp } from '../../shared/client-ip';
+import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import {
@@ -53,8 +55,6 @@ export type RequestAuditContext = {
   userAgent: string | null;
   clientReportedSource?: string | null;
 };
-
-export const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 // Session-status constants live in a dependency-free module so lean callers (the
 // sandbox reaper) can import them without this heavy serializer graph. Re-exported
@@ -359,17 +359,11 @@ export function serializeGitHubRepo(repo: GitHubRepo) {
   };
 }
 
-function clientIp(c: Context) {
-  return (
-    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null
-  );
-}
-
 export function requestAuditContext(c: Context): RequestAuditContext {
   return {
     method: c.req.method,
     path: c.req.path,
-    ip: clientIp(c),
+    ip: requestClientIp(c),
     userAgent: c.req.header('user-agent') || null,
     clientReportedSource: normalizeAuditClientSource(c.req.header('x-kortix-client')),
   };
@@ -556,7 +550,9 @@ export function buildSecretView(input: {
 
 export async function loadSecretViewsForUser(input: {
   projectId: string;
-  userId: string;
+  /** Whose personal overrides merge in; null = shared rows only (an
+   *  agent-principal session with no on-behalf-of human, spec 2026-09-22 §2.3). */
+  userId: string | null;
   canManageShared: boolean;
   /** The project's loaded config. Callers that have already read it pass it so
    *  every row reports the agent-grant axis; omitting it reports null. */
@@ -572,7 +568,9 @@ export async function loadSecretViewsForUser(input: {
     .where(
       and(
         eq(projectSecrets.projectId, projectId),
-        or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
+        userId
+          ? or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId))
+          : isNull(projectSecrets.ownerUserId),
       ),
     )
     .orderBy(desc(projectSecrets.updatedAt));
@@ -637,54 +635,15 @@ export function serializeGitHubInstallation(
 }
 
 /**
- * Sentinel `installation_id` for the managed-git PAT backend ("Use a token"
- * self-host setup, platform/routes/github-app.ts POST /pat) when an account
- * has no real GitHub App installation. Real installation ids are GitHub's own
- * numeric ids, so this string can never collide with one. Lets the
- * Import-repo UI — which only understands the "installations" shape — pick
- * the PAT the same way it picks a real App install, instead of needing a
- * parallel UI/API surface just for the token backend. GET /github/repositories
- * and POST /link-repository both recognize this id and route to the PAT.
+ * Account connections only. The instance backend ("Kortix managed") used to
+ * be injected here as a synthetic entry, which made one instance-global
+ * credential look like this account's own GitHub connection.
  */
-export const PAT_MANAGED_GIT_INSTALLATION_ID = 'pat';
-
 export function serializeGitHubInstallations(
   rows: Array<typeof accountGithubInstallations.$inferSelect>,
   accountId: string,
   installUrl: string | null,
-  /** Owner of the account-level managed-git PAT, when this account has no
-   *  real App installation but the server has a working token configured —
-   *  see the route handlers in routes/r1.ts. */
-  patFallbackOwner?: string | null,
 ) {
-  if (rows.length === 0 && patFallbackOwner) {
-    const patInstallation = {
-      account_id: accountId,
-      installation_row_id: null,
-      installed: true,
-      configured: true,
-      requires_installation: false,
-      install_url: null,
-      installation_id: PAT_MANAGED_GIT_INSTALLATION_ID,
-      owner_login: patFallbackOwner,
-      owner_type: null,
-      repository_selection: 'all',
-      permissions: {},
-      installation_url: null,
-      updated_at: null,
-    };
-    return {
-      ...patInstallation,
-      // The PAT is a valid existing-repository import option, but it is not a
-      // GitHub App installation and cannot back POST /projects/create-repo.
-      // Keep the App install URL visible so the default create flow can offer
-      // a real user/org installation alongside the legacy PAT fallback.
-      requires_installation: Boolean(installUrl),
-      install_url: installUrl,
-      installations: [patInstallation],
-    };
-  }
-
   const primary = rows[0] ?? null;
   const base = serializeGitHubInstallation(primary, accountId, installUrl);
   return {
@@ -708,14 +667,6 @@ export function normalizeBoolean(value: unknown): boolean | null {
     if (normalized === 'false') return false;
   }
   return null;
-}
-
-export function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-export function normalizeJsonObject(value: unknown): Record<string, unknown> {
-  return isPlainObject(value) ? value : {};
 }
 
 export function normalizeRepoUrl(value: unknown): string | null {
@@ -758,14 +709,6 @@ export function deriveProjectName(repoUrl: string): string {
   const tail = cleaned.split(/[/:]/).filter(Boolean).pop();
   if (!tail) return 'Untitled Project';
   return tail.replace(/[-_]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-export async function readBody(c: Context) {
-  try {
-    return await c.req.json<Record<string, unknown>>();
-  } catch {
-    return {};
-  }
 }
 
 export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotBuilds>>[number]) {

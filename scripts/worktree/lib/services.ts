@@ -3,7 +3,7 @@ import { run, which } from './exec';
 
 export async function ensureRuntimeArtifacts(worktreePath: string): Promise<number> {
   const packageBuilds: Array<[string, string]> = [
-    ['sandbox agent', '@kortix/sandbox-agent-server'],
+    ['sandbox agent', 'kortixd'],
     ['CLI', '@kortix/cli'],
   ];
   for (const [label, filter] of packageBuilds) {

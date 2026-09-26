@@ -1,6 +1,6 @@
 import { createHmac, createSign, timingSafeEqual } from 'node:crypto';
 import { getTraceHeaders } from '../lib/request-context';
-import { managedGithubAppConfig } from '../platform/services/managed-github-app';
+import { resolveAppIdentity } from '../platform/services/github-app-identity';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -9,10 +9,99 @@ export class GitHubApiError extends Error {
     message: string,
     readonly status: number,
     readonly path: string,
+    /**
+     * Seconds GitHub asked the caller to wait, when the failure is a rate
+     * limit (primary or secondary). Undefined for every other failure.
+     */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'GitHubApiError';
   }
+}
+
+/**
+ * The wait GitHub asks for on a rate-limited response, in seconds, or null
+ * when the response is not a rate limit.
+ *
+ * Order follows GitHub's REST guidance
+ * (docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api):
+ * `retry-after` first; then `x-ratelimit-reset` when `x-ratelimit-remaining`
+ * is 0; otherwise a secondary rate limit waits at least one minute.
+ */
+export function githubRetryAfterSeconds(
+  status: number,
+  responseHeaders: Headers,
+  message: string,
+  nowMs: number = Date.now(),
+): number | null {
+  if (status !== 403 && status !== 429) return null;
+  const retryAfter = Number(responseHeaders.get('retry-after'));
+  if (responseHeaders.has('retry-after') && Number.isFinite(retryAfter) && retryAfter >= 0) {
+    return Math.ceil(retryAfter);
+  }
+  if (responseHeaders.get('x-ratelimit-remaining') === '0') {
+    const reset = Number(responseHeaders.get('x-ratelimit-reset'));
+    if (Number.isFinite(reset) && reset > 0) return Math.max(1, Math.ceil(reset - nowMs / 1000));
+  }
+  if (status === 429 || /rate limit/i.test(message)) return 60;
+  return null;
+}
+
+/**
+ * The GitHub App (scope `app`) or one installation of it (scope
+ * `installation`) lacks a permission a Kortix flow depends on. It is an
+ * operator or organization-owner fault, never the caller's: keep it apart from
+ * "the caller is not an admin" so the UI does not blame the wrong party.
+ */
+export class GitHubAppPermissionError extends Error {
+  constructor(
+    message: string,
+    readonly scope: 'app' | 'installation',
+    readonly missing: string[],
+  ) {
+    super(message);
+    this.name = 'GitHubAppPermissionError';
+  }
+}
+
+/**
+ * The organization restricts access by IP address (GitHub Enterprise Cloud) and
+ * refused a request from this API's egress address. The caller's role is not
+ * the cause. An organization owner resolves it: enable "IP allow list
+ * configuration for installed GitHub Apps", which imports the addresses the
+ * App owner published on the App, or add those addresses by hand.
+ */
+export class GitHubIpAllowListError extends Error {
+  constructor(readonly organization: string) {
+    super(
+      `${organization} restricts GitHub access with an IP allow list, and it blocked Kortix. ` +
+        `An owner of ${organization} must enable "IP allow list configuration for installed GitHub Apps" ` +
+        '(organization Settings → Authentication security), then verify again.',
+    );
+    this.name = 'GitHubIpAllowListError';
+  }
+}
+
+/**
+ * The organization enforces SAML single sign-on and the caller authorized
+ * Kortix without an active SSO session for it, so GitHub refuses the user
+ * token for that organization. The caller resolves it: sign in to the
+ * organization through its SSO in the same browser, then verify again.
+ */
+export class GitHubSamlSsoError extends Error {
+  constructor(readonly organization: string) {
+    super(
+      `${organization} enforces SAML single sign-on. Open https://github.com/orgs/${organization}/sso ` +
+        'in this browser, sign in, then verify again.',
+    );
+    this.name = 'GitHubSamlSsoError';
+  }
+}
+
+/** GitHub's 403 body for a request an organization IP allow list refused. */
+export function isGitHubIpAllowListRefusal(error: unknown): boolean {
+  return error instanceof GitHubApiError && error.status === 403 && /IP allow list/i.test(error.message);
 }
 
 // 'managed' = a Kortix-managed git token minted server-side by the managed backend.
@@ -109,67 +198,44 @@ export interface CreateRepoInput {
   auth?: GitHubAuthContext;
 }
 
-// DB-first, env-fallback: the in-app self-host setup flow
-// (platform/routes/github-app.ts) writes the App's creds into
-// kortix.platform_settings (managed-github-app.ts); a self-host operator who
-// still configures everything via `.env` keeps working unchanged since the DB
-// config resolves to `{}` until someone runs the setup flow.
+// The App identity is resolved WHOLE from one source — env or the
+// `github_app_identity` platform setting — by
+// platform/services/github-app-identity.ts. These accessors never mix the two
+// field by field: one stored row shadowing six env values is the 2026-09-16
+// production incident.
 export function githubAppId() {
-  return (
-    managedGithubAppConfig().appId?.trim() ||
-    process.env.KORTIX_GITHUB_APP_ID ||
-    process.env.GITHUB_APP_ID ||
-    null
-  );
+  return resolveAppIdentity()?.appId ?? null;
 }
 
 function githubAppPrivateKey() {
-  return (
-    managedGithubAppConfig().privateKey?.trim() ||
-    process.env.KORTIX_GITHUB_APP_PRIVATE_KEY ||
-    process.env.GITHUB_APP_PRIVATE_KEY ||
-    null
-  );
+  return resolveAppIdentity()?.privateKey ?? null;
 }
 
-export function githubAppSlug() {
-  return (
-    managedGithubAppConfig().slug?.trim() ||
-    process.env.KORTIX_GITHUB_APP_SLUG ||
-    process.env.GITHUB_APP_SLUG ||
-    null
-  );
+/**
+ * The slug an operator configured, on whichever source owns the identity.
+ * It is a FALLBACK: `resolveGitHubAppSlug()` derives the live slug from
+ * `GET /app` and only reads this when derivation fails. Production ran for
+ * months with `KORTIX_GITHUB_APP_SLUG=kortix-private-repo-access` while the
+ * App's real slug was `kortix-managed`, so every install URL 404ed.
+ */
+export function configuredGitHubAppSlug() {
+  return resolveAppIdentity()?.configuredSlug ?? null;
 }
 
 export function isGithubAppConfigured() {
-  return Boolean(githubAppId() && githubAppPrivateKey());
+  return resolveAppIdentity() !== null;
 }
 
 // The App's own OAuth client (every GitHub App gets one for "user access
 // token" / user-to-server flows) — used to prove a caller's GitHub identity
 // and org role for account-linking (see platform/routes/github-app.ts's
-// oauth/authorize + oauth/callback). Populated automatically by the manifest
-// flow (exchangeManifestCode stores client_id/client_secret alongside the App
-// creds); env fallback lets a self-host operator who pasted an existing App
-// (POST /app) or configured everything via `.env` set these two values
-// directly, mirroring every other githubApp* accessor's DB-first/env-fallback
-// shape.
+// oauth/authorize + oauth/callback).
 export function githubAppClientId() {
-  return (
-    managedGithubAppConfig().clientId?.trim() ||
-    process.env.KORTIX_GITHUB_APP_CLIENT_ID ||
-    process.env.GITHUB_APP_CLIENT_ID ||
-    null
-  );
+  return resolveAppIdentity()?.clientId ?? null;
 }
 
 export function githubAppClientSecret() {
-  return (
-    managedGithubAppConfig().clientSecret?.trim() ||
-    process.env.KORTIX_GITHUB_APP_CLIENT_SECRET ||
-    process.env.GITHUB_APP_CLIENT_SECRET ||
-    null
-  );
+  return resolveAppIdentity()?.clientSecret ?? null;
 }
 
 /** Whether the App's own OAuth identity-proof flow (oauth/authorize +
@@ -181,14 +247,165 @@ export function isGithubAppOAuthConfigured() {
   return Boolean(githubAppClientId() && githubAppClientSecret());
 }
 
+/**
+ * The HMAC key behind the install-state token. The identity's own state
+ * secret first; `SUPABASE_JWT_SECRET` and the private key are last-resort
+ * signing keys for a deployment that never set one. They are signing keys,
+ * not identity fields, so reading them here is not a mixed identity.
+ */
 export function githubAppStateSecret() {
+  const identity = resolveAppIdentity();
   return (
-    managedGithubAppConfig().stateSecret?.trim() ||
+    identity?.stateSecret ||
     process.env.KORTIX_GITHUB_APP_STATE_SECRET ||
     process.env.SUPABASE_JWT_SECRET ||
-    githubAppPrivateKey() ||
+    identity?.privateKey ||
     null
   );
+}
+
+// ─── Slug derivation ─────────────────────────────────────────────────────────
+// The slug is a PROPERTY of the App, so it is read from the App: `GET /app`
+// signed with the identity's own JWT. A configured slug is only consulted when
+// that read fails, and a mismatch between the two is logged once.
+
+const SLUG_TTL_MS = 60 * 60 * 1000;
+const SLUG_FAILURE_TTL_MS = 60 * 1000;
+const slugCache = new Map<
+  string,
+  { slug: string | null; permissions: Record<string, string> | null; at: number; ttl: number }
+>();
+const slugMismatchLogged = new Set<string>();
+const permissionDriftLogged = new Set<string>();
+
+/**
+ * Every permission a Kortix flow reads or writes through the App. The
+ * self-host manifest (platform/routes/github-app.ts) requests exactly this
+ * set, and `resolveGitHubAppPermissions()` compares a hand-made App against it.
+ *
+ * - `administration: write` — `createRepo` under a connected organization.
+ * - `contents: write` — commits and pushes.
+ *
+ * `pull_requests` is NOT here: no API route calls a pulls endpoint and no GitHub
+ * token reaches a sandbox (git goes through the Kortix git proxy). The manifest
+ * still requests it (`GITHUB_APP_MANIFEST_PERMISSIONS`) so a future pulls flow
+ * needs no re-consent, but its absence breaks nothing and must not alarm.
+ * - `members: read` — the account-linking identity proof
+ *   (`verifyGitHubInstallationAdmin`, `listLinkableGitHubAppInstallations`).
+ *   GitHub answers 403 on both membership reads without it.
+ */
+export const REQUIRED_GITHUB_APP_PERMISSIONS = {
+  administration: 'write',
+  contents: 'write',
+  metadata: 'read',
+  members: 'read',
+} as const satisfies Record<string, 'read' | 'write'>;
+
+/** What the self-host manifest requests: the required set plus reserved extras. */
+export const GITHUB_APP_MANIFEST_PERMISSIONS = {
+  ...REQUIRED_GITHUB_APP_PERMISSIONS,
+  pull_requests: 'write',
+} as const satisfies Record<string, 'read' | 'write'>;
+
+const PERMISSION_RANK: Record<string, number> = { read: 1, write: 2, admin: 3 };
+
+function missingGitHubAppPermissions(granted: Record<string, unknown> | null | undefined): string[] {
+  return Object.entries(REQUIRED_GITHUB_APP_PERMISSIONS)
+    .filter(([name, level]) => {
+      const have = PERMISSION_RANK[String(granted?.[name] ?? '')] ?? 0;
+      return have < PERMISSION_RANK[level];
+    })
+    .map(([name]) => name)
+    .sort();
+}
+
+export interface ResolvedGitHubAppSlug {
+  slug: string | null;
+  source: 'derived' | 'configured' | 'none';
+}
+
+/** Test-only: drop the per-appId slug cache. */
+export function resetGitHubAppSlugCache(): void {
+  slugCache.clear();
+  slugMismatchLogged.clear();
+  permissionDriftLogged.clear();
+}
+
+/** One cached `GET /app` per appId backs both the slug and the permissions. */
+async function readGitHubApp(identity: { appId: string }) {
+  const cached = slugCache.get(identity.appId);
+  if (cached && Date.now() - cached.at < cached.ttl) return cached;
+
+  try {
+    const app = await ghFetch<{ slug?: string; permissions?: Record<string, string> }>(
+      '/app',
+      { method: 'GET' },
+      { token: createGitHubAppJwt() },
+    );
+    const entry = {
+      slug: typeof app.slug === 'string' && app.slug.trim() ? app.slug.trim() : null,
+      permissions: app.permissions && typeof app.permissions === 'object' ? app.permissions : null,
+      at: Date.now(),
+      ttl: SLUG_TTL_MS,
+    };
+    slugCache.set(identity.appId, entry);
+
+    const missing = entry.permissions ? missingGitHubAppPermissions(entry.permissions) : [];
+    if (missing.length && !permissionDriftLogged.has(identity.appId)) {
+      permissionDriftLogged.add(identity.appId);
+      console.error(
+        `[github-app] App "${entry.slug ?? identity.appId}" is missing required permissions: ` +
+          `${missing.join(', ')}. Flows that depend on them fail for every user. ` +
+          'Add them in the App settings (Permissions & events).',
+      );
+    }
+    return entry;
+  } catch (err) {
+    const entry = { slug: null, permissions: null, at: Date.now(), ttl: SLUG_FAILURE_TTL_MS };
+    slugCache.set(identity.appId, entry);
+    console.warn(
+      `[github-app] could not derive the App slug from GET /app for appId ${identity.appId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return entry;
+  }
+}
+
+export interface ResolvedGitHubAppPermissions {
+  /** `null` when no App is configured or `GET /app` failed. */
+  permissions: Record<string, string> | null;
+  /** Names from `REQUIRED_GITHUB_APP_PERMISSIONS` the App lacks. Empty when unknown. */
+  missing: string[];
+}
+
+export async function resolveGitHubAppPermissions(): Promise<ResolvedGitHubAppPermissions> {
+  const identity = resolveAppIdentity();
+  if (!identity) return { permissions: null, missing: [] };
+  const { permissions } = await readGitHubApp(identity);
+  return { permissions, missing: permissions ? missingGitHubAppPermissions(permissions) : [] };
+}
+
+export async function resolveGitHubAppSlug(): Promise<ResolvedGitHubAppSlug> {
+  const identity = resolveAppIdentity();
+  if (!identity) return { slug: null, source: 'none' };
+
+  const derived = (await readGitHubApp(identity)).slug;
+
+  if (derived) {
+    const configured = identity.configuredSlug;
+    if (configured && configured !== derived && !slugMismatchLogged.has(identity.appId)) {
+      slugMismatchLogged.add(identity.appId);
+      console.warn(
+        `[github-app] configured slug "${configured}" does not match the App's own slug "${derived}" ` +
+          `(appId ${identity.appId}); using the derived one`,
+      );
+    }
+    return { slug: derived, source: 'derived' };
+  }
+
+  const configured = identity.configuredSlug;
+  if (configured) return { slug: configured, source: 'configured' };
+  return { slug: null, source: 'none' };
 }
 
 function signGitHubAppStatePayload(payload: string) {
@@ -295,13 +512,18 @@ export function verifyGitHubAppInstallStatePayload(
   }
 }
 
-export function buildGitHubAppInstallUrl(
+/**
+ * The App's install URL. Never emitted for a slug that was not derived from
+ * `GET /app` or explicitly configured — a guessed slug is a permanent 404 on
+ * github.com, which is what production served until 2026-09-16.
+ */
+export async function buildGitHubAppInstallUrl(
   accountId?: string | null,
   nonce?: string,
   purpose: 'account_link' | 'platform_setup' = 'account_link',
   frontendOrigin?: string,
-) {
-  const slug = githubAppSlug()?.trim();
+): Promise<string | null> {
+  const { slug } = await resolveGitHubAppSlug();
   if (!slug) return null;
   const url = new URL(`https://github.com/apps/${slug}/installations/new`);
   if (accountId) {
@@ -403,6 +625,7 @@ async function ghFetch<T>(
       `GitHub ${path} failed (${res.status}): ${detail || res.statusText}`,
       res.status,
       path,
+      githubRetryAfterSeconds(res.status, res.headers, detail) ?? undefined,
     );
   }
   return res.json() as Promise<T>;
@@ -464,6 +687,13 @@ export async function listLinkableGitHubAppInstallations(
     );
   } catch (error) {
     if (!(error instanceof GitHubApiError) || error.status !== 403) throw error;
+    // Organization installations drop out of the list below. Say why once:
+    // `resolveGitHubAppPermissions()` logs a missing `members` permission.
+    const app = await resolveGitHubAppPermissions();
+    console.warn(
+      `[github-app] GET /user/memberships/orgs returned 403 for ${githubLogin}; ` +
+        `organization installations are omitted (App missing: ${app.missing.join(', ') || 'none'})`,
+    );
   }
 
   const adminOrganizations = new Set(
@@ -482,6 +712,42 @@ export async function listLinkableGitHubAppInstallations(
   });
 
   return { githubLogin, installations };
+}
+
+/**
+ * Status for a failed `verifyGitHubInstallationAdmin`. An App without the
+ * permission is an instance fault (502, same as the other upstream-GitHub
+ * failures on these routes); everything else is the caller's access (403).
+ */
+export function githubVerificationStatus(error: unknown): 403 | 502 {
+  return error instanceof GitHubAppPermissionError && error.scope === 'app' ? 502 : 403;
+}
+
+async function membersPermissionError(
+  installation: GitHubAppInstallation,
+): Promise<GitHubAppPermissionError> {
+  const owner = installation.account?.login?.trim() ?? 'this organization';
+  const app = await resolveGitHubAppPermissions();
+  if (app.missing.includes('members')) {
+    console.error(
+      `[github-app] cannot verify organization installation ${installation.id} (${owner}): ` +
+        'the App has no "Members: read" organization permission',
+    );
+    return new GitHubAppPermissionError(
+      'This Kortix instance cannot verify GitHub organizations: its GitHub App is missing the ' +
+        '"Members: read" organization permission. Your GitHub role is not the cause. ' +
+        'Contact the instance operator.',
+      'app',
+      ['members'],
+    );
+  }
+  const where = installation.html_url ? ` at ${installation.html_url}` : ' in its GitHub App settings';
+  return new GitHubAppPermissionError(
+    `${owner} has not granted the Kortix GitHub App the "Members: read" permission. ` +
+      `An owner of ${owner} must accept the updated permissions${where}, then verify again.`,
+    'installation',
+    ['members'],
+  );
 }
 
 export async function verifyGitHubInstallationAdmin(
@@ -512,6 +778,12 @@ export async function verifyGitHubInstallationAdmin(
     return { login };
   }
 
+  // `GET /app/installations/{id}` reports what THIS installation was granted.
+  // Without `members`, GitHub answers 403 below for an organization owner too.
+  if (installation.permissions && !installation.permissions.members) {
+    throw await membersPermissionError(installation);
+  }
+
   let membership: { state?: string; role?: string };
   try {
     membership = await ghFetch<{ state?: string; role?: string }>(
@@ -519,7 +791,18 @@ export async function verifyGitHubInstallationAdmin(
       { method: 'GET' },
       { token },
     );
-  } catch {
+  } catch (error) {
+    if (isGitHubIpAllowListRefusal(error)) throw new GitHubIpAllowListError(ownerLogin);
+    if (error instanceof GitHubApiError && error.status === 403 && /SAML/i.test(error.message)) {
+      throw new GitHubSamlSsoError(ownerLogin);
+    }
+    if (
+      error instanceof GitHubApiError &&
+      error.status === 403 &&
+      error.message.includes('Resource not accessible by integration')
+    ) {
+      throw await membersPermissionError(installation);
+    }
     throw new Error('GitHub organization admin access is required to link this installation');
   }
 
