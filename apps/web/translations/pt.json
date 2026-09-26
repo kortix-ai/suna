@@ -19174,7 +19174,10 @@
       "text467f597e95b0": "Domínio SSO verificado",
       "text8295f9d4861b": "Verificação do domínio SSO da conta definida",
       "text7beaff63a7d3": "Arquivo de configuração do projeto baixado",
-      "text5176d59f25fd": "Versão de configuração da sessão resolvida"
+      "text5176d59f25fd": "Versão de configuração da sessão resolvida",
+      "text273c48dbf3b9": "Dispositivo de notificações push registrado",
+      "textbb666ddf7a57": "Dispositivo de notificações push removido",
+      "text397ab5aecbbf": "Solicitação de permissão da sessão retransmitida"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
