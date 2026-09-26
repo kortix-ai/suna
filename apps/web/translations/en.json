@@ -19188,7 +19188,10 @@
       "text467f597e95b0": "Verified SSO domain",
       "text8295f9d4861b": "Set account SSO domain verification",
       "text7beaff63a7d3": "Downloaded project config archive",
-      "text5176d59f25fd": "Resolved session config release"
+      "text5176d59f25fd": "Resolved session config release",
+      "text273c48dbf3b9": "Registered push notification device",
+      "textbb666ddf7a57": "Removed push notification device",
+      "text397ab5aecbbf": "Relayed session permission request"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
