@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { withMigrationDeadlockRetry } from './migration-retry';
+import { withMigrationRetry } from './migration-retry';
 
-describe('withMigrationDeadlockRetry', () => {
+describe('withMigrationRetry', () => {
   test('waits for a migration advisory lock and then runs pending migrations', async () => {
     let calls = 0;
     const waits: number[] = [];
     const retries: number[] = [];
 
-    const result = await withMigrationDeadlockRetry(async () => {
+    const result = await withMigrationRetry(async () => {
       calls += 1;
       if (calls < 3) throw new Error('Another migration is already running');
       return 'applied';
@@ -28,7 +28,7 @@ describe('withMigrationDeadlockRetry', () => {
     const failure = new Error('Another migration is already running');
     let calls = 0;
 
-    await expect(withMigrationDeadlockRetry(async () => {
+    await expect(withMigrationRetry(async () => {
       calls += 1;
       throw failure;
     }, { maxLockAttempts: 3, sleep: async () => {} })).rejects.toBe(failure);
@@ -40,7 +40,7 @@ describe('withMigrationDeadlockRetry', () => {
     const waits: number[] = [];
     const retries: number[] = [];
 
-    const result = await withMigrationDeadlockRetry(
+    const result = await withMigrationRetry(
       async () => {
         calls += 1;
         if (calls < 3) throw Object.assign(new Error('deadlock detected'), { code: '40P01' });
@@ -63,7 +63,7 @@ describe('withMigrationDeadlockRetry', () => {
     const failure = Object.assign(new Error('unsupported provider rows'), { code: 'P0001' });
     let calls = 0;
 
-    await expect(withMigrationDeadlockRetry(async () => {
+    await expect(withMigrationRetry(async () => {
       calls += 1;
       throw failure;
     }, { sleep: async () => {} })).rejects.toBe(failure);
@@ -74,7 +74,7 @@ describe('withMigrationDeadlockRetry', () => {
     let calls = 0;
     const failure = Object.assign(new Error('deadlock detected'), { code: '40P01' });
 
-    await expect(withMigrationDeadlockRetry(async () => {
+    await expect(withMigrationRetry(async () => {
       calls += 1;
       throw failure;
     }, { maxAttempts: 2, sleep: async () => {} })).rejects.toBe(failure);

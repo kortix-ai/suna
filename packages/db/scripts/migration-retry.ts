@@ -26,7 +26,7 @@ function migrationLockBusy(error: unknown): boolean {
  * node-pg-migrate cannot acquire its advisory lock. The lock error occurs
  * before any migration runs. Other migration failures remain fail-closed.
  */
-export async function withMigrationDeadlockRetry<T>(
+export async function withMigrationRetry<T>(
   operation: () => Promise<T>,
   options: MigrationRetryOptions = {},
 ): Promise<T> {
