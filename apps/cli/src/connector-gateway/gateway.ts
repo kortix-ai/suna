@@ -117,6 +117,11 @@ export interface SecretLinkResult {
   names: string[];
   scope: string;
   expires_at: string;
+  /** Present only when this session's agent will not receive some names. */
+  agent?: string;
+  withheld?: Array<{ name: string; reason: 'agent_grant' | 'session_allowlist' }>;
+  /** The server's one-paragraph fix for `withheld`, ready to relay. */
+  withheld_fix?: string;
 }
 
 /**

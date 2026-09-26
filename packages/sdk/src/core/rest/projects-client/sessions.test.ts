@@ -5,7 +5,9 @@ import type {
   CreateProjectSessionInput,
   ProjectSession,
   RemovedSessionPrompt,
+  SessionConfigRelease,
   SessionPrompt,
+  SessionReloadResult,
   SessionTurn,
   SessionTurnStatus,
 } from './sessions';
@@ -644,6 +646,119 @@ test('getProjectSessionConfigState preserves a NULL stale — "could not tell" i
   const result = await getProjectSessionConfigState('P1', 'S1');
   expect(result.stale).toBeNull();
   expect(result.stale).not.toBe(false);
+});
+
+const RELEASE_FALLBACK: SessionConfigRelease = {
+  mode: 'follow-base',
+  source: 'release',
+  running_release_id: 'a'.repeat(64),
+  desired_release_id: 'b'.repeat(64),
+  proven: true,
+  fallback_reason: 'replacement did not serve GET /agent within 90 s',
+  failed_release_id: 'b'.repeat(64),
+};
+
+test('getProjectSessionConfigState carries the release block unchanged', async () => {
+  // The release block names the config the box runs, the config the API
+  // assigns, and why they differ. The web header derives its state from it.
+  nextResponse = {
+    status: 200,
+    body: {
+      base_ref: 'main',
+      running_etag: null,
+      latest_etag: null,
+      commit_sha: 'c'.repeat(40),
+      stale: true,
+      sandbox_reachable: true,
+      release: RELEASE_FALLBACK,
+    },
+  };
+  const result = await getProjectSessionConfigState('P1', 'S1');
+  const release: SessionConfigRelease | undefined = result.release;
+  expect(release).toEqual(RELEASE_FALLBACK);
+});
+
+test('getProjectSessionConfigState from an API without releases has no release block', async () => {
+  // An API that predates config releases omits the field. It must stay
+  // undefined, so a host renders exactly what it rendered before.
+  nextResponse = {
+    status: 200,
+    body: {
+      base_ref: 'main',
+      running_etag: 'aaaaaaaaaaaaaaaa',
+      latest_etag: 'aaaaaaaaaaaaaaaa',
+      commit_sha: null,
+      stale: null,
+      sandbox_reachable: true,
+    },
+  };
+  const result = await getProjectSessionConfigState('P1', 'S1');
+  expect(result.release).toBeUndefined();
+});
+
+test('reloadProjectSessionConfig carries the release block of the converged box', async () => {
+  // A box that fell all the way to the image default. `source` has no
+  // `workspace` member: under config releases the box never boots from
+  // /workspace, so the chain is release → last proven release → image default.
+  const imageDefault: SessionConfigRelease = {
+    mode: 'follow-base',
+    source: 'image-default',
+    running_release_id: null,
+    desired_release_id: 'd'.repeat(64),
+    proven: true,
+    fallback_reason: 'the base branch config did not start, and no proven release exists on this box',
+    failed_release_id: 'd'.repeat(64),
+  };
+  nextResponse = {
+    status: 200,
+    body: { applied: true, detail: 'ok', release: imageDefault },
+  };
+  const result: SessionReloadResult = await reloadProjectSessionConfig('P1', 'S1');
+  expect(result.release).toEqual(imageDefault);
+});
+
+/** True only when the two unions have exactly the same members. */
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+test('a reload reports BOTH halves: the checkout and the running config', async () => {
+  // `kortix sessions reload` and the web control do two things in one call.
+  // A host must be able to tell the user what happened to each.
+  nextResponse = {
+    status: 200,
+    body: {
+      applied: true,
+      detail: 'ok',
+      workspace_checkout: 'updated',
+      commit_sha: 'e'.repeat(40),
+      release: {
+        mode: 'follow-base',
+        source: 'release',
+        running_release_id: 'a'.repeat(64),
+        desired_release_id: 'a'.repeat(64),
+        proven: true,
+        fallback_reason: null,
+        failed_release_id: null,
+      },
+    },
+  };
+  const result: SessionReloadResult = await reloadProjectSessionConfig('P1', 'S1');
+  const checkout: SessionReloadResult['workspace_checkout'] = result.workspace_checkout;
+  expect(checkout).toBe('updated');
+  expect(result.release?.running_release_id).toBe('a'.repeat(64));
+});
+
+test('a release always follows the base branch, and never serves from /workspace', () => {
+  // Compile-time assertions with a runtime witness: a wider union makes these
+  // `false`, and `const x: true = false` stops `tsc --noEmit`.
+  //
+  // `session-files` is gone: a session's own edits under /workspace are never
+  // the config a box runs — they reach it by being pushed to the base branch.
+  // `workspace` is gone from `source` for the same reason: under config
+  // releases the chain is release → last proven release → image default.
+  const modeFollowsBaseOnly: Exact<SessionConfigRelease['mode'], 'follow-base'> = true;
+  const sourceHasNoWorkspace: Exact<SessionConfigRelease['source'], 'release' | 'image-default'> = true;
+  expect(modeFollowsBaseOnly).toBe(true);
+  expect(sourceHasNoWorkspace).toBe(true);
 });
 
 test('reloadProjectSessionConfig POSTs to /reload with an empty body by default', async () => {

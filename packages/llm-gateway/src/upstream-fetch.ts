@@ -28,12 +28,12 @@
  */
 export type UpstreamFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
-export interface NoIdleTimeoutInit extends RequestInit {
+interface NoIdleTimeoutInit extends RequestInit {
   /** Bun: `false` disables the runtime's default 300 s idle timeout. */
   timeout: false;
 }
 
-export function withoutIdleTimeout(init?: RequestInit): NoIdleTimeoutInit {
+function withoutIdleTimeout(init?: RequestInit): NoIdleTimeoutInit {
   return { ...init, timeout: false };
 }
 

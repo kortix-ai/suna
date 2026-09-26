@@ -1734,9 +1734,8 @@ for (const dispute of open.data?.disputes ?? []) {
  *
  * ==========================================================================
  * ACCURACY GATE. Every claim here is checked against the accuracy-reviewed
- * landing copy it summarises (`features/marketing/capabilities/content.ts`,
- * `how-it-work/how-it-works-content.ts`, `open-source/content.ts`,
- * `landing/content.ts`) and against the `comms` skill. Do not soften, inflate
+ * landing copy it summarises (`how-it-work/how-it-works-content.ts`,
+ * `open-source/content.ts`, `landing/content.ts`) and against the `comms` skill. Do not soften, inflate
  * or "restore" any of it.
  * ==========================================================================
  *  - SECRETS. Never write that a granted secret is invisible to the model. A

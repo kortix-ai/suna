@@ -54,3 +54,37 @@ export async function resolveOpencodeConfigDirAtSha(
   }
   return null;
 }
+
+/**
+ * Did the OpenCode config dir change between the commit a box holds and `tipSha`?
+ *
+ * The compiled agent-config etag answers "did governance or an agent's
+ * frontmatter change". It cannot see a skill body, a tool, or a plugin — none of
+ * them enter the compiled config — so a merge that touched only those left every
+ * running session reporting `stale: false`, and the header never offered the
+ * reload. This is the other half.
+ *
+ * Tri-state, like `isConfigStale`: `null` when it cannot be told. That is a
+ * commit the mirror has never seen — a session that committed without pushing
+ * reports a HEAD only it holds — and it must never read as "up to date".
+ */
+export async function opencodeConfigDirChangedBetween(
+  mirror: string,
+  project: Pick<GitBackedProject, 'manifestPath'>,
+  boxSha: string,
+  tipSha: string,
+): Promise<boolean | null> {
+  if (!/^[0-9a-f]{40}$/i.test(boxSha) || !/^[0-9a-f]{40}$/i.test(tipSha)) return null;
+  if (boxSha === tipSha) return false;
+  for (const sha of [boxSha, tipSha]) {
+    const known = await runGitCapture(['cat-file', '-e', `${sha}^{commit}`], mirror);
+    if (known.exitCode !== 0) return null;
+  }
+  const configDir = await resolveOpencodeConfigDirAtSha(mirror, project, tipSha);
+  // The tip ships no project config: there is nothing a reload could bring in.
+  if (!configDir) return false;
+  const diff = await runGitCapture(['diff', '--quiet', boxSha, tipSha, '--', configDir], mirror);
+  if (diff.exitCode === 0) return false;
+  if (diff.exitCode === 1) return true;
+  return null;
+}

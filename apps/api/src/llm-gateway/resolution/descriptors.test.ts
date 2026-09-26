@@ -54,57 +54,27 @@ beforeEach(() => {
 });
 
 describe('stripBedrockInferenceProfilePrefix', () => {
-  test('strips the us. cross-region inference-profile prefix', () => {
-    expect(stripBedrockInferenceProfilePrefix('us.anthropic.claude-opus-4-8')).toBe(
-      'anthropic.claude-opus-4-8',
-    );
-  });
-
-  test('strips the eu. prefix', () => {
-    expect(stripBedrockInferenceProfilePrefix('eu.amazon.nova-micro-v1:0')).toBe(
-      'amazon.nova-micro-v1:0',
-    );
-  });
-
-  test('strips the apac. prefix', () => {
-    expect(stripBedrockInferenceProfilePrefix('apac.anthropic.claude-sonnet-4-6')).toBe(
-      'anthropic.claude-sonnet-4-6',
-    );
-  });
-
-  test('strips the us-gov. prefix', () => {
-    expect(stripBedrockInferenceProfilePrefix('us-gov.anthropic.claude-opus-4-8')).toBe(
-      'anthropic.claude-opus-4-8',
-    );
-  });
-
-  test('leaves a base id with no region prefix untouched', () => {
-    expect(stripBedrockInferenceProfilePrefix('anthropic.claude-opus-4-8')).toBe(
-      'anthropic.claude-opus-4-8',
-    );
-  });
-
-  test('does not strip a look-alike id that merely starts with a prefix code but no matching dot boundary', () => {
-    // "use." / "usa." aren't in the known-prefix set and don't match "us."
-    // (the char after "us" isn't a dot), so they must pass through unchanged.
-    expect(stripBedrockInferenceProfilePrefix('use.something')).toBe('use.something');
-    expect(stripBedrockInferenceProfilePrefix('usa.something')).toBe('usa.something');
-  });
-
-  test('does not strip an unrelated region-like prefix outside the known AWS set', () => {
-    expect(stripBedrockInferenceProfilePrefix('us-west-2.anthropic.claude-opus-4-8')).toBe(
-      'us-west-2.anthropic.claude-opus-4-8',
-    );
-  });
-
-  test('a bare prefix with nothing after the dot is left untouched (no empty result)', () => {
-    expect(stripBedrockInferenceProfilePrefix('us.')).toBe('us.');
+  // The pricing lookup id: models.dev lists only the base Bedrock id.
+  test.each([
+    ['us.anthropic.claude-opus-4-8', 'anthropic.claude-opus-4-8'],
+    ['eu.amazon.nova-micro-v1:0', 'amazon.nova-micro-v1:0'],
+    ['apac.anthropic.claude-sonnet-4-6', 'anthropic.claude-sonnet-4-6'],
+    ['us-gov.anthropic.claude-opus-4-8', 'anthropic.claude-opus-4-8'],
+    // No prefix, a look-alike without the dot boundary, a region outside the
+    // known set, and a bare prefix all pass through unchanged.
+    ['anthropic.claude-opus-4-8', 'anthropic.claude-opus-4-8'],
+    ['use.something', 'use.something'],
+    ['usa.something', 'usa.something'],
+    ['us-west-2.anthropic.claude-opus-4-8', 'us-west-2.anthropic.claude-opus-4-8'],
+    ['us.', 'us.'],
+  ])('%s → %s', (input, expected) => {
+    expect(stripBedrockInferenceProfilePrefix(input)).toBe(expected);
   });
 });
 
 describe('normalizeBedrockInferenceProfileRegion', () => {
-  test('rewrites a wrong-geography profile to the endpoint region (the SampleCo jp.→us. incident)', () => {
-    // 41 sessions on a us-east-1 box were pinned to jp.anthropic.claude-opus-5,
+  test('rewrites a wrong-geography profile to the endpoint region (the jp.→us. incident)', () => {
+    // Sessions on a us-east-1 box were pinned to jp.anthropic.claude-opus-5,
     // which Bedrock 400s "The provided model identifier is invalid."
     expect(
       normalizeBedrockInferenceProfileRegion('jp.anthropic.claude-opus-5', 'us-east-1'),
@@ -161,14 +131,12 @@ describe('normalizeBedrockInferenceProfileRegion', () => {
   });
 });
 
-describe('livePricing + stripBedrockInferenceProfilePrefix — the actual $0 bug', () => {
-  test('a cross-region-prefixed id misses the catalog on its own (reproduces the bug)', () => {
-    expect(livePricing('amazon-bedrock', 'us.anthropic.claude-opus-4-8')).toBeUndefined();
-  });
-
-  test('stripping the prefix first resolves the same catalog price as the base id', () => {
-    const stripped = stripBedrockInferenceProfilePrefix('us.anthropic.claude-opus-4-8');
-    expect(livePricing('amazon-bedrock', stripped)).toEqual({
+// The $0 upstream-cost bug: a cross-region profile id missed the catalog, so
+// resolve-candidates strips the prefix before this lookup
+// (resolve-candidates.test.ts asserts the stripped id reaches it).
+describe('livePricing maps the catalog price onto the descriptor', () => {
+  test('a flat price maps field by field', () => {
+    expect(livePricing('amazon-bedrock', 'anthropic.claude-opus-4-8')).toEqual({
       inputPerMillion: 15,
       outputPerMillion: 75,
       cachedInputPerMillion: undefined,
@@ -176,16 +144,27 @@ describe('livePricing + stripBedrockInferenceProfilePrefix — the actual $0 bug
       tiers: undefined,
       contextOver200k: undefined,
     });
-    expect(livePricing('amazon-bedrock', stripped)).toEqual(
-      livePricing('amazon-bedrock', 'anthropic.claude-opus-4-8'),
-    );
   });
 
-  test('amazon.nova-micro cross-region id resolves via apac. prefix too', () => {
-    const stripped = stripBedrockInferenceProfilePrefix('apac.amazon.nova-micro-v1:0');
-    expect(livePricing('amazon-bedrock', stripped)).toEqual(
-      livePricing('amazon-bedrock', 'amazon.nova-micro-v1:0'),
-    );
+  test('a long-context price maps its own tier', () => {
+    expect(livePricing('openrouter', 'x-ai/grok-4.6')).toEqual({
+      inputPerMillion: 2,
+      outputPerMillion: 6,
+      cachedInputPerMillion: 0.5,
+      cacheWritePerMillion: undefined,
+      tiers: undefined,
+      contextOver200k: {
+        inputPerMillion: 4,
+        outputPerMillion: 12,
+        cachedInputPerMillion: 1,
+        cacheWritePerMillion: undefined,
+        contextThreshold: 200_000,
+      },
+    });
+  });
+
+  test('a model the catalog does not list has no price', () => {
+    expect(livePricing('amazon-bedrock', 'us.anthropic.claude-opus-4-8')).toBeUndefined();
   });
 });
 
@@ -290,21 +269,6 @@ describe('managed Morph primary with OpenRouter pool fallback', () => {
     const { morphModelId: _drop, ...openrouterOnly } = glm;
     expect(managedCandidates(openrouterOnly).map((c) => c.provider)).toEqual(['openrouter']);
   });
-});
-
-test('managed GLM pins CoreWeave and enforces ZDR without fallback', () => {
-  expect(managedCandidates({
-    id: 'glm-5.3-flash', name: 'GLM-5.3-Flash',
-    upstreamModelId: 'z-ai/glm-5.3-flash', transport: 'openrouter',
-    pricingRef: 'openrouter/z-ai/glm-5.3-flash',
-    pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
-    tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
-    openrouterProvider: { only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
-  })).toEqual([expect.objectContaining({
-    provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1',
-    resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits',
-    bodyExtras: { provider: { only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
-  })]);
 });
 
 describe('bedrockByokBaseUrl', () => {

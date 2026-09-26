@@ -37,6 +37,7 @@ import { useEffect, useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import {
   PanelWidthButton,
+  RefreshButton,
   type ShareContext,
   ViewerActions,
   fileShareInput,
@@ -112,6 +113,8 @@ export function FileViewer({
   path,
   shareContext,
   onClose,
+  refresh,
+  reloadKey,
   className,
 }: {
   content: string;
@@ -124,6 +127,11 @@ export function FileViewer({
    *  text and markdown file with no way to produce a public link. */
   shareContext?: ShareContext;
   onClose?: () => void;
+  /** Re-reads the file on demand. Omitted where there is no file on disk to
+   *  re-read, in which case the control is omitted too. */
+  refresh?: { onRefresh: () => void; refreshing: boolean };
+  /** Reloads the HTML preview in place when it changes. See `HtmlPreview`. */
+  reloadKey?: string | number;
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -184,6 +192,9 @@ export function FileViewer({
             Text is the one kind whose content a clipboard can hold, so `Copy`
             here copies the file itself and `Copy link` drops into the menu. */}
         <span className="flex shrink-0 items-center gap-1">
+          {refresh && (
+            <RefreshButton onRefresh={refresh.onRefresh} refreshing={refresh.refreshing} />
+          )}
           <ViewerActions
             copy={{
               run: () => navigator.clipboard.writeText(content),
@@ -218,6 +229,7 @@ export function FileViewer({
           mermaid={mermaid}
           markdown={markdown}
           view={view}
+          reloadKey={reloadKey}
           onShowSource={() => setView('source')}
         />
       </div>
@@ -261,6 +273,7 @@ function FileBody({
   mermaid,
   markdown,
   view,
+  reloadKey,
   onShowSource,
 }: {
   content: string;
@@ -271,6 +284,7 @@ function FileBody({
   mermaid: boolean;
   markdown: boolean;
   view: View;
+  reloadKey?: string | number;
   onShowSource: () => void;
 }) {
   const svgUrl = useSvgObjectUrl(content, svg && view === 'preview');
@@ -286,7 +300,7 @@ function FileBody({
   // `HtmlPreview` owns the whole exchange, and is the same component the files
   // viewer uses — one answer to "what does an HTML file look like".
   if (html && path && view === 'preview') {
-    return <HtmlPreview path={path} fileName={fileName} />;
+    return <HtmlPreview path={path} fileName={fileName} reloadKey={reloadKey} />;
   }
 
   // SVG stays inline, and stays inert: loaded through `<img>` it renders in the

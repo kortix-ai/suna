@@ -110,11 +110,6 @@ export function loopStartTargetOf(method: string, path: string): string | null {
   return match?.[1] ? decodeURIComponent(match[1]) : null
 }
 
-/** Does this request start (or continue) a prompt loop? */
-export function isLoopStartRequest(method: string, path: string): boolean {
-  return loopStartTargetOf(method, path) !== null
-}
-
 export function resetStopRequestsForTests(): void {
   stopRequestedAt.clear()
 }
@@ -139,9 +134,7 @@ export interface InstanceGuardDeps {
   resumeVictim?: (opencodeSessionId: string, view: EndedTurnView) => Promise<boolean>
   /** Root sessions only are re-prompted: a child belongs to its parent's turn. */
   isRoot?: (opencodeSessionId: string) => Promise<boolean>
-  fetchImpl?: typeof fetch
   sleep?: (ms: number) => Promise<void>
-  now?: () => number
 }
 
 export interface WarmResult {
@@ -205,9 +198,7 @@ const ABORT_NAMES = new Set(['MessageAbortedError', 'AbortError'])
 
 export function createInstanceGuard(initial: InstanceGuardDeps): InstanceGuard {
   const deps: InstanceGuardDeps = { ...initial }
-  const fetchImpl = deps.fetchImpl ?? fetch
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
-  const now = deps.now ?? Date.now
   const canWarm = () => (deps.canWarm ? deps.canWarm() : true)
 
   let warming: Promise<WarmResult | null> | null = null
@@ -226,7 +217,7 @@ export function createInstanceGuard(initial: InstanceGuardDeps): InstanceGuard {
 
   async function status(path: string, timeoutMs: number): Promise<number | string> {
     try {
-      const res = await fetchImpl(url(path), { signal: AbortSignal.timeout(timeoutMs) })
+      const res = await fetch(url(path), { signal: AbortSignal.timeout(timeoutMs) })
       // Drain so the connection is reusable; the body is not needed.
       await res.arrayBuffer().catch(() => undefined)
       return res.status
@@ -251,14 +242,14 @@ export function createInstanceGuard(initial: InstanceGuardDeps): InstanceGuard {
       return Promise.resolve(null)
     }
     warmRetries = 0
-    const started = now()
+    const started = Date.now()
     const run = (async (): Promise<WarmResult> => {
       const results = await Promise.all(
         WARM_PATHS.map(async (path) => [path, await status(path, WARM_REQUEST_TIMEOUT_MS)] as const),
       )
       const statuses = Object.fromEntries(results)
       const ok = results.every(([, s]) => typeof s === 'number' && s < 500)
-      const result = { ok, statuses, ms: now() - started }
+      const result = { ok, statuses, ms: Date.now() - started }
       logger.info('[instance-guard] warmed OpenCode instance caches', { reason, ...result })
       return result
     })()
@@ -272,7 +263,7 @@ export function createInstanceGuard(initial: InstanceGuardDeps): InstanceGuard {
   async function settled(maxMs = WARM_GATE_MAX_MS, opencodeSessionId?: string): Promise<void> {
     const pending = warming
     if (!pending) return
-    const since = now()
+    const since = Date.now()
     let timer: ReturnType<typeof setTimeout> | undefined
     let poll: ReturnType<typeof setInterval> | undefined
     await Promise.race([
@@ -312,7 +303,7 @@ export function createInstanceGuard(initial: InstanceGuardDeps): InstanceGuard {
 
   async function dispose(reason: string): Promise<boolean> {
     try {
-      const res = await fetchImpl(url('/instance/dispose'), {
+      const res = await fetch(url('/instance/dispose'), {
         method: 'POST',
         signal: AbortSignal.timeout(DISPOSE_TIMEOUT_MS),
       })
@@ -321,7 +312,7 @@ export function createInstanceGuard(initial: InstanceGuardDeps): InstanceGuard {
         logger.warn('[instance-guard] instance dispose refused', { reason, status: res.status })
         return false
       }
-      lastDisposedAt = now()
+      lastDisposedAt = Date.now()
       return true
     } catch (err) {
       logger.warn('[instance-guard] instance dispose failed', {
@@ -334,7 +325,7 @@ export function createInstanceGuard(initial: InstanceGuardDeps): InstanceGuard {
 
   async function busySessions(): Promise<string[] | null> {
     try {
-      const res = await fetchImpl(url('/session/status'), { signal: AbortSignal.timeout(PROBE_REQUEST_TIMEOUT_MS) })
+      const res = await fetch(url('/session/status'), { signal: AbortSignal.timeout(PROBE_REQUEST_TIMEOUT_MS) })
       if (!res.ok) return null
       const statuses = (await res.json()) as Record<string, { type?: string }>
       return Object.entries(statuses ?? {})
@@ -418,7 +409,7 @@ export function createInstanceGuard(initial: InstanceGuardDeps): InstanceGuard {
 
   async function readEndedTurn(opencodeSessionId: string): Promise<EndedTurnView | null> {
     try {
-      const res = await fetchImpl(url(`/session/${encodeURIComponent(opencodeSessionId)}/message?limit=6`), {
+      const res = await fetch(url(`/session/${encodeURIComponent(opencodeSessionId)}/message?limit=6`), {
         signal: AbortSignal.timeout(PROBE_REQUEST_TIMEOUT_MS),
       })
       if (!res.ok) return null
@@ -501,7 +492,7 @@ export function createInstanceGuard(initial: InstanceGuardDeps): InstanceGuard {
     healIfPoisoned,
     inspectEndedTurn,
     noteInstanceDisposed() {
-      lastDisposedAt = now()
+      lastDisposedAt = Date.now()
     },
     configure(next) {
       Object.assign(deps, next)
