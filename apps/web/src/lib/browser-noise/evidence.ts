@@ -30,6 +30,7 @@ export interface NoiseEvidence {
   /** Raw `error` / rejection `reason` values. Runtime captures only. */
   error: unknown;
   reason: unknown;
+  digest: unknown;
 }
 
 export interface NoiseRule {
@@ -55,6 +56,7 @@ export interface SentryNoiseEvent {
   exception?: {
     values?: Array<{
       value?: unknown;
+      digest?: unknown;
       mechanism?: { type?: unknown; handled?: unknown };
       stacktrace?: { frames?: NoiseFrame[] };
     }>;
@@ -76,10 +78,11 @@ export function runtimeNoiseEvidence(input: RuntimeNoiseInput): NoiseEvidence {
     environment: '',
     error: input.error,
     reason: input.reason,
+    digest: extractDigest(input.error ?? input.reason),
   };
 }
 
-export function sentryNoiseEvidence(event: SentryNoiseEvent): NoiseEvidence {
+export function sentryNoiseEvidence(event: SentryNoiseEvent, hint?: { originalException?: unknown }): NoiseEvidence {
   const primaryException = event.exception?.values?.find(Boolean);
   return {
     message: primaryException?.value ?? event.message,
@@ -92,7 +95,15 @@ export function sentryNoiseEvidence(event: SentryNoiseEvent): NoiseEvidence {
     environment: normalizeString(event.environment),
     error: undefined,
     reason: undefined,
+    digest: extractDigest(hint?.originalException) || extractDigest(primaryException),
   };
+}
+
+function extractDigest(value: unknown): string {
+  if (value && typeof value === 'object' && 'digest' in value) {
+    return normalizeString((value as { digest?: unknown }).digest);
+  }
+  return '';
 }
 
 /** Every source location of a capture: the `onerror` filename, then each frame's. */

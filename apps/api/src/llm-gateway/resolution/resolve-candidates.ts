@@ -1,6 +1,10 @@
 import { getProjectModelAccess } from '../../repositories/project-model-access';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
-import { resolveDefaultCodexAccountSecret, resolveSessionProviderSecrets } from '../../secrets/account-resource';
+import {
+  resolveDefaultCodexAccountSecret,
+  resolveProjectSharedProviderSecrets,
+  resolveSessionProviderSecrets,
+} from '../../secrets/account-resource';
 import { modelAccessAllows, modelAccessProvider } from '../model-access';
 import { toWireModel } from './effective';
 import {
@@ -119,13 +123,13 @@ export async function resolveCandidates(
           userId: principal.userId, grantUserId: personalUserId, providerId: 'codex', name: 'CODEX_AUTH_JSON',
         })
       : null;
+    const agentMayUseChatGptAccounts = !Array.isArray(principal.agentGrant?.env) ||
+      principal.agentGrant.env.some((name) => name.toUpperCase() === 'CODEX_AUTH_JSON');
+    const agentGrantRefusal = () => new GatewayResolutionError('provider_not_connected',
+      'The running agent cannot use ChatGPT connections.',
+      'Add CODEX_AUTH_JSON to the agent secret grant, or choose another agent.');
     if (selectedPool?.configured) {
-      if (Array.isArray(principal.agentGrant?.env) &&
-        !principal.agentGrant.env.some((name) => name.toUpperCase() === 'CODEX_AUTH_JSON')) {
-        throw new GatewayResolutionError('provider_not_connected',
-          'The running agent cannot use ChatGPT connections.',
-          'Add CODEX_AUTH_JSON to the agent secret grant, or choose another agent.');
-      }
+      if (!agentMayUseChatGptAccounts) throw agentGrantRefusal();
       if (!selectedPool.secrets.length) {
         throw new GatewayResolutionError(
           selectedPool.coolingDown ? 'provider_pool_rate_limited' : 'provider_not_connected',
@@ -159,12 +163,7 @@ export async function resolveCandidates(
     if (pooledEnabled && personalUserId && !principal.keyId) {
       const personal = await resolveDefaultCodexAccountSecret(principal.accountId, principal.projectId, personalUserId);
       if (personal) {
-        if (Array.isArray(principal.agentGrant?.env) &&
-          !principal.agentGrant.env.some((name) => name.toUpperCase() === 'CODEX_AUTH_JSON')) {
-          throw new GatewayResolutionError('provider_not_connected',
-            'The running agent cannot use ChatGPT connections.',
-            'Add CODEX_AUTH_JSON to the agent secret grant, or choose another agent.');
-        }
+        if (!agentMayUseChatGptAccounts) throw agentGrantRefusal();
         try {
           const credential = await resolveCodexAccountCredential({
             projectId: principal.projectId, accountId: principal.accountId,
@@ -178,6 +177,51 @@ export async function resolveCandidates(
         throw new GatewayResolutionError('provider_reauth_required',
           'Your ChatGPT connection needs reconnection.',
           'Reconnect your ChatGPT account in Models, then retry.');
+      }
+    }
+    // No explicit pool and no personal account: the ChatGPT accounts shared
+    // with this project that the principal may use — the same accounts the
+    // model picker lists for it. Unattended sessions (Slack, cron triggers,
+    // agent-started workers) never have a pool row, and a member who did not
+    // create a shared account never has a personal one; without this step both
+    // fell straight to the legacy project connection. A project gateway API
+    // key (`keyId`) keeps the legacy-only behavior.
+    let sharedFailure: GatewayResolutionError | null = null;
+    if (pooledEnabled && !principal.keyId) {
+      const shared = await resolveProjectSharedProviderSecrets({
+        accountId: principal.accountId, projectId: principal.projectId,
+        userId: principal.userId, grantUserId: personalUserId, providerId: 'codex', name: 'CODEX_AUTH_JSON',
+      });
+      if ((shared.secrets.length || shared.coolingDown) && !agentMayUseChatGptAccounts) {
+        // Before this fallback existed such an agent reached only the legacy
+        // connection; it still may, but never a shared account.
+        sharedFailure = agentGrantRefusal();
+      } else if (shared.secrets.length) {
+        const candidates = [];
+        for (const secret of shared.secrets) {
+          try {
+            const accountCredential = await resolveCodexAccountCredential({
+              projectId: principal.projectId, accountId: principal.accountId,
+              sessionId: principal.sessionId ?? null, userId: principal.userId,
+              secretId: secret.secretId, value: secret.value,
+            });
+            if (!accountCredential) continue;
+            // `poolSecretId`: a 429 on one shared account records its cooldown
+            // and moves the request to the next, exactly as in a selected pool.
+            candidates.push({ ...codexDescriptor(accountCredential, effectiveModel),
+              credentialRef: secret.secretId, poolSecretId: secret.secretId });
+          } catch (err) {
+            if (!(err instanceof CodexRefreshError)) throw err;
+          }
+        }
+        if (candidates.length) return candidates;
+        sharedFailure = new GatewayResolutionError('provider_reauth_required',
+          'The ChatGPT connections shared with this project need reconnection.',
+          'Reconnect a shared ChatGPT account in Models, then retry.');
+      } else if (shared.coolingDown) {
+        sharedFailure = new GatewayResolutionError('provider_pool_rate_limited',
+          'All ChatGPT connections shared with this project are cooling down.',
+          'Retry after the cooldown, or connect another ChatGPT account.', shared.retryAfterSeconds);
       }
     }
     let credential: Awaited<ReturnType<typeof resolveCodexCredential>>;
@@ -202,6 +246,7 @@ export async function resolveCandidates(
       throw err;
     }
     if (!credential) {
+      if (sharedFailure) throw sharedFailure;
       throw new GatewayResolutionError(
         'provider_not_connected',
         'Connect Codex to use this model.',

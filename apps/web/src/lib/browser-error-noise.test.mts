@@ -14,6 +14,7 @@ import {
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isExpectedBillingGateMessage,
   isExpectedCompactionNoModelMessage,
+  isExpectedNextRecoveryBailoutNoise,
   isExtensionRejectedObjectNoise,
   isExtensionSource,
   isFailedToSendMessageNoise,
@@ -23,6 +24,7 @@ import {
   isInjectedScriptSendMessageNoise,
   isInpageJsNoErrorMessageNoise,
   isInpageWalletStreamNoise,
+  isIosWebViewInjectedStackOverflowNoise,
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
   isLikelyDomMutationNoise,
@@ -55,6 +57,7 @@ import {
   isVercelLiveFeedbackNoise,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
+  shouldIgnoreSentryNoiseEvent,
 } from './browser-error-noise.ts';
 
 test('matches the Safari runtime.sendMessage tab-not-found noise', () => {
@@ -6207,6 +6210,213 @@ test('does NOT suppress a real first-party RangeError recursion with a resolved 
 });
 
 // ---------------------------------------------------------------------------
+// iOS-WebView in-document inline-script stack overflow
+// (Better Stack patterns
+// 101e1671b389e89e5e2a0f555ea7626e4c83a8ed8495e90fc1a2ac0cfa389f87 and
+// d842945607c935d2d4c85dddf54ffc596f9120137f59257cd293a961908a403b,
+// Kortix Frontend prod, application_id 2346967). `RangeError: Maximum call
+// stack size exceeded.`, 1 occurrence each / 0 identified users, last
+// 2026-09-25 20:01:22 UTC / 20:00:30 UTC, release `a9378b74…`, one anonymous
+// Google Search App 436 session on iOS (iPhone) 27.0.0 with Google Translate
+// active. The stack is a tight mutual recursion of Closure-minified functions
+// (`Ok`/`Qk`) at one document line; EVERY frame's filename is the in-page
+// document source `app:///projects/<project_id>/sessions/<session_id>` — no
+// `_next` chunk frame and no resolved `apps/web/src/…` frame. The sibling
+// shape of the frameless iOS-WebKit stack overflow above.
+// ---------------------------------------------------------------------------
+
+// The exact production frame shape, with synthetic ids (never real prod ids).
+const IOS_WEBVIEW_INLINE_SOURCE = 'app:///projects/test-project-id/sessions/test-session-id';
+const IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES = [
+  { function: 'Ok', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 226, colno: 63, in_app: true },
+  { function: 'Qk', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 226, colno: 408, in_app: true },
+  { function: '?', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 198, colno: 237, in_app: true },
+  { function: '?', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 190, colno: 41, in_app: true },
+];
+
+test('classifies the iOS-WebView in-document inline-script stack overflow as noise', () => {
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message,
+        frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+      }),
+      true,
+      `expected "${message}" with in-document inline frames to be noise`,
+    );
+  }
+});
+
+test('suppresses the iOS-WebView in-document stack overflow via the Sentry beforeSend gate', () => {
+  // The exact production event shape: `auto.browser.global_handlers.onerror`
+  // with every frame on the in-page document source, and the request url path
+  // equal to the frame path.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/test-project-id/sessions/test-session-id' },
+      exception: {
+        values: [
+          {
+            value: 'RangeError: Maximum call stack size exceeded.',
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+            stacktrace: { frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('keeps reporting an asset frame or an in-document frame from a different page path', () => {
+  // A loaded `.js` asset on the `app:///` origin is a real script, not inline
+  // code executed in the document.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack size exceeded.',
+      frames: [
+        { function: 'boot', filename: 'app:///assets/index-abc123.js', lineno: 1, colno: 2 },
+      ],
+    }),
+    false,
+  );
+  // An in-document frame whose path is NOT the page path is another document
+  // context (embed, iframe), not this page's injected script.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack size exceeded.',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+      requestUrl: 'https://kortix.com/projects/other-project/sessions/other-session',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/other-project/sessions/other-session' },
+      exception: {
+        values: [
+          {
+            value: 'Maximum call stack size exceeded.',
+            stacktrace: { frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES },
+          },
+        ],
+      },
+    }),
+    false,
+  );
+});
+
+test('suppresses the iOS-WebView in-document stack overflow via the runtime (window.onerror) gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: IOS_WEBVIEW_INLINE_SOURCE,
+    }),
+    true,
+  );
+});
+
+test('keeps reporting a stack overflow that carries a bundle or first-party frame', () => {
+  const bundleFrame = {
+    function: 'e',
+    filename: 'app:///_next/static/chunks/main-abc123.js',
+    lineno: 1,
+    colno: 2,
+  };
+  const nextLiveFrame = {
+    function: 'te',
+    filename: 'app:///_next-live/feedback/913.f924585152f5e22503e7.js',
+    lineno: 1,
+    colno: 2,
+  };
+  const firstPartyFrame = {
+    function: 'deepRecurse',
+    filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+    lineno: 3,
+    colno: 4,
+  };
+  for (const frames of [
+    [bundleFrame],
+    [nextLiveFrame],
+    [firstPartyFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, bundleFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, nextLiveFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, firstPartyFrame],
+  ]) {
+    // This class's OWN guard always declines a bundle / `_next-live` / first-
+    // party frame — assert that independent of every other rule.
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message: 'Maximum call stack size exceeded.',
+        frames,
+      }),
+      false,
+      `expected real recursion with frames ${JSON.stringify(frames)} to keep reporting`,
+    );
+    // At the full Sentry-gate dispatch level, a `_next-live/feedback/…` frame
+    // with no first-party frame is independently dropped by the (pre-existing,
+    // message-agnostic) `isVercelLiveFeedbackNoise` rule — the Vercel toolbar's
+    // reserved source path is never actionable app code, regardless of message.
+    // That is a DIFFERENT rule than this one; it does not mean this class's own
+    // guard failed to preserve the frame.
+    const isVercelFeedbackFrame = frames.some((frame) =>
+      /^app:\/\/\/_next-live\/feedback\//.test(String(frame.filename ?? '')),
+    );
+    const hasFirstPartyFrame = frames.some((frame) =>
+      String(frame.filename ?? '').includes('apps/web/src/'),
+    );
+    const expectedDispatchVerdict = isVercelFeedbackFrame && !hasFirstPartyFrame;
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: 'Maximum call stack size exceeded.',
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      expectedDispatchVerdict,
+      `expected Sentry gate verdict ${expectedDispatchVerdict} for frames ${JSON.stringify(frames)}`,
+    );
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'app:///_next/static/chunks/main-abc123.js',
+    }),
+    false,
+  );
+});
+
+test('does NOT treat an unrelated message from the same in-document source as stack-overflow noise', () => {
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Minified React error #418',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+    }),
+    false,
+  );
+  // Prefix-only, not the canonical message.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+    }),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // EVM-wallet-extension injected `inpage.js` stream EventEmitter noise
 // (Better Stack patterns 17a0ce67ca03dd51cfa5a9a1ac7e5140a958664a5f66ac8ec74c40604ffd772a
 // (`Cannot read properties of undefined (reading 'addListener')`, 21 occ.)
@@ -8825,6 +9035,157 @@ test('does NOT suppress the "Connection closed by server." wording (over-match g
 });
 
 // ---------------------------------------------------------------------------
+// React error #412 — "Connection closed." (RSC / Flight stream close)
+//
+// KRTX-240, Better Stack pattern
+// 3d9e3dd115f302ff96fa4bee9b54beed839db71851ea5b0ad7660778023ec6a7, Kortix
+// Frontend prod (application_id 2346967). React's minified prod error #412 is
+// `Connection closed.` (see React's error-codes map) — the SAME canonical close
+// string a client-side transport library throws, emitted by React's Flight
+// client in `close()` when an RSC stream ends with chunks still pending
+// (ReactFlightClient: `reportGlobalError(weakResponse, new Error('Connection
+// closed.'))`). In a Next.js App Router client this is the RSC/flight response
+// stream closing early — an aborted navigation/prefetch, a network blip, or the
+// server ending the stream. It is a transient, self-healing browser/transport
+// condition, never an app defect. 6 occurrences over 6 days (first
+// 2026-09-17, last 2026-09-23), 0 identified users (anonymous), all Firefox,
+// across the marketing/`/auth`/`/projects/start` routes, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT). The single
+// stack frame is the minified React chunk
+// `app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js` function `n` — NO
+// resolved first-party `apps/web/src/…` frame. React's formatted prod message
+// is canonical (only the deep-link URL varies), so anchoring on the
+// `Minified React error #412;` prefix is specific; the negative guard preserves
+// a real first-party `throw new Error('Connection closed.')` regression.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event: React's formatted prod
+// error #412 (`Connection closed.`). Only the deep-link URL is React's own.
+const REACT_412_CONNECTION_CLOSED_MESSAGE =
+  'Minified React error #412; visit https://react.dev/errors/412 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.';
+
+// The single production stack frame: the minified React chunk that React's
+// Flight client throws from. Sentry's sourcemap resolution did NOT rewrite this
+// to a first-party `apps/web/src/…` path, so the negative guard does not fire.
+const REACT_412_PROD_FRAMES = [
+  {
+    filename: 'app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js',
+    function: 'n',
+    lineno: 1,
+    colno: 1,
+    in_app: true,
+  },
+];
+
+test('classifies the React error #412 "Connection closed." RSC-stream noise (exact prod shape)', () => {
+  assert.equal(
+    isConnectionClosedNoise({
+      message: REACT_412_CONNECTION_CLOSED_MESSAGE,
+      frames: REACT_412_PROD_FRAMES,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth' },
+      exception: {
+        values: [
+          {
+            value: REACT_412_CONNECTION_CLOSED_MESSAGE,
+            stacktrace: { frames: REACT_412_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses React error #412 through all three capture-path wrappers', () => {
+  // `stripErrorWrappers` + the bare-`Error: ` strip must classify the SAME
+  // underlying message regardless of which capture path delivered it.
+  for (const message of [
+    REACT_412_CONNECTION_CLOSED_MESSAGE,
+    `Error: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+    `Unhandled promise rejection: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+    `Unhandled promise rejection: Error: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+  ]) {
+    assert.equal(
+      isConnectionClosedNoise({ message, frames: REACT_412_PROD_FRAMES }),
+      true,
+      `expected "${message}" to be noise`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: REACT_412_PROD_FRAMES } }],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    );
+  }
+});
+
+test('classifies the frameless React error #412 variant as noise (message alone is specific)', () => {
+  assert.equal(
+    isConnectionClosedNoise({ message: REACT_412_CONNECTION_CLOSED_MESSAGE, frames: [] }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [{ value: REACT_412_CONNECTION_CLOSED_MESSAGE }],
+      },
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress React error #412 when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw the close →
+  // actionable; the negative guard MUST preserve it.
+  const frames = [
+    { filename: 'app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js', function: 'n' },
+    { filename: 'apps/web/src/lib/rsc/stream.ts', function: 'onClose' },
+  ];
+  assert.equal(
+    isConnectionClosedNoise({ message: REACT_412_CONNECTION_CLOSED_MESSAGE, frames }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: REACT_412_CONNECTION_CLOSED_MESSAGE, stacktrace: { frames } }],
+      },
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress a near-worded React error number (over-match guard)', () => {
+  // `\b` after `#412` means `#4120` (and any other number) must keep reporting.
+  for (const message of [
+    'Minified React error #4120; visit https://react.dev/errors/4120 for the full message.',
+    'Minified React error #41; visit https://react.dev/errors/41 for the full message.',
+  ]) {
+    assert.equal(
+      isConnectionClosedNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Canvas `getImageData` out-of-memory noise (BS b4b43847…)
 // ---------------------------------------------------------------------------
 
@@ -11421,4 +11782,117 @@ test('cross-matcher isolation: the WebGL-unsupported matcher does NOT match the 
     }),
     false,
   );
+});
+
+// React error #419 ("The server could not finish this Suspense boundary") is
+// React's recoverable-client-render report. Next.js sets the abandoned
+// boundary's reason on `error.digest`; a 404 / HTTP-error or redirect digest is
+// an expected user state, a hash digest is a real server-render failure.
+const REACT_419_MESSAGE =
+  'Minified React error #419; visit https://react.dev/errors/419 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.';
+
+test('classifies React #419 with a Next.js 404 digest as expected recovery noise', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest: 'NEXT_HTTP_ERROR_FALLBACK;404' }),
+    true,
+  );
+});
+
+test('reports React #419 for a server error boundary', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest: 'NEXT_HTTP_ERROR_FALLBACK;500' }),
+    false,
+  );
+  const error = Object.assign(new Error(REACT_419_MESSAGE), {
+    digest: 'NEXT_HTTP_ERROR_FALLBACK;500',
+  });
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ error }), false);
+  assert.equal(
+    shouldIgnoreSentryNoiseEvent(
+      { exception: { values: [{ value: REACT_419_MESSAGE }] } },
+      { originalException: error },
+    ),
+    false,
+  );
+});
+
+test('classifies React #419 with an unminified server-render message as expected recovery noise', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({
+      message:
+        'The server could not finish this Suspense boundary, likely due to an error during server rendering.',
+      digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+    }),
+    true,
+  );
+});
+
+test('classifies React #419 with a Next.js redirect digest as expected recovery noise', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({
+      message: REACT_419_MESSAGE,
+      digest: 'NEXT_REDIRECT;replace;/projects;307;',
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress React #419 without a digest (a real server-render failure)', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest: undefined }),
+    false,
+  );
+});
+
+test('does NOT suppress React #419 with a hash digest (a real server-render failure)', () => {
+  for (const digest of ['1a2b3c4d', 'NEXT_DYNAMIC_NO_SSR_CODE', 'BAILOUT_TO_CLIENT_SIDE_RENDERING']) {
+    assert.equal(
+      isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest }),
+      false,
+      `expected digest ${digest} to keep reporting`,
+    );
+  }
+});
+
+test('does NOT suppress a non-#419 error that happens to carry a 404 digest', () => {
+  for (const message of [
+    'TypeError: Cannot read properties of undefined (reading "x")',
+    'Minified React error #418; visit https://react.dev/errors/418',
+  ]) {
+    assert.equal(
+      isExpectedNextRecoveryBailoutNoise({ message, digest: 'NEXT_HTTP_ERROR_FALLBACK;404' }),
+      false,
+      `expected "${message}" to keep reporting`,
+    );
+  }
+});
+
+test('suppresses a 404-boundary React #419 from the window.onerror runtime guard', () => {
+  const notFoundError = Object.assign(new Error(REACT_419_MESSAGE), {
+    digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+  });
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ error: notFoundError }), true);
+});
+
+test('does NOT suppress a hash-digest React #419 from the window.onerror runtime guard', () => {
+  const realError = Object.assign(new Error(REACT_419_MESSAGE), { digest: 'deadbeef01' });
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ error: realError }), false);
+});
+
+test('suppresses a 404-boundary React #419 through the Sentry beforeSend hint', () => {
+  const event = {
+    exception: { values: [{ value: REACT_419_MESSAGE }] },
+    request: { url: 'https://kortix.com/dashboard' },
+  };
+  assert.equal(
+    shouldIgnoreSentryNoiseEvent(event, {
+      originalException: Object.assign(new Error(REACT_419_MESSAGE), {
+        digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+      }),
+    }),
+    true,
+  );
+  // Same event without the hint (the digest is not in the serialised event) must
+  // keep reporting so a real server-render failure is never hidden.
+  assert.equal(shouldIgnoreSentryNoiseEvent(event), false);
 });
