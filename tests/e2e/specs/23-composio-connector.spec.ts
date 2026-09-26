@@ -775,6 +775,134 @@ test.describe("23 — Composio managed connector", () => {
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
 
+  test("the chat Connect card adds a NEW named account for the audience picked in its dialog", async ({
+    page,
+  }) => {
+    // Before, a chat connect link could only re-authorize the caller's one
+    // default account: asking for a second one ended on "Already connected".
+    // The card now opens the Add account form. The account row and its grants
+    // are real API writes; only the provider hop and the token routes (whose
+    // token here is the debug scenario's) are stubbed.
+    await fundAccount(databaseUrl!, accountId);
+    await setDatabaseEnterpriseDemo(loadEnv(), accountId, true);
+    const runId = Date.now().toString(36);
+    const slug = `e2e-chat-${runId}`;
+    const groupName = `Sales ${runId}`;
+    await api(
+      session.access_token,
+      "POST",
+      `/connectors/projects/${project.id}/connectors`,
+      { slug, provider: "http", baseUrl: "https://mail.example.com", auth: { type: "none" } },
+      200,
+    );
+    const group = await api<{ group_id: string }>(
+      session.access_token,
+      "POST",
+      `/accounts/${accountId}/iam/groups`,
+      { name: groupName },
+      201,
+    );
+
+    const finalizeBodies: unknown[] = [];
+    await page.route("**/v1/setup-links/connectors/**", async (route) => {
+      const request = route.request();
+      if (request.method() === "GET") {
+        return route.fulfill({
+          json: {
+            kind: "connector",
+            project_id: project.id,
+            project_name: "E2E project",
+            label: "Dad's Gmail",
+            owner: "me",
+            slug,
+            app: "gmail",
+            name: "Gmail",
+            icon_url: null,
+            expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+        });
+      }
+      if (request.url().endsWith("/finalize")) {
+        const body = request.postDataJSON() as { connection_id?: string } | null;
+        finalizeBodies.push(body ?? {});
+        return route.fulfill({
+          json: body?.connection_id
+            ? {
+                connected: true,
+                connected_as: "dad@example.test",
+                connection_id: body.connection_id,
+                label: "Dad's Gmail",
+              }
+            : { connected: false },
+        });
+      }
+      return route.fulfill({ status: 404, json: { error: "unexpected" } });
+    });
+    // The provider hop: a no-auth answer completes without a hosted page.
+    await page.route(`**/v1/projects/${project.id}/connections/*/connect`, (route) =>
+      route.fulfill({ json: { connected: true } }),
+    );
+
+    const url = "/debug/stream?scenario=setup-link&at=end";
+    await installBrowserSessionDirect(page, session, url, authOptions);
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    const card = page.getByTestId("stream-replay").getByTestId("outcome-card-external");
+    await expect(card).toBeVisible({ timeout: 120_000 });
+    await card.getByRole("button", { name: "Connect", exact: true }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Add a Gmail account" });
+    await expect(dialog).toBeVisible();
+    // The agent's suggested name and intended audience, both editable.
+    await expect(dialog.getByLabel("Name")).toHaveValue("Dad's Gmail");
+    await expect(dialog.getByRole("radio", { name: /^Only you/ })).toBeChecked();
+    await dialog.getByRole("radio", { name: /^Specific people or groups/ }).click();
+    await dialog.getByRole("button", { name: groupName }).click();
+
+    const createRequest = page.waitForRequest(
+      (request) =>
+        request.url().endsWith(`/projects/${project.id}/connections`) && request.method() === "POST",
+    );
+    const grantRequest = page.waitForRequest(
+      (request) =>
+        /\/v1\/accounts\/[^/]+\/iam\/assignments$/.test(request.url()) && request.method() === "POST",
+    );
+    await dialog.getByRole("button", { name: "Connect Gmail", exact: true }).click();
+
+    expect((await createRequest).postDataJSON()).toEqual(
+      expect.objectContaining({ connector_alias: slug, owner_type: "project", label: "Dad's Gmail" }),
+    );
+    expect((await grantRequest).postDataJSON()).toEqual(
+      expect.objectContaining({
+        principal_type: "group",
+        principal_id: group.group_id,
+        object_type: "connection",
+      }),
+    );
+    const landed = page.getByTestId("connector-connect-landed");
+    await expect(landed).toContainText("Saved as Dad's Gmail");
+    await expect(landed).toContainText("Specific people or groups");
+    await expect(page.getByTestId("connector-intake-connected-as")).toHaveText(
+      "Connected as dad@example.test",
+    );
+
+    // The link was finalized for THIS account, so the session is told its name.
+    const created = (
+      await api<{
+        connections: Array<{
+          connection_id: string;
+          label: string;
+          owner_type: string;
+          shared_with?: Array<{ principal_type: string; principal_id: string }>;
+        }>;
+      }>(session.access_token, "GET", `/projects/${project.id}/connections`)
+    ).connections.find((c) => c.label === "Dad's Gmail");
+    expect(created?.owner_type).toBe("project");
+    expect(created?.shared_with).toEqual([
+      expect.objectContaining({ principal_type: "group", principal_id: group.group_id }),
+    ]);
+    expect(finalizeBodies).toContainEqual({ connection_id: created?.connection_id });
+  });
+
   test("a connect link for an already-connected account reads as success and names the identity", async ({
     page,
   }) => {

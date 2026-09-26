@@ -15,12 +15,14 @@ import {
 } from '@/components/ui/modal';
 import { AddAccountFields } from '@/features/workspace/customize/sections/add-account-fields';
 import {
+  accountVisibility,
   connectorConnectionRows,
   newAccountAudienceFor,
   newAccountLabelTaken,
   newAccountReady,
   type NewAccountDraft,
 } from '@/features/workspace/customize/sections/view/connector-connections';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useAddManagedAccount } from '@/hooks/connectors/use-add-managed-account';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
@@ -151,6 +153,9 @@ function AddAccountDialogBody({
     queryKey: ['connections', projectId],
     queryFn: () => listConnections(projectId),
     staleTime: 30_000,
+    // Explicit: the chat renders under clients (the stream debug harness)
+    // whose default disables queries, and the name check needs this list.
+    enabled: true,
   });
   const rows = connectorConnectionRows(connectionsQuery.data?.connections, info.slug);
   const [draft, setDraft] = useState<NewAccountDraft>(() => ({
@@ -166,7 +171,12 @@ function AddAccountDialogBody({
   }
   const [phase, setPhase] = useState<'form' | 'waiting' | 'connected'>('form');
   const [error, setError] = useState<string | null>(null);
-  const [landed, setLanded] = useState<{ label: string; connectedAs: string | null } | null>(null);
+  const [landed, setLanded] = useState<{
+    connectionId: string;
+    label: string;
+    connectedAs: string | null;
+  } | null>(null);
+  const { user } = useAuth();
   const managed = useAddManagedAccount(projectId, info.slug, accountId, () => undefined);
 
   const labelTaken = newAccountLabelTaken(draft, rows);
@@ -188,9 +198,15 @@ function AddAccountDialogBody({
         { backendUrl: setupLinkApiBase() },
         { connectionId },
       );
-      setLanded({ label: done.label ?? draft.label.trim(), connectedAs: done.connected_as ?? null });
+      setLanded({
+        connectionId,
+        label: done.label ?? draft.label.trim(),
+        connectedAs: done.connected_as ?? null,
+      });
       setPhase('connected');
       onConnected();
+      // The new row, with its grants, so the summary names the audience.
+      void connectionsQuery.refetch();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : tSharing('connectFailed'));
       setPhase('form');
@@ -199,12 +215,25 @@ function AddAccountDialogBody({
 
   const connected = phase === 'connected';
   const waiting = phase === 'waiting';
+  // The landed account as its card will describe it; the chosen option until the list refreshes.
+  const landedRow = landed ? rows.find((row) => row.connection_id === landed.connectionId) : undefined;
+  const landedVisibility = landedRow ? accountVisibility(landedRow, user?.id) : null;
+  const audienceKind =
+    landedVisibility?.kind ??
+    (draft.audience === 'private' ? 'you' : draft.audience === 'project' ? 'everyone' : null);
   const audienceLabel =
-    draft.audience === 'private'
-      ? tSharing('onlyYou')
-      : draft.audience === 'project'
-        ? everyoneLabelFor(tSharing, headline.project)
-        : tSharing('specificPeople');
+    landedVisibility?.kind === 'named'
+      ? landedVisibility.more > 0
+        ? tSharing('visibilityNamedMore', {
+            names: landedVisibility.names.join(', '),
+            count: landedVisibility.more,
+          })
+        : landedVisibility.names.join(', ')
+      : audienceKind === 'you'
+        ? tSharing('onlyYou')
+        : audienceKind === 'everyone'
+          ? everyoneLabelFor(tSharing, headline.project)
+          : tSharing('specificPeople');
 
   return (
     <>
