@@ -613,7 +613,8 @@ class PreviewHealthGate(unittest.TestCase):
         # OLD: the workflow polled https://pr-<n>.preview-api.kortix.com/v1/health
         # for `.environment == "preview"` and `.commit == $COMMIT`, and the
         # frontend for `.commit`. NEW: the bootstrap script runs the same
-        # assertion against the sandbox origin, then runs the deployed suite.
+        # assertion against the sandbox origin; the deployed suite runs as its
+        # own step afterwards, against the commit that assertion proved.
         self.assertIn(
             '\'.status == "ok" and .environment == "preview" and .commit == $sha\'',
             PREVIEW_CORE,
@@ -622,7 +623,9 @@ class PreviewHealthGate(unittest.TestCase):
         self.assertIn("up -d --wait --wait-timeout 300", PREVIEW_CORE)
         self.assertIn("condition: service_healthy", PREVIEW_STACK)
         self.assertIn("pnpm test -- --target-full", PREVIEW_CORE)
-        self.assertIn("Deploy sandbox and run pnpm test -- --target-full", WORKFLOW)
+        self.assertIn("'.status == \"ok\" and .commit == $sha'", PREVIEW_CORE)
+        self.assertIn("- name: Deploy the preview stack", WORKFLOW)
+        self.assertIn("- name: Run pnpm test -- --target-full against the preview", WORKFLOW)
 
     def test_provider_fallback_hides_no_product_failure(self):
         # A failing test run or a controller bug must surface, not trigger a
