@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { getClient } from '../core/runtime/client';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
+import { getClient } from '../core/runtime/client';
 import type { MessageWithPartsLike, ToolPartLike } from '../core/turns/types';
+import { shouldRunSelfHealPoll } from './self-heal-poll-gate';
 
 /**
  * True when any assistant message has a `question` tool part still
@@ -50,6 +52,11 @@ export interface UseQuestionSelfHealOptions {
  * as long as the tool shows running with nothing pending, and stops the moment
  * a pending question shows up (from either this poll or the SSE event finally
  * arriving).
+ *
+ * The poll also stops while the sandbox is not reachable or is parked
+ * (`shouldRunSelfHealPoll`): a parked box answers every read from the session
+ * row with a 503 and a GET can never resume it, so a part left `running` when
+ * the box parked used to poll it forever (one 5xx per interval, KRTX-269).
  */
 export function useQuestionSelfHeal(
   sessionId: string,
@@ -58,16 +65,26 @@ export function useQuestionSelfHeal(
 ): void {
   const { enabled = true, isSuppressed } = options;
   const addQuestion = useOpenCodePendingStore((s) => s.addQuestion);
-  const pendingCount = useOpenCodePendingStore((s) =>
-    Object.values(s.questions).filter((q) => q.sessionID === sessionId && !isSuppressed?.(q.id))
-      .length,
+  const pendingCount = useOpenCodePendingStore(
+    (s) =>
+      Object.values(s.questions).filter((q) => q.sessionID === sessionId && !isSuppressed?.(q.id))
+        .length,
   );
   const running = useMemo(() => hasRunningQuestionTool(messages), [messages]);
+  const sandboxStatus = useSandboxConnectionStore((s) => s.status);
+  const parked = useSandboxConnectionStore((s) => s.parked);
+  const pollAllowed = shouldRunSelfHealPoll({
+    enabled,
+    hasCandidate: running,
+    pendingCount,
+    sandboxStatus,
+    parked,
+  });
 
   const inFlightRef = useRef(false);
   const lastAtRef = useRef(0);
   useEffect(() => {
-    if (!enabled || !running || pendingCount > 0) return;
+    if (!pollAllowed) return;
 
     let cancelled = false;
 
@@ -110,5 +127,5 @@ export function useQuestionSelfHeal(
       cancelled = true;
       clearInterval(timer);
     };
-  }, [enabled, running, pendingCount, addQuestion, isSuppressed]);
+  }, [pollAllowed, addQuestion, isSuppressed]);
 }
