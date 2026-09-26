@@ -16,9 +16,13 @@ on:
         required: false
         type: string
 
+# Queue, never cancel: an in-flight staging deploy finishes (a cancel could
+# kill `migrate-db` against STAGING_DATABASE_URL mid-migration), and the newest
+# pending run replaces older pending ones, so the latest staging commit still
+# wins. Enforced by tests/unit/deploy-concurrency.test.ts.
 concurrency:
   group: deploy-staging
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
