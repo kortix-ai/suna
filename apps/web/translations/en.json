@@ -9485,7 +9485,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "Propose changes",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "View changes",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Rename…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Share…",
     "autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00": "New session",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix Session is starting",
     "autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70": "Connecting…",
@@ -19195,6 +19194,18 @@
       "title": "Create a public link?",
       "description": "Anyone with the link can view this without signing in. The link stays active until you revoke it.",
       "confirm": "Create link"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "Public link",
+      "sectionDescription": "Anyone with the link can read this conversation without signing in.",
+      "create": "Create public link",
+      "revokeDescription": "The conversation stops loading for everyone with the link. You can create a new link afterwards.",
+      "rowMeta": "Read-only conversation",
+      "unavailable": "This conversation is temporarily unavailable.",
+      "unavailableDescription": "The conversation could not be read right now. Try again in a moment.",
+      "loadFailedDescription": "The conversation could not be loaded.",
+      "empty": "No messages yet",
+      "savedCopy": "Saved copy from {date}"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} account",

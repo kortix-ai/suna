@@ -77,6 +77,7 @@ try/catching every call.
 | transcript | `GET .../sessions/:sid/transcript` → `projects-client/sessions.ts`'s `getSessionTranscript` ✅, facade `session(pid,sid).transcript()` ✅ (previously listed ✅ here with no client fn behind it — that was false; now genuinely wired) |
 | preview candidates (live ports) | `GET .../sessions/:sid/previews` |
 | public shares | `GET/POST/DELETE .../sessions/:sid/public-shares[/:id]` |
+| public transcript share (`{ transcript: true }`, one live link per session; `findActiveTranscriptShare`) + anonymous read (`getPublicSessionShare`, `getPublicSessionShareMessages`, by `share_id` or `kps_` token) | `POST .../sessions/:sid/public-shares` · `GET /v1/public/session-shares/:ref[/messages]` |
 
 ### 5b. Token minting (CLI PATs) — Kortix-as-a-Backend-critical  ✅
 | op | REST | SDK |

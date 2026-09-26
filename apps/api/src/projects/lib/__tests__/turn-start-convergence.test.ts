@@ -7,11 +7,21 @@
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
+  convergeAssetsInBackground,
   convergeBeforeTurnStart,
   DESIRED_TTL_MS,
   invalidateDesiredRelease,
+  scheduleAssetConvergence,
+  type AssetConvergenceDeps,
   type TurnStartConvergenceDeps,
 } from '../turn-start-convergence';
+import {
+  __clearRunningAssetsForTests,
+  forgetRunningAssets,
+  lastKnownAssetVerdict,
+  noteRunningAssets,
+  shouldReportPinned,
+} from '../../../runtime-assets/running-assets';
 import { notifyBaseBranchMoved } from '../config-convergence-triggers';
 import {
   __clearRunningReleasesForTests,
@@ -217,5 +227,133 @@ describe('the running-release memo', () => {
   test('it is per session', () => {
     noteRunningRelease('s1', RELEASE_A);
     expect(lastKnownRunningRelease('s2')).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RUNTIME ASSETS — the lane beside the config gate, and the one rule that
+// separates them: CONFIG BLOCKS THE TURN, BINARIES MUST NOT.
+//
+// Config changes what the agent IS, so `convergeBeforeTurnStart` awaits and a
+// stale box pays 10,287-10,907 ms. A box one turn behind on the CLI is the state
+// that already exists today; a box that makes the user wait for ~100 MB is a
+// regression. So this half DETECTS and SCHEDULES. It never applies, and it is
+// never awaited on the send path. Every later reviewer will want to "just await
+// it" — these cases are why not.
+// ---------------------------------------------------------------------------
+describe('the runtime-asset lane never costs the send', () => {
+  const FP = 'fingerprint-a';
+  let refreshCalls: string[] = [];
+  let probeCalls: string[] = [];
+
+  function assetDeps(over: Partial<AssetConvergenceDeps> = {}): AssetConvergenceDeps {
+    return {
+      fingerprint: async () => FP,
+      lastVerdict: lastKnownAssetVerdict,
+      refresh: (sessionId) => {
+        refreshCalls.push(sessionId);
+      },
+      probe: async (sessionId) => {
+        probeCalls.push(sessionId);
+      },
+      forget: forgetRunningAssets,
+      ...over,
+    };
+  }
+
+  beforeEach(() => {
+    refreshCalls = [];
+    probeCalls = [];
+    __clearRunningAssetsForTests();
+  });
+
+  test('a box the API last saw CURRENT costs zero network calls', async () => {
+    noteRunningAssets(SESSION, FP, 'current');
+    expect(await convergeAssetsInBackground(SESSION, assetDeps())).toBe('current');
+    expect(refreshCalls).toEqual([]);
+    expect(probeCalls).toEqual([]);
+  });
+
+  test('a box the API last saw BEHIND gets a refresh POSTed, not awaited', async () => {
+    noteRunningAssets(SESSION, FP, 'behind');
+    expect(await convergeAssetsInBackground(SESSION, assetDeps())).toBe('scheduled');
+    expect(refreshCalls).toEqual([SESSION]);
+    expect(probeCalls).toEqual([]);
+  });
+
+  // "dok run-uje, u pozadini spremi swap." A cold memo must NOT make the send
+  // pay a probe: fire one off and let the verdict land for the NEXT send.
+  test('a COLD memo schedules a probe and sends no refresh', async () => {
+    expect(await convergeAssetsInBackground(SESSION, assetDeps())).toBe('probe-scheduled');
+    expect(probeCalls).toEqual([SESSION]);
+    expect(refreshCalls).toEqual([]);
+  });
+
+  // Refresh ONCE, then re-measure. Without this the `behind` entry stands for
+  // its whole TTL and every turn in that window POSTs another refresh, stacking
+  // `scheduleSandboxRuntimeRefresh` retry ladders on one box. Forgetting the
+  // entry makes the next send a cold memo, which probes and records what the box
+  // actually did with the refresh.
+  test('a scheduled refresh forgets the verdict instead of re-sending it every turn', async () => {
+    noteRunningAssets(SESSION, FP, 'behind');
+    expect(await convergeAssetsInBackground(SESSION, assetDeps())).toBe('scheduled');
+    expect(await convergeAssetsInBackground(SESSION, assetDeps())).toBe('probe-scheduled');
+    expect(refreshCalls).toEqual([SESSION]);
+    expect(probeCalls).toEqual([SESSION]);
+  });
+
+  // The rolling-deploy guard. Two API versions serve two manifests; the box's
+  // epoch guard refuses to go backwards. A verdict computed against the other
+  // manifest must not keep re-scheduling a pass the box will refuse.
+  test('a verdict taken against another manifest is a miss, not a hit', async () => {
+    noteRunningAssets(SESSION, 'fingerprint-b', 'current');
+    expect(await convergeAssetsInBackground(SESSION, assetDeps())).toBe('probe-scheduled');
+    expect(refreshCalls).toEqual([]);
+  });
+
+  test('a fingerprint that cannot be computed skips the lane entirely', async () => {
+    const decision = await convergeAssetsInBackground(
+      SESSION,
+      assetDeps({
+        fingerprint: async () => {
+          throw new Error('no manifest');
+        },
+      }),
+    );
+    expect(decision).toBe('skipped');
+    expect(refreshCalls).toEqual([]);
+    expect(probeCalls).toEqual([]);
+  });
+
+  test('a refresh that throws never reaches the caller', async () => {
+    noteRunningAssets(SESSION, FP, 'behind');
+    const decision = await convergeAssetsInBackground(
+      SESSION,
+      assetDeps({
+        refresh: () => {
+          throw new Error('box unreachable');
+        },
+      }),
+    );
+    expect(decision).toBe('skipped');
+  });
+
+  test('the fire-and-forget form returns synchronously and never throws', () => {
+    expect(() => scheduleAssetConvergence(SESSION, assetDeps())).not.toThrow();
+  });
+});
+
+describe('a box that crash-looped an update is reported once, not once per turn', () => {
+  beforeEach(() => {
+    __clearRunningAssetsForTests();
+  });
+
+  // `pinned: true` means the supervisor rolled an update back and latched
+  // updates OFF. The daemon re-reads the latch from disk on every health call
+  // precisely so this is visible; until now nothing in the API read it.
+  test('the first sighting reports, the next ones inside the window do not', () => {
+    expect(shouldReportPinned('sess-pinned')).toBe(true);
+    expect(shouldReportPinned('sess-pinned')).toBe(false);
+    expect(shouldReportPinned('sess-other')).toBe(true);
   });
 });

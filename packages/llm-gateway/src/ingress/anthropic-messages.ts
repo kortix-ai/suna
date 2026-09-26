@@ -38,7 +38,12 @@ export interface AnthropicMessagesRequest {
   // through to `reasoning_effort`/a project-configured default — so this is
   // what makes an explicit client `thinking:{type:'disabled'}` immune to a
   // project's configured reasoningEffort default turning thinking back on.
-  thinking?: { type: 'enabled' | 'disabled'; budget_tokens?: number };
+  // `adaptive` is what Claude Code sends; its tier rides in
+  // `output_config.effort` and becomes `reasoning_effort` (see
+  // `anthropicMessagesToChat`), because the transport reads any forwarded
+  // non-`enabled` thinking object as an explicit disable.
+  thinking?: { type: 'enabled' | 'disabled' | 'adaptive'; budget_tokens?: number; display?: string };
+  output_config?: { effort?: string };
   stop_sequences?: string[];
   stream?: boolean;
   metadata?: Record<string, unknown>;
@@ -87,6 +92,18 @@ function toolResultContentToString(content: unknown): string {
   return JSON.stringify(content);
 }
 
+// OpenAI `role: 'tool'` messages carry text only, so images a tool returned
+// (Claude Code's Read on a screenshot) move into a user message right after
+// the tool messages. Dropping them left the model answering about an image it
+// never saw.
+function toolResultImages(content: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter((block): block is AnthropicContentBlock => Boolean(block) && (block as AnthropicContentBlock).type === 'image')
+    .map(userBlockToOpenAiContentPart)
+    .filter((part): part is Record<string, unknown> => part !== null);
+}
+
 function userBlockToOpenAiContentPart(
   block: AnthropicContentBlock,
 ): Record<string, unknown> | null {
@@ -126,18 +143,27 @@ function pushAnthropicUserMessage(message: AnthropicMessage, out: Record<string,
   const toolResults = content.filter((block) => block.type === 'tool_result');
   const otherBlocks = content.filter((block) => block.type !== 'tool_result');
 
+  const imageParts: Record<string, unknown>[] = [];
   for (const result of toolResults) {
-    out.push({
-      role: 'tool',
-      tool_call_id: (result as { tool_use_id?: unknown }).tool_use_id,
-      content: toolResultContentToString((result as { content?: unknown }).content),
-    });
+    const toolUseId = (result as { tool_use_id?: unknown }).tool_use_id;
+    const resultContent = (result as { content?: unknown }).content;
+    const images = toolResultImages(resultContent);
+    let text = toolResultContentToString(resultContent);
+    if (images.length) {
+      const note = `[${images.length} image${images.length === 1 ? '' : 's'} attached in the next message]`;
+      text = text ? `${text}\n${note}` : note;
+      imageParts.push({ type: 'text', text: `Image from tool result ${String(toolUseId)}:` }, ...images);
+    }
+    out.push({ role: 'tool', tool_call_id: toolUseId, content: text });
   }
 
-  if (otherBlocks.length) {
-    const parts = otherBlocks
-      .map(userBlockToOpenAiContentPart)
-      .filter((part): part is Record<string, unknown> => part !== null);
+  if (otherBlocks.length || imageParts.length) {
+    const parts = [
+      ...imageParts,
+      ...otherBlocks
+        .map(userBlockToOpenAiContentPart)
+        .filter((part): part is Record<string, unknown> => part !== null),
+    ];
     if (parts.length === 1 && parts[0].type === 'text') {
       out.push({ role: 'user', content: parts[0].text });
     } else if (parts.length) {
@@ -239,7 +265,10 @@ export function anthropicMessagesToChat(body: AnthropicMessagesRequest): Record<
   // extended thinking back ON against a client that explicitly disabled it,
   // or a client's own explicit thinking budget would be silently dropped in
   // favor of the default's effort level.
-  if (body.thinking && typeof body.thinking === 'object') out.thinking = body.thinking;
+  const thinkingType = body.thinking && typeof body.thinking === 'object' ? body.thinking.type : undefined;
+  const effort = typeof body.output_config?.effort === 'string' ? body.output_config.effort : undefined;
+  if (thinkingType === 'enabled' || thinkingType === 'disabled') out.thinking = body.thinking;
+  else if (effort) out.reasoning_effort = effort;
 
   const tools = translateAnthropicTools(body.tools);
   if (tools) out.tools = tools;
@@ -249,6 +278,27 @@ export function anthropicMessagesToChat(body: AnthropicMessagesRequest): Record<
   if (body.metadata && typeof body.metadata === 'object') out.metadata = body.metadata;
 
   return out;
+}
+
+interface AnthropicUsage {
+  input_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
+}
+
+// OpenAI `prompt_tokens` counts cache reads and writes; Anthropic
+// `input_tokens` excludes both and reports them separately. Claude Code sums
+// the three to size the context window.
+function anthropicInputUsage(usage: Record<string, unknown> | undefined): AnthropicUsage {
+  const prompt = typeof usage?.prompt_tokens === 'number' ? usage.prompt_tokens : 0;
+  const details = (usage?.prompt_tokens_details as Record<string, unknown> | undefined) ?? {};
+  const cacheRead = typeof details.cached_tokens === 'number' ? details.cached_tokens : 0;
+  const cacheWrite = typeof details.cache_write_tokens === 'number' ? details.cache_write_tokens : 0;
+  return {
+    input_tokens: Math.max(0, prompt - cacheRead - cacheWrite),
+    cache_read_input_tokens: cacheRead,
+    cache_creation_input_tokens: cacheWrite,
+  };
 }
 
 function anthropicMessageId(openaiId: unknown): string {
@@ -285,7 +335,8 @@ export function chatJsonToAnthropicMessage(data: Record<string, unknown>): Recor
     });
   }
 
-  const usage = (data.usage as Record<string, unknown>) ?? {};
+  const usage = data.usage as Record<string, unknown> | undefined;
+  const input = anthropicInputUsage(usage);
 
   return {
     id: anthropicMessageId(data.id),
@@ -296,8 +347,12 @@ export function chatJsonToAnthropicMessage(data: Record<string, unknown>): Recor
     stop_reason: mapFinishReason(choice?.finish_reason),
     stop_sequence: null,
     usage: {
-      input_tokens: typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : 0,
-      output_tokens: typeof usage.completion_tokens === 'number' ? usage.completion_tokens : 0,
+      input_tokens: input.input_tokens,
+      output_tokens: typeof usage?.completion_tokens === 'number' ? usage.completion_tokens : 0,
+      ...(input.cache_read_input_tokens ? { cache_read_input_tokens: input.cache_read_input_tokens } : {}),
+      ...(input.cache_creation_input_tokens
+        ? { cache_creation_input_tokens: input.cache_creation_input_tokens }
+        : {}),
     },
   };
 }
@@ -314,7 +369,7 @@ interface AnthropicSseState {
   toolCalls: Map<number, { id: string; name: string; arguments: string[] }>;
   trailingText: string[];
   finishReason: string | null;
-  promptTokens: number;
+  input: AnthropicUsage;
   completionTokens: number;
 }
 
@@ -340,7 +395,7 @@ function ensureMessageStart(
         content: [],
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: state.promptTokens, output_tokens: 0 },
+        usage: { ...state.input, output_tokens: 0 },
       },
     }),
   );
@@ -396,7 +451,7 @@ function handleOpenAiChunk(
   if (typeof chunk.model === 'string' && chunk.model) state.model = chunk.model;
   const usage = chunk.usage as Record<string, unknown> | undefined;
   if (usage) {
-    if (typeof usage.prompt_tokens === 'number') state.promptTokens = usage.prompt_tokens;
+    if (typeof usage.prompt_tokens === 'number') state.input = anthropicInputUsage(usage);
     if (typeof usage.completion_tokens === 'number')
       state.completionTokens = usage.completion_tokens;
   }
@@ -489,7 +544,9 @@ function finishAnthropicStream(
         stop_reason: mapFinishReason(state.finishReason) ?? 'end_turn',
         stop_sequence: null,
       },
-      usage: { output_tokens: state.completionTokens },
+      // Usage arrives in the upstream's last chunk, after message_start went
+      // out with zero. Claude Code reads input usage from message_delta.
+      usage: { ...state.input, output_tokens: state.completionTokens },
     }),
   );
   controller.enqueue(sseFrame(encoder, 'message_stop', { type: 'message_stop' }));
@@ -516,7 +573,7 @@ export function chatSseToAnthropicSse(
     toolCalls: new Map(),
     trailingText: [],
     finishReason: null,
-    promptTokens: 0,
+    input: { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
     completionTokens: 0,
   };
 
@@ -591,8 +648,20 @@ export function chatSseToAnthropicSse(
         }
       }
     } catch {
-      // Upstream stream broke — finish with what we have rather than hang
-      // the client forever without a message_stop.
+      // The upstream broke before [DONE]. Report a failed turn so the client
+      // retries, instead of a normal end_turn over a truncated answer.
+      if (!cancelled && !state.finished) {
+        state.finished = true;
+        ensureMessageStart(controller, encoder, state);
+        closeOpenBlock(controller, encoder, state);
+        controller.enqueue(
+          sseFrame(encoder, 'error', {
+            type: 'error',
+            error: { type: 'api_error', message: 'Upstream stream ended before the response completed' },
+          }),
+        );
+        controller.close();
+      }
     } finally {
       if (!cancelled) finishAnthropicStream(controller, encoder, state);
     }

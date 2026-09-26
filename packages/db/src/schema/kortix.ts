@@ -6266,3 +6266,27 @@ export const sessionUserProviderConnections = kortixSchema.table('session_user_p
   }).onDelete('cascade'),
   index('session_user_provider_connections_connection').on(table.connectionId),
 ]);
+
+/**
+ * A user's Expo push device token plus that device's per-event notification
+ * preferences. One row per physical device (`token` is the Expo push token
+ * and is the primary key, since a token uniquely identifies a device+app
+ * install). A user may hold several rows across several devices.
+ */
+export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
+  token: text('token').primaryKey(),
+  userId: uuid('user_id').notNull(),
+  platform: text('platform').notNull(),
+  provider: text('provider').default('expo').notNull(),
+  enabled: boolean('enabled').default(true).notNull(),
+  onCompletion: boolean('on_completion').default(true).notNull(),
+  onError: boolean('on_error').default(true).notNull(),
+  onQuestion: boolean('on_question').default(true).notNull(),
+  onPermission: boolean('on_permission').default(true).notNull(),
+  playSound: boolean('play_sound').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_push_device_tokens_user').on(table.userId),
+  check('push_device_tokens_platform', sql`${table.platform} in ('ios', 'android')`),
+]);

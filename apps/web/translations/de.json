@@ -9477,7 +9477,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": ". Diese Änderungen existieren nur hier; sie sind noch nicht in deiner",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "Version. Schlage die Änderungen vor, damit sie geprüft und übernommen werden.",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Umbenennen…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Teilen…",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix-Sitzung wird gestartet",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "Neues Terminal",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "Dateiansicht",
@@ -19182,6 +19181,18 @@
       "title": "Öffentlichen Link erstellen?",
       "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",
       "confirm": "Link erstellen"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "Öffentlicher Link",
+      "sectionDescription": "Jeder mit dem Link kann diese Unterhaltung ohne Anmeldung lesen.",
+      "create": "Öffentlichen Link erstellen",
+      "revokeDescription": "Die Unterhaltung lädt für niemanden mit dem Link mehr. Du kannst danach einen neuen Link erstellen.",
+      "rowMeta": "Schreibgeschützte Unterhaltung",
+      "unavailable": "Diese Unterhaltung ist vorübergehend nicht verfügbar.",
+      "unavailableDescription": "Die Unterhaltung kann gerade nicht gelesen werden. Versuche es gleich noch einmal.",
+      "loadFailedDescription": "Die Unterhaltung konnte nicht geladen werden.",
+      "empty": "Noch keine Nachrichten",
+      "savedCopy": "Gespeicherte Kopie vom {date}"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service}-Konto",

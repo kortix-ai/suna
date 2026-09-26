@@ -2,8 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
+  SESSION_STATUS_FILTERS,
+  filterSessionsBySearch,
   filterSessionsByStatus,
-  filterSessionsByTitle,
+  isSessionFilterActive,
+  sessionStatusFilterSummary,
   flattenSessionGroups,
   groupSessionsByActivity,
   groupSessionsByCoordinator,
@@ -14,6 +17,13 @@ import {
   sessionStatusLabel,
   shortRelative,
   spokenRelative,
+  SUB_SESSION_FALLBACK_TITLE,
+  directSubsessions,
+  projectSessionForOpenCodeId,
+  rootOpenCodeSession,
+  subsessionTitle,
+  SUBSESSION_COUNT_BADGE_THRESHOLD,
+  showSubsessionCountBadge,
 } from './session-list';
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
@@ -398,15 +408,15 @@ describe('groupSessionsByActivity', () => {
   });
 });
 
-describe('filterSessionsByTitle', () => {
+describe('filterSessionsBySearch', () => {
   test('an empty query returns the input unchanged', () => {
     const sessions = [makeSession({ session_id: 'a', name: 'Fix login' })];
-    expect(filterSessionsByTitle(sessions, '')).toBe(sessions);
+    expect(filterSessionsBySearch(sessions, '')).toBe(sessions);
   });
 
   test('a whitespace-only query returns the input unchanged', () => {
     const sessions = [makeSession({ session_id: 'a', name: 'Fix login' })];
-    expect(filterSessionsByTitle(sessions, '   ')).toBe(sessions);
+    expect(filterSessionsBySearch(sessions, '   ')).toBe(sessions);
   });
 
   test('matches case-insensitively on a trimmed substring', () => {
@@ -414,7 +424,7 @@ describe('filterSessionsByTitle', () => {
       makeSession({ session_id: 'a', name: 'Fix login bug' }),
       makeSession({ session_id: 'b', name: 'Add billing page' }),
     ];
-    expect(filterSessionsByTitle(sessions, '  LOGIN  ').map((s) => s.session_id)).toEqual(['a']);
+    expect(filterSessionsBySearch(sessions, '  LOGIN  ').map((s) => s.session_id)).toEqual(['a']);
   });
 
   test('matches against the resolved display title, including the untitled fallback', () => {
@@ -422,12 +432,32 @@ describe('filterSessionsByTitle', () => {
       makeSession({ session_id: 'a' }),
       makeSession({ session_id: 'b', name: 'Named session' }),
     ];
-    expect(filterSessionsByTitle(sessions, 'new session').map((s) => s.session_id)).toEqual(['a']);
+    expect(filterSessionsBySearch(sessions, 'new session').map((s) => s.session_id)).toEqual(['a']);
   });
 
   test('no match returns an empty array', () => {
     const sessions = [makeSession({ session_id: 'a', name: 'Fix login' })];
-    expect(filterSessionsByTitle(sessions, 'nonexistent')).toEqual([]);
+    expect(filterSessionsBySearch(sessions, 'nonexistent')).toEqual([]);
+  });
+
+  test('matches the agent name (KRTX-250)', () => {
+    const sessions = [
+      makeSession({ session_id: 'a', name: 'Fix login', agent_name: 'reviewer' }),
+      makeSession({ session_id: 'b', name: 'Add billing', agent_name: 'builder' }),
+      makeSession({ session_id: 'c', name: 'No agent', agent_name: null }),
+    ];
+    expect(filterSessionsBySearch(sessions, 'REVIEW').map((s) => s.session_id)).toEqual(['a']);
+  });
+
+  test('matches the session id, whole or partial (KRTX-250)', () => {
+    const sessions = [
+      makeSession({ session_id: 'ses_7f3a9c', name: 'Fix login' }),
+      makeSession({ session_id: 'ses_1b2d4e', name: 'Add billing' }),
+    ];
+    expect(filterSessionsBySearch(sessions, '7f3a').map((s) => s.session_id)).toEqual(['ses_7f3a9c']);
+    expect(filterSessionsBySearch(sessions, 'ses_1b2d4e').map((s) => s.session_id)).toEqual([
+      'ses_1b2d4e',
+    ]);
   });
 });
 
@@ -464,6 +494,23 @@ describe('filterSessionsByStatus', () => {
     expect(filterSessionsByStatus(sessions, new Set(['failed']))).toEqual([]);
   });
 
+  test('running also matches starting sessions (web parity, KRTX-250)', () => {
+    const sessions = [
+      makeSession({ session_id: 'a', status: 'running' }),
+      makeSession({ session_id: 'b', status: 'provisioning' }),
+      makeSession({ session_id: 'c', status: 'queued' }),
+      makeSession({ session_id: 'd', status: 'branching' }),
+      makeSession({ session_id: 'e', status: 'stopped' }),
+    ];
+    expect(
+      filterSessionsByStatus(sessions, new Set(['running'])).map((s) => s.session_id),
+    ).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  test('the filter sheet offers no separate Starting option', () => {
+    expect(SESSION_STATUS_FILTERS).toEqual(['needs-you', 'running', 'stopped', 'failed']);
+  });
+
   test('needs-you matches the sessions with a pending inbox item', () => {
     const sessions = [
       makeSession({ session_id: 'a', status: 'running' }),
@@ -478,6 +525,29 @@ describe('filterSessionsByStatus', () => {
     expect(
       filterSessionsByStatus(sessions, new Set(['running']), needsYou).map((s) => s.session_id),
     ).toEqual(['a']);
+  });
+});
+
+describe('isSessionFilterActive', () => {
+  test('no query and no status is inactive; whitespace does not count', () => {
+    expect(isSessionFilterActive('', new Set())).toBe(false);
+    expect(isSessionFilterActive('   ', new Set())).toBe(false);
+  });
+
+  test('a query or a status makes the filter active', () => {
+    expect(isSessionFilterActive('login', new Set())).toBe(true);
+    expect(isSessionFilterActive('', new Set(['failed']))).toBe(true);
+  });
+});
+
+describe('sessionStatusFilterSummary', () => {
+  test('lists the picked statuses in the sheet order, whatever the pick order', () => {
+    expect(sessionStatusFilterSummary(new Set(['failed', 'needs-you']))).toBe('Needs you, Failed');
+    expect(sessionStatusFilterSummary(new Set(['running']))).toBe('Running');
+  });
+
+  test('no pick is an empty string', () => {
+    expect(sessionStatusFilterSummary(new Set())).toBe('');
   });
 });
 
@@ -650,5 +720,215 @@ describe('flattenSessionGroups', () => {
 
   test('empty input yields an empty list', () => {
     expect(flattenSessionGroups([])).toEqual([]);
+  });
+});
+
+// ── OpenCode sub-sessions (web: session-label.ts) ───────────────────────────
+
+function ocNode(
+  id: string,
+  parentId: string | null,
+  overrides: Partial<{ title: string | null; updated_at: number | null; archived_at: number | null }> = {}
+) {
+  return {
+    id,
+    title: null,
+    parent_id: parentId,
+    project_id: null,
+    created_at: null,
+    updated_at: null,
+    archived_at: null,
+    ...overrides,
+  };
+}
+
+describe('rootOpenCodeSession', () => {
+  test('no opencode_sessions: null', () => {
+    expect(rootOpenCodeSession(makeSession({ opencode_sessions: [] }))).toBeNull();
+  });
+
+  test('a missing opencode_sessions array (older payload): null, no throw', () => {
+    const session = makeSession({ opencode_sessions: undefined as unknown as ProjectSession['opencode_sessions'] });
+    expect(rootOpenCodeSession(session)).toBeNull();
+  });
+
+  test('the pinned opencode_session_id wins over a parentless entry', () => {
+    const session = makeSession({
+      opencode_session_id: 'oc-root',
+      opencode_sessions: [ocNode('oc-other', null), ocNode('oc-root', null)],
+    } as Partial<ProjectSession>);
+    expect(rootOpenCodeSession(session)?.id).toBe('oc-root');
+  });
+
+  test('a pin that is not in the snapshot: null (web parity, no guess)', () => {
+    const session = makeSession({
+      opencode_session_id: 'oc-missing',
+      opencode_sessions: [ocNode('oc-root', null)],
+    } as Partial<ProjectSession>);
+    expect(rootOpenCodeSession(session)).toBeNull();
+  });
+
+  test('no pin: the first parentless entry', () => {
+    const session = makeSession({
+      opencode_session_id: null,
+      opencode_sessions: [ocNode('oc-child', 'oc-root'), ocNode('oc-root', null)],
+    } as Partial<ProjectSession>);
+    expect(rootOpenCodeSession(session)?.id).toBe('oc-root');
+  });
+});
+
+describe('directSubsessions', () => {
+  test('no opencode_sessions: none', () => {
+    expect(directSubsessions(makeSession())).toEqual([]);
+  });
+
+  test('root only: none', () => {
+    const session = makeSession({
+      opencode_session_id: 'oc-root',
+      opencode_sessions: [ocNode('oc-root', null)],
+    } as Partial<ProjectSession>);
+    expect(directSubsessions(session)).toEqual([]);
+  });
+
+  test('one child of the root', () => {
+    const session = makeSession({
+      opencode_session_id: 'oc-root',
+      opencode_sessions: [ocNode('oc-root', null), ocNode('oc-a', 'oc-root', { title: 'Research' })],
+    } as Partial<ProjectSession>);
+    expect(directSubsessions(session).map((c) => c.id)).toEqual(['oc-a']);
+  });
+
+  test('several children: newest updated_at first, ties and missing times break on id', () => {
+    const session = makeSession({
+      opencode_session_id: 'oc-root',
+      opencode_sessions: [
+        ocNode('oc-root', null),
+        ocNode('oc-c', 'oc-root', { updated_at: null }),
+        ocNode('oc-old', 'oc-root', { updated_at: 1_000 }),
+        ocNode('oc-b', 'oc-root', { updated_at: null }),
+        ocNode('oc-new', 'oc-root', { updated_at: 5_000 }),
+        ocNode('oc-tie-b', 'oc-root', { updated_at: 3_000 }),
+        ocNode('oc-tie-a', 'oc-root', { updated_at: 3_000 }),
+      ],
+    } as Partial<ProjectSession>);
+    expect(directSubsessions(session).map((c) => c.id)).toEqual([
+      'oc-new',
+      'oc-tie-a',
+      'oc-tie-b',
+      'oc-old',
+      'oc-b',
+      'oc-c',
+    ]);
+  });
+
+  test('direct children only: a child of a child is not included', () => {
+    const session = makeSession({
+      opencode_session_id: 'oc-root',
+      opencode_sessions: [
+        ocNode('oc-root', null),
+        ocNode('oc-a', 'oc-root'),
+        ocNode('oc-a-1', 'oc-a'),
+      ],
+    } as Partial<ProjectSession>);
+    expect(directSubsessions(session).map((c) => c.id)).toEqual(['oc-a']);
+  });
+
+  test('an archived child is left out', () => {
+    const session = makeSession({
+      opencode_session_id: 'oc-root',
+      opencode_sessions: [
+        ocNode('oc-root', null),
+        ocNode('oc-a', 'oc-root'),
+        ocNode('oc-gone', 'oc-root', { archived_at: 9_000 }),
+      ],
+    } as Partial<ProjectSession>);
+    expect(directSubsessions(session).map((c) => c.id)).toEqual(['oc-a']);
+  });
+
+  test('never mutates opencode_sessions', () => {
+    const nodes = [ocNode('oc-root', null), ocNode('oc-b', 'oc-root', { updated_at: 1 }), ocNode('oc-a', 'oc-root', { updated_at: 2 })];
+    const session = makeSession({ opencode_session_id: 'oc-root', opencode_sessions: nodes } as Partial<ProjectSession>);
+    directSubsessions(session);
+    expect(nodes.map((n) => n.id)).toEqual(['oc-root', 'oc-b', 'oc-a']);
+  });
+});
+
+describe('subsessionTitle', () => {
+  test('the child title, trimmed', () => {
+    expect(subsessionTitle(ocNode('oc-a', 'oc-root', { title: '  Research (@general)  ' }))).toBe(
+      'Research (@general)'
+    );
+  });
+
+  test('a missing or blank title falls back to "Sub-session" (web parity)', () => {
+    expect(SUB_SESSION_FALLBACK_TITLE).toBe('Sub-session');
+    expect(subsessionTitle(ocNode('oc-a', 'oc-root', { title: null }))).toBe('Sub-session');
+    expect(subsessionTitle(ocNode('oc-a', 'oc-root', { title: '   ' }))).toBe('Sub-session');
+  });
+});
+
+describe('projectSessionForOpenCodeId', () => {
+  const parent = makeSession({
+    session_id: 'ps-parent',
+    opencode_session_id: 'oc-root',
+    opencode_sessions: [ocNode('oc-root', null), ocNode('oc-a', 'oc-root'), ocNode('oc-a-1', 'oc-a')],
+  } as Partial<ProjectSession>);
+  const other = makeSession({
+    session_id: 'ps-other',
+    opencode_session_id: 'oc-other',
+    opencode_sessions: [ocNode('oc-other', null)],
+  } as Partial<ProjectSession>);
+
+  test('null id: null', () => {
+    expect(projectSessionForOpenCodeId([parent, other], null)).toBeNull();
+  });
+
+  test('the root OpenCode id resolves to its project session', () => {
+    expect(projectSessionForOpenCodeId([parent, other], 'oc-root')?.session_id).toBe('ps-parent');
+    expect(projectSessionForOpenCodeId([parent, other], 'oc-other')?.session_id).toBe('ps-other');
+  });
+
+  test('a project session id resolves to itself', () => {
+    expect(projectSessionForOpenCodeId([parent, other], 'ps-other')?.session_id).toBe('ps-other');
+  });
+
+  test('a direct sub-session id resolves to its parent project session', () => {
+    expect(projectSessionForOpenCodeId([other, parent], 'oc-a')?.session_id).toBe('ps-parent');
+  });
+
+  test('a deeper descendant (a task opened from a sub-session) resolves to the same project session', () => {
+    expect(projectSessionForOpenCodeId([parent, other], 'oc-a-1')?.session_id).toBe('ps-parent');
+  });
+
+  test('a pin match wins over a snapshot match in an earlier row', () => {
+    const stale = makeSession({
+      session_id: 'ps-stale',
+      opencode_session_id: 'oc-x',
+      opencode_sessions: [ocNode('oc-x', null), ocNode('oc-root', 'oc-x')],
+    } as Partial<ProjectSession>);
+    expect(projectSessionForOpenCodeId([stale, parent], 'oc-root')?.session_id).toBe('ps-parent');
+  });
+
+  test('an unknown id: null', () => {
+    expect(projectSessionForOpenCodeId([parent, other], 'oc-nope')).toBeNull();
+  });
+});
+
+describe('showSubsessionCountBadge', () => {
+  test('the threshold is 4: the badge shows only for MORE than 4 sub-sessions', () => {
+    expect(SUBSESSION_COUNT_BADGE_THRESHOLD).toBe(4);
+  });
+
+  test('0 to 4 sub-sessions: no badge', () => {
+    for (const count of [0, 1, 2, 3, 4]) expect(showSubsessionCountBadge(count)).toBe(false);
+  });
+
+  test('5 or more sub-sessions: badge', () => {
+    for (const count of [5, 6, 12, 99]) expect(showSubsessionCountBadge(count)).toBe(true);
+  });
+
+  test('a negative or non-finite count never shows a badge', () => {
+    expect(showSubsessionCountBadge(-1)).toBe(false);
+    expect(showSubsessionCountBadge(Number.NaN)).toBe(false);
   });
 });

@@ -16,7 +16,7 @@
  */
 
 import React from 'react';
-import { ActivityIndicator, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
@@ -50,6 +50,7 @@ export function SessionConnecting({
   onCancel,
   onRestart,
   restarting,
+  showLoader = true,
 }: {
   /** The user's just-sent first message (a fresh send from project home), shown as the thread shows it. */
   firstMessage?: string;
@@ -61,6 +62,11 @@ export function SessionConnecting({
   onCancel: () => void;
   onRestart?: () => void;
   restarting?: boolean;
+  /**
+   * Draw the centre loader. False while the project drawer covers this view:
+   * the drawer owns the one loader then (KRTX-244).
+   */
+  showLoader?: boolean;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -105,9 +111,9 @@ export function SessionConnecting({
         <View style={{ flex: 1 }} className="items-center justify-center">
           {error ? (
             <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} />
-          ) : (
+          ) : showLoader ? (
             <KortixLoader size="medium" />
-          )}
+          ) : null}
         </View>
       </View>
 
@@ -147,11 +153,8 @@ function ConnectErrorState({
       ) : null}
       {onRestart ? (
         <Button variant="outline" onPress={onRestart} disabled={restarting} className="mt-1 rounded-full">
-          {restarting ? (
-            <ActivityIndicator size="small" color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
-          ) : (
-            <RotateCcw size={15} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
-          )}
+          {/* Restarting is an inline disabled state, not a second loader. */}
+          <RotateCcw size={15} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
           <Text>{restarting ? 'Restarting…' : 'Restart session'}</Text>
         </Button>
       ) : null}

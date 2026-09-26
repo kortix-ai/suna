@@ -9477,7 +9477,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": "。これらの変更はここにのみ存在し、まだ次には含まれていません:",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "バージョン。変更を提案してレビューと適用を受けてください。",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "名前を変更…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "シェア…",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix セッションを起動しています",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "新しいターミナル",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "ファイルビュー",
@@ -19182,6 +19181,18 @@
       "title": "公開リンクを作成しますか？",
       "description": "リンクを知っている人は誰でもサインインせずに閲覧できます。リンクは取り消すまで有効です。",
       "confirm": "リンクを作成"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "公開リンク",
+      "sectionDescription": "リンクを知っている人は誰でもサインインせずにこの会話を読めます。",
+      "create": "公開リンクを作成",
+      "revokeDescription": "リンクを持つすべての人に対して会話が読み込まれなくなります。後で新しいリンクを作成できます。",
+      "rowMeta": "読み取り専用の会話",
+      "unavailable": "この会話は一時的に利用できません。",
+      "unavailableDescription": "現在この会話を読み込めません。しばらくしてからもう一度お試しください。",
+      "loadFailedDescription": "会話を読み込めませんでした。",
+      "empty": "まだメッセージはありません",
+      "savedCopy": "{date} に保存されたコピー"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} アカウント",

@@ -21,6 +21,12 @@ export function mintRootId(sessionId: string): string {
   return `ses_pi${digest.slice(0, 24)}`
 }
 
+/** A child session id: same shape as the root's, unique per (root, minted message id). */
+export function mintChildId(rootId: string, nonce: string): string {
+  const digest = createHash('sha256').update(`pi-child\0${rootId}\0${nonce}`).digest('hex')
+  return `ses_pi${digest.slice(0, 24)}`
+}
+
 /** `msg_` + 12 lowercase hex clock chars + 14 base62 chars. */
 export const WIRE_MESSAGE_ID = /^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/
 
