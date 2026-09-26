@@ -30,9 +30,8 @@
  * `legacy_renewal_backfill:v1:<invoiceId>` in `credit_ledger.stripe_event_id`,
  * which carries a UNIQUE index (`kortix_unique_stripe_event`). Re-running can
  * therefore never double-pay, and a run interrupted halfway resumes cleanly.
- * The script also pre-checks the ledger for that key: `atomic_add_credits`
- * only dedupes keys seen in the last hour, so long-window idempotency has to be
- * the caller's job (see grantCredits' own note).
+ * The script also reads the ledger for that key, to report what an earlier run
+ * already paid.
  *
  * Usage (a human, with prod env):
  *   dotenvx run -f apps/api/.env.prod -- bun apps/api/src/scripts/backfill-legacy-renewal-credits.ts
@@ -47,7 +46,7 @@ import { creditAccounts, creditLedger } from '@kortix/db';
 import Stripe from 'stripe';
 import { db } from '../shared/db';
 import { getStripe } from '../shared/stripe';
-import { grantCredits } from '../billing/services/credits';
+import { wallet } from '../billing/wallet';
 import { INCLUDED_CREDITS_RATIO, getMonthlyCredits } from '../billing/services/tiers';
 
 const KEY_PREFIX = 'legacy_renewal_backfill:v1:';
@@ -55,7 +54,7 @@ const KEY_PREFIX = 'legacy_renewal_backfill:v1:';
 /**
  * Backfilled credit EXPIRES, like the renewal grant it stands in for.
  *
- * A real renewal calls `resetExpiringCredits`, so the grants these customers
+ * A real renewal calls `wallet.reset`, so the grants these customers
  * missed would each have expired at their next cycle — replaying them with
  * their historical expiry would hand back credit that is already worthless.
  * Granting them non-expiring would instead be strictly more generous than the
@@ -229,15 +228,15 @@ async function main() {
     for (const inv of r.invoices) {
       const key = `${KEY_PREFIX}${inv.id}`;
       try {
-        await grantCredits(
-          r.accountId,
-          inv.creditsUsd,
-          'legacy_renewal_backfill',
-          `Renewal credit for ${inv.created} (invoice ${inv.id}, $${inv.paidUsd.toFixed(2)} paid) — not granted at the time`,
-          true, // expiring, like the renewal grant it replaces
-          key,
-          { expiresAt },
-        );
+        await wallet.grant({
+          accountId: r.accountId,
+          amount: inv.creditsUsd,
+          kind: 'legacy_renewal_backfill',
+          description: `Renewal credit for ${inv.created} (invoice ${inv.id}, $${inv.paidUsd.toFixed(2)} paid) — not granted at the time`,
+          expiring: true, // like the renewal grant it replaces
+          expiresAt,
+          key: { event: key },
+        });
         granted++;
       } catch (err) {
         failed++;

@@ -22,22 +22,13 @@
  *      with a prior pin creates nothing.
  *
  * Covers both hazards directly against `resolveExistingRoot` (real HTTP,
- * fake opencode) plus the pure gates it feeds (`initialPromptAlreadyDelivered`,
- * `isTurnStillOrphaned` via `finalizeOrphanedTurn`) — the same mix of
- * behavioral + source-text assertions this file's siblings
- * (never-abort-live-turn.test.ts, orphan-finalize-error-idempotent.test.ts)
- * already use for these exact call sites.
+ * fake opencode) plus the delivery gate it feeds (`reusedRootAlreadyDelivered`).
+ * The orphan-abort half is proven in orphaned-turn-finalize.test.ts; the
+ * private boot ordering in boot-source-guards.test.ts.
  */
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import {
-  finalizeOrphanedTurn,
-  initialPromptAlreadyDelivered,
-  resolveExistingRoot,
-  reusedRootAlreadyDelivered,
-} from '../harness/open-code/boot'
-
-const SRC = await Bun.file(new URL('../harness/open-code/boot.ts', import.meta.url).pathname).text()
+import { resolveExistingRoot, reusedRootAlreadyDelivered } from '../harness/open-code/boot'
 
 const servers: Array<{ stop(closeActive?: boolean): void }> = []
 
@@ -85,70 +76,22 @@ function rootServer(opts: {
 }
 
 describe('resolveExistingRoot — tri-state message read (hole 1)', () => {
-  test('message-list read times out (non-2xx): known=false, hasMessages=false', async () => {
-    const { port } = rootServer({
-      roots: [{ id: 'ses_root' }],
-      messageStatus: 500,
-    })
-    const baseUrl = `http://127.0.0.1:${port}`
-
-    const result = await resolveExistingRoot(baseUrl, '/workspace', null)
+  // Only an answered `[]` is confirmed-empty. A failed read (non-2xx, the 5 s
+  // timeout, an unparseable body) is UNKNOWN, never "no prompt delivered".
+  test.each([
+    ['a non-2xx message read is unknown', { messageStatus: 500 }, { known: false, hasMessages: false }],
+    [
+      'a read with messages is known and delivered',
+      { messages: [{ info: { id: 'msg_1', role: 'user', time: { completed: 1 } } }] },
+      { known: true, hasMessages: true },
+    ],
+    ['a truly empty root is known and empty', { messages: [] }, { known: true, hasMessages: false }],
+  ])('%s', async (_name, read, expected) => {
+    const { port } = rootServer({ roots: [{ id: 'ses_root' }], ...read })
+    const result = await resolveExistingRoot(`http://127.0.0.1:${port}`, '/workspace', null)
     expect(result.status).toBe('found')
     if (result.status !== 'found') return
-    expect(result.root.known).toBe(false)
-    expect(result.root.hasMessages).toBe(false)
-  })
-
-  test('read succeeds with messages: known=true, hasMessages=true (unchanged)', async () => {
-    const { port } = rootServer({
-      roots: [{ id: 'ses_root' }],
-      messages: [{ info: { id: 'msg_1', role: 'user', time: { completed: 1 } } }],
-    })
-    const baseUrl = `http://127.0.0.1:${port}`
-
-    const result = await resolveExistingRoot(baseUrl, '/workspace', null)
-    expect(result.status).toBe('found')
-    if (result.status !== 'found') return
-    expect(result.root.known).toBe(true)
-    expect(result.root.hasMessages).toBe(true)
-  })
-
-  test('truly empty root: known=true, hasMessages=false (unchanged)', async () => {
-    const { port } = rootServer({
-      roots: [{ id: 'ses_root' }],
-      messages: [],
-    })
-    const baseUrl = `http://127.0.0.1:${port}`
-
-    const result = await resolveExistingRoot(baseUrl, '/workspace', null)
-    expect(result.status).toBe('found')
-    if (result.status !== 'found') return
-    expect(result.root.known).toBe(true)
-    expect(result.root.hasMessages).toBe(false)
-  })
-})
-
-describe('initialPromptAlreadyDelivered — the delivery gate fed by known (hole 1, delivery half)', () => {
-  test('unknown read: never deliver (treated as already delivered)', () => {
-    expect(initialPromptAlreadyDelivered({ known: false, hasMessages: false })).toBe(true)
-  })
-
-  test('known + has messages: already delivered, no re-run', () => {
-    expect(initialPromptAlreadyDelivered({ known: true, hasMessages: true })).toBe(true)
-  })
-
-  test('known + empty: not yet delivered, deliver now', () => {
-    expect(initialPromptAlreadyDelivered({ known: true, hasMessages: false })).toBe(false)
-  })
-})
-
-describe('finalizeOrphanedTurn — the abort gate fed by known (hole 1, orphan half)', () => {
-  test('message-list read fails: zero aborts, turn never treated as orphaned', async () => {
-    const { port } = rootServer({ messageStatus: 500 })
-    const baseUrl = `http://127.0.0.1:${port}`
-
-    const aborted = await finalizeOrphanedTurn(baseUrl, '/workspace', 'ses_unreadable')
-    expect(aborted).toBe(false)
+    expect(result.root).toMatchObject(expected)
   })
 })
 
@@ -223,73 +166,6 @@ describe('resolveExistingRoot — waitForRootList timeout (hole 2)', () => {
   })
 })
 
-describe('the boot path is wired to the defer outcome, not just resolveExistingRoot', () => {
-  test('the initial-session path records listening before answering', () => {
-    const start = SRC.indexOf('async function maybeCreateInitialOpencodeSession(')
-    const end = SRC.indexOf('\nasync function resolveExistingRoot', start)
-    const body = SRC.slice(start, end)
-    const resolveAt = body.indexOf('await resolveExistingRoot(')
-    const listeningAt = body.indexOf('onListening,', resolveAt)
-    const answeringAt = body.indexOf("bootMark('opencode-answering')")
-
-    expect(resolveAt).toBeGreaterThan(-1)
-    expect(listeningAt).toBeGreaterThan(resolveAt)
-    expect(answeringAt).toBeGreaterThan(listeningAt)
-  })
-
-  test('maybeCreateInitialOpencodeSession returns before creating or pinning a session on defer', () => {
-    const start = SRC.indexOf('async function maybeCreateInitialOpencodeSession(')
-    expect(start).toBeGreaterThan(-1)
-    const deferAt = SRC.indexOf("resolved.status === 'defer'", start)
-    expect(deferAt).toBeGreaterThan(start)
-    const returnAt = SRC.indexOf('return', deferAt)
-    const createCallAt = SRC.indexOf('createInitialOpenCodeSession(', start)
-    const pinCallAt = SRC.indexOf('pinOpencodeSessionFile(', start)
-    // The defer branch's `return` must come before ANY create/pin call in the
-    // function — not just textually near the branch, but strictly ahead of
-    // both, so a deferred boot really does touch neither.
-    expect(returnAt).toBeGreaterThan(deferAt)
-    expect(returnAt).toBeLessThan(createCallAt)
-    expect(returnAt).toBeLessThan(pinCallAt)
-  })
-
-  test('delivery is gated through reusedRootAlreadyDelivered, not a raw hasMessages read', () => {
-    const start = SRC.indexOf('async function maybeCreateInitialOpencodeSession(')
-    const end = SRC.indexOf('\nasync function resolveExistingRoot', start)
-    const body = SRC.slice(start, end)
-    expect(body).toContain(
-      'alreadyDelivered = reusedRootAlreadyDelivered(existing, priorPin, priorDeliveredMarker)',
-    )
-    // T22: `priorPin` must be captured BEFORE `resolveExistingRoot` runs, so it
-    // reflects only what a PRIOR boot pinned — never this boot's own pending
-    // write (see `pinOpencodeSessionFile` further down the same function).
-    const priorPinReadAt = body.indexOf('const priorPin = readPinnedOpencodeSessionId()')
-    const resolveCallAt = body.indexOf('await resolveExistingRoot(')
-    const pinWriteAt = body.indexOf('pinOpencodeSessionFile(')
-    expect(priorPinReadAt).toBeGreaterThan(-1)
-    expect(priorPinReadAt).toBeLessThan(resolveCallAt)
-    expect(priorPinReadAt).toBeLessThan(pinWriteAt)
-    // F1: `priorDeliveredMarker` must likewise be captured before delivery —
-    // it must reflect only a PRIOR boot's successful delivery, never this
-    // boot's own (possible) marker write further down the same function.
-    const priorMarkerReadAt = body.indexOf('const priorDeliveredMarker = readInitialPromptDeliveredMarker()')
-    const markerWriteAt = body.indexOf('markInitialPromptDelivered()')
-    expect(priorMarkerReadAt).toBeGreaterThan(-1)
-    expect(priorMarkerReadAt).toBeLessThan(resolveCallAt)
-    expect(priorMarkerReadAt).toBeLessThan(markerWriteAt)
-  })
-
-  test('F1: the delivery marker is written only after accepted prompt publication', () => {
-    const start = SRC.indexOf('async function maybeCreateInitialOpencodeSession(')
-    const end = SRC.indexOf('\nasync function resolveExistingRoot', start)
-    const body = SRC.slice(start, end)
-    const deliverCallAt = body.indexOf('await publishInitialOpenCodeSessionAfterPrompt(')
-    const markerWriteAt = body.indexOf('markInitialPromptDelivered()')
-    expect(deliverCallAt).toBeGreaterThan(-1)
-    expect(markerWriteAt).toBeGreaterThan(deliverCallAt)
-  })
-})
-
 describe('reusedRootAlreadyDelivered — F1: bare pin is no longer proof of delivery', () => {
   test('F1 RED: crash-window boot — pin exists, NO marker, transcript confirmed empty → delivers', () => {
     // The exact shape a crash between the pin write and delivery leaves
@@ -346,6 +222,12 @@ describe('reusedRootAlreadyDelivered — F1: bare pin is no longer proof of deli
         'ses_prior_pin',
         false,
       ),
+    ).toBe(true)
+  })
+
+  test('pinless + unreadable transcript: never delivers (an unknown read is not empty)', () => {
+    expect(
+      reusedRootAlreadyDelivered({ id: 'ses_new_root', known: false, hasMessages: false }, null, false),
     ).toBe(true)
   })
 

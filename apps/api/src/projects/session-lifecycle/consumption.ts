@@ -2,6 +2,7 @@ import { sessionLifecycleCommands, sessionTurns } from '@kortix/db';
 import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { DEDUPE_TTL_MS } from '../../sandbox-proxy/prompt-dedupe';
+import { ORPHANED_PROMPT_MIN_AGE_MS } from '../reaper-constants';
 import { db } from '../../shared/db';
 import { PROMPT_NEVER_RAN_END_REASONS } from './redelivery';
 import { wireMessageIdMatches } from './wire-id-match';
@@ -25,12 +26,12 @@ import { wireMessageIdMatches } from './wire-id-match';
 /**
  * How long a forwarded row is left entirely alone.
  *
- * The same window the reaper uses for "accepted, but not started yet"
- * (`ORPHANED_PROMPT_MIN_AGE_MS`): inside it, a missing ledger row is ordinary
- * — acceptance is a second round trip after the delivery, and the sweep must
- * not race the witness it exists to back up.
+ * The same window the reaper uses for "accepted, but not started yet": inside
+ * it, a missing ledger row is ordinary — acceptance is a second round trip
+ * after the delivery, and the sweep must not race the witness it exists to
+ * back up.
  */
-export const INBOX_FORWARD_CONFIRM_GRACE_MS = 30_000;
+export const INBOX_FORWARD_CONFIRM_GRACE_MS = ORPHANED_PROMPT_MIN_AGE_MS;
 
 /**
  * When "we still cannot tell" stops being worth preserving.
@@ -56,8 +57,8 @@ export const INBOX_FORWARD_CONFIRM_MAX_MS = DEDUPE_TTL_MS;
  * that cycle is one the redelivery declined, not one it is still considering.
  *
  * The cost of the old shared ceiling, MEASURED on the local stack 2026-08-26
- * (session 65216cc6): prompt row 75e8c15f forwarded 04:49:46, ledger turn
- * d91e225c ended `abandoned` 04:50:06 — `GET .../prompts` still answered
+ * (one local session): its prompt row was forwarded 04:49:46, its ledger turn
+ * ended `abandoned` 04:50:06 — `GET .../prompts` still answered
  * `state: delivering` at 04:53:31 with `turns: []`. A `delivering` row counts as
  * live work (`countLiveInboxPrompts`), so for the whole window the composer
  * holds Stop with nothing running and the bubble keeps its "Queued" badge,
@@ -250,10 +251,18 @@ export async function confirmInboxPromptConsumed(
   // their rows were never marked forwarded either.
   if (!wireMessageId) return 'no_prompt';
   try {
-    if ((await deps.confirm(sessionId, wireMessageId)) > 0) return 'confirmed';
-    return (await deps.markConsumedOnDelivery(sessionId, wireMessageId)) > 0
-      ? 'pending_delivery'
-      : 'no_prompt';
+    // The two writes are mutually exclusive BY PREDICATE — `confirm` only
+    // matches a `succeeded` row whose result says `forwarded`, and
+    // `markConsumedOnDelivery` only a still-claimed (`running`) one — so no row
+    // can take both, and issuing them together cannot change which one lands.
+    // It saves a round trip on the delivery path, where the first is a
+    // guaranteed miss (the row is still claimed at this point).
+    const [confirmed, markedOnDelivery] = await Promise.all([
+      deps.confirm(sessionId, wireMessageId),
+      deps.markConsumedOnDelivery(sessionId, wireMessageId),
+    ]);
+    if (confirmed > 0) return 'confirmed';
+    return markedOnDelivery > 0 ? 'pending_delivery' : 'no_prompt';
   } catch (error) {
     console.warn(
       '[session-lifecycle] inbox consumption confirm failed:',
@@ -343,8 +352,8 @@ export async function reconcileForwardedPrompts(
     //
     // It used to wait for the 10-minute ceiling below, which is what the user
     // sees as the reported queue bug. MEASURED, local stack 2026-08-26,
-    // session 65216cc6: prompt row 75e8c15f forwarded at 04:49:46, its ledger
-    // turn d91e225c ended `abandoned` at 04:50:06 — and `GET .../prompts` still
+    // one local session: its prompt row was forwarded at 04:49:46, its ledger
+    // turn ended `abandoned` at 04:50:06 — and `GET .../prompts` still
     // reported it `state: delivering` at 04:53:31 with `turns: []`. For those
     // ~10 minutes the row counts as live work (`countLiveInboxPrompts` counts
     // `delivering`), so the composer holds Stop with nothing running, the

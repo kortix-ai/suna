@@ -19,6 +19,8 @@ describe('anthropicMessagesToChat', () => {
     ]);
     expect(out.model).toBe('claude-sonnet-4-6');
     expect(out.stream).toBe(false);
+    // Thinking is omitted entirely when the client did not set it.
+    expect(out.thinking).toBeUndefined();
   });
 
   test('maps a content-block system prompt to an OpenAI system message', () => {
@@ -173,15 +175,6 @@ describe('anthropicMessagesToChat', () => {
     expect(out.stop).toEqual(['STOP']);
   });
 
-  test('carries stream through unchanged', () => {
-    const out = anthropicMessagesToChat({
-      model: 'claude-sonnet-4-6',
-      messages: [{ role: 'user', content: 'go' }],
-      stream: true,
-    });
-    expect(out.stream).toBe(true);
-  });
-
   // SHOULD-FIX regression (adversarial review of PR #4995): a client's
   // explicit `thinking` field used to be silently dropped entirely — this
   // let a project-configured `reasoningEffort` default turn extended
@@ -290,14 +283,6 @@ describe('anthropicMessagesToChat', () => {
         ],
       },
     ]);
-  });
-
-  test('omits thinking entirely when the client did not set it', () => {
-    const out = anthropicMessagesToChat({
-      model: 'claude-opus-4-8',
-      messages: [{ role: 'user', content: 'go' }],
-    });
-    expect(out.thinking).toBeUndefined();
   });
 });
 

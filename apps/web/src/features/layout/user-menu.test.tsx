@@ -108,9 +108,8 @@ describe('user menu settings entry points', () => {
   /**
    * The rows must NAVIGATE, not poke the store.
    *
-   * `UserMenu`'s only mount is the app header
-   * (`features/layout/app-header.tsx:108`), rendered only by
-   * `app/(app)/accounts/layout.tsx:26`. `SettingsPanel` has exactly two mounts
+   * `UserMenu`'s only mount was the app header, rendered only under the
+   * `/accounts` tree; both are deleted now. `SettingsPanel` has exactly two mounts
    * (`project-layout/project-shell.tsx:195`,
    * `workspace/settings/standalone-settings-route.tsx:113`) and neither is in
    * the `/accounts` tree. So `openSettings(tab)` from here set `open: true`
@@ -150,7 +149,7 @@ describe('user menu settings entry points', () => {
 
   /**
    * Every tab these rows build a URL from must be a segment
-   * `app/(app)/settings/[tab]/page.tsx` accepts, or the route silently falls
+   * `app/[locale]/(app)/settings/[tab]/page.tsx` accepts, or the route silently falls
    * back to `STANDALONE_DEFAULT_SETTINGS_TAB` and Billing opens on Profile.
    */
   test('every tab the rows navigate to is a real /settings segment', async () => {

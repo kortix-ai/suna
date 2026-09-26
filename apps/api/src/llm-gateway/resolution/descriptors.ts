@@ -1,4 +1,5 @@
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
+import { VERIFIED_US_MANAGED_ENDPOINTS } from '@kortix/llm-catalog';
 import { llmPriceMarkup } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { getModelPricing } from '../../router/config/model-pricing';
@@ -8,6 +9,9 @@ import {
   type CodexCredential,
 } from '../credentials/codex';
 import type { ManagedModel } from '../models/managed-models';
+import { isAwsRegion } from './aws-region';
+
+export { isAwsRegion };
 
 // Default region for a project's BYOK Bedrock connection when it hasn't set
 // its own AWS_REGION secret. us-east-1 is Bedrock's broadest-availability
@@ -22,8 +26,14 @@ const DEFAULT_BEDROCK_BYOK_REGION = 'us-east-1';
  */
 export function bedrockByokBaseUrl(region: string | null | undefined): string {
   const trimmed = region?.trim();
+  if (trimmed && !isAwsRegion(trimmed)) {
+    // The region becomes part of the endpoint host. Only an AWS region name
+    // may reach it, so the credential is only ever sent to amazonaws.com.
+    throw new Error('AWS_REGION is not a valid AWS region name');
+  }
   return `https://bedrock-runtime.${trimmed || DEFAULT_BEDROCK_BYOK_REGION}.amazonaws.com`;
 }
+
 
 // Bedrock cross-region ("global") inference profiles prepend a geography code
 // to the base model id so a single logical model can route across multiple
@@ -147,8 +157,32 @@ function managedPricing(managed: ManagedModel): UpstreamDescriptor['pricing'] | 
   return livePricing(managed.pricingRef.slice(0, slash), managed.pricingRef.slice(slash + 1));
 }
 
+function morphManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
+  if (!config.MORPH_MANAGED_MODELS?.includes(managed.id) || !managed.morphModelId || !managed.morphPricing || !config.MORPH_API_KEY) return null;
+  return {
+    provider: 'morph',
+    kind: 'openai-compat',
+    baseUrl: config.MORPH_API_URL,
+    apiKey: config.MORPH_API_KEY,
+    billingMode: 'credits',
+    markup: llmPriceMarkup(),
+    resolvedModel: managed.morphModelId,
+    pricing: managed.morphPricing,
+    failover: true,
+    publicProvider: 'kortix',
+  };
+}
+
 function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.OPENROUTER_API_KEY) return null;
+  const configuredOnly = managed.openrouterProvider?.only;
+  if (!Array.isArray(configuredOnly)) return null;
+  const approved = new Set<string>(VERIFIED_US_MANAGED_ENDPOINTS);
+  const allowed = configuredOnly.filter(
+    (tag: unknown): tag is string => typeof tag === 'string' && approved.has(tag),
+  );
+  const only = allowed;
+  if (only.length === 0) return null;
   return {
     provider: 'openrouter',
     kind: 'openai-compat',
@@ -157,18 +191,27 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.upstreamModelId,
+    // OpenRouter reports `usage.cost` for the endpoint that served the request;
+    // the gateway bills that. This table applies only when the cost is absent.
     pricing: managedPricing(managed),
     bodyExtras: {
       provider: {
-        ...managed.openrouterProvider,
         allow_fallbacks: false,
+        ...managed.openrouterProvider,
+        only,
         zdr: true,
         data_collection: 'deny',
       },
     },
+    failover: true,
+    publicProvider: 'kortix',
   };
 }
 
+/**
+ * MORPH_MANAGED_MODELS selects direct Morph candidates per managed model.
+ * OpenRouter fallback stays inside the verified US endpoint pool.
+ */
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   // CLOUD-ONLY gate, defense-in-depth: RUNTIME_MANAGED_MODELS is already empty
   // on a deployment with KORTIX_MANAGED_PROVIDER_ENABLED off (managed-models.ts),
@@ -176,8 +219,9 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   // guard here too so no managed credential is read if some future caller
   // reaches this directly.
   if (!config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
-  const d = openRouterManagedDescriptor(managed);
-  return d ? [d] : [];
+  const morph = morphManagedDescriptor(managed);
+  const openrouter = openRouterManagedDescriptor(managed);
+  return [morph, openrouter].filter((candidate): candidate is UpstreamDescriptor => candidate !== null);
 }
 
 export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
@@ -186,7 +230,7 @@ export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
 
 /**
  * Whether THIS deployment can actually reach `managed` — i.e. its transport's
- * credential is configured (OPENROUTER_API_KEY) and the
+ * credential is configured (OPENROUTER_API_KEY, or Morph when explicitly enabled) and the
  * managed provider is on.
  *
  * The served catalog reads this so a model that would fail resolution is never

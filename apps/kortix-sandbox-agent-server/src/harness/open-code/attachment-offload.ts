@@ -3,7 +3,7 @@
  *
  * WHY. OpenCode keeps every tool screenshot as a base64 `data:` URL inside the
  * tool part's `state.attachments[]`, in the `part` table of `opencode.db`.
- * Measured on Essentia 2026-08-25: one root = 352 tool parts carrying
+ * Measured on SampleCo 2026-08-25: one root = 352 tool parts carrying
  * 275 MB of attachments out of a 276 MB transcript. Every consumer re-pays
  * those bytes: each LLM step re-serialises the whole history before our
  * llm-proxy windows it to 12 images, every message-list request serialises
@@ -24,7 +24,7 @@
  *     proxy's response stripper turns it into an on-demand ref and
  *     `/kortix/part/:s/:m/:p` serves the sidecar bytes to the UI.
  *
- * Verified live on 1.18.23 (2026-08-25, box i67m4): OpenCode serves an
+ * Verified live on 1.18.23 (2026-08-25, one customer box): OpenCode serves an
  * externally UPDATEd row on the next read — no cache, no restart; the UPDATE
  * took 7 ms with OpenCode holding the DB open (WAL).
  *
@@ -104,7 +104,7 @@ export function inlineAttachmentsOf(part: Record<string, unknown>): AttachmentLi
   return out
 }
 
-export function isOffloadable(a: AttachmentLike, minBytes: number): boolean {
+function isOffloadable(a: AttachmentLike, minBytes: number): boolean {
   return (
     typeof a.id === 'string' &&
     typeof a.url === 'string' &&
@@ -114,7 +114,7 @@ export function isOffloadable(a: AttachmentLike, minBytes: number): boolean {
   )
 }
 
-export function decodeDataUrl(url: string): { mime: string | null; bytes: Buffer } | null {
+function decodeDataUrl(url: string): { mime: string | null; bytes: Buffer } | null {
   const m = DATA_URL_RE.exec(url)
   if (!m) return null
   const payload = m[3] ?? ''
@@ -160,7 +160,7 @@ interface PartRow {
  * attachments EXCEPT those carrying one of the session's newest `keepNewest`
  * attachments, and never the session's newest message.
  */
-export function selectCandidates(
+function selectCandidates(
   rows: Array<
     Pick<PartRow, 'id' | 'session_id' | 'message_id' | 'time_created'> & {
       attachmentCount: number

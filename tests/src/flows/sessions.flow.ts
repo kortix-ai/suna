@@ -781,12 +781,10 @@ flow(
  * server-side (`publicShareToken(shareId)`) and resolves through the exact
  * same `resolvePublicShare()` SESS-13 covers, so it inherits identical
  * 404 (unknown) / 410 (revoked or expired) / 503 (sandbox not provisioned
- * yet) semantics — and ANY existing share for the session (created as a
- * `preview` or a `file`, the only kinds the CRUD supports today) unlocks the
- * transcript view too: a share token already proves the owner handed this
- * link to someone outside the account, and the read-only conversation is not
- * more sensitive than the live preview or workspace file that SAME token
- * already exposes.
+ * yet) semantics. A share grants exactly the resource it names: a `preview`
+ * share names one app port and a `file` share one document, so neither reads
+ * the conversation — `.../messages` answers 404 for both (SCOPE-4 pins this on
+ * the local profile).
  *
  * The metadata route (`GET /:shareId`) is DB-only (title/status/timestamps),
  * so it does not itself 503 on an inactive sandbox — only `resolvePublicShare`'s
@@ -864,15 +862,12 @@ flow(
     );
 
     await ctx.step(
-      'anon: read the sanitized transcript for the real share → 200 (digest) or 503 (sandbox not up)',
+      'anon: a preview share does not read the transcript → 404 (the share names one app port)',
       async () => {
         const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
           params: { shareId },
         });
-        r.status([200, 503]);
-        if (r.statusCode === 200) {
-          r.body().exists('$.available').exists('$.messages').exists('$.message_count');
-        }
+        r.status(404).body().has('$.error', 'This share does not include the conversation');
       },
     );
 
@@ -1193,7 +1188,7 @@ flow(
       await ctx.step(`create repository_access=${access} session and prove checkout plus session-token authorization`, async () => {
         const config = await owner.put('/v1/projects/:projectId/agents/:agentName/config', {
           repository_access: access,
-          kortix_cli: ['project.file.read', 'project.gitops.read'],
+          kortix_permissions: ['project.file.read', 'project.gitops.read'],
         }, { params: { projectId: project.id, agentName: 'kortix' } });
         config.status(200);
         const created = await owner.post('/v1/projects/:projectId/sessions', {
@@ -1305,7 +1300,7 @@ flow(
         async () => {
           const config = await owner.put(
             '/v1/projects/:projectId/agents/:agentName/config',
-            { connectors: 'all', secrets: 'none', skills: 'all', kortix_cli: 'all' },
+            { connectors: 'all', secrets: 'none', skills: 'all', kortix_permissions: 'all' },
             { params: { projectId: project.id, agentName: 'kortix' } },
           );
           config.status(200);
@@ -1511,7 +1506,11 @@ flow(
         const rows: Array<[string, string, string, Record<string, unknown> | null, number]> = [
           // token suffix, end_reason, message_id, end_error, seconds ago (newest last)
           ['completed', 'completed', 'msg_fine', null, 90],
-          ['legacy', 'failed', 'msg_legacy', null, 80],
+          // Ended before the end_error column existed (2026-08-21): a Stop and
+          // an unexplained abort looked the same then, so it stays hidden.
+          ['legacy', 'failed', 'msg_legacy', null, 60 * 60 * 24 * 400],
+          // Ended after it: nobody said why, and the read must still say it died.
+          ['unnamed', 'failed', 'msg_unnamed', null, 35],
           ['queue-interrupt', 'failed', 'msg_queue', { name: 'QueueInterrupt', message: null }, 70],
           ['user-stop', 'failed', 'msg_stop', { name: 'UserStop', message: null }, 60],
           ['box-gone', 'runtime_gone', 'msg_gone', null, 50],
@@ -1547,6 +1546,7 @@ flow(
         const listed = (body.recent_failures ?? []).map((f) => [f.message_id, f.error?.name ?? null]);
         const expected = [
           ['msg_memory', 'SandboxMemoryGuard'],
+          ['msg_unnamed', null],
           ['msg_abort', null],
           ['msg_gone', null],
         ];
@@ -1608,3 +1608,131 @@ flow(
   },
 );
 
+
+flow(
+  'SESS-35',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'POST /v1/projects/:projectId/turn-stream',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+    ],
+  },
+  async (ctx) => {
+    // Prod 2026-09-22: the memory guard stopped a turn three times and the UI
+    // said "No reason was reported". The sandbox ran a daemon built before the
+    // guard named its turn: its cause frame has no `turn_message_id` and says
+    // `error_retryable: true`. The control plane must still attach it.
+    const { randomUUID } = await import('node:crypto');
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    await db.connect();
+    const project = await ctx.fixtures.project();
+    const ownerUserId = ctx.P.OWNER.userId;
+    if (!ownerUserId) throw new Error('OWNER principal has no userId');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const sessionId = randomUUID();
+    let tokenId: string | null = null;
+    let sandbox = ctx.client;
+    const GUARD_MESSAGE =
+      'sandbox memory at 92% (opencode 701 MB RSS of 12288 MB): turn stopped before the kernel would kill opencode';
+    type Failure = { message_id: string; error: { name: string | null; message: string | null } | null };
+    const failures = async () =>
+      (
+        await owner.get('/v1/projects/:projectId/sessions/:sessionId/turn', {
+          params: { projectId: project.id, sessionId },
+        })
+      )
+        .status(200)
+        .json<{ recent_failures?: Failure[] }>().recent_failures ?? [];
+    const insertEndedTurn = (suffix: string, messageId: string, endError: Record<string, unknown>) =>
+      db.query(
+        `INSERT INTO kortix.session_turns
+           (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id,
+            message_id, state, end_reason, end_error, started_at, ended_at, created_at, updated_at)
+         VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, 'ses_root', $6, 'ended', 'failed', $7::jsonb,
+                 now() - interval '40 seconds', now() - interval '1 second', now(), now())`,
+        [`${sessionId}-${suffix}`, sessionId, sessionId, project.id, project.accountId, messageId, JSON.stringify(endError)],
+      );
+    const oldDaemonGuardFrame = () =>
+      sandbox.post(
+        '/v1/projects/:projectId/turn-stream',
+        {
+          session_id: sessionId,
+          kind: 'end',
+          status: 'error',
+          opencode_session_id: 'ses_root',
+          error_name: 'SandboxMemoryGuard',
+          error_message: GUARD_MESSAGE,
+          error_retryable: true,
+        },
+        { params: { projectId: project.id } },
+      );
+    try {
+      await ctx.step('seed a running session, its sandbox, and a sandbox-bound token', async () => {
+        const minted = await owner.post('/v1/accounts/tokens', { name: `SESS-35 ${sessionId.slice(0, 8)}` });
+        minted.status(201);
+        const credential = minted.json<{ token_id: string; secret_key: string }>();
+        tokenId = credential.token_id;
+        sandbox = ctx.client.withBearer(credential.secret_key, 'SESSION_TOKEN');
+        await db.query(
+          `INSERT INTO kortix.project_sessions
+             (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
+           VALUES ($1, $2, $3, 'main', 'kortix', 'running', $4, 'project')`,
+          [sessionId, project.accountId, project.id, ownerUserId],
+        );
+        await db.query(
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+           VALUES ($1::uuid, $1, $2, $3, 'active')`,
+          [sessionId, project.accountId, project.id],
+        );
+        await db.query(
+          `UPDATE kortix.account_tokens
+              SET account_id = $2, user_id = $3, project_id = $4, session_id = $5
+            WHERE token_id = $1`,
+          [tokenId, project.accountId, ownerUserId, project.id, sessionId],
+        );
+      });
+
+      await ctx.step('a turn the abort just closed reads as a bare abort, with no cause', async () => {
+        await insertEndedTurn('aborted', 'msg_aborted', { name: 'MessageAbortedError', message: 'Aborted' });
+        const listed = (await failures()).find((f) => f.message_id === 'msg_aborted');
+        if (!listed || listed.error !== null) {
+          throw new Error(`expected msg_aborted listed with error null, got ${JSON.stringify(listed)}`);
+        }
+      });
+
+      await ctx.step('the old daemon guard frame (no turn id, retryable) is accepted with 200', async () => {
+        (await oldDaemonGuardFrame()).status(200);
+      });
+
+      await ctx.step('the aborted turn now names the memory guard and its message', async () => {
+        const listed = (await failures()).find((f) => f.message_id === 'msg_aborted');
+        if (listed?.error?.name !== 'SandboxMemoryGuard' || listed.error.message !== GUARD_MESSAGE) {
+          throw new Error(`expected the guard cause on msg_aborted, got ${JSON.stringify(listed)}`);
+        }
+      });
+
+      await ctx.step('a stop the user asked for is never turned into a memory failure', async () => {
+        await insertEndedTurn('user-stop', 'msg_user_stop', { name: 'UserStop', message: null });
+        (await oldDaemonGuardFrame()).status(200);
+        const ids = (await failures()).map((f) => f.message_id);
+        if (ids.includes('msg_user_stop')) {
+          throw new Error(`a requested stop must stay hidden, got ${JSON.stringify(ids)}`);
+        }
+      });
+    } finally {
+      await db.query('DELETE FROM kortix.session_turns WHERE session_id = $1', [sessionId]).catch(() => {});
+      await db.query('DELETE FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid', [sessionId]).catch(() => {});
+      await db.query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [sessionId]).catch(() => {});
+      if (tokenId) await db.query('DELETE FROM kortix.account_tokens WHERE token_id = $1', [tokenId]).catch(() => {});
+      await db.end();
+    }
+  },
+);

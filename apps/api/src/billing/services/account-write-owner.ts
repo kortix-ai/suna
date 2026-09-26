@@ -31,8 +31,8 @@
  *
  * Wallet and credit-bookkeeping columns (balances, lifetime totals, auto-topup,
  * grant timestamps) are on NEITHER list on purpose: both writers legitimately
- * move money, and money flows through `grantCredits`/`resetExpiringCredits`
- * anyway, which have their own idempotency contract.
+ * move money, and money flows through `wallet` (billing/wallet) anyway, which
+ * has its own idempotency contract.
  *
  * Naming: the provider-side verb is `applyStripeSync` because Stripe is the
  * writer that caused the damage, but the boundary it enforces is

@@ -4,6 +4,10 @@ import { NextIntlClientProvider } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+/** Every source `useBinaryBlob` was asked for, in order — which read a card
+ *  chose is the behaviour under test for saved history. */
+const blobReads: Array<string | null> = [];
+
 // Image/video reach their render branch only once `useBinaryBlob` has a blob
 // URL. The real hook is a react-query fetch against the sandbox, which never
 // resolves under `renderToStaticMarkup` (one synchronous, effect-free pass), so
@@ -21,7 +25,7 @@ mock.module('@/features/files/hooks/use-binary-blob', () => ({
     ],
   },
   useBinaryBlob: (filePath: string | null) =>
-    filePath
+    (blobReads.push(filePath), filePath)
       ? {
           blobUrl: 'blob:show-content-renderer-test',
           blob: new Blob(['x']),
@@ -31,7 +35,7 @@ mock.module('@/features/files/hooks/use-binary-blob', () => ({
       : { blobUrl: null, blob: null, isLoading: false, error: null },
 }));
 
-import { ShowContentRenderer } from './show-content-renderer';
+import { ShowContentRenderer, showBlobSource } from './show-content-renderer';
 
 // ShowContentRenderer calls `useFileContent` (react-query) unconditionally, and
 // its error copy goes through `useTranslations` — both providers are required
@@ -144,5 +148,84 @@ describe('ShowContentRenderer — inline image/video are framed like every other
 
     expect(image).not.toContain(VIEWER_FRAME_HEADER);
     expect(video).not.toContain(VIEWER_FRAME_HEADER);
+  });
+});
+
+
+// ── Saved history: the stored copy of a shown file ─────────────────────────
+
+const STORED =
+  'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+
+describe('showBlobSource', () => {
+  test('a stored copy wins over the sandbox path for every binary viewer', () => {
+    for (const effectiveType of ['image', 'video', 'audio', 'docx', 'pptx']) {
+      expect(
+        showBlobSource({ effectiveType, attachment: STORED, sandboxPath: '/workspace/a.bin' }),
+      ).toBe(STORED);
+    }
+  });
+
+  test('with no stored copy the sandbox path is read, exactly as before', () => {
+    expect(showBlobSource({ effectiveType: 'image', sandboxPath: '/workspace/a.png' })).toBe(
+      '/workspace/a.png',
+    );
+    expect(
+      showBlobSource({ effectiveType: 'image', attachment: '', sandboxPath: '/workspace/a.png' }),
+    ).toBe('/workspace/a.png');
+  });
+
+  test('a PDF reads bytes only from a stored copy; its sandbox read stays base64', () => {
+    expect(showBlobSource({ effectiveType: 'pdf', attachment: STORED, sandboxPath: '/w/r.pdf' })).toBe(
+      STORED,
+    );
+    expect(showBlobSource({ effectiveType: 'pdf', sandboxPath: '/workspace/r.pdf' })).toBeNull();
+  });
+
+  test('HTML is NEVER read from a stored copy — it would run in the app origin', () => {
+    for (const effectiveType of ['html', 'html-file']) {
+      expect(
+        showBlobSource({ effectiveType, attachment: STORED, sandboxPath: '/workspace/page.html' }),
+      ).toBeNull();
+    }
+  });
+
+  test('text viewers keep their own reads', () => {
+    for (const effectiveType of ['markdown', 'code', 'text', 'csv', 'xlsx', 'mermaid']) {
+      expect(
+        showBlobSource({ effectiveType, attachment: STORED, sandboxPath: '/workspace/x' }),
+      ).toBeNull();
+    }
+  });
+
+  test('something that is not a stored reference is ignored, never fetched', () => {
+    expect(
+      showBlobSource({
+        effectiveType: 'image',
+        attachment: 'https://evil.test/x.png',
+        sandboxPath: '/workspace/a.png',
+      }),
+    ).toBe('/workspace/a.png');
+  });
+});
+
+describe('a card served from saved history', () => {
+  test('an image with a stored copy asks for the copy, not the sandbox', () => {
+    blobReads.length = 0;
+    renderToStaticMarkup(
+      withProviders(
+        <ShowContentRenderer type="image" path="/workspace/out/revenue.png" attachment={STORED} />,
+      ),
+    );
+    expect(blobReads).toContain(STORED);
+    expect(blobReads).not.toContain('/workspace/out/revenue.png');
+  });
+
+  test('a live card (no stored copy) still reads the sandbox', () => {
+    blobReads.length = 0;
+    renderToStaticMarkup(
+      withProviders(<ShowContentRenderer type="image" path="/workspace/out/revenue.png" />),
+    );
+    expect(blobReads).toContain('/workspace/out/revenue.png');
   });
 });

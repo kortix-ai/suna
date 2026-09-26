@@ -234,22 +234,12 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
                 sql`${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' = ${cleanupId}`,
               ),
             );
-          // Re-read before preserving. `preserveEstablishedRuntime` writes the
-          // WHOLE metadata object from the row it is handed, so passing the
-          // pre-claim snapshot would resurrect the `runtimeWakeId` /
-          // `runtimeWakeLeaseExpiresAt` keys the claim just deleted — and a
-          // resurrected wake id reads as `runtimeWakeInProgress` on the next
-          // open, which is the state this whole path exists to end.
-          const [fresh] = await db
-            .select()
-            .from(sessionSandboxes)
-            .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
-            .limit(1);
-          if (!fresh?.externalId) return;
           // Same classification the box reaper writes for the identical
           // observation (reaping/box-reaper.ts `reconcile-removed`), so the
-          // stop-reason query cannot tell the two discovery paths apart.
-          await preserveEstablishedRuntime(fresh, 'runtime_removed', 'provider_removed');
+          // stop-reason query cannot tell the two discovery paths apart. The
+          // preserve merges its keys into the row it locks, so the wake keys
+          // the claim above deleted stay deleted.
+          await preserveEstablishedRuntime(row, 'runtime_removed', 'provider_removed');
         },
       });
       if (result !== 'skipped') checked += 1;

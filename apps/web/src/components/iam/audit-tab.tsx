@@ -666,6 +666,7 @@ function AdvancedFilters({
                   {tI18nComplete.raw('textce5e9df4a78f')}
                 </SelectItem>
                 <SelectItem value="system">{tI18nComplete.raw('text6725e7bbcd28')}</SelectItem>
+                <SelectItem value="anonymous">{tI18nComplete.raw('texte7a8aa2df7e5')}</SelectItem>
               </SelectContent>
             </Select>
           </FilterField>
@@ -853,7 +854,13 @@ function AuditRow({
   const action = describeAuditAction(event.action, tI18nComplete);
   const resource = formatResourcePill(event.resource_type, event.resource_id);
   const actorLabel =
-    actorEmail ?? event.actor_user_id ?? (event.actor_type === 'system' ? 'System' : 'Unknown');
+    actorEmail ??
+    event.actor_user_id ??
+    (event.actor_type === 'system'
+      ? 'System'
+      : event.actor_type === 'anonymous'
+        ? tI18nComplete.raw('texte7a8aa2df7e5')
+        : 'Unknown');
   const scopeLabel =
     projectName ?? (event.project_id ? `Project ${event.project_id.slice(0, 8)}` : 'Account');
 

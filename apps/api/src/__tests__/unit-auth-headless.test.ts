@@ -164,7 +164,7 @@ describe('POST /v1/auth/sign-in/sso', () => {
     const response = await app().request('/v1/auth/sign-in/sso', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ domain: 'essentia.example', redirect_to: 'https://app.example/auth/callback' }),
+      body: JSON.stringify({ domain: 'sampleco.example', redirect_to: 'https://app.example/auth/callback' }),
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ url: 'https://idp.example/saml?RelayState=x' });
@@ -172,7 +172,7 @@ describe('POST /v1/auth/sign-in/sso', () => {
     const call = seen.at(-1)!;
     expect(call.method).toBe('POST');
     expect(call.url).toContain('/sso');
-    expect(call.body).toMatchObject({ domain: 'essentia.example' });
+    expect(call.body).toMatchObject({ domain: 'sampleco.example' });
   });
 
   test('a domain with no provider is a clean refusal, not a 500', async () => {

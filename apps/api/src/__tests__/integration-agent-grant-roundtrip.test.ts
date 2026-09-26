@@ -38,7 +38,7 @@ describe('agent_grant — real DB round-trip + enforcement', () => {
       return;
     }
 
-    const grant = { agent: 'release-bot', kortixCli: ['project.cr.open'], connectors: ['github'] };
+    const grant = { agent: 'release-bot', permissions: ['project.cr.open'], connectors: ['github'] };
 
     const minted = await createAccountToken({
       accountId: proj.account_id,

@@ -503,6 +503,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.activateConnection(projectId, ...a),
       setDefault: (...a: DropFirst<Parameters<typeof P.setDefaultConnection>>) =>
         P.setDefaultConnection(projectId, ...a),
+      rename: (...a: DropFirst<Parameters<typeof P.renameConnection>>) =>
+        P.renameConnection(projectId, ...a),
       pipedreamConnect: (...a: DropFirst<Parameters<typeof P.pipedreamConnectConnection>>) =>
         P.pipedreamConnectConnection(projectId, ...a),
       pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>
@@ -542,6 +544,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.updateAppAccess(projectId, ...a),
           session: (...a: DropFirst<Parameters<typeof P.createAppAccessSession>>) =>
             P.createAppAccessSession(projectId, ...a),
+          /** Agents whose `kortix.yaml` `apps:` grant names this App. Read-only. */
+          agents: (appId: string) => P.listAppAgents(projectId, appId),
         },
         remove: (appId: string) => P.deleteApp(projectId, appId),
         artifacts: {
@@ -842,6 +846,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           connect: (input: Parameters<typeof P.connectSlack>[1]) =>
             P.connectSlack(projectId, input),
           mode: () => P.getSlackMode(projectId),
+          /** Finish an "Add to Slack" install as the signed-in user (web completion page). */
+          completeInstall: (input: Parameters<typeof P.completeSlackInstall>[1]) =>
+            P.completeSlackInstall(projectId, input),
           manifest: () => P.getSlackManifest(projectId),
           disconnect: () => P.disconnectSlack(projectId),
           /** Download a Slack-hosted file through the server-side proxy (bot token stays server-side). */
@@ -849,6 +856,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           /** Upload a file to Slack through the server-side 3-step external-upload proxy. */
           uploadFile: (input: Parameters<typeof P.uploadSlackChannelFile>[1]) =>
             P.uploadSlackChannelFile(projectId, input),
+        },
+        teams: {
+          /** Finish a Microsoft Teams org install as the signed-in user (web completion page). */
+          completeInstall: (input: Parameters<typeof P.completeTeamsInstall>[1]) =>
+            P.completeTeamsInstall(projectId, input),
         },
         email: {
           installation: (connectorSlug?: string | null) =>

@@ -1,4 +1,4 @@
-import type { SseErrorFrame } from './completion-guard';
+import { chunkOutputChars } from './estimate';
 import { type ExtractedUsage, type UpstreamChunkShape, normalizeUsageChunk } from './extract';
 
 // A well-formed SSE `data:` line for a chat-completion chunk (usage frame,
@@ -9,6 +9,24 @@ import { type ExtractedUsage, type UpstreamChunkShape, normalizeUsageChunk } fro
 // oldest bytes are dropped once it's exceeded.
 const DEFAULT_MAX_CARRY_BYTES = 1024 * 1024;
 
+/** The first in-band `error` object an upstream streamed. */
+export interface SseErrorFrame {
+  message: string;
+  code?: string | number;
+  /**
+   * Every REMAINING field of the upstream's `error` object, verbatim, minus
+   * `message`/`code` above. Upstreams put the actually-actionable part of a
+   * rejection here — OpenAI-shaped backends use `type`/`param` to name the
+   * offending field — and dropping it collapses a specific, fixable error into
+   * an unactionable one. That cost real debugging time: every Codex request
+   * 400'd with nothing in the logs but `"Bad Request"`, and finding the true
+   * cause (a missing `store: false`) needed git archaeology against a deleted
+   * transport rather than just reading the error. Kept as an opaque bag so any
+   * upstream's extra fields survive without this type having to know them.
+   */
+  detail?: Record<string, unknown>;
+}
+
 /**
  * Incrementally scans an SSE token stream for the two things `settle()` needs
  * at the end of a completion — the final usage frame and the first upstream
@@ -16,15 +34,15 @@ const DEFAULT_MAX_CARRY_BYTES = 1024 * 1024;
  * request. Memory is bounded by `maxCarryBytes` (the worst case: a single
  * unterminated "line") rather than growing with total tokens streamed.
  *
- * This mirrors exactly what `extractUsageFromSseBuffer`/`sseErrorFrame` did
- * over a fully-accumulated buffer: last usage frame wins, first error frame
- * wins, and only `data:` lines are considered.
+ * Last usage frame wins, first error frame wins, and only `data:` lines are
+ * considered.
  */
 export class IncrementalSseScanner {
   private carry = '';
   private lastUsage: ExtractedUsage | null = null;
   private lastModel: string | undefined;
   private errorFrame: SseErrorFrame | null = null;
+  private streamedOutputChars = 0;
   private readonly maxCarryBytes: number;
 
   constructor(maxCarryBytes: number = DEFAULT_MAX_CARRY_BYTES) {
@@ -67,6 +85,7 @@ export class IncrementalSseScanner {
     }
     if (chunk?.model) this.lastModel = chunk.model;
     if (chunk?.usage) this.lastUsage = normalizeUsageChunk(chunk);
+    this.streamedOutputChars += chunkOutputChars(chunk);
     if (!this.errorFrame && chunk?.error && typeof chunk.error === 'object') {
       const { message, code, ...rest } = chunk.error as {
         message?: unknown;
@@ -92,6 +111,15 @@ export class IncrementalSseScanner {
       this.lastUsage.model = this.lastModel;
     }
     return this.lastUsage;
+  }
+
+  /**
+   * Characters of generated output (content, reasoning, tool-call arguments)
+   * seen so far. The usage estimate for a stream that ends without a usage
+   * frame is built from it.
+   */
+  get outputChars(): number {
+    return this.streamedOutputChars;
   }
 
   /** First upstream error frame seen, or null on a clean stream. */

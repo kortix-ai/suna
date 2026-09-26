@@ -38,6 +38,8 @@ describe('standalone gateway inference routes', () => {
       expect(body.type).toBe('error');
       expect(body.error.type).toBe('authentication_error');
       expect(body.error.message).toBe('Missing bearer token');
+      // Not the OpenAI-compat shape a chat completions 401 returns.
+      expect((body as unknown as { code?: unknown }).code).toBeUndefined();
     });
   }
 

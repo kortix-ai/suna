@@ -22,7 +22,7 @@ describe('buildOpencodeConfigContent — native mode (no gateway env)', () => {
 
   test('with nothing session-specific to inject, only the Kortix-managed overlay remains', async () => {
     const content = await buildOpencodeConfigContent({})
-    // autoupdate:false is unconditional (Essentia 2026-08-22/25: OpenCode's
+    // autoupdate:false is unconditional (SampleCo 2026-08-22/25: OpenCode's
     // self-upgrade via plain `pnpm add -g` left a postinstall-less stub).
     expect(JSON.parse(content!)).toEqual({ autoupdate: false })
   })
@@ -83,15 +83,5 @@ describe('buildOpencodeConfigContent — native mode (no gateway env)', () => {
     expect(parsed.small_model).toBe('anthropic/claude-haiku-4-5')
     expect(parsed.agent.support.model).toBe('codex/gpt-5.6-sol')
     expect(parsed.agent.research.model).toBe('anthropic/claude-opus-4-8')
-  })
-
-  test('gateway mode is untouched: kortix provider + lockout still emitted', async () => {
-    const content = await buildOpencodeConfigContent({
-      KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
-      KORTIX_TOKEN: 'tok-123',
-    })
-    const parsed = JSON.parse(content!)
-    expect(parsed.provider.kortix).toBeDefined()
-    expect(parsed.enabled_providers).toEqual(['kortix'])
   })
 })

@@ -13,7 +13,9 @@ import {
 // replaced wholesale by `mock.module` in several route tests, so every name
 // imported from it is a name those stubs must also declare.
 import { authorize, assertAuthorized } from '../../iam/authorize';
-import { actorOf, type Actor } from '../../iam/actor';
+import { actorOf, isAgentPrincipalActor, type Actor } from '../../iam/actor';
+import { agentSessionStanding } from './agent-session-standing';
+export { agentSessionStanding } from './agent-session-standing';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { projectRoleForUser } from '../../iam/read-models';
 // Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
@@ -48,6 +50,7 @@ import {
   isRepositoryProjectAction,
   sessionWorkspaceAllowsRepositoryAccess,
 } from './session-workspace-access';
+import { isUuid } from '../../shared/validate';
 
 // Enforce the per-account project cap (free → 1, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
@@ -219,7 +222,7 @@ export async function viewerManagerStanding(
  * inventory), so any route that loads a session by id and then acts on it must
  * ask this first — `/start` and `/restart` used to skip it, answer
  * `stage: "stopped"` / 202 on a deleted session, and leave the UI looping on a
- * Restart button that could never work (essentia session b04a9911, 2026-08-24).
+ * Restart button that could never work (sampleco session b04a9911, 2026-08-24).
  */
 export function sessionIsTombstoned(row: { metadata: unknown }): boolean {
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
@@ -306,10 +309,18 @@ export async function loadVisibleSession(
   /** True when `created_by` names a service account (or nobody). */
   ownerIsMachine: boolean;
 } | null> {
+  // The caller's share subject (their groups) and the session's grants are
+  // keyed on the user and the session id, not on anything the row returns, so
+  // all three reads go out together. Every session-scoped route pays this
+  // path, and one behind the other is three round trips.
+  const subjectRead = resolveShareSubject(loaded.userId);
+  const grantsRead = loadSessionGrants([sessionId]);
+  subjectRead.catch(() => undefined);
+  grantsRead.catch(() => undefined);
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
-  const subject = await resolveShareSubject(loaded.userId);
-  const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
+  const subject = await subjectRead;
+  const grants = (await grantsRead).get(sessionId) ?? [];
   const ownership = {
     origin: row.origin ?? null,
     sessionId,
@@ -383,7 +394,14 @@ export async function loadVisibleSession(
       metadata: { via: 'admin_bypass_header', sessionVisibility: row.visibility },
     });
   }
-  const isOwner = row.createdBy === loaded.userId;
+  let isOwner = row.createdBy === loaded.userId;
+  if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
+    // Spec §2: never the launcher's standing. Checked after the ordinary
+    // rules so it can only narrow them.
+    const standing = agentSessionStanding(boundCredentialSessionId, row, visible);
+    if (!standing.visible) return null;
+    isOwner = standing.isOwner;
+  }
   const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
     ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
     : false;
@@ -421,16 +439,18 @@ export async function loadVisibleSession(
  *    gate denied them — the same escalation the member-sharing rule closes.
  */
 export async function loadSessionForSharing(
-  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
+  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; actor?: Actor | null },
   sessionId: string,
   /**
-   * The CALLER's own session when the credential is bound to one. REQUIRED —
-   * see loadVisibleSession. Sharing is the worst surface to leave unnarrowed:
+   * The caller's AGENT/SANDBOX token binding — always `callerKortixSessionId(c)`,
+   * never the raw `c.get('sessionId')` (that is the Supabase LOGIN session id
+   * for a signed-in human, which would narrow every human away from a
+   * backend-origin session). Sharing is the worst surface to leave unnarrowed:
    * a public share is UNAUTHENTICATED and its router is mounted before auth,
    * so minting one against another end-user's session exposes their live app
    * port and workspace files to anyone holding the URL.
    */
-  callerSessionId: string | null,
+  boundCredentialSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   isOwner: boolean;
@@ -449,12 +469,22 @@ export async function loadSessionForSharing(
   if (!isSessionTargetVisibleToCaller({
     origin: row.origin ?? null,
     sessionId,
-    callerSessionId,
+    callerSessionId: boundCredentialSessionId,
+    boundCredentialSessionId,
   })) {
     return null;
   }
-  const isOwner = row.createdBy === loaded.userId;
-  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  let isOwner = row.createdBy === loaded.userId;
+  if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
+    // Spec §2: an agent session manages share links only for sessions it
+    // owns (its own and its children), never the launcher's others.
+    const standing = agentSessionStanding(boundCredentialSessionId, row, true);
+    if (!standing.visible) return null;
+    isOwner = standing.isOwner;
+  }
+  // Same standing rule as loadVisibleSession: a session-bound credential acts
+  // for one session and does not carry the launching user's manage role.
+  const canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
   const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
     ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
     : false;
@@ -622,7 +652,7 @@ export interface UserIdentity {
  * /:projectId/sessions` resolves every distinct `created_by` in the project, so
  * a project with a human owner plus a few trigger/service actors paid one auth
  * round trip PER OWNER, on every one of the ~6 list fetches a single session
- * open issues (measured on the Essentia corpus, 2026-08-26). The rest of the
+ * open issues (measured on the SampleCo corpus, 2026-08-26). The rest of the
  * endpoint is four indexed queries totalling under 3 ms; these calls were the
  * only unbounded work in it.
  *
@@ -675,11 +705,6 @@ const userIdentityMemo = ttlMemo({
     }
   },
 });
-
-/** Drop a user's cached identity — call after a profile/email write. */
-export function invalidateUserIdentity(userId: string): void {
-  userIdentityMemo.invalidate(userId);
-}
 
 export async function resolveUserIdentities(userIds: string[]): Promise<Map<string, UserIdentity>> {
   const result = new Map<string, UserIdentity>();
@@ -906,16 +931,6 @@ export async function assertAgentSessionWorkspaceAllowsRepository(
   });
 }
 
-// `projects.project_id` is a Postgres `uuid` column, so a malformed id
-// (e.g. a truncated "fda4e35e") makes the lookup throw `invalid input syntax
-// for type uuid` (SQLSTATE 22P02) before any guard runs — surfacing as an
-// opaque 500. Validate the shape first so a bad id is a clean 404, not a 500.
-const PROJECT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function isUuid(value: string): boolean {
-  return PROJECT_ID_RE.test(value);
-}
-
 /**
  * The full platform-admin-bypass decision — pure (the DB/header lookups are
  * already resolved into `isPlatformAdmin`/`bypassHeaderPresent` by the
@@ -945,6 +960,27 @@ export function isAdminBypassEligible(input: {
   bypassHeaderPresent: boolean;
 }): boolean {
   return input.action === 'read' && !input.isServiceAccount && input.bypassHeaderPresent;
+}
+
+/**
+ * The `effectiveRole` label manage-tier branches read (`roleAllows(…,
+ * 'manage')`: share management, `can_manage`, the serialized
+ * `effective_project_role`).
+ *
+ * Legacy callers keep the caller's own role. An agent-principal session (spec
+ * docs/specs/2026-09-22-agents-as-principals.md §2.1) never inherits its
+ * launcher's role: it is `manager` only when the AGENT's effective permissions
+ * hold `project.write` (the IAM action behind the `manage` tier,
+ * `iamActionForProjectAccess('manage')`), else `member`. Pure; exported for
+ * unit tests.
+ */
+export function deriveEffectiveRole(input: {
+  agentPrincipal: boolean;
+  agentMayWrite: boolean;
+  callerRole: ProjectRole;
+}): ProjectRole {
+  if (!input.agentPrincipal) return input.callerRole;
+  return input.agentMayWrite ? 'manager' : 'member';
 }
 
 export async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
@@ -1052,12 +1088,14 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
           throw buildDenialError(iamAction, verdict.reason);
         }
         const verb = action === 'manage' ? 'manage this project' : 'change this project';
-        throw new HTTPException(403, {
-          message: `Your role on this project doesn't let you ${verb}. Ask an account owner or admin to grant you a higher role.`,
-        });
+        throw buildDenialError(
+          iamAction,
+          verdict.reason,
+          `Your role on this project doesn't let you ${verb}. Ask an account owner or admin to grant you a higher role.`,
+        );
       }
     }
-    throw new HTTPException(403, { message: 'You do not have access to this project' });
+    throw buildDenialError(iamAction, verdict.reason, 'You do not have access to this project');
   }
 
   // effectiveRole label for the UI / downstream helpers. The engine
@@ -1069,8 +1107,19 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   // For a service account there's no account role; capabilities come purely from
   // its policies (already enforced by `verdict`). Use the safe-minimum 'member'
   // label, exactly as for a member granted access via a policy with no role tier.
-  const effectiveRole =
+  const callerRole =
     (accountRole ? effectiveProjectRole(accountRole, projectRole) : projectRole) ?? 'member';
+  const agentPrincipal = isAgentPrincipalActor(actor);
+  const effectiveRole = deriveEffectiveRole({
+    agentPrincipal,
+    agentMayWrite: agentPrincipal
+      ? // `authorize` directly, not `agentEffectiveAllows`: for an agent-principal
+        // actor they are the same verdict, and a new name imported from
+        // iam/authorize is one more export every hand-written mock must list.
+        (await authorize(actor, iamActionForProjectAccess('manage'), { type: 'project', id: projectId })).allowed
+      : false,
+    callerRole: callerRole as ProjectRole,
+  });
   (c as any).set('accountId', row.accountId);
 
   return {

@@ -5,6 +5,10 @@
  * Maps font weights to their corresponding Roobert font files.
  */
 
+import { MONO_FONT_FAMILY } from './mono-font';
+
+export { MONO_FONT_FAMILY };
+
 export const ROOBERT_FONTS = {
   'Roobert-Light': require('@/assets/font/Roobert/Roobert-Light.ttf'),
   'Roobert-Regular': require('@/assets/font/Roobert/Roobert-Regular.ttf'),
@@ -12,6 +16,7 @@ export const ROOBERT_FONTS = {
   'Roobert-SemiBold': require('@/assets/font/Roobert/Roobert-SemiBold.ttf'),
   'Roobert-Bold': require('@/assets/font/Roobert/Roobert-Bold.ttf'),
   'Roobert-Heavy': require('@/assets/font/Roobert/Roobert-Heavy.ttf'),
+  [MONO_FONT_FAMILY]: require('@/assets/font/Roobert/RoobertMono-Regular.ttf'),
 };
 
 /**

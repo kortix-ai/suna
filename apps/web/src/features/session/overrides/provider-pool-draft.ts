@@ -28,3 +28,29 @@ export function effectiveProviderPools(saved: SavedPool[], drafts: ProviderPoolD
   }
   return selection;
 }
+
+type SessionKey = { access_mode?: 'project' | 'members'; granted_user_ids?: string[] };
+
+/**
+ * The person whose own keys a session can use: its creator, in a private
+ * session. None in a session shared with the project. `undefined` while the
+ * session is unknown, which filters nothing.
+ */
+export function sessionPersonalUser(
+  session: { visibility?: string | null; created_by?: string | null } | null | undefined,
+): string | null | undefined {
+  if (!session?.visibility) return undefined;
+  return session.visibility === 'private' ? (session.created_by ?? null) : null;
+}
+
+/**
+ * The keys a session can use when it runs. The gateway serves a session's
+ * selection with the session's personal user (spec 2026-09-22 §2.3): keys
+ * shared with the whole project always, a key granted to one member only in
+ * that member's private session. Any other key would be refused on save.
+ */
+export function keysForSession<T extends SessionKey>(keys: T[], personalUser: string | null | undefined): T[] {
+  if (personalUser === undefined) return keys;
+  return keys.filter((key) =>
+    key.access_mode === 'project' || (personalUser !== null && (key.granted_user_ids ?? []).includes(personalUser)));
+}

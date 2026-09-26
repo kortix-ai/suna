@@ -36,8 +36,8 @@ Turning the flag off is a fully supported path. The project then runs
 
 A model id has one of three shapes:
 
-- **Managed** — a bare id, like `grok-4.6` or `deepseek-v4-pro-0813`. Kortix
-  supplies the credentials. Cloud accounts pay with Kortix credits.
+- **Managed** — a bare id, like `kimi-k3` or `deepseek-v4.1-flash`.
+  Kortix supplies the credentials. Cloud accounts pay with Kortix credits.
 - **BYOK** — a `provider/model` id, like `anthropic/claude-opus-4-8`. You
   supply the key. Your provider account pays.
 - **ChatGPT** — a `codex/<id>` id. You connect your ChatGPT plan once through
@@ -45,6 +45,24 @@ A model id has one of three shapes:
 
 Connect a BYOK key on the project's Model settings page, or set the
 provider's env var directly as a [secret](/docs/project/secrets).
+
+### Kortix-managed models
+
+The picker lists these under **Kortix**, with their token rates. Every one
+accepts text and images. Each request goes to one pinned endpoint with zero
+data retention, and never falls back to another provider.
+
+| Model | Id |
+| --- | --- |
+| Kimi K3 2.8T | `kimi-k3` |
+| DeepSeek V4.1 Flash (platform default) | `deepseek-v4.1-flash` |
+| GLM 5.3 Flash | `glm-5.3-flash` |
+
+Kortix does not offer OpenAI or Anthropic models as managed models. Use them
+through a BYOK key or a ChatGPT plan. A ChatGPT plan adds `codex/gpt-6-astra`,
+`codex/gpt-6-sol`, and `codex/gpt-6-luna` (plus the GPT-5.x models). A BYOK
+key offers its provider's whole catalog, for example
+`anthropic/claude-opus-5-5` with an Anthropic key. The picker shows the newest model of each family by default.
 
 ## Disable providers or models
 
@@ -141,11 +159,13 @@ to use provider secret resources. Open **Customize → Models → Providers** an
 choose **Add key** beside a provider. Give each key a distinct label. The value
 is write-only; later screens show its label and access list.
 
-New keys belong to this project. **Everyone in this project** can use them by
-default. Open a key's **⋯ → Manage access** and choose **Specific members** to
-restrict access. Legacy account-wide resources retain their member grants.
-Account membership, project permissions, the agent's secret permissions, and
-session selection still apply.
+New keys belong to this project and are private to you by default (**Only
+you**). Any project member can add a key for their own use. Sharing a key with
+**Everyone in this project** or **Specific members** requires permission to
+manage project secrets; without it, those options are disabled. Open a key's
+**⋯ → Manage access** to change who can use it. Legacy account-wide resources
+retain their member grants. Account membership, project permissions, the
+agent's secret permissions, and session selection still apply.
 A member grant permits use without revealing the key. Rotating a key preserves
 its access and session selections. Deleting it removes access for everyone.
 
@@ -165,22 +185,66 @@ For a new session, the selection is sent with the first prompt.
   still show that provider so you can reset it.
 - A failed read shows **Try again**. It never appears as an inherited selection.
 
+A session lists only the keys it can use when it runs: keys shared with the
+whole project, and, in your own private session, keys granted to you. A session
+shared with the project never uses a key granted to one member, so the list
+leaves those keys out and saving one is refused. Changing a shared session to a
+model that only such keys reach is refused too, instead of failing every turn.
+
+### Sessions that name only a model
+
+The CLI, the SDK, and Teams and Slack name a model but no keys. When that model
+runs only on pooled keys, the session gets every key its creator may use for
+that provider, up to ten, so they rotate. The agent must be allowed the key's
+name in its `secrets`. Changing a running session to such a model does the
+same when the session has no selection for that provider. A selection made on
+purpose, an empty one included, is left alone.
+
+Your own keys and ChatGPT connections count only in a session that is private
+to you and acts on your behalf. In a shared session only keys shared with the
+whole project count: a Teams channel or group chat, a Slack channel.
+
 On a rate limit before output starts, the gateway tries another selected key.
 It never replays a partial answer across keys. If every key is rate-limited,
 retry after the earliest cooldown, capped at 60 seconds. An explicit pool does
 not silently borrow another member's key or the legacy project credential.
 
-### ChatGPT accounts
+### ChatGPT accounts (bring your own subscription)
 
-Choose **Add account** under **ChatGPT Plus/Pro**. Each authorization creates a
-separate named connection in this project. **Everyone in this project** can use
-it by default. Use **Manage access → Specific members** to restrict access.
+Every project member can connect their own ChatGPT Plus or Pro subscription.
+Project permissions to manage secrets are not required.
 
-A session can select multiple granted ChatGPT accounts. Without a selection,
-the member's newest usable connection is the default. Another member's shared
-connection requires an explicit selection. The legacy project login remains
-available when the member has no usable connection of their own. A shared
-gateway key cannot borrow its creator's private ChatGPT connection.
+1. In a session, open the model picker and choose **Use your ChatGPT
+   subscription**. Project managers can also use **Models → Providers →
+   ChatGPT accounts**.
+2. Choose **Connect ChatGPT**. The label defaults to `ChatGPT · <your name>`.
+3. Keep **Only you**, then choose **Connect account**. Sign in to ChatGPT with
+   the code shown. If the authorization fails or times out, the dialog shows
+   why; choose **Try again**.
+
+The subscription's models appear in your model picker under **ChatGPT
+subscription**. Each authorization creates a separate named account, so you can
+connect more than one. **Only you** means only you can select the account;
+choosing **Everyone in this project** or **Specific members** requires
+permission to manage project secrets.
+
+If ChatGPT signs you out, open the account's **⋯ → Reconnect** and sign in
+again. Reconnecting keeps the account's name, access, and session selections.
+Only the member who connected an account can reconnect it. Account owners and
+admins can delete any account.
+
+A session can select multiple granted ChatGPT accounts in **Session overrides →
+Provider keys**. Without a selection, the member's newest usable connection is
+the default in their own private session. A session shared with the project
+never uses a member's own connection: select a connection shared with the whole
+project for it. Scheduled sessions cannot use an **Only you** account either.
+Another member's shared connection requires an explicit selection. The legacy
+project login remains available when the member has no usable connection of
+their own. A shared gateway key cannot borrow its creator's private ChatGPT
+connection.
+
+A project manager can turn off **ChatGPT subscription** for the whole project
+in **Models → Providers**. The picker then hides the connect entry.
 
 Google Gemini API keys use Google's OpenAI-compatible endpoint with the gateway
 on. Native OpenCode mode continues to use project secrets.

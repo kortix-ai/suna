@@ -5,7 +5,7 @@ import { remintDecisionFor } from './session-token-grant';
 
 const grant = (extra: Partial<AgentGrant> = {}): AgentGrant => ({
   agent: 'a',
-  kortixCli: 'all',
+  permissions: 'all',
   connectors: 'all',
   env: 'all',
   ...extra,
@@ -27,13 +27,13 @@ describe('remintDecisionFor', () => {
     expect(remintDecisionFor(grant(), running)).toEqual({ action: 'write', grant: running });
   });
 
-  test('a changed kortixCli grant is re-pointed too', () => {
-    const running = grant({ agent: 'b', kortixCli: ['project.session.read'] });
+  test('a changed permissions grant is re-pointed too', () => {
+    const running = grant({ agent: 'b', permissions: ['project.session.read'] });
     expect(remintDecisionFor(grant(), running)).toEqual({ action: 'write', grant: running });
   });
 
   test('NARROWING to a real grant is written', () => {
-    const running = grant({ agent: 'b', connectors: [], kortixCli: [] });
+    const running = grant({ agent: 'b', connectors: [], permissions: [] });
     expect(remintDecisionFor(grant(), running)).toEqual({ action: 'write', grant: running });
   });
 
@@ -59,7 +59,7 @@ describe('remintDecisionFor', () => {
 describe('remintDecisionFor — the REVERT case (regression)', () => {
   const grantFor = (agent: string, extra: Partial<AgentGrant> = {}): AgentGrant => ({
     agent,
-    kortixCli: 'all',
+    permissions: 'all',
     connectors: 'all',
     env: 'all',
     ...extra,
@@ -73,7 +73,7 @@ describe('remintDecisionFor — the REVERT case (regression)', () => {
     // kept ops' grant while support ran. Every later call from that box passed
     // agentMayUseConnector unconditionally.
     const storedOps = grantFor('ops');
-    const runningSupport = grantFor('support', { connectors: ['zendesk'], kortixCli: [] });
+    const runningSupport = grantFor('support', { connectors: ['zendesk'], permissions: [] });
     expect(remintDecisionFor(storedOps, runningSupport)).toEqual({
       action: 'write',
       grant: runningSupport,

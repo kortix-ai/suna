@@ -3,28 +3,26 @@ import {
   createMockCreditAccount,
   createMockRevenueCatEvent,
   mockRegistry,
-  registerCreditsMock,
+  registerWalletMock,
+  fakeWallet,
   registerGlobalMocks,
   resetMockRegistry,
 } from './billing/mocks';
 
 registerGlobalMocks();
-registerCreditsMock();
+registerWalletMock();
 
-let grantCreditsCalls: any[] = [];
+const walletGrants = fakeWallet.calls.grant;
 let upsertCreditAccountCalls: any[] = [];
 
 beforeEach(() => {
-  grantCreditsCalls = [];
+  walletGrants.length = 0;
   upsertCreditAccountCalls = [];
   resetMockRegistry();
 
   mockRegistry.getCreditAccount = async () => createMockCreditAccount({ stripeSubscriptionId: null });
   mockRegistry.upsertCreditAccount = async (id: string, data: any) => {
     upsertCreditAccountCalls.push({ accountId: id, data });
-  };
-  mockRegistry.grantCredits = async (...args: any[]) => {
-    grantCreditsCalls.push(args);
   };
   mockRegistry.resolveAccountId = async (userId: string) => `${userId}_account`;
   mockRegistry.stripeClient = {
@@ -51,7 +49,7 @@ describe('processRevenueCatWebhook canonical account writes', () => {
     expect(upsertCreditAccountCalls[0].data.paymentStatus).toBe('active');
     expect(upsertCreditAccountCalls[0].data.revenuecatCustomerId).toBe('rc_customer_123');
     expect(upsertCreditAccountCalls[0].data.revenuecatSubscriptionId).toBe('rc_txn_123');
-    expect(grantCreditsCalls[0][0]).toBe('legacy_user_123_account');
+    expect(walletGrants[0].accountId).toBe('legacy_user_123_account');
     expect((result as any).account_id).toBe('legacy_user_123_account');
   });
 });

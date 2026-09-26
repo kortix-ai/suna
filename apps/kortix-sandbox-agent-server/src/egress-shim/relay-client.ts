@@ -57,7 +57,6 @@ export interface RelayClientOptions {
   readonly apiUrl: string
   readonly projectId: string
   readonly token: string
-  readonly brokerFetch?: typeof fetch
 }
 
 /** How long the one-shot capability probe may take before we assume legacy. */
@@ -106,9 +105,8 @@ export async function probeRelay(
   options: RelayClientOptions,
   identifier: string,
 ): Promise<boolean> {
-  const call = options.brokerFetch ?? fetch
   try {
-    const response = await call(relayUrl(options, identifier), {
+    const response = await fetch(relayUrl(options, identifier), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${options.token}`,
@@ -225,7 +223,6 @@ export async function relayStreaming(
    */
   onTruncated?: () => void,
 ): Promise<Response> {
-  const call = options.brokerFetch ?? fetch
   const contentEncoding = request.headers.get('content-encoding')?.trim() ?? ''
   const declared = request.headers.get('content-length')
   const hasBody = request.body !== null && request.method !== 'GET' && request.method !== 'HEAD'
@@ -252,7 +249,7 @@ export async function relayStreaming(
     hasBody: body !== null,
   })
 
-  const response = await call(relayUrl(options, rule.identifier), {
+  const response = await fetch(relayUrl(options, rule.identifier), {
     method: 'POST',
     headers: {
       authorization: `Bearer ${options.token}`,

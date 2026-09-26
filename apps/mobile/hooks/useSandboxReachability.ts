@@ -83,6 +83,11 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
           downSince = Date.now();
         }
         downSinceRef.current = downSince;
+        // Keep the same object when nothing changed so consumers skip the
+        // re-render on every 10 s probe.
+        if (prev.checked && prev.reachable === isReachable && prev.downSince === downSince) {
+          return prev;
+        }
         return { checked: true, reachable: isReachable, downSince };
       });
     };

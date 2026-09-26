@@ -11,7 +11,7 @@ not a finding, and a rule is only checked against the protocol it applies to
 ("all protocols" applies to both TCP and UDP).
 
   ./audit-nacl-admin-ports.py                       # current credentials
-  ./audit-nacl-admin-ports.py --profile essentia    # a specific account
+  ./audit-nacl-admin-ports.py --profile sampleco    # a specific account
   ./audit-nacl-admin-ports.py --region us-east-2    # one region
   ./audit-nacl-admin-ports.py --json                # machine-readable
 

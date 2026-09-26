@@ -72,10 +72,11 @@ export interface OpenEventStreamOptions {
    *  throw here is caught and logged — one bad handler must never break the
    *  stream or crash the host. */
   onEvent: (event: OpenCodeEvent) => void;
-  /** Called when a reconnect follows a stream gap > 5s, with the gap size in
-   *  ms. Lets the host re-hydrate anything it fears went stale (e.g. replay
-   *  messages for busy sessions) — the machine itself holds no host state to
-   *  re-hydrate. */
+  /** Called once a reconnect is ESTABLISHED, with the gap in ms from the last
+   *  frame received to the new connection. Fires when the dropped stream had
+   *  delivered events, or when the gap exceeds 5s. Lets the host re-hydrate
+   *  anything it fears went stale (e.g. replay messages for busy sessions) —
+   *  the machine itself holds no host state to re-hydrate. */
   onGapRehydrate?: (gapMs: number) => void;
   /** External signal that also stops the stream when aborted (in addition to
    *  calling `close()` on the returned handle). Optional — most hosts just use
@@ -287,6 +288,14 @@ function createLiveStream(
   // idle SSE connections that carried no events.
   let lastStreamActivityTime = t.now();
 
+  // A drop that has not been repaired yet. `/global/event` has no replay, so
+  // frames emitted between the drop and the next connection are lost. The
+  // repair (`onGapRehydrate`) runs once the NEXT connection is established:
+  // a re-list issued before that could miss frames emitted before the new
+  // stream subscribes. Survives failed attempts, so a run of failed connects
+  // still ends in exactly one rehydrate.
+  let pendingGap: { lastActivityAt: number; eventful: boolean } | null = null;
+
   // Event coalescing queue (like the SolidJS reference)
   let queue: ({ type: string; event: OpenCodeEvent } | undefined)[] = [];
   let flushTimer: EventStreamTimerHandle | undefined;
@@ -333,6 +342,8 @@ function createLiveStream(
     let consecutiveHardFailures = 0;
     while (!abortController.signal.aborted) {
       let streamHadEvents = false;
+      // Events other than the connection's own `server.connected` greeting.
+      let streamHadWork = false;
       let stableConnection = false;
       let heartbeatTimer: EventStreamTimerHandle | undefined;
       let connectTimer: EventStreamTimerHandle | undefined;
@@ -417,6 +428,20 @@ function createLiveStream(
             );
         });
         const { stream } = result;
+
+        // Repair the previous drop now that a live stream exists. The gap runs
+        // from the last frame received to this connection. A dropped stream
+        // that was delivering events always repairs — its outage window may
+        // have held any frame. An idle one repairs only past 5s, so routine
+        // idle rotation does not re-read every transcript.
+        if (pendingGap) {
+          const gap = t.now() - pendingGap.lastActivityAt;
+          const eventful = pendingGap.eventful;
+          pendingGap = null;
+          if (eventful || gap > GAP_REHYDRATE_MS) {
+            dispatchToSubscribers((sub) => sub.onGapRehydrate, gap);
+          }
+        }
         lastStreamActivityTime = t.now();
 
         // Heartbeat timeout — if no events arrive within the idle budget
@@ -465,6 +490,8 @@ function createLiveStream(
             raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
           ) as OpenCodeEvent;
           if (!e?.type) continue;
+          // The connection's own greeting is not work that a drop could lose.
+          if (e.type !== 'server.connected') streamHadWork = true;
 
           const ck = getCoalesceKey(e);
           if (ck) {
@@ -579,14 +606,15 @@ function createLiveStream(
         break;
       }
 
-      // Re-hydrate messages for loaded sessions when the SSE gap was
-      // significant (>5s). Events missed during the gap (e.g. streaming
-      // assistant response) would never arrive, leaving the UI stale until
-      // the user manually refreshes.
-      const gap = t.now() - lastStreamActivityTime;
-      if (gap > GAP_REHYDRATE_MS) {
-        dispatchToSubscribers((sub) => sub.onGapRehydrate, gap);
-      }
+      // Record the drop. Events missed while no connection exists (e.g. a
+      // streaming assistant response, a permission ask) never arrive, so the
+      // host re-hydrates once the next connection is up (see `pendingGap`).
+      // A drop that is still unrepaired (a failed reconnect) keeps its start.
+      const unrepaired = pendingGap as { lastActivityAt: number; eventful: boolean } | null;
+      pendingGap = {
+        lastActivityAt: lastStreamActivityTime,
+        eventful: (unrepaired?.eventful ?? false) || streamHadWork,
+      };
 
       if (stableConnection) {
         // Fast reconnect after healthy streams so live streaming resumes

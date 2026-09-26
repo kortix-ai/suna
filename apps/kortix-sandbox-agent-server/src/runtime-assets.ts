@@ -17,11 +17,12 @@ import type {
   HarnessAssetsService,
 } from './harness/assets'
 import { logger } from './logger'
+import { withReleaseStoreLock } from './boot-config'
 
 /**
  * What the convergence pass is doing RIGHT NOW, for the proxy's not-ready
  * answers (X-Kortix-Boot-Phase). A pass that installs a new OpenCode pin can
- * hold a box in "not ready" for a minute or more (Essentia 2026-08-25:
+ * hold a box in "not ready" for a minute or more (SampleCo 2026-08-25:
  * 1.18.19 → 1.18.23 on resume, 53 s first init on top); the API's boot budget
  * must be able to tell "still working" from "stuck", and this is the signal.
  */
@@ -137,14 +138,10 @@ export interface RuntimeAssetsOptions {
   /** Active harness config dir; the overlay is re-applied into it after an update. */
   configDir?: string
   fetchImpl?: typeof fetch
-  /** Injected for tests; production uses the daemon's own overlay routine. */
-  injectSkills?: (configDir: string, bakedDir: string) => Promise<void>
   /** Where `agent.next` is staged. Defaults to `$KORTIX_AGENT_STATE_DIR`. */
   agentStateDir?: string
   /** The immutable baked daemon. Defaults to `$KORTIX_AGENT_BIN`. */
   agentBakedPath?: string
-  /** Override "which binary is this process running from". Tests only. */
-  runningAgentPath?: string
   /** Harness-owned installation and injection; live when registered at boot. */
   assets?: HarnessAssetsService
 }
@@ -220,7 +217,7 @@ export function overlayHash(files: OverlayFile[]): string {
  * has no such check is one compromised response away from writing anywhere the
  * daemon can reach, and the daemon is root.
  */
-export function isSafeOverlayPath(path: string): boolean {
+function isSafeOverlayPath(path: string): boolean {
   if (!path || path.startsWith('/') || path.startsWith('-')) return false
   if (!path.startsWith('kortix-')) return false
   return path
@@ -366,42 +363,111 @@ function resolveArtifactUrl(apiRoot: string, path: unknown, fallback: string): s
   return `${origin}${path}`
 }
 
-async function replaceCli(
+/**
+ * Give the daemon write access to the directory that holds the CLI.
+ *
+ * The shipped image now bakes this (platform-binaries.ts
+ * SANDBOX_CLI_OWNERSHIP_COMMAND), but a box already running an older snapshot
+ * cannot wait for a rebuild, and it is exactly the box whose CLI has drifted
+ * from the manifest. The image grants `kortix` NOPASSWD:ALL sudo, so one
+ * non-interactive `chown` converges the live box to the state the new image
+ * bakes. `-n` means a box WITHOUT that sudo rule fails immediately instead of
+ * hanging on a password prompt.
+ */
+async function sudoOwnDir(dir: string): Promise<boolean> {
+  try {
+    const uid = process.getuid?.() ?? 0
+    const gid = process.getgid?.() ?? 0
+    const proc = Bun.spawn(['sudo', '-n', 'chown', `${uid}:${gid}`, dir], {
+      stdout: 'ignore',
+      stderr: 'ignore',
+      stdin: 'ignore',
+    })
+    return (await proc.exited) === 0
+  } catch {
+    return false
+  }
+}
+
+export interface ReplaceCliDeps {
+  /** Seam for the escalation. Returns true when it believes it changed something. */
+  unlockDir?: (dir: string) => Promise<boolean>
+  /** Seam for observing the first failure's reason. */
+  onUnlockAttempt?: (reason: string) => void
+}
+
+/**
+ * Install a verified CLI binary at `cliPath`.
+ *
+ * Exported for `runtime-assets-cli-replace.test.ts`, which drives it against a
+ * REAL unwritable directory — the permission failure this function has to
+ * survive is a property of the filesystem, not of a mock.
+ */
+export async function replaceCli(
   cliPath: string,
   expectedSha: string,
   body: ArrayBuffer,
+  deps: ReplaceCliDeps = {},
 ): Promise<'updated' | 'failed'> {
-  // Same directory as the target: `rename` is only atomic within one filesystem,
-  // and a cross-device temp file would fail with EXDEV.
-  const tmpPath = join(
-    dirname(cliPath),
-    `.kortix.download.${process.pid}.${Math.random().toString(36).slice(2, 10)}`,
-  )
-  try {
-    // Buffered, not streamed. `Bun.write(path, response)` hangs on a streamed
-    // Response in this runtime (a known incident in this repo), and a
-    // hash-while-streaming pipeline is more machinery than the numbers justify:
-    // the binary is ~100 MB on a sandbox with at least 4 GB, the buffer is
-    // transient, and the reconcile runs at most once per session start.
-    const bytes = Buffer.from(body)
-    await writeFile(tmpPath, bytes)
-    if (!verifyArtifact(bytes, expectedSha)) {
-      logger.warn('[runtime-assets] CLI download digest mismatch — keeping the installed binary', {
-        expected: expectedSha,
-      })
-      return 'failed'
-    }
-    await chmod(tmpPath, 0o755)
-    // Atomic on Linux: a `kortix` already running keeps its open inode, and no
-    // caller can ever observe a half-written binary at this path.
-    await rename(tmpPath, cliPath)
-    return 'updated'
-  } catch (err) {
-    logger.warn('[runtime-assets] CLI replace failed', { err: String(err) })
+  // Buffered, not streamed. `Bun.write(path, response)` hangs on a streamed
+  // Response in this runtime (a known incident in this repo), and a
+  // hash-while-streaming pipeline is more machinery than the numbers justify:
+  // the binary is ~100 MB on a sandbox with at least 4 GB, the buffer is
+  // transient, and the reconcile runs at most once per session start.
+  const bytes = Buffer.from(body)
+  // Verify BEFORE touching the filesystem: a digest mismatch must not even
+  // create a temp file, and it must not be mistaken for a permission problem.
+  if (!verifyArtifact(bytes, expectedSha)) {
+    logger.warn('[runtime-assets] CLI download digest mismatch — keeping the installed binary', {
+      expected: expectedSha,
+    })
     return 'failed'
-  } finally {
-    await rm(tmpPath, { force: true }).catch(() => {})
   }
+
+  const dir = dirname(cliPath)
+  const attempt = async (): Promise<'updated' | string> => {
+    // Same directory as the target: `rename` is only atomic within one
+    // filesystem, and a cross-device temp file would fail with EXDEV.
+    const tmpPath = join(
+      dir,
+      `.kortix.download.${process.pid}.${Math.random().toString(36).slice(2, 10)}`,
+    )
+    try {
+      await writeFile(tmpPath, bytes)
+      await chmod(tmpPath, 0o755)
+      // Atomic on Linux: a `kortix` already running keeps its open inode, and no
+      // caller can ever observe a half-written binary at this path.
+      await rename(tmpPath, cliPath)
+      return 'updated'
+    } catch (err) {
+      return String(err)
+    } finally {
+      await rm(tmpPath, { force: true }).catch(() => {})
+    }
+  }
+
+  const first = await attempt()
+  if (first === 'updated') return 'updated'
+  deps.onUnlockAttempt?.(first)
+
+  // Both the temp-file create and the rename draw their permission from the
+  // DIRECTORY, so this is the only failure worth escalating for. Exactly one
+  // retry: if unlocking did not actually help, retrying again never will.
+  const unlock = deps.unlockDir ?? sudoOwnDir
+  if (!(await unlock(dir))) {
+    logger.warn('[runtime-assets] CLI replace failed and the directory could not be unlocked', {
+      dir,
+      err: first,
+    })
+    return 'failed'
+  }
+  const second = await attempt()
+  if (second === 'updated') {
+    logger.info('[runtime-assets] CLI replaced after unlocking its directory', { dir })
+    return 'updated'
+  }
+  logger.warn('[runtime-assets] CLI replace failed', { dir, err: second })
+  return 'failed'
 }
 
 // ── Agent staging ──────────────────────────────────────────────────────────
@@ -443,7 +509,6 @@ function isCompiledStandalone(): boolean {
  * single start — for ever.
  */
 async function resolveRunningAgentPath(options: RuntimeAssetsOptions): Promise<string> {
-  if (options.runningAgentPath) return options.runningAgentPath
   if (isCompiledStandalone() && process.execPath) return process.execPath
   const current = join(agentStateDirOf(options), 'agent.current')
   const usable = await stat(current).then(
@@ -581,8 +646,6 @@ export async function reconcileRuntimeAssets(
   const skillsDir = options.managedSkillsDir ?? DEFAULT_MANAGED_SKILLS_DIR
   const statePath = options.statePath ?? DEFAULT_STATE_PATH
   const assets = options.assets ?? resolveHarness().assets
-  const inject = options.injectSkills ?? ((configDir: string, bakedDir: string) =>
-    assets.injectSkills(configDir, bakedDir))
   const token = (
     options.token ??
     process.env.KORTIX_TOKEN ??
@@ -717,7 +780,20 @@ export async function reconcileRuntimeAssets(
           )
           skills = 'failed'
         } else {
-          await writeOverlay(skillsDir, payload.files)
+          // Rewrite the overlay and re-apply it to the live config dir in ONE
+          // section of the release-store lock: a release verification that
+          // saw the new overlay names without the injected files, or the
+          // injected files without the names, reported an added file and
+          // rebuilt the running release (DEF-5). The boot-time injection
+          // already ran, so nothing else would pick the new bodies up.
+          await withReleaseStoreLock(async () => {
+            await writeOverlay(skillsDir, payload.files)
+            if (options.configDir) {
+              await assets.injectSkills(options.configDir, skillsDir).catch((err) =>
+                logger.warn('[runtime-assets] overlay re-injection failed', { err: String(err) }),
+              )
+            }
+          })
           nextState.managed_skills_hash = skillsHash
           skills = 'updated'
           logger.info('[runtime-assets] managed-skill overlay updated from the API', {
@@ -730,14 +806,6 @@ export async function reconcileRuntimeAssets(
   } catch (err) {
     logger.warn('[runtime-assets] managed-skill reconcile failed', { err: String(err) })
     skills = 'failed'
-  }
-
-  // Re-apply the overlay into the live config dir whenever the bodies changed —
-  // the boot-time injection already ran, so nothing else would pick this up.
-  if (skills === 'updated' && options.configDir) {
-    await inject(options.configDir, skillsDir).catch((err) =>
-      logger.warn('[runtime-assets] overlay re-injection failed', { err: String(err) }),
-    )
   }
 
   // ── Agent — STAGE ONLY ─────────────────────────────────────────────────────
@@ -952,8 +1020,6 @@ export interface AgentSwapOptions {
   exit?: (code: number) => void
   /** Seconds this process has been up. Injected by tests. */
   uptimeMs?: number
-  /** Override the settle window. Tests only. */
-  minUptimeMs?: number
 }
 
 /**
@@ -985,7 +1051,7 @@ export async function requestAgentSwapIfIdle(
     if (await agentUpdatesPinned(stateDir)) return 'pinned'
 
     const uptimeMs = options.uptimeMs ?? process.uptime() * 1000
-    if (uptimeMs < (options.minUptimeMs ?? AGENT_SWAP_MIN_UPTIME_MS)) return 'too-young'
+    if (uptimeMs < AGENT_SWAP_MIN_UPTIME_MS) return 'too-young'
 
     const probe = options.turnInFlight ?? swapConfig?.turnInFlight
     if (!probe) return 'not-configured'

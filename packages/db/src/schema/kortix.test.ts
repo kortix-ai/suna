@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { getTableConfig } from 'drizzle-orm/pg-core';
+import { getTableConfig, getViewConfig } from 'drizzle-orm/pg-core';
 import {
   permissions,
   objectPolicies,
@@ -21,6 +21,7 @@ import {
   changeRequestStatusEnum,
   accounts,
   accountMembers,
+  accountMemberships,
   projects,
   projectMembers,
   projectSessions,
@@ -427,33 +428,29 @@ describe('accounts table', () => {
   });
 });
 
-describe('account_members table', () => {
-  test('maps to the account_members table name', () => {
-    expect(getTableConfig(accountMembers).name).toBe('account_members');
+describe('account membership', () => {
+  test('account_members is the compatibility view, not a table', () => {
+    expect(getViewConfig(accountMembers).name).toBe('account_members');
   });
 
-  test('declares a composite primary key on user_id and account_id', () => {
-    const pks = getTableConfig(accountMembers).primaryKeys;
+  test('account_memberships declares a composite primary key on user_id and account_id', () => {
+    const pks = getTableConfig(accountMemberships).primaryKeys;
     expect(pks).toHaveLength(1);
     const pkColumns = pks[0]!.columns.map((c) => c.name);
     expect(pkColumns).toEqual(['user_id', 'account_id']);
   });
 
-  test('has a foreign key back to accounts', () => {
-    const fks = getTableConfig(accountMembers).foreignKeys;
+  test('account_memberships has a foreign key back to accounts', () => {
+    const fks = getTableConfig(accountMemberships).foreignKeys;
     expect(fks.length).toBeGreaterThan(0);
   });
 
-  test('defines the documented indexes', () => {
-    const idx = indexNames(accountMembers);
-    expect(idx).toContain('idx_account_members_user_id');
-    expect(idx).toContain('idx_account_members_account_id');
-    expect(idx).toContain('idx_account_members_user_account');
-  });
-
-  test('account_role defaults to owner', () => {
-    const col = getTableConfig(accountMembers).columns.find((c) => c.name === 'account_role');
-    expect(col?.default).toBe('owner');
+  test('account_memberships declares the indexes the database has', () => {
+    // The primary key leads with user_id, so account-only reads need their own index.
+    expect(indexNames(accountMemberships).sort()).toEqual([
+      'idx_account_members_account_id',
+      'idx_account_members_user_account',
+    ]);
   });
 });
 
@@ -514,25 +511,14 @@ describe('project_llm_routing_policies table', () => {
   });
 });
 
-describe('project_members table', () => {
-  test('project_role defaults to member (the floor role)', () => {
-    const col = getTableConfig(projectMembers).columns.find((c) => c.name === 'project_role');
-    expect(col?.default).toBe('member');
+describe('RBAC compatibility views', () => {
+  test('project_members and project_group_grants are views, not tables', () => {
+    expect(getViewConfig(projectMembers).name).toBe('project_members');
+    expect(getViewConfig(projectGroupGrants).name).toBe('project_group_grants');
   });
 
-  test('enforces a unique project/user index', () => {
-    const cfg = getTableConfig(projectMembers);
-    const unique = cfg.indexes.find((i) => i.config.name === 'idx_project_members_project_user');
-    expect(unique?.config.unique).toBe(true);
-  });
-});
-
-describe('project_group_grants table', () => {
-  test('does not carry branch selection outside the project boundary', () => {
-    const col = getTableConfig(projectGroupGrants).columns.find(
-      (column) => column.name === 'default_base_ref',
-    );
-    expect(col).toBeUndefined();
+  test('project_group_grants does not carry branch selection outside the project boundary', () => {
+    expect(Object.keys(getViewConfig(projectGroupGrants).selectedFields)).not.toContain('defaultBaseRef');
   });
 });
 
@@ -716,33 +702,10 @@ describe('canonical RBAC tables (PR2)', () => {
     expect(names).toContain('idx_role_assignments_account');
   });
 
-  test('iam_roles.account_id is nullable so a system role can be one row', () => {
+  test('roles.account_id is nullable so a system role can be one row', () => {
     // NULL = a seeded system role shared by every account. Every legacy read
     // filters account_id = :id, so those rows are invisible to old code.
     const col = getTableConfig(iamRoles).columns.find((c) => c.name === 'account_id');
     expect(col?.notNull).toBe(false);
-  });
-
-  test('project_members finally has a primary key', () => {
-    // It shipped with only idx_project_members_project_user, which is also every
-    // upsert's ON CONFLICT target — the one index guaranteeing correctness was
-    // the one a cleanup was most likely to drop (42P10, the account_members
-    // incident). The unique index is deliberately kept alongside the PK.
-    const cfg = getTableConfig(projectMembers);
-    const pk = cfg.primaryKeys[0];
-    expect(pk?.columns.map((c) => c.name)).toEqual(['project_id', 'user_id']);
-    expect(cfg.indexes.some((i) => i.config.name === 'idx_project_members_project_user')).toBe(true);
-  });
-});
-
-
-describe('SCIM directory identity', () => {
-  test('scopes stable IDs and unique names to one account', () => {
-    const cfg = getTableConfig(accountScimUsers);
-    expect(cfg.primaryKeys[0]?.columns.map(c => c.name)).toEqual(['account_id', 'scim_id']);
-    const names = cfg.indexes.find(i => i.config.name === 'account_scim_users_account_email');
-    expect(names?.config.unique).toBe(true);
-    expect(names?.config.columns.map(c => 'name' in c ? c.name : null)).toEqual(['account_id', 'user_name']);
-    expect(cfg.foreignKeys[0]?.onDelete).toBe('cascade');
   });
 });

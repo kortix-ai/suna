@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from '@/lib/logger';
 
@@ -21,8 +21,7 @@ interface AdvancedFeaturesProviderProps {
  * AdvancedFeaturesProvider
  * 
  * Provides shared state for Advanced Features across the entire app.
- * This ensures that when the toggle is changed in SettingsPage,
- * all other components immediately reflect the change.
+ * When the toggle changes, every consumer reflects the change at once.
  * 
  * Features:
  * - Shared state across all components
@@ -69,12 +68,15 @@ export function AdvancedFeaturesProvider({ children }: AdvancedFeaturesProviderP
     return setEnabled(!isEnabled);
   }, [isEnabled, setEnabled]);
 
-  const value: AdvancedFeaturesContextType = {
-    isEnabled,
-    isLoading,
-    setEnabled,
-    toggle,
-  };
+  const value = useMemo<AdvancedFeaturesContextType>(
+    () => ({
+      isEnabled,
+      isLoading,
+      setEnabled,
+      toggle,
+    }),
+    [isEnabled, isLoading, setEnabled, toggle]
+  );
 
   return (
     <AdvancedFeaturesContext.Provider value={value}>

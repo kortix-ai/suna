@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 667,
+  "count": 675,
   "routes": [
     {
       "method": "GET",
@@ -515,6 +515,10 @@
       "path": "/v1/accounts/:accountId/iam/sso/provider/from-metadata"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/sso/provider/verify-domain"
+    },
+    {
       "method": "GET",
       "path": "/v1/accounts/:accountId/invites"
     },
@@ -641,6 +645,10 @@
     {
       "method": "POST",
       "path": "/v1/admin/api/accounts/:id/session-limit"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/admin/api/accounts/:id/sso-domain-verification"
     },
     {
       "method": "GET",
@@ -956,11 +964,19 @@
     },
     {
       "method": "POST",
+      "path": "/v1/channels/slack/identity/preview"
+    },
+    {
+      "method": "POST",
       "path": "/v1/channels/teams/identity/bind"
     },
     {
       "method": "GET",
       "path": "/v1/channels/teams/identity/login/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/channels/teams/identity/preview"
     },
     {
       "method": "POST",
@@ -1456,6 +1472,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/agents"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
@@ -1612,6 +1632,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/channels/slack/oauth/complete"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/channels/teams/connect"
     },
     {
@@ -1647,6 +1671,10 @@
       "path": "/v1/projects/:projectId/channels/teams/mode"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/oauth/complete"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/cli-token"
     },
@@ -1669,6 +1697,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/commits/:sha/diff"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/config-archives/:configTreeId"
     },
     {
       "method": "POST",
@@ -1701,6 +1733,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connections/:connectionId/default"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connections/:connectionId/label"
     },
     {
       "method": "GET",
@@ -2129,6 +2165,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/config"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/config-release"
     },
     {
       "method": "GET",

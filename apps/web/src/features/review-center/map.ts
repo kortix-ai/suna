@@ -1,25 +1,17 @@
 /**
- * Map the API's `review_items` row shape into the inbox's `ReviewItem` view
- * model. The polymorphic `detail` jsonb already arrives in the kind-specific
- * shape the agent submitted, so it passes through; the plain-language action
- * labels and the actor are derived from the kind + agent. See review-center.tsx.
+ * Map the API's `review_items` row into the inbox's `ReviewItem`. The row → item
+ * mapping (detail normalization, display title, summary) lives in `@kortix/sdk`,
+ * shared with mobile. This module adds what only the web inbox shows: the
+ * plain-language action labels and the actor avatar. See review-center.tsx.
  */
 
-import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk';
-import type {
-  ApprovalAction,
-  ApprovalActionIcon,
-  ApprovalDetail,
-  BatchDetail,
-  ChangeDetail,
-  DecisionDetail,
-  OutputDetail,
-  RequestedChange,
-  ReviewItem,
-  ReviewKind,
-  ReviewRisk,
-  ReviewStatus,
-} from './types';
+import {
+  humanizeReviewActionPath,
+  mapApiReviewItem as mapSdkReviewItem,
+  reviewVerdictForStatus,
+  type ApiReviewItem,
+} from '@kortix/sdk';
+import type { ReviewItem, ReviewKind } from './types';
 
 /** Plain-language primary action per kind (the row's CTA + the modal footer). */
 export const PRIMARY_ACTION: Record<ReviewKind, string> = {
@@ -37,30 +29,9 @@ export const SECONDARY_ACTION: Partial<Record<ReviewKind, string>> = {
   batch: 'Open list',
 };
 
-/** Title-case a dotted/underscored slug: `send_email` → `Send Email`. */
-function titleCase(slug: string): string {
-  return slug
-    .split(/[._-]/)
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
-}
-
 /** A friendly label for a connector tool path: `gmail.send_email` → `(Gmail)
- *  Send Email`. The connector is the first segment; the rest is the action. */
-export function humanizeActionPath(path: string): string {
-  const dot = path.indexOf('.');
-  if (dot <= 0) return titleCase(path);
-  return `(${titleCase(path.slice(0, dot))}) ${titleCase(path.slice(dot + 1))}`;
-}
-
-/** Split a `connector.action` path into its two parts (connector = first segment). */
-function splitActionPath(path: string): { connector: string; action: string } {
-  const dot = path.indexOf('.');
-  return dot > 0
-    ? { connector: path.slice(0, dot), action: path.slice(dot + 1) }
-    : { connector: path, action: '' };
-}
+ *  Send Email`. */
+export const humanizeActionPath = humanizeReviewActionPath;
 
 /** Two-letter avatar initials from an agent label. */
 export function agentInitials(name: string): string {
@@ -69,207 +40,19 @@ export function agentInitials(name: string): string {
   return `${parts[0][0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase() || 'AI';
 }
 
-// ── detail normalization ────────────────────────────────────────────────────
-// The API `detail` is polymorphic jsonb that arrives in three different shapes:
-// the rich payload a native agent submission carries, the THIN adapter payload a
-// Change Request produces (`{cr_id, base_ref, head_ref, description}`), or the
-// thin connector-approval payload (`{execution_id, action_path, connector_id}`).
-// The modal bodies expect the full view-model shape, so we never pass the raw
-// detail through — we build a complete, defaulted detail for every kind. This is
-// what stops `ChangeBody` from reading `.map` of an undefined `whatChanged`.
-
-type AnyRec = Record<string, unknown>;
-const rec = (v: unknown): AnyRec =>
-  v && typeof v === 'object' && !Array.isArray(v) ? (v as AnyRec) : {};
-const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
-const arrOf = <T>(v: unknown): T[] | undefined => (Array.isArray(v) ? (v as T[]) : undefined);
-const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
-const lines = (s: string): string[] =>
-  s
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-function changeDetail(d: AnyRec, row: ApiReviewItem): ChangeDetail {
-  const adv = rec(d.advanced);
-  // The description is plain text: one bullet per line. A native structured
-  // `whatChanged` array always wins over the free-form description.
-  const description = str(d.description);
-  const native = arrOf<string>(d.whatChanged);
-  const whatChanged =
-    native ?? (description ? lines(description) : row.summary ? [row.summary] : []);
-  return {
-    crId: str(d.cr_id),
-    number: typeof d.number === 'number' ? d.number : undefined,
-    whatChanged,
-    impact: str(d.impact) ?? '',
-    verification: arrOf<ChangeDetail['verification'][number]>(d.verification) ?? [],
-    previewUrl: str(d.previewUrl) ?? str(d.preview_url),
-    conflicts: arrOf<string>(d.conflicts),
-    requestedChanges: arrOf<RequestedChange>(d.requested_changes) ?? [],
-    advanced: {
-      headRef: str(adv.headRef) ?? str(d.head_ref) ?? '',
-      baseRef: str(adv.baseRef) ?? str(d.base_ref) ?? '',
-      headSha: str(adv.headSha) ?? str(d.head_sha) ?? str(d.head_commit_sha) ?? '',
-      baseSha: str(adv.baseSha) ?? str(d.base_sha) ?? '',
-      additions: num(adv.additions),
-      deletions: num(adv.deletions),
-      files: arrOf<ChangeDetail['advanced']['files'][number]>(adv.files) ?? [],
-      mergeMode: str(adv.mergeMode) ?? 'merge',
-    },
-  };
-}
-
-function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
-  const given = arrOf<AnyRec>(d.actions);
-  if (given) {
-    return {
-      actions: given.map((a, i) => ({
-        id: str(a.id) ?? `${row.review_item_id}-${i}`,
-        title: str(a.title) ?? 'Action',
-        connector: str(a.connector) ?? '',
-        action: str(a.action) ?? '',
-        consequence: str(a.consequence) ?? '',
-        risk: (str(a.risk) as ReviewRisk) ?? row.risk,
-        icon: (str(a.icon) as ApprovalActionIcon) ?? 'generic',
-        argsPreview: arrOf<ApprovalAction['argsPreview'][number]>(a.argsPreview) ?? [],
-        policySource: str(a.policySource) ?? 'Requires approval',
-        decided: a.decided === 'approved' || a.decided === 'denied' ? a.decided : undefined,
-      })),
-    };
-  }
-  // Connector-approval adapter → a single action built from the call descriptor.
-  // `action_path` is `connector.action` (e.g. `gmail.send_email`); the row's
-  // `connector_id` is an opaque UUID, so we take the connector NAME from the path.
-  const path = str(d.action_path) ?? '';
-  const { connector, action } = splitActionPath(path);
-  const rawArgsPreview = rec(d.args_preview);
-  const hasArgsPreview = Object.keys(rawArgsPreview).length > 0;
-  const argsPreview = Object.entries(rawArgsPreview).map(([key, value]) => ({
-    key,
-    value:
-      value === '[redacted]'
-        ? 'Hidden credential'
-        : typeof value === 'string'
-          ? value
-          : JSON.stringify(value, null, 2),
-  }));
-  return {
-    actions: [
-      {
-        id: str(d.execution_id) ?? row.review_item_id,
-        title: path ? humanizeActionPath(path) : row.title || 'Run action',
-        connector,
-        action,
-        consequence: 'Runs against the real connector once you approve',
-        risk: row.risk,
-        icon: 'generic',
-        argsPreview,
-        actionPath: path,
-        rawArgsPreview: hasArgsPreview ? rawArgsPreview : undefined,
-        reviewComplete: d.args_preview_complete === true,
-        // The API omits `args_preview` entirely for a viewer without argument
-        // visibility, which is indistinguishable from "the row recorded none".
-        previewAuthorized: d.args_preview_authorized !== false,
-        connectorRisk: str(d.risk) ?? null,
-        policySource: 'Requires approval',
-      },
-    ],
-  };
-}
-
-function outputDetail(d: AnyRec, row: ApiReviewItem): OutputDetail {
-  return {
-    artifactKind: (str(d.artifactKind) as OutputDetail['artifactKind']) ?? 'document',
-    artifactLabel: str(d.artifactLabel) ?? 'Output',
-    previewUrl: str(d.previewUrl) ?? str(d.preview_url),
-    preview: str(d.preview),
-    files: arrOf<NonNullable<OutputDetail['files']>[number]>(d.files),
-    note: str(d.note) ?? row.summary ?? '',
-  };
-}
-
-function decisionDetail(d: AnyRec, row: ApiReviewItem): DecisionDetail {
-  return {
-    question: str(d.question) ?? row.title ?? '',
-    context: str(d.context),
-    options: arrOf<DecisionDetail['options'][number]>(d.options) ?? [],
-  };
-}
-
-function batchDetail(d: AnyRec, row: ApiReviewItem): BatchDetail {
-  return {
-    note: str(d.note) ?? row.summary ?? '',
-    children: arrOf<BatchDetail['children'][number]>(d.children) ?? [],
-  };
-}
-
-// A Change Request's API summary embeds the head branch — a Kortix session
-// branch is an opaque UUID, so it just adds noise to the row. Keep the inbox line
-// clean ("#2 → main"); the full ref stays available in the modal's Advanced view.
-function changeSummary(d: AnyRec, fallback: string): string {
-  const number = typeof d.number === 'number' ? d.number : undefined;
-  const base = str(d.base_ref);
-  if (number != null && base) return `#${number} → ${base}`;
-  return fallback;
-}
-
-function normalizeDetail(kind: ReviewKind, row: ApiReviewItem): ReviewItem['detail'] {
-  const d = rec(row.detail);
-  switch (kind) {
-    case 'change':
-      return changeDetail(d, row);
-    case 'approval':
-      return approvalDetail(d, row);
-    case 'output':
-      return outputDetail(d, row);
-    case 'decision':
-      return decisionDetail(d, row);
-    case 'batch':
-      return batchDetail(d, row);
-  }
-}
-
 export function mapApiReviewItem(
   row: ApiReviewItem,
   projectName: string,
   sessionLabels: Record<string, string> = {},
 ): ReviewItem {
-  const kind = row.kind as ReviewKind;
-  const agent = row.agent || 'Agent';
-  const sessionId = row.origin_session_id ?? undefined;
-  const sessionName = sessionId ? sessionLabels[sessionId] : undefined;
-  // Approval titles arrive as the raw tool path (`Approve: gmail.send_email`);
-  // show a friendly `(Gmail) Send Email` and let the description name the
-  // originating session instead of repeating the path.
-  const actionPath = kind === 'approval' ? str(rec(row.detail).action_path) : undefined;
-  const title = actionPath ? humanizeActionPath(actionPath) : row.title;
-  const summary =
-    kind === 'change'
-      ? changeSummary(rec(row.detail), row.summary)
-      : kind === 'approval'
-        ? (sessionName ?? (sessionId ? 'From a running session' : row.summary))
-        : row.summary;
+  const item = mapSdkReviewItem(row, { sessionLabels });
   return {
-    id: row.review_item_id,
-    kind,
-    title,
-    summary,
-    risk: row.risk,
-    status: row.status as ReviewStatus,
-    source: row.source,
+    ...item,
     project: projectName,
-    agent,
-    actor: { name: agent, initials: agentInitials(agent) },
-    createdAt: row.created_at,
-    sessionId,
-    primaryAction: PRIMARY_ACTION[kind],
-    secondaryAction: SECONDARY_ACTION[kind],
-    // Build a complete, defaulted detail for the kind — never trust the raw jsonb
-    // to already match the discriminated union (CR/connector adapters are thin).
-    detail: normalizeDetail(kind, row),
-    // kind↔detail correlation can't be statically proven across the switch.
-  } as unknown as ReviewItem;
+    actor: { name: item.agent, initials: agentInitials(item.agent) },
+    primaryAction: PRIMARY_ACTION[item.kind],
+    secondaryAction: SECONDARY_ACTION[item.kind],
+  };
 }
 
 /**
@@ -277,19 +60,4 @@ export function mapApiReviewItem(
  * status transitions map onto the API's `/act` verdict. `waiting` (the "resolve
  * with agent" conflict path on change items) has no native verdict.
  */
-export function statusToVerdict(status: ReviewStatus): ReviewVerdict | null {
-  switch (status) {
-    case 'approved':
-      return 'approve';
-    case 'rejected':
-      return 'reject';
-    case 'changes_requested':
-      return 'changes';
-    case 'done':
-      return 'answer';
-    case 'dismissed':
-      return 'dismiss';
-    default:
-      return null;
-  }
-}
+export const statusToVerdict = reviewVerdictForStatus;

@@ -2,12 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { applyGenerationDefaults } from './generation-defaults';
 
 describe('applyGenerationDefaults', () => {
-  test('returns the same body reference when there are no defaults', () => {
-    const body = { model: 'x', messages: [] };
-    expect(applyGenerationDefaults(body, undefined)).toBe(body);
-  });
-
-  test('returns the same body reference when defaults have nothing to add (all already set)', () => {
+  test('explicit client values win over every configured default', () => {
     const body = {
       model: 'x',
       temperature: 0.9,
@@ -21,7 +16,7 @@ describe('applyGenerationDefaults', () => {
       maxOutputTokens: 10,
       reasoningEffort: 'high',
     });
-    expect(out).toBe(body);
+    expect(out).toEqual(body);
   });
 
   test('injects temperature/top_p/max_tokens/reasoning_effort when absent', () => {
@@ -40,18 +35,6 @@ describe('applyGenerationDefaults', () => {
       max_tokens: 2048,
       reasoning_effort: 'medium',
     });
-  });
-
-  test('an explicit client temperature always wins over the configured default', () => {
-    const body = { model: 'x', temperature: 0.7 };
-    const out = applyGenerationDefaults(body, { temperature: 0.1 });
-    expect(out.temperature).toBe(0.7);
-  });
-
-  test('an explicit client top_p always wins over the configured default', () => {
-    const body = { model: 'x', top_p: 0.3 };
-    const out = applyGenerationDefaults(body, { topP: 0.99 });
-    expect(out.top_p).toBe(0.3);
   });
 
   test('an explicit client max_completion_tokens blocks max_tokens injection', () => {

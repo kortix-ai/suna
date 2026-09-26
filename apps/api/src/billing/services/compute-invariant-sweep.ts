@@ -75,7 +75,7 @@ function nonSessionRuntimeBillingStatus(status: string | null): string | null {
  * `sandbox-row-missing` and this sweep would close the meter on a healthy,
  * running box on its very first pass.
  */
-export function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
+function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
   return db
     .select({
       computeId: sandboxComputeSessions.id,

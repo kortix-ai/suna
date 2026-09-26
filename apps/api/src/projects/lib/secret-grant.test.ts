@@ -28,14 +28,14 @@ const {
 function spec(
   name: string,
   env: AgentSpec['env'],
-  extra: Partial<Pick<AgentSpec, 'connectors' | 'kortixCli'>> = {},
+  extra: Partial<Pick<AgentSpec, 'connectors' | 'permissions'>> = {},
 ): AgentSpec {
   return {
     name,
     path: `kortix.yaml#agents.${name}`,
     enabled: true,
     connectors: [],
-    kortixCli: [],
+    permissions: [],
     env,
     file: null,
     model: null,
@@ -80,7 +80,7 @@ describe('effectiveRunningAgent', () => {
 
 describe('agentGrantDiffers', () => {
   const grant = (extra: Record<string, unknown>) =>
-    ({ agent: 'a', kortixCli: 'all', connectors: 'all', env: 'all', ...extra }) as never;
+    ({ agent: 'a', permissions: 'all', connectors: 'all', env: 'all', ...extra }) as never;
 
   test('an identical grant is a free switch', () => {
     expect(agentGrantDiffers(grant({}), grant({}))).toBe(false);
@@ -93,8 +93,8 @@ describe('agentGrantDiffers', () => {
     expect(agentGrantDiffers(grant({}), grant({ connectors: ['calendar'] }))).toBe(true);
   });
 
-  test('a DIFFERENT kortixCli grant is a switch too', () => {
-    expect(agentGrantDiffers(grant({}), grant({ kortixCli: ['session.read'] }))).toBe(true);
+  test('a DIFFERENT permissions grant is a switch too', () => {
+    expect(agentGrantDiffers(grant({}), grant({ permissions: ['session.read'] }))).toBe(true);
   });
 
   test('order and duplicates in a connector list are not a difference', () => {
@@ -270,8 +270,8 @@ describe('resolveSessionSecretGrant', () => {
   test('re-scopes the FULL grant onto the running agent', async () => {
     loadProjectAgentsImpl = async () =>
       loaded([
-        spec('narrow', ['NPM_TOKEN'], { connectors: ['registry'], kortixCli: [] }),
-        spec('broad', 'all', { connectors: 'all', kortixCli: 'all' }),
+        spec('narrow', ['NPM_TOKEN'], { connectors: ['registry'], permissions: [] }),
+        spec('broad', 'all', { connectors: 'all', permissions: 'all' }),
       ]);
 
     const grant = await resolveSessionAgentGrant({
@@ -284,7 +284,7 @@ describe('resolveSessionSecretGrant', () => {
       agent: 'broad',
       env: 'all',
       connectors: 'all',
-      kortixCli: 'all',
+      permissions: 'all',
     });
   });
 
@@ -323,8 +323,8 @@ describe('resolveSessionSecretGrant', () => {
   test('allows a switch between agents whose grants match in every dimension', async () => {
     loadProjectAgentsImpl = async () =>
       loaded([
-        spec('a', ['NPM_TOKEN'], { connectors: ['calendar'], kortixCli: ['session.read'] }),
-        spec('b', ['npm_token'], { connectors: ['calendar'], kortixCli: ['session.read'] }),
+        spec('a', ['NPM_TOKEN'], { connectors: ['calendar'], permissions: ['session.read'] }),
+        spec('b', ['npm_token'], { connectors: ['calendar'], permissions: ['session.read'] }),
       ]);
     await expect(
       resolveSessionSecretGrant({ ...PROJECT, sessionAgent: 'a', requestedAgent: 'b' }),

@@ -1,14 +1,16 @@
 /**
  * The pi harness, black-box through the daemon's own HTTP surface.
  *
- * pi runs in faux mode: a scripted provider, no network, no credentials. What
- * is exercised is real — the agent loop, the bash tool against a temp
- * workspace, the OpenCode wire the SDK parses, the sequenced event stream and
- * the control-plane probes the API polls.
+ * pi runs its REAL model path: the `kortix` provider over pi-ai's
+ * openai-completions client, pointed through `KORTIX_LLM_BASE_URL` +
+ * `KORTIX_TOKEN` at a local OpenAI-compatible fake that streams scripted SSE
+ * chunks (text deltas, tool calls, finish reasons). Everything else is real:
+ * the agent loop, the bash tool against a temp workspace, the OpenCode wire the
+ * SDK parses, the sequenced event stream and the control-plane probes the API
+ * polls.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { createHmac } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadConfig } from '../config'
@@ -17,36 +19,92 @@ import { buildDaemonApp } from '../proxy'
 import { requirePiConfig } from '../harness/pi/config'
 import { createPiHarnessService, type PiHarnessService } from '../harness/pi/service'
 import type { PiBootState } from '../harness/pi/boot-state'
+import { signTestUserContext } from './helpers/open-code-harness'
 
 const TOKEN = 'pi-test-token'
+const MODEL_ID = 'test-model'
 
-function base64url(buf: Buffer): string {
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+/** One scripted model reply: text, a tool call, or text ending on `finish`. */
+type Step = { text: string; finish?: 'stop' | 'length' } | { tool: string; args: Record<string, unknown> }
+
+/**
+ * An OpenAI-compatible `/chat/completions` that answers each request with the
+ * next scripted step as an SSE chunk stream, and records what it was sent.
+ */
+function startFakeGateway() {
+  let script: Step[] = []
+  let calls = 0
+  const requests: Array<{ path: string; auth: string | null }> = []
+  const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
+    `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const url = new URL(req.url)
+      if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
+      await req.text()
+      requests.push({ path: url.pathname, auth: req.headers.get('authorization') })
+      const step: Step = script.shift() ?? { text: '' }
+      calls += 1
+      let body = chunk({ role: 'assistant', content: '' })
+      if ('tool' in step) {
+        const id = `call_${calls}`
+        const args = JSON.stringify(step.args)
+        body += chunk({ tool_calls: [{ index: 0, id, type: 'function', function: { name: step.tool, arguments: '' } }] })
+        body += chunk({ tool_calls: [{ index: 0, function: { arguments: args.slice(0, 5) } }] })
+        body += chunk({ tool_calls: [{ index: 0, function: { arguments: args.slice(5) } }] })
+        body += chunk({}, 'tool_calls')
+      } else {
+        // Two deltas, so the stream carries more than one `message.part.delta`.
+        const half = Math.ceil(step.text.length / 2)
+        if (step.text) body += chunk({ content: step.text.slice(0, half) })
+        if (step.text.length > half) body += chunk({ content: step.text.slice(half) })
+        body += chunk({}, step.finish ?? 'stop')
+      }
+      body += `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`
+      body += 'data: [DONE]\n\n'
+      return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+    },
+  })
+  return {
+    baseUrl: `http://127.0.0.1:${server.port}/v1/llm`,
+    requests,
+    script: (steps: Step[]) => {
+      script = [...steps]
+    },
+    stop: () => server.stop(true),
+  }
 }
 
-function userContext(secret: string): string {
-  const now = Math.floor(Date.now() / 1000)
-  const payloadB64 = base64url(Buffer.from(JSON.stringify({ userId: 'u1', sandboxId: 's1', sandboxRole: 'owner', scopes: [], iat: now, exp: now + 60 })))
-  return `${payloadB64}.${base64url(createHmac('sha256', secret).update(payloadB64).digest())}`
-}
+let gateway: ReturnType<typeof startFakeGateway>
+let catalogDir: string
+beforeAll(() => {
+  gateway = startFakeGateway()
+  catalogDir = mkdtempSync(join(tmpdir(), 'pi-catalog-'))
+  writeFileSync(join(catalogDir, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 64_000, output: 4_096 } } } }))
+})
+afterAll(() => {
+  gateway.stop()
+  rmSync(catalogDir, { recursive: true, force: true })
+})
 
 interface Rig {
   app: ReturnType<typeof buildDaemonApp>
   service: PiHarnessService
   bootState: PiBootState
   workspace: string
+  env: NodeJS.ProcessEnv
   user: (path: string, init?: RequestInit) => Promise<Response>
   bearer: (path: string, init?: RequestInit) => Promise<Response>
 }
 
-let rig: Rig | null = null
+const rigs: Rig[] = []
 
-async function boot(input: { script: unknown[]; env?: Record<string, string>; start?: boolean }): Promise<Rig> {
-  const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
-  const env: NodeJS.ProcessEnv = {
+function rigEnv(workspace: string, env: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return {
     KORTIX_HARNESS: 'pi',
-    KORTIX_PI_MODEL_MODE: 'faux',
-    KORTIX_PI_FAUX_SCRIPT: JSON.stringify(input.script),
+    KORTIX_LLM_BASE_URL: gateway.baseUrl,
+    KORTIX_LLM_CATALOG_FILE: join(catalogDir, 'catalog.json'),
     KORTIX_PI_STATE_DIR: join(workspace, '.state'),
     KORTIX_PROJECT_AUTO_CLONE: '0',
     KORTIX_WORKSPACE: workspace,
@@ -54,17 +112,25 @@ async function boot(input: { script: unknown[]; env?: Record<string, string>; st
     KORTIX_TOKEN: TOKEN,
     KORTIX_SESSION_ID: 'sess-pi-test',
     KORTIX_PROJECT_ID: 'proj-pi-test',
-    ...(input.env ?? {}),
+    ...env,
   }
+}
+
+async function boot(input: {
+  script: Step[]
+  env?: Record<string, string>
+  start?: boolean
+  workspace?: string
+}): Promise<Rig> {
+  const workspace = input.workspace ?? mkdtempSync(join(tmpdir(), 'pi-harness-'))
+  gateway.script(input.script)
+  const env = rigEnv(workspace, input.env)
   const cfg = requirePiConfig(loadConfig(env))
   const service = createPiHarnessService(cfg, undefined, { env })
   const bootState: PiBootState = { repoMaterializationError: null, timeline: [], initialOpenCodeSessionRequired: false }
-  if (input.start !== false) {
-    await service.lifecycle.start()
-    bootState.initialOpenCodeSessionId = service.runtime()!.rootId
-  }
+  if (input.start !== false) await service.lifecycle.start()
   const app = buildDaemonApp(cfg, service, Date.now(), bootState)
-  const ctx = userContext(TOKEN)
+  const ctx = signTestUserContext({ userId: 'u1', sandboxId: 's1', sandboxRole: 'owner' }, TOKEN)
   const request = (path: string, init: RequestInit = {}, headers: Record<string, string>) =>
     Promise.resolve(app.request(path, { ...init, headers: { ...headers, ...((init.headers as Record<string, string>) ?? {}) } }))
   const built: Rig = {
@@ -72,10 +138,11 @@ async function boot(input: { script: unknown[]; env?: Record<string, string>; st
     service,
     bootState,
     workspace,
+    env,
     user: (path, init) => request(path, init, { 'X-Kortix-User-Context': ctx }),
     bearer: (path, init) => request(path, init, { Authorization: `Bearer ${TOKEN}` }),
   }
-  rig = built
+  rigs.push(built)
   return built
 }
 
@@ -103,12 +170,25 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
 
 beforeEach(() => resetKortixEventBusForTests())
 afterEach(async () => {
-  if (rig) {
+  for (const rig of rigs.splice(0)) {
     await rig.service.lifecycle.stop().catch(() => {})
     rmSync(rig.workspace, { recursive: true, force: true })
-    rig = null
   }
 })
+
+/** Wait until the root's transcript shows a tool part in the running state. */
+async function waitForRunningTool(r: Rig, root: string): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    const messages = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ parts: Array<{ type: string; state?: { status?: string } }> }>
+    if (messages.flatMap((m) => m.parts).some((p) => p.type === 'tool' && p.state?.status === 'running')) return
+    await Bun.sleep(10)
+  }
+  throw new Error('no tool started running')
+}
+
+const prompt = (r: Rig, root: string, body: Record<string, unknown>) =>
+  r.user(`/session/${root}/prompt_async`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
 describe('pi harness', () => {
   test('health reports the pi runtime before and after start', async () => {
@@ -120,20 +200,18 @@ describe('pi harness', () => {
     expect((await r.user('/session')).status).toBe(503)
 
     await r.service.lifecycle.start()
-    r.bootState.initialOpenCodeSessionId = r.service.runtime()!.rootId
     const after = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, unknown>
     expect(after.runtimeReady).toBe(true)
     expect(after.status).toBe('ok')
     expect(after.opencode).toBe('ok')
-    expect(after.opencode_session_id).toMatch(/^ses_pi[0-9a-f]{24}$/)
-    expect(after.model).toBe('faux/faux-1')
+    expect(after.model).toBe(`kortix/${MODEL_ID}`)
   })
 
   test('a failed pi start is a boot_error, not a silent down', async () => {
     // The web paints its session error card only from boot_error. runtime() is
     // null until start() resolves, so a failed start used to leave the box
     // "down" with boot_error null and the session spinning forever.
-    const r = await boot({ script: [], env: { KORTIX_PI_MODEL_MODE: 'real' }, start: false })
+    const r = await boot({ script: [], env: { KORTIX_LLM_BASE_URL: '' }, start: false })
     await expect(r.service.lifecycle.start()).rejects.toThrow('KORTIX_LLM_BASE_URL')
     const health = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, unknown>
     expect(health.runtimeReady).toBe(false)
@@ -159,6 +237,11 @@ describe('pi harness', () => {
     expect(accepted.status).toBe(204)
     await waitFor(() => !r.service.runtime()!.busy())
     expect(readFileSync(join(r.workspace, 'note.txt'), 'utf8')).toBe('hello-from-pi')
+    // Both model steps went to the gateway with the session credential.
+    expect(gateway.requests.slice(-2)).toEqual([
+      { path: '/v1/llm/chat/completions', auth: `Bearer ${TOKEN}` },
+      { path: '/v1/llm/chat/completions', auth: `Bearer ${TOKEN}` },
+    ])
 
     const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as {
       source: string
@@ -219,6 +302,34 @@ describe('pi harness', () => {
     expect(await again.json()).toEqual({ deduplicated: true })
   })
 
+  test('every raw /event frame carries the id the SDK dedupes deltas on, the same on every connection', async () => {
+    // The SDK store keys `message.part.delta` idempotency on the envelope's
+    // `id`: a delta with no id, or a different id on redelivery, APPENDS its
+    // text again and the reply renders twice.
+    const r = await boot({ script: [{ text: 'Streamed answer.' }] })
+    const root = r.service.runtime()!.rootId
+    const first = await r.user('/event')
+    const second = await r.user('/event')
+    expect(first.headers.get('content-type')).toContain('text/event-stream')
+    await prompt(r, root, { messageID: 'msg_0198e2a4b0c1ABCDEFGHIJKLMN', parts: [{ type: 'text', text: 'say something' }] })
+    const frames = async (res: Response) =>
+      (await readSse(res, (t) => t.includes('"type":"session.idle"')))
+        .split('\n\n')
+        .map((chunk) => chunk.replace(/^data: /, '').trim())
+        .filter((chunk) => chunk.startsWith('{'))
+        .map((chunk) => JSON.parse(chunk) as { id?: string; type: string })
+    const [a, b] = await Promise.all([frames(first), frames(second)])
+
+    const deltaIds = (list: Array<{ id?: string; type: string }>) => list.filter((f) => f.type === 'message.part.delta').map((f) => f.id)
+    expect(deltaIds(a).length).toBeGreaterThan(1)
+    expect(deltaIds(a)).toEqual(deltaIds(b))
+    const ids = a.filter((f) => f.id !== undefined).map((f) => f.id!)
+    // Distinct events never collide, or the guard drops real deltas.
+    expect(new Set(ids).size).toBe(ids.length)
+    // Epoch-prefixed, so a daemon restart cannot reissue an id already applied.
+    for (const id of ids) expect(id).toMatch(/^b[a-z0-9]+:\d+$/)
+  })
+
   test('the raw message list pages older windows and only omits the cursor at the head', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'printf paged > note.txt' } }, { text: 'Done.' }],
@@ -271,17 +382,19 @@ describe('pi harness', () => {
   })
 
   test('the catalog reads the composer needs answer from the runtime', async () => {
-    const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { coder: { prompt: 'You code.', description: 'Writes code' } } }) } })
+    // The pattern map survives compilation into the agent object the web shows.
+    const permission = { bash: { 'rm -rf *': 'deny', '*': 'allow' } }
+    const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { coder: { prompt: 'You code.', description: 'Writes code', permission } } }) } })
     const config = (await r.user('/config').then((res) => res.json())) as Record<string, unknown>
     expect(config.default_agent).toBe('coder')
-    expect(config.model).toBe('faux/faux-1')
+    expect(config.model).toBe(`kortix/${MODEL_ID}`)
     const agents = (await r.user('/agent').then((res) => res.json())) as Array<Record<string, unknown>>
-    expect(agents[0]).toMatchObject({ name: 'coder', description: 'Writes code', mode: 'primary', prompt: 'You code.' })
+    expect(agents[0]).toMatchObject({ name: 'coder', description: 'Writes code', mode: 'primary', prompt: 'You code.', permission })
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
     expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question'])
     const providers = (await r.user('/provider').then((res) => res.json())) as { all: Array<{ id: string }>; default: Record<string, string> }
-    expect(providers.all[0]!.id).toBe('faux')
-    expect(providers.default).toEqual({ faux: 'faux-1' })
+    expect(providers.all[0]!.id).toBe('kortix')
+    expect(providers.default).toEqual({ kortix: MODEL_ID })
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
@@ -319,7 +432,10 @@ describe('pi harness', () => {
       env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { '*': 'ask' } } } }) },
     })
     const root = r.service.runtime()!.rootId
-    await r.bearer('/kortix/opencode/act', { method: 'POST', body: JSON.stringify({ kind: 'stop' }) })
+    // Stop on an idle root is a no-op success.
+    const idleStop = await r.bearer('/kortix/opencode/act', { method: 'POST', body: JSON.stringify({ kind: 'stop' }) })
+    expect(idleStop.status).toBe(200)
+    expect(await idleStop.json()).toMatchObject({ ok: true })
     expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'go' }] }) })).status).toBe(204)
     await waitFor(() => r.service.runtime()!.permissions.list().length === 1)
     const id = r.service.runtime()!.permissions.list()[0]!.id
@@ -334,16 +450,20 @@ describe('pi harness', () => {
 
   test('a per-pattern deny blocks the command it names and lets the rest run', async () => {
     // `bash: { 'rm -rf *': 'deny', '*': 'allow' }` is a valid manifest rule.
-    // Compiling it down to its `*` entry would run the denied command.
+    // Compiling it down to its `*` entry would run the denied command. The
+    // sentinel it targets lives inside the rig, so a regression costs nothing.
     const permission = { bash: { 'rm -rf *': 'deny', '*': 'allow' } }
     const denied = await boot({
-      script: [{ tool: 'bash', args: { command: 'rm -rf /workspace' } }, { text: 'blocked' }],
+      script: [{ tool: 'bash', args: { command: 'rm -rf ./keep' } }, { text: 'blocked' }],
       env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission } } }) },
     })
+    mkdirSync(join(denied.workspace, 'keep'))
+    writeFileSync(join(denied.workspace, 'keep', 'sentinel'), 'still here')
     const deniedRoot = denied.service.runtime()!.rootId
-    expect((await denied.user(`/session/${deniedRoot}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'go' }] }) })).status).toBe(204)
+    expect((await prompt(denied, deniedRoot, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
     await waitFor(() => !denied.service.runtime()!.busy())
     expect(denied.service.runtime()!.permissions.list()).toHaveLength(0)
+    expect(existsSync(join(denied.workspace, 'keep', 'sentinel'))).toBe(true)
     const deniedPage = (await denied.bearer(`/kortix/opencode/messages/${deniedRoot}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     const deniedTool = deniedPage.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
     expect(deniedTool.state).toMatchObject({ status: 'error' })
@@ -354,7 +474,7 @@ describe('pi harness', () => {
       env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission } } }) },
     })
     const allowedRoot = allowed.service.runtime()!.rootId
-    expect((await allowed.user(`/session/${allowedRoot}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'go' }] }) })).status).toBe(204)
+    expect((await prompt(allowed, allowedRoot, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
     await waitFor(() => !allowed.service.runtime()!.busy())
     const allowedPage = (await allowed.bearer(`/kortix/opencode/messages/${allowedRoot}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     const allowedTool = allowedPage.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
@@ -366,8 +486,7 @@ describe('pi harness', () => {
     const root = r.service.runtime()!.rootId
     const messageID = 'msg_0198e2a4b0c2ABCDEFGHIJKLMN'
     expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ messageID, parts: [{ type: 'text', text: 'wait' }] }) })).status).toBe(204)
-    await waitFor(() => r.service.runtime()!.busy())
-    await Bun.sleep(100)
+    await waitForRunningTool(r, root)
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_in_flight).toBe(true)
     const abort = await r.user(`/session/${root}/abort`, { method: 'POST' })
@@ -384,8 +503,7 @@ describe('pi harness', () => {
     const root = r.service.runtime()!.rootId
     const messageID = 'msg_0198e2a4b0c3ABCDEFGHIJKLMN'
     expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ messageID, parts: [{ type: 'text', text: 'run it' }] }) })).status).toBe(204)
-    await waitFor(() => r.service.runtime()!.busy())
-    await Bun.sleep(150)
+    await waitForRunningTool(r, root)
     const armed = await r.user('/kortix/abort/after-tool', {
       method: 'POST',
       body: JSON.stringify({ prompt_id: 'prm_queue_1', opencode_session_id: root, turn_message_id: messageID }),
@@ -402,20 +520,32 @@ describe('pi harness', () => {
     expect(text).not.toContain('unreachable')
   })
 
-  test('an abort-after-tool armed for another turn is ignored, and disarm clears a pending one', async () => {
+  test.each([
+    ['another turn', (root: string) => ({ opencode_session_id: root, turn_message_id: 'msg_0198e2a4b0c5ABCDEFGHIJKLMN' })],
+    ['another session', () => ({ opencode_session_id: 'ses_someone_else', turn_message_id: 'msg_0198e2a4b0c4ABCDEFGHIJKLMN' })],
+  ])('an abort-after-tool armed for %s is ignored and the turn finishes', async (_name, target) => {
     const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.5; echo ok' } }, { text: 'finished normally' }] })
     const root = r.service.runtime()!.rootId
     const messageID = 'msg_0198e2a4b0c4ABCDEFGHIJKLMN'
-    expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ messageID, parts: [{ type: 'text', text: 'run it' }] }) })).status).toBe(204)
-    await waitFor(() => r.service.runtime()!.busy())
-    await Bun.sleep(100)
-    // Stale: names a different turn.
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'run it' }] })).status).toBe(204)
+    await waitForRunningTool(r, root)
     const stale = await r.user('/kortix/abort/after-tool', {
       method: 'POST',
-      body: JSON.stringify({ prompt_id: 'prm_stale', opencode_session_id: root, turn_message_id: 'msg_0198e2a4b0c5ABCDEFGHIJKLMN' }),
+      body: JSON.stringify({ prompt_id: 'prm_stale', ...target(root) }),
     })
     expect(stale.status).toBe(202)
-    // Armed for this turn, then disarmed before the tool ends.
+    await waitFor(() => !r.service.runtime()!.busy())
+    const messages = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info: any; parts: any[] }>
+    const text = messages.flatMap((m) => m.parts).filter((p) => p.type === 'text').map((p) => p.text).join(' ')
+    expect(text).toContain('finished normally')
+  })
+
+  test('disarming a pending abort-after-tool lets the turn finish', async () => {
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.5; echo ok' } }, { text: 'finished normally' }] })
+    const root = r.service.runtime()!.rootId
+    const messageID = 'msg_0198e2a4b0c4ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'run it' }] })).status).toBe(204)
+    await waitForRunningTool(r, root)
     await r.user('/kortix/abort/after-tool', {
       method: 'POST',
       body: JSON.stringify({ prompt_id: 'prm_live', opencode_session_id: root, turn_message_id: messageID }),
@@ -428,29 +558,71 @@ describe('pi harness', () => {
     expect(text).toContain('finished normally')
   })
 
-  test('the transcript survives a runtime restart', async () => {
+  test('a restarted daemon restores the transcript, title and turn verdicts from the state dir', async () => {
+    // A daemon restart is a new process: a second service on the same state
+    // dir must restore what the first one persisted, not reuse its memory.
     const r = await boot({ script: [{ text: 'first answer' }] })
     const root = r.service.runtime()!.rootId
-    expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'remember me' }] }) })).status).toBe(204)
+    const messageID = 'msg_0198e2a4b0c6ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'remember me' }] })).status).toBe(204)
     await waitFor(() => !r.service.runtime()!.busy())
+    const before = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
     await r.service.lifecycle.stop()
-    await r.service.lifecycle.start()
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> }
+
+    const restarted = await boot({ script: [{ text: 'second answer' }], workspace: r.workspace })
+    rigs.splice(rigs.indexOf(r), 1)
+    expect(restarted.service.runtime()!.rootId).toBe(root)
+    const page = (await restarted.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> }
     expect(page.messages.map((m) => m.info.role)).toEqual(['user', 'assistant'])
     expect(page.messages[1]!.parts[0]).toMatchObject({ type: 'text', text: 'first answer' })
-    const sessions = (await r.user('/session').then((res) => res.json())) as Array<{ title: string }>
+    const sessions = (await restarted.user('/session').then((res) => res.json())) as Array<{ title: string }>
     expect(sessions[0]!.title).toBe('remember me')
+    const probe = (await restarted.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('completed')
+
+    // The id clock was restored too: a new turn's ids sort after every restored id.
+    expect((await prompt(restarted, root, { parts: [{ type: 'text', text: 'again' }] })).status).toBe(204)
+    await waitFor(() => !restarted.service.runtime()!.busy())
+    const after = (await restarted.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
+    const newest = before.map((m) => m.info.id).sort().at(-1)!
+    for (const m of after.slice(before.length)) expect(m.info.id > newest).toBe(true)
   })
 
-  test('skills in the project are loaded into the system prompt', async () => {
+  test('project skills are listed, and the harness-neutral copy wins a name clash', async () => {
     const r = await boot({ script: [{ text: 'ok' }], start: false })
-    writeFileSync(join(r.workspace, '.kortix'), '', { flag: 'a' })
-    rmSync(join(r.workspace, '.kortix'), { force: true })
-    const skillDir = join(r.workspace, '.kortix', 'skills', 'deploy')
-    require('node:fs').mkdirSync(skillDir, { recursive: true })
-    writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: deploy\ndescription: Ship to prod\n---\nRun the deploy script.\n')
+    const neutral = join(r.workspace, '.kortix', 'skills', 'deploy')
+    const opencode = join(r.workspace, '.kortix', 'opencode', 'skills', 'deploy')
+    const other = join(r.workspace, '.kortix', 'opencode', 'skills', 'review')
+    for (const dir of [neutral, opencode, other]) mkdirSync(dir, { recursive: true })
+    writeFileSync(join(neutral, 'SKILL.md'), '---\nname: deploy\ndescription: Ship to prod\n---\nRun the deploy script.\n')
+    writeFileSync(join(opencode, 'SKILL.md'), '---\nname: deploy\ndescription: The OpenCode copy\n---\nOld.\n')
+    writeFileSync(join(other, 'SKILL.md'), '---\nname: review\ndescription: Review a PR\n---\nReview it.\n')
     await r.service.lifecycle.start()
-    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
-    expect(skills.map((s) => s.name)).toEqual(['deploy'])
+    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description?: string }>
+    expect(skills.map((s) => s.name).sort()).toEqual(['deploy', 'review'])
+    expect(skills.find((s) => s.name === 'deploy')?.description).toBe('Ship to prod')
+  })
+
+  test.each([
+    ['a messageID outside the OpenCode wire format', { messageID: 'not-a-wire-id', parts: [{ type: 'text', text: 'hi' }] }],
+    ['an empty parts array', { parts: [] }],
+    ['an unsupported part type', { parts: [{ type: 'image', url: 'x' }] }],
+    ['no content at all', { parts: [{ type: 'text', text: '   ' }] }],
+  ])('a prompt with %s is refused with 400, so the API stops redelivering it', async (_name, body) => {
+    const r = await boot({ script: [] })
+    const root = r.service.runtime()!.rootId
+    expect((await prompt(r, root, body)).status).toBe(400)
+    expect(r.service.runtime()!.busy()).toBe(false)
+  })
+
+  test('a model reply cut off by the length limit ends the turn as failed', async () => {
+    const r = await boot({ script: [{ text: 'partial answ', finish: 'length' }] })
+    const root = r.service.runtime()!.rootId
+    const messageID = 'msg_0198e2a4b0c7ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'long question' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_in_flight).toBe(false)
+    expect(probe.turn_end).toBe('failed')
   })
 })

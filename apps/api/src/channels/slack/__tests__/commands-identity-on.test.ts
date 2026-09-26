@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from '../../../__tests__/helpers/chat-identity-stub';
 
 // Turn the per-user identity feature ON before config is imported, so the gated
 // `/login` / `/logout` subcommands and help rows become live.
@@ -8,15 +9,18 @@ mock.module('../../../config', () => ({
   config: {
     FRONTEND_URL: 'https://app.test',
     SLACK_REQUIRE_USER_IDENTITY: true,
+    // The login-link signing key is derived from this; signing refuses without it.
+    API_KEY_SECRET: 'test-api-key-secret',
   },
 }));
 mock.module('../../../shared/db', () => ({ db: {}, hasDatabase: () => true }));
-mock.module('../identity', () => ({
-  lookupSlackIdentity: async () => null,
-  linkSlackIdentity: async () => {},
-  resolveSlackActor: async () => ({ userId: 'user-1' }),
-  revokeSlackIdentity: async () => true,
-}));
+mock.module('../../core/sessions', () => ({ listVisibleChatSessions: async () => [] }));
+mock.module('../../core/identity', () =>
+  chatIdentityStub({
+    revokeChatIdentity: async () => true,
+    resolveProjectChatActor: async () => ({ userId: 'user-1' }),
+  }),
+);
 mock.module('../../../accounts/core/app', () => ({
   lookupEmailsByUserIds: async () => new Map(),
 }));
@@ -28,7 +32,10 @@ mock.module('../selection', () => ({
   listProjectAgents: async () => [],
   isValidModelId: () => true,
 }));
-mock.module('../model-gate', () => ({ channelModelContext: async () => null }));
+mock.module('../model-gate', () => ({
+  channelModelContext: async () => null,
+  projectModelContext: async () => null,
+}));
 mock.module('../participants', () => ({
   conversationPolicyLabel: () => 'Owner approval',
   normalizeConversationPolicy: () => 'owner_approval',

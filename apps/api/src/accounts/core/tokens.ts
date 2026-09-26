@@ -23,11 +23,11 @@ import {
   OkSchema,
   MeSchema,
   autoClaimPendingInvites,
-  readBodyTokens,
   resolveAccountForUser,
   resolveAccountDisplayNames,
   lookupEmailsByUserIds,
 } from './app';
+import { readJsonObject } from '../../shared/http-body';
 
 /**
  * A query flag arrives as a string or not at all. `?mine`, `?mine=true` and
@@ -143,7 +143,10 @@ accountsRouter.openapi(
       session_id: (c.get('sessionId') as string | undefined) ?? null,
       agent: (c.get('agentGrant') as { agent?: string } | null | undefined)?.agent ?? null,
       connectors: (c.get('agentGrant') as { connectors?: string[] | 'all' } | null | undefined)?.connectors ?? null,
-      kortix_cli: (c.get('agentGrant') as { kortixCli?: string[] | 'all' } | null | undefined)?.kortixCli ?? null,
+      kortix_permissions: (c.get('agentGrant') as { permissions?: string[] | 'all' } | null | undefined)?.permissions ?? null,
+      // Deprecated wire alias of `kortix_permissions` — CLIs released before
+      // the 2026-09-22 rename read this key.
+      kortix_cli: (c.get('agentGrant') as { permissions?: string[] | 'all' } | null | undefined)?.permissions ?? null,
       env: (c.get('agentGrant') as { env?: string[] | 'all' } | null | undefined)?.env ?? null,
     },
     accounts: memberships.map((m) => ({
@@ -246,7 +249,7 @@ accountsRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
-  const body = await readBodyTokens(c);
+  const body = await readJsonObject(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) {
     return c.json({ error: 'name is required' }, 400);

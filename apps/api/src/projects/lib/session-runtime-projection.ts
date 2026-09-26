@@ -368,17 +368,3 @@ export async function readRuntimeLeg(
 ): Promise<RuntimeLeg> {
   return resolveRuntimeLeg(await readRuntimeProjection(sessionId), nowMs);
 }
-
-/**
- * Delete a session's projection — used when a re-pin makes it unreachable.
- *
- * Not called from the read path: a mismatched projection is REFUSED by
- * {@link resolveRuntimeLeg}, and refusing is enough. Deleting on read would
- * make a transient pin disagreement destroy a row the next push would have
- * corrected.
- */
-export async function deleteRuntimeProjection(sessionId: string): Promise<void> {
-  await db
-    .delete(sessionRuntimeProjections)
-    .where(and(eq(sessionRuntimeProjections.sessionId, sessionId)));
-}

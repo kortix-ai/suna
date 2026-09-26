@@ -1,50 +1,42 @@
 'use client';
 
-import type { ModelCostRates, ModelPricingLookup } from '@kortix/sdk';
+import type { CatalogCost } from '@kortix/llm-catalog';
+import {
+  getProjectLlmCatalogProviders,
+  type ModelCostRates,
+  type ModelPricingLookup,
+} from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useParams } from 'next/navigation';
+import { useCallback, useMemo, useState } from 'react';
 
-const MODELS_DEV_URL = 'https://models.dev/api.json';
-const FETCH_TIMEOUT_MS = 15_000;
+/**
+ * Per-million-token rates for a session's turns.
+ *
+ * The primary source is the provider list the session already has (OpenCode's
+ * `/provider`, or the gateway picker — both carry `cost`). The fallback, for a
+ * provider/model the list does not carry (e.g. a provider whose key was
+ * removed after the turn ran), is the API's live models.dev projection
+ * `GET /projects/:id/llm-catalog/providers`. It loads only on the first miss,
+ * and it shares its React Query key with the provider modal's catalog fetch
+ * (`use-live-catalog.ts`). The browser never fetches models.dev itself: that
+ * was a 4.9 MB third-party download on every session open.
+ */
 
-let pricingCache: Map<string, ModelCostRates> | null = null;
-let pricingPromise: Promise<Map<string, ModelCostRates>> | null = null;
-
-type ModelsDevModel = {
-  id?: string;
-  cost?: { input?: number; output?: number; cache_read?: number; cache_write?: number };
-};
-
-type ModelsDevProvider = {
-  models?: Record<string, ModelsDevModel>;
-};
-
-async function loadModelsDevPricing(): Promise<Map<string, ModelCostRates>> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(MODELS_DEV_URL, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) return new Map();
-    const data = (await res.json()) as Record<string, ModelsDevProvider>;
-    return buildModelsDevPricingMap(data);
-  } catch {
-    return new Map();
-  } finally {
-    clearTimeout(timeout);
-  }
+interface CatalogPricingSource {
+  providers: Array<{ id: string; models: Array<{ id: string; cost?: CatalogCost }> }>;
 }
 
-export function buildModelsDevPricingMap(
-  data: Record<string, ModelsDevProvider>,
-): Map<string, ModelCostRates> {
-  const map = new Map<string, ModelCostRates>();
+/** Same key and fetch as `useLiveLlmProviderCatalog` — one request per project. */
+function catalogProvidersQueryKey(projectId: string | null) {
+  return ['llm-catalog-providers', projectId] as const;
+}
 
-  for (const [providerId, provider] of Object.entries(data)) {
-    if (!provider?.models) continue;
-    for (const [modelKey, model] of Object.entries(provider.models)) {
+export function buildCatalogPricingMap(catalog: CatalogPricingSource): Map<string, ModelCostRates> {
+  const map = new Map<string, ModelCostRates>();
+  for (const provider of catalog.providers ?? []) {
+    for (const model of provider.models ?? []) {
       const input = model.cost?.input;
       const output = model.cost?.output;
       if (typeof input !== 'number' || typeof output !== 'number') continue;
@@ -58,30 +50,29 @@ export function buildModelsDevPricingMap(
       if (typeof model.cost?.cache_write === 'number') {
         entry.cacheWritePer1M = model.cost.cache_write;
       }
-      const modelId = model.id ?? modelKey;
-      const keys = new Set([`${providerId}/${modelId}`, `${providerId}/${modelKey}`]);
-      for (const key of keys) {
-        if (key && !map.has(key)) map.set(key, entry);
-      }
+      const key = `${provider.id}/${model.id}`;
+      if (!map.has(key)) map.set(key, entry);
     }
   }
   return map;
 }
 
-export function prefetchModelPricing(): void {
-  if (pricingCache || pricingPromise) return;
-  pricingPromise = loadModelsDevPricing().then((map) => {
-    pricingCache = map;
-    return map;
-  });
+// Every SessionTurn calls the hook; build each catalog's map once.
+const pricingMapByCatalog = new WeakMap<object, Map<string, ModelCostRates>>();
+function pricingMapFor(catalog: CatalogPricingSource): Map<string, ModelCostRates> {
+  let map = pricingMapByCatalog.get(catalog);
+  if (!map) {
+    map = buildCatalogPricingMap(catalog);
+    pricingMapByCatalog.set(catalog, map);
+  }
+  return map;
 }
 
 function lookupCachedPricing(
   providerID: string,
   modelID: string,
-  cache: ReadonlyMap<string, ModelCostRates> | null | undefined,
+  cache: ReadonlyMap<string, ModelCostRates>,
 ): ModelCostRates | null {
-  if (!cache) return null;
   const modelCandidates = [modelID, ...(modelID.includes('/') ? [] : [`${providerID}/${modelID}`])];
   for (const modelCandidate of modelCandidates) {
     const hit = cache.get(`${providerID}/${modelCandidate}`);
@@ -90,11 +81,15 @@ function lookupCachedPricing(
   return null;
 }
 
+/**
+ * `cachedPricing` undefined means "catalog not loaded": a BYO-provider miss
+ * then calls `onCatalogMiss` so the caller can load it.
+ */
 export function createModelPricingLookup(
   providers: ProviderListResponse | undefined,
   cachedPricing?: ReadonlyMap<string, ModelCostRates>,
+  onCatalogMiss?: (providerID: string, modelID: string) => void,
 ): ModelPricingLookup {
-  const cache = cachedPricing ?? pricingCache;
   return (providerID: string, modelID: string) => {
     const provider = providers?.all?.find((p) => p.id === providerID);
     const model = provider?.models?.[modelID] as
@@ -116,24 +111,44 @@ export function createModelPricingLookup(
       return null;
     }
 
-    return lookupCachedPricing(providerID, modelID, cache);
+    if (!cachedPricing) {
+      onCatalogMiss?.(providerID, modelID);
+      return null;
+    }
+    return lookupCachedPricing(providerID, modelID, cachedPricing);
   };
 }
 
 export function useModelPricingLookup(
   providers: ProviderListResponse | undefined,
 ): ModelPricingLookup {
-  const [pricingReady, setPricingReady] = useState(!!pricingCache);
+  // Every caller renders under `/projects/[id]/…` (session chat, the
+  // sub-session modal, the context modal). No project id → no fallback.
+  const params = useParams<{ id?: string }>();
+  const projectId = typeof params?.id === 'string' ? params.id : null;
 
-  useEffect(() => {
-    prefetchModelPricing();
-    if (pricingCache) return;
-    pricingPromise?.then(() => setPricingReady(true));
-  }, []);
+  const [catalogWanted, setCatalogWanted] = useState(false);
+  // A disabled query still returns (and subscribes to) data another observer
+  // cached, so only the first turn that misses has to enable the fetch.
+  const catalogQuery = useQuery({
+    queryKey: catalogProvidersQueryKey(projectId),
+    queryFn: () => getProjectLlmCatalogProviders(projectId!),
+    enabled: catalogWanted && !!projectId,
+    staleTime: 60 * 60 * 1000,
+    retry: 1,
+  });
+  const catalog = catalogQuery.data as CatalogPricingSource | undefined;
+  const cachedPricing = useMemo(() => (catalog ? pricingMapFor(catalog) : undefined), [catalog]);
+
+  // Called during a consumer's render (inside `useMemo`), so the state update
+  // is deferred to a microtask instead of running mid-render.
+  const onCatalogMiss = useCallback(() => {
+    if (catalogWanted || !projectId) return;
+    queueMicrotask(() => setCatalogWanted(true));
+  }, [catalogWanted, projectId]);
 
   return useMemo(
-    () =>
-      createModelPricingLookup(providers, pricingReady ? (pricingCache ?? undefined) : undefined),
-    [providers, pricingReady],
+    () => createModelPricingLookup(providers, cachedPricing, onCatalogMiss),
+    [providers, cachedPricing, onCatalogMiss],
   );
 }

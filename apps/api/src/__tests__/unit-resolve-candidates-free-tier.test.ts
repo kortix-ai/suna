@@ -213,24 +213,23 @@ describe('resolveCandidates free-tier premium gate', () => {
     expect(accountTierCalls).toBe(0);
   });
 
-  test('waives BYOK platform fee and disables managed fallback for free accounts', async () => {
+  test('does not charge BYOK or add a managed fallback for free accounts', async () => {
     accountTier = 'free';
     const candidates = await resolveCandidates(principal('free-byok'), 'openai/gpt-4.1');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('none');
     expect(candidates[0]?.markup).toBe(0);
     expect(candidates[0]?.apiKey).toBe('user-key');
-    expect(accountTierCalls).toBe(1);
+    expect(accountTierCalls).toBe(0);
   });
 
-  test('keeps BYOK platform fee and managed fallback for Team accounts', async () => {
+  test('does not charge BYOK or add a managed fallback for Team accounts', async () => {
     accountTier = 'per_seat';
     const candidates = await resolveCandidates(principal('team-byok'), 'openai/gpt-4.1');
-    expect(candidates).toHaveLength(2);
-    expect(candidates[0]?.billingMode).toBe('platform-fee');
-    expect(candidates[0]?.markup).toBe(0.1);
-    expect(candidates[1]?.billingMode).toBe('credits');
-    expect(accountTierCalls).toBe(1);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.billingMode).toBe('none');
+    expect(candidates[0]?.markup).toBe(0);
+    expect(accountTierCalls).toBe(0);
   });
 
   test('does not tier-gate ChatGPT subscription candidates', async () => {
@@ -269,6 +268,7 @@ describe('resolveCandidates free-tier premium gate', () => {
       'openai/gpt-4.1',
     );
     expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.billingMode).toBe('platform-fee');
+    expect(candidates[0]?.billingMode).toBe('none');
+    expect(candidates[0]?.markup).toBe(0);
   });
 });
