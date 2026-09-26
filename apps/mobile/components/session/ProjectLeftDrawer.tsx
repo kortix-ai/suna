@@ -46,7 +46,7 @@
  * Layout rules: apps/mobile/design.md → Project sidebar.
  */
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -568,6 +568,12 @@ export function ProjectLeftDrawer({
     setRefreshing(true);
     void refetch().finally(() => setRefreshing(false));
   }, [refetch]);
+  // The drawer stays mounted while closed, so its query never remounts: each
+  // open refetches the loaded pages in the background (no spinner), so a
+  // session created or renamed elsewhere shows without a pull.
+  useEffect(() => {
+    if (open) void refetch();
+  }, [open, refetch]);
   const handleRetrySessions = useCallback(() => {
     haptics.tap();
     void refetch();

@@ -1333,11 +1333,6 @@ export function ProjectScreen() {
                 ? () => openSessionActions(activeProjectSession, 'rename')
                 : undefined
             }
-            onSharePress={
-              activeProjectSession && activeProjectSession.can_manage_sharing !== false
-                ? () => openSessionActions(activeProjectSession, 'share')
-                : undefined
-            }
             sessionTitle={
               activeSubsession
                 ? subsessionTitle(activeSubsession)
