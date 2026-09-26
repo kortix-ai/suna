@@ -78,3 +78,9 @@ d9db615d7f26fc4a1aef21b8f0085e3ad37f0258:.gitleaksignore:generic-api-key:62
 # preview refuses it. Not a credential. The line now builds the value at run
 # time; this entry covers the commit that first added it. Reviewed 2026-09-24.
 49cbc8df790318063cbbe8222d86dce45f630c55:tests/src/flows/channels.flow.ts:generic-api-key:1153
+
+# tests/unit/aws-env-action.test.ts:32 is a synthetic PEM fixture (truncated,
+# non-decodable base64 body) used only to assert that the aws-env action's
+# fetch.sh round-trips a multi-line value through GITHUB_ENV intact. Not a
+# credential. Reviewed 2026-09-26.
+5b7d58331842924dfd12344e34097e8a67b1037b:tests/unit/aws-env-action.test.ts:private-key:32

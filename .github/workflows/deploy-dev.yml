@@ -312,7 +312,6 @@ jobs:
       trusted_branch: main
       cloudflare: true
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
-    secrets: inherit
 
   terraform-dev:
     name: Apply dev web Terraform
@@ -335,13 +334,19 @@ jobs:
       trusted_branch: main
       cloudflare: true
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
-    secrets: inherit
 
   build-api:
     name: Build API image (amd64)
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    # deploy-dev.yml has no workflow-level permissions (repo default: read).
+    # Job-level permissions replace that default, so the reads stay listed.
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     outputs:
       image: kortix/kortix-api:dev-${{ needs.detect-changes.outputs.sha8 }}
     steps:
@@ -359,10 +364,23 @@ jobs:
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/api/Dockerfile:linux/amd64
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64)
         # DEV IS SINGLE-ARCH (amd64). dev ECS Fargate runs x86_64, so the arm64
         # half was pure emulation cost — a QEMU-emulated arm64 build took the API
@@ -420,10 +438,23 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           format: table
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - uses: docker/setup-buildx-action@v4
       - name: Resolve image digest
         id: digest
@@ -465,6 +496,13 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    # deploy-dev.yml has no workflow-level permissions (repo default: read).
+    # Job-level permissions replace that default, so the reads stay listed.
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -477,13 +515,23 @@ jobs:
       - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
         env:
           npm_config_engine_strict: "false"
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DATABASE_URL=kortix-dev-env:DATABASE_URL
       - name: Apply pending migrations (node-pg-migrate; halts on failure)
-        env:
-          DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ]; then
-            echo "::error::DEV_DATABASE_URL secret is not set — refusing to deploy without a migration check."
+            echo "::error::kortix-dev-env DATABASE_URL is not set — refusing to deploy without a migration check."
             exit 1
           fi
           pnpm --filter @kortix/db migrate
@@ -579,14 +627,31 @@ jobs:
     needs: [detect-changes, deploy-api-ecs]
     if: ${{ always() && needs.detect-changes.outputs.apps_router == 'true' && (needs.deploy-api-ecs.result == 'success' || needs.deploy-api-ecs.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      DEV_EDGE_SECRET: ${{ secrets.KORTIX_APPS_DEV_EDGE_SECRET }}
-      STAGING_EDGE_SECRET: ${{ secrets.KORTIX_APPS_STAGING_EDGE_SECRET }}
-      PROD_EDGE_SECRET: ${{ secrets.KORTIX_APPS_PROD_EDGE_SECRET }}
-      PREVIEW_EDGE_SECRET: ${{ secrets.KORTIX_APPS_PREVIEW_EDGE_SECRET }}
+    # deploy-dev.yml has no workflow-level permissions (repo default: read).
+    # Job-level permissions replace that default, so the reads stay listed.
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
       - uses: actions/checkout@v7
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            CLOUDFLARE_API_TOKEN
+            DEV_EDGE_SECRET=kortix-ci-env:KORTIX_APPS_DEV_EDGE_SECRET
+            STAGING_EDGE_SECRET=kortix-ci-env:KORTIX_APPS_STAGING_EDGE_SECRET
+            PROD_EDGE_SECRET=kortix-ci-env:KORTIX_APPS_PROD_EDGE_SECRET
+            PREVIEW_EDGE_SECRET=kortix-ci-env:KORTIX_APPS_PREVIEW_EDGE_SECRET
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -623,12 +688,32 @@ jobs:
       && needs.build-api.result == 'success'
       && needs.deploy-api-ecs.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    # deploy-dev.yml has no workflow-level permissions (repo default: read).
+    # Job-level permissions replace that default, so the reads stay listed.
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
       - uses: docker/setup-buildx-action@v4
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Re-tag ${{ needs.build-api.outputs.image }} → kortix/kortix-api:dev
         run: |
           set -euo pipefail
@@ -644,6 +729,13 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    # deploy-dev.yml has no workflow-level permissions (repo default: read).
+    # Job-level permissions replace that default, so the reads stay listed.
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
       - uses: actions/checkout@v7
         with: { submodules: false }
@@ -658,10 +750,23 @@ jobs:
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/llm-gateway/Dockerfile:linux/amd64
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
         uses: useblacksmith/build-push-action@v2
@@ -755,12 +860,32 @@ jobs:
       && needs.build-gateway.result == 'success'
       && needs.verify-gateway-dev-parity.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    # deploy-dev.yml has no workflow-level permissions (repo default: read).
+    # Job-level permissions replace that default, so the reads stay listed.
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
       - uses: docker/setup-buildx-action@v4
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Re-tag kortix/kortix-gateway:dev-${{ github.sha }} → :dev
         run: |
           set -euo pipefail
@@ -777,6 +902,13 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    # deploy-dev.yml has no workflow-level permissions (repo default: read).
+    # Job-level permissions replace that default, so the reads stay listed.
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     outputs:
       image: ${{ steps.tag.outputs.image }}
     steps:
@@ -813,10 +945,23 @@ jobs:
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/web/Dockerfile:linux/amd64
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
         uses: useblacksmith/build-push-action@v2
@@ -859,7 +1004,6 @@ jobs:
     env:
       AWS_REGION: us-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
-      DOTENV_PRIVATE_KEY_DEV: ${{ secrets.WEB_DOTENV_PRIVATE_KEY_DEV }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -869,6 +1013,19 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          role-to-assume: ''
+          keys: |
+            DOTENV_PRIVATE_KEY_DEV=kortix-ci-env:WEB_DOTENV_PRIVATE_KEY_DEV
       - name: Sync the encrypted Dev web profile to Secrets Manager
         run: |
           set -euo pipefail
@@ -902,7 +1059,6 @@ jobs:
     env:
       AWS_REGION: us-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -910,6 +1066,19 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          role-to-assume: ''
+          keys: |
+            CLOUDFLARE_API_TOKEN
       - name: Point the canonical Dev hostname at the web ALB
         run: |
           set -euo pipefail
@@ -926,11 +1095,31 @@ jobs:
       && needs.detect-changes.outputs.frontend == 'true'
       && needs.publish-web-ecs-dns.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    # deploy-dev.yml has no workflow-level permissions (repo default: read).
+    # Job-level permissions replace that default, so the reads stay listed.
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     env:
       EXPECTED_COMMIT: ${{ github.sha }}
       EXPECTED_VERSION: ${{ needs.detect-changes.outputs.version }}
-      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
     steps:
+      # The protection password is identical in the dev, staging, and preview
+      # web blobs; the staging web blob is the single source for CI.
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
       - name: Verify ECS health, protection, runtime configuration, and edge headers
         run: |
           set -euo pipefail
@@ -989,12 +1178,32 @@ jobs:
       && needs.build-frontend.result == 'success'
       && needs.verify-web-dev.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    # deploy-dev.yml has no workflow-level permissions (repo default: read).
+    # Job-level permissions replace that default, so the reads stay listed.
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
       - uses: docker/setup-buildx-action@v4
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Re-tag kortix/kortix-frontend:dev-${{ github.sha }} → :dev
         run: |
           set -euo pipefail

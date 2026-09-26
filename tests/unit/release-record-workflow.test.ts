@@ -31,7 +31,6 @@ const NPM_PUBLISH_JOBS = [
   'publish-llm-catalog',
   'publish-sdk',
   'publish-agent-tunnel',
-  'publish-executor-sdk',
 ] as const;
 
 type Job = { needs: string[] };
@@ -149,7 +148,7 @@ describe('deploy-prod: the release record is not gated on npm', () => {
     // Guards the reader itself: a `needs:` written as a block sequence, or a
     // job this reader cannot see, would silently make every assertion below
     // vacuous.
-    expect(jobs.size).toBe(33);
+    expect(jobs.size).toBe(32);
     expect(jobs.has('github-release')).toBe(true);
     for (const job of NPM_PUBLISH_JOBS) expect(jobs.has(job)).toBe(true);
     expect(workflow).not.toMatch(/^ {4}needs:\s*$/m);
@@ -381,7 +380,6 @@ describe('deploy-prod: github-release refuses an incomplete Release', () => {
       'Publish @kortix/llm-catalog to npm',
       'Publish @kortix/sdk to npm',
       'Publish @kortix/agent-tunnel to npm',
-      'Publish and deprecate final @kortix/executor-sdk',
     ];
     const lines = workflow.split('\n');
     for (const name of publishJobs) {

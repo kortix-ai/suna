@@ -194,10 +194,19 @@ describe('native test-lane workflow', () => {
     expect(release).toContain('WEB_PROTECTION_PASSWORD');
     // Staging sits behind Vercel SSO: every authenticated page 302s to
     // vercel.com/sso-api without this bypass secret, which playwright.config
-    // turns into `x-vercel-protection-bypass`. Restored in #6415.
-    expect(release).toContain(
-      'VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}',
-    );
+    // turns into `x-vercel-protection-bypass`. Restored in #6415. The
+    // credentials come from AWS Secrets Manager (.github/actions/aws-env), so
+    // every staging-facing job must read them itself.
+    for (const job of ['  sweep-before:', '  api:', '  browser:', '  sweep-after:']) {
+      const start = release.indexOf(`\n${job}\n`);
+      expect(start, `${job.trim()} job`).toBeGreaterThan(-1);
+      const next = release.slice(start + job.length + 2).search(/\n {2}[a-z0-9-]+:\n/);
+      const block = release.slice(start, next === -1 ? undefined : start + job.length + 2 + next);
+      expect(block).toContain('uses: ./.aws-env/.github/actions/aws-env');
+      expect(block).toContain('id-token: write');
+      expect(block).toMatch(/^ {12}VERCEL_AUTOMATION_BYPASS_SECRET$/m);
+      expect(block).toContain('WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD');
+    }
     expect(release).toContain('https://staging-api.kortix.com/v1');
     expect(release).toContain('https://staging.kortix.com');
   });

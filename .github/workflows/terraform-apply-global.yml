@@ -57,7 +57,6 @@ jobs:
       github_environment: infra-global
       trusted_branch: main
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
-    secrets: inherit
 
   security-baseline:
     name: security-baseline
@@ -74,4 +73,3 @@ jobs:
       github_environment: infra-global
       trusted_branch: main
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
-    secrets: inherit
