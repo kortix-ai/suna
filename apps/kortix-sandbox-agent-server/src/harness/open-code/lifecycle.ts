@@ -123,6 +123,7 @@ import {
 } from '../../secret-capabilities'
 import { configReleaseNoticePath } from '../../config-release/notice'
 import { bootLinkPath } from '../../boot-config'
+import { declaredAgentNames, pruneUndeclaredAgentFiles } from '../../declared-agents'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -1927,6 +1928,21 @@ export function createOpencodeLifecycle(
       delete env.OPENCODE_CONFIG_CONTENT
     }
     startupMark('runtime-config-ready')
+
+    // Neutralize agent files the platform never declared, BEFORE opencode
+    // reads them (see declared-agents.ts for the exploit this closes: an
+    // in-box caller writes agents/<name>.md with permissions the project
+    // denies, then triggers its own restart). Every spawn, not once at boot —
+    // the escalation needs a restart to take effect, so the check has to sit
+    // on the same path the attack does. Unconditional, regardless of which
+    // config dir `env.OPENCODE_CONFIG_DIR` (the boot link) currently resolves
+    // to: on a hash-verified config-releases directory this is a no-op (the
+    // release was compiled from the same governance as
+    // KORTIX_COMPILED_AGENT_CONFIG, so nothing is ever undeclared there), and
+    // on the pre-release/workspace fallback (`config_releases` off — still the
+    // platform default) it is the only thing standing between the box and its
+    // own agents directory.
+    pruneUndeclaredAgentFiles(env.OPENCODE_CONFIG_DIR ?? bootLinkPath(), declaredAgentNames(baseEnv.KORTIX_COMPILED_AGENT_CONFIG))
 
     const args = ['serve', '--port', String(port), '--hostname', '127.0.0.1']
 
