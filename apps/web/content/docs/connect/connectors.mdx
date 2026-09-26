@@ -92,6 +92,29 @@ A person outside the audience does not see the account. A person who manages
 the project's connections still sees it, marked **Not shared with you**, so
 they can change who can use it.
 
+### Share your own private account
+
+Your own **Only you** account has a **Share** button too. Sharing it turns it
+into a shared account for the people and groups you pick (you stay on it unless
+you remove yourself), or for everyone in the project. From then on it is a
+shared account: people who manage the project's connections can manage it too.
+
+- Sharing needs `project.connector.connections.manage`, the same right as
+  adding a shared account. Without it the button is disabled and says why.
+- Kortix writes the grants first and turns the account shared in one update,
+  so it is never open to the whole project in between.
+- A shared account of the same name on the connector blocks it (`409`): rename
+  one first.
+
+```text
+POST /projects/{projectId}/connections/{connectionId}/share
+     {"principals": [{"principal_type": "group", "principal_id": "<group-id>"}]}
+```
+
+An empty `principals` list shares it with everyone. From the CLI:
+`kortix connectors connections share <connection-id> --group <group-id>`
+(also `--user <email|id>`, repeatable, or `--everyone`).
+
 Each audience entry is one `connection` object assignment in the grant store:
 
 ```text
@@ -114,8 +137,9 @@ kortix connectors connections ls   # the WHO CAN USE column
 - `principal_type` is `user`, `group`, or `project` (everyone in the project;
   `principal_id` is the project id).
 - Granting or revoking one needs `project.connector.connections.manage`.
-- Only a shared account can be narrowed. A private account, or an id that is
-  not a connection in this project, answers `404`.
+- Only a shared account can be narrowed through these grants. A private account,
+  or an id that is not a connection in this project, answers `404`; share your
+  own private account with the `share` route above instead.
 - `GET /projects/{projectId}/connections` returns each shared account's grants
   in `shared_with`, and `usable: false` on an account the caller sees only to
   manage it. The session picker offers only usable accounts.
