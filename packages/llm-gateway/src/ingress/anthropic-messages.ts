@@ -302,14 +302,15 @@ export function chatJsonToAnthropicMessage(data: Record<string, unknown>): Recor
   };
 }
 
+type AnthropicSseBlockType = 'text' | 'tool_use';
+
 interface AnthropicSseState {
   messageId: string;
   model: string;
   messageStarted: boolean;
   finished: boolean;
   nextIndex: number;
-  textIndex: number | null;
-  openBlockIndex: number | null;
+  openBlock: { index: number; type: AnthropicSseBlockType } | null;
   toolIndexMap: Map<number, number>;
   finishReason: string | null;
   promptTokens: number;
@@ -344,19 +345,44 @@ function ensureMessageStart(
   );
 }
 
+// The single source of truth for what is open. Every delta is addressed to
+// `openBlock`, so a delta can never be written into an index that was stopped.
 function closeOpenBlock(
   controller: ReadableStreamDefaultController<Uint8Array>,
   encoder: TextEncoder,
   state: AnthropicSseState,
 ): void {
-  if (state.openBlockIndex === null) return;
+  if (state.openBlock === null) return;
   controller.enqueue(
     sseFrame(encoder, 'content_block_stop', {
       type: 'content_block_stop',
-      index: state.openBlockIndex,
+      index: state.openBlock.index,
     }),
   );
-  state.openBlockIndex = null;
+  state.openBlock = null;
+}
+
+// Closes whatever block is open, then starts a fresh one at the next index and
+// records it as the open block. The content block is built from the allocated
+// index (the tool_use id fallback needs it), so the caller passes a factory.
+function openContentBlock(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  state: AnthropicSseState,
+  type: AnthropicSseBlockType,
+  contentBlock: (index: number) => Record<string, unknown>,
+): number {
+  closeOpenBlock(controller, encoder, state);
+  const index = state.nextIndex++;
+  controller.enqueue(
+    sseFrame(encoder, 'content_block_start', {
+      type: 'content_block_start',
+      index,
+      content_block: contentBlock(index),
+    }),
+  );
+  state.openBlock = { index, type };
+  return index;
 }
 
 function handleOpenAiChunk(
@@ -382,24 +408,17 @@ function handleOpenAiChunk(
   const delta = (choice.delta as Record<string, unknown>) ?? {};
 
   if (typeof delta.content === 'string' && delta.content) {
-    if (state.openBlockIndex !== null && state.openBlockIndex !== state.textIndex) {
-      closeOpenBlock(controller, encoder, state);
-    }
-    if (state.textIndex === null) {
-      state.textIndex = state.nextIndex++;
-      controller.enqueue(
-        sseFrame(encoder, 'content_block_start', {
-          type: 'content_block_start',
-          index: state.textIndex,
-          content_block: { type: 'text', text: '' },
-        }),
-      );
-      state.openBlockIndex = state.textIndex;
-    }
+    const index =
+      state.openBlock?.type === 'text'
+        ? state.openBlock.index
+        : openContentBlock(controller, encoder, state, 'text', () => ({
+            type: 'text',
+            text: '',
+          }));
     controller.enqueue(
       sseFrame(encoder, 'content_block_delta', {
         type: 'content_block_delta',
-        index: state.textIndex,
+        index,
         delta: { type: 'text_delta', text: delta.content },
       }),
     );
@@ -412,25 +431,13 @@ function handleOpenAiChunk(
     let anthropicIndex = state.toolIndexMap.get(openAiIndex);
     const fn = (toolCall.function as Record<string, unknown>) ?? {};
     if (anthropicIndex === undefined) {
-      closeOpenBlock(controller, encoder, state);
-      anthropicIndex = state.nextIndex++;
+      anthropicIndex = openContentBlock(controller, encoder, state, 'tool_use', (index) => ({
+        type: 'tool_use',
+        id: typeof toolCall.id === 'string' && toolCall.id ? toolCall.id : `toolu_${index}`,
+        name: typeof fn.name === 'string' ? fn.name : '',
+        input: {},
+      }));
       state.toolIndexMap.set(openAiIndex, anthropicIndex);
-      controller.enqueue(
-        sseFrame(encoder, 'content_block_start', {
-          type: 'content_block_start',
-          index: anthropicIndex,
-          content_block: {
-            type: 'tool_use',
-            id:
-              typeof toolCall.id === 'string' && toolCall.id
-                ? toolCall.id
-                : `toolu_${anthropicIndex}`,
-            name: typeof fn.name === 'string' ? fn.name : '',
-            input: {},
-          },
-        }),
-      );
-      state.openBlockIndex = anthropicIndex;
     }
     if (typeof fn.arguments === 'string' && fn.arguments) {
       controller.enqueue(
@@ -487,8 +494,7 @@ export function chatSseToAnthropicSse(
     messageStarted: false,
     finished: false,
     nextIndex: 0,
-    textIndex: null,
-    openBlockIndex: null,
+    openBlock: null,
     toolIndexMap: new Map(),
     finishReason: null,
     promptTokens: 0,

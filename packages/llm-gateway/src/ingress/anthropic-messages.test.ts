@@ -309,6 +309,20 @@ async function collectAnthropicEvents(
   return events;
 }
 
+// A content_block_delta is only valid while its block is open. Track the open
+// set and assert every delta targets an index that has started and not stopped.
+function assertEveryDeltaTargetsAnOpenBlock(
+  events: { event: string; data: AnthropicSseEventData }[],
+): void {
+  const openIndices = new Set<number>();
+  for (const { event, data } of events) {
+    if (event === 'content_block_start') openIndices.add(data.index as number);
+    else if (event === 'content_block_stop') openIndices.delete(data.index as number);
+    else if (event === 'content_block_delta')
+      expect(openIndices.has(data.index as number)).toBe(true);
+  }
+}
+
 function chunk(delta: Record<string, unknown>, finish: string | null = null): string {
   return `data: ${JSON.stringify({
     id: 'chatcmpl-xyz',
@@ -443,6 +457,50 @@ describe('chatSseToAnthropicSse', () => {
     expect(events[1].data.index).toBe(0);
     expect(events[4].data.index).toBe(1);
     expect(events[4].data.content_block?.type).toBe('tool_use');
+  });
+
+  test('opens a fresh text block for text that arrives after a tool_use block was closed', async () => {
+    const openai = encodeSse(
+      chunk({ role: 'assistant', content: '' }),
+      chunk({ content: 'checking the weather ' }),
+      chunk({
+        tool_calls: [
+          {
+            index: 0,
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'get_weather', arguments: '{"city":"paris"}' },
+          },
+        ],
+      }),
+      chunk({ content: 'done.' }),
+      chunk({}, 'tool_calls'),
+      'data: [DONE]\n\n',
+    );
+
+    const events = await collectAnthropicEvents(chatSseToAnthropicSse(openai));
+    const types = events.map((e) => e.event);
+    expect(types).toEqual([
+      'message_start',
+      'content_block_start',
+      'content_block_delta',
+      'content_block_stop',
+      'content_block_start',
+      'content_block_delta',
+      'content_block_stop',
+      'content_block_start',
+      'content_block_delta',
+      'content_block_stop',
+      'message_delta',
+      'message_stop',
+    ]);
+
+    expect(events[1].data).toMatchObject({ index: 0, content_block: { type: 'text' } });
+    expect(events[4].data).toMatchObject({ index: 1, content_block: { type: 'tool_use' } });
+    expect(events[7].data).toMatchObject({ index: 2, content_block: { type: 'text' } });
+    expect(events[8].data.delta).toEqual({ type: 'text_delta', text: 'done.' });
+
+    assertEveryDeltaTargetsAnOpenBlock(events);
   });
 
   test('translates a mid-stream OpenAI error frame into an Anthropic error event without dropping the connection', async () => {
