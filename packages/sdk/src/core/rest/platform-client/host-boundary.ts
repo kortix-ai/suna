@@ -206,6 +206,8 @@ export interface ConnectorSetupLinkInfo {
   project_name: string;
   /** The name the agent suggested for the new account, or `null`. Absent on older servers. */
   label?: string | null;
+  /** Whose account the agent meant the link to create. Absent on older servers. */
+  owner?: 'me' | 'project';
   slug: string;
   app: string | null;
   /**

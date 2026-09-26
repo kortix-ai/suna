@@ -181,6 +181,8 @@ setupLinksPublicApp.get('/connectors/:token', async (c) => {
     project_name: name,
     // The agent's suggested name for a new account, or null.
     label: resolved.payload.label ?? null,
+    // Whose account the agent meant; the dialog preselects it. Older tokens: `me`.
+    owner: resolved.payload.owner === 'project' ? 'project' : 'me',
     slug: resolved.payload.slug,
     app: resolved.payload.app,
     name: identity.name,

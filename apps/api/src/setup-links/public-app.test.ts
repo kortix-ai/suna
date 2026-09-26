@@ -242,8 +242,13 @@ describe('GET /connectors/:token', () => {
     ).json();
     expect(named.project_id).toBe(PROJECT_ID);
     expect(named.label).toBe("Dad's Gmail");
-    const unnamed = await (await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`)).json();
+    // Whose account the agent meant: the dialog preselects it.
+    expect(named.owner).toBe('me');
+    const unnamed = await (
+      await setupLinksPublicApp.request(`/connectors/${mintConnectorToken({ owner: 'project' })}`)
+    ).json();
     expect(unnamed.label).toBeNull();
+    expect(unnamed.owner).toBe('project');
   });
 
   test('a connector without a catalog icon reports icon_url null, not a guessed URL', async () => {

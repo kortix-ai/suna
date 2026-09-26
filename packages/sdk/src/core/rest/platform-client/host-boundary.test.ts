@@ -170,6 +170,7 @@ describe('host boundary transport', () => {
         project_id: 'P1',
         project_name: 'Acme',
         label: "Dad's Gmail",
+        owner: 'project',
         slug: 'gmail',
         app: 'gmail',
         expires_at: '2026-01-01',
@@ -181,7 +182,8 @@ describe('host boundary transport', () => {
 
     const projectId: string | undefined = info.project_id;
     const label: string | null | undefined = info.label;
-    expect({ projectId, label }).toEqual({ projectId: 'P1', label: "Dad's Gmail" });
+    const owner: 'me' | 'project' | undefined = info.owner;
+    expect({ projectId, label, owner }).toEqual({ projectId: 'P1', label: "Dad's Gmail", owner: 'project' });
   });
 
   test('connector setup-link finalize names ONE account when given its connection id', async () => {
