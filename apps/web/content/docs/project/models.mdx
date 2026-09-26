@@ -196,3 +196,42 @@ without losing these drafts. Reloading the page discards unsaved changes.
 If a save fails, the panel stays open and shows the error. Correct the selection
 or retry. Providers already saved remain saved; unfinished changes stay in the
 panel.
+
+## Use the gateway from Claude Code
+
+The gateway serves the Anthropic Messages API at `POST /v1/messages`. Claude
+Code and Anthropic SDKs can call any gateway model through it.
+
+1. Create a key in **Customize → Gateway**, tab **Gateway**.
+2. Start Claude Code with the gateway as its API endpoint:
+
+```bash
+ANTHROPIC_BASE_URL=https://gateway.kortix.com \
+ANTHROPIC_AUTH_TOKEN=kortix_gw_... \
+claude --model kimi-k3
+```
+
+The gateway reads the key from `Authorization: Bearer` or from `x-api-key`, so
+`ANTHROPIC_API_KEY` also works.
+
+The gateway translates these Claude Code fields for every provider:
+
+- `thinking: {type: "adaptive"}` with `output_config.effort` becomes
+  `reasoning_effort`. See [Thinking effort](#thinking-effort).
+- Usage on the final `message_delta` carries `input_tokens`,
+  `cache_read_input_tokens`, and `cache_creation_input_tokens`. Claude Code
+  uses them for `/context` and auto-compaction.
+- Images that a tool returns, such as a `Read` of a screenshot, reach the model
+  in a user message after the tool result.
+- A provider stream that ends before completion returns an `api_error` event,
+  so Claude Code retries the turn.
+
+Limits:
+
+- `/v1/messages/count_tokens` returns `404`. Claude Code then estimates
+  counts from characters.
+- Reasoning text is not returned as `thinking` blocks.
+- ChatGPT models need a ChatGPT account that the whole project can use. A
+  gateway key cannot use its creator's private connection.
+- Claude Code cannot set a context window per model. Set
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the smallest window you use.
