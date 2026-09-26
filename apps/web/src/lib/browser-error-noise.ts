@@ -962,6 +962,11 @@ const IOS_WEBVIEW_INSTRUMENTED_FUNCTION_NAMES = new Set([
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
+  // Legacy Safari extension scheme (`safari-extension://`), distinct from the
+  // modern `safari-web-extension://` below: `startsWith('extension://')` does
+  // NOT match it, so it needs its own entry. The `browser-extension` noise
+  // class matches a `*-extension://` URL, which covers both Safari schemes.
+  'safari-extension://',
   'safari-web-extension://',
   'extension://',
 ] as const;
@@ -1545,6 +1550,82 @@ export function isUserscriptManagerNoise(input: {
 }): boolean {
   const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
   return sources.some(isUserscriptManagerInjectedSource);
+}
+
+// Vercel Live Feedback (`vercel-live-feedback`) toolbar instrumentation noise.
+// Vercel injects its Live Feedback toolbar as the deployment-scoped chunk
+// `app:///_next-live/feedback/instrument.<id>.js?dpl=dpl_…` — the same
+// synthetic `app:///` browser-bundle origin shape as our own
+// `app:///_next/static/…` chunks, but under Vercel's reserved `_next-live/`
+// path (NOT a first-party source path). The toolbar's own event handler
+// (function `s`, registered through `addEventListener`) detaches its listener
+// with `window.parent.removeEventListener(...)`; when `window.parent` is
+// `null` (the toolbar script running detached, or its parent frame already
+// gone) the property access throws the engine's canonical null-deref
+// `TypeError` — SpiderMonkey/Firefox wording
+// `can't access property "removeEventListener", window.parent is null` (the
+// observed prod message), V8 wording `Cannot read properties of null (reading
+// 'removeEventListener')`, JSC wording
+// `null is not an object (evaluating 'window.parent.removeEventListener')`.
+// The throw is in Vercel's toolbar script, never first-party app code: the
+// breadcrumbs show a `ui.click` on `vercel-live-feedback` immediately before
+// the throw, and a first-party call site de-minifies to `apps/web/src/…`,
+// never `_next-live/feedback/…`.
+//
+// Better Stack pattern
+// b81e1f084e007841cfb868f8a45299ce4888e8b1f4e9194f261fb4acea3eaa47
+// (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+// `can't access property "removeEventListener", window.parent is null`,
+// 1 occurrence / 0 identified users, first 2026-09-24 19:57:42 UTC, release
+// `4f496426b67b2cbb2e6f5b0c66749a5763bb1196`, request URL a co-worker session
+// page, browser Firefox 155 on macOS, mechanism
+// `auto.browser.browserapierrors.addEventListener` (UNCAUGHT, `handled:false`
+// — Sentry's `BrowserApiErrors` integration auto-wraps `addEventListener` and
+// captures the handler throw). Stack frames: `n` in
+// `app:///_next/static/immutable/chunks/3vyqedzurxshp.js` (the scheduling
+// frame) and `s` in `app:///_next-live/feedback/instrument.<id>.js?dpl=dpl_…`
+// (THE THROW SITE — the Vercel Live Feedback toolbar chunk).
+//
+// The `_next-live/feedback/` frame is Vercel's own reserved toolbar source and
+// is never a first-party call site, so anchoring on it (rather than on the
+// engine-specific message wording, which differs per browser) is conservative
+// and covers every engine variant. A NEGATIVE guard preserves any event whose
+// stack carries a resolved first-party `apps/web/src/…` frame — if our own
+// code somehow triggered the toolbar path, the error is actionable and keeps
+// reporting. Deliberately NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list — that gate has no frame context, so a bare-string match
+// there could swallow a real first-party `window.parent` null-deref; the
+// frame-aware `beforeSend` hook (which calls
+// `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const VERCEL_LIVE_FEEDBACK_FRAME_PATTERNS: ReadonlyArray<RegExp> = [
+  /^app:\/\/\/_next-live\/feedback\//,
+  /^https?:\/\/[^/]+\/_next-live\/feedback\//,
+];
+
+function isVercelLiveFeedbackFrame(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return VERCEL_LIVE_FEEDBACK_FRAME_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * Whether a Sentry / window.onerror event originates from Vercel's Live
+ * Feedback toolbar (`_next-live/feedback/…`). The toolbar's own
+ * `window.parent.removeEventListener` null-deref on a detached/parent-less
+ * context is framework noise, never first-party app code. Requires a positive
+ * `_next-live/feedback/` frame/filename anchor and a NEGATIVE guard: any
+ * resolved first-party `apps/web/src/…` source keeps the event reporting.
+ * See `VERCEL_LIVE_FEEDBACK_FRAME_PATTERNS` for the full rationale and Better
+ * Stack pattern `b81e1f08…`.
+ */
+export function isVercelLiveFeedbackNoise(input: {
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
+  if (!sources.some(isVercelLiveFeedbackFrame)) {
+    return false;
+  }
+  return !sources.some(isFirstPartyResolvedSource);
 }
 
 // OneTrust cookie-consent SDK JSON-parse noise. OneTrust
@@ -3250,28 +3331,97 @@ export function isNonErrorUndefinedRejectionNoise(input: {
 // `OperationError` rejection the negative guard exists to preserve; the
 // frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
 // is the only safe gate.
+//
+// SECOND production shape (KRTX-227 / KRTX-228, 2026-09-22 → 2026-09-23): the
+// SAME browser-internal message now arrives WITH a stack. `popErrorScope` is
+// WebGPU-only, and the only WebGPU code on the site is the three.js renderer
+// behind the public `/a1o` landing page's `<Canvas>` (`three@0.185.1`,
+// `apps/web/src/app/[locale]/a1o/die-scene.tsx`). When the GPU device is
+// dropped (device loss, tab teardown, page navigation) between the error-scope
+// push and pop, the browser rejects `popErrorScope()` with this exact
+// `OperationError`, and three.js surfaces the rejection uncaught from its
+// `createRenderPipeline` pipeline cache. Better Stack patterns
+// a44862f663502fe8edeff94c657db30439856b5584c7f9a5e7b22b13d4843643 (KRTX-228)
+// and 93f6cf89c4b58805d19b8a8ebbd8ebe9b4e27cb25b2ba710bdd907db2a790d18
+// (KRTX-227) (Kortix Frontend prod, application_id 2346967): `OperationError`,
+// ~42-43 occurrences over ~11 h, 0 identified users, release `52c2174f…`,
+// request URL `https://kortix.com/`, Chrome, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT, never reached a React error boundary). The stack is ENTIRELY
+// minified three.js bundle frames in
+// `app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js` —
+// `vz.createRenderPipeline`, `d4._getRenderPipeline`, `Te._renderScene`,
+// `Te._renderObjects`, `dV._animationLoop` — with NO de-minified
+// `apps/web/src/…` frame. The old matcher's negative guard #2
+// (`isResolvableFrameSource`) vetoed every one of them, because a minified
+// `app:///_next/…` chunk counts as "resolvable", so the class leaked. The fix
+// adds a POSITIVE anchor — a browser-bundle frame whose function is one of the
+// three.js WebGPU renderer pipeline helpers — alongside the existing frameless
+// shape; the first-party `apps/web/src/…` negative guard is unchanged and still
+// preserves a real first-party `OperationError` rejection.
 const OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN = /^Instance dropped in popErrorScope$/;
+
+// The three.js WebGPU renderer internals that drive GPUDevice error scopes.
+// `GPUDevice.createRenderPipeline` is wrapped by the renderer's
+// `createRenderPipeline` / `_getRenderPipeline` pipeline-cache helpers, and the
+// browser rejects `popErrorScope()` with `OperationError: Instance dropped in
+// popErrorScope` when the GPU device is dropped (device loss, tab teardown,
+// page navigation) between the push and the pop. These method names survive
+// minification, so they are a stable positive anchor for the renderer stack.
+// They are three.js internals, never first-party `apps/web/src/…` functions.
+const WEBGPU_RENDERER_PIPELINE_FRAME_FUNCTIONS = new Set([
+  'createRenderPipeline',
+  '_getRenderPipeline',
+  'getForRender',
+  'updateForRender',
+]);
+
+// Sentry frame function names carry the minified receiver
+// (`vz.createRenderPipeline`, `d4._getRenderPipeline`). Compare the method name
+// only — it survives minification.
+function browserBundleFunctionName(frame: { function?: unknown } | undefined): string {
+  const name = normalizeString(frame?.function);
+  const dot = name.lastIndexOf('.');
+  return dot >= 0 ? name.slice(dot + 1) : name;
+}
+
+// A positive anchor frame: a browser bundle chunk (`app:///_next/static/…`)
+// whose function is one of the three.js WebGPU renderer's pipeline helpers. The
+// bundle-source requirement keeps the anchor on bundled library code, never a
+// de-minified first-party path (which negative guard #1 already preserves).
+function isWebGpuRendererPipelineFrame(
+  frame: { filename?: unknown; function?: unknown } | undefined,
+): boolean {
+  return (
+    isBrowserBundleSource(frame?.filename) &&
+    WEBGPU_RENDERER_PIPELINE_FRAME_FUNCTIONS.has(browserBundleFunctionName(frame))
+  );
+}
 
 /**
  * Whether a Sentry event is the browser-internal DOM/binding
  * `OperationError: Instance dropped in popErrorScope` noise class:
  * `popErrorScope` is part of the WebIDL/internal error-scope machinery
  * (DOMQueuingStrategy, ResizeObserver, IntersectionObserver, media streams,
- * GPU, …), NOT a first-party Kortix API. Some browser code paths surface a
- * frameless `OperationError` with this exact message as an uncaught global
- * `onunhandledrejection` — never first-party app code. Requires the EXACT
- * message (case-sensitive; `OperationError` alone is a generic WebIDL type a
- * real first-party `new OperationError(...)` could also surface with) AND a
- * NEGATIVE guard: if any frame resolves to a de-minified first-party
- * `apps/web/src/…` source path OR any resolvable frame location at all, the
- * event keeps reporting (a real first-party `OperationError` rejection we can
- * attribute should still surface). The production noise pattern has NO frames
- * at all; only the frameless capture is dropped. See
- * `OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN` for the full rationale.
+ * GPU, …), NOT a first-party Kortix API. Two production shapes are covered:
+ * (a) the frameless `OperationError` with this exact message surfaced as an
+ * uncaught global `onunhandledrejection`; and (b) the stack-bearing shape from
+ * the three.js WebGPU renderer on the `/a1o` landing page, whose rejection
+ * carries only minified `app:///_next/static/…` bundle frames (the renderer's
+ * `createRenderPipeline` / `_getRenderPipeline` pipeline helpers) and no
+ * de-minified `apps/web/src/…` frame. Both are never first-party app code.
+ * Requires the EXACT message (case-sensitive; `OperationError` alone is a
+ * generic WebIDL type a real first-party `new OperationError(...)` could also
+ * surface with), AND a NEGATIVE guard: if any frame resolves to a de-minified
+ * first-party `apps/web/src/…` source path, the event keeps reporting (a real
+ * first-party `OperationError` rejection we can attribute should still
+ * surface). A non-anchored resolvable frame location still keeps reporting
+ * (guard #2). See `OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN` for the full
+ * rationale.
  */
 export function isOperationErrorPopErrorScopeNoise(input: {
   message?: unknown;
-  frames?: Array<{ filename?: unknown } | undefined>;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
 }): boolean {
   const message = normalizeString(input.message);
   if (!OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN.test(message)) {
@@ -3284,9 +3434,19 @@ export function isOperationErrorPopErrorScopeNoise(input: {
   if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
     return false;
   }
-  // Negative guard #2: any resolvable source location (real chunk/URL/named
-  // file) → an attributable error with a real stack; keep reporting. Only the
-  // frameless capture (the production noise pattern) remains → drop it.
+  // Positive anchor: the WebGPU renderer stack. `popErrorScope` is WebGPU-only,
+  // and the three.js renderer is the code that drives a GPU error scope. Its
+  // pipeline helpers (`createRenderPipeline` / `_getRenderPipeline`) live in a
+  // minified `app:///_next/static/…` bundle chunk. This is the stack-bearing
+  // sibling of the frameless production shape — the browser drops the GPU error
+  // scope mid-render (device loss / teardown) and three.js surfaces the
+  // rejection uncaught. No first-party frame → noise; drop it.
+  if (frames.some(isWebGpuRendererPipelineFrame)) {
+    return true;
+  }
+  // Negative guard #2: any other resolvable source location (real chunk/URL/
+  // named file) → an attributable error with a real stack; keep reporting. Only
+  // the frameless capture and the anchored WebGPU-renderer capture remain.
   if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
     return false;
   }
@@ -4218,6 +4378,39 @@ export function isUndefinedVariableThirdPartyNoise(input: {
 // is the only safe gate.
 const REDEFINE_WEBDRIVER_NOISE_MESSAGE = /^Cannot redefine property: webdriver$/;
 
+// Shared core for the injected-script `Cannot redefine property: <name>` noise
+// family (`isRedefineWebdriverNoise`, `isRedefineInjectedWalletNoise`): an
+// injected third-party script calls `Object.defineProperty` on a page global
+// that some other injected script already installed as non-configurable, so the
+// trap throws V8's canonical `TypeError: Cannot redefine property: <name>` from
+// the injected script — never first-party Kortix code. The message is stripped
+// of the canonical `TypeError: ` / `Unhandled promise rejection: ` wrappers so
+// all capture paths (window.onerror, onunhandledrejection, Sentry exception)
+// classify consistently. The matcher carries the shared NEGATIVE guard: a
+// resolved first-party `apps/web/src/…` frame (or window.onerror `filename`)
+// means our own code called `defineProperty` on a non-configurable property →
+// a real first-party regression; keep reporting so the call site can be found +
+// fixed. A real first-party `defineProperty` regression de-minifies to
+// `apps/web/src/…` and is never hidden.
+function isRedefineInjectedPropertyNoise(
+  input: {
+    message?: unknown;
+    filename?: unknown;
+    frames?: Array<{ filename?: unknown } | undefined>;
+  },
+  messagePattern: RegExp,
+): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!messagePattern.test(stripped)) {
+    return false;
+  }
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Whether a Sentry / window.onerror event is the bot / automation-framework /
  * scraper `Cannot redefine property: webdriver` noise class: an injected
@@ -4242,20 +4435,55 @@ export function isRedefineWebdriverNoise(input: {
   filename?: unknown;
   frames?: Array<{ filename?: unknown } | undefined>;
 }): boolean {
-  const stripped = stripErrorWrappers(normalizeString(input.message));
-  if (!REDEFINE_WEBDRIVER_NOISE_MESSAGE.test(stripped)) {
-    return false;
-  }
-  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
-  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
-  // window.onerror `filename`) means our own code called `defineProperty` on a
-  // non-configurable property → a real first-party regression; keep reporting
-  // so the call site can be found + fixed. A real first-party `defineProperty`
-  // regression de-minifies to `apps/web/src/…` and is never hidden.
-  if (sources.some(isFirstPartyResolvedSource)) {
-    return false;
-  }
-  return true;
+  return isRedefineInjectedPropertyNoise(input, REDEFINE_WEBDRIVER_NOISE_MESSAGE);
+}
+
+// Injected EVM/Web3 wallet-provider `Cannot redefine property: <provider>` noise
+// — the wallet sibling of the `Cannot redefine property: webdriver` class above
+// (see `isRedefineWebdriverNoise` for the shared rationale). A browser wallet
+// extension (MetaMask / Coinbase Wallet / Phantom / TronLink / a userscript
+// wallet injector) injects a content script that installs its provider on the
+// page global (`window.ethereum` / `window.solana` / `window.web3` /
+// `window.tronWeb`) via `Object.defineProperty(window, '<provider>', …)` so site
+// code can detect the wallet. When the property is already installed — two
+// wallet extensions active at once, a userscript-manager wrapper that already
+// defines it, or a non-configurable descriptor left by another injected script
+// — the `defineProperty` trap throws V8's canonical `TypeError: Cannot redefine
+// property: <provider>`. The throw originates in the injected wallet/userscript
+// script, never first-party Kortix code: our app never defines
+// `ethereum`/`solana`/`web3`/`tronWeb` (they are wallet-provider globals).
+//
+// This is the class the `software-factory-infra-sweep` `browser-extension`
+// noise class matches (its message rule is
+// `Cannot redefine property: (ethereum|solana|web3|tronWeb)`), so the property
+// set here MUST stay in sync with that class definition. Better Stack pattern
+// `3b46e257…` (Kortix Frontend prod, application_id 2346967): `TypeError`,
+// message `Cannot redefine property: ethereum`, 1 occurrence / 0 identified
+// users over 3 days (0 in the last 24 h). The userscript/extension-URL rules of
+// the same class are already covered by `isUserscriptManagerNoise` and
+// `isExtensionSource`.
+//
+// The property names are the injected wallet providers and are never
+// first-party Kortix globals, so the EXACT-message match is specific. Mirroring
+// `isRedefineWebdriverNoise`, the matcher carries a NEGATIVE guard: if ANY frame
+// (or the window.onerror `filename`) resolves to a de-minified first-party
+// `apps/web/src/…` source path, the event keeps reporting — a real first-party
+// `defineProperty` regression must not be hidden. A frameless capture with this
+// exact message still classifies as noise. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there could swallow a real first-party
+// `defineProperty` regression the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// and the runtime gate (`shouldIgnoreBrowserRuntimeNoise`) are the safe gates.
+const REDEFINE_WALLET_PROVIDER_NOISE_MESSAGE =
+  /^Cannot redefine property: (?:ethereum|solana|web3|tronWeb)$/;
+
+export function isRedefineInjectedWalletNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  return isRedefineInjectedPropertyNoise(input, REDEFINE_WALLET_PROVIDER_NOISE_MESSAGE);
 }
 
 // Transient fetch-abort `signal timed out` noise — the Bun / native
@@ -4611,6 +4839,15 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Vercel Live Feedback toolbar (`_next-live/feedback/…`) instrumentation
+  // noise — the toolbar's own `window.parent.removeEventListener` null-deref on
+  // a detached/parent-less context. Framework noise, never first-party code.
+  // Requires the `_next-live/feedback/` frame/filename anchor with a
+  // first-party negative guard. See `isVercelLiveFeedbackNoise`.
+  if (isVercelLiveFeedbackNoise({ filename: input.filename })) {
+    return true;
+  }
+
   // Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
   // FireMonkey) injected user-script noise — the script's own logic bug (e.g.
   // `JSON.parse(undefined)` → `SyntaxError: "undefined" is not valid JSON`)
@@ -4740,6 +4977,20 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Injected EVM/Web3 wallet-provider `Cannot redefine property: <provider>`
+  // noise — the wallet sibling of the `webdriver` class above. A wallet
+  // extension / userscript injects `Object.defineProperty(window, 'ethereum' |
+  // 'solana' | 'web3' | 'tronWeb', …)` and the trap throws because the provider
+  // global is already non-configurable. The throw is in the injected script,
+  // never first-party code (our app never defines these globals). Requires the
+  // EXACT message AND a NEGATIVE guard: a resolved first-party `apps/web/src/…`
+  // filename means our own code called `defineProperty` on a non-configurable
+  // property → a real first-party regression; keep reporting. See
+  // `isRedefineInjectedWalletNoise` and Better Stack pattern `3b46e257…`.
+  if (isRedefineInjectedWalletNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   // Transient fetch-abort `signal timed out` noise — the native `TimeoutError`
   // raised by `AbortSignal.timeout()` when a client-side fetch exceeds its 30s
   // deadline. The SDK's `makeRequest` aborts on its 30s deadline and the abort
@@ -4772,7 +5023,7 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     values?: Array<{
       value?: unknown;
       mechanism?: { type?: unknown; handled?: unknown };
-      stacktrace?: { frames?: Array<{ filename?: unknown }> };
+      stacktrace?: { frames?: Array<{ filename?: unknown; function?: unknown }> };
     }>;
   };
 }): boolean {
@@ -5082,6 +5333,17 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Vercel Live Feedback toolbar (`_next-live/feedback/…`) instrumentation
+  // noise — the toolbar's own `window.parent.removeEventListener` null-deref on
+  // a detached/parent-less context, captured by Sentry's `BrowserApiErrors`
+  // `addEventListener` auto-wrapper. Framework noise, never first-party code;
+  // requires the `_next-live/feedback/` frame anchor with a first-party
+  // negative guard. See `isVercelLiveFeedbackNoise` and Better Stack pattern
+  // `b81e1f08…`.
+  if (isVercelLiveFeedbackNoise({ frames })) {
+    return true;
+  }
+
   // Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
   // FireMonkey) injected user-script noise — the script's own logic bug (e.g.
   // `JSON.parse(undefined)` → `SyntaxError: "undefined" is not valid JSON`)
@@ -5332,14 +5594,16 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // Browser-internal DOM/binding `OperationError: Instance dropped in
   // popErrorScope` noise — `popErrorScope` is part of the WebIDL/internal
   // error-scope machinery (DOMQueuingStrategy, ResizeObserver,
-  // IntersectionObserver, media streams, GPU, …), NOT a first-party API. Some
-  // browser code paths surface a frameless `OperationError` with this exact
-  // message as an uncaught global `onunhandledrejection`; never first-party
-  // app code. Requires the EXACT message AND NEGATIVE guards: any resolved
-  // first-party `apps/web/src/…` frame OR any resolvable frame location → keep
-  // reporting (a real first-party `OperationError` rejection we can attribute
-  // should still surface). The production noise pattern has NO frames at all;
-  // only the frameless capture is dropped. See
+  // IntersectionObserver, media streams, GPU, …), NOT a first-party API. Two
+  // production shapes: a frameless `OperationError` surfaced as an uncaught
+  // global `onunhandledrejection`, and the stack-bearing three.js WebGPU
+  // renderer shape (minified `app:///_next/static/…` pipeline-helper frames,
+  // no first-party frame) from the `/a1o` landing page. Never first-party app
+  // code. Requires the EXACT message AND NEGATIVE guard #1: any resolved
+  // first-party `apps/web/src/…` frame → keep reporting (a real first-party
+  // `OperationError` rejection we can attribute must still surface). The
+  // frameless capture and the anchored WebGPU-renderer capture are dropped;
+  // any other resolvable frame location still keeps reporting (guard #2). See
   // `isOperationErrorPopErrorScopeNoise`. NOT in `ignoreErrors` (no frame
   // context there).
   if (isOperationErrorPopErrorScopeNoise({ message, frames })) {
@@ -5484,6 +5748,23 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // (no frame context there). See `isRedefineWebdriverNoise` and Better Stack
   // pattern `ee14e84d…`.
   if (isRedefineWebdriverNoise({ message, frames })) {
+    return true;
+  }
+
+  // Injected EVM/Web3 wallet-provider `Cannot redefine property: <provider>`
+  // noise — the wallet sibling of the `webdriver` class above. A wallet
+  // extension / userscript injects `Object.defineProperty(window, 'ethereum' |
+  // 'solana' | 'web3' | 'tronWeb', …)` and the trap throws because the provider
+  // global is already non-configurable. The throw is in the injected script,
+  // never first-party code (our app never defines these globals). Requires the
+  // EXACT message AND a NEGATIVE guard: a resolved first-party `apps/web/src/…`
+  // frame means our own code called `defineProperty` on a non-configurable
+  // property → a real first-party regression; keep reporting. The production
+  // noise carries no first-party frame. A frameless capture with this exact
+  // message still classifies as noise. NOT in `ignoreErrors` (no frame context
+  // there). See `isRedefineInjectedWalletNoise` and Better Stack pattern
+  // `3b46e257…`.
+  if (isRedefineInjectedWalletNoise({ message, frames })) {
     return true;
   }
 
