@@ -276,8 +276,15 @@ export async function resolveCandidates(
         name,
         consumer: 'llm_gateway',
       });
-    const selectedPool = (prospectiveIds !== undefined || principal.sessionId) && principal.userId &&
-      await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets')
+    // The pooled-secret read only runs for a request that can hold a pooled
+    // selection — a session/prospective pool or a project gateway key. A
+    // session-less servability probe keeps the legacy-only path it always had
+    // and reads the feature flag no more than it used to.
+    const mayUsePooledProviderSecrets = Boolean(principal.userId) &&
+      (prospectiveIds !== undefined || Boolean(principal.sessionId) || Boolean(principal.keyId));
+    const pooledEnabled = mayUsePooledProviderSecrets &&
+      await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets');
+    const selectedPool = (prospectiveIds !== undefined || principal.sessionId) && principal.userId && pooledEnabled
       ? await resolveSessionProviderSecrets({
           accountId: principal.accountId,
           projectId: principal.projectId,
@@ -289,22 +296,64 @@ export async function resolveCandidates(
           name: byok.envVar,
         })
       : null;
-    if (selectedPool?.configured && Array.isArray(principal.agentGrant?.env) &&
-      !principal.agentGrant.env.some((identifier) => identifier.toUpperCase() === byok.envVar.toUpperCase())) {
-      throw new GatewayResolutionError('provider_not_connected',
-        `The running agent cannot use ${provider} keys.`,
-        `Add ${byok.envVar} to the agent's secret grant, or choose another agent.`);
+    const agentMayUseProviderKeys = !Array.isArray(principal.agentGrant?.env) ||
+      principal.agentGrant.env.some((identifier) => identifier.toUpperCase() === byok.envVar.toUpperCase());
+    const agentGrantRefusal = () => new GatewayResolutionError('provider_not_connected',
+      `The running agent cannot use ${provider} keys.`,
+      `Add ${byok.envVar} to the agent's secret grant, or choose another agent.`);
+    if (selectedPool?.configured && !agentMayUseProviderKeys) throw agentGrantRefusal();
+    // The keys to run on. An explicit session selection wins. With NO
+    // selection — a session the pool row never reached (Slack, cron, an
+    // agent-started worker, or any caller that names only a model) — the
+    // account keys SHARED with the project serve: exactly the keys the model
+    // picker lists (`servableProjectCatalog` → `listGrantedGatewaySecretNames`).
+    // Reading only the legacy project secret here made a shared BYOK key the
+    // picker advertised fail on the first turn with `provider_not_connected`,
+    // the same flakiness the codex shared-account fallback above fixed. The
+    // legacy project secret stays the last resort.
+    let keys: Array<{ identifier: string; value: string; pooled: boolean }>;
+    let sharedFailure: GatewayResolutionError | null = null;
+    let sharedCoolingDown: { coolingDown: boolean; retryAfterSeconds?: number } | null = null;
+    if (selectedPool?.configured) {
+      keys = selectedPool.secrets.map((secret) => ({ identifier: secret.secretId, value: secret.value, pooled: true }));
+    } else {
+      const projectId = principal.projectId;
+      const legacyKeys = async () => (await resolveProjectSecretsForConsumer({
+        projectId,
+        accountId: principal.accountId,
+        sessionId: principal.sessionId,
+        actorUserId: principal.userId,
+        name: byok.envVar,
+        consumer: 'llm_gateway',
+      })).map(({ identifier, value }) => ({ identifier, value, pooled: false }));
+      const shared = pooledEnabled && principal.userId
+        ? await resolveProjectSharedProviderSecrets({
+            accountId: principal.accountId,
+            projectId,
+            userId: principal.userId,
+            grantUserId: principal.keyId ? null : personalUserId,
+            providerId: provider,
+            name: byok.envVar,
+          })
+        : null;
+      const sharedUsable = shared?.secrets ?? [];
+      if (sharedUsable.length > 0 || shared?.coolingDown) {
+        if (!agentMayUseProviderKeys) {
+          // Before this fallback such an agent reached only the legacy project
+          // key; it still may, but never a shared account key. The grant
+          // refusal is held and thrown only when nothing else serves it.
+          sharedFailure = agentGrantRefusal();
+          keys = await legacyKeys();
+        } else if (sharedUsable.length) {
+          keys = sharedUsable.map((secret) => ({ identifier: secret.secretId, value: secret.value, pooled: true }));
+        } else {
+          sharedCoolingDown = shared ?? null;
+          keys = await legacyKeys();
+        }
+      } else {
+        keys = await legacyKeys();
+      }
     }
-    const keys = selectedPool?.configured
-      ? selectedPool.secrets.map((secret) => ({ identifier: secret.secretId, value: secret.value }))
-      : await resolveProjectSecretsForConsumer({
-          projectId: principal.projectId,
-          accountId: principal.accountId,
-          sessionId: principal.sessionId,
-          actorUserId: principal.userId,
-          name: byok.envVar,
-          consumer: 'llm_gateway',
-        });
     if (selectedPool?.configured && keys.length === 0) {
       throw new GatewayResolutionError(
         selectedPool.coolingDown ? 'provider_pool_rate_limited' : 'provider_not_connected',
@@ -316,6 +365,14 @@ export async function resolveCandidates(
           : 'Select a granted key in session settings.',
         selectedPool.retryAfterSeconds,
       );
+    }
+    // The grant refusal takes precedence over a cooldown, as in the codex
+    // shared fallback.
+    if (!keys.length && sharedFailure) throw sharedFailure;
+    if (!keys.length && sharedCoolingDown?.coolingDown) {
+      throw new GatewayResolutionError('provider_pool_rate_limited',
+        `All ${provider} keys shared with this project are cooling down after rate limits.`,
+        'Retry after the cooldown, or connect another key.', sharedCoolingDown.retryAfterSeconds);
     }
     if (keys.length > 0) {
       const resolvedModelId = effectiveModel.slice(provider.length + 1);
@@ -352,7 +409,7 @@ export async function resolveCandidates(
         byok.kind === 'bedrock'
           ? normalizeBedrockInferenceProfileRegion(resolvedModelId, bedrockRegion)
           : resolvedModelId;
-      const byokDescriptors: UpstreamDescriptor[] = keys.map(({ identifier, value }) => ({
+      const byokDescriptors: UpstreamDescriptor[] = keys.map(({ identifier, value, pooled }) => ({
         provider,
         kind: byok.kind,
         npm: byok.npm,
@@ -360,7 +417,7 @@ export async function resolveCandidates(
         ...(bedrockRegion ? { region: bedrockRegion } : {}),
         apiKey: value,
         credentialRef: identifier,
-        ...(selectedPool?.configured ? { poolSecretId: identifier } : {}),
+        ...(pooled ? { poolSecretId: identifier } : {}),
         // BYOK bills the provider account directly. Kortix records provider
         // spend for observability but never debits Kortix credits.
         billingMode: 'none',
