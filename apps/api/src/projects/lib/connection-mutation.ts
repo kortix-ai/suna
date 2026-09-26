@@ -26,13 +26,18 @@ export interface ConnectionMutationActor extends ConnectionReachabilityActor {
  * private account is then yours to administer: reachability already proved
  * the owner is the caller. Every other reachable connection is shared with
  * the project, so it needs the connections-manage capability.
+ *
+ * Mutating a shared account manages it; it does not use it. The account's
+ * audience (who may USE it) is therefore `'open'` here: a connections manager
+ * outside a narrowed account's audience still renames, re-credentials, or
+ * revokes it.
  */
 export function mayMutateConnection(
   connection: ConnectionReachabilityRow,
   actor: ConnectionMutationActor,
 ): boolean {
   return (
-    connectionRowIsReachable(connection, actor) &&
+    connectionRowIsReachable(connection, actor, 'open') &&
     (connection.ownerType === 'member' || actor.mayManageSystemConnections)
   );
 }
@@ -96,5 +101,7 @@ export async function loadMutableConnection(c: Context, projectId: string, conne
     mayManageSystemConnections,
     agentPrincipal,
   };
-  return mayMutateConnection(connection, actor) ? { loaded, connection } : null;
+  return mayMutateConnection(connection, actor)
+    ? { loaded, connection, mayManageSystemConnections }
+    : null;
 }

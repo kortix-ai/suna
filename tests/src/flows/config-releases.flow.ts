@@ -128,7 +128,20 @@ const CONFIG_FILES: Record<string, string> = {
   '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\n',
   '.kortix/opencode/agents/reviewer.md': '---\ndescription: reviews\n---\nReview.\n',
   '.kortix/opencode/skills/demo/SKILL.md': '---\nname: demo\ndescription: demo\n---\nDemo skill.\n',
-  '.kortix/opencode/tools/hello.ts': 'export default {}\n',
+  // A bare `export default {}` never registers: measured on a real box
+  // (Platinum, 2026-09-26), `GET /experimental/tool/ids` lists every OTHER
+  // fixture tool but never `hello` for that shape, only for this one — no
+  // `description`/`args`/`execute` means OpenCode drops it, silently, same as
+  // a genuinely missing tool. `args: {}` needs no zod import, so the fixture
+  // stays self-contained (this CONFIG_FILES set ships no `tools/lib/`).
+  '.kortix/opencode/tools/hello.ts':
+    'export default {\n'
+    + '  description: "A trivial no-op tool used to prove config-release tool loading.",\n'
+    + '  args: {},\n'
+    + '  async execute() {\n'
+    + '    return "hello";\n'
+    + '  },\n'
+    + '};\n',
   // `git archive` would drop this file and rewrite the next one. The
   // archive must hold both unmodified, or blob verification on the box fails.
   '.kortix/opencode/.gitattributes': 'notes.md export-ignore\nversion.txt export-subst\n',
