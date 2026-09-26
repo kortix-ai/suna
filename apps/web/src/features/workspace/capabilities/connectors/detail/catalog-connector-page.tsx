@@ -10,7 +10,7 @@ import {
   type DiscoverConnectorDetail,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { CaretRightIcon, GlobeIcon, MonitorIcon, PlusIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, CheckIcon, GlobeIcon, MonitorIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
@@ -26,6 +26,7 @@ import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { cn } from '@/lib/utils';
 
 import {
   catalogEntryConnectors,
@@ -96,6 +97,7 @@ export function CatalogConnectorPage({
   sourceValue,
   slug,
   addHref,
+  activeConnectorSlug,
 }: {
   projectId: string;
   sourceValue: string;
@@ -106,6 +108,9 @@ export function CatalogConnectorPage({
    *  third surface inside this pane and cover it. Navigating closes the
    *  connector pane and hands its column to the add form. */
   addHref?: string;
+  /** The connector open in the split view's right pane. Its row in
+   *  "In this project" shows a check instead of the caret. */
+  activeConnectorSlug?: string;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const source = parseCatalogSource(sourceValue);
@@ -482,30 +487,41 @@ export function CatalogConnectorPage({
                 {tI18nComplete.raw('text4ca06a005d29')}
               </h2>
               <ul className="space-y-2">
-                {projectMatches.map((match) => (
-                  <li key={match.slug}>
-                    <Link
-                      href={
-                        entry.source === 'discover'
-                          ? appConnectorHref(projectId, entry.slug, match.slug)
-                          : entry.source === 'easy-connect'
-                            ? `${appConnectorHref(projectId, entry.slug, match.slug)}?src=apps`
-                            : connectedConnectorHref(projectId, match.slug)
-                      }
-                      className="group bg-popover hover:bg-accent flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="text-foreground block truncate text-sm font-medium">
-                          {match.name?.trim() || match.slug}
+                {projectMatches.map((match) => {
+                  const active = match.slug === activeConnectorSlug;
+                  return (
+                    <li key={match.slug}>
+                      <Link
+                        aria-current={active ? 'page' : undefined}
+                        href={
+                          entry.source === 'discover'
+                            ? appConnectorHref(projectId, entry.slug, match.slug)
+                            : entry.source === 'easy-connect'
+                              ? `${appConnectorHref(projectId, entry.slug, match.slug)}?src=apps`
+                              : connectedConnectorHref(projectId, match.slug)
+                        }
+                        className={cn(
+                          'group hover:bg-accent flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors',
+                          active ? 'bg-accent' : 'bg-popover',
+                        )}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="text-foreground block truncate text-sm font-medium">
+                            {match.name?.trim() || match.slug}
+                          </span>
+                          <span className="text-muted-foreground block text-xs">
+                            {connectorStatusLine(match, providerLabel(match.provider))}
+                          </span>
                         </span>
-                        <span className="text-muted-foreground block text-xs">
-                          {connectorStatusLine(match, providerLabel(match.provider))}
-                        </span>
-                      </span>
-                      <CaretRightIcon className="text-muted-foreground/60 size-4 shrink-0" />
-                    </Link>
-                  </li>
-                ))}
+                        {active ? (
+                          <CheckIcon className="text-foreground size-4 shrink-0" />
+                        ) : (
+                          <CaretRightIcon className="text-muted-foreground/60 size-4 shrink-0" />
+                        )}
+                      </Link>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           ) : null}

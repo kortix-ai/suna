@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 const feature = import.meta.dir;
 const appRoute = resolve(
   feature,
-  '../../../../../app/(app)/projects/[id]/(capabilities)/connectors/catalog/[source]/[slug]/page.tsx',
+  '../../../../../app/[locale]/(app)/projects/[id]/(capabilities)/connectors/catalog/[source]/[slug]/page.tsx',
 );
 
 describe('catalogue connector detail route', () => {

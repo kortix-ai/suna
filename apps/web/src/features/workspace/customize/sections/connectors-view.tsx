@@ -4,6 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 import { connectorCredentialHelpLinks } from '@/features/workspace/capabilities/connectors/detail/connector-doc-links';
+
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -22,10 +23,11 @@ import {
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { parameterNameLooksLikeSecret } from './auth-param-name';
 
 import { HighlightedCode } from '@/components/markdown/code';
+import { ConnectorHandshake } from '@/components/setup-links/connector-handshake';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -75,6 +77,7 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
+import { SlackLogo } from '@/features/workspace/capabilities/connectors/slack-logo';
 import {
   type EmailInstallation,
   type EmailSenderPolicy,
@@ -113,7 +116,6 @@ import {
   getConnectStatus,
   listAllConnections,
   listConnections,
-  renameConnection,
   listPipedreamApps,
   listProjectAccess,
   type OAuth2DeviceAuthorizationStartResult,
@@ -122,6 +124,7 @@ import {
   reconcileConnection,
   reconcileMemberConnection,
   registerConnectionOAuth2Client,
+  renameConnection,
   revokeConnection,
   setConnectorCredential,
   setDefaultConnection,
@@ -140,10 +143,7 @@ import {
   proposeConnectorConnectionSlug,
 } from './connector-connection-form';
 import { ConnectorConnectionModal } from './connector-connection-modal';
-import {
-  credentialWriteTarget,
-  oauth2DiscoveryConnectionKey,
-} from './connector-credential-target';
+import { credentialWriteTarget, oauth2DiscoveryConnectionKey } from './connector-credential-target';
 import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
@@ -168,7 +168,6 @@ import { DiscoverCatalogue } from './discover-catalogue';
 import { connectorConnectionRows } from './view/connector-connections';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
-const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
 
 function SaveBar({
   dirty,
@@ -2160,28 +2159,6 @@ function ChannelCatalogue({
   );
 }
 
-/**
- * The real Slack logo — the single Slack mark used everywhere across the
- * connectors + channels surface (catalogue cards, channel cards, connect flow),
- * so Slack always reads as Slack and never as a generic glyph. Sized by
- * `className`; defaults to `size-4`.
- */
-export function SlackLogo({ className }: { className?: string }) {
-  return (
-    <span className={cn('relative inline-flex size-4 shrink-0', className)}>
-      <Image
-        src={SLACK_ICON_SRC}
-        alt=""
-        referrerPolicy="no-referrer"
-        fill
-        sizes="32px"
-        className="object-contain"
-        unoptimized
-      />
-    </span>
-  );
-}
-
 function SlackIconTile() {
   return (
     <span className="border-border/60 bg-card relative flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-sm border">
@@ -3068,6 +3045,19 @@ function ConnectorConfigFields({
                   disabled={readOnly}
                   required
                 />
+                {/* The first user pasted their API KEY here and then met the
+                    Connect dialog asking for "the value" again — a loop with
+                    no explanation (Jay, 2026-09-17). Say what the field IS,
+                    and call out a pasted secret the moment it appears. */}
+                {parameterNameLooksLikeSecret(draft.auth?.name ?? '') ? (
+                  <FieldDescription className="text-kortix-orange">
+                    {tI18nHardcoded.raw('i18nComplete.text74d49e84f16e')}
+                  </FieldDescription>
+                ) : (
+                  <FieldDescription>
+                    {tI18nHardcoded.raw('i18nComplete.textfd3f01bb8cf4')}
+                  </FieldDescription>
+                )}
               </Field>
               <Field>
                 <FieldLabel htmlFor="connector-auth-placement">
@@ -3688,8 +3678,14 @@ export function SetCredentialModal({
       ) : null}
       <TabsContent value="static">
         <Field>
+          {/* Named for the thing the server wants ("API key", "Bearer
+              token"), never the generic "Value" — beside the Connection
+              form's parameter-name field, "Value" read as a duplicate ask
+              (Jay, 2026-09-17). */}
           <FieldLabel htmlFor="connector-static-credential">
-            {objectCredential ? tI18nHardcoded.raw('i18nComplete.textb8ce566177f1') : 'Value'}
+            {objectCredential
+              ? tI18nHardcoded.raw('i18nComplete.textb8ce566177f1')
+              : staticTabLabel}
           </FieldLabel>
           {objectCredential ? (
             <Textarea
@@ -3711,10 +3707,14 @@ export function SetCredentialModal({
               autoFocus
             />
           )}
-          {objectCredential && (
+          {objectCredential ? (
             <FieldDescription>
               {tI18nHardcoded.raw('i18nComplete.textfdf7bc860f55')} {requestAuth}{' '}
               {tI18nHardcoded.raw('i18nComplete.text41a01f64505d')}
+            </FieldDescription>
+          ) : (
+            <FieldDescription>
+              {tI18nHardcoded.raw('i18nComplete.text82a532f91165')}
             </FieldDescription>
           )}
         </Field>
@@ -3738,7 +3738,12 @@ export function SetCredentialModal({
                     {link.label}
                   </Link>
                 ) : (
-                  <Link href={link.href} target="_blank" rel="noreferrer" className="text-foreground hover:underline">
+                  <Link
+                    href={link.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-foreground hover:underline"
+                  >
                     {link.label}
                   </Link>
                 )}
@@ -3966,6 +3971,126 @@ export function SetCredentialModal({
       </Button>
     </>
   );
+
+  /**
+   * One-click OAuth leads (Jay's OA1 pick, 2026-09-26). When discovery says
+   * the server registers Kortix itself (`plan.kind === 'register'`), the
+   * panel is the connect dialog's band — the app and Kortix side by side on
+   * an `aspect-[21/9]` strip (`ConnectDialogBody`) — one sentence, and one
+   * primary action in the footer. The token and own-app paths stay one click
+   * away as quiet links; picking either returns to the full form.
+   */
+  const appName = connector ? connectorDisplayName(connector) : '';
+  const oneClick =
+    plan.kind === 'register' &&
+    !manualSetup &&
+    credentialTypeChoice !== 'static' &&
+    !discoveryError &&
+    !discoveryPending;
+  const oneClickBody = (
+    <>
+      <div className="bg-background border-border flex aspect-[21/9] shrink-0 items-center justify-center border-b">
+        <ConnectorHandshake
+          name={appName}
+          iconUrl={connector?.iconUrl ?? null}
+          size="xl"
+          collapsible={false}
+        />
+      </div>
+      <div className="space-y-6 px-4 py-5">
+        <div className="space-y-1">
+          <p className="text-foreground text-base font-medium text-balance">
+            {tI18nHardcoded.raw('i18nComplete.text6aaa89f1c199')}
+          </p>
+          <p className="text-muted-foreground text-sm text-pretty">
+            {tI18nHardcoded('i18nComplete.textdc97f4aff662', { value0: appName })}
+            {plan.kind === 'register' && plan.scopes.length
+              ? ` ${tI18nHardcoded('i18nComplete.text1d42883b00c1', { value0: plan.scopes.join(', ') })}`
+              : ''}
+          </p>
+        </div>
+        <div className="space-y-1.5 border-t pt-4">
+          <p className="text-muted-foreground text-xs">
+            {tI18nHardcoded.raw('i18nComplete.text2ff5a35c01eb')}
+          </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto px-0"
+              onClick={() => setCredentialTypeChoice('static')}
+            >
+              {tI18nHardcoded('i18nComplete.text14957e170611', { value0: staticTabLabel })}
+            </Button>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto px-0"
+              onClick={() => {
+                setCredentialTypeChoice('oauth2');
+                setManualSetup(true);
+              }}
+            >
+              {tI18nHardcoded.raw('i18nComplete.texte67a6ef2363e')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+  const oneClickFooter = (
+    <>
+      <Button
+        type="button"
+        variant="outline-ghost"
+        size="sm"
+        onClick={() => handleShellOpenChange(false)}
+        disabled={autoConnect.isPending}
+      >
+        {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        className="gap-1.5"
+        disabled={autoConnect.isPending}
+        onClick={() => autoConnect.mutate()}
+      >
+        {autoConnect.isPending && <Loading className="size-4 shrink-0" />}
+        {tI18nHardcoded('i18nComplete.text29e18e882443', { value0: appName })}
+      </Button>
+    </>
+  );
+
+  if (shell === 'split' && oneClick) {
+    return (
+      <SplitSheetContent>
+        <SplitSheetHeader>
+          <SplitSheetTitle>{dialogTitle}</SplitSheetTitle>
+          <SplitSheetDescription>{dialogDescription}</SplitSheetDescription>
+        </SplitSheetHeader>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">{oneClickBody}</div>
+        <SplitSheetFooter className="justify-between">{oneClickFooter}</SplitSheetFooter>
+      </SplitSheetContent>
+    );
+  }
+
+  if (oneClick) {
+    return (
+      <Modal open={open} onOpenChange={handleShellOpenChange}>
+        <ModalContent className="overflow-hidden p-0 lg:max-w-xl">
+          <ModalHeader className="px-4 pt-4">
+            <ModalTitle>{dialogTitle}</ModalTitle>
+            <ModalDescription>{dialogDescription}</ModalDescription>
+          </ModalHeader>
+          {oneClickBody}
+          <ModalFooter className="px-4 pb-4 sm:justify-between">{oneClickFooter}</ModalFooter>
+        </ModalContent>
+      </Modal>
+    );
+  }
 
   if (shell === 'split') {
     return (

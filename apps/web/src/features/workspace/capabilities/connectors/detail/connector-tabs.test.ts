@@ -22,25 +22,33 @@ const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
 // by position, against literals — never against `CONNECTOR_TABS`, which
 // would make the assertion agree with any reordering of the constant.
 describe('the canonical tab order', () => {
-  test('CONNECTOR_TABS is exactly accounts, tools, settings', () => {
-    expect(CONNECTOR_TABS.length).toBe(3);
-    expect(CONNECTOR_TABS[0]).toBe('accounts');
-    expect(CONNECTOR_TABS[1]).toBe('tools');
-    expect(CONNECTOR_TABS[2]).toBe('settings');
+  test('CONNECTOR_TABS is exactly overview, accounts, tools, settings', () => {
+    expect(CONNECTOR_TABS.length).toBe(4);
+    expect(CONNECTOR_TABS[0]).toBe('overview');
+    expect(CONNECTOR_TABS[1]).toBe('accounts');
+    expect(CONNECTOR_TABS[2]).toBe('tools');
+    expect(CONNECTOR_TABS[3]).toBe('settings');
   });
 
-  test('a connector that yields all three tabs emits them in that literal sequence', () => {
+  test('a connected connector leads with overview', () => {
+    const tabs = connectorTabs(conn(), { canWrite: true });
+    expect(tabs).toEqual(['overview', 'accounts', 'tools', 'settings']);
+  });
+
+  test('a connector that yields all four tabs emits them in that literal sequence', () => {
     const tabs = connectorTabs(conn({ provider: 'pipedream' }), { canWrite: true });
-    expect(tabs.length).toBe(3);
-    expect(tabs[0]).toBe('accounts');
-    expect(tabs[1]).toBe('tools');
-    expect(tabs[2]).toBe('settings');
+    expect(tabs.length).toBe(4);
+    expect(tabs[0]).toBe('overview');
+    expect(tabs[1]).toBe('accounts');
+    expect(tabs[2]).toBe('tools');
+    expect(tabs[3]).toBe('settings');
   });
 });
 
 describe('connectorTabs', () => {
-  test('order is always accounts, tools, settings', () => {
+  test('order is always overview, accounts, tools, settings', () => {
     expect(connectorTabs(conn({ provider: 'pipedream' }), { canWrite: true })).toEqual([
+      'overview',
       'accounts',
       'tools',
       'settings',
@@ -79,8 +87,8 @@ describe('connectorTabs', () => {
     ]);
   });
 
-  test('a read-only viewer gets exactly accounts', () => {
-    expect(connectorTabs(conn(), { canWrite: false })).toEqual(['accounts']);
+  test('a read-only viewer gets exactly overview and accounts', () => {
+    expect(connectorTabs(conn(), { canWrite: false })).toEqual(['overview', 'accounts']);
   });
 
   // The whole point of the tab model: a tab that does not apply is ABSENT,
@@ -109,6 +117,19 @@ describe('connectorTabs', () => {
           expect(new Set(tabs).size).toBe(tabs.length);
         }
       }
+    }
+  });
+});
+
+describe('the overview tab', () => {
+  test('leads in every state — connected or not (Jay, 2026-09-26)', () => {
+    expect(connectorTabs(conn({ status: 'needs_auth' }), { canWrite: true })[0]).toBe('overview');
+    expect(connectorTabs(conn(), { canWrite: false })).toEqual(['overview', 'accounts']);
+  });
+
+  test('channels and computers never get it — they run their own flows', () => {
+    for (const provider of ['channel', 'computer'] as const) {
+      expect(connectorTabs(conn({ provider }), { canWrite: true })).not.toContain('overview');
     }
   });
 });

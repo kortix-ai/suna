@@ -1,19 +1,14 @@
 'use client';
 
 import type { AdminConnector } from '@kortix/sdk';
-import { CheckIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon, CaretDownIcon, CheckCircleIcon } from '@phosphor-icons/react';
+import Link from 'next/link';
+import type { ReactNode } from 'react';
 
+import { Button } from '@/components/ui/button';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-
-import {
-  Stepper,
-  StepperDescription,
-  StepperIndicator,
-  StepperItem,
-  StepperSeparator,
-  StepperTitle,
-} from '@/components/ui/stepper';
 
 interface SetupStep {
   title: string;
@@ -50,19 +45,21 @@ export function connectorSetupSteps(
     ? {
         title: tI18nComplete('text2e300bb1c797', { value0: input.displayName }),
         hint: input.usesProjectAuthorization
-          ? 'Use Connect above — one shared sign-in the whole project uses.'
-          : 'Connect your own account under Accounts, below.',
+          ? `${input.displayName} opens in a new tab. Sign in with the account the whole project should share — every session uses it.`
+          : 'Each member signs in with their own account, under Accounts.',
         done: connectDone,
       }
     : input.usesProjectAuthorization
       ? {
           title: tI18nComplete.raw('text71ec1c2e842f'),
-          hint: tI18nComplete.raw('textc4b8a965e9ef'),
+          hint: tI18nComplete.raw('text7b6f2f96318f'),
           done: connectDone,
         }
       : {
           title: tI18nComplete.raw('text24fa20ced6cc'),
-          hint: tI18nComplete.raw('text9bbde51bfbd3'),
+          // Connect for a non-managed member-scoped connector writes the
+          // member's own credential (see `connectsHere`).
+          hint: tI18nComplete.raw('text2c32b9b6322c'),
           done: connectDone,
         };
   return [
@@ -81,11 +78,11 @@ export function connectorSetupSteps(
 }
 
 /**
- * The "what now?" answer for a connector that is not ready yet: three live
- * steps with the current one lit, each naming where its action lives (the
- * panel above, the Accounts tab below). Renders nothing once connected —
- * a finished checklist is clutter (Jay, 2026-09-14: "Needs setup, but no
- * clear way what the next step is").
+ * The Overview's "what now?" for a connector that is not ready yet — a
+ * disclosure list (Jay's SS9 pick, 2026-09-26). Finished steps collapse to
+ * one quiet line, the CURRENT step opens with its explanation and its
+ * explanation and a docs link, and what comes after is muted and labelled
+ * Automatic. Connect itself lives in the page header, on every tab.
  */
 export function ConnectorSetupSteps({
   connector,
@@ -93,12 +90,18 @@ export function ConnectorSetupSteps({
   usesProjectAuthorization,
   isManagedProvider,
   hasStrategyConnection,
+  action,
+  helpLink,
 }: {
   connector: AdminConnector;
   displayName: string;
   usesProjectAuthorization: boolean;
   isManagedProvider: boolean;
   hasStrategyConnection: boolean;
+  /** The current step's button (Connect / Sign in). Omitted for readers. */
+  action?: ReactNode;
+  /** "How it works" — the Kortix guide for this provider. */
+  helpLink?: { label: string; href: string; external?: boolean };
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const steps = connectorSetupSteps(
@@ -114,48 +117,102 @@ export function ConnectorSetupSteps({
     },
     tI18nComplete,
   );
-  const active = steps.findIndex((step) => !step.done) + 1 || steps.length;
+  const currentIndex = steps.findIndex((step) => !step.done);
+  const doneCount = steps.filter((step) => step.done).length;
+  // Every step done = nothing to finish. A card of three green checks is
+  // noise (Jay, 2026-09-26); the connected Overview takes over.
+  if (currentIndex === -1) return null;
 
   return (
-    /* One bordered card, same shape as the connection panel above it — the
-       checklist reads as one object, not loose page prose (Jay, 2026-09-14).
-       Composed from the design-system Stepper, kept deliberately PLAIN
-       (Jay, 2026-09-17: "keep it simple"): every step is the same quiet
-       tile — a check when done, its number otherwise — with one continuous
-       hairline rail between tiles and muted hints. The separator is
-       ABSOLUTE inside each item (top of tile height to row bottom), the
-       primitive's canonical vertical-with-text shape, so it can never
-       collapse into a floating stub. The failure story lives in the
-       connection panel above; the sync hint only points at it. */
-    <section
-      className="bg-popover space-y-3 rounded-md border px-4 py-3"
-      aria-labelledby="connector-setup-title"
-    >
-      <h2 id="connector-setup-title" className="text-foreground text-sm font-medium">
-        {tI18nComplete.raw('text51eb40d78f0a')}
-      </h2>
-      <Stepper orientation="vertical" value={active} count={steps.length} className="w-full">
-        {steps.map((step, index) => (
-          /* The row gap lives INSIDE the text column (`pb-3`), never on the
-             row itself: the rail stretches to the row's content box, so
-             padding on the row would sit below the rail's reach and cut a
-             gap between one tile and the next. */
-          <div key={step.title} className="flex w-full gap-3">
-            <StepperItem step={index + 1} completed={step.done} className="relative">
-              <StepperIndicator className="bg-secondary text-secondary-foreground tabular-nums">
-                {step.done ? <CheckIcon className="size-3.5" /> : index + 1}
-              </StepperIndicator>
-              <StepperSeparator className="absolute top-6 bottom-0 left-3 m-0 -translate-x-1/2" />
-            </StepperItem>
-            <div className={index < steps.length - 1 ? 'min-w-0 flex-1 pb-3' : 'min-w-0 flex-1'}>
-              <StepperTitle className="text-foreground leading-6">{step.title}</StepperTitle>
-              {step.hint ? (
-                <StepperDescription className="text-xs text-pretty">{step.hint}</StepperDescription>
-              ) : null}
-            </div>
-          </div>
-        ))}
-      </Stepper>
+    <section className="space-y-2" aria-labelledby="connector-setup-title">
+      <div className="flex items-center justify-between gap-3">
+        <h2 id="connector-setup-title" className="text-foreground text-sm font-medium">
+          {tI18nComplete.raw('text51eb40d78f0a')}
+        </h2>
+        <span className="text-muted-foreground text-xs tabular-nums">
+          {tI18nComplete('textca6c5e5f6000', { value0: doneCount, value1: steps.length })}
+        </span>
+      </div>
+      <div className="bg-popover divide-y overflow-hidden rounded-md border">
+        {steps.map((step, index) => {
+          // Only the CURRENT step is a disclosure — it is the only one with
+          // something to say and something to do. Done and upcoming steps are
+          // plain rows; a chevron on them opened a line that restated the
+          // title (Jay, 2026-09-26).
+          if (index !== currentIndex) {
+            return (
+              <div key={step.title} className="flex items-center gap-2.5 px-4 py-2.5">
+                <StepMark state={step.done ? 'done' : 'upcoming'} />
+                <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">
+                  {step.title}
+                </span>
+                <span className="text-muted-foreground shrink-0 text-xs">
+                  {step.done ? step.hint : tI18nComplete.raw('textd461a493a375')}
+                </span>
+              </div>
+            );
+          }
+          return (
+            // Keyed on the step so a newly current step mounts open.
+            <Disclosure key={step.title} defaultOpen className="group/step">
+              <DisclosureTrigger>
+                <div className="hover:bg-hover focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2.5 px-4 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-inset">
+                  <StepMark state="current" />
+                  <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
+                    {step.title}
+                  </span>
+                  <CaretDownIcon className="text-muted-foreground duration-moderate size-3.5 shrink-0 transition-transform ease-out group-data-[state=open]/step:rotate-180 motion-reduce:transition-none" />
+                </div>
+              </DisclosureTrigger>
+              <DisclosureContent>
+                <div className="space-y-3 pr-4 pb-3.5 pl-10">
+                  {step.hint ? (
+                    <p className="text-muted-foreground text-xs text-pretty">{step.hint}</p>
+                  ) : null}
+                  {action || helpLink ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {action}
+                      {helpLink ? (
+                        <Button
+                          asChild
+                          size="sm"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-foreground gap-1"
+                        >
+                          <Link
+                            href={helpLink.href}
+                            {...(helpLink.external ? { target: '_blank', rel: 'noreferrer' } : {})}
+                          >
+                            {tI18nComplete.raw('text9c870aa6e5e9')}
+                            <ArrowUpRightIcon className="size-3.5 shrink-0" />
+                          </Link>
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </DisclosureContent>
+            </Disclosure>
+          );
+        })}
+      </div>
     </section>
+  );
+}
+
+/** Solid check-circle when done, a ring for the current step, a hollow
+ *  circle for what comes after — one fixed 16px slot, so every title starts
+ *  on the same lane. */
+function StepMark({ state }: { state: 'done' | 'current' | 'upcoming' }) {
+  return (
+    <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
+      {state === 'done' ? (
+        <CheckCircleIcon weight="fill" className="text-kortix-green size-4" />
+      ) : state === 'current' ? (
+        <span className="border-foreground size-3.5 rounded-full border-4" />
+      ) : (
+        <span className="border-border size-3.5 rounded-full border" />
+      )}
+    </span>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import {
   createConnector,
   getDiscoverConnector,
@@ -17,7 +18,6 @@ import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -31,7 +31,6 @@ import {
 } from '@/components/ui/split-sheet';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
-  connectorAuthorizationStrategyIsEditable,
   connectorSyncErrorForSlug,
   createOnlyConnectorDraft,
   proposeConnectorConnectionSlug,
@@ -55,6 +54,12 @@ import { surfacesRecommendedFirst } from '../detail/connector-detail-copy';
  * (one shared account vs each member's own; the install itself is always
  * project-wide — Marko, 2026-09-15).
  */
+/** Channels and computers have no per-owner choice. Inlined when main deleted
+ *  the shared helper along with the Settings "Connects as" control. */
+function connectorAuthorizationStrategyIsEditable(provider: string): boolean {
+  return provider !== 'channel' && provider !== 'computer';
+}
+
 export function DiscoverAddSheet({
   projectId,
   connector,
@@ -334,7 +339,7 @@ export function DiscoverAddSheet({
           onClick={() => add.mutate()}
           disabled={!canWrite || add.isPending || !selected?.connector || !name.trim() || !slug}
         >
-          {add.isPending ? <Loading className="size-4 shrink-0" /> : null}
+          {add.isPending ? <SessionDotMatrix className="size-4 shrink-0" /> : null}
           {tI18nComplete.raw('texta6ef2483d6fb')}
         </Button>
       </SplitSheetFooter>

@@ -43,11 +43,15 @@ export function ConnectorCredentialRow({
   connector,
   canWrite,
   onChanged,
+  onReplace,
 }: {
   projectId: string;
   connector: AdminConnector;
   canWrite: boolean;
   onChanged: () => void;
+  /** Opens the Connect form to paste a new value (Settings' "Replace",
+   *  Jay's R4 pick). Omit to render the row without it. */
+  onReplace?: () => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const source = connector.credentialSource ?? (connector.secretSet ? 'stored' : 'none');
@@ -91,7 +95,9 @@ export function ConnectorCredentialRow({
   // Nothing set AND nothing bindable = nothing to say. The Connect CTA and
   // the stepper above already carry "add a credential"; a row restating it
   // with no control attached is dead weight on an already-empty connector.
-  if (source === 'none' && bindable.length === 0) return null;
+  // With `onReplace` the row still has a job: it is the way in.
+  const canReplace = Boolean(onReplace) && canWrite && source !== 'platform';
+  if (source === 'none' && bindable.length === 0 && !canReplace) return null;
 
   const statement =
     source === 'project_secret' && boundIdentifier
@@ -102,7 +108,7 @@ export function ConnectorCredentialRow({
           'A value stored with this connector, encrypted. To switch to a project secret, disconnect the stored credential first.'
         : source === 'platform'
           ? 'Managed by Kortix for this deployment.'
-          : 'Nothing set. Add a credential above, or bind an existing project secret.';
+          : 'Nothing set. Connect a credential, or bind an existing project secret.';
 
   return (
     <div className="bg-popover rounded-md border px-4 py-3">
@@ -130,38 +136,50 @@ export function ConnectorCredentialRow({
         {/* No picker while a stored value exists — the server 409s every bind
             in that state, and a control that can only error is worse than the
             sentence above explaining the order of operations. */}
-        {canWrite && (source === 'project_secret' || (source === 'none' && bindable.length > 0)) ? (
-          <div className="shrink-0">
-            <Select
-              // Driven by the live binding so a bind/unbind reflects with no
-              // local state. `''` (nothing bound) shows the placeholder;
-              // "unbind" is a sentinel item, present only while a binding
-              // exists to step off of.
-              value={boundIdentifier ?? ''}
-              onValueChange={(next) => {
-                if (next === (boundIdentifier ?? '')) return;
-                if (next === 'unbind') {
-                  setConfirmUnbind(true);
-                  return;
-                }
-                bind.mutate(next);
-              }}
-              disabled={bind.isPending}
-            >
-              <SelectTrigger size="sm" className="w-full sm:w-56">
-                <SelectValue placeholder={tI18nComplete.raw('textc769b970c58f')} />
-              </SelectTrigger>
-              <SelectContent>
-                {source === 'project_secret' ? (
-                  <SelectItem value="unbind">{tI18nComplete.raw('textda9e74dcdde6')}</SelectItem>
-                ) : null}
-                {bindable.map((row) => (
-                  <SelectItem key={row.identifier} value={row.identifier}>
-                    {row.identifier}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {canReplace ||
+        (canWrite &&
+          (source === 'project_secret' || (source === 'none' && bindable.length > 0))) ? (
+          <div className="flex shrink-0 items-center gap-2">
+            {canReplace ? (
+              <Button size="sm" variant="ghost" onClick={onReplace}>
+                {source === 'none'
+                  ? tI18nComplete.raw('text1a2303ede074')
+                  : tI18nComplete.raw('text54483ce856e0')}
+              </Button>
+            ) : null}
+            {canWrite &&
+            (source === 'project_secret' || (source === 'none' && bindable.length > 0)) ? (
+              <Select
+                // Driven by the live binding so a bind/unbind reflects with no
+                // local state. `''` (nothing bound) shows the placeholder;
+                // "unbind" is a sentinel item, present only while a binding
+                // exists to step off of.
+                value={boundIdentifier ?? ''}
+                onValueChange={(next) => {
+                  if (next === (boundIdentifier ?? '')) return;
+                  if (next === 'unbind') {
+                    setConfirmUnbind(true);
+                    return;
+                  }
+                  bind.mutate(next);
+                }}
+                disabled={bind.isPending}
+              >
+                <SelectTrigger size="sm" className="w-full sm:w-56">
+                  <SelectValue placeholder={tI18nComplete.raw('textc769b970c58f')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {source === 'project_secret' ? (
+                    <SelectItem value="unbind">{tI18nComplete.raw('textda9e74dcdde6')}</SelectItem>
+                  ) : null}
+                  {bindable.map((row) => (
+                    <SelectItem key={row.identifier} value={row.identifier}>
+                      {row.identifier}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
           </div>
         ) : null}
       </div>

@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 const feature = import.meta.dir;
 const appRoute = resolve(
   feature,
-  '../../../../../app/(app)/projects/[id]/(capabilities)/connectors/[slug]/page.tsx',
+  '../../../../../app/[locale]/(app)/projects/[id]/(capabilities)/connectors/[slug]/page.tsx',
 );
 
 describe('connected connector route', () => {
@@ -34,7 +34,7 @@ describe('connected connector route', () => {
     // The app-split route exists and composes the two pages as columns.
     const splitRoute = resolve(
       feature,
-      '../../../../../app/(app)/projects/[id]/(capabilities)/connectors/[slug]/[connectorSlug]/page.tsx',
+      '../../../../../app/[locale]/(app)/projects/[id]/(capabilities)/connectors/[slug]/[connectorSlug]/page.tsx',
     );
     expect(existsSync(splitRoute)).toBe(true);
     const split = readFileSync(join(feature, 'app-connector-split-page.tsx'), 'utf8');
@@ -60,6 +60,34 @@ describe('connected connector route', () => {
     expect(page).toContain('if (connectorsQuery.isFetching)');
   });
 
+  test('Connect is never gated on a declared authSecret', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // An MCP connector whose auth auto-detect saw nothing has authSecret
+    // null and still needs a credential. Gating the CTA on authSecret left
+    // the panel saying "connection required" with NO button — a hard dead
+    // end (Jay, 2026-09-17). The dialog discovers what the server wants.
+    expect(page).toContain('canWrite && !connected && !isChannel && !isComputer && connectsHere');
+    expect(page).not.toContain('Boolean(connector.authSecret) &&');
+    expect(page).not.toContain('(isManagedProvider || Boolean(connector.authSecret))');
+    // …and never member-scope-blind: a non-managed member-scoped connector
+    // connects HERE (the dialog writes the member's own credential); only
+    // managed member-scope defers to the Accounts tab's per-member flows.
+    expect(page).toContain('const connectsHere = usesProjectAuthorization || !isManagedProvider;');
+  });
+
+  test('a mid-setup connector keeps its list LIVE; a settled one stops the poll', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // Connect completes on the SERVER (credential, then the tools sync flips
+    // needs_auth/0 tools → active + actions) with no client signal — without
+    // this poll the ready-state UI only appeared after a full reload.
+    expect(page).toContain('refetchInterval: (query) =>');
+    expect(page).toContain(
+      "row.status === 'needs_auth' || row.status === 'error' || row.actions.length === 0",
+    );
+    // `false` for a settled row is what STOPS the polling — never a constant.
+    expect(page).toContain('settling ? 4_000 : false');
+  });
+
   test('Connect opens the split column, not an overlay', () => {
     const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
     // The credential dialog renders as an inline SplitSheet column beside the
@@ -70,6 +98,33 @@ describe('connected connector route', () => {
     expect(page).toContain('cover={connectCoversPage}');
     expect(page).toContain('<SplitSheetMain');
     expect(page).toContain('shell="split"');
+  });
+
+  test('the "what now?" answer follows state — checklist, then the Overview tab', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // Not ready → the setup checklist above the tabs. Connected → the
+    // Overview tab (status strip + try-it prompts, Jay's R5 pick,
+    // 2026-09-26), which `connectorTabs` adds only once connected.
+    expect(page).toContain('<ConnectorSetupSteps');
+    expect(page).toContain('connectorTabs(connector, { canWrite })');
+    expect(page).toContain('setupSteps={');
+    expect(page).toContain('<ConnectorOverview');
+    expect(page).toContain(
+      "overviewState={connected ? 'connected' : failing ? 'failing' : 'setup'}",
+    );
+    // Connect lives in the header on every tab, Overview included.
+    expect(page).not.toContain("tab === 'overview' && primaryAction");
+    // Healthy + connected drops the primary panel; failing keeps it.
+    expect(page).toContain('primaryTitle={failing ? primaryTitle : undefined}');
+    const overview = readFileSync(join(feature, 'connector-overview.tsx'), 'utf8');
+    // The facts never claim "Active" outside the connected state.
+    expect(overview).toContain(
+      "state === 'connected'\n            ? tI18nComplete.raw('text92340695899b')",
+    );
+    const strip = readFileSync(join(feature, 'connector-status-strip.tsx'), 'utf8');
+    // Facts only, derived. The strip carries no second action button.
+    expect(strip).toContain("action.risk === 'read'");
+    expect(strip).not.toContain('<Button');
   });
 
   test('an add flow hands off into the connect dialog via ?connect=1', () => {
@@ -92,12 +147,13 @@ describe('connected connector route', () => {
     expect(page).toContain('{connector.lastError}');
   });
 
-  test('names the credential source and links the curated documentation', () => {
+  test('links the curated documentation', () => {
     const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
     // The two-way Secrets link: a connector whose credential is a bound
     // project secret must say so on its page, not render the same state as a
     // pasted value.
-    expect(page).toContain('<ConnectorCredentialRow');
+    // The credential source moved with main's per-account rework: each
+    // account holds its own credential (Accounts tab), so Settings has no row.
     // Docs come from the curated per-app map, not a single generic link.
     expect(page).toContain('connectorDocLinks(connector, tI18nComplete)');
   });

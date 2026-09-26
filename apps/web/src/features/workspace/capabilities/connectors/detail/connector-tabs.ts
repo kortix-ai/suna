@@ -1,14 +1,20 @@
 import type { AdminConnector } from '@kortix/sdk';
 
-export type ConnectorTab = 'accounts' | 'tools' | 'settings';
+export type ConnectorTab = 'overview' | 'accounts' | 'tools' | 'settings';
 
 /**
  * Tab order never changes. A tab that does not apply is absent; the ones that
  * remain keep their positions, so the surface does not reshape per connector.
  */
-export const CONNECTOR_TABS: readonly ConnectorTab[] = ['accounts', 'tools', 'settings'];
+export const CONNECTOR_TABS: readonly ConnectorTab[] = [
+  'overview',
+  'accounts',
+  'tools',
+  'settings',
+];
 
 export const CONNECTOR_TAB_LABEL: Record<ConnectorTab, string> = {
+  overview: 'Overview',
   accounts: 'Accounts',
   tools: 'Tools',
   settings: 'Settings',
@@ -17,8 +23,10 @@ export const CONNECTOR_TAB_LABEL: Record<ConnectorTab, string> = {
 /**
  * Which tabs a connector shows.
  *
- * - The name, icon, status and connect action live in the modal header, above
- *   every tab — so there is no separate Overview tab.
+ * - Overview leads for every connector, in every state (Jay, 2026-09-26:
+ *   "it should always show the same"). Not connected, it holds the setup
+ *   checklist; connected, the status strip and try-it prompts (R5).
+ *   Channels and computers run their own flows and never get it.
  * - Every connector has Accounts. For a Computer Tunnel profile, Accounts edits its
  *   assigned machine set and links to the fleet-management surface.
  * - Tools and Settings mutate project state, so they are writer-only. Accounts
@@ -30,6 +38,8 @@ export function connectorTabs(
   caps: { canWrite: boolean },
 ): ConnectorTab[] {
   const present = new Set<ConnectorTab>();
+  const ownFlow = connector.provider === 'channel' || connector.provider === 'computer';
+  if (!ownFlow) present.add('overview');
   present.add('accounts');
   if (caps.canWrite) present.add('tools');
   if (caps.canWrite) present.add('settings');

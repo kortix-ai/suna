@@ -58,6 +58,7 @@ export function AppConnectorSplitPage({
           projectId={projectId}
           sourceValue={easyConnect ? 'easy-connect' : 'discover'}
           slug={appSlug}
+          activeConnectorSlug={connectorSlug}
           // Add another, asked from INSIDE the split view: navigating to the
           // app page with `?add=1` (the Install dropdown's own param) closes
           // this connector pane and opens the add column in its place. Without

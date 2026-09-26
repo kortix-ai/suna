@@ -4,13 +4,12 @@ import {
   getConnectorConfig,
   listConnections,
   listConnectors,
-  setConnectorAuthorizationStrategy,
   type AdminConnector,
-  type ConnectorAuthorizationStrategy,
+  type Connection,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { KeyIcon, PlusIcon } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -25,12 +24,9 @@ import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SplitSheet, SplitSheetMain } from '@/components/ui/split-sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
-import {
-  connectorAuthorizationUpdateIsPending,
-  connectorConnectionQueryKeys,
-} from '@/features/workspace/customize/sections/connector-connection-form';
+import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
 import { usePipedreamConnect } from '@/hooks/connectors/use-pipedream-connect-app';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -40,7 +36,6 @@ import { connectorDisplayName } from '../connector-filter';
 import { ConnectorAppIcon, ConnectorStatusBadge } from '../connector-identity';
 import { connectorErrorExplanation } from '../connector-status-line';
 import { composioConnectionIsAuthorized, isManagedConnectorProvider } from '../provider-label';
-import { ConnectorCredentialRow } from './connector-credential-row';
 import { connectorConnectionIsReady } from './connector-detail-copy';
 import {
   ConnectorDetailLayout,
@@ -51,6 +46,12 @@ import { connectorDocLinks } from './connector-doc-links';
 import { ConnectorSetupSteps } from './connector-setup-steps';
 import { CONNECTOR_TAB_LABEL, connectorTabs, type ConnectorTab } from './connector-tabs';
 
+import type { ConnectorOverviewState } from './connector-overview';
+
+const ConnectorOverview = dynamic(
+  () => import('./connector-overview').then((module) => module.ConnectorOverview),
+  { loading: () => <ConnectorSectionFallback /> },
+);
 const ConnectorAccounts = dynamic(
   () => import('./connector-accounts').then((module) => module.ConnectorAccounts),
   { loading: () => <ConnectorSectionFallback /> },
@@ -125,6 +126,21 @@ export function ConnectedConnectorPage({
     queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId),
     ...contract('config'),
+    // LIVE while the viewed connector is mid-setup. Connect finishes on the
+    // server (credential lands, then the tools sync runs and flips
+    // `needs_auth`/0 tools → `active` + actions) with no client signal, so
+    // the page sat on its cache and the ready-state UI only appeared after
+    // a full reload (Jay, 2026-09-17). Poll every 4s until the connector
+    // settles; a settled row answers `false` and the polling stops. Errors
+    // poll too — the sync retries server-side and the page should heal
+    // itself. Paused automatically while the tab is unfocused.
+    refetchInterval: (query) => {
+      const row = query.state.data?.connectors.find((item) => item.slug === slug);
+      if (!row || row.provider === 'channel' || row.provider === 'computer') return false;
+      const settling =
+        row.status === 'needs_auth' || row.status === 'error' || row.actions.length === 0;
+      return settling ? 4_000 : false;
+    },
   });
   const connector = connectorsQuery.data?.connectors.find((item) => item.slug === slug) ?? null;
 
@@ -316,15 +332,7 @@ function ConnectedConnectorContent({
       '',
       suffix ? `${window.location.pathname}?${suffix}` : window.location.pathname,
     );
-    if (
-      canWrite &&
-      !connected &&
-      !isManagedProvider &&
-      !isChannel &&
-      !isComputer &&
-      usesProjectAuthorization &&
-      connector.authSecret
-    ) {
+    if (canWrite && !connected && !isManagedProvider && !isChannel && !isComputer) {
       setCredOpen(true);
     }
   }, [
@@ -332,7 +340,6 @@ function ConnectedConnectorContent({
     autoConnectRequested,
     canWrite,
     connected,
-    connector.authSecret,
     isChannel,
     isComputer,
     isManagedProvider,
@@ -348,66 +355,55 @@ function ConnectedConnectorContent({
 
   const reconnect = usePipedreamConnect(projectId, connector.slug, invalidate);
   const newSession = useNewProjectSession(projectId);
-  const startPrivateSession = () => {
-    newSession({ create: { require_connectors: [connector.slug] } });
+  /**
+   * Start a new private session. Given an account, bind THIS connector to it
+   * (`inherit_unbound` keeps the project default for every other connector) —
+   * main's per-account ownership model; there is no session-level connector
+   * requirement any more. A prompt, when given, is sent as the first turn.
+   */
+  const startPrivateSession = (prompt?: string, connection?: Connection) => {
+    newSession({
+      create: {
+        ...(connection
+          ? {
+              connector_bindings: { [connector.slug]: { connection_id: connection.connection_id } },
+              inherit_unbound: true,
+            }
+          : {}),
+        ...(prompt ? { pending_prompt: { text: prompt } } : {}),
+      },
+    });
   };
 
-  const [authorizationStrategyAwaitingRefresh, setAuthorizationStrategyAwaitingRefresh] =
-    useState<ConnectorAuthorizationStrategy | null>(null);
-  if (
-    authorizationStrategyAwaitingRefresh !== null &&
-    authorizationStrategyAwaitingRefresh === connector.authorizationStrategy
-  ) {
-    setAuthorizationStrategyAwaitingRefresh(null);
-  }
-  const updateAuthorizationStrategy = useMutation({
-    mutationFn: (next: ConnectorAuthorizationStrategy) =>
-      setConnectorAuthorizationStrategy(projectId, connector.slug, next),
-    onSuccess: (result, next) => {
-      const syncError = result.sync?.errors.find((error) => error.slug === connector.slug);
-      if (syncError) {
-        warningToast(tI18nComplete('text691991176e63', { value0: connector.name }));
-      } else {
-        successToast(
-          tI18nComplete('text67ccb61d5f27', {
-            value0:
-              next === 'project'
-                ? tI18nComplete.raw('text985959785319')
-                : tI18nComplete.raw('textb512d97e7cbf'),
-          }),
-        );
-      }
-      invalidate();
-    },
-    onError: (error: Error) => {
-      setAuthorizationStrategyAwaitingRefresh(null);
-      errorToast(error.message || tI18nComplete.raw('texta743aa4452d3'));
-    },
-  });
-  const strategyUpdating = connectorAuthorizationUpdateIsPending(
-    connector.authorizationStrategy,
-    authorizationStrategyAwaitingRefresh,
-    updateAuthorizationStrategy.isPending,
-  );
-
   const tabs = connectorTabs(connector, { canWrite });
-  const [selectedTab, setSelectedTab] = useState<ConnectorTab>('accounts');
-  const tab = tabs.includes(selectedTab) ? selectedTab : (tabs[0] ?? 'accounts');
+  // `null` = "the first tab" (Overview) until the user picks one.
+  const [selectedTab, setSelectedTab] = useState<ConnectorTab | null>(null);
+  const tab = selectedTab && tabs.includes(selectedTab) ? selectedTab : (tabs[0] ?? 'accounts');
 
-  const showConnectCta =
-    canWrite &&
-    (isManagedProvider || Boolean(connector.authSecret)) &&
-    !connected &&
-    !isChannel &&
-    usesProjectAuthorization;
-  const showReconnectCta =
-    canWrite && (isManagedProvider || Boolean(connector.authSecret)) && connected && !isChannel;
+  // NEVER gated on a declared `authSecret` (Jay, 2026-09-17): an MCP
+  // connector whose auth auto-detect saw nothing still lands here needing a
+  // credential, and the old gate left the panel saying "connection
+  // required" with NO button — a hard dead end. The Connect dialog owns
+  // discovering what the server actually wants (one-click OAuth via the
+  // discovery probe, or a pasted credential), so it is always reachable
+  // while a project-scoped connector is not connected.
+  //
+  // And never member-scope-blind either (same day, same report): a
+  // NON-MANAGED member-scoped connector's dialog writes the member's OWN
+  // credential (`authorizationStrategy: 'user'`), and the Accounts tab
+  // deliberately carries no second credential button — so without this CTA
+  // that connector had no way to connect anywhere on the page. Managed
+  // member-scope stays with the Accounts tab, whose ConnectionsList runs
+  // the real per-member OAuth flows.
+  const connectsHere = usesProjectAuthorization || !isManagedProvider;
+  const showConnectCta = canWrite && !connected && !isChannel && !isComputer && connectsHere;
+  const showReconnectCta = canWrite && connected && !isChannel && !isComputer && connectsHere;
 
   const primaryAction = showConnectCta ? (
     <Button
       className="gap-1.5 max-sm:w-full"
       onClick={() => (isManagedProvider ? reconnect.mutate() : setCredOpen(true))}
-      disabled={strategyUpdating || reconnect.isPending}
+      disabled={reconnect.isPending}
     >
       {reconnect.isPending ? (
         <Loading className="size-4 shrink-0" />
@@ -427,7 +423,7 @@ function ConnectedConnectorContent({
       variant="outline"
       className="gap-1.5 max-sm:w-full"
       onClick={() => (isManagedProvider ? reconnect.mutate() : setCredOpen(true))}
-      disabled={strategyUpdating || reconnect.isPending}
+      disabled={reconnect.isPending}
     >
       {reconnect.isPending ? (
         <Loading className="size-4 shrink-0" />
@@ -478,8 +474,11 @@ function ConnectedConnectorContent({
     )
   ) : usesProjectAuthorization ? (
     'Connect one account or credential that every authorized project session can use.'
-  ) : (
+  ) : isManagedProvider ? (
     'Each member connects a separate account from the Accounts tab.'
+  ) : (
+    // The Connect button sits right beside this text — see `connectsHere`.
+    'Connect your own account — each member brings their own.'
   );
 
   // Curated: the Kortix guide anchored to this provider's section, the app's
@@ -548,54 +547,29 @@ function ConnectedConnectorContent({
             // required, so what was just added is usable in one click. Only a
             // CONNECTED connector gets it — a session requiring a connector
             // that cannot run would open straight onto a failure.
+            // The one page verb, in the same slot in every state (R5): start
+            // a session once connected, Connect (or Reconnect) before that.
+            // The page verb, ALWAYS in this slot (Jay, 2026-09-26: "show the
+            // connect button always"): New session once connected, Connect
+            // (or Reconnect) before that — on every tab, Overview included.
             connected ? (
-              <Button
-                size="sm"
-                variant="secondary"
-                className="gap-1.5"
-                onClick={startPrivateSession}
-              >
-                <PlusIcon className="size-4 shrink-0" />
+              <Button size="sm" onClick={() => startPrivateSession()}>
                 {tI18nComplete.raw('textcffdba22adf2')}
               </Button>
-            ) : undefined
+            ) : (
+              primaryAction
+            )
           }
-          primaryTitle={primaryTitle}
+          // Connected and healthy: no panel (Jay's R5 pick, 2026-09-26) —
+          // the badge says Connected and Overview carries the facts. The
+          // panel stays while there is something to DO: connect, or fix.
+          // Only a FAILURE gets a panel — it has a reason to explain. Every
+          // other state reads the same: header verb, tabs, Overview first
+          // (Jay, 2026-09-26: old connectors must look like the new build).
+          primaryTitle={failing ? primaryTitle : undefined}
           primaryDescription={primaryDescription}
-          primaryAction={primaryAction}
+          primaryAction={connected ? primaryAction : undefined}
         >
-          {/* What now? The live checklist for a connector that is not ready
-              yet — the "Needs setup" badge alone answered nothing (Jay,
-              2026-09-14). Channels and computers have their own flows. */}
-          {!connected && !isChannel && !isComputer ? (
-            <ConnectorSetupSteps
-              connector={connector}
-              displayName={displayName}
-              usesProjectAuthorization={usesProjectAuthorization}
-              isManagedProvider={isManagedProvider}
-              hasStrategyConnection={hasStrategyConnection}
-            />
-          ) : null}
-
-          {/* Where the credential actually lives, and the two-way door to the
-          Secrets page. Directly under the primary Connection panel — before
-          any tab — because "is this a pasted value or the project secret
-          LINEAR_API_KEY?" is connection state, not a settings detail. Only
-          connectors with a project-owned declared credential have a source to
-          name. */}
-          {!isManagedProvider &&
-          !isChannel &&
-          !isComputer &&
-          usesProjectAuthorization &&
-          connector.authSecret ? (
-            <ConnectorCredentialRow
-              projectId={projectId}
-              connector={connector}
-              canWrite={canWrite}
-              onChanged={invalidate}
-            />
-          ) : null}
-
           <ConnectorManagementTabs
             projectId={projectId}
             connector={connector}
@@ -604,19 +578,24 @@ function ConnectedConnectorContent({
             selectedTab={tab}
             canWrite={canWrite}
             canManageConnections={canManageConnections}
-            strategyUpdating={strategyUpdating}
             connectionsError={connectionsQuery.isError ? connectionsQuery.error : null}
             onRetryConnections={() => void connectionsQuery.refetch()}
             onTabChange={setSelectedTab}
             onChanged={invalidate}
             onRemoved={returnToConnected}
-            onStartSession={startPrivateSession}
-            onSetCredential={() => setCredOpen(true)}
-            onAuthorizationStrategyChange={(next) => {
-              setCredOpen(false);
-              setAuthorizationStrategyAwaitingRefresh(next);
-              updateAuthorizationStrategy.mutate(next);
-            }}
+            onStartSession={(connection) => startPrivateSession(undefined, connection)}
+            onTryPrompt={startPrivateSession}
+            overviewState={connected ? 'connected' : failing ? 'failing' : 'setup'}
+            setupSteps={
+              <ConnectorSetupSteps
+                connector={connector}
+                displayName={displayName}
+                usesProjectAuthorization={usesProjectAuthorization}
+                isManagedProvider={isManagedProvider}
+                hasStrategyConnection={hasStrategyConnection}
+                helpLink={docsLinks[0]}
+              />
+            }
           />
 
           {hideDocumentation ? null : <ConnectorDocumentationLinks links={docsLinks} />}
@@ -636,7 +615,7 @@ function ConnectedConnectorContent({
               ? (projectConnection?.connection_id ?? null)
               : (myPrivateConnection?.connection_id ?? null)
           }
-          authorizationStrategy={connector.authorizationStrategy}
+          owner={usesProjectAuthorization ? 'project' : 'me'}
           open
           onOpenChange={setCredOpen}
           onSaved={invalidate}
@@ -654,15 +633,15 @@ function ConnectorManagementTabs({
   selectedTab,
   canWrite,
   canManageConnections,
-  strategyUpdating,
   connectionsError,
   onRetryConnections,
   onTabChange,
   onChanged,
   onRemoved,
   onStartSession,
-  onSetCredential,
-  onAuthorizationStrategyChange,
+  onTryPrompt,
+  overviewState,
+  setupSteps,
 }: {
   projectId: string;
   connector: AdminConnector;
@@ -671,15 +650,16 @@ function ConnectorManagementTabs({
   selectedTab: ConnectorTab;
   canWrite: boolean;
   canManageConnections: boolean;
-  strategyUpdating: boolean;
   connectionsError: unknown;
   onRetryConnections: () => void;
   onTabChange: (tab: ConnectorTab) => void;
   onChanged: () => void;
   onRemoved: () => void;
-  onStartSession: () => void;
-  onSetCredential: () => void;
-  onAuthorizationStrategyChange: (strategy: ConnectorAuthorizationStrategy) => void;
+  onStartSession: (connection: Connection) => void;
+  onTryPrompt: (prompt: string) => void;
+  overviewState: ConnectorOverviewState;
+  /** Rendered under Overview's facts until the connector is connected. */
+  setupSteps: ReactNode;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
@@ -696,6 +676,17 @@ function ConnectorManagementTabs({
         ))}
       </TabsList>
       <div className="pt-5">
+        <TabsContent value="overview">
+          <ConnectorOverview
+            projectId={projectId}
+            connector={connector}
+            canWrite={canWrite}
+            usesProjectAuthorization={connector.authorizationStrategy === 'project'}
+            state={overviewState}
+            setup={setupSteps}
+            onTryPrompt={onTryPrompt}
+          />
+        </TabsContent>
         <TabsContent value="accounts">
           {connectionsError ? (
             <ErrorState
@@ -719,11 +710,9 @@ function ConnectorManagementTabs({
               displayName={displayName}
               canWrite={canWrite}
               canManageConnections={canManageConnections}
-              strategyUpdating={strategyUpdating}
               onChanged={onChanged}
               onRemoved={onRemoved}
               onStartSession={onStartSession}
-              onSetCredential={onSetCredential}
             />
           )}
         </TabsContent>
@@ -733,7 +722,7 @@ function ConnectorManagementTabs({
             connector={connector}
             displayName={displayName}
             canWrite={canWrite}
-            disabled={strategyUpdating}
+            disabled={false}
             onChanged={onChanged}
           />
         </TabsContent>
@@ -742,9 +731,6 @@ function ConnectorManagementTabs({
             projectId={projectId}
             connector={connector}
             displayName={displayName}
-            canWrite={canWrite}
-            strategyUpdating={strategyUpdating}
-            onAuthorizationStrategyChange={onAuthorizationStrategyChange}
             onChanged={onChanged}
             onRemoved={onRemoved}
           />

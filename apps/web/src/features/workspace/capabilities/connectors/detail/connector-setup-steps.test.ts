@@ -16,20 +16,23 @@ const base = {
 };
 
 describe('connectorSetupSteps — the "what now?" answer, from real state', () => {
-  test('a user-scoped credential connector points each member at Accounts', () => {
+  test('a user-scoped credential connector points each member at Connect', () => {
     const steps = connectorSetupSteps(base, testUiTranslator);
     expect(steps.map((step) => step.done)).toEqual([true, false, true]);
     expect(steps[1]?.title).toBe('Connect your account');
-    expect(steps[1]?.hint).toContain('Accounts, below');
+    // The action sits in the open step (SS9), so the hint no longer points
+    // "above" — it says whose account this is.
+    expect(steps[1]?.hint).not.toContain('above');
+    expect(steps[1]?.hint).toContain('their own account');
   });
 
-  test('a project-scoped credential connector points at Connect above', () => {
+  test('a project-scoped credential connector explains where the credential goes', () => {
     const steps = connectorSetupSteps(
       { ...base, usesProjectAuthorization: true },
       testUiTranslator,
     );
     expect(steps[1]?.title).toBe('Add the credential');
-    expect(steps[1]?.hint).toContain('Connect above');
+    expect(steps[1]?.hint).toContain('encrypted');
     expect(steps[1]?.done).toBe(false);
     expect(
       connectorSetupSteps(
