@@ -1601,6 +1601,33 @@ const MARKER_AGENT = (marker: string): string =>
 const MARKER_PROMPT =
   'Answer with the RELOAD_VERIFY_MARKER value from your instructions and nothing else.';
 
+/**
+ * DEF-DEV-2's decider — a key the conversation CANNOT supply.
+ *
+ * On dev on 2026-09-25 a converged session kept answering an OLD marker. Two
+ * readings fit: the model was answering from its own conversation history, or
+ * the prompt it receives was stale instance state that survived the swap. The
+ * race rounds below already ask for a value the history cannot hold, because
+ * each round's marker is committed in that round. This closes the last gap in
+ * that argument — that the model might be pattern-matching "RELOAD_VERIFY_
+ * MARKER means the newest value I have seen" rather than reading what it was
+ * given. It cannot pattern-match a directive NAME it has never seen, asked by
+ * a question that has never been asked in the conversation.
+ *
+ * A correct answer proves the per-turn system prompt is CURRENT, so the stale
+ * answers were the model reading its own transcript and there is no platform
+ * fix to make. A wrong or absent answer proves the prompt itself is stale, and
+ * that is a different defect with a different fix (dispose the instance cache
+ * after a swap).
+ *
+ * The OLD key is deliberately left in the file with a DIFFERENT value, so a
+ * model answering from habit has something wrong to reach for.
+ */
+const MARKER2_AGENT = (marker: string, marker2: string): string =>
+  `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\nRELOAD_VERIFY_MARKER: ${marker}\nRELOAD_VERIFY_MARKER2: ${marker2}\n`;
+const MARKER2_PROMPT =
+  'Answer with the RELOAD_VERIFY_MARKER2 value from your instructions and nothing else.';
+
 flow(
   'CFG-11',
   {
@@ -1890,6 +1917,35 @@ flow(
         console.log(`[CFG-12] idle convergence took ${Date.now() - started} ms`);
         if (converged.fallback_reason !== null) {
           throw new Error(`the idle convergence reported a fallback: ${converged.fallback_reason}`);
+        }
+      });
+
+      await ctx.step('DEF-DEV-2: the answer comes from the CURRENT instructions, not the conversation', async () => {
+        const marker2 = 'marker2-delta';
+        const before = String((await box.releaseOf())?.running_release_id ?? '');
+        await fixture.commit(
+          { '.kortix/opencode/agents/kortix.md': MARKER2_AGENT('marker-stale-on-purpose', marker2) },
+          marker2,
+        );
+        // Ask only once the BOX is serving it. A wrong answer before that would
+        // say the push had not landed, not that the prompt was stale.
+        await waitFor(() => box.releaseOf(), {
+          until: (rel) =>
+            Boolean(rel) &&
+            rel.running_release_id === rel.desired_release_id &&
+            rel.proven === true &&
+            rel.running_release_id !== before,
+          timeoutMs: 300_000,
+          intervalMs: 3_000,
+          description: 'the box serves the RELOAD_VERIFY_MARKER2 release',
+        });
+        const r = await box.send(MARKER2_PROMPT);
+        r.status(200);
+        const answer = await answerTo(MARKER2_PROMPT);
+        if (!answer.includes(marker2)) {
+          throw new Error(
+            `DEF-DEV-2: the model did not answer from the current instructions: ${answer.slice(0, 200)}`,
+          );
         }
       });
 
