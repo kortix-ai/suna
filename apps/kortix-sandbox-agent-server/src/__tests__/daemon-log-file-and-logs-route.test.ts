@@ -2,7 +2,7 @@
  * The daemon log lands on disk and is readable through GET /kortix/logs —
  * and the sink can never hurt the box.
  *
- * 2026-08-25: two hours of an Essentia daemon reporting `starting` on the wrong
+ * 2026-08-25: two hours of an SampleCo daemon reporting `starting` on the wrong
  * port could be fenced but not proven, because its stdout lived on a stream
  * nobody kept (E2B envd). Every line now also lands in a file on the box.
  */
@@ -12,6 +12,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { Config } from '../config'
+import type { Opencode } from '../harness/open-code/lifecycle'
+import type { HarnessDiagnosticsService } from '../harness/diagnostics'
 import {
   DAEMON_LOG_BUFFER_CAP_BYTES,
   DAEMON_LOG_MAX_LINE_BYTES,
@@ -22,7 +24,8 @@ import {
   enableDaemonLogFile,
   logger,
 } from '../logger'
-import { createLogsRouter, tailFile } from '../routes/logs'
+import { createLogsRouter } from '../routes/logs'
+import { createOpenCodeDiagnosticsService } from '../harness/open-code/diagnostics'
 
 let root: string
 const savedEnv = { file: process.env.KORTIX_DAEMON_LOG_FILE, max: process.env.KORTIX_DAEMON_LOG_MAX_BYTES }
@@ -135,24 +138,9 @@ describe('daemon log file sink', () => {
   })
 })
 
-describe('tailFile', () => {
-  test('returns the last N lines and null for a missing file', () => {
-    const p = join(root, 't.log')
-    writeFileSync(p, Array.from({ length: 50 }, (_, i) => `l${i}`).join('\n') + '\n')
-    expect(tailFile(p, 3)).toBe('l47\nl48\nl49\n')
-    expect(tailFile(join(root, 'missing.log'), 3)).toBeNull()
-  })
-})
-
 describe('GET /kortix/logs', () => {
   const token = 'sandbox-token'
   const cfg = { sandboxToken: token } as Config
-
-  test('401 without the service bearer or a user context', async () => {
-    const app = createLogsRouter(cfg, { opencodeHome: root })
-    const res = await app.request('http://d/?tail=10')
-    expect(res.status).toBe(401)
-  })
 
   test('tails the daemon log for the service caller, and both sources on demand', async () => {
     enableDaemonLogFile()
@@ -161,7 +149,7 @@ describe('GET /kortix/logs', () => {
     await __flushDaemonLogFileForTests()
     mkdirSync(join(root, '.local', 'share', 'opencode', 'log'), { recursive: true })
     writeFileSync(join(root, '.local', 'share', 'opencode', 'log', 'opencode.log'), 'oc-1\noc-2\n')
-    const app = createLogsRouter(cfg, { opencodeHome: root })
+    const app = createLogsRouter(cfg, createOpenCodeDiagnosticsService({} as Opencode, root))
 
     const agent = await app.request('http://d/?tail=1', { headers: { Authorization: `Bearer ${token}` } })
     expect(agent.status).toBe(200)
@@ -182,8 +170,38 @@ describe('GET /kortix/logs', () => {
   })
 
   test('404 when no requested source exists on disk', async () => {
-    const app = createLogsRouter(cfg, { opencodeHome: root })
+    const app = createLogsRouter(cfg, createOpenCodeDiagnosticsService({} as Opencode, root))
     const res = await app.request('http://d/?source=opencode', { headers: { Authorization: `Bearer ${token}` } })
     expect(res.status).toBe(404)
   })
+
+  test('the controller uses the selected service log sources and owns tail parsing and response headers', async () => {
+    const reads: Array<{ source: string; lines: number }> = []
+    const diagnostics = {
+      logSources: () => ['daemon', 'other-runtime'],
+      readLog(source: string, lines: number) {
+        reads.push({ source, lines })
+        return { label: `/logs/${source}`, text: `${source} output\n` }
+      },
+    } as unknown as HarnessDiagnosticsService
+    const app = createLogsRouter(cfg, diagnostics)
+    const headers = { Authorization: `Bearer ${token}` }
+    const denied = await app.request('/?source=all')
+    expect(denied.status).toBe(401)
+    expect(reads).toEqual([])
+
+    const all = await app.request('/?source=ALL&tail=9000', { headers })
+    expect(all.status).toBe(200)
+    expect(all.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+    expect(all.headers.get('cache-control')).toBe('no-store')
+    expect(all.headers.get('x-kortix-log-tail')).toBe('5000')
+    expect(await all.text()).toBe('==> /logs/daemon <==\ndaemon output\n==> /logs/other-runtime <==\nother-runtime output\n')
+    expect(reads).toEqual([{ source: 'daemon', lines: 5000 }, { source: 'other-runtime', lines: 5000 }])
+
+    const unsupported = await app.request('/?source=opencode', { headers })
+    expect(unsupported.status).toBe(400)
+    expect(await unsupported.json()).toEqual({ error: 'unknown source', detail: 'source must be daemon, other-runtime, or all' })
+    expect(reads).toHaveLength(2)
+  })
+
 })

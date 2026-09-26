@@ -46,6 +46,26 @@
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
  * catalog to the contract key list and requires every entry to declare its
  * enforcement.
+ *
+ * ## Hidden flags (`catalogHidden`)
+ *
+ * A flag that has become THE behavior is no longer a choice we present, but it
+ * is not yet safe to delete: support still needs one lever to put a single
+ * project back on the old behavior while that project migrates.
+ * `catalogHidden: true` is exactly that state — RESOLVABLE but UNADVERTISED:
+ *
+ *   • `resolveFeatureFlag` / `resolveFeatureFlags` — UNCHANGED. The platform
+ *     default still applies and an explicit project override still wins.
+ *   • `buildFeatureFlagCatalog` — OMITS the entry, so Settings → Feature flags
+ *     does not list it and no UI presents it as a toggle.
+ *   • `isFeatureFlagKey` — UNCHANGED, so `PATCH /projects/:id/features` keeps
+ *     accepting the key. That is the support escape hatch, and it is the whole
+ *     reason this is not `available: () => false` (which would force the flag
+ *     OFF for every project — the opposite of what a hidden default means).
+ *
+ * A hidden flag is a DATED state, not a parking spot: hide it in the release
+ * that makes it the default, delete it in the next one. The comment on the
+ * entry names the release and the spec section that ends it.
  */
 import { config } from '../config';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
@@ -82,6 +102,14 @@ export interface FeatureFlagDef {
   enforcement: FeatureFlagEnforcement;
   /** Mandatory for 'ui-only': why the server does not enforce. */
   enforcementNote?: string;
+  /**
+   * Omit this flag from the serialized catalog ({@link buildFeatureFlagCatalog})
+   * so no UI lists it as a toggle. Resolution and `PATCH /projects/:id/features`
+   * are untouched — see "Hidden flags" in this file's header. Set it only on a
+   * flag whose value is now the product behavior, and delete the flag in the
+   * next release.
+   */
+  catalogHidden?: true;
 }
 
 /**
@@ -96,6 +124,15 @@ export interface FeatureFlagDef {
  * repository configuration. See docs/specs/computer-connector.md.
  */
 const FLAGS: readonly FeatureFlagDef[] = [
+  {
+    key: 'session_transcript_history',
+    name: 'Session Transcript History',
+    description: 'Save chat history after each turn and show it from the database while the session computer starts.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+  },
   {
     key: 'marketplace',
     name: 'Marketplace',
@@ -178,7 +215,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => config.LLM_GATEWAY_ENABLED,
     // Fleet rollout switch, default ON (config.ts LLM_GATEWAY_DEFAULT_ENABLED).
     // Turning the flag OFF per project is the first-class native path — the
-    // deliberate lever for deployments (e.g. Essentia) that bring their own
+    // deliberate lever for deployments (e.g. SampleCo) that bring their own
     // keys end to end. Explicit project overrides always win, and the master
     // availability gate above remains the emergency kill switch.
     platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
@@ -266,11 +303,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
-      'No dedicated routes. The secret write paths (POST /secrets and PUT ' +
-      '/secrets/:id/strategy in projects/routes/r3.ts) reject a request that ' +
+      'No dedicated routes. The secret write paths (POST /secrets in ' +
+      'projects/routes/secrets.ts, PUT /secrets/:id/strategy in ' +
+      'projects/routes/secret-delivery.ts) reject a request that ' +
       'moves a secret INTO egress delivery when the flag is off. A secret that ' +
       'is already egress keeps serving and stays editable, so turning the flag ' +
       'off never strands an existing enforced secret.',
+  },
+  {
+    key: 'pooled_provider_secrets',
+    name: 'Pooled Provider Secrets',
+    description: 'Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
   {
     key: 'pi_worker',
@@ -283,6 +331,75 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // the download route answers 403.
     platformDefault: () => false,
     enforcement: 'routes',
+  },
+  {
+    key: 'pi_harness',
+    name: 'Pi Harness (in-sandbox)',
+    description:
+      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
+      'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
+  },
+  {
+    key: 'config_releases',
+    name: 'Config Releases',
+    description:
+      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
+    stability: 'experimental',
+    // Operator kill switch (config.ts CONFIG_RELEASES_ENABLED). Off ⇒ the
+    // Settings row disappears and the surface is dark for every project.
+    available: () => config.CONFIG_RELEASES_ENABLED,
+    // OFF by default until this is proven on real projects (Marko, 2026-09-24:
+    // "its off for now, as its untested"). The behaviour it gates is the
+    // intended one; the default is a rollout decision, not a design opinion.
+    // Turn it on per project in Settings, watch it, then widen. Flip this to
+    // `true` when the rollout is done.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Mixed, and both halves are enforced. ROUTES: the descriptor route ' +
+      '(POST /projects/:id/sessions/:id/config-release) and the archive route ' +
+      '(GET /projects/:id/config-archives/:tree) answer 403 `feature_disabled` ' +
+      'when off — config-releases/routes.ts. BEHAVIORAL: convergeSessionConfig ' +
+      'returns `disabled` without reaching the box (session-config-convergence.ts), ' +
+      'reloadSessionConfig takes the pre-release legacy path (session-reload.ts), ' +
+      'and GET /config omits the `release` block (routes/session-config.ts). Off ⇒ ' +
+      'no release is built, no archive is stored, and no kortix.config_releases ' +
+      'row is written. See docs/specs/config-releases.md → "Feature flag".',
+  },
+  {
+    key: 'agent_principal',
+    name: 'Agents as Principals',
+    description:
+      'A governed agent session acts as the agent itself, not as the person who started it. Its authority is its kortix_permissions list, capped by the IAM role bound to the agent and never including member management, project deletion, or credential issue. Running an agent, firing its trigger, or starting it from another agent requires permission to run that agent.',
+    stability: 'experimental',
+    available: () => true,
+    // Default ON. An agent's authority is a property of the AGENT, not of
+    // whoever pressed start: the launcher-∩-grant model gave the same agent
+    // different power per person, let an owner-launched agent ignore its own
+    // grant entirely (super-admin short-circuit), and ran every unattended
+    // trigger as the account owner. Switching a project OFF restores that old
+    // model as an escape hatch for one release; the switch is then deleted
+    // (spec docs/specs/2026-09-22-agents-as-principals.md §5).
+    platformDefault: () => true,
+    // Not listed in Settings → Feature flags. An agent acting as itself is how
+    // Kortix works, not a choice we offer, so presenting a switch would invite
+    // a project to turn the governance model off. Support can still put ONE
+    // project back with `PATCH /projects/:id/features {agent_principal:false}`
+    // while it migrates. Delete the flag — and this line — in the release after
+    // the one that shipped the default (spec §5).
+    catalogHidden: true,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Read by the authorization engine for every agent-session credential ' +
+      '(iam/agent-principal.ts agentPrincipalModeFor → iam/actor.ts actingPrincipal, ' +
+      'iam/authorize.ts), the manual trigger fire and child-session run gates, and ' +
+      'the change-request merge governance guard.',
   },
 ];
 
@@ -350,11 +467,15 @@ export interface FeatureFlagView {
 }
 
 /**
- * Build the full per-project catalog the clients render. Self-contained so the
- * UI never hard-codes the flag list — add to FLAGS and it appears.
+ * Build the per-project catalog the clients render. Self-contained so the UI
+ * never hard-codes the flag list — add to FLAGS and it appears.
+ *
+ * `catalogHidden` entries are omitted: they still resolve and are still
+ * writable through `PATCH /projects/:id/features`, they are simply not offered
+ * as a toggle (see "Hidden flags" in this file's header).
  */
 export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
-  return FLAGS.map((f) => ({
+  return FLAGS.filter((f) => !f.catalogHidden).map((f) => ({
     key: f.key,
     name: f.name,
     description: f.description,

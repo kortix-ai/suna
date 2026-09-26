@@ -2,7 +2,7 @@
  * Liveness-probe hysteresis: a BUSY but healthy opencode must not be declared
  * "not ready" by a single slow probe.
  *
- * Root cause (Essentia, running sessions showing "opencode not ready"): the
+ * Root cause (SampleCo, running sessions showing "opencode not ready"): the
  * readiness loop downgraded `ok -> starting` on ONE failed 2 s liveness probe,
  * and proxy.ts then 503s every opencode-bound request (message list included)
  * while state !== 'ok'. A busy opencode mid-heavy-turn can miss one `/session`
@@ -11,66 +11,21 @@
  * (a real wedge), converging fast on recovery.
  */
 import { describe, expect, test } from 'bun:test'
-import { nextLivenessState } from '../opencode'
+import { nextLivenessState, type OpencodeState } from '../harness/open-code/lifecycle'
 
-const T = 3 // threshold used in these tests
+// Production passes READY_LIVENESS_DOWNGRADE_THRESHOLD = 3.
+const T = 3
 
 describe('nextLivenessState', () => {
-  test('a ready probe is always ok and clears the failure count', () => {
-    expect(nextLivenessState({ state: 'starting', ready: true, consecutiveFailures: 0, threshold: T }))
-      .toEqual({ state: 'ok', consecutiveFailures: 0, downgraded: false })
-    expect(nextLivenessState({ state: 'ok', ready: true, consecutiveFailures: 2, threshold: T }))
-      .toEqual({ state: 'ok', consecutiveFailures: 0, downgraded: false })
-  })
-
-  test('an ok session TOLERATES failures below the threshold (stays ok, counts up)', () => {
-    expect(nextLivenessState({ state: 'ok', ready: false, consecutiveFailures: 0, threshold: T }))
-      .toEqual({ state: 'ok', consecutiveFailures: 1, downgraded: false })
-    expect(nextLivenessState({ state: 'ok', ready: false, consecutiveFailures: 1, threshold: T }))
-      .toEqual({ state: 'ok', consecutiveFailures: 2, downgraded: false })
-  })
-
-  test('an ok session downgrades to starting only ON the Nth consecutive failure', () => {
-    expect(nextLivenessState({ state: 'ok', ready: false, consecutiveFailures: 2, threshold: T }))
-      .toEqual({ state: 'starting', consecutiveFailures: 3, downgraded: true })
-  })
-
-  test('threshold of 1 = no hysteresis (immediate downgrade, matches old behaviour)', () => {
-    expect(nextLivenessState({ state: 'ok', ready: false, consecutiveFailures: 0, threshold: 1 }))
-      .toEqual({ state: 'starting', consecutiveFailures: 1, downgraded: true })
-  })
-
-  test('a non-ok, non-starting state (down) on a failed probe becomes starting (unchanged behaviour)', () => {
-    expect(nextLivenessState({ state: 'down', ready: false, consecutiveFailures: 0, threshold: T }))
-      .toEqual({ state: 'starting', consecutiveFailures: 0, downgraded: false })
-  })
-
-  test('already starting + failed probe stays starting, no spurious downgrade flag', () => {
-    expect(nextLivenessState({ state: 'starting', ready: false, consecutiveFailures: 0, threshold: T }))
-      .toEqual({ state: 'starting', consecutiveFailures: 0, downgraded: false })
-  })
-
-  test('scenario: 2 blips then recover keeps a running session OK the whole time', () => {
-    let s: { state: import('../opencode').OpencodeState; consecutiveFailures: number } = { state: 'ok', consecutiveFailures: 0 }
-    const seq = [false, false, true] // miss, miss, answer
-    const states: string[] = []
-    for (const ready of seq) {
-      const r = nextLivenessState({ state: s.state, ready, consecutiveFailures: s.consecutiveFailures, threshold: T })
-      s = { state: r.state, consecutiveFailures: r.consecutiveFailures }
-      states.push(r.state)
-    }
-    expect(states).toEqual(['ok', 'ok', 'ok']) // never gated off — this is the bug it fixes
-  })
-
-  test('scenario: 3 consecutive failures = genuine wedge -> starting', () => {
-    let s: { state: import('../opencode').OpencodeState; consecutiveFailures: number } = { state: 'ok', consecutiveFailures: 0 }
-    let downgradedAt = -1
-    ;[false, false, false].forEach((ready, i) => {
-      const r = nextLivenessState({ state: s.state, ready, consecutiveFailures: s.consecutiveFailures, threshold: T })
-      s = { state: r.state, consecutiveFailures: r.consecutiveFailures }
-      if (r.downgraded && downgradedAt < 0) downgradedAt = i
-    })
-    expect(s.state).toBe('starting')
-    expect(downgradedAt).toBe(2) // on the 3rd, not the 1st
+  test.each([
+    ['a ready probe from starting is ok', 'starting', true, 0, { state: 'ok', consecutiveFailures: 0, downgraded: false }],
+    ['a ready probe clears the failure count', 'ok', true, 2, { state: 'ok', consecutiveFailures: 0, downgraded: false }],
+    ['ok tolerates the first failure', 'ok', false, 0, { state: 'ok', consecutiveFailures: 1, downgraded: false }],
+    ['ok tolerates the second failure', 'ok', false, 1, { state: 'ok', consecutiveFailures: 2, downgraded: false }],
+    ['ok downgrades ON the third consecutive failure', 'ok', false, 2, { state: 'starting', consecutiveFailures: 3, downgraded: true }],
+    ['down + a failed probe becomes starting', 'down', false, 0, { state: 'starting', consecutiveFailures: 0, downgraded: false }],
+    ['starting + a failed probe stays starting, no downgrade flag', 'starting', false, 0, { state: 'starting', consecutiveFailures: 0, downgraded: false }],
+  ] as const)('%s', (_name, state, ready, consecutiveFailures, expected) => {
+    expect(nextLivenessState({ state: state as OpencodeState, ready, consecutiveFailures, threshold: T })).toEqual(expected)
   })
 })

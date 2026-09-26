@@ -28,6 +28,8 @@ export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfi
         scope: {
           env: [],
           connectors: [],
+          kortix_permissions: 'all',
+          // Deprecated wire alias of kortix_permissions (pre-rename clients).
           kortix_cli: 'all',
         },
       },
@@ -59,7 +61,7 @@ export function buildPlatformMetaOpenCodeConfig(): string {
 export function platformMetaAgentGrant(): AgentGrant {
   return {
     agent: META_AGENT_NAME,
-    kortixCli: 'all',
+    permissions: 'all',
     connectors: [],
     env: [],
   };

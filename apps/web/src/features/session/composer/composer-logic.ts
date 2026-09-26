@@ -15,6 +15,7 @@ import {
   mergeFailedSubmissionDocument,
   mergeFailedSubmissionFiles,
 } from '../composer-draft-recovery';
+import { parseReplyContexts, serializeReplyContext, stripReplyContexts } from '../reply-context';
 import type { AttachedFile } from './types';
 
 /**
@@ -44,6 +45,110 @@ export function textToParagraphs(text: string): JSONContent[] {
 /** `textToParagraphs` wrapped as a whole document. */
 export function textToDocument(text: string): JSONContent {
   return { type: 'doc', content: textToParagraphs(text) };
+}
+
+// ── Reply quotes ───────────────────────────────────────────────────────────
+//
+// A reply quote is a transcript passage the user chose "Reply" on. The
+// composer holds the quotes as an ordered list, drawn as a card above the
+// input (`quote-list.tsx`). They are never part of the editor document. A
+// normal send writes each one, in order, as its own `<reply_context>` line
+// ahead of the typed text (`withReplyQuotes`). The tag is the wire format in
+// `reply-context.ts`; the transcript renders it with `QuotedMessageBody`.
+
+/** One quote in the composer's list. `id` is local to one composer mount. */
+export interface ComposerQuote {
+  id: string;
+  text: string;
+}
+
+/**
+ * Split text that is about to enter the composer — a prefill, a rewind, a
+ * restored queue row — into its reply quotes and the rest.
+ *
+ * Text with no block comes back unchanged, whitespace included: a plain
+ * prefill must land exactly as given. With blocks, the remaining text is the
+ * message with every block removed, trimmed. Blank quotes and repeats are
+ * dropped, the same rule `appendComposerQuote` applies.
+ */
+export function extractReplyQuotes(text: string): { quotes: string[]; text: string } {
+  const { quotes } = parseReplyContexts(text);
+  if (quotes.length === 0) return { quotes: [], text };
+  const unique: string[] = [];
+  for (const quote of quotes) {
+    if (quote && !unique.includes(quote)) unique.push(quote);
+  }
+  return { quotes: unique, text: stripReplyContexts(text) };
+}
+
+/**
+ * `quotes` with `text` appended as quote `id`. Trimmed. Blank text, or text
+ * already in the list, changes nothing and returns `quotes` itself, so a
+ * no-op does not re-render.
+ */
+export function appendComposerQuote(
+  quotes: ComposerQuote[],
+  text: string,
+  id: string,
+): ComposerQuote[] {
+  const quote = text.trim();
+  if (!quote || quotes.some((existing) => existing.text === quote)) return quotes;
+  return [...quotes, { id, text: quote }];
+}
+
+/** `quotes` without quote `id`. Returns `quotes` itself when no id matches. */
+export function removeComposerQuote(quotes: ComposerQuote[], id: string): ComposerQuote[] {
+  const remaining = quotes.filter((quote) => quote.id !== id);
+  return remaining.length === quotes.length ? quotes : remaining;
+}
+
+/**
+ * The list after a restore: `restored` first, in its order, then every quote
+ * in `current` whose text is not already there. Used where a failed send or a
+ * stored draft brings quotes back into a composer the user may have added to
+ * since.
+ */
+export function mergeComposerQuotes(
+  restored: readonly ComposerQuote[],
+  current: readonly ComposerQuote[],
+): ComposerQuote[] {
+  const merged = [...restored];
+  for (const quote of current) {
+    if (!merged.some((existing) => existing.text === quote.text)) merged.push(quote);
+  }
+  return merged;
+}
+
+/**
+ * Put quote `texts` that left with a draft back at the head of `current` — a
+ * restored draft, a prefill, a failed send. They lead in their own order; a
+ * text already in the list keeps its id and moves up; quotes added since stay
+ * after them. Blank and repeated texts are skipped. Nothing to restore
+ * returns `current` itself.
+ */
+export function restoreComposerQuotes(
+  current: ComposerQuote[],
+  texts: readonly string[],
+  makeId: () => string,
+): ComposerQuote[] {
+  const restored: ComposerQuote[] = [];
+  for (const raw of texts) {
+    const text = raw.trim();
+    if (!text || restored.some((quote) => quote.text === text)) continue;
+    restored.push(current.find((quote) => quote.text === text) ?? { id: makeId(), text });
+  }
+  if (restored.length === 0) return current;
+  return mergeComposerQuotes(restored, current);
+}
+
+/**
+ * The wire text of a quoted send: each quote as its own `<reply_context>`
+ * line, in order, then `text`. Quotes alone are a whole message. No quotes:
+ * `text` unchanged.
+ */
+export function withReplyQuotes(quotes: readonly string[], text: string): string {
+  if (quotes.length === 0) return text;
+  return [...quotes.map(serializeReplyContext), ...(text ? [text] : [])].join('\n');
 }
 
 export interface FailedSendRecoveryInput {
@@ -242,6 +347,47 @@ export function shouldApplyPrefill({
   return true;
 }
 
+/** One "Reply" on a transcript selection, waiting to join the quote list. */
+export interface QuoteRequest {
+  id: number;
+  text: string;
+}
+
+/**
+ * The `quoteRequests` to append right now, in order.
+ *
+ * A FIFO, not a single slot: two "Reply" clicks before the composer applies
+ * the first used to keep only the second. Each request is applied once per
+ * id; `appliedIds` (tracked by the caller) is refused here.
+ *
+ * Never held. A quote goes to the list above the input, not into the editor,
+ * so neither a lazy editor that has not mounted nor a question or approval
+ * lock has anything to protect it from.
+ */
+export function planQuoteRequests({
+  requests,
+  appliedIds,
+}: {
+  requests: readonly QuoteRequest[];
+  appliedIds: ReadonlySet<number>;
+}): QuoteRequest[] {
+  return requests.filter((request) => !appliedIds.has(request.id));
+}
+
+/**
+ * `requests` without the acknowledged `ids` — the holder's half of the
+ * handoff. An acknowledged request must leave the holder, or a remounted
+ * composer (empty applied set) would insert it again. Returns `requests`
+ * itself when nothing matches, so a no-op ack does not re-render.
+ */
+export function acknowledgeQuoteRequests(
+  requests: QuoteRequest[],
+  ids: readonly number[],
+): QuoteRequest[] {
+  const remaining = requests.filter((request) => !ids.includes(request.id));
+  return remaining.length === requests.length ? requests : remaining;
+}
+
 export interface ResolveEditorPlaceholderInput {
   lockForApproval: boolean;
   lockForQuestion: boolean;
@@ -285,10 +431,21 @@ export interface PlanDraftSubmissionInput {
   text: string;
   /** The live command list the chip is resolved against. */
   commands: Command[];
+  /** `getContent().commandSplit` — where the chip sat. Display only. */
+  commandSplit?: { before: string; after: string };
+  /** The composer's reply quotes, in list order. Every send leads with them. */
+  quotes?: readonly string[];
 }
 
 export type DraftSubmissionPlan =
-  { kind: 'command'; command: Command; args?: string } | { kind: 'message'; text: string };
+  | {
+      kind: 'command';
+      command: Command;
+      args?: string;
+      /** `commandSplit`, with the quote blocks ahead of `before`. */
+      split?: { before: string; after: string };
+    }
+  | { kind: 'message'; text: string };
 
 /**
  * Decide whether a draft runs a command or sends a message.
@@ -312,14 +469,26 @@ export function planDraftSubmission({
   commandName,
   text,
   commands,
+  commandSplit,
+  quotes = [],
 }: PlanDraftSubmissionInput): DraftSubmissionPlan {
   const trimmed = text.trim();
-  if (!commandName) return { kind: 'message', text: trimmed };
+  if (!commandName) return { kind: 'message', text: withReplyQuotes(quotes, trimmed) };
 
   const command = commands.find((candidate) => candidate.name === commandName);
-  if (command) return { kind: 'command', command, args: trimmed || undefined };
+  if (command) {
+    // The quotes ride in the args, so the command template sees them, and in
+    // `split.before`, so the sent bubble draws them (turn/user-message.tsx
+    // parses quotes out of the split halves of a command message).
+    const args = withReplyQuotes(quotes, trimmed);
+    const split =
+      commandSplit && quotes.length > 0
+        ? { before: withReplyQuotes(quotes, commandSplit.before), after: commandSplit.after }
+        : commandSplit;
+    return { kind: 'command', command, args: args || undefined, ...(split ? { split } : {}) };
+  }
 
-  return { kind: 'message', text: `/${commandName} ${trimmed}`.trim() };
+  return { kind: 'message', text: withReplyQuotes(quotes, `/${commandName} ${trimmed}`.trim()) };
 }
 
 /**

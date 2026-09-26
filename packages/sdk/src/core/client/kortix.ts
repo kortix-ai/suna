@@ -70,6 +70,45 @@ function runtime(): OpencodeClient {
  */
 const inFlightSessionStarts = new Map<string, Promise<SessionRuntimeEntry>>();
 
+/**
+ * Build the `RUNTIME_UNAVAILABLE` message from a not-ready `/start` result.
+ *
+ * The server already earns a concrete reason on a terminal `stage:"failed"` —
+ * `failure.category`/`failure.message`, its `failure.evidence.error`, or a
+ * plain `reason` (see `SessionStartResultSchema` in `@kortix/api-contract`).
+ * Before this, the caller threw only `(stage: <stage>)` and dropped all of it,
+ * so `kortix sessions log`/`sessions new --wait` surfaced a bare
+ * `Session runtime not ready (stage: failed)` with no cause — the operator
+ * could not tell a provider-capacity failure from a git-auth failure
+ * (incident-20260922T140537Z-kxhourly). Keep the stage for continuity and
+ * append the concrete reason when the result carries one.
+ */
+function runtimeNotReadyMessage(
+  started:
+    | {
+        stage?: string;
+        reason?: string;
+        failure?: {
+          category?: string;
+          message?: string;
+          evidence?: { error?: string | null } | null;
+        } | null;
+      }
+    | null
+    | undefined,
+): string {
+  const base = `Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`;
+  const failure = started?.failure;
+  const parts: string[] = [];
+  if (failure?.category) parts.push(failure.category);
+  if (failure?.message) parts.push(failure.message);
+  const providerError = failure?.evidence?.error;
+  if (providerError && providerError !== failure?.message) parts.push(providerError);
+  // `reason` is the coarser fallback the server sends without a `failure` block.
+  if (parts.length === 0 && started?.reason) parts.push(started.reason);
+  return parts.length > 0 ? `${base}: ${parts.join(' — ')}` : base;
+}
+
 export class SessionNotReadyError extends Error {
   constructor(action: string) {
     super(
@@ -170,6 +209,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     list: P.listAccounts,
     get: P.getAccount,
     create: P.createAccount,
+    secretResources: {
+      list: P.listAccountSecretResources,
+      create: P.createAccountSecretResource,
+      rotate: P.rotateAccountSecretResource,
+      remove: P.deleteAccountSecretResource,
+      grant: P.grantAccountSecretResource,
+      revoke: P.revokeAccountSecretResourceGrant,
+      setAccess: P.setAccountSecretResourceAccess,
+    },
     updateName: P.updateAccountName,
     /** Organization branding (Enterprise): own logo / icon / favicon (light + dark) and product name. */
     branding: {
@@ -331,6 +379,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
    * genuinely don't fit account- or project-scoping.
    */
   const accountInvites = {
+    /** The caller's own pending invites, matched by email. */
+    listMine: P.listMyAccountInvites,
     describe: P.describeAccountInvite,
     accept: P.acceptAccountInvite,
     decline: P.declineAccountInvite,
@@ -361,6 +411,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   /** GitHub App installation + repository linking — account-scoped, not project-scoped. */
   const github = {
     linkRepository: P.linkRepository,
+    replaceProjectRepository: P.replaceProjectRepository,
     getInstallation: P.getGitHubInstallation,
     listInstallations: P.listGitHubInstallations,
     listLinkableInstallations: P.listLinkableGitHubInstallations,
@@ -369,6 +420,16 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     linkInstallation: P.linkGitHubInstallation,
     saveInstallation: P.saveGitHubInstallation,
     deleteInstallation: P.deleteGitHubInstallation,
+  };
+
+  /**
+   * The instance git backend ("Kortix managed") — one deployment-wide owner
+   * plus credential, never an account connection. `backend()` is readable by
+   * any authenticated user; `backendRepositories()` is self-host-operator only.
+   */
+  const gitBackend = {
+    get: P.getManagedGitBackend,
+    repositories: P.listManagedGitRepositories,
   };
 
   /** Public share links for a sandbox port (`/v1/p/share`) — sandbox-scoped, not project-scoped. */
@@ -417,6 +478,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Call one `<connector>.<action>` tool. */
       call: <T = unknown>(...a: DropFirst<Parameters<typeof P.callConnector<T>>>) =>
         P.callConnector<T>(projectId, ...a),
+      /** The accounts a connector can be called as, default first. */
+      accounts: (...a: DropFirst<Parameters<typeof P.listConnectorAccounts>>) =>
+        P.listConnectorAccounts(projectId, ...a),
       /** Upload bytes for use by a later connector call. */
       uploadAttachment: (...a: DropFirst<Parameters<typeof P.uploadConnectorAttachment>>) =>
         P.uploadConnectorAttachment(projectId, ...a),
@@ -439,6 +503,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.activateConnection(projectId, ...a),
       setDefault: (...a: DropFirst<Parameters<typeof P.setDefaultConnection>>) =>
         P.setDefaultConnection(projectId, ...a),
+      rename: (...a: DropFirst<Parameters<typeof P.renameConnection>>) =>
+        P.renameConnection(projectId, ...a),
       pipedreamConnect: (...a: DropFirst<Parameters<typeof P.pipedreamConnectConnection>>) =>
         P.pipedreamConnectConnection(projectId, ...a),
       pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>
@@ -478,6 +544,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.updateAppAccess(projectId, ...a),
           session: (...a: DropFirst<Parameters<typeof P.createAppAccessSession>>) =>
             P.createAppAccessSession(projectId, ...a),
+          /** Agents whose `kortix.yaml` `apps:` grant names this App. Read-only. */
+          agents: (appId: string) => P.listAppAgents(projectId, appId),
         },
         remove: (appId: string) => P.deleteApp(projectId, appId),
         artifacts: {
@@ -778,6 +846,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           connect: (input: Parameters<typeof P.connectSlack>[1]) =>
             P.connectSlack(projectId, input),
           mode: () => P.getSlackMode(projectId),
+          /** Finish an "Add to Slack" install as the signed-in user (web completion page). */
+          completeInstall: (input: Parameters<typeof P.completeSlackInstall>[1]) =>
+            P.completeSlackInstall(projectId, input),
           manifest: () => P.getSlackManifest(projectId),
           disconnect: () => P.disconnectSlack(projectId),
           /** Download a Slack-hosted file through the server-side proxy (bot token stays server-side). */
@@ -785,6 +856,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           /** Upload a file to Slack through the server-side 3-step external-upload proxy. */
           uploadFile: (input: Parameters<typeof P.uploadSlackChannelFile>[1]) =>
             P.uploadSlackChannelFile(projectId, input),
+        },
+        teams: {
+          /** Finish a Microsoft Teams org install as the signed-in user (web completion page). */
+          completeInstall: (input: Parameters<typeof P.completeTeamsInstall>[1]) =>
+            P.completeTeamsInstall(projectId, input),
         },
         email: {
           installation: (connectorSlug?: string | null) =>
@@ -997,7 +1073,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           !started.sandbox ||
           !started.opencode_session_id
         ) {
-          throw new ApiError(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`, {
+          throw new ApiError(runtimeNotReadyMessage(started), {
             code: 'RUNTIME_UNAVAILABLE',
           });
         }
@@ -1109,6 +1185,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Per-session audit trail of connector-gated agent actions. */
       audit: (limit?: number, options?: Parameters<typeof P.getSessionAudit>[3]) =>
         P.getSessionAudit(projectId, sessionId, limit, options),
+      attachments: {
+        upload: (file: File, options?: Parameters<typeof P.uploadSessionAttachment>[3]) =>
+          P.uploadSessionAttachment(projectId, sessionId, file, options),
+        read: (attachmentId: string, signal?: AbortSignal) =>
+          P.fetchSessionAttachment(`kortix-attachment://${projectId}/${sessionId}/${attachmentId}`, signal),
+      },
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
         P.getSessionTranscript(projectId, sessionId, options),
@@ -1194,6 +1276,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
       /** Read the authoritative secret allowlist and connections. */
       scope: () => P.getProjectSessionScope(projectId, sessionId),
+      providerSecretPool: {
+        list: () => P.listSessionProviderSecretPools(projectId, sessionId),
+        get: (providerId: string) => P.getSessionProviderSecretPool(projectId, sessionId, providerId),
+        set: (providerId: string, secretIds: string[] | null) =>
+          P.setSessionProviderSecretPool(projectId, sessionId, providerId, secretIds),
+      },
       /** Re-scope a running session — set semantics; see setProjectSessionScope. */
       rescope: (scope: P.SessionScopeInput) =>
         P.setProjectSessionScope(projectId, sessionId, scope),
@@ -1344,15 +1432,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Headless regular auth — see `auth` above. */
     auth,
     accounts,
-    providerConnections: {
-      list: P.listUserProviderConnections,
-      saveApiKey: P.saveUserProviderApiKey,
-      remove: P.deleteUserProviderConnection,
-      startOAuth: P.startUserProviderOAuth,
-      pollOAuth: P.pollUserProviderOAuth,
-      listProject: P.listProjectPersonalProviders,
-      setProject: P.setProjectPersonalProvider,
-    },
     /** Identity and access — assignments, roles, permissions, groups, probes. */
     iam,
     /** Account-invite lifecycle reached by invite token alone (accept/decline/describe). */
@@ -1364,6 +1443,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     session,
     /** GitHub App installation + repository linking (account-scoped). */
     github,
+    /** The instance git backend ("Kortix managed", deployment-scoped). */
+    gitBackend,
     /** Billing read surface, including unified session costs. */
     billing,
     /** Public share links for a sandbox port (`/v1/p/share`, sandbox-scoped). */

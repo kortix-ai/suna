@@ -1,3 +1,4 @@
+import { publishOpenCodeEvent } from '../harness/open-code/event-bus'
 /**
  * `/kortix/opencode/*` end to end, against a REAL local OpenCode stand-in and a
  * REAL fixture `opencode.db`.
@@ -13,15 +14,16 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
-import { OpencodeDb } from '../opencode-db'
-import { RuntimeStateStore } from '../runtime-state-projection'
-import { KortixEventBus, kortixEventBus, resetKortixEventBusForTests } from '../kortix-event-bus'
-import { createOpencodeRuntimeRouter } from '../routes/opencode-runtime'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/lifecycle'
+import { OpencodeDb } from '../harness/open-code/opencode-db'
+import { RuntimeStateStore } from '../harness/open-code/runtime-state-projection'
+import { kortixEventBus, resetKortixEventBusForTests } from '../kortix-event-bus'
+import { createRuntimeRouter } from '../routes/runtime'
+import { createOpenCodeQueryService } from '../harness/open-code/queries'
 
 const TOKEN = 'sandbox-token'
-const SESSION = 'ses_fc5a2a353ffe4n9mPmwVuEVg5u'
+const SESSION = 'ses_test00000000000000routes'
 const auth = { Authorization: `Bearer ${TOKEN}` }
 
 // --------------------------------------------------------------------------
@@ -34,6 +36,7 @@ const TEMPLATE = '# Init\nDo the thing.\n'.repeat(80)
 
 let server: ReturnType<typeof Bun.serve>
 let opencodeCalls: string[] = []
+let opencodeUrls: string[] = []
 let acts: Array<{ path: string; body: unknown }> = []
 let permissions: unknown[] = []
 let failConfig = false
@@ -44,6 +47,7 @@ function startFakeOpencode() {
     async fetch(req) {
       const url = new URL(req.url)
       opencodeCalls.push(url.pathname)
+      opencodeUrls.push(url.pathname + url.search)
       if (req.method === 'POST') {
         acts.push({ path: url.pathname, body: await req.json().catch(() => null) })
         if (url.pathname.includes('/unknown/')) return Response.json({ error: 'nope' }, { status: 404 })
@@ -54,7 +58,7 @@ function startFakeOpencode() {
           return Response.json({ version: '1.18.23' })
         case '/agent':
           return Response.json([
-            { name: 'essentia-agi', description: 'the working agent', mode: 'primary', native: false, permission: {}, options: {}, prompt: SYSTEM_PROMPT },
+            { name: 'sampleco-agi', description: 'the working agent', mode: 'primary', native: false, permission: {}, options: {}, prompt: SYSTEM_PROMPT },
             { name: 'build', description: 'builtin', mode: 'primary', native: true, permission: {}, options: {}, prompt: SYSTEM_PROMPT },
           ])
         case '/command':
@@ -66,7 +70,7 @@ function startFakeOpencode() {
           return Response.json({
             model: 'kortix/codex/gpt-5.6-sol',
             small_model: 'kortix/codex/gpt-5.6-sol',
-            agent: 'essentia-agi',
+            agent: 'sampleco-agi',
             permission: { edit: 'allow' },
             instructions: ['AGENTS.md'],
             provider: { kortix: { models: { a: { name: 'x'.repeat(4000) } } } },
@@ -138,7 +142,7 @@ function buildDb(messages = 6, attachmentBytes = 120_000): void {
         sessionID: SESSION,
         role: i % 2 === 0 ? 'assistant' : 'user',
         time: { created: i * 10, completed: i * 10 + 1 },
-        agent: 'essentia-agi',
+        agent: 'sampleco-agi',
         // Weight the raw row the way a live message is weighted.
         system: 'S'.repeat(2_000),
       }),
@@ -189,7 +193,7 @@ function buildDb(messages = 6, attachmentBytes = 120_000): void {
 }
 
 function makeRouter(options: { dbPath?: string; pinnedSessionId?: () => string | null } = {}) {
-  const cfg = { sandboxToken: TOKEN, workspace: '/workspace' } as Config
+  const cfg = { sandboxToken: TOKEN, workspace: '/workspace', opencodeInternalPort: 4096, opencodeStandbyPort: 4097, defaultOpencodeConfigDir: '/workspace/.kortix/opencode' } as Config
   const opencode = {
     getInternalUrl: () => `http://127.0.0.1:${server.port}`,
     getState: () => 'ok',
@@ -205,12 +209,11 @@ function makeRouter(options: { dbPath?: string; pinnedSessionId?: () => string |
     daemonBuild: () => 7,
   })
   return {
-    app: createOpencodeRuntimeRouter(cfg, {
-      opencode,
+    app: createRuntimeRouter(cfg, createOpenCodeQueryService(opencode, {
       db,
       state,
       pinnedSessionId: options.pinnedSessionId ?? (() => SESSION),
-    }),
+    }).bind({ cfg })),
     state,
     db,
     cfg,
@@ -229,6 +232,7 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-runtime-'))
   dbPath = join(root, 'opencode.db')
   opencodeCalls = []
+  opencodeUrls = []
   acts = []
   permissions = []
   failConfig = false
@@ -237,6 +241,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // Module-level state: clear it on the way OUT too, or the next file in this
+  // bun process inherits it (see test-state-reset-tripwire.test.ts).
+  resetKortixEventBusForTests()
   rmSync(root, { recursive: true, force: true })
 })
 
@@ -245,22 +252,31 @@ afterEach(() => {
 describe('auth', () => {
   test('every route refuses an unauthenticated call', async () => {
     const { app } = makeRouter()
-    for (const path of ['/state', `/messages/${SESSION}`, '/events', '/turn/msg_1']) {
+    for (const path of [
+      '/state',
+      `/messages/${SESSION}`,
+      '/events',
+      '/turn/msg_1',
+      '/vcs-diff',
+      '/project-current',
+      '/config',
+      `/session/${SESSION}`,
+      `/todo/${SESSION}`,
+    ]) {
       expect((await app.request(`http://d${path}`)).status).toBe(401)
     }
     expect((await app.request('http://d/act', { method: 'POST', body: '{}' })).status).toBe(401)
   })
 
   test('an unconfigured daemon answers 503, not 401 — the operator gets the real reason', async () => {
-    const cfg = {} as Config
+    const cfg = { opencodeInternalPort: 4096, opencodeStandbyPort: 4097, defaultOpencodeConfigDir: '/workspace/.kortix/opencode' } as Config
     const opencode = { getInternalUrl: () => `http://127.0.0.1:${server.port}` } as unknown as Opencode
     const db = new OpencodeDb(dbPath)
-    const app = createOpencodeRuntimeRouter(cfg, {
-      opencode,
+    const app = createRuntimeRouter(cfg, createOpenCodeQueryService(opencode, {
       db,
       state: new RuntimeStateStore({ opencode, cfg, db, pinnedSessionId: () => null, daemonBuild: () => null }),
       pinnedSessionId: () => null,
-    })
+    }).bind({ cfg }))
     expect((await app.request('http://d/state', { headers: auth })).status).toBe(503)
   })
 })
@@ -280,9 +296,9 @@ describe('GET /state', () => {
     expect(body.identity.head_seq).toEqual({ [SESSION]: 2_016 })
     expect(body.epoch).toBe(kortixEventBus().epoch)
     expect(body.agents.known).toBe(true)
-    expect(body.agents.value.map((a: any) => a.name)).toEqual(['essentia-agi', 'build'])
+    expect(body.agents.value.map((a: any) => a.name)).toEqual(['sampleco-agi', 'build'])
     expect(body.commands.value[0]).toMatchObject({ name: 'init', template_bytes: TEMPLATE.length })
-    expect(body.config.value).toMatchObject({ model: 'kortix/codex/gpt-5.6-sol', default_agent: 'essentia-agi' })
+    expect(body.config.value).toMatchObject({ model: 'kortix/codex/gpt-5.6-sol', default_agent: 'sampleco-agi' })
     expect(body.config.value.enabled_providers).toEqual(['kortix'])
     expect(body.statuses.value).toEqual({ [SESSION]: { type: 'idle' } })
     expect(body.permissions.value).toEqual([])
@@ -392,14 +408,28 @@ describe('GET /state', () => {
     expect(opencodeCalls.length).toBe(before)
   })
 
-  test('a catalog-moving frame forces exactly one rebuild', async () => {
+  // The four ways the roster moves. Boot re-pushes the projection on the same
+  // set (CATALOG_MOVING_EVENT_TYPES), so this table proves both consumers.
+  test.each(['server.instance.disposed', 'mcp.tools.changed', 'global.disposed', 'plugin.added'])(
+    'a %s frame forces exactly one rebuild',
+    async (type) => {
+      const { app, state } = makeRouter()
+      await app.request('http://d/state', { headers: auth })
+      const before = opencodeCalls.filter((p) => p === '/agent').length
+      state.noteEvent({ type, properties: {} })
+      await app.request('http://d/state', { headers: auth })
+      await app.request('http://d/state', { headers: auth })
+      expect(opencodeCalls.filter((p) => p === '/agent').length).toBe(before + 1)
+    },
+  )
+
+  test('an ordinary frame does not rebuild the catalog', async () => {
     const { app, state } = makeRouter()
     await app.request('http://d/state', { headers: auth })
     const before = opencodeCalls.filter((p) => p === '/agent').length
-    state.noteEvent({ type: 'mcp.tools.changed', properties: {} })
+    state.noteEvent({ type: 'message.part.delta', properties: {} })
     await app.request('http://d/state', { headers: auth })
-    await app.request('http://d/state', { headers: auth })
-    expect(opencodeCalls.filter((p) => p === '/agent').length).toBe(before + 1)
+    expect(opencodeCalls.filter((p) => p === '/agent').length).toBe(before)
   })
 
   test('concurrent opens share ONE build', async () => {
@@ -436,6 +466,7 @@ describe('GET /messages/:sessionId', () => {
     const { app } = makeRouter()
     const older = (await (await app.request(`http://d/messages/${SESSION}?limit=2&before=msg_004`, { headers: auth })).json()) as any
     expect(older.messages.map((m: any) => m.info.id)).toEqual(['msg_002', 'msg_003'])
+    expect(older.has_more).toBe(true)
     const newer = (await (await app.request(`http://d/messages/${SESSION}?limit=10&after=msg_004`, { headers: auth })).json()) as any
     expect(newer.messages.map((m: any) => m.info.id)).toEqual(['msg_005', 'msg_006'])
     expect(newer.has_more).toBe(false)
@@ -466,9 +497,12 @@ describe('GET /messages/:sessionId', () => {
   })
 
   test('the page limit is bounded', async () => {
+    rmSync(dbPath, { force: true })
+    buildDb(205, 8)
     const { app } = makeRouter()
     const body = (await (await app.request(`http://d/messages/${SESSION}?limit=99999`, { headers: auth })).json()) as any
-    expect(body.count).toBe(6)
+    expect(body.count).toBe(200)
+    expect(body.has_more).toBe(true)
   })
 })
 
@@ -513,13 +547,13 @@ describe('GET /events (SSE)', () => {
   test('replays the gap then hands off to live with no loss and no duplication', async () => {
     const { app } = makeRouter()
     const bus = kortixEventBus()
-    for (let i = 1; i <= 5; i++) bus.publishOpencode({ type: 'message.part.delta', properties: { i } })
+    for (let i = 1; i <= 5; i++) publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { i } })
 
     const res = await app.request('http://d/events?since=2', { headers: auth })
     // hello + replay(3,4,5) + live(6,7)
     const framesPromise = readFrames(res, 6)
     await Bun.sleep(20)
-    bus.publishOpencode({ type: 'session.idle', properties: { sessionID: SESSION } })
+    publishOpenCodeEvent(bus, { type: 'session.idle', properties: { sessionID: SESSION } })
     bus.publishDaemon('kortix.turn', { verdict: 'idle' }, SESSION)
     const frames = await framesPromise
 
@@ -542,16 +576,14 @@ describe('GET /events (SSE)', () => {
 
   test('an unreplayable cursor gets kortix.resync and then live events, never a silent hole', async () => {
     const { app } = makeRouter()
-    // A tiny ring so the gap is guaranteed unreplayable.
-    const bus = new KortixEventBus('e-test', 2)
-    ;(globalThis as any).__unusedBus = bus
+    // A cursor from another daemon boot cannot be replayed onto this one.
     const live = kortixEventBus()
-    for (let i = 0; i < 5; i++) live.publishOpencode({ type: 'x', properties: {} })
+    for (let i = 0; i < 5; i++) publishOpenCodeEvent(live, { type: 'x', properties: {} })
 
     const res = await app.request('http://d/events?since=3&epoch=some-old-epoch', { headers: auth })
     const framesPromise = readFrames(res, 3)
     await Bun.sleep(20)
-    live.publishOpencode({ type: 'session.idle', properties: { sessionID: SESSION } })
+    publishOpenCodeEvent(live, { type: 'session.idle', properties: { sessionID: SESSION } })
     const frames = await framesPromise
     const events = frames.map(dataOf)
     expect(events[0].type).toBe('kortix.hello')
@@ -559,25 +591,34 @@ describe('GET /events (SSE)', () => {
     expect(events[2]).toMatchObject({ type: 'session.idle', seq: 6 })
   })
 
-  test('the heartbeat is a TYPED event and carries no seq', async () => {
-    const cfg = { sandboxToken: TOKEN, workspace: '/workspace' } as Config
-    const opencode = { getInternalUrl: () => `http://127.0.0.1:${server.port}` } as unknown as Opencode
-    const db = new OpencodeDb(dbPath)
-    const app = createOpencodeRuntimeRouter(cfg, {
-      opencode,
-      db,
-      state: new RuntimeStateStore({ opencode, cfg, db, pinnedSessionId: () => SESSION, daemonBuild: () => null }),
-      pinnedSessionId: () => SESSION,
-    })
-    const res = await app.request('http://d/events', { headers: auth })
-    const [hello] = await readFrames(res, 1)
+  test('the heartbeat is a TYPED event every 15 s and carries no seq', async () => {
+    // Capture the stream's interval instead of sleeping 15 s. What matters is
+    // the WIRE FORM: a `:` comment would be swallowed by every SSE parser and
+    // leave consumer watchdogs blind — the defect sse-keepalive.ts records.
+    const { app } = makeRouter()
+    const realSetInterval = globalThis.setInterval
+    const intervals: Array<{ tick: () => void; ms: number | undefined }> = []
+    globalThis.setInterval = ((tick: () => void, ms?: number) => {
+      intervals.push({ tick, ms })
+      return realSetInterval(() => {}, 1 << 30)
+    }) as typeof setInterval
+    let res: Response
+    try {
+      res = await app.request('http://d/events', { headers: auth })
+    } finally {
+      globalThis.setInterval = realSetInterval
+    }
+    const framesPromise = readFrames(res, 2)
+    await Bun.sleep(10)
+    expect(intervals.map((i) => i.ms)).toEqual([15_000])
+    intervals[0]!.tick()
+    const [hello, heartbeat] = await framesPromise
     expect(hello).toContain('event: kortix.hello')
-    // Cadence itself is asserted by the constant, not by sleeping 15 s in a
-    // unit test. What matters here is the WIRE FORM: a `:` comment would be
-    // swallowed by every SSE parser and leave consumer watchdogs blind — the
-    // defect sse-keepalive.ts records from the 2026-08-26 incident.
-    const { EVENT_HEARTBEAT_MS } = await import('../routes/opencode-runtime')
-    expect(EVENT_HEARTBEAT_MS).toBe(15_000)
+    expect(heartbeat!.split('\n')[0]).toBe('event: kortix.heartbeat')
+    expect(heartbeat).not.toMatch(/^id:/m)
+    const data = dataOf(heartbeat!)
+    expect(data.type).toBe('kortix.heartbeat')
+    expect(data).not.toHaveProperty('seq')
   })
 
   test('cancelling the stream unsubscribes', async () => {
@@ -628,6 +669,18 @@ describe('POST /act', () => {
     })
     expect(res.status).toBe(200)
     expect(acts[0]!.path).toBe(`/session/${SESSION}/abort`)
+  })
+
+  test('stop with no session named and none pinned is a 409, and reaches nothing', async () => {
+    const { app } = makeRouter({ pinnedSessionId: () => null })
+    const res = await app.request('http://d/act', {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'stop' }),
+    })
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ ok: false, error: 'no opencode session pinned' })
+    expect(acts).toEqual([])
   })
 
   test('revert and unrevert both work, and revert needs a message id', async () => {
@@ -735,12 +788,8 @@ describe('GET /kortix/opencode/* passthroughs — the last raw reads move onto /
     const { app } = makeRouter()
     const res = await app.request('http://d/vcs-diff?mode=git', { headers: auth })
     expect(res.status).toBe(200)
-    expect(opencodeCalls).toContain('/vcs/diff')
-  })
-
-  test('a passthrough refuses an unauthenticated request', async () => {
-    const { app } = makeRouter()
-    expect((await app.request('http://d/vcs-diff')).status).toBe(401)
+    const forwarded = new URL(`http://x${opencodeUrls.find((u) => u.startsWith('/vcs/diff'))}`)
+    expect(forwarded.searchParams.get('mode')).toBe('git')
   })
 })
 

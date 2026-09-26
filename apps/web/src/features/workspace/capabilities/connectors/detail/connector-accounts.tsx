@@ -1,13 +1,12 @@
 'use client';
 
+import type { AdminConnector, Connection } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
-import type { AdminConnector } from '@kortix/sdk';
 
 import { Label } from '@/components/ui/label';
 import {
   ChannelConnectionSection,
   ConnectionRoster,
-  ConnectionSection,
   ConnectionsList,
 } from '@/features/workspace/customize/sections/connectors-view';
 import { isManagedConnectorProvider } from '../provider-label';
@@ -19,25 +18,33 @@ export interface ConnectorAccountsProps {
   displayName: string;
   canWrite: boolean;
   canManageConnections: boolean;
-  strategyUpdating: boolean;
   onChanged: () => void;
   onRemoved: () => void;
-  onStartSession: () => void;
-  onSetCredential: () => void;
+  /** Start a session bound to this exact account. */
+  onStartSession: (connection: Connection) => void;
 }
 
 /**
  * Accounts — which accounts this connector runs as.
  *
- * Pipedream connectors hold many authorizations (one project account plus one
- * per member), so they get `ConnectionsList` and, for a per-user connector, the
- * team roster below it. Every other connector has at most one credential, owned
- * by `ConnectionSection` — or `ChannelConnectionSection` for channels.
+ * A connector is a declared capability with no identity; an account
+ * (`connector_connections` row) is an authorized identity on it, owned by the
+ * project (shared) or by one member — and BOTH can coexist on the very same
+ * connector, direct or managed alike. So every provider except Computer
+ * Tunnel (`ComputerConnectorAccount`, its own machine-assignment UI) and
+ * Channel (`ChannelConnectionSection`, its own per-platform connect flow)
+ * gets the same two-group `ConnectionsList`:
  *
- * `ConnectionSection` also carries the transport config, which belongs on
- * Settings. It is one component with no seam between the two, and splitting it
- * means editing `connectors-view.tsx`, so it is mounted here only — showing it
- * on both tabs would print the same form twice.
+ * - Managed (Composio/Pipedream) — "Add" runs the hosted Connect Link OAuth
+ *   flow (`usePipedreamConnectProject` / `usePipedreamConnectMember`).
+ * - Direct (openapi/http/mcp/graphql/postman/…) — "Add" creates the account
+ *   then opens `SetCredentialModal` for it, wired inside `ConnectionsList`
+ *   itself. Every row also gets a "Set credential" action to re-enter it.
+ *
+ * `ConnectionSection` (the transport config — slug/provider/spec/auth/
+ * headers) is NOT mounted here any more. It moved to the Settings tab
+ * (`connector-settings.tsx`) — see that file's docstring. Mounting it here
+ * too would print the same form twice.
  */
 export function ConnectorAccounts({
   projectId,
@@ -45,17 +52,14 @@ export function ConnectorAccounts({
   displayName,
   canWrite,
   canManageConnections,
-  strategyUpdating,
   onChanged,
   onRemoved,
   onStartSession,
-  onSetCredential,
 }: ConnectorAccountsProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isManagedProvider = isManagedConnectorProvider(connector.provider);
   const isChannel = connector.provider === 'channel';
   const isComputer = connector.provider === 'computer';
-  const usesProjectAuthorization = connector.authorizationStrategy === 'project';
   const showRoster =
     isManagedProvider && canManageConnections && connector.authorizationStrategy === 'user';
 
@@ -70,66 +74,38 @@ export function ConnectorAccounts({
     );
   }
 
-  if (isManagedProvider) {
+  if (isChannel) {
     return (
-      <div className="space-y-5">
-        <ConnectionsList
-          projectId={projectId}
-          connector={connector}
-          displayName={displayName}
-          canManageConnections={canManageConnections}
-          onChanged={onChanged}
-          onStartSession={onStartSession}
-          disabled={strategyUpdating}
-        />
-        {showRoster ? (
-          <section className="space-y-2">
-            <Label>{tI18nComplete.raw('text74156382383b')}</Label>
-            <ConnectionRoster
-              projectId={projectId}
-              connectorSlug={connector.slug}
-              displayName={displayName}
-            />
-          </section>
-        ) : null}
-      </div>
+      <ChannelConnectionSection
+        projectId={projectId}
+        connector={connector}
+        onChanged={onChanged}
+        onRemoved={onRemoved}
+        canWrite={canWrite}
+      />
     );
   }
 
-  // `ConnectionSection` fetches its config with `enabled: canWrite` and renders
-  // a skeleton until that resolves, so showing it to a reader would leave three
-  // grey bars on screen for good. The old panel had the same gate
-  // (`showConnectionTab = canWrite && …`); a reader is told why instead.
-  if (!canWrite) {
-    return (
-      <p className="text-muted-foreground text-sm text-pretty">
-        {displayName} {tI18nComplete.raw('text39c6992dbec1')}{' '}
-        {usesProjectAuthorization
-          ? tI18nComplete.raw('texte90f6cee880b')
-          : tI18nComplete.raw('text9b91e724f63b')}
-        {tI18nComplete.raw('textdbc539f3b073')}
-      </p>
-    );
-  }
-
-  // `canWrite` is already true past the guard above, so the only thing left to
-  // gate on is the in-flight strategy change — writing an account while the
-  // authorization owner is moving would race it.
-  return isChannel ? (
-    <ChannelConnectionSection
-      projectId={projectId}
-      connector={connector}
-      onChanged={onChanged}
-      onRemoved={onRemoved}
-      canWrite={!strategyUpdating}
-    />
-  ) : (
-    <ConnectionSection
-      projectId={projectId}
-      connector={connector}
-      onChanged={onChanged}
-      canWrite={!strategyUpdating}
-      onSetCredential={usesProjectAuthorization ? onSetCredential : undefined}
-    />
+  return (
+    <div className="space-y-5">
+      <ConnectionsList
+        projectId={projectId}
+        connector={connector}
+        displayName={displayName}
+        canManageConnections={canManageConnections}
+        onChanged={onChanged}
+        onStartSession={onStartSession}
+      />
+      {showRoster ? (
+        <section className="space-y-2">
+          <Label>{tI18nComplete.raw('text74156382383b')}</Label>
+          <ConnectionRoster
+            projectId={projectId}
+            connectorSlug={connector.slug}
+            displayName={displayName}
+          />
+        </section>
+      ) : null}
+    </div>
   );
 }

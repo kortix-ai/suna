@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { modelItemValue, pickerGroupId, pickerGroupLabel, splitModelLabel } from './model-grouping';
+import { buildPickerSections, isPickerGroupOpen, modelItemValue, pickerGroupId, pickerGroupLabel, splitModelLabel } from './model-grouping';
 import type { FlatModel } from './session-chat-input';
 
 // Regression coverage for the "every provider shows as Kortix" picker bug.
@@ -205,5 +205,83 @@ describe('modelItemValue', () => {
     expect(modelItemValue('model', { providerID: 'kortix', modelID: 'gpt-5.6' })).not.toBe(
       modelItemValue('model', { providerID: 'openai', modelID: 'gpt-5.6' }),
     );
+  });
+});
+
+describe('isPickerGroupOpen', () => {
+  const base = {
+    groupIndex: 1,
+    groupProviderID: 'codex',
+    hasSearch: false,
+    containsSelected: false,
+    toggled: new Map<string, boolean>(),
+  };
+
+  test('a secondary group is collapsed by default', () => {
+    expect(isPickerGroupOpen(base)).toBe(false);
+  });
+
+  test('the first group — the managed set — starts open', () => {
+    expect(isPickerGroupOpen({ ...base, groupIndex: 0 })).toBe(true);
+  });
+
+  test('the group holding the selected model starts open, so the check has a home', () => {
+    expect(isPickerGroupOpen({ ...base, containsSelected: true })).toBe(true);
+  });
+
+  test('the first group collapses when the user collapses it', () => {
+    expect(
+      isPickerGroupOpen({ ...base, groupIndex: 0, toggled: new Map([['codex', false]]) }),
+    ).toBe(false);
+  });
+
+  test('the selected model group collapses when the user collapses it', () => {
+    expect(
+      isPickerGroupOpen({ ...base, containsSelected: true, toggled: new Map([['codex', false]]) }),
+    ).toBe(false);
+  });
+
+  test('a search reaches every group, even one the user collapsed', () => {
+    expect(
+      isPickerGroupOpen({ ...base, hasSearch: true, toggled: new Map([['codex', false]]) }),
+    ).toBe(true);
+  });
+
+  test('what the user expanded stays expanded', () => {
+    expect(isPickerGroupOpen({ ...base, toggled: new Map([['codex', true]]) })).toBe(true);
+  });
+
+  test('expanding one group does not open its neighbour', () => {
+    expect(
+      isPickerGroupOpen({
+        ...base,
+        groupProviderID: 'anthropic',
+        toggled: new Map([['codex', true]]),
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('buildPickerSections', () => {
+  const group = {
+    providerID: 'codex',
+    providerName: 'ChatGPT subscription',
+    models: [{ modelID: 'codex/gpt-6-astra' }, { modelID: 'codex/gpt-5.5' }] as never[],
+  };
+
+  test('one section per provider, models listed once', () => {
+    const [section] = buildPickerSections([group]);
+    expect(section!.models).toHaveLength(2);
+    expect(section!.label).toBe('ChatGPT subscription');
+  });
+
+  test('the section keeps the RESOLVED provider for its row logos', () => {
+    const [section] = buildPickerSections([group]);
+    expect(section!.providerID).toBe('codex');
+  });
+
+  test('sections carry no credential chooser; provider keys live in Session overrides', () => {
+    const [section] = buildPickerSections([group]);
+    expect(Object.keys(section!).sort()).toEqual(['id', 'label', 'models', 'providerID']);
   });
 });

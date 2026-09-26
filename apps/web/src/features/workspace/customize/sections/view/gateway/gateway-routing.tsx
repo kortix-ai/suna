@@ -711,7 +711,7 @@ export function GatewayRouting({
         (model) => model !== primaryModel,
       );
       const preferred =
-        models.find((model) => modelKeyToWire(model) === 'glm-5.3-flash') ??
+        models.find((model) => modelKeyToWire(model) === 'deepseek-v4.1-flash') ??
         models.find((model) => modelKeyToWire(model) !== primaryModel);
       return {
         ...current,

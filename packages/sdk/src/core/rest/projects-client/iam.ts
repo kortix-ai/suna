@@ -618,6 +618,36 @@ export async function setMfaRequired(accountId: string, enabled: boolean) {
   );
 }
 
+// ─── Session oversight ────────────────────────────────────────────────────
+
+/**
+ * The account policy that lets account owners and admins open EVERY session in
+ * the account, members' private sessions included. Off by default. Any member
+ * may read it; only an account owner may change it (`can_change`).
+ */
+export interface SessionOversightStatus {
+  enabled: boolean;
+  /** True when the caller is an account owner and may change the policy. */
+  can_change: boolean;
+}
+
+export async function getSessionOversight(accountId: string) {
+  return unwrap(
+    await iamGet<SessionOversightStatus>(`/accounts/${accountId}/iam/session-oversight`),
+  );
+}
+
+/** Owner only. An admin or member receives 403 `account_owner_required`. */
+export async function setSessionOversight(accountId: string, enabled: boolean) {
+  return unwrap(
+    await backendApi.patch<{ enabled: boolean; unchanged?: boolean }>(
+      `/accounts/${accountId}/iam/session-oversight`,
+      { enabled },
+      { showErrors: false },
+    ),
+  );
+}
+
 // ─── SAML SSO ─────────────────────────────────────────────────────────────
 
 export interface SsoProvider {
@@ -631,8 +661,23 @@ export interface SsoProvider {
   /** When true, the unified auth flow refuses the password/email-code paths
    *  for this provider's primary domain — the IdP becomes the only door. */
   enforce_sso: boolean;
+  /** True once the account proved control of `primary_domain`. Until then an
+   *  email this IdP asserts is trusted only inside this account, and
+   *  `enforce_sso` has no effect. */
+  domain_verified?: boolean;
+  domain_verified_at?: string | null;
+  /** The DNS TXT record that proves control of `primary_domain`. */
+  domain_verification?: SsoDomainVerificationRecord | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface SsoDomainVerificationRecord {
+  record_type: 'TXT';
+  /** DNS name, e.g. `_kortix-verification.example.com`. */
+  record_name: string;
+  /** TXT value, e.g. `kortix-verification=<token>`. */
+  record_value: string;
 }
 
 export interface SsoGroupMapping {
@@ -694,6 +739,22 @@ export async function importSsoProviderFromMetadata(
     await backendApi.post<{ provider: SsoProvider }>(
       `/accounts/${accountId}/iam/sso/provider/from-metadata`,
       input,
+      { showErrors: false },
+    ),
+  ).provider;
+}
+
+/**
+ * Check the DNS TXT record from `provider.domain_verification` and, when it is
+ * published, mark the provider's primary domain verified. Rejects with the
+ * API's 422 (`code: 'sso_domain_unverified'`) while the record is missing, and
+ * 409 (`sso_domain_claimed`) when another account verified the domain first.
+ */
+export async function verifySsoDomain(accountId: string) {
+  return unwrap(
+    await backendApi.post<{ provider: SsoProvider }>(
+      `/accounts/${accountId}/iam/sso/provider/verify-domain`,
+      {},
       { showErrors: false },
     ),
   ).provider;
@@ -928,7 +989,7 @@ export interface IamAuditEvent extends AuditEvent {
   project_id: string | null;
   session_id: string | null;
   actor_user_id: string | null;
-  actor_type: 'human' | 'agent' | 'service_account' | 'system' | null;
+  actor_type: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous' | null;
   source: string | null;
   outcome: 'success' | 'failure' | 'denied' | 'pending' | null;
   action: string;
@@ -954,7 +1015,7 @@ export interface ListAuditFilter {
   actor?: string;
   project_id?: string;
   session_id?: string;
-  actor_type?: 'human' | 'agent' | 'service_account' | 'system';
+  actor_type?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
   source?: string;
   phase?: string;
   outcome?: 'success' | 'failure' | 'denied' | 'pending';

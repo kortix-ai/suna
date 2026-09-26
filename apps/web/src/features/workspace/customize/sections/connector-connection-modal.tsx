@@ -1,10 +1,8 @@
 'use client';
 
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import type { ConnectorAuthorizationStrategy } from '@kortix/sdk';
 import { useEffect, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
@@ -18,13 +16,6 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { CaretDownIcon, PlusIcon } from '@phosphor-icons/react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
@@ -38,125 +29,18 @@ import {
 } from './connector-connection-form';
 import { ConnectorConnectionHeader } from './connector-connection-header';
 
-export function AuthorizationStrategyField({
-  idPrefix,
-  value,
-  onChange,
-  disabled = false,
-  pending = false,
-  lockedReason,
-  hideLabel = false,
-}: {
-  idPrefix: string;
-  value: ConnectorAuthorizationStrategy;
-  onChange: (value: ConnectorAuthorizationStrategy) => void;
-  disabled?: boolean;
-  pending?: boolean;
-  /**
-   * Set on a connector that already exists, where the choice is settled.
-   *
-   * Forces the control off AND replaces the description, because a disabled
-   * select with unchanged help text reads as a bug: the user tries it, nothing
-   * happens, and nothing says why. The reason belongs where the control is.
-   */
-  lockedReason?: string;
-  /**
-   * Skips this field's own "Authorization owner" label. For a caller that
-   * already prints its own plain-language label for this exact control
-   * directly above it (the connector Settings tab's "Connects as") —
-   * so the two do not stack and repeat the same fact in two vocabularies.
-   * Defaults to `false`; every other caller is unaffected.
-   *
-   * It never leaves the control unnamed. In the interactive branch the
-   * suppressed `FieldLabel htmlFor` was the select's ONLY name source, so
-   * `hideLabel` alone would have shipped a form control with no accessible
-   * name (WCAG 4.1.2) — invisible to `tsc`, to eslint and to every test here.
-   * That combination is one line away: `connector-settings.tsx` today passes both
-   * `hideLabel` and a `lockedReason`, and its own comment says re-enabling
-   * editing means deleting `lockedReason`. So the two props are coupled below
-   * rather than documented apart — documenting it was tried, twice, and this
-   * still surprised a reviewer.
-   */
-  hideLabel?: boolean;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const id = `${idPrefix}-authorization-strategy`;
-  /** The name the `<FieldLabel>` would have carried, moved onto the control
-   *  itself whenever that label is suppressed. */
-  const suppressedLabel = hideLabel ? 'Authorization owner' : undefined;
-
-  // Settled connectors get a STATEMENT, not a dead input. A disabled select
-  // still looks operable — it keeps the chevron, the focus ring and the hover —
-  // so it invites a click that does nothing. Reading the value out plainly is
-  // both calmer and more honest about the fact that there is no decision left.
-  if (lockedReason) {
-    const isProject = value === 'project';
-    return (
-      <Field>
-        {hideLabel ? null : <FieldLabel>{tI18nComplete.raw('textca6f5e1c98a8')}</FieldLabel>}
-        {/* The design-system settings-row shape (title, statement, one quiet
-            border) — the colored duotone tile it used to carry was a one-off
-            style and decorative color, both off the brand allowlist
-            (Jay, 2026-09-14). */}
-        <div className="bg-popover rounded-md border px-4 py-3">
-          <div className="flex items-center gap-2">
-            <p className="text-foreground text-sm font-medium">{isProject ? 'Project' : 'User'}</p>
-            <Badge variant="outline" size="xs">
-              {tI18nComplete.raw('text1246fc93bca0')}
-            </Badge>
-          </div>
-          <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-            {isProject
-              ? tI18nComplete.raw('texteb573b3b299a')
-              : tI18nComplete.raw('texte31c7af1f424')}
-          </p>
-          {/* The reason it is fixed lives INSIDE the row it explains — as a
-              loose paragraph between rows it read as page prose, at body
-              size, belonging to nothing (Jay, 2026-09-14). */}
-          <p className="text-muted-foreground mt-1.5 text-xs text-pretty">{lockedReason}</p>
-        </div>
-      </Field>
-    );
-  }
-  return (
-    <Field>
-      <div className="flex items-center justify-between gap-2">
-        {hideLabel ? null : (
-          <FieldLabel htmlFor={id}>{tI18nComplete.raw('textca6f5e1c98a8')}</FieldLabel>
-        )}
-        {pending ? <Loading className="size-4 shrink-0" /> : null}
-      </div>
-      <Select
-        value={value}
-        disabled={disabled || pending}
-        onValueChange={(next) => onChange(next as ConnectorAuthorizationStrategy)}
-      >
-        <SelectTrigger id={id} aria-label={suppressedLabel}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="project">{tI18nComplete.raw('text985959785319')}</SelectItem>
-          <SelectItem value="user">{tI18nComplete.raw('textb512d97e7cbf')}</SelectItem>
-        </SelectContent>
-      </Select>
-      <FieldDescription className="text-pretty">
-        {value === 'project'
-          ? tI18nComplete.raw('texteb573b3b299a')
-          : tI18nComplete.raw('texte31c7af1f424')}
-      </FieldDescription>
-    </Field>
-  );
-}
-
 /**
  * The "Add connector" dialog: connection header + one primary button.
  *
- * Defaults (app name, proposed slug, project authorization) are always valid,
- * so a non-technical user reads the header and presses "+ Add connector"
- * without meeting "slug" or "authorization owner". Those fields stay behind a
- * collapsed disclosure for the rare rename / ownership case. The disclosure
- * force-opens when the slug inside it becomes invalid, so a submit that
- * would silently refuse never hides its reason.
+ * Defaults (app name, proposed slug) are always valid, so a non-technical user
+ * reads the header and presses "+ Add connector" without meeting "slug". That
+ * field stays behind a collapsed disclosure for the rare rename case. The
+ * disclosure force-opens when the slug inside it becomes invalid, so a submit
+ * that would silently refuse never hides its reason.
+ *
+ * There is no owner choice here any more. A connector is a capability with no
+ * identity; WHO it runs as is a property of each account on its Accounts tab,
+ * where both a shared and a private account can exist at the same time.
  */
 export function ConnectorConnectionModal({
   open,
@@ -166,7 +50,6 @@ export function ConnectorConnectionModal({
   initialSlug,
   existingSlugs,
   pending,
-  authorizationStrategyDisabled = false,
   icon,
   byline,
   summary,
@@ -182,7 +65,6 @@ export function ConnectorConnectionModal({
   initialSlug: string;
   existingSlugs: readonly string[];
   pending: boolean;
-  authorizationStrategyDisabled?: boolean;
   /** The app tile — `ConnectorConnectionIcon` over the catalogue record. */
   icon?: React.ReactNode;
   /** e.g. "by Pipedream". */
@@ -202,8 +84,6 @@ export function ConnectorConnectionModal({
   const [slug, setSlug] = useState(initialSlug);
   const [slugEdited, setSlugEdited] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
-  const [authorizationStrategy, setAuthorizationStrategy] =
-    useState<ConnectorAuthorizationStrategy>('project');
 
   useEffect(() => {
     if (!open) return;
@@ -211,7 +91,6 @@ export function ConnectorConnectionModal({
     setSlug(initialSlug);
     setSlugEdited(false);
     setOptionsOpen(false);
-    setAuthorizationStrategy('project');
   }, [proposedName, initialSlug, open]);
 
   const slugAvailable = isConnectorConnectionSlugAvailable(slug, existingSlugs);
@@ -237,13 +116,13 @@ export function ConnectorConnectionModal({
           onSubmit={(event) => {
             event.preventDefault();
             if (!name.trim() || !slugAvailable || pending) return;
-            onSubmit({ name, slug, authorizationStrategy });
+            onSubmit({ name, slug });
           }}
         >
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <p className="text-muted-foreground text-sm text-pretty">
-              {tI18nComplete.raw('text17e9f72b9ba8')}
-              {displayName} {tI18nComplete.raw('texte99baf469ca8')}
+              {tI18nComplete.raw('text17e9f72b9ba8')} {displayName}{' '}
+              {tI18nComplete.raw('texte99baf469ca8')}
             </p>
             <Disclosure
               variant="outline"
@@ -322,13 +201,6 @@ export function ConnectorConnectionModal({
                           : tI18nComplete.raw('text48026cbaf423')}
                       </FieldDescription>
                     </Field>
-                    <AuthorizationStrategyField
-                      idPrefix={idPrefix}
-                      value={authorizationStrategy}
-                      onChange={setAuthorizationStrategy}
-                      disabled={authorizationStrategyDisabled}
-                      pending={pending}
-                    />
                   </FieldGroup>
                 </div>
               </DisclosureContent>

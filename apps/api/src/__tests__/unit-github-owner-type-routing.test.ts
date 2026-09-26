@@ -13,15 +13,15 @@
  *  - the stored `ownerType` install-callback now writes to the DB config, and
  *  - the live `isOrgAccount` fallback for configs that don't have it yet.
  *
- * Mocks only `platform/services/managed-github-app` (the DB-cache module,
- * same convention as unit-github-app-isconfigured.test.ts) — everything
- * downstream runs for real. Must run in its own `bun test <file>` invocation
- * (mock.module is process-global — see the same caveat documented in that
- * file and platform/services/session-sandbox.test.ts).
+ * Seeds the two instance resolvers (platform/services/github-app-identity.ts
+ * and platform/services/managed-git-backend.ts) — everything downstream runs
+ * for real. The seeds are per-process, so this file owns its process
+ * (`bun test --isolate`).
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
-import type { ManagedGithubAppConfig } from '../platform/services/managed-github-app';
+import { __setStoredAppIdentityForTests } from '../platform/services/github-app-identity';
+import { __setStoredGitBackendForTests } from '../platform/services/managed-git-backend';
 
 // A throwaway RSA key — only used to produce a JWT `createInstallationToken`
 // can sign; the fetch mock below never verifies the signature.
@@ -29,17 +29,29 @@ const TEST_APP_PRIVATE_KEY = generateKeyPairSync('rsa', { modulusLength: 2048 })
   .privateKey.export({ type: 'pkcs8', format: 'pem' })
   .toString();
 
-let dbConfig: ManagedGithubAppConfig = {};
+interface StoredConfig {
+  appId?: string;
+  privateKey?: string;
+  owner?: string;
+  ownerType?: 'User' | 'Organization';
+  installationId?: string;
+}
 
-mock.module('../platform/services/managed-github-app', () => ({
-  managedGithubAppConfig: () => dbConfig,
-  refreshManagedGithubAppConfig: async () => {},
-  invalidateManagedGithubAppConfig: () => {},
-  updateManagedGithubAppConfig: async (patch: ManagedGithubAppConfig) => {
-    dbConfig = { ...dbConfig, ...patch };
-    return dbConfig;
-  },
-}));
+/** Seed the stored identity + the stored App backend, the way the in-app
+ *  setup flow writes them. */
+function setConfig(config: StoredConfig) {
+  __setStoredAppIdentityForTests({ appId: config.appId, privateKey: config.privateKey });
+  __setStoredGitBackendForTests(
+    config.owner && config.installationId
+      ? {
+          kind: 'app',
+          owner: config.owner,
+          ownerType: config.ownerType,
+          installationId: config.installationId,
+        }
+      : {},
+  );
+}
 
 const { githubBackend } = await import('../projects/git-backends/github');
 
@@ -86,7 +98,7 @@ function repoResponse(owner: string) {
 }
 
 beforeEach(() => {
-  dbConfig = {};
+  setConfig({});
   requests = [];
   for (const k of ENV_KEYS) delete process.env[k];
   globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
@@ -128,13 +140,13 @@ function findRequest(pathSuffix: string) {
 
 describe('managed GitHub App createRepo — owner-type routing', () => {
   test('stored ownerType "User" (install-callback resolved a personal account) -> POST /user/repos', async () => {
-    dbConfig = {
+    setConfig({
       appId: '12345',
       privateKey: TEST_APP_PRIVATE_KEY,
       owner: 'agent-kortix',
       ownerType: 'User',
       installationId: '501',
-    };
+    });
 
     const repo = await githubBackend.createRepo({
       accountId: 'acct-1',
@@ -153,13 +165,13 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
   });
 
   test('stored ownerType "Organization" -> POST /orgs/{owner}/repos (regression guard)', async () => {
-    dbConfig = {
+    setConfig({
       appId: '12345',
       privateKey: TEST_APP_PRIVATE_KEY,
       owner: 'kortix-managed',
       ownerType: 'Organization',
       installationId: '501',
-    };
+    });
 
     const repo = await githubBackend.createRepo({
       accountId: 'acct-1',
@@ -175,12 +187,12 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
   });
 
   test('no stored ownerType (older config) falls back to a live account-type lookup — User', async () => {
-    dbConfig = {
+    setConfig({
       appId: '12345',
       privateKey: TEST_APP_PRIVATE_KEY,
       owner: 'user-owner-live',
       installationId: '501',
-    };
+    });
 
     const repo = await githubBackend.createRepo({
       accountId: 'acct-1',
@@ -195,12 +207,12 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
   });
 
   test('no stored ownerType, live lookup says Organization -> org path (regression guard)', async () => {
-    dbConfig = {
+    setConfig({
       appId: '12345',
       privateKey: TEST_APP_PRIVATE_KEY,
       owner: 'org-owner-live',
       installationId: '501',
-    };
+    });
 
     const repo = await githubBackend.createRepo({
       accountId: 'acct-1',
@@ -214,8 +226,9 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
     expect(findRequest('/orgs/org-owner-live/repos')).toBeTruthy();
   });
 
-  test('PAT path also routes off a live account-type lookup, not a hardcoded/env-gated assumption', async () => {
-    dbConfig = { pat: 'ghp_dummy', patOwner: 'user-owner-live' };
+  test('token backend also routes off a live account-type lookup, not a hardcoded assumption', async () => {
+    __setStoredAppIdentityForTests({});
+    __setStoredGitBackendForTests({ kind: 'pat', token: 'ghp_dummy', owner: 'user-owner-live' });
 
     const repo = await githubBackend.createRepo({
       accountId: 'acct-1',

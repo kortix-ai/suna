@@ -98,6 +98,76 @@ export function graphToken(tenantId: string, creds?: TeamsBotCreds | null): Prom
   return mintTeamsToken({ scope: GRAPH_SCOPE, tenantId, creds });
 }
 
+/**
+ * Prove that a bring-your-own bot's app registration exists in `tenant`.
+ *
+ * A tenant id or domain typed into the connect form proves nothing on its own:
+ * both are public. Microsoft issues an app-only token for a tenant only when
+ * the app has a service principal there (it was registered or consented in
+ * that tenant), and the token's `tid` claim names the tenant as a GUID — so a
+ * domain resolves to the id inbound activities carry.
+ */
+export async function proveTeamsTenant(input: {
+  tenantId: string;
+  creds: TeamsBotCreds;
+}): Promise<{ ok: true; tenantId: string } | { ok: false; error: string }> {
+  let token: string;
+  try {
+    token = await mintTeamsToken({ scope: GRAPH_SCOPE, tenantId: input.tenantId, creds: input.creds });
+  } catch {
+    return {
+      ok: false,
+      error:
+        'Microsoft did not issue a token for this app in that tenant. Check the tenant id, the app id and the ' +
+        'client secret, and that the app is registered in (or consented to by) the tenant.',
+    };
+  }
+  const tid = tenantClaim(token);
+  if (!tid) return { ok: false, error: 'Microsoft returned a token without a tenant id.' };
+  return { ok: true, tenantId: tid };
+}
+
+function tenantClaim(jwt: string): string | null {
+  try {
+    const payload = JSON.parse(Buffer.from(jwt.split('.')[1] ?? '', 'base64url').toString('utf8')) as { tid?: unknown };
+    return typeof payload.tid === 'string' && payload.tid ? payload.tid : null;
+  } catch {
+    return null;
+  }
+}
+
 export function clearTeamsTokenCache(): void {
   tokenCache.clear();
+}
+
+/**
+ * Mint the shared bot-connector token ahead of the first inbound message.
+ * The token is cached for its lifetime (minus a margin), so without this the
+ * first message after a deploy — or after an hour of silence — paid the
+ * login.microsoftonline.com round trip before "Working on it…" could be
+ * posted. No-op when the managed bot is not configured; never throws.
+ */
+export async function prewarmTeamsBotToken(): Promise<boolean> {
+  if (!teamsConfigured()) return false;
+  try {
+    await botConnectorToken();
+    return true;
+  } catch (err) {
+    console.warn('[teams-auth] bot token prewarm failed', (err as Error)?.message);
+    return false;
+  }
+}
+
+/** Keep the bot-connector token warm for the life of the process. */
+export const TEAMS_TOKEN_REFRESH_MS = 50 * 60 * 1000;
+
+export function startTeamsBotTokenRefresh(): ReturnType<typeof setInterval> | null {
+  if (!teamsConfigured()) return null;
+  void prewarmTeamsBotToken();
+  const timer = setInterval(() => {
+    tokenCache.delete(`${config.MICROSOFT_APP_ID}|${config.MICROSOFT_APP_TENANT}|${BOT_CONNECTOR_SCOPE}`);
+    void prewarmTeamsBotToken();
+  }, TEAMS_TOKEN_REFRESH_MS);
+  timer.unref();
+  return timer;
 }

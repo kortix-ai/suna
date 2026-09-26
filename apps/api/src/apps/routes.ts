@@ -40,6 +40,7 @@ import { assertProjectCapability, loadProjectForUser } from '../projects/lib/acc
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { projectsApp } from '../projects/lib/app';
 import { requireFeatureFlag } from '../feature-flags/gate';
+import { readAgentsGrantingApp } from './agent-grants';
 import {
   appAccessibleToUser,
   appsOpenableByUser,
@@ -404,6 +405,44 @@ projectsApp.openapi(
       console.warn(`[apps] viewer-token revoke failed for ${current.appId}:`, error);
     });
     return c.json(await serializeAppAccessPolicy(row));
+  },
+);
+
+export { agentsGrantingApp } from './agent-grants';
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get', path: '/{projectId}/apps/{appId}/agents', tags: ['apps'], summary: 'List the agents granted this App in kortix.yaml', ...auth,
+    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+    responses: {
+      200: json(z.object({ agents: z.array(z.object({
+        agent_name: z.string(),
+        grant: z.enum(['all', 'listed']),
+        path: z.string(),
+      })) }), 'Agents whose apps grant names this App'),
+      ...errors(403, 404, 503),
+    },
+  }),
+  async (c: any) => {
+    const { projectId, appId } = c.req.param();
+    const loaded = await authorizedProject(c, projectId);
+    if (loaded instanceof Response) return loaded;
+    const row = await visibleApp(projectId, appId, loaded.userId);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    const project = loaded.row;
+    if (!project.defaultBranch) return c.json({ agents: [] });
+    try {
+      const agents = await readAgentsGrantingApp({
+        projectId: project.projectId,
+        repoUrl: project.repoUrl,
+        defaultBranch: project.defaultBranch,
+        manifestPath: project.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      }, row.slug);
+      return c.json({ agents });
+    } catch (error) {
+      return c.json({ error: `kortix.yaml could not be read: ${(error as Error).message}` }, 503);
+    }
   },
 );
 

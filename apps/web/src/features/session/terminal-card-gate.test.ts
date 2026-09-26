@@ -150,7 +150,7 @@ describe('the five /start producer shapes, bound to their real call site', () =>
  */
 const pageSource = readFileSync(
   fileURLToPath(
-    new URL('../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx', import.meta.url),
+    new URL('../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx', import.meta.url),
   ),
   'utf8',
 );

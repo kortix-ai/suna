@@ -11,8 +11,10 @@ import type { Context } from 'hono';
 import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
+import { commitMultipleFilesToBranch } from '../git/branches';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
 import {
   createSession,
@@ -46,8 +48,8 @@ import {
   defaultTriggerSessionMode,
   extractTriggers,
   parseMonitorFields,
+  manifestWrites,
   readManifest,
-  serializeManifest,
   synthesizeBlankManifest,
   triggerSpecToTomlEntry,
 } from '../triggers';
@@ -61,10 +63,10 @@ import {
   type ProjectRow,
   type RequestAuditContext,
   deriveKortixApiRoot,
-  isPlainObject,
   normalizeBoolean,
   normalizeString,
 } from './serializers';
+import { isPlainObject } from '../../shared/json';
 
 /**
  * Who asked for this fire. `monitor` is the third trigger type's source
@@ -910,10 +912,19 @@ async function enqueueTriggerPrompt(input: {
   /** The trigger's configured model; carried on the prompt for a re-prompted session. */
   model?: string | null;
 }): Promise<'queued' | 'no-session' | 'failed'> {
+  // Scoped to the trigger's own project and account. A pinned `session_id` is
+  // manifest text, so a session of any other project is "no session" here and
+  // the fire falls through to the trigger's own reuse/create path.
   const [session] = await db
     .select({ status: projectSessions.status, metadata: projectSessions.metadata })
     .from(projectSessions)
-    .where(eq(projectSessions.sessionId, input.sessionId))
+    .where(
+      and(
+        eq(projectSessions.sessionId, input.sessionId),
+        eq(projectSessions.projectId, input.project.projectId),
+        eq(projectSessions.accountId, input.project.accountId),
+      ),
+    )
     .limit(1);
   if (!session) return 'no-session';
   if (session.status === 'failed') return 'failed';
@@ -1251,11 +1262,11 @@ async function executeTriggerExecution(
     }
     const error = result.error ?? result.reason ?? 'scheduled trigger execution failed';
     // A billing-gate rejection (wallet drained / no plan / no account) is
-    // PERMANENT — a retry re-runs the same `createSession` → `checkBillingActive`
-    // → atomic-hold `deductCredits` only to fail identically, so retrying five
-    // times over ~30s only delays the terminal state and re-burns the same
-    // admission attempt. Mark it terminal on the first failure so the trigger
-    // runtime row shows `failed` + the machine-readable reason immediately.
+    // PERMANENT — a retry re-runs the same `createSession` →
+    // `checkBillingAdmission` only to fail identically, so retrying five times
+    // over ~30s only delays the terminal state. Mark it terminal on the first
+    // failure so the trigger runtime row shows `failed` + the machine-readable
+    // reason immediately.
     const terminal = result.errorCode === 'insufficient_credits'
       || result.errorCode === 'subscription_required'
       || result.errorCode === 'no_account';
@@ -1307,7 +1318,7 @@ export function startProjectTriggerScheduler(): void {
   if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
     clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
   }
-  const tick = () => {
+  const tickBody = () => {
     // Watchdog: if we're the leader but the sweep has stalled (started and never
     // completed within the stale window), make it LOUD. A silent dead scheduler
     // is what turned a single hung fire into an ~18h fleet-wide outage.
@@ -1320,16 +1331,6 @@ export function startProjectTriggerScheduler(): void {
         },
       );
     }
-
-    drainSessionLifecycleQueue({ limit: 10 })
-      .then((result) => {
-        if (result.claimed || result.failed) {
-          console.log('[session-lifecycle] queue drain completed', result);
-        }
-      })
-      .catch((error) => {
-        console.error('[session-lifecycle] queue drain failed:', error);
-      });
 
     runProjectTriggerSweep()
       .then(() => drainTriggerExecutionQueue())
@@ -1378,6 +1379,9 @@ export function startProjectTriggerScheduler(): void {
         });
     }
   };
+  // Everything the tick starts (sweep, drains, connector reconcile) inherits
+  // the worker context through AsyncLocalStorage.
+  const tick = () => void runWorkerTick('trigger-scheduler', tickBody);
   tick();
   triggerSchedulerTimer = setInterval(tick, triggerSchedulerIntervalMs());
   globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;
@@ -1880,13 +1884,23 @@ export async function commitRepoFile(
   message: string,
   expectedFileRevision?: string | null,
   expectedCandidatePaths?: readonly string[],
+  /** Same-commit companions of `path`: more files to write, and more blobs
+   *  that must be unchanged. Only a manifest with `imports:` passes these. */
+  extra?: {
+    files?: Array<{ path: string; content: string }>;
+    alsoExpect?: Array<{ path: string; sha: string }>;
+    /** The file `expectedFileRevision` guards, when it is not `path`: an edit
+     *  to an imported entry writes only that file, yet the root manifest's
+     *  revision is still the one the read was anchored on. */
+    expectedPath?: string;
+  },
 ): Promise<{ ok: true } | { error: string; status: number }> {
   const branch = project.defaultBranch;
 
   // GitHub repos: commit through the Contents API (App / PAT auth) — the
   // lightweight single-file path that doesn't need a full clone.
   const repo = parseGitHubRepoUrl(project.repoUrl);
-  if (repo && expectedFileRevision === undefined) {
+  if (repo && expectedFileRevision === undefined && !extra) {
     let auth: GitHubAuthContext | undefined;
     if (hasResolvedGitAuth(project)) {
       auth = project.gitAuthToken
@@ -1927,6 +1941,11 @@ export async function commitRepoFile(
       };
     }
     invalidateProjectMirror(project.projectId);
+    // The base branch moved through the Contents API. The git-CLI path below
+    // notifies from `commitMultipleFilesToBranch`.
+    void import('./config-convergence-triggers')
+      .then((triggers) => triggers.notifyBaseBranchMoved(project.projectId, branch, 'manifest-write'))
+      .catch(() => {});
     return { ok: true };
   }
 
@@ -1960,18 +1979,34 @@ export async function commitRepoFile(
   }
 
   try {
-    await commitFileToBranch(gitProject, {
-      path,
-      content,
-      message,
-      branch,
-      authorName: 'Kortix',
-      authorEmail: 'noreply@kortix.ai',
-      expectedFileRevision:
-        expectedFileRevision === undefined
-          ? undefined
-          : { path, sha: expectedFileRevision, candidatePaths: expectedCandidatePaths },
-    });
+    const commit = { message, branch, authorName: 'Kortix', authorEmail: 'noreply@kortix.ai' };
+    if (extra) {
+      // A manifest with `imports:` — every changed source file in ONE commit,
+      // guarded by the root revision plus every imported file's revision.
+      await commitMultipleFilesToBranch(gitProject, {
+        ...commit,
+        files: [{ path, content }, ...(extra.files ?? [])],
+        alsoExpect: extra.alsoExpect,
+        expectedFileRevision:
+          expectedFileRevision === undefined
+            ? undefined
+            : {
+                path: extra.expectedPath ?? path,
+                sha: expectedFileRevision,
+                candidatePaths: expectedCandidatePaths,
+              },
+      });
+    } else {
+      await commitFileToBranch(gitProject, {
+        ...commit,
+        path,
+        content,
+        expectedFileRevision:
+          expectedFileRevision === undefined
+            ? undefined
+            : { path, sha: expectedFileRevision, candidatePaths: expectedCandidatePaths },
+      });
+    }
   } catch (err) {
     if (err instanceof Error && err.name === 'GitFileRevisionConflictError') {
       return { error: err.message, status: 409 };
@@ -1997,18 +2032,25 @@ export async function commitManifest(
   manifest: ParsedManifest,
   message: string,
 ): Promise<{ ok: true } | { error: string; status: number }> {
-  const content = serializeManifest(manifest);
   // Write back to the SAME file we read (kortix.yaml or kortix.toml, or a custom
   // path) in its own format — never a hardcoded name, or a yaml project's edits
   // would silently land in a second kortix.toml the runtime doesn't read.
+  // A manifest with `imports:` writes the file that declares the edited entry
+  // (see `manifestWrites`), all in this one commit.
   const manifestFile = manifest.path || project.manifestPath || MANIFEST_FILENAME;
+  const writes = manifestWrites(manifest, manifestFile);
+  const [first, ...rest] = writes.files;
+  if (!first) return { ok: true };
   return commitRepoFile(
     project,
-    manifestFile,
-    content,
+    first.path,
+    first.content,
     message,
     manifest.revision,
     manifest.candidatePaths,
+    manifest.imports
+      ? { files: rest, alsoExpect: writes.alsoExpect, expectedPath: manifestFile }
+      : undefined,
   );
 }
 

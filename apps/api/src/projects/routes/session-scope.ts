@@ -8,12 +8,13 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
-import { connectors, projectSessions, projectSessionConnectorBindings, serviceAccounts } from '@kortix/db';
+import { projectSessions, projectSessionConnectorBindings, serviceAccounts } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, readBody, hasOwn } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { resolveEffectiveSessionConnectorBindings, sessionConnectorBindingsRequirePrivateVisibility, validateSessionConnectorBindings } from '../lib/session-connector-bindings';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
@@ -22,12 +23,15 @@ import { assertAgentScope } from '../../iam/agent-scope';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape, validateNativeOpencodeModelRef } from '../lib/session-model-change';
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
-import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/connector-alias';
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
 import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
+import { resolveSessionPersonalOwner } from '../lib/personal-resources';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { admitSessionModelChange } from '../lib/session-model-keys';
+import { validateProviderSecretPool } from './provider-secret-pools';
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -46,7 +50,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -87,7 +91,11 @@ projectsApp.openapi(
     });
     return c.json({
       secrets_allowlist: visible.row.secretsAllowlist ?? null,
-      required_connectors: visible.row.requiredConnectors ?? null,
+      // Always null. A session cannot require connectors any more, but the key
+      // stays on the wire: `SessionScope` is a published @kortix/sdk type, and a
+      // consumer reading `scope.required_connectors` must get null, not
+      // undefined.
+      required_connectors: null,
       connector_bindings: bindings,
       dropped_secrets: [],
       added_secrets: [],
@@ -134,7 +142,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -157,7 +165,7 @@ projectsApp.openapi(
       );
     }
 
-    const parsedBody = SessionScopeInputSchema.safeParse(await readBody(c));
+    const parsedBody = SessionScopeInputSchema.safeParse(await readJsonObject(c));
     if (!parsedBody.success) {
       return c.json(
         {
@@ -175,7 +183,6 @@ projectsApp.openapi(
     // opposite — an explicit "no connectors at all". Before this existed an
     // override was one-way: nothing in the API could undo one.
     const clearsBindings = wantsBindings && body.connector_bindings === null;
-    const wantsRequired = Object.hasOwn(body, 'require_connectors');
 
     // The agent grant is the ceiling for both axes. Resolved from the agent this
     // session actually runs, and fail-closed: if it cannot be established, the
@@ -275,7 +282,12 @@ projectsApp.openapi(
         //
         // Falls back to the caller only when the row carries no creator, which
         // matches how every other principal-resolution site degrades.
-        const secretsPrincipal = visible.row.createdBy ?? loaded.userId;
+        const secretsPrincipal = await resolveSessionPersonalOwner({
+          projectId,
+          sessionId: visible.row.sessionId,
+          accountId: loaded.row.accountId,
+          legacyUserId: visible.row.createdBy ?? loaded.userId,
+        });
         const availableSecrets = await listResolvedProjectSecrets(projectId, secretsPrincipal);
         const available = new Set(
           availableSecrets.map((secret) => secret.identifier.toUpperCase()),
@@ -326,35 +338,6 @@ projectsApp.openapi(
       });
       if (!decided.ok) return c.json({ error: decided.message, code: decided.code }, 403);
       nextBindings = decided.bindings;
-    }
-
-    // `require_connectors` is the one axis that can name an alias with NOTHING
-    // connected to it — that is the whole point of it existing separately from
-    // bindings, which must carry a connection id. So it is checked against the
-    // agent's grant (may this agent use the alias at all?) and never against
-    // whether a connection exists: not-yet-connected is the state the caller is
-    // deliberately declaring, and the pre-flight turns it into a connect prompt
-    // on the next turn.
-    let nextRequired = visible.row.requiredConnectors ?? null;
-    if (wantsRequired) {
-      const requested = (body.require_connectors ?? [])
-        .map((alias) => canonicalConnectorAlias(String(alias).trim()))
-        .filter((alias) => alias.length > 0);
-      const deduped = [...new Set(requested)];
-      if (Array.isArray(grant?.connectors)) {
-        const granted = new Set(grant.connectors.map(canonicalConnectorAlias));
-        const offending = deduped.filter((alias) => !granted.has(alias));
-        if (offending.length > 0) {
-          return c.json(
-            {
-              error: `not granted to this agent: ${offending.map(publicConnectorAlias).join(', ')}`,
-              code: 'CONNECTOR_NOT_ASSIGNED',
-            },
-            403,
-          );
-        }
-      }
-      nextRequired = deduped.length > 0 ? deduped : null;
     }
 
     let bindingRows: Array<{
@@ -424,12 +407,10 @@ projectsApp.openapi(
       const sessionUpdates: {
         updatedAt: Date;
         secretsAllowlist?: string[] | null;
-        requiredConnectors?: string[] | null;
         connectorBindingsConfigured?: boolean;
         connectorBindingsInheritUnbound?: boolean;
       } = { updatedAt: new Date() };
       if (wantsSecrets) sessionUpdates.secretsAllowlist = nextAllowlist;
-      if (wantsRequired) sessionUpdates.requiredConnectors = nextRequired;
       if (wantsBindings) {
         // `null` reverts the session to inheriting project defaults; anything
         // else is an explicit override.
@@ -516,7 +497,7 @@ projectsApp.openapi(
 
     return c.json({
       secrets_allowlist: nextAllowlist,
-      required_connectors: nextRequired,
+      required_connectors: null,
       connector_bindings: effectiveBindings,
       // Names are gated; the WARNING is not. Enumerating the agent grant to
       // report what a null → list narrowing dropped hands the caller secret
@@ -617,7 +598,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -638,8 +619,8 @@ projectsApp.openapi(
       );
     }
 
-    const body = await readBody(c);
-    const requested = typeof body?.opencode_model === 'string' ? body.opencode_model : '';
+    const body = await readJsonObject(c);
+    const requested = typeof body.opencode_model === 'string' ? body.opencode_model : '';
     const shapeError = validateModelChangeShape(requested);
     if (shapeError) {
       return c.json({ error: shapeError.message, code: shapeError.code }, 400);
@@ -665,12 +646,33 @@ projectsApp.openapi(
       nextModel = trimmed;
     } else {
       const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
-      const servable = await isModelServableForAccount({
-        userId: loaded.userId,
+      const owner = visible.row.createdBy ?? loaded.userId;
+      // Checked in the key scope the gateway uses for this session; stores the
+      // pooled keys it selects (lib/session-model-keys.ts).
+      const servable = await admitSessionModelChange({
         accountId: loaded.row.accountId,
         projectId,
+        sessionId,
+        owner,
+        caller: loaded.userId,
         freeModelsOnly,
         model: trimmed,
+        mayPool:
+          resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
+          !visible.ownerIsMachine &&
+          Boolean(visible.row.createdBy),
+        callerMaySelect: async (providerId, secretIds) =>
+          !(await validateProviderSecretPool({
+            accountId: loaded.row.accountId,
+            projectId,
+            repoUrl: loaded.row.repoUrl,
+            defaultBranch: loaded.row.defaultBranch,
+            manifestPath: loaded.row.manifestPath,
+            agentName: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
+            userId: loaded.userId,
+            providerId,
+            ids: secretIds,
+          })),
       });
       if (!servable) {
         return c.json(

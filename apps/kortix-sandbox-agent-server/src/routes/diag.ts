@@ -13,14 +13,9 @@
  * Nothing secret: no env dump, no tokens. Same auth as `/kortix/logs`.
  */
 import { Hono } from 'hono'
-import type { Config } from '../config'
+import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '../harness/diagnostics'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-user-context'
-import { daemonLogFilePath, logger } from '../logger'
-import type { Opencode } from '../opencode'
-import type { ResourceMonitor } from '../resources'
-import { runtimeConvergenceReport } from '../runtime-assets'
-import type { SandboxBootState } from './health'
-import { opencodeLogFilePath, tailFile } from './logs'
+import { logger } from '../logger'
 
 const DEFAULT_DIAG_TAIL = 200
 const MAX_DIAG_TAIL = 2_000
@@ -30,16 +25,12 @@ function bearerToken(header: string | undefined): string | null {
   return header.slice('Bearer '.length).trim() || null
 }
 
-export interface DiagDeps {
-  opencode: Opencode
-  bootTime: number
-  bootState: SandboxBootState
-  opencodeHome: string
-  resources: () => ResourceMonitor | null
-}
-
-export function createDiagRouter(cfg: Config, deps: DiagDeps): Hono {
+export function createDiagRouter(
+  context: HarnessDiagnosticsContext,
+  diagnostics: HarnessDiagnosticsService,
+): Hono {
   const router = new Hono()
+  const { cfg } = context
 
   router.get('/', async (c) => {
     if (!cfg.sandboxToken) {
@@ -55,49 +46,7 @@ export function createDiagRouter(cfg: Config, deps: DiagDeps): Hono {
     }
     const n = Number(c.req.query('tail'))
     const tail = Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), MAX_DIAG_TAIL) : DEFAULT_DIAG_TAIL
-
-    const monitor = deps.resources()
-    const [resourcesNow, runtime] = await Promise.all([
-      monitor ? monitor.tick('diag').catch(() => null) : Promise.resolve(null),
-      runtimeConvergenceReport().catch((err) => ({ error: err instanceof Error ? err.message : String(err) })),
-    ])
-    const daemonLog = daemonLogFilePath()
-    const opencodeLog = opencodeLogFilePath(deps.opencodeHome)
-
-    return c.json({
-      at: new Date().toISOString(),
-      daemon: {
-        pid: process.pid,
-        bun: typeof Bun !== 'undefined' ? Bun.version : null,
-        uptime_s: Math.floor((Date.now() - deps.bootTime) / 1000),
-        workspace: cfg.workspace,
-        service_port: cfg.servicePort,
-        daemon_log_file: daemonLog,
-      },
-      opencode: {
-        state: deps.opencode.getState(),
-        pid: deps.opencode.getPid(),
-        port: deps.opencode.getActivePort(),
-        internal_url: deps.opencode.getInternalUrl(),
-        binary: deps.opencode.getBinaryPath(),
-        port_pair: [cfg.opencodeInternalPort, cfg.opencodeStandbyPort],
-        session_id: deps.bootState.initialOpenCodeSessionId ?? null,
-        log_file: opencodeLog,
-      },
-      boot: {
-        repo_materialization_error: deps.bootState.repoMaterializationError,
-        initial_session_error: deps.bootState.initialOpenCodeSessionError ?? null,
-        timeline: deps.bootState.timeline,
-      },
-      resources: resourcesNow,
-      resources_previous: monitor?.latest() ?? null,
-      runtime,
-      logs: {
-        tail,
-        daemon: daemonLog ? tailFile(daemonLog, tail) : null,
-        opencode: tailFile(opencodeLog, tail),
-      },
-    })
+    return c.json(await diagnostics.report(context, tail))
   })
 
   return router

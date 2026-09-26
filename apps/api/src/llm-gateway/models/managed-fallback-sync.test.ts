@@ -9,29 +9,17 @@ import { MANAGED_MODELS } from '@kortix/llm-catalog';
 //
 // Imported across app boundaries ON PURPOSE: this file is the tripwire that
 // fails the moment the managed lineup and that hand-maintained table drift.
-import { BUNDLED_MANAGED_MODELS } from '../../../../kortix-sandbox-agent-server/src/opencode';
-import { gatewayModelCatalog } from './catalog-models';
+import { BUNDLED_MANAGED_MODELS } from '../../../../kortix-sandbox-agent-server/src/harness/open-code/lifecycle';
 
 const managedIds = MANAGED_MODELS.map((m) => m.id).sort();
 const bundledIds = Object.keys(BUNDLED_MANAGED_MODELS).sort();
 
 describe('daemon bundled managed set vs the managed lineup', () => {
-  test('every @kortix/llm-catalog managed model exists in the daemon fallback', () => {
-    const missing = managedIds.filter((id) => !BUNDLED_MANAGED_MODELS[id]);
-    expect(missing).toEqual([]);
-  });
-
-  // The other direction matters just as much: a bundled entry for a model the
-  // gateway no longer serves resolves as model_not_found and 400s every turn
-  // that selects it (see the commented-out kimi-k3 / claude entries in
-  // opencode.ts, deactivated by the 2026-08-10 slim-down).
-  test('the daemon fallback advertises no model the managed lineup dropped', () => {
-    const extra = bundledIds.filter((id) => !managedIds.includes(id));
-    expect(extra).toEqual([]);
-  });
-
-  test('the fallback matches what the gateway actually serves as managed-only', () => {
-    expect(bundledIds).toEqual(Object.keys(gatewayModelCatalog(undefined)).sort());
+  // Both directions matter. A served model missing from the fallback answers
+  // ModelNotFound; a fallback entry the lineup dropped resolves as
+  // model_not_found and 400s every turn that selects it.
+  test('the daemon fallback lists exactly the @kortix/llm-catalog managed lineup', () => {
+    expect(bundledIds).toEqual(managedIds);
   });
 
   test('every bundled managed entry is branded as a Kortix-managed bare id', () => {
@@ -41,4 +29,29 @@ describe('daemon bundled managed set vs the managed lineup', () => {
       expect(model.limit?.context).toBeGreaterThan(0);
     }
   });
+
+  // The fallback record is what OpenCode registers when the live fetch is down,
+  // so each field the runtime or the picker reads must equal the lineup's.
+  for (const managed of MANAGED_MODELS) {
+    test(`${managed.id}: name, limit, vision, tool calling, and declared cost agree`, () => {
+      const bundled = BUNDLED_MANAGED_MODELS[managed.id];
+      expect(bundled).toBeDefined();
+      if (!bundled) return;
+      expect(bundled.name).toBe(managed.name);
+      // `limit` sizes the conversation; a drift compacts at the wrong wall.
+      expect(bundled.limit).toEqual(managed.limit);
+      expect(bundled.attachment ?? false).toBe(managed.vision);
+      // The managed lineup is tool-capable; an agent turn needs tool calls.
+      expect(bundled.tool_call).toBe(true);
+      // Cost is optional on the fallback record; when declared it must be the
+      // billed rate the picker renders.
+      if (bundled.cost && managed.pricing) {
+        expect(bundled.cost.input).toBe(managed.pricing.inputPerMillion);
+        expect(bundled.cost.output).toBe(managed.pricing.outputPerMillion);
+        if (bundled.cost.cache_read !== undefined) {
+          expect(bundled.cost.cache_read).toBe(managed.pricing.cachedInputPerMillion ?? Number.NaN);
+        }
+      }
+    });
+  }
 });

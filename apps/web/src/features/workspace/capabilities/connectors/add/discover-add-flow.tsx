@@ -28,7 +28,6 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { surfacesRecommendedFirst } from '@/features/workspace/capabilities/connectors/detail/connector-detail-copy';
 import {
-  connectorAuthorizationStrategyIsEditable,
   connectorSyncErrorForSlug,
   createOnlyConnectorDraft,
   proposeConnectorConnectionSlug,
@@ -131,7 +130,6 @@ export function DiscoverAddFlow({
         slug: connection.slug,
         name: connection.name.trim(),
         provider: template.provider,
-        authorization_strategy: connection.authorizationStrategy,
         ...(template.spec ? { spec: template.spec } : {}),
         ...(template.url ? { url: template.url } : {}),
         ...(template.transport ? { transport: template.transport } : {}),
@@ -283,9 +281,6 @@ export function DiscoverAddFlow({
         initialSlug={target ? proposeConnectorConnectionSlug(connectionName, existingSlugs) : ''}
         existingSlugs={existingSlugs}
         pending={addConnection.isPending}
-        authorizationStrategyDisabled={
-          target ? !connectorAuthorizationStrategyIsEditable(target.connector.provider) : false
-        }
         onOpenChange={(open) => !open && setTarget(null)}
         onSubmit={(connection) => {
           if (!target) return;

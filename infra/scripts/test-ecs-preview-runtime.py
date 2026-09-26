@@ -17,6 +17,10 @@ Daytona sandbox that boots the full self-host distribution:
          -> one sandbox per PR, own PostgreSQL/Supabase/Mailpit behind a
             provider-issued HTTPS origin, then `pnpm test -- --target-full`
 
+fad008f63c (#7482, 2026-09-22) made previews Platinum only, host and sessions.
+It deleted the Daytona deploy and the Daytona fallback. Daytona code remains
+only to delete previews created before that commit.
+
 The gate structure is unchanged: an approval job resolves exactly one head SHA,
 three credential-free jobs build it, and one default-branch job holds the
 credentials and never executes pull request code. The assertions follow the new
@@ -113,7 +117,16 @@ class PreviewApproval(unittest.TestCase):
         # workflow_dispatch is a second entry point; it reads the head SHA from
         # the API and runs through the same permission, label, and SHA checks.
         self.assertIn("github.event_name == 'workflow_dispatch'", WORKFLOW)
-        self.assertIn("case \"$provider\" in auto|platinum|daytona) ;; *) exit 1 ;; esac", authorize)
+        # The provider is an allowlist, and since fad008f63c (#7482) it holds
+        # Platinum only: `daytona` is neither a dispatch option nor accepted.
+        self.assertIn(
+            'case "$provider" in auto|platinum) ;; '
+            '*) echo "::error::Previews run on Platinum only."; exit 1 ;; esac',
+            authorize,
+        )
+        dispatch_inputs = WORKFLOW.split("  workflow_dispatch:\n", 1)[1].split("\n  schedule:\n", 1)[0]
+        self.assertTrue(dispatch_inputs.endswith("options:\n          - auto\n          - platinum"), dispatch_inputs)
+        self.assertNotIn("daytona", dispatch_inputs)
         self.assertIn('echo "ref=refs/pull/${num}/head"', authorize)
         # The dependency graph is pinned to the approved SHA as well.
         self.assertIn("contents/pnpm-lock.yaml?ref=${sha}", authorize)
@@ -226,15 +239,16 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # NEW: one stable sandbox name per PR; the origin is provider-issued.
         self.assertIn("return `kortix-preview-pr-${prNumber}`;", PREVIEW_CORE)
         self.assertIn("invalid preview PR number", PREVIEW_CORE)
-        # Both providers name the sandbox after the PR: Daytona directly, and
-        # Platinum through previewSandboxIdentity, whose PR branch is the same
-        # call. Neither may improvise a name.
-        self.assertIn("name: previewSandboxName(input.prNumber),", PREVIEW_PROVIDERS)
+        # Platinum names the sandbox through previewSandboxIdentity, whose PR
+        # branch is previewSandboxName. It may not improvise a name. (The Daytona
+        # deploy, which named it directly, was deleted by fad008f63c, #7482.)
         self.assertIn("name: previewSandboxName(input.prNumber),", PREVIEW_CORE)
         self.assertIn("name: identity.name,", PREVIEW_PROVIDERS)
         # A branch environment is named after the BRANCH and reused in place, so
-        # its origin survives a push. Daytona issues its own URL, so falling back
-        # there would break exactly that — it must refuse rather than rotate.
+        # its origin survives a push. Daytona issues its own URL, so a Daytona
+        # deploy would rotate it. fad008f63c (#7482) deleted the Daytona deploy
+        # and its branch-env refusal; the rule is now that no preview is ever
+        # created on Daytona (asserted below).
         self.assertIn("return `kortix-env-${slug}`;", PREVIEW_CORE)
         self.assertIn("reuseExisting: true,", PREVIEW_CORE)
         # A reused sandbox is still serving the previous deploy, so it can never
@@ -244,13 +258,17 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # ...and cleanup deletes only a sandbox this run CREATED. Deleting a
         # reused one discards the stable origin the environment exists to hold.
         self.assertIn("if (sandboxId && !reusedSandboxId) await deletePlatinum(", PREVIEW_PROVIDERS)
-        self.assertIn("if (input.branchEnv) {", PREVIEW_PROVIDERS)
-        self.assertIn("is pinned to Platinum: a Daytona fallback would change its origin", PREVIEW_PROVIDERS)
+        # Previews run on Platinum only (fad008f63c, #7482). Nothing may create
+        # a Daytona sandbox, so no preview or branch environment can land on a
+        # provider-issued Daytona origin. Daytona code remains for deletion only.
+        self.assertNotIn("createDaytonaSandbox(", PREVIEW_PROVIDERS)
+        self.assertNotIn("deployDaytonaPreview", PREVIEW_PROVIDERS + PREVIEW_CLI)
         # OLD: rollback_deploy / PREVIOUS_TASK_DEFINITION rolled a live service
         # back. A sandbox is disposable, so a redeploy deletes and recreates it.
+        # (replaceExistingDaytonaPreview went with the Daytona deploy in
+        # fad008f63c; the Daytona teardown keeps the same ownership refusal.)
         self.assertIn("async function replaceExistingPlatinumPreview(", PREVIEW_PROVIDERS)
-        self.assertIn("async function replaceExistingDaytonaPreview(", PREVIEW_PROVIDERS)
-        self.assertIn("refused to replace unowned Daytona sandbox", PREVIEW_PROVIDERS)
+        self.assertIn("refused to delete unowned Daytona sandbox", PREVIEW_PROVIDERS)
         # The owner a PR preview is stamped with (previewSandboxIdentity) is the
         # same one every destructive read filters on, so a redeploy, a teardown,
         # and the nightly sweep can only ever touch a sandbox this system made.
@@ -264,12 +282,16 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         self.assertIn("sandbox.name === ephemeral &&", PREVIEW_CORE)
         self.assertIn("owner === 'kortix-preview' &&", PREVIEW_CORE)
         self.assertIn("sandbox.name === persistent && owner === 'kortix-branch-env'", PREVIEW_CORE)
-        self.assertIn("'kortix-preview': 'true',", PREVIEW_PROVIDERS)
+        # Legacy Daytona previews are found and deleted only by the owner label
+        # the old deploy stamped (deploy stamping deleted in fad008f63c).
+        self.assertIn("return JSON.stringify({ 'kortix-preview': 'true' });", PREVIEW_PROVIDERS)
+        self.assertIn("sandbox.labels?.['kortix-preview-pr'] !== String(input.prNumber)", PREVIEW_PROVIDERS)
         # A provider switch must not leave the other provider's sandbox running.
-        self.assertIn(
-            "const staleProviderCleanup = result.provider === 'platinum'",
-            cli_action("deploy"),
-        )
+        # Every deploy is Platinum since fad008f63c (#7482), so every deploy
+        # deletes this pull request's pre-cutover Daytona sandbox.
+        deploy_action = cli_action("deploy")
+        self.assertIn("platinum: () => deployPlatinumPreview(deployment),", deploy_action)
+        self.assertIn("await teardownDaytonaPreview({ ...daytona, prNumber }).catch(", deploy_action)
 
     def test_the_preview_origin_is_credential_free_https(self):
         # OLD: WEB_PROTECTION_PASSWORD plus the anonymous/wrong/cookie_only
@@ -366,17 +388,15 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         self.assertIn("preview runtime secret is not allowlisted", PREVIEW_STACK)
         self.assertIn("validatePreviewRuntimeSecrets(rawSecrets);", PREVIEW_STACK)
         self.assertIn("/workspace/kortix-preview/runtime-secrets.json", PREVIEW_PROVIDERS)
-        # Platinum passes the mode explicitly; Daytona uses the 0600 default of
-        # encodedFileCommand. Both secret writes must stay owner-only.
+        # The secret write must stay owner-only. Platinum passes the mode
+        # explicitly. The Daytona write (0600 via encodedFileCommand) was deleted
+        # with deployDaytonaPreview in fad008f63c (#7482), so the Platinum write
+        # must be the ONLY place the secrets file is written.
+        self.assertEqual(PREVIEW_PROVIDERS.count("/workspace/kortix-preview/runtime-secrets.json"), 1)
         platinum_write = PREVIEW_PROVIDERS.split(
             "`${sandboxId}:/workspace/kortix-preview/runtime-secrets.json`", 1
         )[1].split(");", 1)[0]
         self.assertIn("'0600'", platinum_write)
-        self.assertIn("mode = '0600'", PREVIEW_PROVIDERS)
-        daytona_write = PREVIEW_PROVIDERS.split(
-            "'/workspace/kortix-preview/runtime-secrets.json',", 1
-        )[1].split("),", 1)[0]
-        self.assertNotIn("'07", daytona_write)
         # No production identity may reach a preview, on any surface.
         for path, source in list(PREVIEW_SOURCES.items()) + [("deploy-preview.yml", WORKFLOW)]:
             self.assertNotIn("kortix-prod-env", source, path)
@@ -545,8 +565,11 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn("auto_delete_days: identity.autoDeleteDays,", PREVIEW_PROVIDERS)
         self.assertIn("autoArchiveDays: 7,", PREVIEW_CORE)
         self.assertIn("autoDeleteDays: 7,", PREVIEW_CORE)
-        self.assertIn("autoArchiveInterval: 10_080,", PREVIEW_PROVIDERS)
-        self.assertIn("autoDeleteInterval: 10_080,", PREVIEW_PROVIDERS)
+        # The Daytona 7-day intervals (autoArchiveInterval/autoDeleteInterval
+        # 10_080) went with the Daytona deploy in fad008f63c (#7482). Sandboxes
+        # created before it keep them and the Daytona reconcile above still
+        # sweeps them; nothing may create a new Daytona sandbox without them.
+        self.assertNotIn("createDaytonaSandbox(", PREVIEW_PROVIDERS)
         # A branch environment carries NO provider expiry — it is retired by the
         # `preview` label coming off or by its BRANCH being deleted, and nothing
         # else. Teardown must therefore know the branch, or the box outlives
@@ -555,7 +578,13 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn("autoArchiveDays: 0,", PREVIEW_CORE)
         self.assertIn("autoDeleteDays: 0,", PREVIEW_CORE)
         self.assertIn("branchEnvSandboxName(input.branchEnv)", PREVIEW_CORE)
-        self.assertIn("selectTeardownSandboxIds(await allPlatinumPreviewSandboxes(api), input)", PREVIEW_PROVIDERS)
+        # Teardown takes one provider snapshot, selects the owned host, stops
+        # the host's child session boxes, then deletes the host. The old exact
+        # one-line assertion rejected this stronger lifecycle because listing
+        # moved into a local variable.
+        self.assertIn("const sandboxes = await allPlatinumPreviewSandboxes(api);", PREVIEW_PROVIDERS)
+        self.assertIn("const owned = selectTeardownSandboxIds(sandboxes, input);", PREVIEW_PROVIDERS)
+        self.assertIn("await stopPreviewSessionsOf(api, sandboxes, ownedNames);", PREVIEW_PROVIDERS)
         self.assertIn("PREVIEW_BRANCH_ENV", job("teardown"))
 
     def test_a_failed_pull_request_query_never_reads_as_no_active_previews(self):
@@ -596,13 +625,20 @@ class PreviewHealthGate(unittest.TestCase):
         self.assertIn("Deploy sandbox and run pnpm test -- --target-full", WORKFLOW)
 
     def test_provider_fallback_hides_no_product_failure(self):
-        # New rule with #6347: `auto` may retry on Daytona only when Platinum
-        # infrastructure fails. A failing test run or a controller bug must
-        # surface, not trigger a second, greener attempt.
-        self.assertIn("if (!(error instanceof PreviewInfrastructureError)) throw error;", PREVIEW_CORE)
-        self.assertIn("if (input.provider === 'platinum') return runners.platinum(input);", PREVIEW_CORE)
-        self.assertIn("if (input.provider === 'daytona') return runners.daytona(input);", PREVIEW_CORE)
-        self.assertIn("PREVIEW_SANDBOX_PROVIDER must be auto, platinum, or daytona", PREVIEW_CLI)
+        # A failing test run or a controller bug must surface, not trigger a
+        # second, greener attempt. #6347 allowed `auto` to retry on Daytona after
+        # a Platinum infrastructure failure; fad008f63c (#7482) removed that
+        # fallback. Now there is exactly one runner and no retry of any kind.
+        run = PREVIEW_CORE.split("export async function runSandboxPreview(", 1)[1]
+        run = run.split("\n}\n", 1)[0]
+        self.assertIn("if (input.provider !== 'auto' && input.provider !== 'platinum') {", run)
+        self.assertIn("throw new Error(`previews run on Platinum only; received provider", run)
+        self.assertIn("return runners.platinum(input);", run)
+        self.assertEqual(run.count("runners."), 1)
+        self.assertNotIn("catch", run)
+        self.assertNotIn("daytona", run.lower())
+        self.assertIn("export type SandboxPreviewProvider = 'auto' | 'platinum';", PREVIEW_CORE)
+        self.assertIn("PREVIEW_SANDBOX_PROVIDER must be auto or platinum", PREVIEW_CLI)
 
 
 class SharedPreviewEdge(unittest.TestCase):

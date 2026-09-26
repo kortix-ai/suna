@@ -8,7 +8,7 @@
  * no-op, so the two paths can race freely.
  */
 
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
@@ -18,6 +18,11 @@ import { preserveEstablishedRuntime } from '../runtime-identity';
 import { settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-lifecycle';
 import { requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
+import {
+  STOPPED_SANDBOX_CLEARED_KEYS,
+  transitionSandbox,
+  transitionSession,
+} from '../session-lifecycle/status-transitions';
 import type { StopReason } from '../stop-reason';
 
 /** Merge keys into a jsonb metadata column without clobbering siblings. */
@@ -34,7 +39,7 @@ export function mergeMetadata(patch: Record<string, unknown>) {
  * but a Platinum lifecycle transition outlasts that, so both reads landed
  * inside it and the guard expired mid-transition instead of covering it.
  *
- * Incident 2026-08-21T23:58Z (session 541ea985, Platinum sbx_01M0JE5DDBE9JCZ):
+ * Incident 2026-08-21T23:58Z (a prod session on a Platinum sandbox):
  * parked at 23:58:37 with `provider_reconcile`, and the SAME box reported
  * running again at 23:58:47 — ten seconds later. The guest never rebooted
  * (uptime spanned the whole window) and OpenCode never restarted, so nothing
@@ -52,7 +57,7 @@ export type StoppedObservationDecision = 'park' | 'await_confirmation';
 /**
  * May a single provider-`stopped` read park this box?
  *
- * Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): it did,
+ * Incident 2026-08-17T20:40:03Z (a prod session on a Daytona sandbox): it did,
  * mid-turn, `stopReason: provider_reconcile` — while Daytona's own
  * `autoStopInterval` was 720 minutes and nothing had asked for a stop.
  * `stopping` and `pending_stop` both map to `stopped`
@@ -181,6 +186,7 @@ export async function clearPendingStopObservation(sandboxId: string): Promise<vo
     );
 }
 
+
 export interface StoppedStateWrite {
   sandboxId: string;
   sessionId: string;
@@ -235,7 +241,7 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   // is unfinished through no choice of the user's, so those prompts come back
   // as well — held, like every other requeue from a stop. A stop Kortix chose
   // (idle deadline, user Stop) keeps the old rule: only never-accepted
-  // deliveries are given back. Essentia 2026-08-25: four provider-paused
+  // deliveries are given back. SampleCo 2026-08-25: four provider-paused
   // turns, every one needed the user to type "go on".
   const providerOriginated = write.stopReason === 'provider_reconcile';
   const abandonedDeliveries = storedSandboxTurns(before?.metadata).filter(
@@ -253,44 +259,29 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
     stoppedAt: now.toISOString(),
   };
   await db.transaction(async (tx) => {
-    await tx
-      .update(sessionSandboxes)
-      .set({
-        status: 'stopped',
-        updatedAt: now,
-        // A committed stop cancels any in-flight wake. If provider.start()
-        // resolves after this transaction, its fenced completion write loses
-        // and the resume path stops the provider again. This makes an explicit
-        // user stop win both orderings of the start/stop race.
-        //
-        // `patch` always carries stopReason + stoppedAt, so this is never an
-        // empty merge. The same statement drops wake fences and every turn
-        // authority record. A provider webhook can win the idle-stop race
-        // before the reaper clears an unknown turn. A stopped sandbox cannot
-        // retain authority that a later resume could misread. Still a MERGE,
-        // never a whole-object assign — a concurrent writer's lastAliveAt lives
-        // in this column too.
-        //
-        // `pendingStopObservedAtMs` goes with them: a box that is parked, woken,
-        // and given a new turn must earn its confirmation again from scratch, or
-        // the stale marker parks it on the first transient stopped read.
-        metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-          - 'runtimeWakeStartedAt'
-          - 'runtimeWakeId'
-          - 'runtimeWakeLeaseExpiresAt'
-          - 'runtimeWakeProviderStatus'
-          - 'runtimeWakeCleanupId'
-          - 'runtimeWakeCleanupLeaseExpiresAt'
-          - 'activeTurn'
-          - 'activeTurns'
-          - 'pendingStopObservedAtMs'
-          - 'lifecycleStopClaim') || ${JSON.stringify(patch)}::jsonb`,
-      })
-      .where(eq(sessionSandboxes.sandboxId, write.sandboxId));
-    await tx
-      .update(projectSessions)
-      .set({ status: 'stopped', updatedAt: now })
-      .where(eq(projectSessions.sessionId, write.sessionId));
+    // A committed stop cancels any in-flight wake. If provider.start()
+    // resolves after this transaction, its fenced completion write loses and
+    // the resume path stops the provider again. This makes an explicit user
+    // stop win both orderings of the start/stop race.
+    //
+    // The same statement drops wake fences and every turn authority record. A
+    // provider webhook can win the idle-stop race before the reaper clears an
+    // unknown turn. A stopped sandbox cannot retain authority that a later
+    // resume could misread. `pendingStopObservedAtMs` goes with them: a box
+    // that is parked, woken, and given a new turn must earn its confirmation
+    // again from scratch, or the stale marker parks it on the first transient
+    // stopped read.
+    //
+    // The archived row of a deleted session is not a live row and stays
+    // archived (see SANDBOX_TRANSITIONS.stop).
+    await transitionSandbox(
+      'stop',
+      write.sandboxId,
+      { at: now, metadata: { strip: STOPPED_SANDBOX_CLEARED_KEYS, merge: patch } },
+      tx,
+    );
+    // A `failed` session keeps its park (see SESSION_TRANSITIONS.stop).
+    await transitionSession('stop', write.sessionId, { at: now }, tx);
     // A turn that was in flight when the box parked ended because the runtime
     // went away — that is precisely what `end_reason = 'runtime_gone'` records.
     // Keyed by sandbox, not by token: the statement above just deleted the

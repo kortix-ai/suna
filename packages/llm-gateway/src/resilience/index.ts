@@ -1,2 +1,2 @@
-export { backoffDelay, realSleep, withRetry } from './retry';
-export type { RetryOptions, SleepFn } from './retry';
+export { withRetry } from './retry';
+export type { RetryOptions } from './retry';

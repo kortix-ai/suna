@@ -39,14 +39,18 @@ import {
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
   type ManifestFormat,
+  ManifestImportError,
+  type ResolvedManifest,
   formatDurationSeconds,
   manifestCandidatePaths,
   manifestFormatForPath,
   parseDurationSeconds,
   parseManifestText,
   serializeManifestObject,
+  splitManifestByOrigin,
 } from '@kortix/manifest-schema';
 import { type GitBackedProject, readManifestFromRepo } from './git';
+import { isPlainObject } from '../shared/json';
 import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
@@ -84,12 +88,6 @@ export const KNOWN_SCHEMA_VERSION = 1;
 export const MAX_SCHEMA_VERSION = 2;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
-
-/** Local copy — `lib/serializers` imports from this module, so importing back
- *  would close a cycle for one two-line predicate. */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 export type GitTriggerType = 'cron' | 'webhook' | 'monitor';
 
@@ -331,6 +329,13 @@ export interface ParsedManifest {
   /** Commit the manifest was read at, or null when unknown (synthesized, or
    *  a string parse with no git context). Carried onto derived grants. */
   commit?: string | null;
+  /**
+   * Set when the manifest declares `imports:`. `raw` is then the MERGED
+   * document; this carries every source file (root first) and the file each
+   * trigger/connector/agent/app was declared in, so `commitManifest` writes an
+   * edit back to the declaring file instead of flattening it into the root.
+   */
+  imports?: ResolvedManifest;
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */
@@ -378,11 +383,15 @@ export async function readManifest(
     // `loadProjectAgents` answers with a synthesized `secrets: 'all'` manifest.
     // Callers that must fail CLOSED on an unreadable manifest opt into the
     // distinction here. See projects/lib/secret-grant.ts.
+    // A broken import is a malformed manifest, not an absent one: it propagates
+    // like a root syntax error does (thrown by `parseManifestString` below),
+    // never laundered into the synthesized permissive manifest.
+    if (err instanceof ManifestImportError) throw err;
     if (opts?.rethrowReadErrors) throw err;
     return null;
   }
   if (!found) return null;
-  return parseManifestString(
+  const manifest = parseManifestString(
     found.content,
     manifestFormatForPath(found.path),
     found.path,
@@ -390,6 +399,8 @@ export async function readManifest(
     found.candidatePaths,
     found.commit,
   );
+  if (found.imports) manifest.imports = found.imports;
+  return manifest;
 }
 
 /**
@@ -444,7 +455,7 @@ export function synthesizeBlankManifest(project: {
         [SYNTHESIZED_DEFAULT_AGENT_NAME]: {
           connectors: 'all',
           secrets: 'all',
-          kortix_cli: 'all',
+          kortix_permissions: 'all',
           skills: 'all',
         },
       },
@@ -511,6 +522,42 @@ export function serializeManifest(manifest: ParsedManifest): string {
   return serializeManifestObject(out, manifest.format);
 }
 
+/** What one manifest edit commits: the file(s) to write, plus the imported
+ *  files that must be unchanged for the write to be safe. */
+export interface ManifestWrites {
+  files: Array<{ path: string; content: string }>;
+  alsoExpect: Array<{ path: string; sha: string }>;
+}
+
+/**
+ * The file writes for an edited manifest — THE serializer every commit path
+ * uses. Without `imports:` it is the root file, exactly as before. With
+ * imports, `manifest.raw` is the merged document, so it is split back by
+ * origin: an edited entry is written to the file that declares it, a new entry
+ * to the root, and only files whose content changed are written. Serializing
+ * `manifest.raw` straight into the root instead would copy every imported
+ * entry into it and make the next read fail on duplicate names.
+ */
+export function manifestWrites(manifest: ParsedManifest, fallbackPath?: string): ManifestWrites {
+  const rootPath = manifest.path || fallbackPath || MANIFEST_FILENAME;
+  if (!manifest.imports) {
+    return { files: [{ path: rootPath, content: serializeManifest(manifest) }], alsoExpect: [] };
+  }
+  const [root, ...imported] = splitManifestByOrigin(manifest.imports, manifest.raw);
+  const files: ManifestWrites['files'] = [];
+  const changedImports = imported.filter((file) => file.changed);
+  if (root && (root.changed || changedImports.length === 0)) {
+    files.push({ path: rootPath, content: serializeManifest({ ...manifest, raw: root.raw }) });
+  }
+  for (const file of changedImports) {
+    files.push({ path: file.path, content: serializeManifestObject(file.raw, 'yaml') });
+  }
+  const alsoExpect = imported.flatMap((file) =>
+    typeof file.revision === 'string' ? [{ path: file.path, sha: file.revision }] : [],
+  );
+  return { files, alsoExpect };
+}
+
 /* ─── Trigger extraction ────────────────────────────────────────────────── */
 
 /**
@@ -545,7 +592,12 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
   const seenSlugs = new Set<string>();
 
   rawTriggers.forEach((entry, index) => {
-    const result = parseTriggerEntry(entry, index, filename);
+    // With `imports:`, report the file that declares the trigger, so the UI and
+    // every error message point at the file the author has to open.
+    const slug = (entry as { slug?: unknown } | null)?.slug;
+    const declaredIn =
+      (typeof slug === 'string' ? manifest.imports?.origins.triggers[slug] : undefined) ?? filename;
+    const result = parseTriggerEntry(entry, index, declaredIn);
     if (!result.ok) {
       errors.push(result.error);
       return;

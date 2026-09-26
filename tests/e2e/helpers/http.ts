@@ -17,6 +17,10 @@
  * A non-idempotent request that reached the origin (a plain 502/504 on POST)
  * is NOT retried — a duplicate write is worse than a red gate.
  *
+ *  - Any request whose body says `GITHUB_RATE_LIMITED`. The API answers it
+ *    when GitHub refuses repository creation, before the project row exists,
+ *    so a repeat cannot duplicate a write. It waits the server's
+ *    `Retry-After` and gets its own, longer budget (RATE_LIMIT_BUDGET_FACTOR).
  * A status the caller explicitly expects is never retried: `apiJson(…, 403)`
  * asserting a refusal must not sit in a backoff loop.
  */
@@ -40,11 +44,26 @@ export function isTransientStatus(
   if (expectedStatus.includes(status)) return false;
   if (!RETRYABLE_STATUSES.has(status)) return false;
   if (body.includes('MAINTENANCE_MODE')) return true;
+  if (body.includes('GITHUB_RATE_LIMITED')) return true;
   return IDEMPOTENT_METHODS.has(method.toUpperCase());
 }
 
 export function transientRetryDelayMs(attempt: number): number {
   return Math.min(1_000 * 2 ** attempt, 8_000);
+}
+
+/**
+ * A GitHub secondary rate limit blocks repository creation for minutes
+ * (2026-09-22 preview runs: > 4 min). The ordinary 60 s transient budget runs
+ * out first, so a rate-limited response may wait up to 15x that budget.
+ */
+const RATE_LIMIT_BUDGET_FACTOR = 15;
+const MAX_RETRY_AFTER_MS = 5 * 60_000;
+
+function retryAfterMs(response: Response): number | null {
+  const raw = response.headers.get('retry-after')?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return null;
+  return Math.min(Number(raw) * 1000, MAX_RETRY_AFTER_MS);
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -71,6 +90,7 @@ export async function requestWithTransientRetry(
 ): Promise<RawResponse> {
   const method = (init.method ?? 'GET').toUpperCase();
   const deadline = Date.now() + budgetMs;
+  const rateLimitDeadline = Date.now() + budgetMs * RATE_LIMIT_BUDGET_FACTOR;
   // A transport throw keeps the 3-attempt tolerance `apiResult` always had, so
   // a local run (budget 0) does not lose its connection-reset resilience.
   const minTransportAttempts = 3;
@@ -81,6 +101,13 @@ export async function requestWithTransientRetry(
       const body = await response.text();
       const result = { status: response.status, url: response.url || url, body };
       if (!isTransientStatus(method, response.status, body, expectedStatus)) return result;
+      if (budgetMs > 0 && body.includes('GITHUB_RATE_LIMITED')) {
+        const waitMs = (retryAfterMs(response) ?? 60_000) + Math.round(Math.random() * 15_000);
+        if (Date.now() + waitMs > rateLimitDeadline) return result;
+        await sleep(waitMs);
+        attempt += 1;
+        continue;
+      }
       if (Date.now() >= deadline) return result;
     } catch (error) {
       if (attempt + 1 >= minTransportAttempts && Date.now() >= deadline) throw error;

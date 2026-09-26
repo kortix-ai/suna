@@ -28,7 +28,7 @@ import {
 import { useProjectPicker } from '@/features/marketplace/marketplace-project-picker';
 import { useAuth } from '@/features/providers/auth-provider';
 import { installMarketplaceItemAsSession } from '@/lib/marketplace-client';
-import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
+import { isManagedGitUnavailableError } from '@/lib/onboarding/provision-errors';
 
 // First-party use-case templates ship in the bundled `kortix-starter` registry,
 // so a use-case slug maps to the catalog id the install-session resolves by.
@@ -111,7 +111,7 @@ export function TemplateSessionInstallDialog({
     } catch (e) {
       setError(
         isManagedGitUnavailableError(e)
-          ? "Managed git isn't set up on this server — an admin needs to connect GitHub in Git settings before projects can be created."
+          ? "Managed git isn't set up on this server — a platform admin connects GitHub in the admin console before projects can be created."
           : (e as Error).message || 'Could not open the install session',
       );
       setOpening(false);

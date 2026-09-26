@@ -1,7 +1,7 @@
 /**
  * One user action = one submission — and the NEXT user action must survive.
  *
- * The latch's BEHAVIOR (defer a typed second message, drop a same-tick
+ * The latch's BEHAVIOR (immediately dispatch a typed second message, drop a same-tick
  * double-fire, release on throw) is asserted with real promises in
  * `submit-latch.test.ts`. The send behavior below runs the exported helpers
  * `composer.tsx` and its hosts call — `captureAttachmentSubmission`,
@@ -282,9 +282,11 @@ describe('Send hands uploads off and never waits for them', () => {
     const first = composer.submit();
     composer.type('second draft', [fileA]);
     await composer.submit();
-    // Enter took the draft out of the editor and handed its upload off.
+    // A distinct draft dispatches at once, even while the first POST is in
+    // flight. Its refusal returns the upload and the draft before that POST ends.
     expect(upload.handedOff).toEqual([['local-a']]);
-    expect(composer.editor).toEqual({ text: '', files: [] });
+    expect(upload.reclaimed).toEqual([['local-a']]);
+    expect(composer.editor).toEqual({ text: 'second draft', files: [fileA] });
 
     releasePost();
     await first;
@@ -345,8 +347,8 @@ describe('the composer submits through the latch', () => {
     expect(wiring).toContain('}, []);');
   });
 
-  test('the latch dispatches through a ref, so a deferred re-run reads fresh state', () => {
-    // The deferred re-run fires after the in-flight send settles — an
+  test('the latch dispatches through a ref, so a later submit reads fresh state', () => {
+    // A later submit can arrive during an in-flight send — an
     // arbitrarily later render. Dispatching the closure captured at latch
     // creation would submit against stale attachedFiles/queue props.
     const wiring = between('const dispatchSubmissionRef = useRef', 'const editorPlaceholder');
@@ -419,14 +421,19 @@ describe('the composer submits through the latch', () => {
     expect(clear).toBeGreaterThan(reset);
     expect(run).toBeGreaterThan(clear);
     expect(send.replace(/\s+/g, ' ')).toContain(
-      'controller: promptAttachments, active: activeSubmissionIdsRef.current, send: () => onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission),',
+      'controller: promptAttachments, active: activeSubmissionIdsRef.current, send: () => onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission, placement),',
     );
     const failed = send.slice(send.indexOf('onFailed: () => {')).replace(/\s+/g, ' ');
-    // A refused send saves the restored draft again, only where Send clears the draft. Project
-    // home (`clearOnSend={false}`) keeps it in the editor, and a connector-gate Retry that sends
-    // it must not bring it back as a saved draft.
+    // Both recovery calls read `reset.clear` — what the composer ACTUALLY did to
+    // itself — not the raw `clearOnSend` prop. `'text-only'` (project home) is a
+    // truthy value that clears the box but revokes nothing, so a prop-keyed
+    // recovery returned `null` there and a refused send kept an empty box with
+    // no draft to get back. A composer that never cleared (`false`) still skips
+    // both: its draft is on screen, and a connector-gate Retry sending it later
+    // must not resurrect it as a saved draft.
+    expect(failed).toContain('clearOnSend: reset.clear,');
     expect(failed).toContain(
-      'if (clearOnSend && restoredDoc) handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);',
+      'if (reset.clear && restoredDoc) handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);',
     );
     // The tray shows the refused files again: the sent cache lets go of their pictures, unrevoked.
     expect(failed).toContain('disownSentAttachmentPreviews(sentFiles);');

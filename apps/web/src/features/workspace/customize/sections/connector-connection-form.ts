@@ -1,9 +1,4 @@
-import type {
-  AdminConnector,
-  ConnectorAuthorizationStrategy,
-  ConnectorDraftInput,
-  ConnectorSyncResult,
-} from '@kortix/sdk';
+import type { AdminConnector, ConnectorDraftInput, ConnectorSyncResult } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
 const MAX_CONNECTOR_SLUG_LENGTH = 128;
@@ -23,7 +18,6 @@ export interface EasyConnectApp {
 export interface EasyConnectConnectionInput {
   name: string;
   slug: string;
-  authorizationStrategy: ConnectorAuthorizationStrategy;
 }
 
 export type ConnectorSetupStatus =
@@ -38,42 +32,8 @@ export function connectorConnectionQueryKeys(projectId: string) {
   ] as const;
 }
 
-export function connectionOwnerTypeForStrategy(
-  strategy: ConnectorAuthorizationStrategy,
-): 'project' | 'member' {
-  return strategy === 'project' ? 'project' : 'member';
-}
-
-export function connectorAuthorizationStrategyForProvider(
-  provider: ConnectorDraftInput['provider'],
-  strategy: ConnectorAuthorizationStrategy,
-): ConnectorAuthorizationStrategy {
-  return provider === 'channel' || provider === 'computer' ? 'project' : strategy;
-}
-
-export function connectorAuthorizationStrategyIsEditable(
-  provider: ConnectorDraftInput['provider'],
-): boolean {
-  return provider !== 'channel' && provider !== 'computer';
-}
-
-export function connectorAuthorizationUpdateIsPending(
-  current: ConnectorAuthorizationStrategy,
-  submitted: ConnectorAuthorizationStrategy | null,
-  mutationPending: boolean,
-): boolean {
-  return mutationPending || (submitted !== null && submitted !== current);
-}
-
 export function createOnlyConnectorDraft(draft: ConnectorDraftInput): ConnectorDraftInput {
-  return {
-    ...draft,
-    authorization_strategy: connectorAuthorizationStrategyForProvider(
-      draft.provider,
-      draft.authorization_strategy ?? 'project',
-    ),
-    create_only: true,
-  };
+  return { ...draft, create_only: true };
 }
 
 export function connectorSyncErrorForSlug(
@@ -96,6 +56,11 @@ export function connectorSetupStatus(
   // connected account and no GitHub tool call had ever run.
   if (connector.status === 'needs_auth') return 'needs_setup';
   if (!connector.authSecret) return 'no_auth';
+  // `authorizationStrategy` is no longer a mode anyone sets — it is a derived
+  // summary the API computes from the connector's accounts (`'user'` = it has
+  // member-owned accounts and no project-owned one). Read here it still answers
+  // the grid's question: this connector runs on per-person accounts, so a
+  // missing project credential is not a setup gap.
   if (connector.authorizationStrategy === 'user') return 'user_managed';
   return connector.secretSet ? 'connected' : 'needs_setup';
 }
@@ -204,6 +169,5 @@ export function buildEasyConnectConnectorDraft(
     provider: app.provider ?? 'pipedream',
     app: app.slug,
     account: 'default',
-    authorization_strategy: connection.authorizationStrategy,
   });
 }

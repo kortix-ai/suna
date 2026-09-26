@@ -1,6 +1,8 @@
 'use client';
 
 import type { FileExplorerSource } from '@/features/project-files/explorer-source';
+import { useProjectFileSource as useMirrorFileSource } from '@/features/project-files/file-source';
+import { useFileList as useMirrorFileList } from '@/features/project-files/hooks/use-file-list';
 import { downloadFile } from './api/runtime-files';
 import { workspaceFileSource } from './file-source';
 import { useFileEventInvalidation, useFileSearch, useGitStatus, useServerHealth } from './hooks';
@@ -28,11 +30,41 @@ export const sandboxExplorerSource: FileExplorerSource = {
     hiddenToggle: true,
     gitStatusChip: true,
   },
-  useFileViewerSource: () => workspaceFileSource,
-  useFileList: (dirPath) => {
-    const { data: health } = useServerHealth();
-    return useFileList(dirPath, { enabled: health?.healthy === true });
+  /**
+   * Bytes follow the listing. Reading from the daemon while the listing came
+   * from the mirror would just move the forever-spinner into the preview modal:
+   * the daemon answers the same readiness 503, and `use-file-content` re-reads
+   * on a timer that a parked box never satisfies.
+   */
+  useFileViewerSource: () => {
+    const { parked } = useServerHealth();
+    const mirror = useMirrorFileSource();
+    return parked ? mirror : workspaceFileSource;
   },
+  /**
+   * The listing, from whichever source can actually answer.
+   *
+   * Box up: the daemon inside it — the live working tree, writable, showing
+   * uncommitted edits. Box PARKED: the daemon is unreachable and no read may
+   * wake it, so this reads the project's bare git mirror at the session's own
+   * branch instead (the branch name IS the session id). Verified against a real
+   * parked Platinum box: the daemon answers `503 sandbox_not_ready` in 2ms
+   * while the mirror returns the tree in 33ms.
+   *
+   * The mirror is best-effort — `createRemoteSessionBranch` pushes the branch in
+   * the background and records a failure in session metadata — so it can come
+   * back empty. `DriveExplorer` treats "parked and empty" as idle rather than as
+   * an empty folder, which is the one case this must not state as fact.
+   *
+   * Both hooks run every render; only one is ever enabled.
+   */
+  useFileList: (dirPath) => {
+    const { data: health, parked } = useServerHealth();
+    const live = useFileList(dirPath, { enabled: !parked && health?.healthy === true });
+    const mirror = useMirrorFileList(dirPath, { enabled: parked });
+    return parked ? mirror : live;
+  },
+  useReadinessParked: () => useServerHealth().parked,
   useGitStatus: () => {
     const { data: health } = useServerHealth();
     return useGitStatus({ enabled: health?.healthy === true });

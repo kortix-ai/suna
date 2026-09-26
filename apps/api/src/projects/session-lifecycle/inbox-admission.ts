@@ -2,6 +2,7 @@ import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { reconcileInboxTurn } from './inbox-turn-recovery';
 import { inboxPrecedesRow } from './inbox-order';
 import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 
@@ -10,7 +11,9 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
  *
  * ONE QUEUED MESSAGE RUNS AT A TIME, IN ORDER, AND EACH GETS ITS OWN ANSWER.
  * A prompt sits in `session_lifecycle_commands` until the session's turn is
- * over AND every older prompt has left the delivery path.
+ * over AND every older prompt has left the delivery path. The first Quick
+ * Queue prompt may end that turn after its current tool call finishes. Queue
+ * List prompts wait for natural turn completion.
  *
  * The turn half is not belt-and-braces on the order half — it is the whole
  * feature. OpenCode picks up new user messages at STEP boundaries INSIDE a
@@ -24,7 +27,7 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
  * Forwarding mid-turn was tried (`4ee30a9c3b`) to remove the gap between
  * queued messages. It bought that merge. The gap it was removing is gone by
  * other means: `promoteNextInboxRow` is AWAITED on the daemon's own
- * `session.idle` relay (`routes/r4.ts`, "THE TURN ENDED — the session's next
+ * `session.idle` relay (`routes/turn-stream.ts`, "THE TURN ENDED — the session's next
  * queued prompt is admissible NOW"), and the backoff below is now a 2s-capped
  * fallback rather than the 30s ceiling that produced the measured dead air.
  * A queued message therefore goes out on the turn-end event, not on a clock.
@@ -50,7 +53,7 @@ export const INBOX_ORDER_BACKOFF_MS = 300;
  * 75s of dead air behind ~1s deliveries.
  */
 export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
-export const INBOX_BACKOFF_FREE_REFUSALS = 4;
+const INBOX_BACKOFF_FREE_REFUSALS = 4;
 
 /** `base * 2^(refusals - free)`, capped. Pure, so the curve is testable. */
 export function admissionBackoffMs(baseMs: number, capMs: number, refusals: number): number {
@@ -71,7 +74,13 @@ function admissionRefusals(result: unknown): number {
  *  `reason`, where a second value may well appear again. */
 export type InboxAdmission =
   | { admit: true }
-  | { admit: false; reason: InboxAdmissionReason; retryAfterMs: number };
+  | {
+      admit: false;
+      reason: InboxAdmissionReason;
+      retryAfterMs: number;
+      /** Only the first Quick Queue row may end the active turn at a tool boundary. */
+      interruptAtBoundary?: { opencodeSessionId: string; messageId: string };
+    };
 
 /**
  * Does this session hold live turn authority right now?
@@ -112,6 +121,8 @@ export async function sessionHoldsLiveTurn(sessionId: string): Promise<boolean> 
 }
 
 export interface InboxAdmissionDeps {
+  /** Recover a missed terminal relay from exact runtime evidence. */
+  reconcileTurn?: (sessionId: string) => Promise<void>;
   /** The session's one sandbox row — its `metadata.activeTurns` is the turn
    *  authority `sessionHoldsTurnAuthority` reads. */
   readSandbox: (
@@ -127,6 +138,7 @@ export interface InboxAdmissionDeps {
 }
 
 const liveDeps: InboxAdmissionDeps = {
+  reconcileTurn: reconcileInboxTurn,
   async readSandbox(sessionId) {
     const [box] = await db
       .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
@@ -190,14 +202,54 @@ export async function admitInboxPrompt(
     refusals,
   );
 
-  // A LIVE TURN HOLDS EVERY QUEUED PROMPT BACK — see the header. This is the
-  // one rule that makes a queued message its own turn with its own answer,
-  // and it binds a PROMOTED row too: "send now" reorders the line, it does not
-  // put a second message in front of a turn that is already running. The
-  // daemon's `session.idle` relay releases the next row the instant this turn
-  // is over, so the wait is an event, not a poll.
-  if (sessionHoldsTurnAuthority(await deps.readSandbox(row.sessionId))) {
-    return { admit: false, reason: 'turn_active', retryAfterMs: orderBackoffMs };
+  // THE THREE READS THIS GATE ASKS FOR ARE INDEPENDENT, so they go out
+  // together. Awaiting them one at a time cost three sequential round trips on
+  // every delivery, and the API does not share a region with its database
+  // everywhere it runs (dev: API us-west-2, database us-east-2, ~100 ms per
+  // query). The gate below still CONSUMES them in its original order, and each
+  // one is awaited exactly where its answer is first needed, so the verdict for
+  // any given state is unchanged. Each read also now happens once instead of
+  // twice on the path where a live turn clears.
+  const started = <T>(promise: Promise<T>): Promise<T> => {
+    // An early return may leave one of these unawaited; a rejection must not
+    // surface as an unhandled rejection. The awaiting site still sees it.
+    promise.catch(() => undefined);
+    return promise;
+  };
+  const sandboxRead = started(deps.readSandbox(row.sessionId));
+  const inFlightRead = started(deps.hasInFlightPrompt(row.sessionId, row.commandId));
+  const olderRead = started(deps.hasOlderPendingPrompt(row.sessionId, row));
+
+  // A live turn holds delivery for both placements. Quick Queue may request
+  // an interrupt at the next tool boundary, but it is still never forwarded
+  // into that turn: the terminal relay admits it as its own turn afterward.
+  let sandbox = await sandboxRead;
+  if (sessionHoldsTurnAuthority(sandbox)) {
+    // Only the head may reconcile or arm an interrupt. Quick Queue sorts ahead
+    // of every Queue List row (`inbox-order.ts`), so its head arms the
+    // interrupt even while older Queue List entries wait.
+    const isHead = !(await inFlightRead) && !(await olderRead);
+    if (deps.reconcileTurn && isHead) {
+      await deps.reconcileTurn(row.sessionId);
+      sandbox = await deps.readSandbox(row.sessionId);
+    }
+    if (sessionHoldsTurnAuthority(sandbox)) {
+      const turns = storedSandboxTurns(sandbox?.metadata);
+      const active = turns.length === 1 ? turns[0] : null;
+      const interruptAtBoundary =
+        isHead &&
+        (row.payload as { placement?: unknown } | null)?.placement === 'transcript' &&
+        active?.state === 'active' &&
+        active.messageId
+          ? { opencodeSessionId: active.opencodeSessionId, messageId: active.messageId }
+          : undefined;
+      return {
+        admit: false,
+        reason: 'turn_active',
+        retryAfterMs: orderBackoffMs,
+        ...(interruptAtBoundary ? { interruptAtBoundary } : {}),
+      };
+    }
   }
 
   // ONE PROMPT OF A SESSION ON THE WIRE AT A TIME, and this check binds even a
@@ -206,7 +258,7 @@ export async function admitInboxPrompt(
   // of it. Admitting a second prompt into that window races two deliveries of
   // one session, and OpenCode orders what it receives by ARRIVAL — so the loser
   // of that race is the message the user typed FIRST.
-  if (await deps.hasInFlightPrompt(row.sessionId, row.commandId)) {
+  if (await inFlightRead) {
     return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
   }
 
@@ -215,10 +267,7 @@ export async function admitInboxPrompt(
   // does not, because it is about a delivery already happening rather than
   // about which message goes first.
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
-  if (
-    !promoted &&
-    (await deps.hasOlderPendingPrompt(row.sessionId, row))
-  ) {
+  if (!promoted && (await olderRead)) {
     return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
   }
 

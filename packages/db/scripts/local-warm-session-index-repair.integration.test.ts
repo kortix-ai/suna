@@ -1,8 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { repairLocalWarmSessionIndex } from './local-warm-session-index-repair';
+import { dockerAvailable } from './docker-available';
 
-const dockerAvailable =
-  Bun.spawnSync(['docker', 'version'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
 const container = `kortix-local-warm-index-${crypto.randomUUID().slice(0, 8)}`;
 let databaseUrl = '';
 

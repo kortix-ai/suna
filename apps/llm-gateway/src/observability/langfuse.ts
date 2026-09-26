@@ -47,6 +47,7 @@ export function traceToLangfuse(t: GatewayTrace): TracePayloads {
         keyId: t.keyId,
         billingMode: t.billingMode,
         provider: t.provider,
+        ...(t.upstream ? { upstreamProvider: t.upstream.provider, upstreamModel: t.upstream.model } : {}),
         streaming: t.streaming,
         status: t.status,
         ok: t.ok,
@@ -81,6 +82,7 @@ export function traceToLangfuse(t: GatewayTrace): TracePayloads {
       metadata: {
         requestedModel: t.requestedModel,
         provider: t.provider,
+        ...(t.upstream ? { upstreamProvider: t.upstream.provider, upstreamModel: t.upstream.model } : {}),
         status: t.status,
         errorCode: t.errorCode,
         attempts: t.attempts,

@@ -104,15 +104,74 @@ and actual Merit/Skill. It's hard, because you have to not only be very smart bu
 also crazy driven to push like a motherfucker and want to feel every edge and
 corner to make sure the output is good.
 
-## Learnings: incident rules live in the `learnings` skill
+## Skills live in `.agents/skills/`
 
-`.claude/skills/learnings/SKILL.md` is the append-only register of rules paid
-for with real downtime — each with the incident that taught it and the
-automation that enforces it. Load it before writing or reviewing a DB
-migration, touching deploy/release workflows, planning a promote, or responding
-to a prod incident. After resolving ANY incident or near-miss, append its rule
-there in the same session — an incident that leaves no learning behind is not
-finished.
+Every repo skill is a directory in `.agents/skills/<name>/`. `.claude/skills/<name>` is a
+symlink to it. Add a skill in `.agents/skills/`, then add the symlink. Third-party skills come
+from `npx skills add` and are pinned in `skills-lock.json`. The PR procedure is the
+**contributing** skill. Browser work is the **agent-browser** skill.
+
+## Learnings: the episodic ledger in the `learnings` skill
+
+`.agents/skills/learnings/` is the append-only, timestamped ledger of rules paid
+for with real downtime. `MEMORY.md` indexes it newest first, and each entry is
+one file in `entries/`: the rule, the incident that taught it, and the
+automation that enforces it. Search it before writing or reviewing a DB
+migration, touching deploy/release workflows, planning a promote, or
+responding to a prod incident. After resolving ANY incident or near-miss,
+record a new entry in the same session with `scripts/new-entry.sh`. An incident
+that leaves no entry behind is not finished.
+
+## NEVER write customer data or PII into anything we publish or commit
+
+This is a hard rule. No exceptions, no "just this once", no "it's only
+internal".
+
+**Never write any of these:**
+
+- customer or company names, and the names of their people;
+- email addresses, phone numbers, or other personal data;
+- real account, project, session, user, or sandbox IDs from prod, staging, or
+  a customer deployment;
+- customer repository names, hostnames, or URLs that contain any of the above;
+- customer prompts, messages, files, or log lines;
+- screenshots of a real customer workspace.
+
+**Never write them into:**
+
+- commits, commit messages, or branch names;
+- PR titles, PR bodies, PR comments, or review comments;
+- issues;
+- code comments, test names, or test fixtures;
+- docs, runbooks, skills, `AGENTS.md`, changelogs, or release notes;
+- artifacts, Slack posts, or any public or team-visible text.
+
+**Write the class instead:** "a customer reported", "an enterprise
+workspace", "a prod session", `<session_id>`. Build test data from synthetic
+values. Evidence that contains real data stays local: the gitignored
+`output/` folder, your scratchpad, or the private agent memory. It never goes
+into a tracked file.
+
+**If you find customer data** in the tree or in a PR, remove it in the same
+branch and say so. Do not rewrite history on `main`. Report the SHA to the user
+instead.
+
+**A guard enforces this on every commit and push.**
+`scripts/check-blocked-terms.sh` runs from `.githooks/pre-commit`,
+`.githooks/commit-msg`, and `.githooks/pre-push`. It refuses any added line,
+commit message, or pushed branch name that contains a blocked term. Matching is
+case-insensitive and whole-word. The list is itself customer data, so it lives
+encrypted in `apps/api/.env` as `BLOCKED_COMMIT_TERMS`, comma-separated.
+
+- Add a customer the day they sign: `dotenvx set BLOCKED_COMMIT_TERMS
+  "<existing>,<new>" -f apps/api/.env`. Read the current value first with
+  `dotenvx get BLOCKED_COMMIT_TERMS -f apps/api/.env`.
+- In a worktree the guard decrypts with the primary checkout's
+  `apps/api/.env.keys`. Without a key it warns and allows.
+- Deleting a line that contains a term is always allowed.
+- Never bypass the guard with `--no-verify`. If it fires, remove the term.
+- The hooks do not see PR titles, PR bodies, or comments. Those stay your
+  responsibility.
 
 ## How to communicate: precise, technically accurate, no fluff
 
@@ -187,11 +246,18 @@ It is not a save point, and it is not how you show someone your work.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Open a **draft PR against `main` on the first commit** and apply the
-   `preview` label. That builds a complete self-host preview for the branch — its
+   `preview` label. Follow the **contributing** skill: it fills the PR template,
+   finds the preview origin, records the demo video with agent-browser, and
+   attaches it with `gh pr edit --attach`. Every PR body carries that video.
+   The `preview` label builds a complete self-host preview for the branch — its
    own PostgreSQL, Supabase, API, gateway, frontend, and HTTPS origin. This is how
    work is shared and reviewed internally. **Sharing never requires merging.**
+   The `preview` label also runs the six-lane `Tests` suite on the PR.
 3. Run the relevant local unit, type, integration, and end-to-end checks with
-   real inputs and outputs. Keep the PR green as you go, not at the end.
+   real inputs and outputs. **CI does not run the local suite on a PR into
+   `main`** — run it yourself (narrowest command first, then `pnpm test`), or
+   add the `test` label to get the six CI lanes (~8 min, no push needed). Keep
+   the PR green as you go, not at the end.
 4. Merge `main` into the canonical branch daily. A branch that diverges for weeks
    detonates on merge exactly like a 1,500-line PR does.
 5. **Never merge to `main` without the user's explicit approval of that merge.**
@@ -210,8 +276,10 @@ It is not a save point, and it is not how you show someone your work.
    alone is not deployment proof. A newer push cancels an older run by design —
    if yours was cancelled before it deployed, the next push re-picks-up your
    still-stale surface, or force it with
-   `gh workflow run deploy-dev.yml -f surface=all`. Full procedure, surfaces,
-   and verification: `docs/runbooks/deploy-dev.md`.
+   `gh workflow run deploy-dev.yml -f surface=all`. The surfaces and their
+   checks are in `.github/workflows/deploy-dev.yml`. The same push runs the
+   `Tests` suite on the merge commit in parallel. It does not gate the deploy.
+   A red run comments on the commit and names the failing lanes — read it.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
@@ -295,10 +363,12 @@ mocked internals when a real surface exists.
   same flags and stdin a user or agent would use. Assert exit code, stdout,
   stderr, and any files/API calls/commits it should create. Do not rely only on
   importing command functions.
-- **Web changes:** drive the real page in Chromium/Playwright/chrome-devtools.
-  Click/type/toggle the actual controls, intercept or observe the network
-  request, and assert the visible UI state plus the outgoing payload. Screenshots
-  are useful evidence, but assertions on DOM and network data are required.
+- **Web changes:** drive the real page with **agent-browser** (the primary
+  browser; `agent-browser skills get core` loads its guide). Click/type/toggle
+  the actual controls, observe the network request (`agent-browser network`),
+  and assert the visible UI state plus the outgoing payload. Record the flow
+  (`agent-browser record start`) for the PR's demo video. Screenshots and video
+  are evidence, but assertions on DOM and network data are required.
 - **Cross-surface features:** verify each exposed surface independently. If the
   same feature ships on API + CLI + web + mobile, each gets its own black-box
   assertion for the inputs users can make and the outputs they receive.
@@ -360,10 +430,13 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 ### One local testing system
 
 - `pnpm test` is the only repository-level test command. It runs local REST and
-  CLI flows, SDK tests, runner unit tests, route coverage, and worktree tests
-  concurrently.
+  CLI flows, SDK tests, PostgreSQL-backed suites (`db-suites`), runner unit
+  tests, route coverage, and worktree tests concurrently.
 - `pnpm test -- --id ACC-4` runs one flow. `--domain access` runs one domain.
 - `pnpm test -- --sdk-only` runs only `packages/sdk` tests.
+- `pnpm test -- --db-only [path-filter]` runs only the PostgreSQL-backed suites
+  (`integration-*.test.ts`, `*.integration.test.ts`, `tests/migration`), each
+  file against its own fresh migrated database. A skipped DB suite fails.
 - `pnpm test -- --browser-only` runs Playwright browser journeys. It starts the
   deterministic local stack.
 - Local browser runs use two Playwright workers. CI browser shards use one.
@@ -381,28 +454,47 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
 - Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
-  || '<label>' }}`. Tiers, the kill switch back to GitHub-hosted runners, and
-  the Docker layer cache: `docs/runbooks/ci-runners.md`.
-- GitHub Actions runs four lanes — `core`, `browser-1`, `browser-2`, `packages` —
-  natively, one Blacksmith runner each (`CI_RUNNER_L`), through
-  `.github/workflows/tests.yml`. The two browser lanes are halves of one sharded
-  run (`--browser-shard=1/2` and `2/2`). The slowest lane defines the gate
-  duration. Each lane is the unchanged root command at the exact PR head SHA;
-  browser lanes install Chromium and prestart Supabase first. Do not add
-  CI-only test logic. (The Platinum/Daytona sandbox-worker path was removed on
-  2026-08-26; only `deploy-preview.yml` still uses a cloud sandbox.)
+  || '<label>' }}`. Setting a `CI_RUNNER_<tier>` repository variable to a
+  GitHub-hosted label is the kill switch back to GitHub-hosted runners.
+- GitHub Actions runs six lanes — `core`, `browser-1` … `browser-4`, `packages`
+  — natively, one Blacksmith runner each (`CI_RUNNER_L`), through
+  `.github/workflows/tests.yml`. The four browser lanes are quarters of one
+  sharded run (`--browser-shard=N/4`, Playwright's native `--shard`). The suite
+  measures 8m17s wall clock; `packages` (~8 min) is the slowest lane, so a fifth
+  browser shard buys nothing and the concurrency settings in
+  `tests/bin/package-quality.ts` must not be raised. Each lane is the unchanged
+  root command at the exact requested SHA; browser lanes install Chromium and
+  prestart Supabase first. Do not add CI-only test logic. (The Platinum/Daytona
+  sandbox-worker path was removed on 2026-08-26; only `deploy-preview.yml` still
+  uses a cloud sandbox.)
+- The suite runs on every push to `main`, on a pull request into `staging`, on a
+  pull request labelled `test` or `preview`, and on manual dispatch. The label
+  re-triggers an open pull request without a push. A plain pull request into
+  `main` skips it, and its check shows as skipped. A push-to-`main` run
+  blocks nothing: a red run comments the failing lanes on the commit, a cancelled
+  run means a newer commit superseded it. A pull request into `prod` runs
+  `tests-release.yml` against deployed staging instead.
+- Run the suite locally before merging into `main`: the narrowest relevant
+  command first, then `pnpm test`. The old per-pull-request gate cost ~11 min
+  median and 68 min worst case and gated nothing, because `main` and `staging`
+  require no status check.
 - Release tests run `pnpm test -- --target-full` against deployed staging. They block
   production when API or gateway health reports a SHA other than
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
   Playwright journey fails.
 - The `preview` label creates one full self-host preview in a persistent warm
-  Platinum sandbox. `auto` uses Daytona only for a Platinum infrastructure
-  failure. The preview has its own PostgreSQL, Supabase, API, gateway, frontend,
-  Mailpit, and HTTPS origin.
+  Platinum sandbox. Previews run on Platinum only: the preview host and every
+  session inside it. A Platinum failure fails the preview; there is no Daytona
+  fallback. Daytona code remains only to delete previews created before
+  2026-09-22. The preview has its own PostgreSQL, Supabase, API, gateway,
+  frontend, Mailpit, and HTTPS origin.
 - Preview CI runs `pnpm test -- --target-full` against that origin. The sticky
   pull request comment links the origin and its `/_tests/` HTML report.
-- A preview head change deletes the sandbox and removes the stale `preview`
-  label. Unlabel, close, and scheduled reconciliation also delete the sandbox.
+- A push to a `preview`-labelled branch redeploys its environment in place; the
+  label stays. Removing the label or deleting the branch tears it down. Closing
+  the pull request does not. A daily reconciler deletes environments whose
+  branch no longer exists (`deploy-preview.yml` `teardown`, `teardown-branch`,
+  `reconcile`).
 - Preview warm images contain dependencies and Docker layers only. They never
   contain a database or runtime secret.
 - Preview Mailpit handles authentication and invite email. The dedicated
@@ -452,18 +544,27 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `dev-api.kortix.com`, treat that as a broken staging setup, not a passing
   staging gate.
 
-### Driving the real UI (chrome-devtools MCP)
+### Driving the real UI (agent-browser)
 
+- **agent-browser is the browser for every agent task in this repo.** Use it
+  before chrome-devtools MCP, Playwright MCP, or any other built-in browser
+  tool. Playwright stays the engine of the committed browser test suite only.
+- The installed skill is a stub. Load the guide that matches the CLI version:
+  `agent-browser skills get core` (`--full` adds the command reference).
+- Use one named session per worktree:
+  `agent-browser session id --scope worktree --prefix <task>`, then pass
+  `--session <id>` on every command. Keep every `AGENT_BROWSER_*` variable the
+  same for all commands in a session. A per-command change relaunches the
+  browser and drops the open page.
 - Routes are auth-gated (`/dashboard`, `/projects/*` → redirect to `/auth`
   unauthenticated); sign in first (seed a user as above, then log in via the
-  `/auth` form, or inject the Supabase session).
-- The MCP uses a dedicated Chrome profile at
-  `~/.cache/chrome-devtools-mcp/chrome-profile` (separate from your normal
-  browser). If launch fails with "browser is already running for … profile",
-  kill the orphaned Chrome using that profile and remove
-  `chrome-profile/Singleton{Lock,Cookie,Socket}`, then retry.
+  `/auth` form). On a PR preview, the magic link arrives in the preview's Mailpit API
+  (`<origin>/_mailpit/api/v1`)
+  (the **contributing** skill has the script).
 - Next.js dev compiles routes on first hit — first navigation to a cold route
   can take 30–60s; warm it with `curl` or use a generous navigation timeout.
+- `agent-browser doctor` diagnoses launch and recording problems. Recording
+  needs ffmpeg with libvpx and libx264.
 
 ### Frontend type/lint gate
 
@@ -501,20 +602,19 @@ in `pnpm test -- --browser-only` and supports the actual Electron shell:
 `E2E_DESKTOP_NATIVE=1 E2E_GREP='27 — desktop parity' pnpm test -- --browser-only`.
 Run the native journey when changing shell CSS, navigation, settings, agents,
 or connectors. A desktop user-agent test does not prove native hit testing.
-See `docs/runbooks/desktop-verification.md` for the commands and evidence list.
 Report any unverified desktop behavior explicitly. Do not promise that tests
 prevent every future regression.
 
 When touching any visual surface in `apps/web`, treat brand fit as a release
 gate, not polish:
 
-- Read `.claude/skills/kortix-brand-guidelines/SKILL.md` before writing the first
+- Read `.agents/skills/kortix-brand-guidelines/SKILL.md` before writing the first
   `className`. It is the value law: the complete allowlist of every color,
   spacing step, type rung, radius, elevation, and duration you may use. Note
   `--spacing: 0.23rem` — Tailwind's scale is 8% tighter here, so a 16px mockup
   padding is `p-4`, never `p-[16px]`. Run its `audit.sh` over your changed paths
   before opening the PR; it must be clean on files you touched.
-- Read `.claude/skills/kortix-design-system/SKILL.md` next and compose existing
+- Read `.agents/skills/kortix-design-system/SKILL.md` next and compose existing
   primitives from `@/components/ui/*` before inventing local chrome.
 - Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,
   dense-but-legible UI, black/white plus one earned accent, token-driven spacing,

@@ -44,6 +44,9 @@ export const gitRefExplorerSource: FileExplorerSource = {
   },
   useFileViewerSource: useProjectFileSource,
   useFileList,
+  // A git ref has no compute behind it, so there is nothing to park. Every
+  // readiness error from this source is a real error.
+  useReadinessParked: () => false,
   useGitStatus,
   useFileEventInvalidation,
   useFileSearch,

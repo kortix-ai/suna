@@ -3,6 +3,7 @@ import {
   PreviewInfrastructureError,
   buildPreviewBootstrapScript,
   previewLockfileHash,
+  previewDeploymentStatusPath,
   previewSandboxIdentity,
   previewSandboxName,
   runSandboxPreview,
@@ -12,6 +13,7 @@ import {
 import {
   daytonaPreviewLabelsFilter,
   platinumPreviewIdempotencyKey,
+  stopPreviousPreviewWorkerCommand,
 } from '../src/core/sandbox-preview-providers';
 
 const input = {
@@ -24,6 +26,67 @@ const input = {
 describe('provider-neutral preview lifecycle', () => {
   it('uses one stable sandbox name per pull request', () => {
     expect(previewSandboxName(6337)).toBe('kortix-preview-pr-6337');
+  });
+
+  it('hands the host sandbox name to the stack as its instance id', () => {
+    const base = {
+      repository: input.repository,
+      ref: 'refs/pull/6337/head',
+      sha: input.sha,
+      prNumber: input.prNumber,
+      origin: 'https://preview.example.com/',
+    };
+    const tagged = buildPreviewBootstrapScript({ ...base, hostName: 'kortix-env-feature-x' });
+    const configure = tagged.slice(tagged.indexOf('PREVIEW_INSTANCE_DIR='));
+    expect(configure).toMatch(/PREVIEW_INSTANCE_ID='kortix-env-feature-x' \\?\s*bun tests\/bin\/preview-stack\.ts/);
+    // An untagged bootstrap leaves the stack's workers off (preview-stack.ts).
+    expect(buildPreviewBootstrapScript(base)).not.toContain('PREVIEW_INSTANCE_ID');
+    expect(() => buildPreviewBootstrapScript({ ...base, hostName: "x'; rm -rf /" })).toThrow(
+      'invalid preview host name',
+    );
+  });
+
+  it('serializes remote deployments before checkout and test status reset', () => {
+    const script = buildPreviewBootstrapScript({
+      repository: input.repository,
+      ref: 'refs/pull/6337/head',
+      sha: input.sha,
+      prNumber: input.prNumber,
+      origin: 'https://preview.example.com/',
+    });
+    const lock = script.indexOf('flock -x 9');
+    expect(lock).toBeGreaterThan(-1);
+    expect(lock).toBeLessThan(script.indexOf('rm -f "$STATUS" "$PHASE"'));
+    expect(lock).toBeLessThan(script.indexOf('git -C "$ROOT" checkout'));
+  });
+
+  it('terminates a cancelled detached worker before host reuse', () => {
+    const command = stopPreviousPreviewWorkerCommand();
+    expect(command).toContain("pgrep -f '^bash /workspace/run-kortix-preview\\.sh$'");
+    expect(command).toContain('kill -TERM -- "-$pgid"');
+    expect(command).toContain('kill -KILL -- "-$pgid"');
+    expect(command).not.toContain('pkill');
+  });
+
+  it('isolates completion records by workflow run and attempt', () => {
+    const first = previewDeploymentStatusPath('1234', '1');
+    expect(first).not.toBe(previewDeploymentStatusPath('1234', '2'));
+    expect(first).not.toBe(previewDeploymentStatusPath('1235', '1'));
+    expect(() => previewDeploymentStatusPath('../escape', '1')).toThrow();
+    const script = buildPreviewBootstrapScript({
+      repository: input.repository, ref: 'refs/pull/6337/head', sha: input.sha,
+      prNumber: input.prNumber, origin: 'https://preview.example.com/', statusPath: first,
+    });
+    expect(script).toContain(`STATUS='${first}'`);
+  });
+
+  it('closes the deployment lock before starting the persistent Docker daemon', () => {
+    const script = buildPreviewBootstrapScript({
+      repository: input.repository, ref: 'refs/pull/6337/head', sha: input.sha,
+      prNumber: input.prNumber, origin: 'https://preview.example.com/',
+    });
+    const daemon = script.split('\n').find((line) => line.includes('nohup dockerd'));
+    expect(daemon).toMatch(/9>&-.*&$/);
   });
 
   it('gives a pull request preview a disposable identity and a branch environment a standing one', () => {
@@ -334,33 +397,36 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).not.toContain('ecs-preview');
   });
 
-  it('falls back only after a Platinum infrastructure failure', async () => {
+  it('runs on Platinum only: an infrastructure failure fails the preview, never falls back', async () => {
+    // Previews never run on Daytona. The shared Daytona org hit its snapshot
+    // quota on 2026-09-21 and every preview session failed there.
     const platinum = vi.fn().mockRejectedValue(new PreviewInfrastructureError('restore timeout'));
-    const daytona = vi.fn().mockResolvedValue({ exitCode: 0, provider: 'daytona' });
-    await expect(runSandboxPreview(input, { platinum, daytona })).resolves.toEqual({
-      exitCode: 0,
-      provider: 'daytona',
-    });
-    expect(daytona).toHaveBeenCalledOnce();
+    await expect(runSandboxPreview(input, { platinum })).rejects.toThrow('restore timeout');
+    expect(platinum).toHaveBeenCalledOnce();
   });
 
-  it('does not fall back after a product test failure', async () => {
+  it('treats `auto` as Platinum', async () => {
+    const platinum = vi.fn().mockResolvedValue({ exitCode: 0, provider: 'platinum' });
+    await expect(runSandboxPreview({ ...input, provider: 'auto' }, { platinum })).resolves.toEqual({
+      exitCode: 0,
+      provider: 'platinum',
+    });
+  });
+
+  it('returns a product test failure unchanged', async () => {
     const platinum = vi.fn().mockResolvedValue({ exitCode: 9, provider: 'platinum' });
-    const daytona = vi.fn();
-    await expect(runSandboxPreview(input, { platinum, daytona })).resolves.toEqual({
+    await expect(runSandboxPreview(input, { platinum })).resolves.toEqual({
       exitCode: 9,
       provider: 'platinum',
     });
-    expect(daytona).not.toHaveBeenCalled();
   });
 
-  it('does not hide an arbitrary controller bug behind fallback', async () => {
-    const platinum = vi.fn().mockRejectedValue(new Error('invalid preview config'));
-    const daytona = vi.fn();
-    await expect(runSandboxPreview(input, { platinum, daytona })).rejects.toThrow(
-      'invalid preview config',
-    );
-    expect(daytona).not.toHaveBeenCalled();
+  it('rejects a Daytona request', async () => {
+    const platinum = vi.fn();
+    await expect(
+      runSandboxPreview({ ...input, provider: 'daytona' as never }, { platinum }),
+    ).rejects.toThrow(/Platinum only/);
+    expect(platinum).not.toHaveBeenCalled();
   });
 
   it('selects only stale or unlabeled preview sandboxes for teardown', () => {

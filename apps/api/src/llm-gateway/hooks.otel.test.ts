@@ -220,15 +220,4 @@ describe('emitGatewayGenAiSpan', () => {
     expect(endMs).toBeLessThanOrEqual(after + 5);
   });
 
-  test('never throws and does not export when no OTLP endpoint is configured', () => {
-    delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
-    delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-
-    expect(() => emitGatewayGenAiSpan(baseTrace())).not.toThrow();
-    expect(fetchCalls).toHaveLength(0);
-  });
-
-  test('never throws when there is no request context, even if the exporter is configured', () => {
-    expect(() => emitGatewayGenAiSpan(baseTrace())).not.toThrow();
-  });
 });

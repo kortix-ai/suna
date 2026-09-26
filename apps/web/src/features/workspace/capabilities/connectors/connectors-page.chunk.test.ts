@@ -30,10 +30,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(here, '../../../..');
-const ROUTE_ENTRY = resolve(
-  SRC,
-  'app/(app)/projects/[id]/(capabilities)/customize/connectors/page.tsx',
-);
+const ROUTE_ENTRY = resolve(SRC, 'app/[locale]/(app)/projects/[id]/(capabilities)/customize/connectors/page.tsx');
 
 /** Modules that must not be parsed before the connectors grid paints. */
 const FORBIDDEN = [

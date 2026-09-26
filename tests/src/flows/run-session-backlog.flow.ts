@@ -109,7 +109,7 @@ flow(
     // (apps/api/src/sandbox-proxy/routes/preview.ts REAL_PRE_PROMPT_DEPS). A
     // session whose only prompt was claimed by the daemon during boot
     // never crosses that proxy, so it "never crosses a titling hook again" —
-    // apps/api/src/projects/routes/r4.ts says exactly that in its own comment.
+    // apps/api/src/projects/routes/turn-stream.ts says exactly that in its own comment.
     // Waiting for the mirror straight after an initial_prompt boot is therefore
     // unsatisfiable by construction. Drive ONE real turn through the proxy, the
     // way every client does, and then assert the mirror the flow is about.
@@ -387,13 +387,13 @@ flow(
     // authorization request from agent session ses_fc0decd80ffeYPyIR1B5efRcz3`.
     // CONN-25 passed in the same run (real connect.composio.dev link in 7.4s),
     // so staging holds a working COMPOSIO_API_KEY — the unproven part is the
-    // live gpt-5.6-luna turn calling `add_connector` inside the 300s wait, and
+    // live morph-dsv41flash turn calling `add_connector` inside the 300s wait, and
     // the harness dumps no transcript on that timeout. Quarantined until it
     // passes a staging dry run of tests-release.yml with the transcript
     // captured on failure; un-quarantine ONLY in the PR that carries that
     // green run.
     quarantine:
-      'real-agent Composio selection: gpt-5.6-luna turn produced no add_connector call / connect.composio.dev link within 300s on staging (gate run 32992496089, api shard 1) — unproven flow, quarantined 2026-08-26 pending a green staging dry run',
+      'real-agent Composio selection: morph-dsv41flash turn produced no add_connector call / connect.composio.dev link within 300s on staging (gate run 32992496089, api shard 1) — unproven flow, quarantined 2026-08-26 pending a green staging dry run',
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
@@ -415,11 +415,11 @@ flow(
     });
 
     const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step('GPT-5.6 Luna receives the real Gmail connector request', async () => {
+    await ctx.step('GLM-5.3 744B receives the real Gmail connector request', async () => {
       const prompted = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
+          model: { providerID: 'kortix', modelID: 'morph-dsv41flash' },
           parts: [
             {
               type: 'text',

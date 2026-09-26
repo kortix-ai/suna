@@ -178,7 +178,7 @@ module "gateway" {
   # 2 GiB gives admission a 1 GiB budget (memory-budget.ts takes 50%), i.e.
   # ~341 MiB of concurrent wire bytes at the measured 3x amplification. The old
   # 512 MiB (dev) / 1 GiB (staging, prod) sat right on top of the size that
-  # OOM-killed the Essentia gateway on a single 28 MB request.
+  # OOM-killed the SampleCo gateway on a single 28 MB request.
   #
   # Capacity comes from REPLICAS, not from one big task: the gateway is
   # stateless and ALBRequestCountPerTarget already scales it. min_capacity is

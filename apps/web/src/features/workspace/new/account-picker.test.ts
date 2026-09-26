@@ -87,14 +87,16 @@ describe('AccountPicker: quiet header trigger, not a form field', () => {
     expect(code).not.toContain('Team');
   });
 
-  test('uses the transparent SelectTrigger so it reads as a span click, not a boxed field', () => {
-    expect(code).toContain('variant="transparent"');
-    expect(code).toContain('text-muted-foreground hover:text-foreground');
+  test('renders a full-width md SelectTrigger that fills the form column', () => {
+    // 2a55f7a56c replaced the transparent header link with a full-width field.
+    expect(code).toContain('className="w-full"');
+    expect(code).toContain('size="md"');
+    expect(code).not.toContain('variant="transparent"');
   });
 });
 
-describe('AccountPicker: EntityAvatar matches AccountSwitcher header scale', () => {
-  test('sizes every account avatar "xs" — same tile as account-switcher.tsx', () => {
+describe('AccountPicker: EntityAvatar size contract', () => {
+  test('renders every account avatar at size xs', () => {
     expect(code).toContain('<EntityAvatar');
     const avatars = code.match(/<EntityAvatar[\s\S]*?\/>/g) ?? [];
     expect(avatars.length).toBeGreaterThan(0);

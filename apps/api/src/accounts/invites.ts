@@ -1,10 +1,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountInvitations,
   accountMemberships,
   accounts,
+  projects,
 } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
@@ -16,6 +17,8 @@ import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/roles';
 import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
+import { trustedEmailForUser } from '../iam/email-trust';
+import { isUuid } from '../shared/validate';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -53,6 +56,29 @@ function normalizeEmail(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase();
 }
 
+/**
+ * The caller's email for invite matching: the Auth row's email, and only when
+ * it proves ownership (see iam/email-trust.ts). An SSO identity whose IdP has
+ * not verified the email's domain matches no invite.
+ */
+async function callerInviteEmail(c: any): Promise<string> {
+  return trustedEmailForUser(c.get('userId') as string | undefined);
+}
+
+/** 403 for a caller whose token names the invite's email but cannot prove it. */
+function unverifiedSsoEmail(c: any, invite: { email: string }) {
+  const claimed = normalizeEmail(c.get('userEmail') as string | undefined);
+  if (!claimed || claimed !== invite.email.toLowerCase()) return null;
+  return c.json(
+    {
+      error:
+        "Your single sign-on provider has not verified this email's domain. Sign in with your email address to use this invite.",
+      code: 'sso_email_domain_unverified',
+    },
+    403,
+  );
+}
+
 function isExpired(invite: { expiresAt: Date; acceptedAt: Date | null }): boolean {
   return !invite.acceptedAt && invite.expiresAt.getTime() <= Date.now();
 }
@@ -83,12 +109,11 @@ type ValidatedGrant = {
   role: 'manager' | 'member';
   expires_at: string | null;
 };
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
   if (!raw || typeof raw !== 'object') return null;
   const g = raw as Record<string, unknown>;
-  if (typeof g.project_id !== 'string' || !UUID_RE.test(g.project_id)) return null;
+  if (!isUuid(g.project_id)) return null;
   if (typeof g.role !== 'string') return null;
   const role = normalizeProjectRole(g.role);
   if (!role) return null;
@@ -114,7 +139,7 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
 export function validateBootstrapGroup(raw: unknown): { group_id: string } | null {
   if (!raw || typeof raw !== 'object') return null;
   const g = raw as Record<string, unknown>;
-  if (typeof g.group_id !== 'string' || !UUID_RE.test(g.group_id)) return null;
+  if (!isUuid(g.group_id)) return null;
   return { group_id: g.group_id };
 }
 
@@ -187,6 +212,99 @@ async function applyBootstrapGrants(
   return applied;
 }
 
+const MyInviteSchema = z
+  .object({
+    invite_id: z.string(),
+    account_id: z.string(),
+    account_name: z.string().nullable(),
+    initial_role: z.string(),
+    inviter_email: z.string().nullable(),
+    created_at: z.string(),
+    expires_at: z.string(),
+    /** Projects the invite grants on accept. Empty for a plain workspace invite. */
+    projects: z.array(z.object({ project_id: z.string(), name: z.string(), role: z.string() })),
+  })
+  .openapi('MyInvite');
+
+// GET /v1/account-invites — the pending invites addressed to the caller's
+// email. The chooser at /projects/start lists them, so an invitee who signs up
+// without the email link still finds the workspace or project they were
+// invited to. Only unexpired, unaccepted invites; nothing is redacted because
+// every row is addressed to the caller.
+accountInvitesRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['accounts'],
+    summary: "List the caller's pending invites",
+    ...auth,
+    responses: {
+      200: json(z.object({ invites: z.array(MyInviteSchema) }), 'Pending invites'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
+    const callerEmail = await callerInviteEmail(c);
+    if (!callerEmail) return c.json({ invites: [] });
+
+    const rows = await db
+      .select({ invite: accountInvitations, accountName: accounts.name })
+      .from(accountInvitations)
+      .leftJoin(accounts, eq(accounts.accountId, accountInvitations.accountId))
+      .where(
+        and(
+          sql`lower(${accountInvitations.email}) = ${callerEmail}`,
+          isNull(accountInvitations.acceptedAt),
+          gt(accountInvitations.expiresAt, new Date()),
+        ),
+      )
+      .orderBy(accountInvitations.createdAt);
+
+    const grantsByInvite = new Map(
+      rows.map(({ invite }) => [
+        invite.inviteId,
+        (invite.bootstrapGrants ?? [])
+          .map(validateBootstrapGrant)
+          .filter((g): g is ValidatedGrant => g !== null),
+      ]),
+    );
+    const projectIds = [...new Set([...grantsByInvite.values()].flat().map((g) => g.project_id))];
+    const projectNames = new Map<string, string>();
+    if (projectIds.length > 0) {
+      const projectRows = await db
+        .select({ projectId: projects.projectId, name: projects.name, accountId: projects.accountId })
+        .from(projects)
+        .where(inArray(projects.projectId, projectIds));
+      for (const row of projectRows) projectNames.set(`${row.accountId}:${row.projectId}`, row.name);
+    }
+
+    const inviters = new Map<string, string | null>();
+    for (const { invite } of rows) {
+      if (invite.invitedBy && !inviters.has(invite.invitedBy)) {
+        inviters.set(invite.invitedBy, await lookupAuthEmail(invite.invitedBy));
+      }
+    }
+
+    return c.json({
+      invites: rows.map(({ invite, accountName }) => ({
+        invite_id: invite.inviteId,
+        account_id: invite.accountId,
+        account_name: accountName ?? null,
+        initial_role: invite.initialRole,
+        inviter_email: invite.invitedBy ? (inviters.get(invite.invitedBy) ?? null) : null,
+        created_at: invite.createdAt.toISOString(),
+        expires_at: invite.expiresAt.toISOString(),
+        // A grant only counts when its project still exists in the invite's
+        // own account; a deleted project drops out instead of showing a blank row.
+        projects: (grantsByInvite.get(invite.inviteId) ?? []).flatMap((g) => {
+          const name = projectNames.get(`${invite.accountId}:${g.project_id}`);
+          return name ? [{ project_id: g.project_id, name, role: g.role }] : [];
+        }),
+      })),
+    });
+  },
+);
+
 // GET /v1/account-invites/:inviteId — describe an invite. Redacts identifying
 // fields when the caller's email doesn't match the invite, so the URL alone
 // can't be used to enumerate accounts.
@@ -204,7 +322,7 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
+  const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
 
   const [invite] = await db
@@ -279,7 +397,7 @@ accountInvitesRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
-  const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
+  const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
 
   const [invite] = await db
@@ -291,7 +409,8 @@ accountInvitesRouter.openapi(
   if (!invite) return c.json({ error: 'Invite not found' }, 404);
 
   if (callerEmail !== invite.email.toLowerCase()) {
-    return c.json({ error: 'This invite is addressed to a different account.' }, 403);
+    return unverifiedSsoEmail(c, invite)
+      ?? c.json({ error: 'This invite is addressed to a different account.' }, 403);
   }
 
   const alreadyAccepted = !!invite.acceptedAt;
@@ -413,7 +532,7 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
+  const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
 
   const [invite] = await db
@@ -429,7 +548,8 @@ accountInvitesRouter.openapi(
   }
 
   if (callerEmail !== invite.email.toLowerCase()) {
-    return c.json({ error: 'This invite is addressed to a different account.' }, 403);
+    return unverifiedSsoEmail(c, invite)
+      ?? c.json({ error: 'This invite is addressed to a different account.' }, 403);
   }
 
   await db.delete(accountInvitations).where(eq(accountInvitations.inviteId, invite.inviteId));

@@ -33,11 +33,12 @@
  * billed while stopped" an invariant rather than a best-effort.
  */
 
+import { observeSandboxTurn, type SandboxTurnReading } from '../sandbox-turn-observation';
 import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
-import { REAP_CONCURRENCY } from '../reaper-constants';
+import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
@@ -50,9 +51,9 @@ import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import {
   type SandboxTurnDeliveryReconciliation,
-  type SandboxTurnObservation,
   type SessionTurnEndReason,
   type StoredSandboxTurn,
+  REAPER_TURN_CAUSES,
   clearSandboxTurn,
   reconcileSandboxTurnDelivery,
   renewActiveSandboxTurn,
@@ -113,7 +114,7 @@ export interface SandboxReaperDependencies {
   extendUnconfirmedTurnDeadline: typeof extendUnconfirmedTurnDeadline;
   requeueAbandonedPrompt: typeof requeueAbandonedPrompt;
   promoteNextInboxRow: typeof promoteNextInboxRow;
-  drainSessionLifecycleQueue: (input: { idempotencyKey: string }) => Promise<unknown>;
+  drainSessionLifecycleQueue: (input: { idempotencyKey: string; coalesce?: boolean }) => Promise<unknown>;
 }
 
 const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
@@ -127,24 +128,11 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
   requeueAbandonedPrompt,
   promoteNextInboxRow,
   drainSessionLifecycleQueue: async (input) => {
-    const { drainSessionLifecycleQueue } = await import('../session-lifecycle/engine');
+    const { drainSessionLifecycleQueue } = await import('../session-lifecycle/drain');
     return drainSessionLifecycleQueue(input);
   },
 };
 
-/**
- * How old an accepted turn record must be before "no assistant message, root
- * idle" counts as an ORPHANED PROMPT rather than a turn that is merely starting.
- *
- * The daemon's `turn_orphaned_prompt` is a statement about the messages on
- * record, and for a few moments after OpenCode ACKs a prompt those messages look
- * identical to a dropped one: the user message exists, nothing has answered it,
- * and `/session/status` has not flipped busy yet. Redelivering into that window
- * runs the prompt twice. 30s is far past that window — a root that is genuinely
- * working reports busy, which is `inFlight: true` and never reaches here — and
- * still well inside one reaper pass, so it costs a dropped prompt nothing.
- */
-const ORPHANED_PROMPT_MIN_AGE_MS = 30_000;
 
 /**
  * Per-sandbox probe back-off after an `unknown` turn observation, in this
@@ -222,7 +210,7 @@ async function releaseQueuedPromptAfterTerminalTurn(
     });
     if (promotedPromptId) {
       void dependencies
-        .drainSessionLifecycleQueue({ idempotencyKey: promotedPromptId })
+        .drainSessionLifecycleQueue({ idempotencyKey: promotedPromptId, coalesce: false })
         .catch((error) =>
           console.warn('[reaper] targeted queue drain failed', {
             sandboxId: row.sandboxId,
@@ -395,7 +383,7 @@ export async function reapAndReconcileSandboxes(
               // It used to skip the probe outright, and that made the drip below
               // unreachable for the incident's own shape: a boot prompt's record
               // is `delivering` until the daemon calls back `turn_accepted`
-              // (routes/r4.ts), a mute daemon never calls back, and an unprobed
+              // (routes/turn-stream.ts), a mute daemon never calls back, and an unprobed
               // record can never make `unreadableTurns === turns.length` hold
               // while `deadlineAt > now`. The two conditions were mutually
               // exclusive, so a box dying on the 15-minute boot floor mid-turn —
@@ -423,7 +411,7 @@ export async function reapAndReconcileSandboxes(
               // Back-off on "could not tell": a box that answered `unknown`
               // is not asked again until its back-off elapses. The extension
               // below still happens (the record's own bound governs it), the
-              // PROBE does not. Essentia 2026-08-25: two replicas probed one
+              // PROBE does not. SampleCo 2026-08-25: two replicas probed one
               // box 345 times in an hour, each probe made OpenCode serialise
               // its 140 MB transcript, and the kernel OOM-killed it.
               const backoff = probeBackoff.get(row.sandboxId);
@@ -538,7 +526,7 @@ export async function reapAndReconcileSandboxes(
                 // orphan redelivery below — so a terminal observation landing
                 // inside ORPHANED_PROMPT_MIN_AGE_MS was a one-shot race that
                 // silently swallowed the prompt: observed live 2026-08-20
-                // (Essentia session d1b74954, prompt cleared `unknown` at age
+                // (SampleCo session d1b74954, prompt cleared `unknown` at age
                 // 27s, 3s under the floor, never answered). The next pass runs
                 // ~20s later; by then the age check passes and the redelivery
                 // fires, or the prompt got answered and the observation says
@@ -569,11 +557,21 @@ export async function reapAndReconcileSandboxes(
                 // Its own `turn_end` is the authority; failing that, a husk
                 // this pass had to force-close is a turn that did NOT finish;
                 // failing both, the honest record is that nobody can say.
+                const clearReason = endReason ?? (huskFinalized ? 'failed' : 'unknown');
+                // A turn closed here lost its own end frame, and with it the
+                // reason. Say what this pass saw, or the UI shows nothing.
+                const clearCause =
+                  clearReason !== 'failed'
+                    ? null
+                    : huskFinalized
+                      ? REAPER_TURN_CAUSES.huskFinalized
+                      : REAPER_TURN_CAUSES.runtimeFailed;
                 const cleared = await dependencies.clearSandboxTurn(
                   row.sandboxId,
                   turn.token,
                   undefined,
-                  endReason ?? (huskFinalized ? 'failed' : 'unknown'),
+                  clearReason,
+                  clearCause,
                 );
                 // AND THE PROMPT COMES BACK, when the daemon says one is
                 // stranded. This is the incident: the record is `active`
@@ -840,122 +838,4 @@ function hasFreshTurnRecord(turns: StoredSandboxTurn[], now: Date): boolean {
   });
 }
 
-/**
- * The reasons a SANDBOX is allowed to name. `runtime_gone` is deliberately not
- * one of them: the box is the subject of the judgement, and that value is only
- * ever written by the control plane's own stop writers. Anything else the
- * daemon sends — free text, a value from a newer agent build — is dropped, so a
- * box can never put an unconstrained string into the ledger column.
- */
-const DAEMON_REPORTABLE_END_REASONS = new Set<SessionTurnEndReason>([
-  'completed',
-  'failed',
-  'abandoned',
-]);
-
-function daemonReportedEndReason(value: unknown): SessionTurnEndReason | null {
-  return DAEMON_REPORTABLE_END_REASONS.has(value as SessionTurnEndReason)
-    ? (value as SessionTurnEndReason)
-    : null;
-}
-
-export interface SandboxTurnReading {
-  observation: SandboxTurnObservation;
-  /**
-   * HOW the daemon says the turn ended, when `observation` is `terminal` and it
-   * could tell. `null` is the ordinary answer for an agent build that predates
-   * `turn_end` and for an OpenCode state its messages cannot classify — the
-   * caller decides what to record, and must not invent a completion.
-   */
-  endReason: SessionTurnEndReason | null;
-  /**
-   * Did the daemon ANSWER this probe at all — separately from what it said?
-   *
-   * `unknown` has two very different causes and only one of them is evidence
-   * the runtime is alive: an agent build that omits the turn fields answers 200
-   * without them (routes/health.ts adds them only for `?turn=1` on a build that
-   * has them), while an unreachable box, a wedged daemon, or a timeout answers
-   * nothing. The reaper's drip needs the first and must refuse the second, so
-   * the two cannot be collapsed into one `unknown`.
-   */
-  daemonAnswered: boolean;
-  /**
-   * The daemon says a PROMPT is on record with nothing answering it.
-   *
-   * Evidence about the prompt, not about the turn, and that distinction is the
-   * whole point: a record is `delivering` for one upstream round trip only —
-   * OpenCode 200s the `prompt_async` and the acceptance write promotes it to
-   * `active` milliseconds later. An OpenCode killed after that and respawned
-   * keeps the persisted user message and loses its in-memory queue, so the
-   * record says `active` while nothing is running and nothing ever will. The
-   * record's state cannot see that; this can.
-   */
-  orphanedPrompt: boolean;
-}
-
-/** A fresh value per call: an exported function must not hand out a shared object. */
-const unreadableTurn = (daemonAnswered: boolean): SandboxTurnReading => ({
-  observation: 'unknown',
-  endReason: null,
-  daemonAnswered,
-  orphanedPrompt: false,
-});
-
-/**
- * Observe only a control-plane-minted `delivering` record through the common
- * daemon health contract. The provider adapter resolves transport and auth.
- */
-export async function observeSandboxTurn(
-  provider: Pick<SandboxProvider, 'resolveEndpoint'>,
-  externalId: string,
-  _sandboxId?: string,
-  identity?: { token?: string; opencodeSessionId: string; messageId: string | null },
-): Promise<SandboxTurnReading> {
-  try {
-    const endpoint = await provider.resolveEndpoint(externalId);
-    const url = new URL(`${endpoint.url.replace(/\/$/, '')}/kortix/health`);
-    url.searchParams.set('turn', '1');
-    if (identity?.opencodeSessionId) {
-      url.searchParams.set('turn_session_id', identity.opencodeSessionId);
-    }
-    if (identity?.messageId) {
-      url.searchParams.set('turn_message_id', identity.messageId);
-    }
-    const response = await fetch(url, {
-      headers: endpoint.headers,
-      signal: AbortSignal.timeout(10_000),
-    });
-    // A non-2xx is the proxy or the box refusing, not the daemon answering:
-    // fail toward "nothing came back", which is the reading that buys a box
-    // nothing. Only a parsed 200 counts as an answer.
-    if (!response.ok) return unreadableTurn(false);
-    const body = (await response.json()) as {
-      turn_in_flight?: unknown;
-      turn_end?: unknown;
-      turn_orphaned_prompt?: unknown;
-    };
-    if (body.turn_in_flight === true) {
-      return {
-        observation: 'active',
-        endReason: null,
-        daemonAnswered: true,
-        orphanedPrompt: false,
-      };
-    }
-    if (body.turn_in_flight === false) {
-      return {
-        observation: 'terminal',
-        endReason: daemonReportedEndReason(body.turn_end),
-        daemonAnswered: true,
-        // Absent on every agent build that predates the field, which reads as
-        // "no orphan evidence" — the conservative answer.
-        orphanedPrompt: body.turn_orphaned_prompt === true,
-      };
-    }
-    // The shape of the 2026-08-17 box: the daemon is up and answering, its
-    // build just says nothing about turns.
-    return unreadableTurn(true);
-  } catch {
-    return unreadableTurn(false);
-  }
-}
+export { observeSandboxTurn, type SandboxTurnReading } from '../sandbox-turn-observation';

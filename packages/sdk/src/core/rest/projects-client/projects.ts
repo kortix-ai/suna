@@ -2,6 +2,7 @@
 
 import type { CatalogModel } from '@kortix/llm-catalog';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
+import { retiredEndpointError } from '../../http/api/errors';
 import type { SandboxProviderName } from '../platform-client/types';
 import {
   type ProjectFileEntry,
@@ -44,7 +45,12 @@ export type FeatureFlagKey =
   | 'monitors'
   | 'warm_sessions'
   | 'secrets_egress'
-  | 'pi_worker';
+  | 'pi_worker'
+  | 'session_transcript_history'
+  | 'pooled_provider_secrets'
+  | 'pi_harness'
+  | 'config_releases'
+  | 'agent_principal';
 
 /**
  * Every {@link FeatureFlagKey} the API serves, at runtime. Kept in the same
@@ -64,6 +70,11 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'warm_sessions',
   'secrets_egress',
   'pi_worker',
+  'session_transcript_history',
+  'pooled_provider_secrets',
+  'pi_harness',
+  'config_releases',
+  'agent_principal',
 ] as const;
 
 /**
@@ -169,7 +180,14 @@ export interface ProjectConfigSummary {
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';
+      /** Kortix permissions (`project.*` actions). Absent on servers released
+       *  before 2026-09-22 — fall back to `kortix_cli`. */
+      kortix_permissions?: string[] | 'all';
+      /** @deprecated Renamed to `kortix_permissions` (same value). Removed in the next major. */
       kortix_cli: string[] | 'all';
+      /** Kortix Apps (by slug) the agent may open when restricted/private.
+       *  `[]` = none. Absent on servers released before 2026-09-22 (= none). */
+      apps?: string[] | 'all';
     };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
@@ -232,6 +250,14 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
+  /** Customer USD per million tokens for each eligible managed route. */
+  managedPricingRoutes?: Record<string, Array<{
+    route: string;
+    role: 'preferred' | 'eligible';
+    input: number;
+    cacheRead: number;
+    output: number;
+  }>>;
   /**
    * The project's stored EXCEPTIONS to the default model set
    * (`wireModelId -> enabled`). Served by `/model-picker` so a client toggling
@@ -320,7 +346,7 @@ export interface ProvisionProjectInput {
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
   /** Default branch for the newly-created managed repo. Omit to accept the
-   *  server's own default (`apps/api/src/projects/routes/r1.ts`). */
+   *  server's own default (`apps/api/src/projects/routes/projects.ts`). */
   default_branch?: string;
   starter_template?: 'general-knowledge-worker' | 'minimal';
   marketplace_items?: string[];
@@ -526,7 +552,7 @@ export interface ProjectLlmCatalogProvidersResponse {
  * provider, the shape the connect modal (apps/web/src/lib/llm-providers.ts)
  * needs. Unlike `getProjectLlmCatalog`/`getProjectModelPicker`, works for
  * native (non-gateway) projects too — see the route's doc comment
- * (apps/api/src/projects/routes/r4.ts, `/llm-catalog/providers`).
+ * (apps/api/src/projects/routes/models.ts, `/llm-catalog/providers`).
  */
 export async function getProjectLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
   return unwrap(
@@ -586,7 +612,7 @@ export type ProvisionPhase = 'validating' | 'creating_repository' | 'registering
  *
  * The `error` frame's `status` mirrors the HTTP status the equivalent
  * `/provision` response would have carried for the same failure — the route
- * (`apps/api/src/projects/routes/r1.ts`) writes `result.status` from the
+ * (`apps/api/src/projects/routes/projects.ts`) writes `result.status` from the
  * shared `runProvision` core alongside `error`/`code`, exactly the fields
  * `provisionProjectStream` (below) copies onto the error it throws. Without
  * this, a host reading only `.status`/`.code` (as `apps/web`'s
@@ -655,7 +681,7 @@ function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
  *
  * The stream always ends in a terminal `done` or `error` frame — the server
  * guarantees it (see the route's `finally`/catch in
- * `apps/api/src/projects/routes/r1.ts`). A stream that closes with NEITHER is
+ * `apps/api/src/projects/routes/projects.ts`). A stream that closes with NEITHER is
  * treated as a failure here too, never as an implicit success: resolving
  * with no project would hand the caller an undefined project id and route a
  * user to `/projects/undefined`.
@@ -939,16 +965,14 @@ export async function getProjectSandboxProviderTransition(
 }
 
 /**
- * Configure the warm sandbox pool for one sandbox template (Customize → Sandbox).
- * Warm pool is per-template + opt-in; `slug` selects which template (defaults to
- * the platform default). Live ready/warming counts come back on each template via
- * `listProjectSnapshots`.
+ * @deprecated The per-template warm pool was removed from the API. Always
+ * rejects with `ENDPOINT_RETIRED`.
  */
 export async function updateTemplateWarmPool(
-  projectId: string,
-  input: { slug: string; enabled?: boolean; size?: number },
-) {
-  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input));
+  _projectId: string,
+  _input: { slug: string; enabled?: boolean; size?: number },
+): Promise<KortixProject> {
+  throw retiredEndpointError('updateTemplateWarmPool');
 }
 
 export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {

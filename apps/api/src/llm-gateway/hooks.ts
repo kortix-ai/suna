@@ -5,10 +5,10 @@ import type {
   UsageEvent,
 } from '@kortix/llm-gateway';
 import { BillingGateError, assertBillingActive } from '../billing/services/billing-gate';
-import { deductForLlmUsage, grantCredits } from '../billing/services/credits';
 import { accountMayUseManagedModels, getCachedAccountTier } from '../billing/services/entitlements';
 import { llmPriceMarkup } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
+import { wallet } from '../billing/wallet';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { emitOtelSpan, isOtelTraceExporterConfigured } from '../lib/otel';
@@ -22,10 +22,11 @@ import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
 import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
-import { checkBudget } from './budgets';
+import { checkBudget, releaseBudgetReservation } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
+import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import { resolveGatewayRoute } from './routing';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
@@ -54,11 +55,25 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
     // projectId/sessionId attribute usage to the calling session (the sandbox
     // connector token is minted per-session with session_id = sandbox_id) — the
     // reaper's activity signal + precise per-session billing.
+    // Personal provider keys follow the session's on-behalf-of human in a
+    // private session under the agent-principal model (spec 2026-09-22 §2.3).
+    // Flag OFF returns `userId`, and the field stays absent (legacy).
+    const personalUserId =
+      account.projectId && account.sessionId
+        ? await resolveSessionPersonalOwner({
+            projectId: account.projectId,
+            sessionId: account.sessionId,
+            accountId: account.accountId,
+            legacyUserId: account.userId,
+          })
+        : account.userId;
     return {
       userId: account.userId,
       accountId: account.accountId,
       projectId: account.projectId ?? undefined,
       sessionId: account.sessionId ?? undefined,
+      agentGrant: account.agentGrant ?? null,
+      ...(personalUserId !== account.userId ? { personalUserId } : {}),
     };
   }
   return null;
@@ -127,39 +142,38 @@ export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<v
 }
 
 /**
- * The combined pre-dispatch gate — authenticate + billing + budget in one call.
- * Backs the /internal/gateway/authorize RPC so the standalone gateway folds three
- * sequential round-trips into one. Returns a principal or a typed 401/402 denial.
+ * Authenticate and check budgets before model resolution. New gateways defer
+ * billing until resolution identifies who owns the provider credential.
  */
-export async function authorizeRequest(token: string): Promise<AuthorizeResult> {
+export async function authorizeRequest(
+  token: string,
+  options: { deferBilling?: boolean } = {},
+): Promise<AuthorizeResult> {
   let principal = await authenticatePrincipal(token);
   if (!principal) {
     return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
   }
-  try {
-    const billing = await assertLlmBillingActive(principal.accountId);
-    if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
-  } catch (err) {
-    return {
-      ok: false,
-      status: 402,
-      // The real reason (subscription_required / insufficient_credits /
-      // no_account) — not a hardcoded constant. See BillingGateError's doc
-      // comment: without this, every billing denial reported the same code
-      // regardless of cause, masking the true failure-mode breakdown in
-      // gateway_request_logs and in any programmatic caller that trusts `code`
-      // over regexing `message`.
-      errorCode: err instanceof BillingGateError ? err.reason : 'subscription_required',
-      message: err instanceof Error ? err.message : 'Billing inactive',
-      principal,
-    };
+  // Old gateway processes omit deferBilling and still expect this RPC to take
+  // the managed admission hold. New gateways defer it until model resolution.
+  if (!options.deferBilling) {
+    try {
+      const billing = await assertLlmBillingActive(principal.accountId);
+      if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
+    } catch (err) {
+      return {
+        ok: false,
+        status: 402,
+        errorCode: err instanceof BillingGateError ? err.reason : 'subscription_required',
+        message: err instanceof Error ? err.message : 'Billing inactive',
+        principal,
+      };
+    }
   }
   const { exceeded, message, warnings } = await checkBudget(principal);
   logGatewayBudgetWarnings(principal, warnings);
   if (exceeded) {
-    // A hold was taken above but the budget gate denies dispatch — the caller
-    // (handler.ts's admit()) refunds it via refundBillingHold when it sees
-    // this denial's `principal`.
+    // A legacy gateway can have a hold here. It refunds the hold when it sees
+    // this denial's principal.
     return {
       ok: false,
       status: 402,
@@ -236,6 +250,9 @@ function extendDeadlineForLlmActivity(sessionId: string | null | undefined): voi
 }
 
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
+  // The request is over: its cost is in the logged spend (or it cost nothing),
+  // so its in-flight budget reservation must stop counting.
+  releaseBudgetReservation(event.projectId, event.actorUserId);
   const pureHoldRefund = isPureHoldRefund(event);
   // A pure hold refund observed nothing — no upstream call happened.
   if (!pureHoldRefund) extendDeadlineForLlmActivity(event.sessionId);
@@ -256,11 +273,22 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
         cacheWriteTokens: event.cacheWriteTokens,
         costUsd: event.finalCost,
         streaming: event.streaming,
+        // One row per gateway request: a retried settlement finds this row,
+        // and the debit keyed on its id (`llm:<event id>`) runs once.
+        requestId: event.requestId,
         metadata: {
           upstreamCostUsd: event.upstreamCost,
           markup: llmPriceMarkup(),
           requestId: event.requestId,
           billingMode: event.billingMode,
+          // The stream ended before the provider reported usage; the token
+          // counts are the gateway's estimate (see usage/estimate.ts).
+          ...(event.usageEstimated ? { usageEstimated: true } : {}),
+          // Staff-only: the upstream behind a Kortix-managed model. Customer
+          // surfaces read `provider`/`model`, which name Kortix.
+          ...(event.upstream
+            ? { upstreamProvider: event.upstream.provider, upstreamModel: event.upstream.model }
+            : {}),
         },
       });
 
@@ -270,43 +298,51 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
     const { toDeduct, toRefund } = reconcileBillingHold(event.finalCost, event.billingHoldUsd);
     if (toDeduct > 0) {
       // The real cost exceeded the (small, fixed) admission hold — collect
-      // the difference. Still a flat atomic deduct (deductForLlmUsage →
-      // atomic_use_credits), so it can never take the balance negative; if
-      // the account has since run dry, this is the same best-effort,
-      // logged-not-thrown gap the flat-deduct path always had — now bounded
-      // to (finalCost - holdUsd) instead of the full finalCost.
-      await deductForLlmUsage({
-        accountId: event.accountId,
-        costUsd: toDeduct,
-        model: event.model,
-        provider: event.provider,
-        actorUserId: event.actorUserId,
-        usageEventId,
-        upstreamCostUsd: event.upstreamCost,
-        markup: llmPriceMarkup(),
-      });
+      // the difference as a settlement of work already done.
+      await settleLlmUsage(event, toDeduct, usageEventId);
     } else if (toRefund > 0) {
-      await grantCredits(
-        event.accountId,
-        toRefund,
-        'llm_reservation_refund',
-        `LLM gateway admission-hold refund${event.model && event.model !== 'unknown' ? ` · ${event.model}` : ''}`,
-        false,
-      );
+      await wallet.grant({
+        accountId: event.accountId,
+        amount: toRefund,
+        kind: 'llm_reservation_refund',
+        description: `LLM gateway admission-hold refund${event.model && event.model !== 'unknown' ? ` · ${event.model}` : ''}`,
+        expiring: false,
+        // A retried settlement of the same request refunds once.
+        key: event.requestId ? { request: `llm-hold-refund:${event.requestId}` } : null,
+      });
     }
     return;
   }
 
   if (event.billingMode === 'none') return;
-  await deductForLlmUsage({
+  await settleLlmUsage(event, event.finalCost, usageEventId);
+}
+
+/**
+ * Record LLM spend. SETTLEMENT, not admission: the tokens are already generated
+ * and already paid for upstream. An admission debit would refuse this on a
+ * drained wallet and the spend would disappear from the ledger — which is
+ * exactly what happened for a full billing period.
+ */
+async function settleLlmUsage(event: UsageEvent, costUsd: number, usageEventId: string | null): Promise<void> {
+  if (costUsd <= 0) return;
+  const markup = llmPriceMarkup();
+  const hasAudit = Boolean(usageEventId) || event.upstreamCost != null;
+  await wallet.settle({
     accountId: event.accountId,
-    costUsd: event.finalCost,
-    model: event.model,
-    provider: event.provider,
-    actorUserId: event.actorUserId,
-    usageEventId,
-    upstreamCostUsd: event.upstreamCost,
-    markup: llmPriceMarkup(),
+    amount: costUsd,
+    description: `LLM · ${event.provider ? `${event.provider}/` : ''}${event.model}`,
+    kind: 'llm_debit',
+    key: usageEventId ? { request: `llm:${usageEventId}` } : null,
+    audit: hasAudit
+      ? {
+          ...(usageEventId ? { usageEventId } : {}),
+          ...(event.upstreamCost != null ? { upstreamCostUsd: event.upstreamCost } : {}),
+          ...(markup != null ? { markup } : {}),
+          ...(event.actorUserId ? { actorUserId: event.actorUserId } : {}),
+          route: '/v1/llm/chat/completions',
+        }
+      : undefined,
   });
 }
 
@@ -342,6 +378,9 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
         'kortix.cost_usd': trace.finalCost,
         'kortix.upstream_cost_usd': trace.upstreamCost,
         'kortix.provider': trace.provider,
+        ...(trace.upstream
+          ? { 'kortix.upstream_provider': trace.upstream.provider, 'kortix.upstream_model': trace.upstream.model }
+          : {}),
         'kortix.cached_tokens': trace.usage.cachedTokens,
         'kortix.cache_write_tokens': trace.usage.cacheWriteTokens,
         'kortix.streaming': trace.streaming,

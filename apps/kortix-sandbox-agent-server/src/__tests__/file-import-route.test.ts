@@ -4,10 +4,10 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { buildOpencodeApp } from '../proxy'
+import { buildOpenCodeTestApp } from './helpers/open-code-harness'
 import { logger } from '../logger'
 
 const TOKEN = 'import-test-token'
@@ -113,7 +113,7 @@ function descriptor(downloadUrl = 'http://storage.test/signed?token=secret') {
   }
 }
 
-function request(app: ReturnType<typeof buildOpencodeApp>, body: Record<string, unknown>) {
+function request(app: ReturnType<typeof buildOpenCodeTestApp>, body: Record<string, unknown>) {
   return app.request('http://daemon.test/file/import', {
     method: 'POST',
     headers: {
@@ -188,7 +188,7 @@ describe('POST /file/import', () => {
       },
       { preconnect: originalFetch.preconnect },
     )
-    const app = buildOpencodeApp(config(), opencode(), Date.now())
+    const app = buildOpenCodeTestApp(config(), opencode(), Date.now())
 
     const response = await request(app, {
       command_id: COMMAND_ID,
@@ -226,7 +226,7 @@ describe('POST /file/import', () => {
             : new Response(bytes),
         { preconnect: originalFetch.preconnect },
       )
-      const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -237,36 +237,6 @@ describe('POST /file/import', () => {
     } finally {
       writeSpy.mockRestore()
     }
-  })
-
-  it('cancels the download when its declared length exceeds the descriptor', async () => {
-    let canceled = false
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(bytes)
-      },
-      cancel() {
-        canceled = true
-      },
-    })
-    globalThis.fetch = Object.assign(
-      async (input: Parameters<typeof fetch>[0]) =>
-        String(input).startsWith('http://api.test/')
-          ? Response.json(descriptor())
-          : new Response(body, {
-              headers: { 'Content-Length': String(bytes.byteLength + 1) },
-            }),
-      { preconnect: originalFetch.preconnect },
-    )
-
-    const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
-      command_id: COMMAND_ID,
-      attachment_id: ATTACHMENT_ID,
-      part_index: 0,
-    })
-
-    assertImportFailureWarning(response)
-    expect(canceled).toBe(true)
   })
 
   it('cancels the download and removes partial bytes after a filesystem write failure', async () => {
@@ -292,7 +262,7 @@ describe('POST /file/import', () => {
         { preconnect: originalFetch.preconnect },
       )
 
-      const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -312,7 +282,7 @@ describe('POST /file/import', () => {
       calls += 1
       return Response.json(descriptor())
     }, { preconnect: originalFetch.preconnect })
-    const app = buildOpencodeApp(config(), opencode(), Date.now())
+    const app = buildOpenCodeTestApp(config(), opencode(), Date.now())
 
     for (const key of ['url', 'target_path', 'headers', 'filename', 'mime', 'size', 'sha256']) {
       const response = await request(app, {
@@ -343,7 +313,7 @@ describe('POST /file/import', () => {
           : new Response(bytes),
       { preconnect: originalFetch.preconnect },
     )
-    const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+    const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
       command_id: COMMAND_ID,
       attachment_id: ATTACHMENT_ID,
       part_index: 0,
@@ -369,7 +339,7 @@ describe('POST /file/import', () => {
         },
         { preconnect: originalFetch.preconnect },
       )
-      const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -395,7 +365,7 @@ describe('POST /file/import', () => {
         },
         { preconnect: originalFetch.preconnect },
       )
-      const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -406,9 +376,18 @@ describe('POST /file/import', () => {
     }
   })
 
-  it('rejects a declared or streamed body larger than the descriptor', async () => {
+  it('rejects a declared or streamed body larger than the descriptor, and cancels the declared one', async () => {
+    let canceled = false
+    const declared = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes)
+      },
+      cancel() {
+        canceled = true
+      },
+    })
     for (const download of [
-      new Response(bytes, { headers: { 'Content-Length': String(bytes.byteLength + 1) } }),
+      new Response(declared, { headers: { 'Content-Length': String(bytes.byteLength + 1) } }),
       new Response(new Uint8Array([...bytes, 0])),
     ]) {
       globalThis.fetch = Object.assign(
@@ -416,7 +395,7 @@ describe('POST /file/import', () => {
           String(input).startsWith('http://api.test/') ? Response.json(descriptor()) : download,
         { preconnect: originalFetch.preconnect },
       )
-      const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -426,6 +405,7 @@ describe('POST /file/import', () => {
       expect(await fs.stat(targetPath()).then(() => true).catch(() => false)).toBe(false)
       expect(await fs.readdir(path.dirname(targetPath())).catch(() => [])).toEqual([])
     }
+    expect(canceled).toBe(true)
   })
 
   it('does not download again when the existing file matches size and digest', async () => {
@@ -439,7 +419,7 @@ describe('POST /file/import', () => {
       },
       { preconnect: originalFetch.preconnect },
     )
-    const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+    const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
       command_id: COMMAND_ID,
       attachment_id: ATTACHMENT_ID,
       part_index: 0,
@@ -459,7 +439,7 @@ describe('POST /file/import', () => {
       },
       { preconnect: originalFetch.preconnect },
     )
-    const app = buildOpencodeApp(config({ apiUrl: 'https://api.test/v1' }), opencode(), Date.now())
+    const app = buildOpenCodeTestApp(config({ apiUrl: 'https://api.test/v1' }), opencode(), Date.now())
     const response = await request(app, {
       command_id: COMMAND_ID,
       attachment_id: ATTACHMENT_ID,
@@ -485,7 +465,7 @@ describe('POST /file/import', () => {
             : new Response(bytes),
         { preconnect: originalFetch.preconnect },
       )
-      const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+      const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
         command_id: COMMAND_ID,
         attachment_id: ATTACHMENT_ID,
         part_index: 0,
@@ -512,7 +492,7 @@ describe('POST /file/import', () => {
               : new Response(bytes),
           { preconnect: originalFetch.preconnect },
         )
-        const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+        const response = await request(buildOpenCodeTestApp(config(), opencode(), Date.now()), {
           command_id: COMMAND_ID,
           attachment_id: ATTACHMENT_ID,
           part_index: 0,

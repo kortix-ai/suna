@@ -20,6 +20,8 @@ let calls: Call[] = [];
 let projectPolicies: Array<Record<string, unknown>> = [];
 let defaultMode = 'risk';
 let discoverEnabled = true;
+/** The accounts GET .../connectors/:slug/accounts returns, default first. */
+let connectorAccounts: Array<Record<string, unknown>> = [];
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -63,7 +65,29 @@ function startServer(): string {
       if (url.pathname === `${ex}/connectors/gmail/sensitive` && req.method === 'PUT') {
         return Response.json({ ok: true });
       }
-      if (url.pathname === `${ex}/connectors/gmail/authorization-strategy` && req.method === 'PUT') {
+      if (url.pathname === `${ex}/connectors/gmail/connect` && req.method === 'POST') {
+        return Response.json({
+          provider: 'composio',
+          app: 'gmail',
+          connectUrl: 'https://connect.composio.test/auth_1',
+          connected: false,
+          isNoAuth: false,
+          sessionId: 'trs_1',
+          connectionId: '11111111-1111-4111-8111-111111111111',
+          requestId: 'auth_1',
+        });
+      }
+      if (url.pathname === `${ex}/connectors/gmail/accounts` && req.method === 'GET') {
+        return Response.json({
+          connector: 'gmail',
+          accounts: connectorAccounts,
+        });
+      }
+      if (
+        url.pathname.startsWith(`/v1/projects/${PROJECT}/connections/`) &&
+        url.pathname.endsWith('/default') &&
+        req.method === 'PUT'
+      ) {
         return Response.json({ ok: true });
       }
       if (url.pathname === `${ex}/discover/connectors/detail` && req.method === 'GET') {
@@ -200,6 +224,21 @@ describe('kortix connectors — capability-page parity', () => {
     projectPolicies = [{ match: 'send_*', action: 'require_approval' }];
     defaultMode = 'risk';
     discoverEnabled = true;
+    connectorAccounts = [
+      {
+        connection_id: '11111111-1111-4111-8111-111111111111',
+        label: 'Sales inbox',
+        owner_type: 'project',
+        is_default: true,
+        connected_as: 'sales@example.test',
+      },
+      {
+        connection_id: '22222222-2222-4222-8222-222222222222',
+        label: 'user@example.test',
+        owner_type: 'member',
+        is_default: false,
+      },
+    ];
   });
 
   afterEach(() => {
@@ -241,23 +280,214 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.stderr).toContain('Pass on or off');
   });
 
-  test('owner PUTs authorization_strategy — the field the route validates', async () => {
+  // `authorization_strategy` was a connector-level mode that made shared and
+  // private accounts mutually exclusive — and left a `user` connector with no
+  // connect flow at all (2026-09-16). Ownership is a property of each ACCOUNT
+  // now, so the command survives for scripts but must touch nothing.
+  test('owner is a deprecated no-op: exit 0, no API call, points at the accounts model', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'owner', 'gmail', 'user', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)).toEqual({
-      method: 'PUT',
-      path: `/v1/connectors/projects/${PROJECT}/connectors/gmail/authorization-strategy`,
-      body: { authorization_strategy: 'user' },
-    });
-    expect(r.stdout).toContain('each member authorizes their own connection');
+    expect(calls).toEqual([]);
+    expect(r.stdout).toContain('ownership is per account now');
+    expect(r.stdout).toContain('kortix connectors connect gmail --owner me|project');
+    expect(r.stdout).toContain('kortix connectors accounts gmail');
   });
 
-  test('owner rejects anything but project|user', async () => {
+  test('owner no longer needs a project|user argument at all', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['connectors', 'owner', 'gmail', 'account', '--project', PROJECT], config);
+    const r = await runCli(['connectors', 'owner', 'gmail', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  // The owner of the account a connect link creates. It is sent ONLY when
+  // asked for: the connect body is `.strict()` server-side, so a CLI that
+  // always sent `owner` would 400 against an API deployed before the field.
+  test('connect defaults to the caller and sends no owner field', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'connect', 'gmail', '--project', PROJECT, '--json'], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)).toEqual({
+      method: 'POST',
+      path: `/v1/connectors/projects/${PROJECT}/connectors/gmail/connect`,
+      body: {},
+    });
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      slug: 'gmail',
+      owner: 'me',
+      url: 'https://connect.composio.test/auth_1',
+    });
+  });
+
+  test('connect --owner project asks for a shared account', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['connectors', 'connect', 'gmail', '--owner', 'project', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)).toEqual({
+      method: 'POST',
+      path: `/v1/connectors/projects/${PROJECT}/connectors/gmail/connect`,
+      body: { owner: 'project' },
+    });
+    expect(r.stdout).toContain('shared with every project member');
+  });
+
+  test('connect --owner rejects anything but me|project before any request', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['connectors', 'connect', 'gmail', '--owner', 'everyone', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(2);
-    expect(r.stderr).toContain('Pass project or user');
+    expect(r.stderr).toContain('--owner must be me or project');
+    expect(calls).toEqual([]);
+  });
+
+  test.each([
+    [['--mine', '--owner', 'project'], '--mine cannot be combined with --owner or --owner-id'],
+    [['--owner', 'everyone'], '--owner must be project, agent, member, subject, or external'],
+    [['--owner', 'project', '--owner-id', 'agent_1'], '--owner-id is not valid for a project connection'],
+    [['--metadata', 'not-json'], '--metadata must be valid JSON'],
+  ])('connections add %p exits 2 before any request', async (flags, message) => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['connectors', 'connections', 'add', 'gmail', 'Inbox', ...flags, '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain(message);
+    expect(calls).toEqual([]);
+  });
+
+  test('accounts tables what --account accepts, shared/private, default first', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'accounts', 'gmail', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)).toEqual({
+      method: 'GET',
+      path: `/v1/connectors/projects/${PROJECT}/connectors/gmail/accounts`,
+      body: null,
+    });
+    const lines = r.stdout.split('\n').map((line) => line.trim());
+    expect(
+      lines.some((line) => /^LABEL\s+CONNECTED AS\s+OWNER\s+DEFAULT\s+CONNECTION ID$/.test(line)),
+    ).toBe(true);
+    // Order is the API's: the default account first. CONNECTED AS names the
+    // authorized identity, or `—` when the server does not know it.
+    const rows = lines.filter((line) => /^(Sales inbox|user@example\.test)\s/.test(line));
+    expect(rows[0]).toMatch(
+      /^Sales inbox\s+sales@example\.test\s+shared\s+yes\s+11111111-1111-4111-8111-111111111111\s+\(pinned default\)$/,
+    );
+    expect(rows[1]).toMatch(
+      /^user@example\.test\s+—\s+private\s+no\s+22222222-2222-4222-8222-222222222222$/,
+    );
+    expect(r.stdout).toContain('2 accounts');
+    // A ready-to-copy example per account, plus the two selector words.
+    expect(r.stdout).toContain('kortix connectors call gmail <action> --account "Sales inbox"');
+    expect(r.stdout).toContain(
+      'kortix connectors call gmail <action> --account "user@example.test"',
+    );
+    expect(r.stdout).toContain('kortix connectors call gmail <action> --account me');
+    expect(r.stdout).toContain('kortix connectors call gmail <action> --account project');
+    // A default IS pinned here (Sales inbox), so no account_required warning.
+    expect(r.stdout).not.toContain('No default pinned');
+  });
+
+  test('accounts warns when several accounts exist and none is pinned', async () => {
+    connectorAccounts = [
+      {
+        connection_id: '11111111-1111-4111-8111-111111111111',
+        label: 'Sales inbox',
+        owner_type: 'project',
+        is_default: false,
+      },
+      {
+        connection_id: '22222222-2222-4222-8222-222222222222',
+        label: 'user@example.test',
+        owner_type: 'member',
+        is_default: false,
+      },
+    ];
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'accounts', 'gmail', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('No default pinned');
+    expect(r.stdout).toContain('account_required');
+    expect(r.stdout).toContain('kortix connectors accounts gmail --default <label>');
+  });
+
+  test('accounts --default pins one account by label, resolved through the accounts list', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['connectors', 'accounts', 'gmail', '--project', PROJECT, '--default', 'user@example.test'],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Pinned');
+    expect(r.stdout).toContain('user@example.test');
+    expect(calls.at(-1)).toEqual({
+      method: 'PUT',
+      path: `/v1/projects/${PROJECT}/connections/22222222-2222-4222-8222-222222222222/default`,
+      body: {},
+    });
+  });
+
+  test('accounts --default reports an unknown label clearly and makes no write', async () => {
+    const config = writeConfig(startServer());
+    const before = calls.length;
+    const r = await runCli(
+      ['connectors', 'accounts', 'gmail', '--project', PROJECT, '--default', 'nope@example.test'],
+      config,
+    );
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('No account "nope@example.test"');
+    // Only the accounts GET happened — no PUT default was attempted.
+    expect(calls.slice(before).every((c) => c.method === 'GET')).toBe(true);
+  });
+
+  test('accounts --json emits the payload agents parse', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'accounts', 'gmail', '--project', PROJECT, '--json'], config);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({
+      connector: 'gmail',
+      accounts: [
+        {
+          connection_id: '11111111-1111-4111-8111-111111111111',
+          label: 'Sales inbox',
+          owner_type: 'project',
+          is_default: true,
+          connected_as: 'sales@example.test',
+        },
+        {
+          connection_id: '22222222-2222-4222-8222-222222222222',
+          label: 'user@example.test',
+          owner_type: 'member',
+          is_default: false,
+        },
+      ],
+    });
+  });
+
+  test('accounts with nothing connected names the remedy, in both faces', async () => {
+    connectorAccounts = [];
+    const config = writeConfig(startServer());
+    const human = await runCli(['connectors', 'accounts', 'gmail', '--project', PROJECT], config);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain('No connected accounts.');
+    expect(human.stdout).toContain('kortix connectors connect gmail --owner me');
+    expect(human.stdout).toContain('kortix connectors connect gmail --owner project');
+
+    const json = await runCli(['connectors', 'accounts', 'gmail', '--project', PROJECT, '--json'], config);
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toEqual({
+      connector: 'gmail',
+      accounts: [],
+      note: `Nothing is connected to "gmail" yet. Run 'kortix connectors connect gmail --owner me'.`,
+    });
   });
 
   test('catalog lists records and forwards q + cursor', async () => {

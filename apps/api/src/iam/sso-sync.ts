@@ -20,9 +20,12 @@ import { db } from '../shared/db';
 import { withDirectoryTransaction } from './directory-transaction';
 import { assignRole, SYSTEM_ACTOR } from './assignments';
 import { invalidateIamCacheForUser } from './cache-invalidation';
+import { identitiesMergeableIntoSso, reconcileAccountIdentities } from './account-identity';
 import {
+  emailDomain,
   ensureAutoProvisionedGroup,
   getSsoProviderBySupabaseId,
+  isSsoDomainVerified,
   listSsoGroupMappings,
 } from '../repositories/sso';
 
@@ -265,7 +268,67 @@ export async function syncSsoMembership(args: {
     if (directoryUser && (!directoryUser.active || directoryUser.deletedAt)) {
       return { skipped: false, memberCreated: false };
     }
-    if (directoryUser && !directoryUser.userId) {
+    const priorAccountIdentities = await db.execute(sql`
+      WITH account_user_ids AS (
+        SELECT membership.user_id
+        FROM kortix.account_memberships membership
+        WHERE membership.account_id=${provider.accountId}::uuid
+        UNION
+        SELECT session_row.created_by
+        FROM kortix.project_sessions session_row
+        WHERE session_row.account_id=${provider.accountId}::uuid
+        UNION
+        SELECT directory_row.user_id
+        FROM kortix.account_scim_users directory_row
+        WHERE directory_row.account_id=${provider.accountId}::uuid
+          AND directory_row.user_id IS NOT NULL
+      )
+      SELECT auth_user.id::text AS user_id
+      FROM account_user_ids account_user
+      JOIN auth.users auth_user ON auth_user.id=account_user.user_id
+      WHERE lower(trim(auth_user.email))=lower(trim(${args.email}))
+        AND auth_user.id<>${args.userId}::uuid
+      ORDER BY auth_user.id
+    `) as unknown as Array<{ user_id: string }>;
+    // `auth.identities.email` is GoTrue's indexed, lowercased copy of each
+    // identity's address; every SAML identity has a row with provider
+    // `sso:<id>`. Reading it avoids a full scan of `auth.users` by email.
+    const otherProviderIdentities = await db.execute(sql`
+      SELECT DISTINCT identity_row.user_id::text AS user_id
+      FROM auth.identities identity_row
+      WHERE identity_row.email=lower(trim(${args.email}))
+        AND identity_row.provider='sso:' || ${provider.supabaseSsoProviderId}::text
+        AND identity_row.user_id<>${args.userId}::uuid
+    `) as unknown as Array<{ user_id: string }>;
+    if (otherProviderIdentities.length > 0) {
+      throw new Error(`Ambiguous SSO identity for ${args.email.trim().toLowerCase()}`);
+    }
+    const candidateIds = new Set([
+      ...(directoryUser?.userId && directoryUser.userId !== args.userId ? [directoryUser.userId] : []),
+      ...priorAccountIdentities.map(row => row.user_id),
+    ]);
+    // Merging moves another identity's roles and credentials onto this one, on
+    // the strength of an email the IdP asserts. Only a verified domain makes
+    // that email proof, and owners / super-admins are never merged.
+    const { mergeable: priorUserIds, protectedIds } = await identitiesMergeableIntoSso(
+      provider.accountId,
+      [...candidateIds],
+      {
+        emailTrusted:
+          isSsoDomainVerified(provider) && emailDomain(args.email) === provider.primaryDomain,
+      },
+    );
+    if (protectedIds.length > 0) {
+      console.warn('[sso-sync] kept existing identities separate from the SSO identity', {
+        accountId: provider.accountId,
+        userId: args.userId,
+        keptUserIds: protectedIds,
+      });
+    }
+    const identityReconciled = priorUserIds.length > 0;
+    if (identityReconciled) {
+      await reconcileAccountIdentities(provider.accountId, priorUserIds, args.userId);
+    } else if (directoryUser && !directoryUser.userId) {
       await db.update(accountScimUsers).set({ userId: args.userId })
         .where(and(eq(accountScimUsers.accountId, provider.accountId), eq(accountScimUsers.scimId, directoryUser.scimId)));
     }
@@ -283,9 +346,9 @@ export async function syncSsoMembership(args: {
       )
       .limit(1);
 
-    let memberCreated = false;
+    let memberCreated = identityReconciled;
     if (!existingMember) {
-      if (!provider.autoCreateMembers && !directoryUser?.active) {
+      if (!provider.autoCreateMembers && !directoryUser?.active && !identityReconciled) {
         return { skipped: false, memberCreated: false };
       }
       // IDENTITY, then the ROLE. Two stores since the cutover.

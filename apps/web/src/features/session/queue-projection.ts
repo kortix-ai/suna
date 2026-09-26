@@ -1,13 +1,13 @@
+import type { QueuedDraft } from '@/stores/queued-draft-store';
 import type { RemovedSessionPrompt, SessionPrompt } from '@kortix/sdk';
 import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
-import type { QueuedDraft } from '@/stores/queued-draft-store';
 import type { AttachedFile } from './composer/types';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
   parseFileReferences,
-  parseReplyContext,
   parseSessionReferences,
+  stripReplyContexts,
 } from './message-parsing';
 
 /**
@@ -15,9 +15,8 @@ import {
  * renders, from the ONE thing that holds a pending message.
  *
  * The server inbox (`GET .../prompts`) is the queue: durable, shared across
- * tabs and devices, ordered and admitted by the control plane. A queued entry
- * is NOT in the transcript. It leaves this list the moment the runtime echoes
- * its message into the transcript, and appears there as a normal user message.
+ * tabs and devices, ordered and admitted by the control plane. Composer entries
+ * stay here until admitted. Transcript entries are drawn in the conversation.
  *
  * `drafts` are this tab's own queued sends (`queued-draft-store.ts`). They add
  * the text as typed, the original files, and a row for the upload window before
@@ -53,7 +52,7 @@ export interface QueueRow {
   attachmentCount: number;
   state: QueueRowState;
   lastError?: string;
-  /** Offers ✕. */
+  /** The server can still remove this prompt. */
   removable: boolean;
   /** Up takes it back into the composer without losing anything. */
   takeBackEligible: boolean;
@@ -70,7 +69,7 @@ export interface QueueProjection {
 /** A prompt's visible words: the transport blocks the send path appends
  *  (reply context, upload refs, mention refs) stripped back out. */
 export function cleanPromptText(text: string): { text: string; fileCount: number } {
-  const withoutReply = parseReplyContext(text).cleanText;
+  const withoutReply = stripReplyContexts(text);
   const uploads = parseFileReferences(withoutReply);
   const withoutSessions = parseSessionReferences(uploads.cleanText).cleanText;
   const withoutFiles = parseFileMentionReferences(withoutSessions).cleanText;
@@ -86,8 +85,8 @@ function onScreen(prompt: SessionPrompt, transcriptIds: ReadonlySet<string> | un
   // re-mint and a reload.
   return Boolean(
     (prompt.message_id && transcriptIds.has(prompt.message_id)) ||
-      (prompt.wire_message_id && transcriptIds.has(prompt.wire_message_id)) ||
-      (prompt.client_message_id && transcriptIds.has(prompt.client_message_id)),
+    (prompt.wire_message_id && transcriptIds.has(prompt.wire_message_id)) ||
+    (prompt.client_message_id && transcriptIds.has(prompt.client_message_id)),
   );
 }
 
@@ -106,11 +105,11 @@ export function projectQueueRows(input: {
   for (const prompt of input.prompts) {
     if (prompt.client_message_id) listed.add(prompt.client_message_id);
     if (prompt.reason === 'held' && prompt.state !== 'failed') heldCount += 1;
-    if (isFirstPromptRow(prompt)) continue;
+    if (isFirstPromptRow(prompt) || prompt.placement === 'transcript') continue;
     if (onScreen(prompt, input.transcriptMessageIds)) continue;
 
     const draft = prompt.client_message_id ? draftsById.get(prompt.client_message_id) : undefined;
-    const cleaned = cleanPromptText(prompt.text);
+    const cleaned = cleanPromptText(prompt.full_text ?? prompt.text);
     const state: QueueRowState =
       prompt.state === 'failed'
         ? 'failed'
@@ -140,7 +139,8 @@ export function projectQueueRows(input: {
 
   // Sends still uploading: the inbox has no row for them yet.
   for (const draft of input.drafts ?? []) {
-    if (draft.posted || listed.has(draft.clientMessageId)) continue;
+    if (draft.placement === 'transcript' || draft.posted || listed.has(draft.clientMessageId))
+      continue;
     rows.push({
       id: `draft:${draft.clientMessageId}`,
       clientMessageId: draft.clientMessageId,

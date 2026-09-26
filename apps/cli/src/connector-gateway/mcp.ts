@@ -1,6 +1,3 @@
-import { constants } from 'node:fs';
-import { open, realpath, stat } from 'node:fs/promises';
-import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 /**
  * `kortix connectors mcp` — the Connector exposed as a stdio MCP server.
  *
@@ -33,7 +30,17 @@ import {
   removeConnector,
   type BrokerMethod,
   type ConnectorClient,
+  type SecretLinkResult,
 } from './gateway.ts';
+import {
+  attachmentRef,
+  attachmentSlot,
+  insertAttachmentHandles,
+  uploadAttachmentFiles,
+} from './attachments.ts';
+import { connectorErrorPayload } from './io.ts';
+
+export { uploadAttachmentFiles } from './attachments.ts';
 
 interface JsonRpcRequest {
   jsonrpc?: string;
@@ -46,170 +53,6 @@ interface JsonRpcRequest {
 const SERVER_INFO = { name: 'kortix-connectors', version: '0.3.0' };
 
 const BROKER_METHODS: BrokerMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
-
-const MAX_ATTACHMENT_FILES = 20;
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-const DEFAULT_ATTACHMENT_ROOTS = ['output', 'artifacts', 'reports', 'deliverables'];
-
-const ATTACHMENT_CONTENT_TYPES: Record<string, string> = {
-  '.csv': 'text/csv',
-  '.doc': 'application/msword',
-  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  '.gif': 'image/gif',
-  '.jpeg': 'image/jpeg',
-  '.jpg': 'image/jpeg',
-  '.json': 'application/json',
-  '.md': 'text/markdown',
-  '.pdf': 'application/pdf',
-  '.png': 'image/png',
-  '.ppt': 'application/vnd.ms-powerpoint',
-  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  '.txt': 'text/plain',
-  '.webp': 'image/webp',
-  '.xls': 'application/vnd.ms-excel',
-  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  '.zip': 'application/zip',
-};
-
-interface LocalAttachmentFile {
-  path: string;
-  filename?: string;
-  content_type?: string;
-  content_disposition?: 'attachment' | 'inline';
-  content_id?: string;
-}
-
-interface UploadedAttachment {
-  filename: string;
-  content_type: string;
-  content_disposition: 'attachment' | 'inline';
-  content_id?: string;
-  attachment_id: string;
-}
-
-function isWithinRoot(path: string, root: string): boolean {
-  const offset = relative(root, path);
-  return offset !== '' && !offset.startsWith(`..${sep}`) && offset !== '..' && !isAbsolute(offset);
-}
-
-function localAttachment(value: unknown, index: number): LocalAttachmentFile {
-  const row = asRecord(value);
-  const path = stringField(row, 'path').trim();
-  if (!path) throw new Error(`attachment_files[${index}].path is required`);
-  const disposition = row.content_disposition;
-  if (disposition !== undefined && disposition !== 'attachment' && disposition !== 'inline') {
-    throw new Error(
-      `attachment_files[${index}].content_disposition must be "attachment" or "inline"`,
-    );
-  }
-  return {
-    path,
-    ...(stringField(row, 'filename').trim()
-      ? { filename: stringField(row, 'filename').trim() }
-      : {}),
-    ...(stringField(row, 'content_type').trim()
-      ? { content_type: stringField(row, 'content_type').trim() }
-      : {}),
-    ...(disposition ? { content_disposition: disposition } : {}),
-    ...(stringField(row, 'content_id').trim()
-      ? { content_id: stringField(row, 'content_id').trim() }
-      : {}),
-  };
-}
-
-export async function uploadAttachmentFiles(
-  value: unknown,
-  connector: Pick<ConnectorClient, 'uploadAttachment'>,
-  options: {
-    workspaceRoot?: string;
-    maxBytes?: number;
-    afterOpen?: (path: string, index: number) => Promise<void>;
-  } = {},
-): Promise<UploadedAttachment[]> {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error('attachment_files must be a non-empty array');
-  }
-  if (value.length > MAX_ATTACHMENT_FILES) {
-    throw new Error(`attachment_files supports at most ${MAX_ATTACHMENT_FILES} files`);
-  }
-
-  const workspaceRoot = await realpath(
-    options.workspaceRoot ?? process.env.KORTIX_INTERNAL_WORKSPACE_ROOT ?? '/workspace',
-  );
-  const allowedRoots = DEFAULT_ATTACHMENT_ROOTS.map((name) => resolve(workspaceRoot, name));
-  const maxBytes = options.maxBytes ?? MAX_ATTACHMENT_BYTES;
-  let totalBytes = 0;
-  const uploaded: UploadedAttachment[] = [];
-
-  for (let index = 0; index < value.length; index++) {
-    const item = localAttachment(value[index], index);
-    if (!isAbsolute(item.path)) {
-      throw new Error(`attachment_files[${index}].path must be absolute`);
-    }
-    const file = await open(item.path, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
-      (error: unknown) => {
-        if (asRecord(error).code === 'ELOOP') {
-          throw new Error(`attachment_files[${index}].path must not be a symbolic link`);
-        }
-        throw error;
-      },
-    );
-    try {
-      await options.afterOpen?.(item.path, index);
-      const path = await realpath(item.path);
-      if (!allowedRoots.some((root) => isWithinRoot(path, root))) {
-        throw new Error(
-          `attachment_files[${index}].path must be inside /workspace/{${DEFAULT_ATTACHMENT_ROOTS.join(',')}}`,
-        );
-      }
-      const [details, pathDetails] = await Promise.all([file.stat(), stat(path)]);
-      if (!details.isFile()) throw new Error(`attachment_files[${index}].path is not a file`);
-      if (details.nlink !== 1) {
-        throw new Error(`attachment_files[${index}].path must not have hard links`);
-      }
-      if (details.dev !== pathDetails.dev || details.ino !== pathDetails.ino) {
-        throw new Error(`attachment_files[${index}].path changed while it was being opened`);
-      }
-      totalBytes += details.size;
-      if (totalBytes > maxBytes) {
-        throw new Error(
-          `attachment_files exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MiB aggregate limit`,
-        );
-      }
-
-      const filename = item.filename || basename(path);
-      if (
-        !filename ||
-        filename === '.' ||
-        filename === '..' ||
-        filename.includes('/') ||
-        filename.includes('\\')
-      ) {
-        throw new Error(`attachment_files[${index}].filename must be a plain filename`);
-      }
-      const contentType =
-        item.content_type ||
-        ATTACHMENT_CONTENT_TYPES[extname(filename).toLowerCase()] ||
-        'application/octet-stream';
-      const result = await connector.uploadAttachment(await file.readFile(), {
-        filename,
-        contentType,
-        contentDisposition: item.content_disposition ?? 'attachment',
-        ...(item.content_id ? { contentId: item.content_id } : {}),
-      });
-      uploaded.push({
-        filename,
-        content_type: contentType,
-        content_disposition: item.content_disposition ?? 'attachment',
-        ...(item.content_id ? { content_id: item.content_id } : {}),
-        attachment_id: result.attachment_id,
-      });
-    } finally {
-      await file.close();
-    }
-  }
-  return uploaded;
-}
 
 /**
  * The fixed meta-tool surface. Stable regardless of how many connectors or
@@ -268,7 +111,7 @@ const META_TOOLS = [
   {
     name: 'call',
     description:
-      'Run a tool. The gateway resolves the credential server-side, enforces sharing + policy, executes the call, and audits it. Returns { ok, data, risk } on success, or a denial / pending-approval result. For email attachments, pass local file references in attachment_files; this MCP uploads raw bytes outside the model and JSON-RPC payloads. GraphQL tools take selected fields via an "__select" arg, e.g. {"id":"1","__select":"id name email"}.',
+      'Run a tool. The gateway resolves the credential server-side, enforces sharing + policy, executes the call, and audits it. Returns { ok, data, risk, account } on success — `account` names WHICH connected account actually ran the call — or a denial / pending-approval result. A connector may have several accounts (see `accounts`); if it does and the human did not say which one, ask — or say which one you used, reading it off the result\'s `account`. If several accounts are reachable, none is named, and none is pinned as the default, the call is denied with reason "account_required" (not a guess) — pass `account`, or tell the human to pin one with `kortix connectors accounts <slug> --default <label>`. To attach files to an email (native Email channel, Microsoft Graph sendMail, SendGrid, Postmark, …), pass local file references in attachment_files and leave the attachment array out of args; this MCP uploads raw bytes outside the model and JSON-RPC payloads, and the gateway writes them into the field the action\'s schema declares. Never paste base64 into args. GraphQL tools take selected fields via an "__select" arg, e.g. {"id":"1","__select":"id name email"}.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -284,10 +127,15 @@ const META_TOOLS = [
           type: 'object',
           description: "Arguments matching the tool's input schema (see describe). Defaults to {}.",
         },
+        account: {
+          type: 'string',
+          description:
+            'Which connected account to run as, when this connector has more than one (a shared project account and each member\'s own). Give the account label or its connection id exactly as `accounts` returns it, or the selector word `me` (the caller\'s own default private account) or `project` (the project\'s default shared account). Omit to use the default account. A name that matches nothing is refused and the refusal lists the available names — it never silently runs as a different account.',
+        },
         attachment_files: {
           type: 'array',
           description:
-            'Local files for an email action that supports attachments. Paths must be absolute and inside /workspace/output, /workspace/artifacts, /workspace/reports, or /workspace/deliverables. The MCP uploads raw bytes and passes opaque attachment handles, so never paste base64 into args.',
+            'Local files to attach. Works for any action whose input schema has an `attachments` array, at any depth (for example `body.message.attachments` on Microsoft Graph sendMail). Paths must be absolute and inside /workspace/output, /workspace/artifacts, /workspace/reports, or /workspace/deliverables. The MCP uploads raw bytes and passes opaque attachment handles; the gateway base64-encodes them server-side, so never paste base64 into args.',
           items: {
             type: 'object',
             properties: {
@@ -316,7 +164,12 @@ const META_TOOLS = [
             required: ['path'],
             additionalProperties: false,
           },
-          maxItems: MAX_ATTACHMENT_FILES,
+          maxItems: 20,
+        },
+        attachment_path: {
+          type: 'string',
+          description:
+            'Optional dotted path of the array that receives attachment_files, e.g. "body.message.attachments". Omit it: the first array named `attachments` in the action\'s input schema is used.',
         },
       },
       required: ['connector', 'action'],
@@ -325,9 +178,53 @@ const META_TOOLS = [
     readOnly: false,
   },
   {
+    name: 'upload_attachment',
+    description:
+      'Stage one local file for a connector call and get back `ref`, the value {"$kortix_attachment": "<id>"}. Put `ref` anywhere in `call` args: as an `attachments[]` element the gateway builds the provider\'s attachment item (Microsoft Graph fileAttachment, SendGrid, Postmark, …); in a string field such as `contentBytes` or `content` it becomes the file\'s base64. The bytes never pass through the model. For the common case, `call` with attachment_files does upload + placement in one step. A staged file is single-use and expires after 24 hours.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        connector: {
+          type: 'string',
+          description: 'Slug of the connector the file is for, e.g. "microsoft-graph".',
+        },
+        path: {
+          type: 'string',
+          description:
+            'Absolute path inside /workspace/output, /workspace/artifacts, /workspace/reports, or /workspace/deliverables.',
+        },
+        filename: { type: 'string', description: 'Optional recipient-visible filename.' },
+        content_type: { type: 'string', description: 'Optional MIME type.' },
+        content_disposition: {
+          type: 'string',
+          enum: ['attachment', 'inline'],
+          description: 'Defaults to attachment.',
+        },
+        content_id: { type: 'string', description: 'Optional inline content ID.' },
+      },
+      required: ['connector', 'path'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
+    name: 'accounts',
+    description:
+      'Use this whenever the human asks which/how many accounts are connected, or before a call where the account matters. Never infer accounts from a profile/whoami call — a connector can hold several accounts, and a single get_profile/get_me only ever answers for one of them. List the connected accounts a connector can be called as, default first. Each account is either SHARED with the project (owner_type "project") or PRIVATE to one member (owner_type "member"). Use this before passing `account` to `call`, and when a call is denied `connector_not_connected` (nothing named matched) or `account_required` (several accounts, none named, none pinned — the denial lists `available_accounts`). `call` also accepts the two selector words `me` (the caller\'s own default private account) and `project` (the project\'s default shared account) instead of a label or id. A human can pin one account as the default with `kortix connectors accounts <slug> --default <label>`, after which unnamed calls use it. An empty list means nothing is connected yet — call `connect` to get a link for the human.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        connector: { type: 'string', description: 'Connector slug, e.g. "gmail".' },
+      },
+      required: ['connector'],
+      additionalProperties: false,
+    },
+    readOnly: true,
+  },
+  {
     name: 'connect',
     description:
-      'Start the configured provider authorization for a connector that is declared but not yet authenticated, and SURFACE any returned url to the human in your reply. This works for Composio and explicit legacy Pipedream connectors. In the web UI the link opens a connect popup; in Slack it is tappable. No credential ever touches the sandbox. The connector must already exist in kortix.yaml.',
+      'Start the configured provider authorization for a connector — its first account, or an additional one beside the accounts `accounts` already lists — and SURFACE any returned url to the human in your reply. This works for Composio and explicit legacy Pipedream connectors. In the web UI the link opens a connect popup; in Slack it is tappable. No credential ever touches the sandbox. The connector must already exist in kortix.yaml.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -338,6 +235,12 @@ const META_TOOLS = [
         expires_in_minutes: {
           type: 'number',
           description: 'Link lifetime in minutes (default 30, max 1440).',
+        },
+        owner: {
+          type: 'string',
+          enum: ['me', 'project'],
+          description:
+            'Who the new account belongs to: "me" (the human who opens the link, and only they can call with it — the default) or "project" (shared with every project member, which requires project.connector.write). Ask the human before choosing "project": it authorizes an identity the whole project can spend.',
         },
       },
       required: ['slug'],
@@ -515,6 +418,54 @@ const META_TOOLS = [
   },
 ] as const;
 
+/** One account, as summarized on `connectors` / `describe` tool output. */
+interface AccountSummaryEntry {
+  label: string;
+  /** `private` = one member's own account. `shared` = the project's account. */
+  owner: 'shared' | 'private';
+  default: boolean;
+  connection_id: string;
+}
+
+/** `private` for a member-owned account, `shared` for everything else (the project's). */
+function ownerKind(ownerType: string): 'shared' | 'private' {
+  return ownerType === 'member' ? 'private' : 'shared';
+}
+
+/**
+ * Summarize a connector's accounts for a meta-tool result: the
+ * label/owner/default table, `default_account`, and — only when there is a
+ * real choice to make (more than one account) — `how_to_choose`, a
+ * copy-pasteable `call` shape naming the default.
+ */
+function accountsSummary(
+  connector: string,
+  accounts: ReadonlyArray<{
+    connection_id: string;
+    label: string;
+    owner_type: string;
+    is_default: boolean;
+  }>,
+  defaultLabel: string | null,
+): { accounts: AccountSummaryEntry[]; default_account: string | null; how_to_choose?: string } {
+  const entries: AccountSummaryEntry[] = accounts.map((a) => ({
+    label: a.label,
+    owner: ownerKind(a.owner_type),
+    default: a.is_default,
+    connection_id: a.connection_id,
+  }));
+  const resolvedDefault = defaultLabel ?? entries[0]?.label ?? null;
+  return {
+    accounts: entries,
+    default_account: resolvedDefault,
+    ...(entries.length > 1 && resolvedDefault
+      ? {
+          how_to_choose: `call {connector: "${connector}", action: "<action>", account: "${resolvedDefault}"}`,
+        }
+      : {}),
+  };
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -541,13 +492,17 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
       const connectors = await client.catalog();
       return {
         content: content({
-          connectors: connectors.map((c) => ({
-            slug: c.slug,
-            name: c.name,
-            provider: c.provider,
-            status: c.status,
-            tools: c.actions.length,
-          })),
+          connectors: connectors.map((c) => {
+            const summary = accountsSummary(c.slug, c.accounts ?? [], c.default_account ?? null);
+            return {
+              slug: c.slug,
+              name: c.name,
+              provider: c.provider,
+              status: c.status,
+              tools: c.actions.length,
+              ...summary,
+            };
+          }),
         }),
         isError: false,
       };
@@ -590,12 +545,18 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
           isError: true,
         };
       }
+      // Same accounts summary as `connectors` — a describe call is often the
+      // step right before `call`, so this is where `account` gets decided.
+      const accounts = await client.accounts(tool.connector).catch(() => []);
       return {
         content: content({
           tool: tool.tool,
           risk: tool.risk,
           description: tool.description,
           inputSchema: tool.inputSchema,
+          // `accounts` comes back default-first (see listEntitledConnectorConnections),
+          // so the first entry is what an unnamed call resolves to.
+          ...accountsSummary(tool.connector, accounts, accounts[0]?.label ?? null),
         }),
         isError: false,
       };
@@ -616,27 +577,28 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
       let callArgs = asRecord(args.args);
       if (args.attachment_files !== undefined) {
         const described = await client.describe(`${connector}.${action}`);
-        const schema = asRecord(described?.inputSchema);
-        const properties = asRecord(schema.properties);
-        if (!described || !properties.attachments) {
-          return {
-            content: content({
-              ok: false,
-              error: `${connector}.${action} does not accept attachments`,
-            }),
-            isError: true,
-          };
-        }
         try {
-          const files = await uploadAttachmentFiles(args.attachment_files, client);
-          const existing = callArgs.attachments;
-          if (existing !== undefined && !Array.isArray(existing)) {
-            throw new Error('args.attachments must be an array when attachment_files is used');
+          const slot = described
+            ? attachmentSlot(
+                described.inputSchema,
+                typeof args.attachment_path === 'string' ? args.attachment_path : undefined,
+              )
+            : null;
+          if (!slot) {
+            return {
+              content: content({
+                ok: false,
+                error: `${connector}.${action} does not accept attachments: its input schema has no \`attachments\` array. Pass attachment_path to name the array field.`,
+              }),
+              isError: true,
+            };
           }
-          callArgs = {
-            ...callArgs,
-            attachments: [...(Array.isArray(existing) ? existing : []), ...files],
-          };
+          const files = await uploadAttachmentFiles(args.attachment_files, client, { connector });
+          callArgs = insertAttachmentHandles(
+            callArgs,
+            slot,
+            files.map((file) => attachmentRef(file.attachment_id)),
+          );
         } catch (err) {
           return {
             content: content({
@@ -649,11 +611,65 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
       }
       // Returns the authenticated approval URL immediately when policy gates
       // the call. The server callback resumes the session after a decision.
-      const result = await callWithApprovalHandoff(client, connector, action, callArgs);
+      let result;
+      try {
+        result = await callWithApprovalHandoff(client, connector, action, callArgs, {
+          account: typeof args.account === 'string' ? args.account : null,
+        });
+      } catch (err) {
+        // A denial is an HTTP 403, so the SDK THROWS it. Left to the JSON-RPC
+        // loop it would reach the model as a bare `message` string, dropping
+        // `available_accounts`, `hint` and `connect_url` — the only fields
+        // that tell the model what to do next. Hand back the API body itself.
+        return { content: content(connectorErrorPayload(err)), isError: true };
+      }
       return {
+        // The result passes through untouched, including the `account` echo
+        // that names WHICH identity ran the call.
         content: content(result),
         // Pending approval is a successful handoff, not a connector failure.
         isError: result.status !== 'pending_approval' && !result.ok,
+      };
+    }
+
+    case 'upload_attachment': {
+      const connector = typeof args.connector === 'string' ? args.connector.trim() : '';
+      if (!connector) {
+        return { content: content({ ok: false, error: 'connector is required' }), isError: true };
+      }
+      try {
+        const { connector: _connector, ...file } = args;
+        const [uploaded] = await uploadAttachmentFiles([file], client, { connector });
+        return {
+          content: content({ ok: true, ...uploaded, ref: attachmentRef(uploaded!.attachment_id) }),
+          isError: false,
+        };
+      } catch (err) {
+        return { content: content(connectorErrorPayload(err)), isError: true };
+      }
+    }
+
+    case 'accounts': {
+      const connector = typeof args.connector === 'string' ? args.connector : '';
+      if (!connector) {
+        return {
+          content: content({ ok: false, error: 'connector is required' }),
+          isError: true,
+        };
+      }
+      const accounts = await client.accounts(connector);
+      return {
+        content: content({
+          ok: true,
+          connector,
+          accounts,
+          ...(accounts.length === 0
+            ? {
+                note: `Nothing is connected to "${connector}" yet. Call connect to get an authorization link for the human.`,
+              }
+            : {}),
+        }),
+        isError: false,
       };
     }
 
@@ -666,12 +682,28 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
         };
       const expires =
         typeof args.expires_in_minutes === 'number' ? args.expires_in_minutes : undefined;
+      // Default `me`: the human authorizes themselves. `project` is an explicit
+      // choice — it creates an account every member can spend — so anything
+      // else is refused rather than quietly downgraded.
+      const owner: 'me' | 'project' | undefined =
+        args.owner === 'me' || args.owner === 'project' ? args.owner : undefined;
+      if (args.owner !== undefined && owner === undefined) {
+        return {
+          content: content({ ok: false, error: 'owner must be "me" or "project"' }),
+          isError: true,
+        };
+      }
       try {
-        const link = await mintConnectLink({ slug, expiresInMinutes: expires });
+        const link = await mintConnectLink({
+          slug,
+          expiresInMinutes: expires,
+          ...(owner ? { owner } : {}),
+        });
         return {
           content: content({
             ok: true,
             slug: link.slug,
+            owner: owner ?? 'me',
             provider: link.provider,
             app: link.app,
             url: link.url,
@@ -757,17 +789,7 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
           descriptions: asRecord(args.descriptions) as Record<string, string>,
         });
         return {
-          content: content({
-            ok: true,
-            names: link.names,
-            scope: link.scope,
-            url: link.url,
-            expires_at: link.expires_at,
-            instructions:
-              link.scope === 'runtime'
-                ? 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. The runtime value appears in KORTIX_PROJECT_SECRET_NAMES after submission.'
-                : 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. The connector value remains server-side and never appears in KORTIX_PROJECT_SECRET_NAMES.',
-          }),
+          content: content(secretLinkToolPayload(link)),
           isError: false,
         };
       } catch (err) {
@@ -979,6 +1001,34 @@ function writeResponse(
 }
 
 /** Run the stdio JSON-RPC loop until stdin closes. */
+/**
+ * The `request_secret` result. When the server reports names this session's
+ * agent will not receive, the instructions lead with that and the fix: the
+ * human fills the form in the same visit, so it is the moment to widen the
+ * grant — not after the agent finds no env var and reports a saved value unset.
+ */
+export function secretLinkToolPayload(link: SecretLinkResult): Record<string, unknown> {
+  const base =
+    link.scope === 'runtime'
+      ? 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. After submission the runtime value is live in new shells (check the variable itself, or kortix secrets ls — KORTIX_PROJECT_SECRET_NAMES is the session-start list and does not update).'
+      : 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. The connector value remains server-side and never appears in KORTIX_PROJECT_SECRET_NAMES.';
+  const withheld = link.withheld ?? [];
+  const instructions =
+    withheld.length === 0
+      ? base
+      : `${base} This session will NOT receive ${withheld.map((w) => w.name).join(', ')} even after ` +
+        `the value is saved. ${link.withheld_fix ?? ''} Tell the human this fix together with the url.`.replace(/\s+/g, ' ');
+  return {
+    ok: true,
+    names: link.names,
+    scope: link.scope,
+    url: link.url,
+    expires_at: link.expires_at,
+    ...(withheld.length > 0 ? { agent: link.agent, withheld } : {}),
+    instructions,
+  };
+}
+
 export async function runConnectorMcpServer(): Promise<number> {
   const client = connectorClient();
   const decoder = new TextDecoder();

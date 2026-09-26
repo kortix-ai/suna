@@ -3,10 +3,15 @@ import { create } from 'zustand';
 import { Appearance } from 'react-native';
 import { colorScheme as nativewindColorScheme } from 'nativewind';
 import { log } from '@/lib/logger';
+import {
+  DEFAULT_THEME_PREFERENCE,
+  parseThemePreference,
+  type ThemePreference,
+} from './theme-preference';
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
 
-export type ThemePreference = 'light' | 'dark' | 'system';
+export type { ThemePreference };
 export type ResolvedTheme = 'light' | 'dark';
 
 interface ThemeState {
@@ -36,27 +41,33 @@ function resolveTheme(preference: ThemePreference): ResolvedTheme {
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
-  preference: 'light',
-  resolvedTheme: 'light',
+  preference: DEFAULT_THEME_PREFERENCE,
+  resolvedTheme: resolveTheme(DEFAULT_THEME_PREFERENCE),
   isLoaded: false,
 
   initialize: async () => {
     try {
       const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
       log.log('🌓 Theme store: Loading preference from storage:', saved);
-      
-      const preference: ThemePreference = (saved as ThemePreference) || 'light';
+
+      const preference = parseThemePreference(saved);
       const resolvedTheme = resolveTheme(preference);
       
       log.log('🌓 Theme store: Initialized with:', { preference, resolvedTheme });
 
       set({ preference, resolvedTheme, isLoaded: true });
       // Apply to NativeWind so every `dark:` class / useColorScheme() consumer
-      // follows the persisted preference (idempotent with _layout's restore).
+      // follows the persisted preference. This is the app's only theme restore
+      // (called once from the root layout).
       nativewindColorScheme.set(preference);
     } catch (error) {
       log.error('🌓 Theme store: Failed to load preference:', error);
-      set({ preference: 'light', resolvedTheme: 'light', isLoaded: true });
+      set({
+        preference: DEFAULT_THEME_PREFERENCE,
+        resolvedTheme: resolveTheme(DEFAULT_THEME_PREFERENCE),
+        isLoaded: true,
+      });
+      nativewindColorScheme.set(DEFAULT_THEME_PREFERENCE);
     }
   },
 

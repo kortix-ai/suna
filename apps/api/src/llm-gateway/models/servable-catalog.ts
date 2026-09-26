@@ -1,5 +1,3 @@
-import { listProjectUserProviderConnections } from '../../provider-connections/store';
-import { providerConnectionAdapter } from '../../provider-connections/adapters';
 import { getProjectModelAccess } from '../../repositories/project-model-access';
 import { modelAccessAllows } from '../model-access';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
@@ -11,6 +9,8 @@ import { toWireModel } from '../resolution/effective';
 import { gatewayModelCatalog } from './catalog-models';
 import { projectPickerCatalog } from './picker-catalog';
 import { platformDefaultModelId } from './served-managed-models';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
+import { listGrantedGatewaySecretNames } from '../../secrets/account-resource';
 
 type GatewayModel = ReturnType<typeof gatewayModelCatalog>[string];
 
@@ -27,7 +27,7 @@ export interface ServableProjectCatalog {
  * now": the runtime catalog reduced to managed models the account may use,
  * the providers its secrets connect, and the ids its defaults/routing name —
  * stamped with per-project enablement. Served to the web picker
- * (`GET /projects/:id/model-picker`, r4.ts) AND to the sandbox at boot
+ * (`GET /projects/:id/model-picker`, routes/models.ts) AND to the sandbox at boot
  * (`GET /v1/llm/models?scope=picker` → internal `/models` with
  * `scope:'picker'`), so the list OpenCode registers on the `kortix` provider
  * is exactly the list the composer offers. Before this the sandbox learned
@@ -41,29 +41,37 @@ export interface ServableProjectCatalog {
 export async function servableProjectCatalog(input: {
   projectId: string;
   accountId: string;
-  /** Whose secret-visibility applies for the BYOK connection check; the
-   *  gateway principal's user for a sandbox, the caller for the web picker. */
+  /** The member whose project access admits keys shared with the whole
+   *  project: the gateway principal's user for a sandbox, the caller for the
+   *  web picker, the linked person for a chat channel. */
   principalUserId: string | null | undefined;
+  /**
+   * Whose PERSONAL resources count — a personal project-secret override and
+   * a pooled key granted to one member. Absent = `principalUserId`. `null` =
+   * none: a shared session reaches only project-wide keys (spec 2026-09-22
+   * §2.3). Before this was separate, a shared session got NO pooled key at
+   * all, so a model reached through a project-wide key was missing from the
+   * list its sandbox registers.
+   */
+  personalUserId?: string | null;
 }): Promise<ServableProjectCatalog> {
   const { projectId, accountId, principalUserId } = input;
+  const personalUserId = input.personalUserId === undefined ? (principalUserId ?? null) : input.personalUserId;
   const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
-  const [secrets, defaults, routing, access] = await Promise.all([
+  const [secrets, defaults, routing, access, pooledEnabled] = await Promise.all([
     listProjectSecretNamesForConsumer({
       projectId,
-      principalUserId,
+      principalUserId: personalUserId,
       consumer: 'llm_gateway',
     }).catch(() => [] as string[]),
     getAccountModelDefaults(accountId, projectId),
     getProjectRoutingPolicy(projectId),
     getProjectModelAccess(projectId),
+    projectFeatureFlagEnabled(projectId, 'pooled_provider_secrets'),
   ]);
-  if (principalUserId) {
-    const personal = await listProjectUserProviderConnections(projectId, principalUserId);
-    for (const binding of personal) {
-      const adapter = providerConnectionAdapter(binding.provider_id);
-      if (adapter) secrets.push(adapter.secretName);
-    }
-  }
+  const pooledNames = pooledEnabled && principalUserId
+    ? await listGrantedGatewaySecretNames(accountId, projectId, principalUserId, personalUserId).catch(() => [] as string[])
+    : [];
   const effectiveDefault = toWireModel(
     defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
   );
@@ -77,7 +85,7 @@ export async function servableProjectCatalog(input: {
   ].filter((model): model is string => !!model);
   const models = projectPickerCatalog(
     gatewayModelCatalog(projectId, { freeManagedOnly }),
-    new Set(secrets),
+    new Set([...secrets, ...pooledNames]),
     requiredModels,
   );
   const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);

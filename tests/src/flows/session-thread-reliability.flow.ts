@@ -496,7 +496,7 @@ flow(
   },
   async (ctx) => {
     const { projectId, sessionId, sandboxId } = await bootSandbox(ctx, {
-      opencodeModel: 'gpt-5.6-luna',
+      opencodeModel: 'morph-dsv41flash',
     });
     const ocSessionId = await createOcConversation(ctx, sandboxId);
 
@@ -505,7 +505,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
-          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
+          model: { providerID: 'kortix', modelID: 'morph-dsv41flash' },
           parts: [
             {
               type: 'text',
@@ -611,7 +611,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
-          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
+          model: { providerID: 'kortix', modelID: 'morph-dsv41flash' },
           parts: [
             {
               type: 'text',
@@ -983,6 +983,7 @@ flow(
           client_message_id: clientMessageId,
           message_id: wireMessageId,
           parts: [{ type: 'text', text: 'SESS-25 inbox prompt' }],
+          placement: 'transcript',
           overrides: { directory: '/workspace' },
         },
         { params },
@@ -1054,6 +1055,9 @@ flow(
       }
       if (mine.client_message_id !== clientMessageId) {
         throw new Error(`inbox row carries the wrong client id: ${mine.client_message_id}`);
+      }
+      if (mine.placement !== 'transcript' || mine.full_text !== 'SESS-25 inbox prompt') {
+        throw new Error('Inbox did not preserve placement and full accepted text');
       }
       if (!['queued', 'waiting', 'delivering', 'failed'].includes(mine.state)) {
         throw new Error(`unexpected prompt state: ${mine.state}`);

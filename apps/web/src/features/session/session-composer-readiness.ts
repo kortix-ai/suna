@@ -110,6 +110,9 @@ const RUNTIME_UNREACHABLE_NOTICE =
 
 export function sessionComposerReadiness(input: {
   runtimeReady: boolean;
+  pendingPrompt?: boolean;
+  /** A queued status already describes this send; do not ask for another. */
+  pendingDelivery?: boolean;
   /**
    * The CONTROL PLANE holds an open turn for this session right now — pass
    * `serverHoldsOpenTurn(working)`, never `working.source === 'server'`.
@@ -195,6 +198,13 @@ export function sessionComposerReadiness(input: {
       retryable: true,
     };
   }
+  if (input.pendingPrompt) {
+    return {
+      ready: false,
+      notice: 'Starting your computer… your message will send automatically.',
+      retryable: false,
+    };
+  }
   if (input.connection === 'waking') {
     // A PARKED / idle box: the control plane says the sandbox is not up, and
     // nothing is actively booting — a genuine boot-stall is caught by `stalled`
@@ -205,7 +215,7 @@ export function sessionComposerReadiness(input: {
     // session that is merely asleep (RC-3).
     return {
       ready: false,
-      notice: 'This session is idle — your next message starts it automatically and is delivered.',
+      notice: input.pendingDelivery ? null : 'This session is idle — your next message starts it automatically and is delivered.',
       retryable: false,
     };
   }

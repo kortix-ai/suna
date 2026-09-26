@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { dispatch, type OpencodeTurnError } from '../opencode-events'
+import { dispatch, type OpencodeTurnError } from '../harness/open-code/events'
 
 describe('dispatch — session.error flattening', () => {
   test('flattens an APIError (out of credits) into name/message/statusCode', () => {
@@ -72,12 +72,23 @@ describe('dispatch — session.error flattening', () => {
     expect(called).toBe(false)
   })
 
-  test('session.idle dispatches the idle handler with the sessionID', () => {
+  test('session.idle dispatches the idle handler with the sessionID, not the status handler', () => {
     let id: string | undefined
+    let statusCalls = 0
     dispatch(
       { type: 'session.idle', properties: { sessionID: 'ses_root' } },
-      { onSessionIdle: (sid) => (id = sid) },
+      { onSessionIdle: (sid) => (id = sid), onSessionStatus: () => statusCalls++ },
     )
     expect(id).toBe('ses_root')
+    expect(statusCalls).toBe(0)
+  })
+
+  test('a session.status frame (as OpenCode 1.18.19 sends it) reaches the status handler', () => {
+    const seen: Array<[string, string]> = []
+    dispatch(
+      { type: 'session.status', properties: { sessionID: 'ses_root', status: { type: 'busy' } } },
+      { onSessionStatus: (s, t) => seen.push([s, t]) },
+    )
+    expect(seen).toEqual([['ses_root', 'busy']])
   })
 })

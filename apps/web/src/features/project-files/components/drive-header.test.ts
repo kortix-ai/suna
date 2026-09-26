@@ -90,6 +90,7 @@ describe('driveHeaderClass', () => {
 
   test('tags every standalone header with the desktop title-bar hook', () => {
     expect(driveHeaderClass(true)).toContain(FILES_HEADER_DESKTOP_CLASS);
+    expect(driveHeaderClass(true)).toContain('kx-titlebar-band-height');
   });
 
   /**
@@ -143,19 +144,18 @@ describe('desktop title-bar clearance rules', () => {
     expect(bandVarPx(rule![1], 'macos')).toBe(band.contentLeft);
   });
 
-  test('the right indent clears the Win/Linux window controls', () => {
+  test('the right indent stays zero with the Win/Linux native frame', () => {
     const rule = new RegExp(
       `html\\[data-desktop='true'\\] \\.${FILES_HEADER_DESKTOP_CLASS} \\{\\s*padding-right: calc\\([^)]*var\\((--[\\w-]+)\\)`,
     ).exec(globalsCss);
 
     expect(rule).not.toBeNull();
-    expect(bandVarPx(rule![1], 'other')).toBeGreaterThan(0);
+    expect(bandVarPx(rule![1], 'other')).toBe(0);
   });
 
-  // macOS draws its controls on the LEFT, so the same variable must resolve to
-  // zero there — otherwise every row wearing it reserves a phantom right
-  // gutter on the platform that does not need one.
-  test('the right-edge reservation is platform-scoped, not global', () => {
+  // macOS draws its controls on the left, so neither platform needs a right
+  // gutter inside web content.
+  test('the right-edge reservation stays zero on macOS', () => {
     const macBlock = globalsCss.match(/html\[data-desktop-platform='macos'\]\s*\{([^}]*)\}/);
     expect(macBlock).not.toBeNull();
     expect(macBlock![1]).toMatch(/--kx-titlebar-controls-width:\s*0px/);

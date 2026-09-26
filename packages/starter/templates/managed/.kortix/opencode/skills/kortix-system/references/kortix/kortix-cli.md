@@ -173,9 +173,9 @@ the exact HTTPS hosts the policy lists.
 
 | Command | Effect |
 | --- | --- |
-| `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. |
+| `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. In a session it lists only your agent's granted secrets; a declared key outside the grant shows `not granted` (set or not, you never receive it — ask the human to enable it under Customize → Agents → your agent → Secrets). |
 | `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). |
-| `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER the value(s)** — you never see/handle the raw key. Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `runtime` = injected into the sandbox env), `--expires <minutes>` (default 30). Use this when you need a key you don't have. |
+| `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER the value(s)** — you never see/handle the raw key. Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `connector` = server-side only; pass `--scope runtime` for a value your code reads from the env), `--expires <minutes>` (default 7 days). Warns when your agent's grant will withhold a requested name. Use this when you need a key you don't have. |
 | `kortix secrets unset NAME …` | Remove. |
 | `kortix secrets call IDENTIFIER URL [--method METHOD] [--header NAME:VALUE] [--data BODY\|--data-file PATH]` | (Experimental network enforcement only.) Send one policy-bound HTTPS request. Kortix adds the secret server-side. Use it when a request cannot be relayed transparently. |
 
@@ -194,21 +194,27 @@ has no sandbox presence at all.
 
 ### Connectors — call external tools
 
-A connector defines actions against an external system. A connection stores one
-usable authorization. Calls run **server-side** through the connector gateway,
-so no third-party credential enters the sandbox. The same gateway is available
-through the `kortix-connectors` **MCP**, this **CLI**, and the
-`@kortix/sdk` **TypeScript package**. JSON output.
+A connector defines actions against an external system. **A connector is not
+an account** — one connector (e.g. Gmail) can hold several accounts, each
+SHARED with the whole project or PRIVATE to one member. Calls run
+**server-side** through the connector gateway, so no third-party credential
+enters the sandbox. The same gateway is available through the
+`kortix-connectors` **MCP**, this **CLI**, and the `@kortix/sdk` **TypeScript
+package**. JSON output.
 
 | Command | Effect |
 | --- | --- |
-| `kortix connectors ls [--session <id>]` | List project or session-visible connectors and actions. |
+| `kortix connectors ls [--session <id>]` | List project or session-visible connectors and actions (an `ACCOUNTS` column shows how many each holds). |
 | `kortix connectors discover "<intent>"` | Search actions by natural language (`--limit`). |
 | `kortix connectors show <connector>.<action>` | Show one action's input schema and risk. |
-| `kortix connectors call <connector> <action> '<json>'` | Invoke an action. The gateway resolves the connection, enforces policy, and audits. |
+| `kortix connectors accounts <slug>` | List the accounts a connector holds, default first. Use this whenever it matters which account runs, or a human asks which/how many are connected — never infer it from one call's result. |
+| `kortix connectors accounts <slug> --default <label>` | Pin one account as the one an unnamed call uses. |
+| `kortix connectors call <connector> <action> '<json>' [--account <label\|id\|me\|project>]` | Invoke an action, optionally naming which account. Omit `--account` for the default. The gateway resolves the account, enforces policy, and audits. Every successful result echoes `account` — say which one ran when it matters. |
+| `kortix connectors call <connector> <action> @args.json --attach <file>` | Attach a file from `/workspace/{output,artifacts,reports,deliverables}`. The gateway writes it into the action's attachments array as the provider's item (e.g. Microsoft Graph `body.message.attachments`). `@file` / `-` read large args. |
+| `kortix connectors upload <file> --connector <slug>` | Stage one file; prints `ref` (`{"$kortix_attachment":"<id>"}`) to place in args — an attachments[] element or a base64 field such as `contentBytes`. |
 | `kortix connectors add <slug> --provider composio --app <toolkit> --apply` | Add a managed SaaS connector now, commit it to `kortix.yaml` on main, and sync it. |
 | `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
-| `kortix connectors connect <slug>` | Mint the configured provider's connection URL for the human. |
+| `kortix connectors connect <slug> [--owner me\|project]` | Mint the configured provider's authorization URL for a NEW account. `me` (default) is yours alone; `project` shares it with the whole project. |
 | `kortix connectors mcp` | Run the `kortix-connectors` stdio MCP server. |
 
 > Use Composio for every new managed SaaS connector. Pipedream is retained only
@@ -216,7 +222,15 @@ through the `kortix-connectors` **MCP**, this **CLI**, and the
 > the human explicitly approves the `--allow-legacy-pipedream` fallback.
 
 > Inside a session, the `kortix-connectors` MCP tools can expose the same
-> list/discover/show/call loop. Use the CLI when those tools are absent.
+> list/discover/show/accounts/call loop. Use the CLI when those tools are
+> absent.
+
+> **Choosing the account:** one account → just call. Several, and the human
+> named one → `--account <label>`. Several, and it is unclear which → ASK,
+> never guess. If nothing is named and nothing is pinned, a call with several
+> reachable accounts is refused with reason `account_required` — pass
+> `--account`, or pin a default with `kortix connectors accounts <slug>
+> --default <label>`.
 
 ### Env — dotenv ↔ secrets
 

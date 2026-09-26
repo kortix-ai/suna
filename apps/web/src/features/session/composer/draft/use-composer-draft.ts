@@ -1,7 +1,7 @@
 'use client';
 
 import type { JSONContent } from '@tiptap/core';
-import { type RefObject, useCallback, useEffect, useRef } from 'react';
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
 
@@ -23,13 +23,22 @@ import { clearDraft, readDraft, writeDraft } from './composer-draft-store';
  */
 const SAVE_DEBOUNCE_MS = 400;
 
+const NO_QUOTES: readonly string[] = [];
+
 export interface UseComposerDraftInput {
+  active?: boolean;
   /** Omitted or null → the composer persists nothing (marketing demo, tests). */
   scope: DraftScope | null | undefined;
   editorRef: RefObject<ComposerEditorHandle | null>;
   /** The editor element exists, so the handle's methods are safe to call. */
   editorReady: boolean;
   attachedFiles: readonly AttachedFile[];
+  /**
+   * The reply quotes in the card above the input, in order. Saved with the
+   * document; a change to the list schedules a save on its own, because a
+   * quote can arrive with no keystroke after it.
+   */
+  quotes?: readonly string[];
   /** An explicit prefill outranks a stored draft — see `shouldRestoreDraft`. */
   hasPrefill: boolean;
   /** Called once, with the validated draft, when it is this draft's turn. */
@@ -53,10 +62,12 @@ export interface UseComposerDraftResult {
  * contract) and lifting the document into state would defeat it.
  */
 export function useComposerDraft({
+  active = true,
   scope,
   editorRef,
   editorReady,
   attachedFiles,
+  quotes = NO_QUOTES,
   hasPrefill,
   onRestore,
 }: UseComposerDraftInput): UseComposerDraftResult {
@@ -70,9 +81,11 @@ export function useComposerDraft({
   const scopeRef = useRef(scope);
   const userIdRef = useRef(userId);
   const filesRef = useRef(attachedFiles);
+  const quotesRef = useRef(quotes);
   const pendingRef = useRef<{ doc: JSONContent; isEmpty: boolean } | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoredKeyRef = useRef<string | null>(null);
+  const activeRef = useRef(active);
 
   useEffect(() => {
     scopeRef.current = scope;
@@ -108,20 +121,46 @@ export function useComposerDraft({
         doc: pending.doc,
         documentIsEmpty: pending.isEmpty,
         files: filesRef.current,
+        quotes: quotesRef.current,
         userId: userIdRef.current,
       }),
     );
   }, []);
 
+  useLayoutEffect(() => {
+    // Flush before the replacement composer's passive restore effect runs.
+    activeRef.current = active;
+    if (!active) flush();
+    return () => {
+      flush();
+      activeRef.current = false;
+    };
+  }, [active, flush]);
+
   const handleDocChange = useCallback(
     (doc: JSONContent, isEmpty: boolean) => {
-      if (!scopeRef.current || !userIdRef.current) return;
+      if (!activeRef.current || !scopeRef.current || !userIdRef.current) return;
       pendingRef.current = { doc, isEmpty };
       if (timerRef.current !== null) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(flush, SAVE_DEBOUNCE_MS);
     },
     [flush],
   );
+
+  /**
+   * A quote list change is a draft change. The snapshot is the live editor's
+   * document, read now, the same pair `handleDocChange` would receive.
+   * Skipped while the list is unchanged, so the mount itself never writes: an
+   * empty first snapshot would overwrite the stored draft before it restores.
+   */
+  useEffect(() => {
+    if (quotesRef.current === quotes) return;
+    quotesRef.current = quotes;
+    const editor = editorRef.current;
+    if (!editorReady || !editor) return;
+    const doc = editor.getDocument();
+    if (doc) handleDocChange(doc, editor.isEmpty());
+  }, [quotes, editorReady, editorRef, handleDocChange]);
 
   const clearSavedDraft = useCallback(() => {
     if (timerRef.current !== null) {
@@ -130,7 +169,7 @@ export function useComposerDraft({
     }
     pendingRef.current = null;
     const activeScope = scopeRef.current;
-    if (activeScope) clearDraft(activeScope);
+    if (activeRef.current && activeScope) clearDraft(activeScope);
   }, []);
 
   /**
@@ -164,6 +203,7 @@ export function useComposerDraft({
     const key = draftScopeKey(scope);
     if (
       !shouldRestoreDraft({
+        active,
         editorReady,
         editorIsEmpty: editorRef.current?.isEmpty() ?? true,
         hasPrefill,
@@ -175,7 +215,7 @@ export function useComposerDraft({
     restoredKeyRef.current = key;
     const stored = readDraft(scope, userId);
     if (stored) onRestore(stored);
-  }, [scope, userId, editorReady, hasPrefill, editorRef, onRestore]);
+  }, [active, scope, userId, editorReady, hasPrefill, editorRef, onRestore]);
 
   return { handleDocChange, clearSavedDraft };
 }

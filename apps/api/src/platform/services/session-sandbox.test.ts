@@ -19,7 +19,7 @@
 //
 // This test drives the REAL provisionSessionSandbox with every external
 // dependency mocked (provider, snapshot builder, token minting, billing,
-// LLM-gateway entitlement) so it can run fully offline, deterministic, and
+// LLM-gateway flag) so it can run fully offline, deterministic, and
 // fast. The DB is a lightweight fake that records every update() call and
 // compiles its WHERE condition to real SQL text via drizzle's PgDialect (no
 // live Postgres needed) so the test asserts on the actual guard clauses, not
@@ -51,6 +51,7 @@ const USER_ID = '00000000-0000-4000-a000-00000000a004';
 const EXTERNAL_ID = 'ext-daytona-1';
 
 // ── mutable test state, reset in beforeEach ─────────────────────────────────
+let insertedSandboxRows: Array<Record<string, unknown>> = [];
 let updateCalls: Array<{
   table: unknown;
   updates: Record<string, unknown>;
@@ -69,7 +70,7 @@ let scenario: {
 let removedIds: string[] = [];
 let stoppedIds: string[] = [];
 let onRemoved: (() => void) | null = null;
-let computeSessionsOpened: Array<{ sandboxId: string; accountId: string }> = [];
+let computeSessionsOpened: Array<{ sandboxId: string; accountId: string; spec?: unknown }> = [];
 let onComputeOpened: (() => void) | null = null;
 let recordedEvents: Array<{ outcome: string; marks?: Array<{ label: string }> }> = [];
 let identityConflict = false;
@@ -100,6 +101,7 @@ let activeRouting: {
   activeSnapshotName: string | null;
 } | null = null;
 let agentGrantError: Error | null = null;
+let gatewayFlag = false;
 const testConfig = {
   ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
   KORTIX_URL: 'http://localhost:8008',
@@ -113,6 +115,20 @@ function compile(condition: unknown): { sql: string; params: unknown[] } {
   } catch {
     return { sql: '', params: [] };
   }
+}
+
+/**
+ * The keys a sandbox write merges into its metadata. Every writer here strips
+ * and merges in SQL (`(metadata - …) || $patch::jsonb`), so the patch is the
+ * one JSON-object parameter of the rendered fragment.
+ */
+function mergedMetadata(updates: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!updates?.metadata) return {};
+  for (const param of compile(updates.metadata).params) {
+    if (typeof param !== 'string' || !param.startsWith('{')) continue;
+    return JSON.parse(param) as Record<string, unknown>;
+  }
+  return {};
 }
 
 // A resolved Promise with `.returning()` bolted on so it satisfies both the
@@ -134,6 +150,7 @@ mock.module('../../shared/db', () => ({
   db: {
     insert: (table: unknown) => ({
       values: (v: Record<string, unknown>) => {
+        if (table === sessionSandboxes) insertedSandboxRows.push(v);
         const result = {
           returning: async () => (identityConflict && table === sessionSandboxes ? [] : [{ ...v }]),
           onConflictDoNothing: () => result,
@@ -294,12 +311,19 @@ mock.module('../../snapshots/builder', () => ({
       contentHash: 'meta-hash-1',
       isDefault: false,
       built: false,
+      runtimeProfile: 'meta',
+      spec: { cpu: 1, memoryGb: 2, diskGb: 8 },
     };
   },
   deleteSandboxImage: async (_project: unknown, opts: { slug?: string; provider?: string }) => {
     standardImageDeleteCalls.push(opts);
   },
-  resolveTemplate: async (_project: unknown, _slug: unknown) => ({}),
+  // The real resolver throws TemplateNotFoundError for `meta` / `pi-worker`:
+  // neither is a project template.
+  resolveTemplate: async (_project: unknown, slug: unknown) => {
+    if (slug === 'meta' || slug === 'pi-worker') throw new Error(`template ${String(slug)} not found`);
+    return {};
+  },
 }));
 
 let onProviderEvent: (() => void) | null = null;
@@ -343,10 +367,6 @@ mock.module('../../repositories/service-accounts', () => ({
   },
 }));
 
-mock.module('../../shared/account-limits', () => ({
-  accountEntitledToLlmGateway: async (_accountId: string) => false,
-}));
-
 mock.module('../../projects/triggers', () => ({
   readManifest: async () => null,
 }));
@@ -364,7 +384,7 @@ mock.module('../../projects/agents', () => ({
 }));
 
 mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: (_metadata: unknown) => false,
+  projectLlmGatewayEnabled: (_metadata: unknown) => gatewayFlag,
 }));
 
 mock.module('../../shared/session-failure-notifier', () => ({
@@ -385,6 +405,7 @@ function waitFor(setResolver: (resolve: () => void) => void, timeoutMs = 2000): 
 
 beforeEach(() => {
   updateCalls = [];
+  insertedSandboxRows = [];
   scenario = {
     archiveBeforeFinish: false,
     projectSessionStatusAtCheck: 'provisioning',
@@ -415,6 +436,7 @@ beforeEach(() => {
   providerSyncCalls = [];
   activeRouting = null;
   agentGrantError = null;
+  gatewayFlag = false;
 });
 
 function baseOpts() {
@@ -455,13 +477,31 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       sessionId: SANDBOX_ID,
       agentGrant: {
         agent: 'meta',
-        kortixCli: 'all',
+        permissions: 'all',
         connectors: [],
         env: [],
       },
       serviceAccountId: null,
     });
     expect(serviceAccountCreateCalls).toHaveLength(0);
+  });
+
+  test('meta sessions are metered at the size of the image they boot from', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      agentName: 'meta',
+      sandboxSlug: 'meta',
+    });
+    await opened;
+
+    expect(computeSessionsOpened).toHaveLength(1);
+    expect(computeSessionsOpened[0]).toMatchObject({
+      sandboxId: SANDBOX_ID,
+      spec: { cpuCores: 1, memoryGb: 2, diskGb: 8, gpuCount: 0 },
+    });
   });
 
   test('session starts request the OpenCode runtime image', async () => {
@@ -509,6 +549,45 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(finishCall?.updates.config).toMatchObject({ serviceKey: 'exec-tok-1' });
   });
 
+  test('a gateway project boots with the gateway env on any plan (the gateway enforces the plan per request)', async () => {
+    // The pi harness has no native-provider path: a box booted without
+    // KORTIX_LLM_BASE_URL never starts pi, so its first prompt is never
+    // delivered. A free account still gets the gateway; the gateway limits it
+    // to free/BYOK models per request (principal.freeModelsOnly).
+    gatewayFlag = true;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars.KORTIX_LLM_BASE_URL).toBe('http://localhost:8008/v1/llm');
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect((finishCall?.updates.config as Record<string, unknown>).llmGatewayEnabled).toBe(true);
+  });
+
+  test('a native project boots without the gateway env', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars).not.toHaveProperty('KORTIX_LLM_BASE_URL');
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect((finishCall?.updates.config as Record<string, unknown>).llmGatewayEnabled).toBe(false);
+  });
+
   test('stamps metadata.instanceId from KORTIX_INSTANCE_ID on the row it creates, and the finish write keeps it', async () => {
     // Instance scoping for background work on a shared DB (projects/instance-scope.ts).
     // The stamp is what lets another local API instance recognise this box as
@@ -525,7 +604,12 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         (call) =>
           call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
       );
-      expect((finishCall?.updates.metadata as Record<string, unknown>).instanceId).toBe('wt-instance-a');
+      const inserted = insertedSandboxRows[0]?.metadata as Record<string, unknown> | undefined;
+      expect(inserted?.instanceId).toBe('wt-instance-a');
+      // The finish write merges into the row, so the stamp survives unless the
+      // write strips or replaces it. It does neither.
+      expect(compile(finishCall?.updates.metadata).sql).not.toContain(`'instanceId'`);
+      expect(mergedMetadata(finishCall?.updates)).not.toHaveProperty('instanceId');
     } finally {
       delete (testConfig as Record<string, unknown>).KORTIX_INSTANCE_ID;
     }
@@ -542,7 +626,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       (call) =>
         call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
     );
-    expect((finishCall?.updates.metadata as Record<string, unknown>).instanceId).toBeUndefined();
+    expect(mergedMetadata(finishCall?.updates).instanceId).toBeUndefined();
   });
 
   test('forwards the restricted-workspace project-image denial into image resolution', async () => {
@@ -747,11 +831,11 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       (call) =>
         call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
     );
-    expect(finishCall?.updates.metadata).toMatchObject({
+    expect(mergedMetadata(finishCall?.updates)).toMatchObject({
       providerExternalId: 'ext-e2b-1',
       runtimeArtifact: { provider: 'e2b', artifactType: 'e2b_template' },
     });
-    expect(finishCall?.updates.metadata).not.toHaveProperty('daytonaSandboxId');
+    expect(mergedMetadata(finishCall?.updates)).not.toHaveProperty('daytonaSandboxId');
     expect(computeSessionsOpened[0]).toMatchObject({ provider: 'e2b' });
   });
 
@@ -788,9 +872,9 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       (call) =>
         call.table === sessionSandboxes &&
         call.updates.status === 'error' &&
-        (call.updates.metadata as Record<string, unknown>)?.failureCategory === 'provider-capacity',
+        mergedMetadata(call.updates).failureCategory === 'provider-capacity',
     );
-    expect(terminal?.updates.metadata).toMatchObject({
+    expect(mergedMetadata(terminal?.updates)).toMatchObject({
       initAttempts: 1,
       initMaxAttempts: 1,
       failureCategory: 'provider-capacity',
@@ -880,13 +964,16 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(computeSessionsOpened[0].sandboxId).toBe(SANDBOX_ID);
     expect(computeSessionsOpened[0].accountId).toBe(ACCOUNT_ID);
 
-    // The session_sandboxes finish update is guarded by `status != 'archived'`.
+    // The session_sandboxes finish update never leaves `archived`: its
+    // status guard names every other state.
     const finishCall = updateCalls.find(
       (c) => c.table === sessionSandboxes && 'externalId' in c.updates && 'config' in c.updates,
     );
     expect(finishCall).toBeTruthy();
-    expect(finishCall?.sql).toContain('<>');
-    expect(finishCall?.params).toContain('archived');
+    expect(finishCall?.updates.status).toBe('active');
+    expect(finishCall?.sql).toContain('in (');
+    expect(finishCall?.params).toContain('provisioning');
+    expect(finishCall?.params).not.toContain('archived');
 
     // The project_sessions running-flip is guarded by `status IN (queued, branching, provisioning)`.
     const flipCall = updateCalls.find(
@@ -943,7 +1030,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       (c) => c.table === sessionSandboxes && c.updates.status === 'stopped',
     );
     expect(preserved?.updates.externalId).toBe(EXTERNAL_ID);
-    expect(preserved?.updates.metadata).toMatchObject({ stoppedDuringProvisioning: true });
+    expect(mergedMetadata(preserved?.updates)).toMatchObject({ stoppedDuringProvisioning: true });
   });
 });
 

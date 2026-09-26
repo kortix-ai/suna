@@ -6,9 +6,11 @@ import {
   PROVIDER_PAGE_SIZE,
   ProviderConnectView,
   providerKeyFieldId,
+  supportsPooledProviderKey,
   type ProviderConnectRow,
   type ProviderConnectViewProps,
 } from './provider-connect';
+import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 
 /**
  * `ProviderConnectView` is the pure, props-only half of `provider-connect.tsx`
@@ -477,66 +479,38 @@ describe('ProviderConnectView — the subscription slot', () => {
   });
 });
 
-describe('ProviderConnectView — connection scope stays inside its row', () => {
-  test('wraps the existing fields and subscription once without adding a second provider list', () => {
-    const html = renderToStaticMarkup(
-      <ProviderConnectView
-        {...props({
-          subscriptionSlots: { openai: <button>Connect ChatGPT</button> },
-          wrapCredentials: (provider, fields) => (
-            <section data-scope-for={provider.id}>{fields}</section>
-          ),
-          instruction: 'Choose a personal or project connection.',
-        })}
-      />,
-    );
-    expect(html.match(/data-provider-row="openai"/g)).toHaveLength(1);
-    expect(html.match(/Connect ChatGPT/g)).toHaveLength(1);
-    expect(html).toContain('data-scope-for="openai"');
-    expect(html).toContain('Choose a personal or project connection.');
-    expect(html).not.toContain('Everyone on this project can use it.');
+describe('ProviderConnectView — pooled provider keys', () => {
+  test('offers pooled keys only where the gateway can route a single API key', () => {
+    expect(supportsPooledProviderKey(LLM_PROVIDER_BY_ID.get('anthropic'))).toBe(true);
+    expect(supportsPooledProviderKey(LLM_PROVIDER_BY_ID.get('openai'))).toBe(true);
+    expect(supportsPooledProviderKey(LLM_PROVIDER_BY_ID.get('google'))).toBe(true);
+    expect(supportsPooledProviderKey(LLM_PROVIDER_BY_ID.get('qvac'))).toBe(false);
   });
 
-  test('offers personal scope to readers without exposing shared credential fields', () => {
-    const html = renderToStaticMarkup(
-      <ProviderConnectView
-        {...props({
-          canWrite: false,
-          wrapCredentials: (_provider, fields) => (
-            <section>
-              <button>Choose connection</button>
-              {fields}
-            </section>
-          ),
-        })}
-      />,
+  test('shows the key manager in place of the single-key field when enabled', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView {...props({
+        rows: [ANTHROPIC],
+        pooledSecretsEnabled: true,
+        pooledSlots: { anthropic: <button>Add another Anthropic key</button> },
+      })} />,
     );
-    expect(html).toContain('Choose connection');
-    expect(html).not.toContain('type="password"');
+    expect(out).toContain('Add another Anthropic key');
+    // New connections are owner-only until shared (default since 2026-09-21).
+    expect(out).toContain('New ones are private to you until you share them');
+    expect(out).not.toContain('Paste your Anthropic API key');
+    expect(out).not.toContain('it saves when you click away');
   });
-});
 
-describe('ProviderConnectView — connection actions', () => {
-  test('replaces inline credentials with one action per provider and keeps reader instructions', () => {
-    const html = renderToStaticMarkup(
-      <ProviderConnectView
-        {...props({
-          canWrite: false,
-          rows: [OPENAI],
-          instruction: 'Connect your account or add a connection for this project.',
-          wrapCredentials: () => (
-            <>
-              <span>Not connected</span>
-              <button>Connect</button>
-            </>
-          ),
-        })}
-      />,
+  test('keeps an existing project key visible during the pooled transition', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView {...props({
+        rows: [{ ...ANTHROPIC, connected: true }],
+        pooledSecretsEnabled: true,
+        pooledSlots: { anthropic: <button>Add another Anthropic key</button> },
+      })} />,
     );
-    expect(html.match(/data-provider-row="openai"/g)).toHaveLength(1);
-    expect(html.match(/<button[^>]*>Connect<\/button>/g)).toHaveLength(1);
-    expect(html).not.toContain('type="password"');
-    expect(html).not.toContain('role="combobox"');
-    expect(html).toContain('Connect your account or add a connection for this project.');
+    expect(out).toContain('Existing project key');
+    expect(out).toContain('Saved — paste a new key to replace it');
   });
 });

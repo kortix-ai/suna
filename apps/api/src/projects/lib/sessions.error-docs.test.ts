@@ -12,10 +12,7 @@ import { join, resolve } from 'node:path';
 const REPO_ROOT = resolve(import.meta.dir, '../../../../..');
 const API_SRC = join(REPO_ROOT, 'apps/api/src');
 
-const ERROR_TABLES = [
-  'docs/KORTIX_AS_A_BACKEND_GUIDE.md',
-  'apps/web/content/docs/backend.mdx',
-];
+const ERROR_TABLES = ['apps/web/content/docs/backend.mdx'];
 
 function apiSourceText(): string {
   const parts: string[] = [];
@@ -99,35 +96,30 @@ describe('KaaB error tables match the codes the API emits', () => {
     }
   });
 
-  test('the active CONNECTOR_CONNECTION_REQUIRED code stays in the tables', () => {
-    // The required-connection gate emits this code from session creation and
-    // prompt preflight. Keep both public error tables aligned with that contract.
+  test('the retired CONNECTOR_CONNECTION_REQUIRED code is no longer documented as live', () => {
+    // No route emits it since the session-level connector gate was retired
+    // (2026-09-16). The guides mention it only as history, outside the error
+    // tables; a table row would promise a refusal that can never happen.
     for (const relativePath of ERROR_TABLES) {
-      expect(documentedErrorCodes(readFileSync(join(REPO_ROOT, relativePath), 'utf8'))).toContain(
+      expect(documentedErrorCodes(readFileSync(join(REPO_ROOT, relativePath), 'utf8'))).not.toContain(
         'CONNECTOR_CONNECTION_REQUIRED',
       );
     }
   });
 
-  test('every required-connector refusal code is documented in every table', () => {
-    // Derived from the resolution union rather than hand-listed, so a third
-    // refusal code added to the gate fails here until it is documented.
-    const union = readFileSync(join(import.meta.dir, 'session-connector-bindings.ts'), 'utf8')
-      .split('export type RequiredConnectorResolution =')[1]
-      ?.split('\nexport ')[0];
-    expect(union).toBeTruthy();
-    const gateCodes = [...(union as string).matchAll(/code: '([A-Z][A-Z0-9_]+)'/g)].map(
-      ([, code]) => code,
+  // The session-level required-connector GATE is retired (connection-access.ts:
+  // credentials are a call-time choice, not a session gate). The union type
+  // this test used to derive its code list from —
+  // `RequiredConnectorResolution` in session-connector-bindings.ts — no longer
+  // exists, and neither code it named is emitted by any route anymore. Pinned
+  // here so a resurrected gate (or a resurrected phantom doc entry) fails a
+  // test instead of shipping silently.
+  test('the retired required-connector gate stays retired: no resolution union, no live refusal', () => {
+    const sessionBindingsSource = readFileSync(
+      join(import.meta.dir, 'session-connector-bindings.ts'),
+      'utf8',
     );
-    expect(gateCodes.sort()).toEqual([
-      'CONNECTOR_CONNECTION_REQUIRED',
-      'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
-    ]);
-
-    for (const relativePath of ERROR_TABLES) {
-      const codes = documentedErrorCodes(readFileSync(join(REPO_ROOT, relativePath), 'utf8'));
-      for (const code of gateCodes) expect({ relativePath, code, listed: codes.includes(code) })
-        .toEqual({ relativePath, code, listed: true });
-    }
+    expect(sessionBindingsSource).not.toContain('RequiredConnectorResolution');
+    expect(sessionBindingsSource).not.toContain('REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE');
   });
 });

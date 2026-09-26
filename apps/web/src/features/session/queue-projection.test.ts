@@ -1,6 +1,6 @@
+import type { QueuedDraft } from '@/stores/queued-draft-store';
 import type { RemovedSessionPrompt, SessionPrompt } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import type { QueuedDraft } from '@/stores/queued-draft-store';
 import type { AttachedFile } from './composer/types';
 import { cleanPromptText, composeTakeBack, projectQueueRows } from './queue-projection';
 
@@ -40,6 +40,26 @@ const remoteFile: AttachedFile = {
 };
 
 describe('projectQueueRows', () => {
+  test('conversation placement stays out of the composer list, including uploads', () => {
+    const { rows, heldCount } = projectQueueRows({
+      prompts: [
+        prompt({ placement: 'transcript', reason: 'held' }),
+        prompt({ prompt_id: 'composer', placement: 'composer' }),
+      ],
+      drafts: [draft('upload', { placement: 'transcript', posted: false })],
+    });
+    expect(rows.map((row) => row.id)).toEqual(['composer']);
+    expect(heldCount).toBe(1);
+  });
+
+  test('a composer entry uses full accepted text after reload', () => {
+    const text = '  const result = await run();\n'.repeat(120).trim();
+    expect(
+      projectQueueRows({ prompts: [prompt({ full_text: text, text: text.slice(0, 2000) })] })
+        .rows[0].text,
+    ).toBe(text);
+  });
+
   test('the order the server listed them in is the order rendered', () => {
     // The inbox delivers oldest first. A list that re-sorts lies about what
     // runs next.
@@ -141,6 +161,19 @@ describe('projectQueueRows', () => {
     expect(rows[0]?.attachmentCount).toBe(1);
   });
 
+  test('a row with several inline quotes shows only its reply text', () => {
+    const { rows } = projectQueueRows({
+      prompts: [
+        prompt({
+          text:
+            '<reply_context>quoted alpha</reply_context>\nreply to alpha\n' +
+            '<reply_context>quoted bravo</reply_context>\nreply to bravo',
+        }),
+      ],
+    });
+    expect(rows[0]?.text).toBe('reply to alpha\nreply to bravo');
+  });
+
   test("this tab's draft supplies the text as typed and its file count", () => {
     const { rows } = projectQueueRows({
       prompts: [prompt({ client_message_id: 'q_1', text: 'server preview' })],
@@ -152,7 +185,10 @@ describe('projectQueueRows', () => {
   test('a row with files and no draft cannot be taken back — its files would be lost', () => {
     const { rows } = projectQueueRows({
       prompts: [
-        prompt({ prompt_id: 'files', attachments: [{ filename: 'a.pdf', mime: 'application/pdf' }] }),
+        prompt({
+          prompt_id: 'files',
+          attachments: [{ filename: 'a.pdf', mime: 'application/pdf' }],
+        }),
         prompt({ prompt_id: 'text' }),
       ],
     });

@@ -60,7 +60,6 @@ import { SandboxTab } from './tabs/sandbox-tab';
 import { SecurityTab } from './tabs/security-tab';
 import { SessionsTab } from './tabs/sessions-tab';
 import { SnapshotsTab } from './tabs/snapshots-tab';
-import { PersonalProviderConnections } from '@/features/providers/personal-provider-connections';
 import { TokensTab } from './tabs/tokens-tab';
 import type { RailGroup, RailItem } from './type';
 import { useSettingsAccountId } from './use-settings-account-id';
@@ -91,7 +90,6 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // Your own API keys are yours in ONE account (the read is account-scoped —
   // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
   // or without a project open like the three above it.
-  'provider-connections',
   'tokens',
   // Same scope as `plan` below — one wallet per account, read through the same
   // resolved id — so it renders wherever `plan` does. Listed before it, in the
@@ -391,8 +389,6 @@ export function SettingsPanelView({
         )}
       >
         <ModalTitle className="sr-only">{modalTitle}</ModalTitle>
-        <div className="kx-titlebar-spacer" aria-hidden />
-
         <SettingsPanelShell
           tab={tab}
           onTabChange={onTabChange}
@@ -481,14 +477,15 @@ export function SettingsPanelShell({
         {isMobile ? (
           <nav
             aria-label={chrome.settings}
-            className="border-border/60 flex h-auto shrink-0 items-center border-b bg-inherit"
+            className="kx-titlebar-row kx-titlebar-band-height kx-settings-mobile-titlebar border-border/60 flex h-auto shrink-0 items-center border-b bg-inherit"
+            data-sidebar-collapsed=""
           >
             <FadedScrollArea
               orientation="horizontal"
               fadeColor="from-background"
-              className="min-w-0 flex-1 py-2"
+              className="kx-settings-mobile-scroll min-w-0 flex flex-1 items-center py-2"
             >
-              <TabsList orientation="horizontal" className="w-fit gap-1 px-2">
+              <TabsList orientation="horizontal" className="kx-settings-mobile-tabs w-fit gap-1 px-2">
                 {allItems.map((item) => (
                   <TabsTrigger
                     key={item.tab}
@@ -504,7 +501,7 @@ export function SettingsPanelShell({
                     <ModalClose asChild key={account.account_id}>
                       <HubLink
                         to={hubTarget(account.account_id)}
-                        className="text-muted-foreground hover:text-foreground flex h-8 w-auto shrink-0 items-center gap-1 px-3 text-sm whitespace-nowrap transition-colors"
+                        className="kx-settings-mobile-org-link text-muted-foreground hover:text-foreground flex h-8 w-auto shrink-0 items-center gap-1 px-3 text-sm whitespace-nowrap transition-colors"
                       >
                         {account.name?.trim() || organizationCopy.fallbackAccountName}
                         <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0 opacity-60" />
@@ -518,7 +515,7 @@ export function SettingsPanelShell({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="text-muted-foreground hit-area-2 shrink-0"
+                  className="kx-settings-mobile-close text-muted-foreground hit-area-2 shrink-0"
                   aria-label={chrome.close}
                 >
                   <Close className="text-foreground size-4 stroke-1" />
@@ -535,7 +532,7 @@ export function SettingsPanelShell({
            `ROW_CLASS` dialect keyed on the Radix `data-state` the trigger
            carries instead of `data-active`. */
           <aside className="flex min-h-0 flex-col border-r bg-inherit">
-            <div className="flex h-11 shrink-0 items-center px-2">
+            <div className="kx-titlebar-row kx-titlebar-band-height kx-overlay-sidebar-titlebar flex h-11 shrink-0 items-center justify-start px-2">
               <ModalClose asChild>
                 <Button
                   variant="ghost"
@@ -630,7 +627,7 @@ export function SettingsPanelShell({
             /* The 44px `Settings / <pane>` bar the account shell puts over its
              content (`account-settings-shell.tsx`). Neither crumb is a link:
              Settings is where you are, and the pane is picked in the rail. */
-            <header className="flex h-11 shrink-0 items-center border-b px-2">
+            <header className="kx-titlebar-row kx-titlebar-band-height flex h-11 shrink-0 items-center border-b px-2">
               <Breadcrumb className="min-w-0 flex-1">
                 <BreadcrumbList className="text-foreground flex-nowrap gap-1 text-sm font-medium sm:gap-1">
                   <BreadcrumbItem className="min-w-0">
@@ -734,7 +731,6 @@ function SettingsTabPane({
   if (item.tab === 'connected') {
     return <ConnectedAccountsTab accountId={accountId} />;
   }
-  if (item.tab === 'provider-connections') return <PersonalProviderConnections />;
   if (item.tab === 'tokens') {
     return <TokensTab accountId={accountId} />;
   }

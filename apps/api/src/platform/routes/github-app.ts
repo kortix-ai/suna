@@ -32,33 +32,41 @@ import { config } from '../../config';
 import { supabaseAuth } from '../../middleware/auth';
 import { requireAdmin } from '../../middleware/require-admin';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
-import {
-  githubBackend,
-  managedGithubInstallId,
-  managedGithubOwner,
-  managedGithubToken,
-} from '../../projects/git-backends/github';
+import { githubBackend } from '../../projects/git-backends/github';
 import {
   buildGitHubAppInstallUrl,
   getGitHubAppInstallation,
   githubAppClientId,
   githubAppClientSecret,
-  githubAppSlug,
   githubAppStateSecret,
   isGithubAppConfigured,
   isGithubAppOAuthConfigured,
+  GITHUB_APP_MANIFEST_PERMISSIONS,
   normalizeGitHubFrontendOrigin,
+  resolveGitHubAppSlug,
   signGitHubAppJwt,
   type GitHubAppInstallState,
   verifyGitHubAppInstallStatePayload,
 } from '../../projects/github';
 import type { AppEnv } from '../../types';
 import {
-  managedGithubAppConfig,
-  refreshManagedGithubAppConfig,
-  resetManagedGithubAppConfig,
-  updateManagedGithubAppConfig,
-} from '../services/managed-github-app';
+  clearAppIdentity,
+  refreshAppIdentity,
+  resolveAppIdentity,
+  storedAppIdentity,
+  writeAppIdentity,
+} from '../services/github-app-identity';
+import {
+  clearGitBackend,
+  refreshGitBackend,
+  resolveGitBackend,
+  writeGitBackend,
+} from '../services/managed-git-backend';
+import {
+  envManagedConflictBody,
+  resolveInstanceGitMutability,
+} from '../services/instance-git-mutability';
+import { readJsonObject } from '../../shared/http-body';
 
 export const githubAppSetupRouter = makeOpenApiApp<AppEnv>();
 
@@ -109,19 +117,10 @@ export function buildGithubAppManifest(opts: {
     callback_urls: [`${base}/v1/platform/github-app/oauth/callback`],
     setup_on_update: true,
     public: false,
-    default_permissions: {
-      administration: 'write',
-      contents: 'write',
-      pull_requests: 'write',
-      metadata: 'read',
-      // Backs the account-linking identity proof (oauth/authorize +
-      // oauth/callback below): GET /orgs/{org}/memberships/{user} and
-      // GET /user/memberships/orgs both require "Members: read" on a GitHub
-      // App user-to-server token — without it, verifyGitHubInstallationAdmin
-      // / listLinkableGitHubAppInstallations (projects/github.ts) 403 for
-      // every organization installation.
-      members: 'read',
-    },
+    // One source: the set `resolveGitHubAppPermissions()` audits a hand-made
+    // App against (projects/github.ts), plus the reserved `pull_requests`. `members: read` backs the
+    // account-linking identity proof (oauth/authorize + oauth/callback below).
+    default_permissions: { ...GITHUB_APP_MANIFEST_PERMISSIONS },
     default_events: [],
     hook_attributes: { url: opts.homepageUrl, active: false },
   };
@@ -418,15 +417,31 @@ function frontendUrl(): string {
   return (config.FRONTEND_URL || '').replace(/\/+$/, '');
 }
 
-/** `<FRONTEND_URL>/accounts/<accountId>?tab=git&github=<status>` — falls back
- *  to `<FRONTEND_URL>/` (or just `/`) when the account can't be resolved. */
-function accountRedirect(accountId: string | null, status: string, reason?: string): string {
-  const base = frontendUrl();
+/**
+ * Where a PLATFORM-SETUP callback lands: the instance-wide admin page, never
+ * an account page. The previous helper built
+ * `<FRONTEND_URL>/accounts/<id>?tab=git`, a route apps/web has never had — so
+ * every managed-git callback 404ed, and the surface itself sat inside one
+ * account's settings while it wrote instance-global state (2026-09-16).
+ */
+function platformSetupRedirect(status: 'connected' | 'error', reason?: string): string {
   const qs = reason ? `github=${status}&reason=${encodeURIComponent(reason)}` : `github=${status}`;
-  if (accountId) return `${base}/accounts/${encodeURIComponent(accountId)}?tab=git&${qs}`;
-  // No account correlation (e.g. a state-less/failed callback) — land on the
-  // frontend root rather than guessing a path (spec: "fall back to `/`").
-  return `${base || ''}/?${qs}`;
+  return `${frontendUrl()}/admin/git?${qs}`;
+}
+
+/**
+ * Where an ACCOUNT-LINK callback lands when it fails: the same setup page the
+ * success hop uses, which knows how to render the reason.
+ */
+function accountLinkErrorRedirect(
+  accountId: string | null,
+  frontendOrigin: string | undefined,
+  reason: string,
+): string {
+  const base = (frontendOrigin ?? frontendUrl()).replace(/\/+$/, '');
+  const params = new URLSearchParams({ github: 'error', reason });
+  if (accountId) params.set('account_id', accountId);
+  return `${base}/github/setup?${params.toString()}`;
 }
 
 export function resolveGitHubInstallCallbackAction(
@@ -447,6 +462,17 @@ export function buildAccountGitHubSetupRedirect(
   });
   if (input.setupAction) params.set('setup_action', input.setupAction);
   return `${baseUrl.replace(/\/+$/, '')}/github/setup?${params.toString()}`;
+}
+
+/**
+ * Every mutation of this instance's GitHub identity or git backend runs this
+ * first. When env owns either half, the UI must not shadow it: the route
+ * answers 409 and names the variables that own it.
+ */
+function envManagedGate(c: any) {
+  const { mutable, envOwnedBy } = resolveInstanceGitMutability();
+  if (mutable) return null;
+  return c.json(envManagedConflictBody(envOwnedBy), 409);
 }
 
 // ─── POST /manifest-start ─────────────────────────────────────────────────────
@@ -474,14 +500,16 @@ githubAppSetupRouter.openapi(
         }),
         'Manifest + create URL + signed state — the frontend POSTs the manifest to `${github_create_url}?state=${state}`',
       ),
-      ...errors(401, 403, 500),
+      ...errors(401, 403, 409, 500),
     },
   }),
   async (c: any) => {
+    const gate = envManagedGate(c);
+    if (gate) return gate;
     try {
       const accountId = c.get('userId') as string;
-      const body = await c.req.json().catch(() => ({}));
-      const org = typeof body?.org === 'string' && body.org.trim() ? body.org.trim() : undefined;
+      const body = await readJsonObject(c);
+      const org = typeof body.org === 'string' && body.org.trim() ? body.org.trim() : undefined;
 
       const manifest = buildGithubAppManifest({
         apiBaseUrl: apiBaseUrl(c),
@@ -530,42 +558,53 @@ githubAppSetupRouter.openapi(
   async (c: any) => {
     const query = c.req.query();
     const parsedState = verifyManifestStartState(query.state);
-    const accountId = parsedState?.accountId ?? null;
 
+    // The manifest flow is instance setup, so every hop of it — success and
+    // failure alike — lands on the platform admin page.
+    const { mutable, envOwnedBy } = resolveInstanceGitMutability();
+    if (!mutable) {
+      console.warn(
+        `[github-app] refusing a manifest callback: env owns this instance (${envOwnedBy.join(', ')})`,
+      );
+      return c.redirect(platformSetupRedirect('error', 'instance_identity_is_env_managed'), 302);
+    }
     if (query.error) {
-      return c.redirect(accountRedirect(accountId, 'error', String(query.error)), 302);
+      return c.redirect(platformSetupRedirect('error', String(query.error)), 302);
     }
     if (!parsedState) {
-      return c.redirect(accountRedirect(null, 'error', 'invalid_state'), 302);
+      return c.redirect(platformSetupRedirect('error', 'invalid_state'), 302);
     }
     if (!query.code) {
-      return c.redirect(accountRedirect(accountId, 'error', 'missing_code'), 302);
+      return c.redirect(platformSetupRedirect('error', 'missing_code'), 302);
     }
 
     try {
       const conversion = await exchangeManifestCode(query.code);
-      await updateManagedGithubAppConfig({
+      // A WHOLE identity, written in one object. The previous flow merged
+      // fields into one shared row, which is how a new App's id ended up
+      // beside another App's installation and another owner's token.
+      await writeAppIdentity({
         appId: String(conversion.id),
         slug: conversion.slug,
         privateKey: conversion.pem,
         clientId: conversion.client_id,
         clientSecret: conversion.client_secret,
         webhookSecret: conversion.webhook_secret,
-        stateSecret: managedGithubAppConfig().stateSecret || randomBytes(32).toString('hex'),
-        // A GitHub App and a PAT are mutually exclusive managed-git methods —
-        // clear any PAT so the active method stays unambiguous (see
-        // git-backends/github.ts's DB-first resolution + POST /pat below).
-        pat: undefined,
-        patOwner: undefined,
+        stateSecret: storedAppIdentity().stateSecret || randomBytes(32).toString('hex'),
       });
+      // The identity just changed, so any stored backend belongs to the
+      // PREVIOUS App and cannot mint a token. Clear it; install-callback
+      // writes the new one.
+      await clearGitBackend();
+      resetManagedGithubAppInstallationHealthCache();
 
-      const installUrl = buildGitHubAppInstallUrl(
+      const installUrl = await buildGitHubAppInstallUrl(
         parsedState.accountId,
         parsedState.nonce,
         'platform_setup',
       );
       if (!installUrl) {
-        return c.redirect(accountRedirect(accountId, 'error', 'install_url_unavailable'), 302);
+        return c.redirect(platformSetupRedirect('error', 'install_url_unavailable'), 302);
       }
       return c.redirect(installUrl, 302);
     } catch (err) {
@@ -573,7 +612,7 @@ githubAppSetupRouter.openapi(
         '[github-app] manifest-callback exchange failed',
         err instanceof Error ? err.message : err,
       );
-      return c.redirect(accountRedirect(accountId, 'error', 'exchange_failed'), 302);
+      return c.redirect(platformSetupRedirect('error', 'exchange_failed'), 302);
     }
   },
 );
@@ -612,8 +651,15 @@ githubAppSetupRouter.openapi(
     const installationId = query.installation_id;
     const action = resolveGitHubInstallCallbackAction(state);
 
+    // An account link and an instance setup fail in different places, because
+    // they are different concepts with different audiences.
+    const fail = (reason: string) =>
+      action === 'link_account'
+        ? accountLinkErrorRedirect(accountId, state?.frontendOrigin, reason)
+        : platformSetupRedirect('error', reason);
+
     if (!installationId) {
-      return c.redirect(accountRedirect(accountId, 'error', 'missing_installation_id'), 302);
+      return c.redirect(fail('missing_installation_id'), 302);
     }
     // Installing straight from the App's GitHub page (rather than through
     // Kortix's Connect button) is a perfectly normal thing to do, and GitHub
@@ -634,25 +680,26 @@ githubAppSetupRouter.openapi(
       return c.redirect(`${base || ''}/?${qs.toString()}`, 302);
     }
     if (action === 'reject') {
-      return c.redirect(accountRedirect(accountId, 'error', 'invalid_state'), 302);
+      return c.redirect(fail('invalid_state'), 302);
     }
 
     try {
-      // Force a fresh read: manifest-callback (which just stored appId/
-      // privateKey) may have run on a different replica than this request.
-      await refreshManagedGithubAppConfig();
+      // Force a fresh read: manifest-callback (which just wrote the identity)
+      // may have run on a different replica than this request.
+      await refreshAppIdentity();
+      await refreshGitBackend();
       if (!isGithubAppConfigured()) {
-        return c.redirect(accountRedirect(accountId, 'error', 'app_not_configured'), 302);
+        return c.redirect(fail('app_not_configured'), 302);
       }
       // `getGitHubAppInstallation` calls GET /app/installations/{id} signed
-      // with THIS app's own JWT — GitHub 404s that call outright if the
-      // installation id doesn't belong to this app, so a successful response
-      // here already proves the installation-belongs-to-app invariant; no
-      // separate check needed before we persist it.
+      // with the CURRENT identity's own JWT — GitHub 404s that call outright
+      // if the installation does not belong to this App, so a successful
+      // response here proves the installation-belongs-to-identity invariant
+      // before anything is written.
       const installation = await getGitHubAppInstallation(installationId);
-      const owner = installation.account?.login;
+      const owner = installation.account?.login?.trim();
       if (!owner) {
-        return c.redirect(accountRedirect(accountId, 'error', 'owner_unresolved'), 302);
+        return c.redirect(fail('owner_unresolved'), 302);
       }
       // GitHub tells us for free whether the install target is an
       // Organization or a personal User account — store it so repo-create
@@ -672,18 +719,31 @@ githubAppSetupRouter.openapi(
         );
       }
 
-      await updateManagedGithubAppConfig({ owner, ownerType, installationId });
+      // Instance setup. Refuse it whenever env owns this instance — the same
+      // rule every mutation route applies, on the one path that reaches the
+      // configuration through a browser redirect instead of an API call.
+      const { mutable, envOwnedBy } = resolveInstanceGitMutability();
+      if (!mutable) {
+        console.warn(
+          `[github-app] refusing an install callback: env owns this instance (${envOwnedBy.join(', ')})`,
+        );
+        return c.redirect(
+          platformSetupRedirect('error', 'instance_identity_is_env_managed'),
+          302,
+        );
+      }
+      await writeGitBackend({ kind: 'app', owner, ownerType, installationId });
       // A fresh install just replaced whatever installationId (if any) was
       // previously cached as healthy/unhealthy — don't let a stale cache
       // entry from before this reconnect answer the next GET /status.
       resetManagedGithubAppInstallationHealthCache();
-      return c.redirect(accountRedirect(accountId, 'connected'), 302);
+      return c.redirect(platformSetupRedirect('connected'), 302);
     } catch (err) {
       console.error(
         '[github-app] install-callback resolve failed',
         err instanceof Error ? err.message : err,
       );
-      return c.redirect(accountRedirect(accountId, 'error', 'resolve_failed'), 302);
+      return c.redirect(fail('resolve_failed'), 302);
     }
   },
 );
@@ -813,7 +873,14 @@ githubAppSetupRouter.openapi(
       // header, or proxy/CDN access logs), so it's the right place for a
       // short-lived credential in a same-tab redirect chain that has no
       // durable server-side session to stash it in.
-      const fragment = new URLSearchParams({ access_token: accessToken });
+      // `github_token`, NOT `access_token`: the popup is a page of the web
+      // app, whose Supabase browser client watches every load for an
+      // implicit-flow `#access_token=` fragment. A GitHub token under that
+      // name is not a Supabase session, the recovery fails, and the client
+      // drops the session cookie the OPENER is signed in with — the setup
+      // page then sees no user and bounces to /auth mid-link (reported on dev
+      // 2026-09-17).
+      const fragment = new URLSearchParams({ github_token: accessToken });
       return c.redirect(`${landingOrigin}/auth/github-connect#${fragment.toString()}`, 302);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -828,17 +895,15 @@ githubAppSetupRouter.openapi(
 
 // ─── GET /status ──────────────────────────────────────────────────────────────
 //
-// `source` reports WHICH of the three managed-git methods (see module
-// docblock + `docs/specs` self-host git settings work) is active, in this
-// precedence order — matching how the accessors themselves resolve
-// (App-DB > App-env > PAT, PAT itself DB-first then env):
-//   'db'   — a GitHub App created via the in-app manifest flow OR pasted in
-//            via POST /app (both write the same DB config).
-//   'env'  — a GitHub App configured via KORTIX_GITHUB_APP_*/GITHUB_APP_* env
-//            vars (the hosted Kortix deployment's setup).
-//   'pat'  — a personal/fine-grained access token, via POST /pat (DB) or
-//            MANAGED_GIT_GITHUB_TOKEN (env).
-//   'none' — managed-git isn't usable via any method yet.
+// Three separate concepts, reported separately and never conflated:
+//   identity_source — who owns appId/privateKey/OAuth client ('env'|'db'|'none')
+//   backend_source  — who owns the managed-repo owner + credential
+//   mutable         — may the UI change either of them?
+//
+// `source` is retained for the existing clients: it reports the ACTIVE
+// managed-git method the way the git backend resolves it (a token
+// short-circuits the App path), so it can never drift from what project
+// creation does.
 
 export type ManagedGitSource = 'db' | 'env' | 'pat' | 'none';
 
@@ -848,7 +913,7 @@ export type ManagedGitSource = 'db' | 'env' | 'pat' | 'none';
  * to the two values `resolveDefaultOwner`/`managedAdminAuth` actually branch
  * on, defaulting to `'Organization'` (the historical assumption, still right
  * for every managed-git org install) for anything unexpected. Shared by both
- * places that resolve an installation's owner type (install-callback below,
+ * places that resolve an installation's owner type (install-callback above,
  * and `verifyPastedGithubAppInstallation`'s "paste an existing App" path) so
  * they can never drift from each other on what counts as a personal account.
  */
@@ -858,46 +923,16 @@ export function resolveInstallationOwnerType(
   return accountType === 'User' ? 'User' : 'Organization';
 }
 
-/**
- * Pure precedence rule behind `GET /status`'s `source` field — split out so
- * it's testable without a Hono context/DB (see unit-github-app-pat.test.ts).
- *
- * Mirrors what the git backend ACTUALLY does, not the order the config is
- * stored in: `managedGithubToken()` (a PAT, DB or env) short-circuits the App
- * path in `managedAdminAuth` and `mintManagedWriteToken`
- * (git-backends/github.ts), so when a PAT exists every managed-repo call uses
- * it and the App is inert. Until 2026-09-07 this reported App-DB > App-env >
- * PAT, so an operator who had just stored a PAT via POST /pat (prod, during the
- * provisioning outage) read `source: "env"` and could not tell whether the
- * token they stored was in use.
- */
-export function resolveManagedGitSource(input: {
-  dbAppConfigured: boolean;
-  envAppConfigured: boolean;
-  patConfigured: boolean;
-}): ManagedGitSource {
-  if (input.patConfigured) return 'pat';
-  if (input.dbAppConfigured) return 'db';
-  if (input.envAppConfigured) return 'env';
-  return 'none';
-}
-
-// ─── Torn-config detection ────────────────────────────────────────────────
-// A stored config can go "torn": the App half (appId/privateKey) and the
-// installation half (owner/installationId) were written by two different
-// manifest-flow runs (e.g. an operator re-ran the flow after an earlier
-// attempt, creating a second App, but a stale installationId from the first
-// App is still sitting in the row) — `isConfigured()` can't see this, it
-// only checks that all four fields are non-empty, not that the
-// installationId actually belongs to the CURRENT appId+privateKey.
+// ─── Installation health ──────────────────────────────────────────────────
+// A stored App backend can go stale for a reason no write-time check can
+// prevent: somebody uninstalls the App on github.com. `GET /app/installations/
+// {id}` signed with the CURRENT identity's JWT answers that in one call —
+// GitHub 404s it outright when the installation is gone or belongs to another
+// App. Cached briefly, since only the status-polling endpoint asks.
 //
-// Detected cheaply: `GET /app/installations/{id}` signed with the CURRENT
-// app's JWT — GitHub 404s that call outright if the installation doesn't
-// belong to this app (same call install-callback already relies on to prove
-// the belongs-to-app invariant at write time; here we're just re-checking it
-// hasn't drifted since). Cached briefly since this only runs off a
-// status-polling endpoint, not a hot path, and only for the 'db' source (env-
-// configured Apps and PATs have no "two configs in one row" failure mode).
+// It no longer detects a "torn" config: identity and backend are each written
+// whole, and a new identity clears the backend, so the two halves can no
+// longer come from two different setup runs.
 const INSTALLATION_HEALTH_TTL_MS = 30_000;
 let installationHealthCache: { key: string; ok: boolean; at: number } | null = null;
 
@@ -935,7 +970,7 @@ githubAppSetupRouter.openapi(
     method: 'get',
     path: '/status',
     tags: ['platform'],
-    summary: 'Managed GitHub App configuration status',
+    summary: 'Instance GitHub identity + git backend status',
     ...auth,
     middleware: [supabaseAuth, requireAdmin] as const,
     responses: {
@@ -953,32 +988,38 @@ githubAppSetupRouter.openapi(
            *  half. An operator on the "paste an existing App" path (POST
            *  /app) without OAuth credentials sees this false. */
           oauth_configured: z.boolean(),
+          identity_source: z.enum(['env', 'db', 'none']),
+          backend_source: z.enum(['env', 'db', 'none']),
+          mutable: z.boolean(),
+          install_url: z.string().nullable(),
+          env_owned_by: z.array(z.string()),
         }),
-        'Managed GitHub App status',
+        'Instance GitHub identity + git backend status',
       ),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
-    // Reuse the git-backend's own resolution (githubBackend.isConfigured())
+    // Reuse the git backend's own resolution (githubBackend.isConfigured())
     // rather than re-deriving "is managed-git usable" here — it already
-    // covers PAT + App-installation, so this route can never drift from what
-    // project creation actually does.
+    // covers both kinds, so this route can never drift from what project
+    // creation actually does.
     let configured = await githubBackend.isConfigured();
-    const owner = managedGithubOwner();
-    const slug = githubAppSlug();
-    const installationId = managedGithubInstallId();
+    const identity = resolveAppIdentity();
+    const backend = resolveGitBackend();
+    const { mutable, envOwnedBy } = resolveInstanceGitMutability();
+    const { slug } = await resolveGitHubAppSlug();
+    const installUrl = await buildGitHubAppInstallUrl();
 
-    const dbConfig = managedGithubAppConfig();
-    const source = resolveManagedGitSource({
-      dbAppConfigured: Boolean(dbConfig.appId),
-      envAppConfigured: isGithubAppConfigured(),
-      patConfigured: Boolean(managedGithubToken()),
-    });
+    const source: ManagedGitSource = backend
+      ? backend.kind === 'pat'
+        ? 'pat'
+        : backend.source
+      : 'none';
 
     let reason: string | undefined;
-    if (configured && source === 'db' && installationId) {
-      const healthy = await checkManagedGithubAppInstallationHealthy(installationId);
+    if (configured && backend?.kind === 'app' && backend.source === 'db') {
+      const healthy = await checkManagedGithubAppInstallationHealthy(backend.installationId);
       if (!healthy) {
         configured = false;
         reason = 'installation_not_found_for_app';
@@ -987,11 +1028,16 @@ githubAppSetupRouter.openapi(
 
     return c.json({
       configured,
-      owner,
+      owner: backend?.owner ?? null,
       slug,
-      installation_id: installationId,
+      installation_id: backend?.kind === 'app' ? backend.installationId : null,
       source,
       oauth_configured: isGithubAppOAuthConfigured(),
+      identity_source: identity?.source ?? 'none',
+      backend_source: backend?.source ?? 'none',
+      mutable,
+      install_url: installUrl,
+      env_owned_by: envOwnedBy,
       ...(reason ? { reason } : {}),
     });
   },
@@ -1078,20 +1124,23 @@ githubAppSetupRouter.openapi(
     },
     responses: {
       200: json(z.object({ ok: z.literal(true), owner: z.string() }), 'App credentials stored'),
-      ...errors(400, 401, 403, 500),
+      ...errors(400, 401, 403, 409, 500),
     },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const appId = typeof body?.app_id === 'string' ? body.app_id.trim() : '';
-    const privateKey = typeof body?.private_key === 'string' ? body.private_key.trim() : '';
+    const gate = envManagedGate(c);
+    if (gate) return gate;
+
+    const body = await readJsonObject(c);
+    const appId = typeof body.app_id === 'string' ? body.app_id.trim() : '';
+    const privateKey = typeof body.private_key === 'string' ? body.private_key.trim() : '';
     const installationId =
-      typeof body?.installation_id === 'string' ? body.installation_id.trim() : '';
-    const slug = typeof body?.slug === 'string' && body.slug.trim() ? body.slug.trim() : undefined;
+      typeof body.installation_id === 'string' ? body.installation_id.trim() : '';
+    const slug = typeof body.slug === 'string' && body.slug.trim() ? body.slug.trim() : undefined;
     const clientId =
-      typeof body?.client_id === 'string' && body.client_id.trim() ? body.client_id.trim() : undefined;
+      typeof body.client_id === 'string' && body.client_id.trim() ? body.client_id.trim() : undefined;
     const clientSecret =
-      typeof body?.client_secret === 'string' && body.client_secret.trim()
+      typeof body.client_secret === 'string' && body.client_secret.trim()
         ? body.client_secret.trim()
         : undefined;
 
@@ -1106,6 +1155,9 @@ githubAppSetupRouter.openapi(
       );
     }
 
+    // Write-time validation: the installation must belong to the identity we
+    // are about to store, and its account login is the owner we store with it.
+    // Both halves therefore come from one verified GitHub response.
     let owner: string;
     let ownerType: 'User' | 'Organization';
     try {
@@ -1119,20 +1171,16 @@ githubAppSetupRouter.openapi(
       );
     }
 
-    await updateManagedGithubAppConfig({
+    await writeAppIdentity({
       appId,
       privateKey,
-      installationId,
-      owner,
-      ownerType,
       slug,
       clientId,
       clientSecret,
-      stateSecret: managedGithubAppConfig().stateSecret || randomBytes(32).toString('hex'),
-      // Mutually exclusive with a PAT — see POST /pat's matching comment.
-      pat: undefined,
-      patOwner: undefined,
+      webhookSecret: storedAppIdentity().webhookSecret,
+      stateSecret: storedAppIdentity().stateSecret || randomBytes(32).toString('hex'),
     });
+    await writeGitBackend({ kind: 'app', owner, ownerType, installationId });
     resetManagedGithubAppInstallationHealthCache();
 
     return c.json({ ok: true as const, owner });
@@ -1254,13 +1302,16 @@ githubAppSetupRouter.openapi(
     },
     responses: {
       200: json(z.object({ ok: z.literal(true) }), 'Token stored'),
-      ...errors(400, 401, 403, 500),
+      ...errors(400, 401, 403, 409, 500),
     },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const token = typeof body?.token === 'string' ? body.token.trim() : '';
-    const owner = typeof body?.owner === 'string' ? body.owner.trim() : '';
+    const gate = envManagedGate(c);
+    if (gate) return gate;
+
+    const body = await readJsonObject(c);
+    const token = typeof body.token === 'string' ? body.token.trim() : '';
+    const owner = typeof body.owner === 'string' ? body.owner.trim() : '';
     if (!token || !owner) {
       return c.json({ error: true, message: 'token and owner are required', status: 400 }, 400);
     }
@@ -1284,48 +1335,40 @@ githubAppSetupRouter.openapi(
       return c.json({ error: true, message: verdict.message, status: 400 }, 400);
     }
 
-    await updateManagedGithubAppConfig({
-      pat: token,
-      patOwner: owner,
-      // A PAT and a GitHub App are mutually exclusive managed-git methods —
-      // clear the App half so isConfigured()/source resolution never has to
-      // guess which one is "active" (see git-backends/github.ts).
-      appId: undefined,
-      slug: undefined,
-      privateKey: undefined,
-      clientId: undefined,
-      clientSecret: undefined,
-      webhookSecret: undefined,
-      owner: undefined,
-      ownerType: undefined,
-      installationId: undefined,
-    });
+    // A token backend replaces the backend WHOLE. It leaves the App identity
+    // alone: account connections still need an App to mint installation
+    // tokens, and the two are separate concepts.
+    await writeGitBackend({ kind: 'pat', owner, token });
+    resetManagedGithubAppInstallationHealthCache();
 
     return c.json({ ok: true as const });
   },
 );
 
 // ─── DELETE / ─────────────────────────────────────────────────────────────────
-// Disconnect managed-git entirely (App AND/OR PAT) so an operator can
-// reconfigure from a clean slate instead of the setup card guessing which of
-// several half-cleared fields is still "active".
+// Disconnect this instance's stored GitHub configuration — identity AND git
+// backend — so an operator can reconfigure from a clean slate. It clears only
+// what the database owns; an env-managed instance is refused with 409.
 
 githubAppSetupRouter.openapi(
   createRoute({
     method: 'delete',
     path: '/',
     tags: ['platform'],
-    summary: 'Disconnect managed-git — clears the GitHub App and/or PAT configuration',
+    summary: 'Disconnect the stored GitHub identity and git backend',
     ...auth,
     middleware: [supabaseAuth, requireAdmin] as const,
     responses: {
       200: json(z.object({ ok: z.literal(true) }), 'Cleared'),
-      ...errors(401, 403, 500),
+      ...errors(401, 403, 409, 500),
     },
   }),
   async (c: any) => {
+    const gate = envManagedGate(c);
+    if (gate) return gate;
     try {
-      await resetManagedGithubAppConfig();
+      await clearGitBackend();
+      await clearAppIdentity();
       resetManagedGithubAppInstallationHealthCache();
       return c.json({ ok: true as const });
     } catch (err) {

@@ -16,7 +16,7 @@ const MFA_DENIAL_MESSAGE =
  *
  * This exists because a denial's reason is the only thing that can distinguish
  * WHICH constraint fired. `authorizeV2` folds three independent limits into one
- * boolean — the human's project role, the agent session's `kortix_cli` grant,
+ * boolean — the human's project role, the agent session's `kortix_permissions` grant,
  * and an activated service account's assigned role — and a caller that
  * re-derives the cause from a second `authorize()` probe cannot separate them.
  * Guessing "your role is too low" at an account owner whose AGENT grant denied
@@ -34,7 +34,14 @@ export function denialReasonMessage(action: string, reason?: string): string | n
     case 'agent_scope_insufficient':
       // The agent-session token's own grant denied it, at any role. Mirrors the
       // wording assertAgentScope already uses for the same constraint.
-      return `This agent session is not granted "${action}". Add it to the agent's kortix_cli in kortix.yaml and merge the change.`;
+      return `This agent session is not granted "${action}". Add it to the agent's kortix_permissions in kortix.yaml and merge the change.`;
+    case 'agent_ceiling_insufficient':
+      // Agent-principal model: the manifest lists the action, the role an admin
+      // bound to the agent's service account does not. Editing kortix.yaml
+      // cannot fix this.
+      return `This agent's role does not allow "${action}". Ask an account admin to raise the role bound to this agent.`;
+    case 'agent_human_only_action':
+      return `"${action}" is reserved for a human. No agent can perform it, whatever its kortix_permissions or role.`;
     case 'service_account_scope_insufficient':
       // The session authorizes AS the agent's service account (an admin gave it
       // a standing role), so the launching user's role is irrelevant here.
@@ -58,19 +65,27 @@ export function denialReasonMessage(action: string, reason?: string): string | n
  * its step-up dialog on it (the SDK's ApiError already lifts `code` from error
  * bodies).
  */
-export function buildDenialError(action: string, reason?: string): HTTPException {
+export function buildDenialError(action: string, reason?: string, messageOverride?: string): HTTPException {
   if (reason === 'account_mfa_required') {
     return new HTTPException(403, {
       message: MFA_DENIAL_MESSAGE,
-      res: new Response(
-        JSON.stringify({ error: MFA_DENIAL_MESSAGE, code: 'account_mfa_required' }),
-        { status: 403, headers: { 'content-type': 'application/json' } },
-      ),
+      res: jsonResponse({ error: MFA_DENIAL_MESSAGE, code: 'account_mfa_required', action }),
     });
   }
+  const message = messageOverride ?? denialReasonMessage(action, reason) ?? humanizePermissionDenial(action);
+  // Spec docs/specs/2026-09-22-agents-as-principals.md §4: every 403 from
+  // `authorize` names its verdict reason (`code`) and the `action`. The body
+  // keeps the global error handler's `{error, message, status}` shape and adds
+  // the two fields, so a client that reads `message` is unchanged. The CLI
+  // picks its remedy hint from `code` (apps/cli/src/token-denial.ts).
   return new HTTPException(403, {
-    message: denialReasonMessage(action, reason) ?? humanizePermissionDenial(action),
+    message,
+    res: jsonResponse({ error: true, message, status: 403, code: reason ?? 'forbidden', action }),
   });
+}
+
+function jsonResponse(body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify(body), { status: 403, headers: { 'content-type': 'application/json' } });
 }
 
 /**
@@ -115,7 +130,10 @@ const ACTION_VERBS: Record<string, string> = {
   'audit.export': 'export audit events',
   // Tokens
   'token.read': 'view personal access tokens',
-  'token.revoke': 'revoke personal access tokens',
+  'token.create': 'create account tokens',
+  'token.revoke': 'revoke account tokens',
+  'token.personal.create': 'create your own personal access token',
+  'token.personal.revoke': 'revoke your own personal access token',
   // Billing
   'billing.read': 'view billing',
   'billing.write': 'change billing',

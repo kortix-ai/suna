@@ -118,6 +118,21 @@ describe('qk.project', () => {
   // `data.account_id` (the summary shape) breaks the moment a detail reader's
   // fetch wins the race, or vice versa. `summary` and `detail` must never be
   // the same key or a prefix of one another.
+  // The credential modal is mounted once and retargeted per connection. The
+  // discovery result carries the connection id it resolved, and one-click
+  // OAuth starts on that id — so two connections of one connector must never
+  // share a cache entry.
+  test('connectorOAuth2Discovery is keyed per connection, under the per-connector prefix', () => {
+    const a = qk.project.connectorOAuth2Discovery(id, 'mcp', 'conn_a');
+    const b = qk.project.connectorOAuth2Discovery(id, 'mcp', 'conn_b');
+    const perConnector = qk.project.connectorOAuth2Discovery(id, 'mcp');
+
+    expect(a).not.toEqual(b as never);
+    expect(startsWith(a, perConnector)).toBe(true);
+    expect(startsWith(b, perConnector)).toBe(true);
+    expect(startsWith(a, qk.project.connectorConfig(id, 'mcp'))).toBe(true);
+  });
+
   test('summary(id) and detail(id) are different keys, neither a prefix of the other', () => {
     expect(qk.project.summary(id)).not.toEqual(qk.project.detail(id) as never);
     expect(startsWith(qk.project.detail(id), qk.project.summary(id))).toBe(false);
@@ -350,6 +365,17 @@ describe('qk.projects.scope', () => {
 // what a stale single-account list from another user produces. Only the KEY
 // the list was cached under carries the answer. Hence this family.
 describe('qk.accounts', () => {
+  // The caller's pending invites. Joining one changes the account list, and
+  // every "an account changed" invalidation targets `scope()` — so the invite
+  // list must sit under that same prefix, or a joined invite stays listed.
+  test('myInvites partitions by user and sits under scope()', () => {
+    expect(qk.accounts.myInvites('user_a')).not.toEqual(qk.accounts.myInvites('user_b') as never);
+    expect(qk.accounts.myInvites('user_a')).toContain('user_a');
+    expect(startsWith(qk.accounts.myInvites('user_a'), qk.accounts.scope())).toBe(true);
+    expect(qk.accounts.myInvites('user_a')).not.toEqual(qk.accounts.list('user_a') as never);
+    expect(startsWith(qk.accounts.myInvites('user_a'), qk.accounts.list('user_a'))).toBe(false);
+  });
+
   test('the account list partitions by USER', () => {
     expect(qk.accounts.list('user_a')).not.toEqual(qk.accounts.list('user_b') as never);
   });

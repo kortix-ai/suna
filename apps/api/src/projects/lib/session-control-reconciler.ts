@@ -33,6 +33,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import {
   connectorCalls,
+  projectSessions,
   sessionSandboxes,
   sessionTranscriptMirrors,
   sessionTranscriptMessages,
@@ -97,6 +98,12 @@ interface Reconciler {
   ticking: boolean;
   /** When the last handle was released, or null while one is held. */
   idleSince: number | null;
+  /**
+   * The session's project. Every audit read filters on it, so the
+   * `(project_id, session_id, created_at)` index serves the read instead of
+   * a scan of all tenants' `connector_calls`.
+   */
+  projectId: string | null;
 }
 
 const reconcilers = new Map<string, Reconciler>();
@@ -116,7 +123,10 @@ export interface ControlReconcilerHandle {
  * timer runs while at least one stream holds a handle and stops the moment the
  * last one releases.
  */
-export function acquireControlReconciler(sessionId: string): ControlReconcilerHandle {
+export function acquireControlReconciler(
+  sessionId: string,
+  projectId: string | null = null,
+): ControlReconcilerHandle {
   sweepIdleReconcilers();
   let reconciler = reconcilers.get(sessionId);
   if (!reconciler) {
@@ -133,10 +143,12 @@ export function acquireControlReconciler(sessionId: string): ControlReconcilerHa
       resolveReady,
       ticking: false,
       idleSince: null,
+      projectId,
     };
     reconcilers.set(sessionId, reconciler);
   }
   const target = reconciler;
+  target.projectId ??= projectId;
   target.refs += 1;
   target.idleSince = null;
 
@@ -209,7 +221,7 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       readRuntimeControlState(sessionId),
       readMirrorWatermark(sessionId),
-      readSessionAuditWatermark(sessionId),
+      readSessionAuditWatermark(sessionId, reconciler),
     ]);
 
     if (turn.status === 'fulfilled') {
@@ -442,12 +454,29 @@ export interface AuditWatermark {
  * falls), so `emit`'s fingerprint fires on each. The heavy row read stays where
  * it was — a human opens it; liveness only needs to know WHEN it changed.
  */
-async function readSessionAuditWatermark(sessionId: string): Promise<AuditWatermark> {
+async function readSessionAuditWatermark(
+  sessionId: string,
+  reconciler: Pick<Reconciler, 'projectId'>,
+): Promise<AuditWatermark> {
+  // No index on `connector_calls` leads with `session_id`, so a session-only
+  // filter reads the whole all-tenant table every 5 s per watched session.
+  // Filter on the project too, and never run the read without it.
+  if (!reconciler.projectId) {
+    const [owner] = await db
+      .select({ projectId: projectSessions.projectId })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1);
+    reconciler.projectId = owner?.projectId ?? null;
+  }
+  const projectId = reconciler.projectId;
+  if (!projectId) throw new Error(`session ${sessionId} has no project; audit watermark skipped`);
   const [pendingRow] = await db
     .select({ pending: count() })
     .from(connectorCalls)
     .where(
       and(
+        eq(connectorCalls.projectId, projectId),
         eq(connectorCalls.sessionId, sessionId),
         eq(connectorCalls.status, 'pending_approval'),
         isNull(connectorCalls.resolvedAt),
@@ -459,7 +488,7 @@ async function readSessionAuditWatermark(sessionId: string): Promise<AuditWaterm
       latestResolved: max(connectorCalls.resolvedAt),
     })
     .from(connectorCalls)
-    .where(eq(connectorCalls.sessionId, sessionId));
+    .where(and(eq(connectorCalls.projectId, projectId), eq(connectorCalls.sessionId, sessionId)));
   return {
     known: true,
     pending: pendingRow?.pending ?? 0,

@@ -3,12 +3,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { createProjectEnvStore } from '../project-env'
-import { buildOpencodeApp } from '../proxy'
+import { buildOpenCodeTestApp } from './helpers/open-code-harness'
 
 const TEST_TOKEN = 'curl-test-kortix-token'
 const execFileAsync = promisify(execFile)
@@ -54,7 +54,7 @@ function fakeOpencode(onRestart: () => void): Opencode {
     // applied", which is what this counts.
     reloadConfig: async () => {
       onRestart()
-      return 'restarted' as const
+      return { how: 'restarted' as const, turnEnded: false }
     },
   } as unknown as Opencode
 }
@@ -77,6 +77,17 @@ async function curlJson(url: string, body: string): Promise<{ status: number; bo
 }
 
 describe('project env sync curl e2e', () => {
+  // The route writes pushed secrets into this process's env, and every test
+  // file shares one `bun test` process.
+  let savedEnv: NodeJS.ProcessEnv
+  beforeEach(() => {
+    savedEnv = { ...process.env }
+  })
+  afterEach(() => {
+    for (const name of Object.keys(process.env)) if (!(name in savedEnv)) delete process.env[name]
+    Object.assign(process.env, savedEnv)
+  })
+
   it('updates running daemon env state through curl without restarting the sandbox', async () => {
     let restarts = 0
     const temp = mkdtempSync(join(tmpdir(), 'kortix-env-curl-'))
@@ -84,7 +95,7 @@ describe('project env sync curl e2e', () => {
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
       API_KEY: 'old',
     } as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(
+    const app = buildOpenCodeTestApp(
       baseConfig(),
       fakeOpencode(() => { restarts += 1 }),
       Date.now(),

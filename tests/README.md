@@ -2,13 +2,14 @@
 
 `pnpm test` is the only repository-level test command.
 
-The default run executes five lanes concurrently:
+The default run executes six lanes concurrently:
 
 1. Black-box REST and CLI flows against local Supabase, API, and gateway.
 2. `@kortix/sdk` tests in `packages/sdk`.
-3. Test-runner unit tests.
-4. API route coverage.
-5. Worktree-tool unit and contract tests.
+3. Every PostgreSQL-backed test file (`db-suites`, see [DB suites](#db-suites)).
+4. Test-runner unit tests.
+5. API route coverage.
+6. Worktree-tool unit and contract tests.
 
 The REST runner is language-agnostic at the product boundary. It sends HTTP
 requests and starts the compiled CLI as a process. It never imports API route
@@ -21,8 +22,10 @@ pnpm test                       # Fast local core
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only
+pnpm test -- --db-only         # PostgreSQL-backed suites only
+pnpm test -- --db-only prompt-inbox tests/migration # Suites whose path contains a filter
 pnpm test -- --browser-only    # Browser journeys with the deterministic local stack
-pnpm test -- --browser-only --browser-shard=1/2 # One deterministic browser shard
+pnpm test -- --browser-only --browser-shard=1/4 # One deterministic browser shard
 pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --full            # Core, browser, and every app/package test
 pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
@@ -56,18 +59,28 @@ code.
 
 Desktop UI parity is part of the browser lane in `27-desktop-parity.spec.ts`.
 Run the same journey in native Electron with `E2E_DESKTOP_NATIVE=1` and
-`E2E_GREP='27 — desktop parity'`. See
-[`desktop-verification.md`](../docs/runbooks/desktop-verification.md).
+`E2E_GREP='27 — desktop parity'`.
 
-GitHub Actions uses `.github/workflows/tests.yml` for local-profile PR tests.
-`tests-pr.yml` calls it once for pull requests into `main` or `staging`. Full
-mode runs four lanes in parallel, each natively on one Blacksmith runner
-(`CI_RUNNER_L`, 8 vCPU / 32 GB — see `docs/runbooks/ci-runners.md`). Core and
-package lanes run `pnpm test` and `pnpm test -- --packages-only`. Two browser
-lanes run shards `1/2` and `2/2` through
-`pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`. The four lanes are
-the parallel equivalent of `pnpm test -- --full`. Each lane checks out the exact
-pull-request head SHA, runs `pnpm install --frozen-lockfile`, and invokes the
+GitHub Actions uses `.github/workflows/tests.yml` for every local-profile run.
+It runs on every push to `main`, on a pull request into `staging`, on a pull
+request labelled `test` or `preview`, and on manual dispatch. The label
+re-triggers an open pull request without a push. A plain pull request into
+`main` does not run it; its check shows as skipped. The push-to-`main`
+run blocks nothing — `main` and `staging` require no status check — and a red
+run comments on the offending commit with the failing lane names. A cancelled
+run means a newer commit superseded it. Deployed-target runs are separate:
+`deploy-preview.yml` (`--target-full` against a preview origin) and
+`tests-release.yml` (`--target-*-full` against deployed staging, whose
+`full suite + quality gates` job is the only required check in the repository).
+
+The run is six lanes in parallel, each natively on one Blacksmith runner
+(`CI_RUNNER_L`, 8 vCPU / 32 GB). Core and
+package lanes run `pnpm test` and `pnpm test -- --packages-only`. Four browser
+lanes run shards `1/4` through `4/4` via
+`pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`, which maps straight
+to Playwright's native `--shard`. The six lanes are the parallel equivalent of
+`pnpm test -- --full` and measure 8m17s wall clock. Each lane checks out the
+exact requested SHA, runs `pnpm install --frozen-lockfile`, and invokes the
 unchanged root command; browser lanes also install Chromium and prestart
 Supabase so the root runner reuses it. Blacksmith caches the pnpm store, the
 Chromium download, and every pulled Docker image (the Supabase images) across
@@ -109,7 +122,7 @@ The warm image contains dependencies and Docker layers only. It contains no
 preview database and no runtime secret.
 
 The runtime secret allowlist contains `DAYTONA_API_KEY`,
-`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, and the five fields required
+`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, `MORPH_API_KEY`, and the five fields required
 for the dedicated preview GitHub App installation. Mailpit handles preview
 email. The GitHub App runs the real managed repository and CLI push flows.
 OAuth initiation is the only allowed preview browser exclusion. All API flow
@@ -118,18 +131,57 @@ exclusions and all other browser journey exclusions fail the preview test.
 Use **Run workflow** to select `platinum` or `daytona` explicitly for one
 provider proof. A new deployment deletes any existing provider sandbox for the
 same pull request. A test failure keeps the sandbox available for diagnosis.
-Removing the label, closing the pull request, or pushing a new commit deletes
-the sandbox. A new commit also removes the stale `preview` label. A scheduled
-reconciler deletes sandboxes whose pull request is closed, unlabeled, or at a
-different SHA.
+A push to a labelled branch redeploys its environment in place, and the label
+stays. Removing the label or deleting the branch deletes the sandbox; closing
+the pull request does not. A scheduled reconciler deletes environments whose
+branch no longer exists.
 
 `tests-release.yml` runs the deployed staging suite for pull requests into
 `prod`. It does not repeat the local-profile suite. It rejects development and
-production hosts. It requires the API and gateway health commits to equal
-`RELEASE_SOURCE_SHA`. It runs every selected REST and CLI flow with
+production hosts. It requires the API, gateway, **and frontend** health commits
+to equal `RELEASE_SOURCE_SHA`. It runs every selected REST and CLI flow with
 `--require-all`, then runs all configured Playwright journeys against
 `staging.kortix.com` with the Vercel bypass header. A missing external
 capability fails the release gate instead of counting as a pass.
+
+#### Why the preflight reads three surfaces
+
+`assertTargetSmokeHealth` (`src/core/target-smoke.ts`) read only the API and the
+gateway until 2026-09-18. Those two roll on ECS; the frontend is a Vercel
+deployment that `deploy-staging.yml` aliases onto `staging.kortix.com`, and
+Vercel swaps an alias atomically. The two clocks are independent, so the browser
+shards could drive the previous release's frontend while preflight saw two green
+surfaces.
+
+Measured on the v0.13.25 gate (release run `35392201088`, PR #7422,
+`RELEASE_SOURCE_SHA=8a1e38dc97ba76ae2aba7fe9c7cce284fa05af23`):
+
+| Event | Time (UTC) |
+| --- | --- |
+| `deploy-staging` 35391030403, job "Deploy staging web to Vercel" starts | 20:32:06 |
+| Vercel `dpl_ZWu71zWXoWKvwGBr9uCs17FVu7Ha` (sha `8a1e38dc`) created | 20:32:38 |
+| Release-gate browser shards 1–3 start | 20:36:16 |
+| That deployment still `INITIALIZING`; alias still on `dpl_43b4…` (sha `fa68c114`, built 05:22Z) | 20:50 |
+
+So the shards drove a frontend 15 hours behind the release. A shard failing
+there fails for a reason unrelated to the code under test — a phantom failure.
+
+The preflight now **fails fast** on that skew. It does not wait or retry: a
+stale alias is a deploy problem for a human, not something a preflight should
+sit and hope out. Two distinct verdicts:
+
+- **SHA mismatch** — one message naming all three actual commits, so the stale
+  surface is readable without opening the run.
+- **Unstamped build** — the frontend reports `commit: "unknown"` (or no commit
+  field). That means the build never received the SHA, which is a build defect,
+  not a stale deploy, and it says so in its own words.
+
+Staging sits behind Vercel SSO deployment protection, so the frontend read sends
+`x-vercel-protection-bypass` using the `VERCEL_AUTOMATION_BYPASS_SECRET` the gate
+already sets at the workflow env level. It sends that header **alone**, without
+`x-vercel-set-bypass-cookie`: the cookie variant answers 307 instead of the body,
+and `fetch` keeps no cookie jar. `deployment-bypass.ts` owns both header forms so
+the browser lane and this one-shot read cannot drift.
 
 #### Release gate shards
 
@@ -349,6 +401,8 @@ preview stack pin it to `1`.
 | `KE2E_PROVISION_CONCURRENCY` | 4 | Global cap on concurrent project provisions. Each provision creates a real managed GitHub repository, so this — not the worker counts — is the binding constraint on suite parallelism. |
 | `KE2E_PROVISION_RATE_LIMIT_BASE_DELAY_MS` | 15000 | First delay after a GitHub rate-limit response. Doubles per attempt with equal jitter. |
 | `KE2E_PROVISION_RATE_LIMIT_DELAY_MS` | 120000 | Ceiling for that backoff. |
+| `KE2E_PROVISION_RATE_LIMIT_BUDGET_MS` | 900000 | Wall-clock time one provision may spend in the shared rate-limit cooldown, whoever set it. |
+| `KE2E_TOKEN_REFRESH_MARGIN_MS` | 20 min, or half a shorter token lifetime | Renew a principal's Supabase access token when this much lifetime or less remains. A value at or above the lifetime renews before every request; use it only to prove renewal against a real GoTrue. |
 | `KE2E_TEARDOWN_WORKERS` | 8 | Concurrency for deleting synthesized users at teardown. |
 | `KE2E_GATEWAY_RETRIES` | 3 | In-request retries of a gateway-generated transient 502/503/504. |
 | `KE2E_RETRY_BASE_DELAY_MS` | 500 | Base for that retry's exponential backoff with full jitter. |
@@ -376,6 +430,52 @@ application 5xx (`origin`). Do not guess at which one a 503 was.
 capability, a failed OWNER Stripe subscribe now throws during provisioning
 instead of degrading 52 flows to `skip` and reporting the red at the end of the
 run. Set `KE2E_FUNDING_OPTIONAL=1` to restore the warning-only behavior.
+
+### Principal tokens outlive the run
+
+Every principal the runner synthesizes (OWNER, NONMEMBER, the run-scoped
+platform admin, and every `fixtures.user()` / `team().addMember()` user) signs
+in with a password grant. Supabase access tokens expire after 1 hour. Preview
+runs 36067774228 and 36068206735 (2026-09-24) lasted ~61 minutes, and every
+flow that started after minute 60 failed with `401 Invalid or expired token`.
+
+The principal's `auth` is now a `SupabaseSessionAuth`
+(`src/fixtures/supabase-session.ts`). It keeps the refresh token and renews the
+access token through the refresh-token grant:
+
+- `Client` awaits `auth.ensureFresh()` before every request.
+- A background timer renews at the same point, so code that reads
+  `P.OWNER.auth.token` synchronously also stays valid. `env.adminToken` reads
+  the platform admin's current token the same way.
+- Renewal starts when 20 minutes or less remain, so a token a flow reads stays
+  valid for the longest flow.
+- One renewal runs at a time per principal. GoTrue rotates the refresh token.
+- A failed renewal keeps the old token while it is still valid and tries again
+  after 30 s. When the token is no longer usable, the request is not sent and
+  the flow fails with `SupabaseSessionRefreshError`, which names the
+  principal, the token age, and the cause. A network or 5xx failure is marked
+  retryable.
+
+There is no "retry on 401". Many flows assert a 401 on purpose, and a replay
+with a new token would hide that result.
+
+### Fixtures stop when their flow attempt ends
+
+The runner gives every flow attempt an `AbortSignal`. It aborts when the
+attempt passes, fails, or exceeds its timeout. A project provision that is
+still queued behind the provision semaphore, or sleeping out a GitHub rate
+limit, then stops and frees its slot. Before this, a flow that timed out kept
+its provision alive for up to the full 15-minute rate-limit budget, holding one
+of the 4 semaphore slots. On the two preview runs above, 61 and 67 flows failed
+with a flow timeout while provisions were failing on the GitHub rate limit, and
+the API lane took ~61 minutes instead of the usual ~20.
+
+The rate-limit budget also counts the time a provision waits in the shared
+cooldown that other provisions set. A cooldown that does not fit the remaining
+budget fails the provision at once with the reason. The shared projects
+(`sharedProject()`, `sharedSeededProject()`) are run-scoped and do not take the
+attempt signal. A failed shared provision is no longer cached: the next flow
+that asks creates it again.
 
 ## Browser journeys
 
@@ -475,6 +575,67 @@ Prefer waiting on the visible outcome over `page.waitForResponse(url === …)`.
 The latter pins a client cache and hydration detail, not a product contract, and
 its default budget is 30s.
 
+## DB suites
+
+A DB suite is a Bun test file that needs a real PostgreSQL. The `db-suites`
+lane (`bin/db-suites.ts`, rules in `src/core/db-suites.ts`) runs all of them in
+the core run and in the `core` CI lane. It discovers them by name:
+
+| Package | File name | Database |
+| --- | --- | --- |
+| `apps/api` | `src/**/integration-*.test.ts`, `src/**/*.integration.test.ts` | Lane-provided |
+| `packages/db` | `scripts/*.integration.test.ts` | Lane-provided, or its own Docker container |
+| `tests` | `migration/*.test.ts` | Its own Docker container |
+
+The unit discovery of each package excludes these names, so a file runs in
+exactly one lane: `apps/api/scripts/test.sh` excludes both `apps/api`
+patterns, `packages/db` ignores `*.integration.test.ts`, and package quality no
+longer runs `tests/migration`. `pnpm --filter kortix-api test:integration`
+delegates to the same lane.
+
+How the lane runs a file:
+
+1. It reads the local Supabase database URL. `pnpm test` (with or without
+   `--db-only`) starts Supabase before the first stage and stops it at the end
+   when it started it. `test:integration` and `bun tests/bin/db-suites.ts`
+   need a running Supabase.
+2. It builds one template database per content hash of the migrations, the
+   `packages/db` scripts, and the platform `auth` schema. It copies `auth` from
+   the Supabase database with `pg_dump` inside the Supabase container, applies
+   `test-prereqs.sql`, and runs `migrate.ts local-up`. A second run with the
+   same hash reuses the template (0.1 s instead of ~1 s).
+3. For every file it clones a fresh database from the template
+   (`CREATE DATABASE … TEMPLATE`, ~150 ms), runs `bun test <file>` in its own
+   process, and drops the database. No file sees another file's rows
+   or the developer's data, and `mock.module()` cannot leak between files.
+4. Six files run at a time (`KORTIX_DB_SUITE_WORKERS`). A file that runs longer
+   than 240 s is killed (`KORTIX_DB_SUITE_TIMEOUT_MS`).
+
+Each file receives:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL`, `TEST_DATABASE_URL` | The file's database, role `postgres` (the API's role; not a superuser) |
+| `TEST_DATABASE_SUPERUSER_URL` | The same database as `supabase_admin`, for fixture setup only |
+| `TEST_DATABASE_ADMIN_URL` | The cluster's `postgres` database, for suites that create their own database |
+| `KORTIX_TEST_DB_CONFIRM` | `I_UNDERSTAND_THIS_DELETES_TEST_DATA` |
+
+`apps/api` files also load the placeholders in `apps/api/scripts/test.env`.
+They never read the encrypted `apps/api/.env`.
+
+A file FAILS the lane when a test fails, when it skips any test, or when it runs
+no test. The lane always supplies a database and Docker, so a skip means the
+suite ignored them. `unit/db-suites.test.ts` fails when a test file reads
+`process.env.TEST_DATABASE_URL` (or the other lane variables) but is not named
+as a DB suite, so a new suite cannot sit skipped inside a unit lane.
+
+To park a broken suite, add it to `DB_SUITE_QUARANTINE` with the reason. The
+lane prints every quarantined file on every run. Remove the entry when the
+cause is fixed.
+
+A test that needs a live cloud sandbox, a model, or another external service is
+not a DB suite. Name it `*.live.test.ts`; no lane runs it.
+
 ## SDK tests
 
 SDK tests stay in `packages/sdk`. They protect the published package contract
@@ -510,7 +671,7 @@ contracts moved into the canonical lanes before deletion.
 | --- | --- |
 | `tests/accessibility` | Axe checks moved to `tests/e2e/specs/00-accessibility.spec.ts`. |
 | `tests/pentest` | Unique transport checks moved to REST flow `SEC-J`. Existing auth and webhook checks stay in `SEC-A` through `SEC-I`. |
-| `tests/migration` shell runner | Four unique disposable-Postgres contracts run from `pnpm test -- --packages-only`. |
+| `tests/migration` shell runner | The disposable-Postgres contracts run in the `db-suites` lane of `pnpm test`. |
 | `tests/e2e/specs/10-production-*` | API behavior moved to REST access, project, session, trigger, and security flows. Browser-visible behavior stays in focused Playwright journeys. |
 | `tests/self-host-e2e/fast` | Co-located `apps/cli/src/self-host/__tests__` contracts run from the package lane. |
 | `tests/self-host-e2e/live` | Removed as opt-in image-orchestration scripts. They never gated changes and duplicated the CLI and API contracts without deterministic fixtures. |

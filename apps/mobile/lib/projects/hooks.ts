@@ -3,8 +3,14 @@
  * Query keys mirror the web app: ['accounts'] and ['projects', accountId].
  */
 
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { flattenSessionPages, sessionsNextCursor } from '@/lib/session/session-pages';
+import {
+  nextProjectSessionsPollWindow,
+  projectSessionsPollInterval,
+  type ProjectSessionsPollWindow,
+} from './poll-policy';
 import {
   archiveProject,
   buildSandboxTemplate,
@@ -34,6 +40,7 @@ import {
   getProject,
   getProjectDetail,
   getProjectLlmCatalog,
+  getProjectModelPicker,
   getProjectCommitDiff,
   getProjectFileHistory,
   getVersionDiff,
@@ -50,6 +57,7 @@ import {
   listProjectPolicies,
   listProjectSecrets,
   listProjectSessions,
+  listProjectSessionsPage,
   listProjectTriggers,
   listProjectsForAccount,
   mergeChangeRequest,
@@ -65,18 +73,13 @@ import {
   updateProject,
   updateProjectTrigger,
   upsertProjectSecret,
+  updateProjectDefaultAgent,
   inviteProjectMember,
   updateProjectAccess,
   revokeProjectAccess,
   listPendingProjectInvites,
   resendPendingProjectInvite,
   revokePendingProjectInvite,
-  listProjectGroupGrants,
-  attachGroupToProject,
-  updateProjectGroupGrant,
-  detachGroupFromProject,
-  listAccountGroups,
-  removeGroupMember,
   type ChangeRequestStatus,
   type ConnectorSharing,
   type ExperimentalFeatureKey,
@@ -87,6 +90,7 @@ import {
   type OpenChangeRequestInput,
   type PolicyDefaultMode,
   type ProjectPolicy,
+  type ProvisionProjectInput,
   type UpdateProjectTriggerInput,
   type UpdateSandboxTemplateInput,
 } from './projects-client';
@@ -101,10 +105,19 @@ export const projectKeys = {
   project: (projectId: string | null | undefined) => ['project', projectId] as const,
   projectDetail: (projectId: string | null | undefined) => ['project-detail', projectId] as const,
   llmCatalog: (projectId: string | null | undefined) => ['project-llm-catalog', projectId] as const,
+  modelPicker: (projectId: string | null | undefined) => ['project-model-picker', projectId] as const,
   projectFile: (projectId: string | null | undefined, path: string | null | undefined) =>
     ['project-file', projectId, path] as const,
   projectSessions: (projectId: string | null | undefined) =>
     ['project-sessions', projectId] as const,
+  /**
+   * The paged list (`useInfiniteQuery`). A child of `projectSessions`, so every
+   * `invalidateQueries({ queryKey: projectSessions(id) })` refreshes it too. Its
+   * own key: a flat `useQuery` and an infinite query under one key would hand
+   * each other the wrong data shape.
+   */
+  projectSessionsPaged: (projectId: string | null | undefined) =>
+    ['project-sessions', projectId, 'paged'] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
   secrets: (projectId: string | null | undefined) => ['project-secrets', projectId] as const,
   slackInstall: (projectId: string | null | undefined) => ['slack-install', projectId] as const,
@@ -144,9 +157,6 @@ export const projectKeys = {
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
   pendingInvites: (projectId: string | null | undefined) =>
     ['project-pending-invites', projectId] as const,
-  groupGrants: (projectId: string | null | undefined) =>
-    ['project-group-grants', projectId] as const,
-  accountGroups: (accountId: string | null | undefined) => ['account-groups', accountId] as const,
   policies: (projectId: string | null | undefined) => ['project-policies', projectId] as const,
   pipedreamApps: (projectId: string | null | undefined, q: string) =>
     ['pipedream-apps', projectId, q] as const,
@@ -335,30 +345,11 @@ export function usePendingProjectInvites(projectId: string | null, enabled: bool
   });
 }
 
-export function useProjectGroupGrants(projectId: string | null) {
-  return useQuery({
-    queryKey: projectKeys.groupGrants(projectId),
-    queryFn: () => listProjectGroupGrants(projectId!),
-    enabled: !!projectId,
-    staleTime: 20_000,
-  });
-}
-
-export function useAccountGroups(accountId: string | null, enabled: boolean) {
-  return useQuery({
-    queryKey: projectKeys.accountGroups(accountId),
-    queryFn: () => listAccountGroups(accountId!),
-    enabled: enabled && !!accountId,
-    staleTime: 60_000,
-  });
-}
-
-/** Invalidate everything that a membership/group change can ripple into. */
+/** Invalidate everything that a membership change can ripple into. */
 function useInvalidateMembership(projectId: string) {
   const queryClient = useQueryClient();
   return () => {
     queryClient.invalidateQueries({ queryKey: projectKeys.projectAccess(projectId) });
-    queryClient.invalidateQueries({ queryKey: projectKeys.groupGrants(projectId) });
     queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
     queryClient.invalidateQueries({ queryKey: ['projects'] });
   };
@@ -412,41 +403,6 @@ export function useRevokeProjectInvite(projectId: string) {
   });
 }
 
-export function useAttachGroup(projectId: string) {
-  const invalidate = useInvalidateMembership(projectId);
-  return useMutation({
-    mutationFn: ({ groupId, role }: { groupId: string; role: ProjectRole }) =>
-      attachGroupToProject(projectId, groupId, role),
-    onSuccess: invalidate,
-  });
-}
-
-export function useUpdateGroupGrant(projectId: string) {
-  const invalidate = useInvalidateMembership(projectId);
-  return useMutation({
-    mutationFn: ({ groupId, role }: { groupId: string; role: ProjectRole }) =>
-      updateProjectGroupGrant(projectId, groupId, role),
-    onSuccess: invalidate,
-  });
-}
-
-export function useDetachGroup(projectId: string) {
-  const invalidate = useInvalidateMembership(projectId);
-  return useMutation({
-    mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
-    onSuccess: invalidate,
-  });
-}
-
-export function useRemoveGroupMember(projectId: string, accountId: string | null) {
-  const invalidate = useInvalidateMembership(projectId);
-  return useMutation({
-    mutationFn: ({ groupId, userId }: { groupId: string; userId: string }) =>
-      removeGroupMember(accountId ?? '', groupId, userId),
-    onSuccess: invalidate,
-  });
-}
-
 /** Resolve a single Pipedream app's display name + logo by its slug, for showing
  *  connected connectors with their real app branding. Cached; lazy per row. */
 export function usePipedreamAppMeta(projectId: string | null, slug: string | null, enabled = true) {
@@ -473,19 +429,62 @@ export function usePipedreamApps(projectId: string | null, q: string) {
   });
 }
 
-export function useProjectSessions(projectId: string | null) {
+/** Background-poll options for list hooks. */
+export interface PollOptions {
+  /** Run the interval poll. `false` pauses it, e.g. while the screen is not focused. Default `true`. */
+  poll?: boolean;
+}
+
+export function useProjectSessions(projectId: string | null, { poll = true }: PollOptions = {}) {
+  const pollWindowRef = useRef<ProjectSessionsPollWindow | null>(null);
   return useQuery({
     queryKey: projectKeys.projectSessions(projectId),
     queryFn: () => listProjectSessions(projectId!),
     enabled: !!projectId,
     staleTime: 10_000,
-    // Poll so freshly-provisioning session sandboxes flip to running in the list.
+    // Poll so freshly-provisioning session sandboxes flip to running in the
+    // list, for at most 4 min per set of pending rows (poll-policy).
     refetchInterval: (query) => {
-      const data = query.state.data;
-      const pending = data?.some((s) => ['queued', 'branching', 'provisioning'].includes(s.status));
-      return pending ? 3_000 : false;
+      const rows = query.state.data;
+      const now = Date.now();
+      const pollWindow = nextProjectSessionsPollWindow(pollWindowRef.current, rows, now);
+      pollWindowRef.current = pollWindow;
+      if (!poll || !pollWindow) return false;
+      return projectSessionsPollInterval(rows, pollWindow.startedAt, now);
     },
   });
+}
+
+/**
+ * A project's sessions a page at a time, newest activity first — the list the
+ * project drawer and the Sessions page scroll. `useProjectSessions` above is
+ * one page (the first 50): it serves lookups, not browsing.
+ *
+ * `sessions` is every loaded page, flattened and de-duplicated. A refetch
+ * (poll, pull to refresh, invalidation) refetches every loaded page, so the
+ * cost is bounded by what the user scrolled to.
+ */
+export function useProjectSessionsPaged(projectId: string | null, { poll = true }: PollOptions = {}) {
+  const pollWindowRef = useRef<ProjectSessionsPollWindow | null>(null);
+  const query = useInfiniteQuery({
+    queryKey: projectKeys.projectSessionsPaged(projectId),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => listProjectSessionsPage(projectId!, { cursor: pageParam }),
+    getNextPageParam: sessionsNextCursor,
+    enabled: !!projectId,
+    staleTime: 10_000,
+    // The same 4-minute provisioning poll as `useProjectSessions`, judged on the rows loaded so far.
+    refetchInterval: (q) => {
+      const rows = flattenSessionPages(q.state.data);
+      const now = Date.now();
+      const pollWindow = nextProjectSessionsPollWindow(pollWindowRef.current, rows, now);
+      pollWindowRef.current = pollWindow;
+      if (!poll || !pollWindow) return false;
+      return projectSessionsPollInterval(rows, pollWindow.startedAt, now);
+    },
+  });
+  const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
+  return { ...query, sessions };
 }
 
 export function useCreateProjectSession(projectId: string | null) {
@@ -511,7 +510,9 @@ export function useArchiveProject() {
 export function useProvisionProject() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: provisionProject,
+    // Wrapped: TanStack v5 calls mutationFn(variables, context), and the
+    // context must not land in provisionProject's ApiClientOptions.
+    mutationFn: (input: ProvisionProjectInput) => provisionProject(input),
     onSuccess: () => {
       invalidateAfterProjectCreation(queryClient);
     },
@@ -569,6 +570,15 @@ export function useUpsertProjectSecret(projectId: string) {
     mutationFn: (input: { name: string; value?: string; sharing?: ConnectorSharing }) =>
       upsertProjectSecret(projectId, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.secrets(projectId) }),
+  });
+}
+
+/** Set the agent a new session runs on when the user picks none. */
+export function useSetProjectDefaultAgent(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.projectDetail(projectId) }),
   });
 }
 
@@ -704,9 +714,14 @@ export function useProjectAgentsForTrigger(projectId: string | null) {
  *  true when the project hasn't turned the LLM gateway on; treat that as "no
  *  override available" rather than an error. */
 export function useProjectModelCatalogForTrigger(projectId: string | null) {
+  // `/model-picker`, NOT `/llm-catalog`: the raw catalog is the full runtime
+  // projection (7134 models on 2026-09-16). The picker rendered every one of
+  // them as a row, so the sheet froze when it opened (Jay, 2026-09-22). The
+  // model picker is the bounded, connection-aware list the composer reads, and
+  // it shares that query's cache: the list is usually there before the tap.
   const query = useQuery({
-    queryKey: projectKeys.llmCatalog(projectId),
-    queryFn: () => getProjectLlmCatalog(projectId!),
+    queryKey: projectKeys.modelPicker(projectId),
+    queryFn: () => getProjectModelPicker(projectId!),
     enabled: !!projectId,
     staleTime: 60_000,
     retry: false,
@@ -714,6 +729,35 @@ export function useProjectModelCatalogForTrigger(projectId: string | null) {
   const gatewayDisabled = (query.error as { code?: string } | null)?.code === 'llm_gateway_disabled';
   const models = useMemo(() => flattenTriggerModelCatalog(query.data?.models), [query.data]);
   return { models, isLoading: query.isLoading, gatewayDisabled };
+}
+
+/** The project home composer's model choices and the project default.
+ *  Reads `/model-picker`, NOT `/llm-catalog`: the raw catalog is the full
+ *  runtime projection (7134 models on 2026-09-16) with no `enabled` flags and
+ *  no `defaultModel`, so the pill read "Default" and offered models the project
+ *  does not serve. `/model-picker` is the bounded, connection-aware list (8–13
+ *  models) with both fields. 404 `llm_gateway_disabled` leaves `catalog`
+ *  undefined: the project runs on its sandbox's own providers. The thread
+ *  reads the same catalog (`lib/session/model-picker.ts`), so home and thread
+ *  list the same models as web. */
+export function useProjectModelCatalog(projectId: string | null) {
+  const query = useQuery({
+    queryKey: projectKeys.modelPicker(projectId),
+    queryFn: () => getProjectModelPicker(projectId!),
+    enabled: !!projectId,
+    staleTime: 60_000,
+    retry: false,
+  });
+  return {
+    /** The raw catalog. Undefined while loading, and for a project without the gateway. */
+    catalog: query.data?.models,
+    defaultModel: query.data?.defaultModel,
+    /** First load only: consumers hide the model pill instead of flashing "Connect model". */
+    isLoading: query.isLoading,
+    /** `ConnectProviderSheet` refetches after the in-app browser closes, to
+     *  toast once a provider connects. */
+    refetch: query.refetch,
+  };
 }
 
 // ── Change requests (web parity) ──────────────────────────────────────────────
@@ -726,13 +770,17 @@ function invalidateChangeWorld(queryClient: ReturnType<typeof useQueryClient>, p
 }
 
 /** CR list, filtered by status. Polls so merged/closed transitions clear live. */
-export function useChangeRequests(projectId: string | null, status: ChangeRequestStatus | 'all') {
+export function useChangeRequests(
+  projectId: string | null,
+  status: ChangeRequestStatus | 'all',
+  { poll = true }: PollOptions = {}
+) {
   return useQuery({
     queryKey: projectKeys.changeRequests(projectId, status),
     queryFn: () => listChangeRequests(projectId!, status),
     enabled: !!projectId,
     staleTime: 8_000,
-    refetchInterval: 8_000,
+    refetchInterval: poll ? 8_000 : false,
   });
 }
 

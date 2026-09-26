@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -77,7 +77,7 @@ describe('local test runner contract', () => {
     expect(source).toContain("await runWorkspaceTests(['@kortix/cli'], 1)");
     expect(source).toContain("await runWorkspaceTests(['kortixd'], 1)");
     expect(source).not.toContain("['@kortix/cli', 'kortixd']");
-    expect(source).toContain("await runWorkspaceTests(['@kortix/db'], 1)");
+    expect(source).toContain("runWorkspaceTests(['@kortix/db'], 1)");
     expect(source).toContain('Promise.allSettled(tasks)');
     expect(source.match(/await runAll\(\[/g)).toHaveLength(5);
     expect(source).toContain("'!kortix-api'");
@@ -103,7 +103,52 @@ describe('local test runner contract', () => {
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
     expect(agentPackage.scripts.test).toBe('bun test');
-    expect(dbPackage.scripts.test).toBe('bun test --parallel=2 --max-concurrency 2');
+    // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
+    // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
+    // stdio fd into epoll, and never ends the outgoing sinks at the swap
+    // (oven-sh/bun#37968; the fix, oven-sh/bun#38008, is still open). A reused
+    // fd number then fails EPOLL_CTL_ADD with EEXIST — Linux only, so it never
+    // reproduces on a laptop — and Bun reports it as a failure that names no
+    // test. That killed the packages lane on run 35331083850, both attempts at
+    // the same SHA. 28 files: 11s parallel vs 34s serial, measured in a Linux
+    // container against the real disposable-PostgreSQL containers.
+    // The PostgreSQL contracts (`*.integration.test.ts`) run one file per
+    // process in the `db-suites` lane of the core run, not here.
+    expect(dbPackage.scripts.test).toBe(
+      "bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'",
+    );
+  });
+
+  it('keeps bun test isolation opt-in, with a stated reason per package', () => {
+    // Isolation is a cost (see the EEXIST note above), not a free speedup. A
+    // package earns it with file count, or by giving each file its own PROCESS
+    // so the leaking swap never happens. Adding a name here is a deliberate
+    // decision to carry that risk.
+    const isolated: Record<string, string> = {
+      '@kortix/cli': '107 test files; serial would cost minutes, not seconds',
+      'Kortix-Computer-Frontend': '762 test files; serial is not viable',
+      '@kortix/sdk': 'xargs -n1 -P4 runs one file per process: no isolate swap, no leak',
+    };
+
+    const offenders: string[] = [];
+    for (const group of ['apps', 'packages']) {
+      for (const entry of readdirSync(resolve(root, group), { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const manifest = resolve(root, group, entry.name, 'package.json');
+        if (!existsSync(manifest)) continue;
+        const parsed = JSON.parse(readFileSync(manifest, 'utf8'));
+        const script: string | undefined = parsed.scripts?.test;
+        if (!script || !parsed.name) continue;
+        if (!/--isolate\b|--parallel\b/.test(script)) continue;
+        if (parsed.name in isolated) continue;
+        offenders.push(`${parsed.name}: ${script}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+    for (const [name, reason] of Object.entries(isolated)) {
+      expect(reason.length, `${name} needs a reason`).toBeGreaterThan(20);
+    }
   });
 
   it('keeps connector discovery convergence out of the parallel API lane', () => {

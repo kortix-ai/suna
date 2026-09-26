@@ -13,7 +13,7 @@ import {
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { type FormEvent, useCallback, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -761,12 +761,12 @@ function SecretTableRow({
             {delivery.label}
           </Badge>
           {row.requiresRotation && (
-            <span className="text-kortix-orange text-[11px] font-medium">
+            <span className="text-kortix-orange text-xs font-medium">
               {tI18nComplete.raw('texte450e0da6cf9')}
             </span>
           )}
           {shouldWarnMissingAgentGrant(row.deliveryBlockedReason, row.strategy, row.consumer) && (
-            <span className="text-kortix-orange text-[11px] font-medium">
+            <span className="text-kortix-orange text-xs font-medium">
               {tI18nComplete.raw('text6404e0b5d78d')}
             </span>
           )}

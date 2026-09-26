@@ -5,12 +5,15 @@ import type {
   CreateProjectSessionInput,
   ProjectSession,
   RemovedSessionPrompt,
+  SessionConfigRelease,
   SessionPrompt,
+  SessionReloadResult,
   SessionTurn,
   SessionTurnStatus,
 } from './sessions';
 import {
   createProjectSession,
+  sessionParentId,
   createSessionPrompt,
   createSessionPublicShare,
   claimWarmProjectSession,
@@ -24,6 +27,7 @@ import {
   getSessionPreviewCandidates,
   getSessionOpenBundle,
   getSessionTranscript,
+  getSessionTranscriptSync,
   getSessionTurn,
   listProjectSessions,
   listProjectSessionsPage,
@@ -453,6 +457,45 @@ test('getSessionTranscript builds the query string from limit/chars options', as
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/transcript');
 });
 
+test('getSessionTranscriptSync pages older windows with the previous window cursor', async () => {
+  // The mirror retains a whole history and every reader asks for a tail, so
+  // without a cursor everything before that tail is stored and unreachable.
+  nextResponse = {
+    status: 200,
+    body: {
+      available: true,
+      reason: null,
+      source: 'mirror',
+      complete: false,
+      captured_at: '2026-09-21T00:00:00.000Z',
+      opencode_session_id: 'ocs-1',
+      message_count: 40,
+      total: 242,
+      next_cursor: 'msg_older',
+      messages: [],
+    },
+  };
+  const envelope = await getSessionTranscriptSync('P1', 'S1', {
+    limit: 40,
+    before: 'msg_tail',
+  });
+  expect(last().url).toContain('before=msg_tail');
+  expect(last().url).toContain('shape=sync');
+  // `complete: false` says the window is partial; these two say by how much and
+  // how to reach the rest.
+  expect(envelope.total).toBe(242);
+  expect(envelope.next_cursor).toBe('msg_older');
+});
+
+test('getSessionTranscriptSync omits the cursor on a first window', async () => {
+  nextResponse = {
+    status: 200,
+    body: { available: false, reason: null, source: 'none', complete: false, captured_at: null, opencode_session_id: null, message_count: 0, messages: [] },
+  };
+  await getSessionTranscriptSync('P1', 'S1', { limit: 40 });
+  expect(last().url).not.toContain('before=');
+});
+
 test('getSessionTurn hits GET /projects/:id/sessions/:id/turn', async () => {
   nextResponse = { status: 200, body: { turns: [] } };
   await getSessionTurn('P1', 'S1');
@@ -603,6 +646,119 @@ test('getProjectSessionConfigState preserves a NULL stale — "could not tell" i
   const result = await getProjectSessionConfigState('P1', 'S1');
   expect(result.stale).toBeNull();
   expect(result.stale).not.toBe(false);
+});
+
+const RELEASE_FALLBACK: SessionConfigRelease = {
+  mode: 'follow-base',
+  source: 'release',
+  running_release_id: 'a'.repeat(64),
+  desired_release_id: 'b'.repeat(64),
+  proven: true,
+  fallback_reason: 'replacement did not serve GET /agent within 90 s',
+  failed_release_id: 'b'.repeat(64),
+};
+
+test('getProjectSessionConfigState carries the release block unchanged', async () => {
+  // The release block names the config the box runs, the config the API
+  // assigns, and why they differ. The web header derives its state from it.
+  nextResponse = {
+    status: 200,
+    body: {
+      base_ref: 'main',
+      running_etag: null,
+      latest_etag: null,
+      commit_sha: 'c'.repeat(40),
+      stale: true,
+      sandbox_reachable: true,
+      release: RELEASE_FALLBACK,
+    },
+  };
+  const result = await getProjectSessionConfigState('P1', 'S1');
+  const release: SessionConfigRelease | undefined = result.release;
+  expect(release).toEqual(RELEASE_FALLBACK);
+});
+
+test('getProjectSessionConfigState from an API without releases has no release block', async () => {
+  // An API that predates config releases omits the field. It must stay
+  // undefined, so a host renders exactly what it rendered before.
+  nextResponse = {
+    status: 200,
+    body: {
+      base_ref: 'main',
+      running_etag: 'aaaaaaaaaaaaaaaa',
+      latest_etag: 'aaaaaaaaaaaaaaaa',
+      commit_sha: null,
+      stale: null,
+      sandbox_reachable: true,
+    },
+  };
+  const result = await getProjectSessionConfigState('P1', 'S1');
+  expect(result.release).toBeUndefined();
+});
+
+test('reloadProjectSessionConfig carries the release block of the converged box', async () => {
+  // A box that fell all the way to the image default. `source` has no
+  // `workspace` member: under config releases the box never boots from
+  // /workspace, so the chain is release → last proven release → image default.
+  const imageDefault: SessionConfigRelease = {
+    mode: 'follow-base',
+    source: 'image-default',
+    running_release_id: null,
+    desired_release_id: 'd'.repeat(64),
+    proven: true,
+    fallback_reason: 'the base branch config did not start, and no proven release exists on this box',
+    failed_release_id: 'd'.repeat(64),
+  };
+  nextResponse = {
+    status: 200,
+    body: { applied: true, detail: 'ok', release: imageDefault },
+  };
+  const result: SessionReloadResult = await reloadProjectSessionConfig('P1', 'S1');
+  expect(result.release).toEqual(imageDefault);
+});
+
+/** True only when the two unions have exactly the same members. */
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+test('a reload reports BOTH halves: the checkout and the running config', async () => {
+  // `kortix sessions reload` and the web control do two things in one call.
+  // A host must be able to tell the user what happened to each.
+  nextResponse = {
+    status: 200,
+    body: {
+      applied: true,
+      detail: 'ok',
+      workspace_checkout: 'updated',
+      commit_sha: 'e'.repeat(40),
+      release: {
+        mode: 'follow-base',
+        source: 'release',
+        running_release_id: 'a'.repeat(64),
+        desired_release_id: 'a'.repeat(64),
+        proven: true,
+        fallback_reason: null,
+        failed_release_id: null,
+      },
+    },
+  };
+  const result: SessionReloadResult = await reloadProjectSessionConfig('P1', 'S1');
+  const checkout: SessionReloadResult['workspace_checkout'] = result.workspace_checkout;
+  expect(checkout).toBe('updated');
+  expect(result.release?.running_release_id).toBe('a'.repeat(64));
+});
+
+test('a release always follows the base branch, and never serves from /workspace', () => {
+  // Compile-time assertions with a runtime witness: a wider union makes these
+  // `false`, and `const x: true = false` stops `tsc --noEmit`.
+  //
+  // `session-files` is gone: a session's own edits under /workspace are never
+  // the config a box runs — they reach it by being pushed to the base branch.
+  // `workspace` is gone from `source` for the same reason: under config
+  // releases the chain is release → last proven release → image default.
+  const modeFollowsBaseOnly: Exact<SessionConfigRelease['mode'], 'follow-base'> = true;
+  const sourceHasNoWorkspace: Exact<SessionConfigRelease['source'], 'release' | 'image-default'> = true;
+  expect(modeFollowsBaseOnly).toBe(true);
+  expect(sourceHasNoWorkspace).toBe(true);
 });
 
 test('reloadProjectSessionConfig POSTs to /reload with an empty body by default', async () => {
@@ -831,6 +987,10 @@ test('getProjectSessionScope reads canonical session scope', async () => {
   // client can stop calling an inherited default "nothing selected".
   expect(result.connector_bindings_configured).toBe(false);
   expect(result.connector_bindings_inherit_unbound).toBe(true);
+  // A session cannot require a connector any more. The field survives as a
+  // published-type compatibility shim and is always null — a consumer that
+  // branches on it must see "nothing required", never a stale alias list.
+  expect(result.required_connectors).toBeNull();
 });
 
 test('setProjectSessionScope clears a connector override with null', async () => {
@@ -926,6 +1086,22 @@ test('createSessionPrompt POSTs the submission name, the wire id, the parts and 
     message_id: 'msg_a',
     deduped: false,
   });
+});
+
+test('createSessionPrompt preserves explicit queue placement on the wire', async () => {
+  for (const placement of ['transcript', 'composer'] as const) {
+    nextResponse = {
+      status: 202,
+      body: { prompt_id: 'cmd-placement', state: 'queued', message_id: 'msg_a', deduped: false },
+    };
+    await createSessionPrompt('P1', 'S1', {
+      clientMessageId: `placement-${placement}`,
+      messageId: 'msg_a',
+      parts: [{ type: 'text', text: 'follow up' }],
+      placement,
+    });
+    expect(last().body).toMatchObject({ placement });
+  }
 });
 
 test('createSessionPrompt asks for a server re-mint only when the caller says its id is stale', async () => {
@@ -1131,4 +1307,53 @@ test('getSessionOpenBundle asks for the transcript window it was given', async (
 test('getSessionOpenBundle throws when the response is unsuccessful', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   await expect(getSessionOpenBundle('P1', 'S1')).rejects.toBeTruthy();
+});
+
+
+// ── sessionParentId ────────────────────────────────────────────────────────
+//
+// A session spawned by an agent from inside another session carries its parent
+// in `metadata.spawned_by_session` (apps/api/src/projects/lib/sessions.ts:1566,
+// deliberately kept on the LIST payload — see LIST_OMITTED_SESSION_METADATA_KEYS
+// in apps/api/src/projects/lib/serializers.ts:84). `metadata` was
+// `Record<string, unknown>`, so every host re-derived the same `typeof … ===
+// 'string'` cast: apps/web/src/components/projects/session-label.ts:61,
+// apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359,
+// apps/tui/src/lib/session-groups.ts:145.
+
+const child = (metadata: Record<string, unknown>, sessionId = 'child') =>
+  ({ session_id: sessionId, metadata }) as unknown as ProjectSession;
+
+test('sessionParentId reads metadata.spawned_by_session', () => {
+  expect(sessionParentId(child({ spawned_by_session: 'parent-1' }))).toBe('parent-1');
+});
+
+test('sessionParentId is null for a root session', () => {
+  expect(sessionParentId(child({}))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: '' }))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: '   ' }))).toBeNull();
+});
+
+test('sessionParentId ignores a non-string value', () => {
+  // The column is jsonb. A malformed row must not produce a parent id that a
+  // caller then uses as a session id.
+  expect(sessionParentId(child({ spawned_by_session: 42 }))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: null }))).toBeNull();
+  expect(sessionParentId(child({ spawned_by_session: { id: 'x' } }))).toBeNull();
+});
+
+test('sessionParentId refuses a self-referential link', () => {
+  // A session that is its own parent would make any tree walk loop forever.
+  expect(sessionParentId(child({ spawned_by_session: 'child' }, 'child'))).toBeNull();
+});
+
+test('sessionParentId tolerates a session with no metadata at all', () => {
+  expect(sessionParentId({ session_id: 'a' } as unknown as ProjectSession)).toBeNull();
+});
+
+test('ProjectSession.metadata types spawned_by_session as an optional string', () => {
+  const session = child({ spawned_by_session: 'parent-1' });
+  // No cast: the narrowing is the point of the typed metadata.
+  const parent: string | undefined = session.metadata.spawned_by_session;
+  expect(parent).toBe('parent-1');
 });

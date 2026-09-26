@@ -7,9 +7,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { OFFLOAD_PLACEHOLDER_URL } from '../attachment-offload'
-import type { Opencode } from '../opencode'
-import { createPartRouter, findAttachment } from '../routes/part'
+import { OFFLOAD_PLACEHOLDER_URL } from '../harness/open-code/attachment-offload'
+import type { Opencode } from '../harness/open-code/lifecycle'
+import { createPartRouter } from '../routes/part'
+import { createOpenCodeAttachmentService } from '../harness/open-code/queries'
 
 let root: string
 let server: ReturnType<typeof Bun.serve> | null = null
@@ -31,18 +32,6 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 function fakeOpencode(port: number): Opencode {
   return { getInternalUrl: () => `http://127.0.0.1:${port}` } as unknown as Opencode
 }
-
-describe('findAttachment', () => {
-  test('finds a top-level file part and a nested tool attachment by id', () => {
-    const parts = [
-      { type: 'file', id: 'f1', url: 'data:x' },
-      { type: 'tool', state: { attachments: [{ type: 'file', id: 'a1', url: 'data:y' }] } },
-    ]
-    expect(findAttachment(parts as any, 'f1')?.url).toBe('data:x')
-    expect(findAttachment(parts as any, 'a1')?.url).toBe('data:y')
-    expect(findAttachment(parts as any, 'zz')).toBeNull()
-  })
-})
 
 describe('GET /kortix/part/:s/:m/:p', () => {
   test('serves a tool screenshot from its nested attachment, and an offloaded one from the sidecar', async () => {
@@ -78,7 +67,7 @@ describe('GET /kortix/part/:s/:m/:p', () => {
       ],
     }
     server = Bun.serve({ port: 0, fetch: () => Response.json(message) })
-    const app = createPartRouter(fakeOpencode(server.port as number))
+    const app = createPartRouter(createOpenCodeAttachmentService(fakeOpencode(server.port as number)))
 
     const inline = await app.request('http://d/ses/msg_1/prt_inline')
     expect(inline.status).toBe(200)
@@ -120,7 +109,7 @@ describe('offloaded attachment read through OpenCode (marker stripped by its sch
       ],
     }
     server = Bun.serve({ port: 0, fetch: () => Response.json(message) })
-    const app = createPartRouter(fakeOpencode(server.port as number), { sidecarDir })
+    const app = createPartRouter(createOpenCodeAttachmentService(fakeOpencode(server.port as number), { sidecarDir }))
 
     const byId = await app.request('http://d/ses/msg_1/prt_byid')
     expect(byId.status).toBe(200)

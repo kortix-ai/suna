@@ -43,6 +43,11 @@ function renderShareable(fileName: string, content = 'x'): string {
   );
 }
 
+/** How many times `needle` occurs in `haystack`. */
+function count(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
 describe('file kind predicates', () => {
   test('svg is recognised, and is not confused with the other rendered kind', () => {
     expect(isSvg('logo.svg')).toBe(true);
@@ -131,7 +136,7 @@ describe('FileViewer toolbar', () => {
   });
 
   test('a file with only one form gets no toggle — it would have one position', () => {
-    // Markdown is the other no-toggle kind, but `DocMarkdown` can't be rendered
+    // Markdown is the other no-toggle kind, but `UnifiedMarkdown` can't be rendered
     // by this effect-free harness, so plain source stands in for both.
     const txt = render('notes.txt', 'hi');
     expect(txt).not.toContain('aria-label="Preview"');
@@ -229,14 +234,27 @@ describe('FileViewer actions', () => {
     expect(button.endsWith('>Copy')).toBe(true);
   });
 
-  test('Copy link and Download file are behind the caret, not beside it', () => {
+  test('Copy link is behind the caret, not beside it', () => {
     const md = renderShareable('notes.txt', 'hi');
     expect(md).toContain('aria-label="More actions"');
-    // Radix renders menu content only once opened, so the items themselves
-    // cannot appear in static markup — their absence here is the proof they
-    // are not sitting in the toolbar row.
+    // Radix renders menu content only once opened, so the item itself cannot
+    // appear in static markup — its absence here is the proof it is not
+    // sitting in the toolbar row.
     expect(md).not.toContain('title="Copy public link"');
-    expect(md).not.toContain('aria-label="Download"');
+  });
+
+  test('Download is a visible button, exactly one', () => {
+    // Download used to hide behind the caret. It is now a first-class icon
+    // button, so it needs no menu opened.
+    const md = renderShareable('notes.txt', 'hi');
+    expect(count(md, 'aria-label="Download"')).toBe(1);
+    expect(count(md, 'data-viewer-download=""')).toBe(1);
+    // Order: split button, then Download, then the panel controls.
+    const copy = md.indexOf('aria-label="Copy file contents"');
+    const download = md.indexOf('aria-label="Download"');
+    const fullScreen = md.indexOf('aria-label="Full screen"');
+    expect(copy).toBeLessThan(download);
+    expect(download).toBeLessThan(fullScreen);
   });
 
   test('the removed icon peers stay removed', () => {
@@ -276,8 +294,12 @@ describe('FileViewer actions', () => {
     expect(noPath).not.toContain('aria-label="More actions"');
   });
 
-  test('a path with no share context still earns the caret — Download lives there', () => {
-    expect(render('notes.txt', 'hi')).toContain('aria-label="More actions"');
+  test('a path with no share context shows Download, and no caret for it', () => {
+    // Download is never a menu item, so without Copy link there is nothing
+    // left for a menu: Copy stands alone and Download is visible beside it.
+    const md = render('notes.txt', 'hi');
+    expect(md).not.toContain('aria-label="More actions"');
+    expect(count(md, 'aria-label="Download"')).toBe(1);
   });
 });
 
@@ -333,27 +355,18 @@ You are **Veyris Internal**.
 
 describe('FileViewer — markdown frontmatter', () => {
   // Rendered assertions live in markdown-frontmatter.test.ts: `parseFrontmatter`
-  // owns the behaviour and is tested directly there. DocMarkdown needs the full
-  // i18n + sandbox-proxy provider stack, which this suite does not stand up (the
-  // other cases here only render non-markdown paths), so what is asserted here
-  // is the WIRING — that the viewer splits the file before the markdown parser
-  // can see the fences.
+  // owns the behaviour and is tested directly there. The markdown renderer
+  // needs the full i18n + sandbox-proxy provider stack, which this suite does
+  // not stand up (the other cases here only render non-markdown paths), so what
+  // is asserted here is the WIRING — that the viewer hands the whole file to
+  // the component that splits frontmatter off before the parser sees it.
 
-  test('the markdown branch splits frontmatter off instead of passing raw content', () => {
-    // The bug: `<DocMarkdown content={content} />`. Markdown then read `---` as
-    // a thematic break and the closing `---` as a setext underline, turning the
-    // whole metadata block into one giant <h2>.
-    expect(FILE_VIEWER_SOURCE).toContain('parseFrontmatter');
-    expect(FILE_VIEWER_SOURCE).not.toMatch(/<DocMarkdown\s+content=\{content\}/);
-  });
-
-  test('the parsed body — not the original file — reaches DocMarkdown', () => {
-    expect(FILE_VIEWER_SOURCE).toMatch(/<DocMarkdown[\s\S]{0,120}content=\{body\}/);
-  });
-
-  test('the metadata renders through the shared card, not a bespoke one', () => {
-    // Same component the chat's inline preview uses, so the two panes agree.
-    expect(FILE_VIEWER_SOURCE).toContain('MarkdownFrontmatterCard');
+  test('the markdown branch renders through MarkdownWithFrontmatter', () => {
+    // The bug: the raw file went straight to the markdown renderer. Markdown
+    // then read `---` as a thematic break and the closing `---` as a setext
+    // underline, turning the whole metadata block into one giant <h2>.
+    expect(FILE_VIEWER_SOURCE).toMatch(/<MarkdownWithFrontmatter\s+content=\{content\}/);
+    expect(FILE_VIEWER_SOURCE).not.toContain('<UnifiedMarkdown');
   });
 });
 

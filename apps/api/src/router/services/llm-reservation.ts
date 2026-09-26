@@ -1,5 +1,5 @@
 import { HTTPException } from 'hono/http-exception';
-import { grantCredits } from '../../billing/services/credits';
+import { wallet } from '../../billing/wallet';
 import { recordUsageEvent } from '../../shared/usage-events';
 import type { ActorContext } from '../../shared/actor-context';
 import { requireModelPricing, type ModelConfig } from '../config/models';
@@ -128,13 +128,14 @@ export async function reserveEstimatedLlmCredits(
   }
 
   const actorReservedCents = await reserveActorCost(actor, creditReservation.cost, () =>
-    grantCredits(
+    wallet.grant({
       accountId,
-      creditReservation.cost,
-      'llm_reservation_refund',
-      `LLM reservation refund after member cap: ${modelId}`,
-      false,
-    ),
+      amount: creditReservation.cost,
+      kind: 'llm_reservation_refund',
+      description: `LLM reservation refund after member cap: ${modelId}`,
+      expiring: false,
+      key: null,
+    }),
   );
 
   return {
@@ -210,13 +211,14 @@ export async function settleLlmReservation(input: {
         console.error(`[LLM] ${input.logPrefix} delta deduction failed:`, error);
       }
     } else if (toRefund > 0) {
-      await grantCredits(
-        input.accountId,
-        toRefund,
-        'llm_reservation_refund',
-        `LLM reservation refund: ${input.modelId}`,
-        false,
-      ).catch((error) => {
+      await wallet.grant({
+        accountId: input.accountId,
+        amount: toRefund,
+        kind: 'llm_reservation_refund',
+        description: `LLM reservation refund: ${input.modelId}`,
+        expiring: false,
+        key: null,
+      }).catch((error) => {
         console.error(`[LLM] ${input.logPrefix} refund failed:`, error);
       });
     }
@@ -269,13 +271,14 @@ export async function refundLlmReservation(
 ): Promise<void> {
   if (!reservation) return;
   if (reservation.cost > 0) {
-    await grantCredits(
-      reservation.accountId,
-      reservation.cost,
-      'llm_reservation_refund',
+    await wallet.grant({
+      accountId: reservation.accountId,
+      amount: reservation.cost,
+      kind: 'llm_reservation_refund',
       description,
-      false,
-    );
+      expiring: false,
+      key: null,
+    });
   }
   if (reservation.actor && (reservation.actorReservedCents ?? 0) > 0) {
     await refundActorSpend(

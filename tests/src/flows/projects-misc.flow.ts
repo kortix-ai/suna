@@ -610,8 +610,83 @@ flow(
   },
 );
 
+// PROJ-37 — PUT and DELETE /model-defaults run one guard in one order:
+// project visible (404) → project.customize.write (403) → project LLM gateway
+// enabled (404 llm_gateway_disabled). Same caller + same project state → same
+// status on both verbs. Every denial fires before model servability is
+// checked. PROJ-27 covers the funded set/read/clear lifecycle; this local
+// flow proves an authorized writer reaches model validation and deletion.
+flow(
+  'PROJ-37',
+  {
+    domain: 'projects',
+    routes: [
+      'PATCH /v1/projects/:projectId/experimental',
+      'GET /v1/projects/:projectId/model-defaults',
+      'PUT /v1/projects/:projectId/model-defaults',
+      'DELETE /v1/projects/:projectId/model-defaults',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const gatewayOff = await team.project();
+    const gatewayOn = await team.project();
+    const user = await team.addMember('member');
+    const manager = await team.addMember('member');
+    for (const project of [gatewayOff, gatewayOn]) {
+      await team.grantProjectRole(project.id, user.userId!, 'user');
+      await team.grantProjectRole(project.id, manager.userId!, 'manager');
+    }
+    const path = '/v1/projects/:projectId/model-defaults';
+    const put = (actor: typeof user, projectId: string, model = 'guard-probe-model') =>
+      ctx.client.as(actor).put(path, { scope: 'project', model }, { params: { projectId } });
+    const del = (actor: typeof user, projectId: string) =>
+      ctx.client.as(actor).del(path, { params: { projectId }, query: { scope: 'project' } });
+
+    await ctx.step('OWNER turns the LLM gateway off on one project and on for the other', async () => {
+      for (const [project, enabled] of [[gatewayOff, false], [gatewayOn, true]] as const) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch(
+            '/v1/projects/:projectId/experimental',
+            { feature: 'llm_gateway', enabled },
+            { params: { projectId: project.id } },
+          );
+        r.status(200);
+      }
+    });
+    await ctx.step('project user without customize.write → PUT and DELETE both 403 while the gateway is off', async () => {
+      (await put(user, gatewayOff.id)).status(403);
+      (await del(user, gatewayOff.id)).status(403);
+    });
+    await ctx.step('project user without customize.write → PUT and DELETE both 403 while the gateway is on', async () => {
+      (await put(user, gatewayOn.id)).status(403);
+      (await del(user, gatewayOn.id)).status(403);
+    });
+    await ctx.step('project manager → PUT and DELETE both 404 llm_gateway_disabled while the gateway is off', async () => {
+      (await put(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
+      (await del(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
+    });
+    await ctx.step('NONMEMBER → PUT and DELETE both 403 on either project', async () => {
+      for (const project of [gatewayOff, gatewayOn]) {
+        (await put(ctx.P.NONMEMBER, project.id)).status(403);
+        (await del(ctx.P.NONMEMBER, project.id)).status(403);
+      }
+    });
+    await ctx.step('project manager reaches model validation and deletion while the gateway is on', async () => {
+      (await put(manager, gatewayOn.id)).status(409)
+        .body().has('$.code', 'model_not_servable');
+      const read = () =>
+        ctx.client.as(manager).get(path, { params: { projectId: gatewayOn.id } });
+      (await read()).status(200).body().has('$.projectDefault', null);
+      (await del(manager, gatewayOn.id)).status(200).body().has('$.ok', true).has('$.scope', 'project');
+      (await read()).status(200).body().has('$.projectDefault', null);
+    });
+  },
+);
+
 // PROJ-35 — PUT /v1/projects/:projectId/model-enablement
-// (apps/api/src/projects/routes/r4.ts:2763-2822). Replace the project's
+// (apps/api/src/projects/routes/models.ts). Replace the project's
 // model-override exceptions (which models are enabled/disabled). The full
 // positive path needs a funded account + model-picker data; the BOUNDARIES
 // are assertable without one: an unknown project 404s, ANON 401s, a missing
@@ -823,7 +898,10 @@ flow(
   {
     domain: 'projects',
     requires: ['managedGit'],
-    routes: ['PATCH /v1/projects/:projectId/sandbox-provider'],
+    routes: [
+      'GET /v1/projects/:projectId',
+      'PATCH /v1/projects/:projectId/sandbox-provider',
+    ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true, seed: true });
@@ -838,27 +916,54 @@ flow(
       r.status(400);
     });
     if (ctx.env.target !== 'local') {
-      await ctx.step(
-        "pin to the enabled 'daytona' provider → 200 project or preparation",
-        async () => {
+      // The enabled set is deployment config (ALLOWED_SANDBOX_PROVIDERS with an
+      // API key): dev/staging/prod enable Daytona + Platinum, a PR preview
+      // enables Platinum only. Read it from the project instead of assuming a
+      // provider, then prove a concrete pin works and a known-but-disabled
+      // provider is refused.
+      let enabled: string[] = [];
+      await ctx.step('read the enabled providers from the project → non-empty', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId', { params: { projectId: p.id } });
+        r.status(200).body().exists('$.available_sandbox_providers');
+        enabled = r.json<{ available_sandbox_providers?: string[] }>()?.available_sandbox_providers ?? [];
+        if (enabled.length === 0) {
+          throw new Error(`no enabled sandbox provider: ${r.text()}`);
+        }
+      });
+      await ctx.step('pin to an enabled provider → 200 project or preparation', async () => {
+        const target = enabled[0]!;
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch(
+            '/v1/projects/:projectId/sandbox-provider',
+            { provider: target },
+            { params: { projectId: p.id } },
+          );
+        r.status(200).body().exists('$.kind');
+        const body = r.json<any>();
+        if (body?.kind === 'project') {
+          r.body().has('$.default_sandbox_provider', target);
+        } else if (body?.kind === 'preparation') {
+          r.body().has('$.target_provider', target);
+        } else {
+          throw new Error(`unexpected sandbox-provider PATCH response: ${r.text()}`);
+        }
+      });
+      const disabled = ['daytona', 'platinum', 'e2b'].find((name) => !enabled.includes(name));
+      if (disabled) {
+        await ctx.step('pin to a known but disabled provider → 400', async () => {
           const r = await ctx.client
             .as(ctx.P.OWNER)
             .patch(
               '/v1/projects/:projectId/sandbox-provider',
-              { provider: 'daytona' },
+              { provider: disabled },
               { params: { projectId: p.id } },
             );
-          r.status(200).body().exists('$.kind');
-          const body = r.json<any>();
-          if (body?.kind === 'project') {
-            r.body().has('$.default_sandbox_provider', 'daytona');
-          } else if (body?.kind === 'preparation') {
-            r.body().has('$.target_provider', 'daytona');
-          } else {
-            throw new Error(`unexpected sandbox-provider PATCH response: ${r.text()}`);
-          }
-        },
-      );
+          r.status(400);
+        });
+      }
     }
     await ctx.step('clear the pin (null) → 200 (immediate, kind:project)', async () => {
       const r = await ctx.client
@@ -895,7 +1000,7 @@ flow(
 
 // PROJ-32 — the BYOK-provider-connect-modal catalog. Serves the SAME live,
 // 24h-refreshed `runtimeModelCatalog.snapshot()` every other gateway/model
-// endpoint reads (apps/api/src/projects/routes/r4.ts) — provider-level rows
+// endpoint reads (apps/api/src/projects/routes/models.ts) — provider-level rows
 // (id, name, auth env vars, docs URL), NOT gated by projectLlmGatewayEnabled
 // since it's meaningful for every project including native (non-gateway)
 // ones. Project-read-scoped (403/404 boundary), not actually secret data.

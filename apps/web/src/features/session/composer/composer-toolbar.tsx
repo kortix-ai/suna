@@ -1,8 +1,8 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
@@ -173,6 +173,7 @@ export function ComposerToolbar({
             defaultControls={modelDefaultControls}
             triggerLabelClassName="max-w-[7rem]"
             projectId={projectId}
+            offerChatGptAccounts
             open={modelMenuOpen}
             onOpenChange={onModelMenuOpenChange}
           />

@@ -9,6 +9,8 @@ import { attemptKeyFor, clearAttemptKey } from '@/features/workspace/new/create-
 import {
   buildCreateRepoPayload,
   buildLinkRepositoryPayload,
+  buildManagedImportPayload,
+  isManagedImport,
 } from '@/features/workspace/new/github-source';
 import {
   buildProvisionPayload,
@@ -22,7 +24,7 @@ import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import {
   isManagedGitUnavailableError,
   isProjectLimitError,
-} from '@/lib/onboarding/ensure-first-project';
+} from '@/lib/onboarding/provision-errors';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   createProjectRepo,
@@ -61,7 +63,7 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * actually identifies a genuinely different workspace: keying on those means
  * creating "suna-web" then, moments later, "kortix-api" in the same account
  * mints two independent keys instead of the second create silently returning
- * the first project (the exact failure mode `r1.ts`'s `idempotency_key` doc
+ * the first project (the exact failure mode `projects.ts`'s `idempotency_key` doc
  * comment warns about).
  */
 export function fingerprintOf(state: NewWorkspaceFormState): string {
@@ -201,6 +203,19 @@ export function buildGitHubImportPayload(
 }
 
 /**
+ * The `POST /projects/link-repository` body for an existing MANAGED repository
+ * — the operator-only import path. Same account resolution; the installation
+ * is the managed-git backend rather than an account's GitHub App installation.
+ */
+export function buildManagedImportRequest(
+  state: NewWorkspaceFormState,
+  creatableAccounts: KortixAccount[],
+  userId: string | null,
+): LinkRepositoryInput {
+  return buildManagedImportPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
+}
+
+/**
  * A user-facing message for a failed create.
  *
  * `ApiError` field names verified at
@@ -212,7 +227,7 @@ export function buildGitHubImportPayload(
  *
  * 502 and 503 are NOT the same failure and must not share a message. This
  * route's only 503 is `isManagedGitUnavailableError`
- * (`ensure-first-project.ts:254`) — managed git is not configured on this
+ * (`lib/onboarding/provision-errors.ts`) — managed git is not configured on this
  * server, a server-config state no client-side retry can fix. Telling the
  * user to "try again" there is false: nothing they do changes the outcome
  * until an operator configures it. 502 (an upstream/gateway fault) keeps the
@@ -225,14 +240,13 @@ export function buildGitHubImportPayload(
  * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
  * (`apps/api/src/projects/lib/access.ts`) returns 403 too, and
  * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/shared/account-limits.ts`)
- * plus `ensureFirstProject` auto-provisioning every account's first project
- * means EVERY free-tier user who clicks "Create a workspace…" hits this —
- * not an edge case. The generic 403 message ("You need owner or admin
+ * means every free-tier user who already has one project and clicks
+ * "Create a workspace…" hits this — not an edge case. The generic 403 message ("You need owner or admin
  * access…") is actively false for them: they have the role, they are simply
  * out of quota. The server's own message is reused verbatim rather than
  * inventing new copy — it already states the exact limit and the upgrade
  * path, matching what the deleted create modal's `isProjectLimitError`
- * handling reused for the same code (`ensure-first-project.ts`).
+ * handling reused for the same code (`provision-errors.ts`).
  *
  * `provision_in_flight` (409, final-review FIX 1) also gets its own branch,
  * never the raw server text: `PROVISION_IN_FLIGHT_CODE`'s own doc comment
@@ -256,14 +270,14 @@ export function messageFor(error: unknown): string {
   }
   if (status === 400) return message || 'Check the workspace name and try again.';
   if (isManagedGitUnavailableError(error)) {
-    return "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before workspaces can be created.";
+    return "Managed git isn't set up on this server. A platform admin connects GitHub in the admin console before workspaces can be created.";
   }
   if (status === 409) {
     // Two different 409s reach here now, and they must not share a message.
     // `provision_in_flight` carries a typed `code`
     // (`PROVISION_IN_FLIGHT_CODE`); the GitHub sources' 409s do not — they are
     // "install the Kortix GitHub App first" (`create-repo` and
-    // `link-repository`, `apps/api/src/projects/routes/r2.ts`) and "no
+    // `link-repository`, `apps/api/src/projects/routes/project-from-repository.ts`) and "no
     // available repository name near X". Both of those already say exactly
     // what to do, so the server's own message is reused verbatim rather than
     // being overwritten with a wait-and-retry line that is simply false for
@@ -303,7 +317,7 @@ export function messageFor(error: unknown): string {
  * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
  *   later attempt can land differently with no change on the client at all.
  * - `503` (this route's only 503 is `isManagedGitUnavailableError`,
- *   `ensure-first-project.ts:254`) — NOT retryable. A server configuration
+ *   `lib/onboarding/provision-errors.ts`) — NOT retryable. A server configuration
  *   state; see `messageFor` above. Reuses that detector rather than
  *   re-deriving the 503 check, so this and `messageFor` can never disagree
  *   about which failure is which.
@@ -328,6 +342,11 @@ export function isRetryableError(error: unknown): boolean {
   const status = (error as { status?: number } | null | undefined)?.status;
 
   if (status === 400) return false;
+  // The plan cap is a 403 too, but nothing about a retry changes it — only a
+  // plan change does, and the page offers that instead (`limitReached`).
+  // Before the generic 403 fallthrough, which IS retryable (wrong account,
+  // role granted meanwhile).
+  if (isProjectLimitError(error)) return false;
   if (isManagedGitUnavailableError(error)) return false;
   if (status === 409) return true;
 
@@ -338,8 +357,7 @@ export function isRetryableError(error: unknown): boolean {
  * The network calls `runCreateAttempt` and `runProvisionAttempt` need,
  * injectable so their logic is unit-tested with a plain fake instead of
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
- * hazard for sibling test suites (see `ensure-first-project.ts`'s own
- * `EnsureFirstProjectClient` for the same pattern). `wait` is injected too, so
+ * hazard for sibling test suites. `wait` is injected too, so
  * a test exercises the FULL retry budget without sleeping the real
  * 400ms/1200ms.
  */
@@ -400,7 +418,7 @@ export function isTransportFailure(error: unknown): boolean {
  *
  * POSTs once. On a `409` `provision_in_flight` — another call carrying this
  * SAME `idempotency_key` is still mid-provision, per
- * `apps/api/src/projects/routes/r1.ts` — retries up to `RETRY_DELAY_MS.length`
+ * `apps/api/src/projects/routes/projects.ts` — retries up to `RETRY_DELAY_MS.length`
  * more times with the IDENTICAL payload. Never a re-minted key: the key
  * identifies the ATTEMPT, and the whole point of retrying is to land on that
  * same attempt's result. Any other error, or exhausting the retry budget,
@@ -501,8 +519,7 @@ export async function runProvisionAttempt(
  * `mock.module('@kortix/sdk', ...)`, which is process-wide in this monorepo.
  *
  * `attemptKeyFor`/`clearAttemptKey`/`writeLastProjectId`/`now` don't depend on
- * React and could be given real module-level defaults (as
- * `EnsureFirstProjectClient` does in `ensure-first-project.ts`); the other
+ * React and could be given real module-level defaults ; the other
  * three (`primeProjectCache`, `invalidateProjects`, `enterOnboarding`) are
  * inherently render-scoped — they close over the live `queryClient`/`router`
  * a hook only has inside a component — so there is no single "no-args"
@@ -579,6 +596,15 @@ async function runSourceAttempt(
       buildGitHubImportPayload(state, creatableAccounts, userId),
     );
   }
+  // `managed` + a chosen repository is an IMPORT of a repository the managed
+  // owner already holds, not a provision of a new one. `/projects/provision`
+  // cannot adopt an existing repository, so it would create a second, empty
+  // one and ignore the choice.
+  if (isManagedImport(state)) {
+    return client.importGitHubRepoProject(
+      buildManagedImportRequest(state, creatableAccounts, userId),
+    );
+  }
   if (!idempotencyKey) {
     throw new Error('runCreate: the managed source requires an idempotency key');
   }
@@ -603,15 +629,13 @@ async function runSourceAttempt(
  *
  * **No onboarding gate.** An earlier version read the account's project count
  * here and pre-stamped the new project onboarded unless it was the account's
- * first. That gate could never fire: the account's first project is
- * auto-provisioned (`ensure-first-project.ts`), never created through `/new`,
- * so the count was always >= 1 by the time anyone reached this code — and the
- * pre-stamp made the wizard render `null` on arrival, every single time.
+ * first. The pre-stamp made the wizard render `null` on arrival for every
+ * project after the first.
  * Every `/new` create now runs onboarding, and the only thing that stamps the
  * project is the wizard finishing.
  *
  * The key is cleared FIRST among the success-path steps, before any of the
- * other four. The API's own contract (`r1.ts`) is that the key identifies the
+ * other four. The API's own contract (`projects.ts`) is that the key identifies the
  * ATTEMPT, not the payload — once the server has confirmed this attempt
  * succeeded, the key must never be replayed, or a LATER, genuinely different
  * create with the same name would silently return THIS project instead of
@@ -636,7 +660,7 @@ export async function runCreate(
   // for a GitHub source would persist a key that is never sent and never
   // cleared, so `usesIdempotencyKey` gates BOTH the mint and the clear rather
   // than only the field in the payload.
-  const usesIdempotencyKey = state.source === 'managed';
+  const usesIdempotencyKey = state.source === 'managed' && !isManagedImport(state);
   const idempotencyKey = usesIdempotencyKey
     ? client.attemptKeyFor(fingerprint, client.now())
     : null;
@@ -682,6 +706,12 @@ export function useCreateWorkspace(): {
   retry: () => void;
   /** Whether `retry` can plausibly succeed for the CURRENT error; see `isRetryableError`. */
   canRetry: boolean;
+  /**
+   * The account is at its plan's project cap (403 `project_limit_reached`,
+   * `enforceProjectQuota` in `apps/api/src/projects/lib/access.ts`). Retrying
+   * cannot fix it; the page offers the upgrade dialog instead.
+   */
+  limitReached: boolean;
 } {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -772,5 +802,6 @@ export function useCreateWorkspace(): {
   // create is `'creating'` or has already succeeded.
   const canRetry = status === 'error' && isRetryableError(lastError);
 
-  return { create, status, error, retry, canRetry };
+  const limitReached = status === 'error' && isProjectLimitError(lastError);
+  return { create, status, error, retry, canRetry, limitReached };
 }

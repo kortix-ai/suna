@@ -3,7 +3,7 @@
  * project's config lives INSIDE the cloned repo (`<projectTarget>/.kortix/
  * opencode`), so this only returns the project dir once the repo has been
  * materialized — otherwise it falls back to the baked default. The boot path
- * (main.ts) MUST therefore resolve this AFTER the clone; resolving before the
+ * (harness/open-code/boot.ts) MUST therefore resolve this AFTER the clone; resolving before the
  * clone always fell back and silently dropped the project's custom agents,
  * plugins, commands and `default_agent`.
  */
@@ -12,7 +12,8 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from '../config'
+import { loadConfig } from '../config'
+import { loadOpenCodeConfig, requireOpenCodeConfig, resolveOpencodeConfigDir, type OpenCodeConfig as Config } from '../harness/open-code/config'
 
 let workspace: string
 const DEFAULT_DIR = '/ephemeral/kortix-master/opencode'
@@ -105,28 +106,38 @@ describe('resolveOpencodeConfigDir', () => {
   })
 })
 
-describe('resolveSandboxOnBoot', () => {
-  test('returns null when no manifest exists', async () => {
-    expect(await resolveSandboxOnBoot(cfg())).toBeNull()
+describe('native configuration behind the host boundary', () => {
+  test('an empty environment yields the flat defaults', () => {
+    const native = requireOpenCodeConfig(loadConfig({}))
+    expect(native).toMatchObject({
+      servicePort: 8000,
+      staticPort: 3211,
+      opencodeInternalPort: 4096,
+      opencodeStandbyPort: 4097,
+      defaultOpencodeConfigDir: DEFAULT_DIR,
+    })
+    // The API's boot-time config-dir HINT is gone: the boot path asks the API
+    // for the release itself, so no second, earlier answer exists to disagree.
+    expect('opencodeConfigDirHint' in native).toBe(false)
   })
 
-  test('reads sandbox.on_boot from kortix.yaml', async () => {
-    writeFileSync(join(workspace, 'kortix.yaml'), 'sandbox:\n  on_boot: "pnpm dev"\n')
-    expect(await resolveSandboxOnBoot(cfg())).toBe('pnpm dev')
-  })
-
-  test('reads an unquoted sandbox.on_boot from kortix.yaml', async () => {
-    writeFileSync(join(workspace, 'kortix.yaml'), 'sandbox:\n  on_boot: pnpm dev\n')
-    expect(await resolveSandboxOnBoot(cfg())).toBe('pnpm dev')
-  })
-
-  test('reads [sandbox] on_boot from legacy kortix.toml', async () => {
-    writeFileSync(join(workspace, 'kortix.toml'), '[sandbox]\non_boot = "pnpm dev"\n')
-    expect(await resolveSandboxOnBoot(cfg())).toBe('pnpm dev')
-  })
-
-  test('returns null when sandbox.on_boot is unset', async () => {
-    writeFileSync(join(workspace, 'kortix.yaml'), 'sandbox:\n  cpu: 4\n')
-    expect(await resolveSandboxOnBoot(cfg())).toBeNull()
+  test('reads supplied host and native overrides', () => {
+    const native = loadOpenCodeConfig({
+      KORTIX_SERVICE_PORT: '8123',
+      KORTIX_OPENCODE_INTERNAL_PORT: '4123',
+      KORTIX_OPENCODE_STANDBY_PORT: '4124',
+      KORTIX_DEFAULT_OPENCODE_CONFIG_DIR: '/custom/native/config',
+      KORTIX_OPENCODE_CONFIG_DIR_HINT: '.kortix/opencode',
+    })
+    expect(native).toMatchObject({
+      servicePort: 8123,
+      opencodeInternalPort: 4123,
+      opencodeStandbyPort: 4124,
+      defaultOpencodeConfigDir: '/custom/native/config',
+    })
+    // A stale hint from an older API is READ BY NOTHING, so it cannot steer a
+    // boot any more.
+    expect('opencodeConfigDirHint' in native).toBe(false)
+    expect(() => loadOpenCodeConfig({ KORTIX_OPENCODE_INTERNAL_PORT: 'invalid' })).toThrow()
   })
 })

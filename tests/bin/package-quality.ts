@@ -147,6 +147,7 @@ async function runWorkspaceTests(
 await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
+  run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
 ]);
 await rejectFocusedTests();
 await runAll([
@@ -173,12 +174,9 @@ await runAll([
   })(),
 ]);
 await runAll([
-  (async () => {
-    await runWorkspaceTests(['@kortix/db'], 1);
-    // These contracts apply the complete migration history to disposable
-    // PostgreSQL containers. Keep them after the DB package to bound Docker IO.
-    await run(['bun', 'test', '--max-concurrency', '2', 'tests/migration']);
-  })(),
+  // `@kortix/db`'s PostgreSQL contracts (`*.integration.test.ts`) and
+  // `tests/migration` run in the `db-suites` lane of the core run.
+  runWorkspaceTests(['@kortix/db'], 1),
   runWorkspaceTests(
     [
       './packages/**',

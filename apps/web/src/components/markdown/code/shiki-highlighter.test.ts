@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   __testing,
   clampCode,
+  PRELOAD_LANGS,
   highlightAsync,
   highlightSync,
   SHIKI_THEME_DARK,
@@ -90,10 +91,10 @@ describe('shikiKey', () => {
     );
   });
 
-  test('BUG: two different long strings of the same length collide on one key', () => {
-    // Past 200 characters the signature is head(100) + tail(100) + length, so
-    // any edit that stays inside the middle and keeps the length produces the
-    // same key as the text it replaced. Documented, not asserted away.
+  test('two different long strings of the same length get different keys', () => {
+    // The key used to be head(100) + tail(100) + length, so an edit inside the
+    // middle that kept the length collided with the text it replaced. The key
+    // now hashes the whole string.
     const head = 'a'.repeat(100);
     const tail = 'b'.repeat(100);
     const plus = `${head}const total = subtotal + tax;${tail}`;
@@ -101,14 +102,12 @@ describe('shikiKey', () => {
 
     expect(plus).not.toBe(minus);
     expect(plus.length).toBe(minus.length);
-    expect(shikiKey(plus, 'typescript', SHIKI_THEME_DARK)).toBe(
+    expect(shikiKey(plus, 'typescript', SHIKI_THEME_DARK)).not.toBe(
       shikiKey(minus, 'typescript', SHIKI_THEME_DARK),
     );
   });
 
-  test('BUG: the collision serves one snippet the other snippet’s highlighted HTML', () => {
-    // What the key collision costs a reader: highlightSync answers from the
-    // cache before it looks at the code it was handed.
+  test('a cached snippet is never served for a different snippet of the same length', () => {
     const head = 'a'.repeat(100);
     const tail = 'b'.repeat(100);
     const plus = `${head}const total = subtotal + tax;${tail}`;
@@ -116,7 +115,7 @@ describe('shikiKey', () => {
 
     cacheHtml(shikiKey(plus, 'typescript', SHIKI_THEME_DARK), '<pre>PLUS</pre>');
 
-    expect(highlightSync(minus, 'typescript', SHIKI_THEME_DARK)).toBe('<pre>PLUS</pre>');
+    expect(highlightSync(minus, 'typescript', SHIKI_THEME_DARK)).not.toBe('<pre>PLUS</pre>');
   });
 });
 
@@ -213,5 +212,54 @@ describe('the lock', () => {
     // is the regression test: if the parameter ever widens back to `string`,
     // the line stops erroring, the directive goes unused, and tsc fails.
     expect(highlightSync('const a = 1;', 'typescript', 'github-dark')).toBeNull();
+  });
+});
+
+// Regression for Better Stack 1604d50a (`WebAssembly is not defined`): visitors
+// whose browser blocks WebAssembly must still get highlighted code, and must
+// never fire an unhandled rejection. The JavaScript regex engine needs no
+// WebAssembly at all.
+describe('without WebAssembly', () => {
+  test('a cold highlighter still highlights', async () => {
+    const original = (globalThis as { WebAssembly?: unknown }).WebAssembly;
+    try {
+      delete (globalThis as { WebAssembly?: unknown }).WebAssembly;
+      const cold: typeof import('./shiki-highlighter') = await import(
+        `./shiki-highlighter?nowasm=${Date.now()}`
+      );
+      expect(await cold.highlightAsync('const a = 1;', 'typescript', SHIKI_THEME_DARK)).toContain(
+        '<pre',
+      );
+    } finally {
+      (globalThis as { WebAssembly?: unknown }).WebAssembly = original;
+    }
+  });
+});
+
+describe('on-demand grammars', () => {
+  test('nothing loads before the first highlight request', async () => {
+    const cold: typeof import('./shiki-highlighter') = await import(
+      `./shiki-highlighter?lazy=${Date.now()}`
+    );
+    expect(cold.__testing.loadedLangs.size).toBe(0);
+  });
+
+  test('a grammar outside PRELOAD_LANGS loads on first use and then answers synchronously', async () => {
+    expect(PRELOAD_LANGS).not.toContain('rust');
+    expect(await highlightAsync('fn main() {}', 'rust', SHIKI_THEME_DARK)).toContain('<pre');
+    expect(loadedLangs.has('rust')).toBe(true);
+    expect(highlightSync('fn other() {}', 'rust', SHIKI_THEME_DARK)).toContain('<pre');
+  });
+
+  test('an unknown hint resolves to null (plain text), not a rejection', async () => {
+    expect(await highlightAsync('x', 'not-a-language', SHIKI_THEME_DARK)).toBeNull();
+  });
+
+  test('plain-text hints highlight without a grammar', async () => {
+    expect(await highlightAsync('just text', 'text', SHIKI_THEME_DARK)).toContain('just text');
+  });
+
+  test('PRELOAD_LANGS is a handful, not the old ~58', () => {
+    expect(PRELOAD_LANGS.length).toBeLessThanOrEqual(10);
   });
 });

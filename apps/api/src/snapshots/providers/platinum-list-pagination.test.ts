@@ -5,6 +5,7 @@ const {
   PlatinumAdapter,
   PlatinumTemplateListingError,
 } = await import('./platinum');
+const { SnapshotInUseError } = await import('./errors');
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -292,5 +293,58 @@ describe('deleteSnapshot removes every exact-name Platinum template', () => {
         : jsonResponse([namedTpl('delete-failure', target)])) as unknown as typeof fetch;
 
     await expect(platinumProvider.deleteSnapshot(target)).rejects.toThrow(/503/);
+  });
+
+  // Platinum refuses to delete a template while any sandbox still pins its
+  // rootfs (409 template_in_use; verified live 2026-09-22 against
+  // api.platinum.dev). Daytona deletes a snapshot under live sandboxes, so
+  // this outcome is Platinum-only. It is an expected state, not an outage:
+  // callers must see a typed error, never a generic provider failure.
+  test('maps 409 template_in_use to SnapshotInUseError and still deletes free duplicates', async () => {
+    const target = 'kortix-default-in-use';
+    const deleted: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+      const id = new URL(url).pathname.split('/').at(-1) ?? '';
+      if (init?.method === 'DELETE') {
+        deleted.push(id);
+        return id === 'pinned'
+          ? jsonResponse(
+              {
+                error: 'template still in use by 3 sandbox(es); delete those first',
+                code: 'template_in_use',
+                in_use: 3,
+              },
+              409,
+            )
+          : jsonResponse({});
+      }
+      return jsonResponse([namedTpl('pinned', target), namedTpl('free-duplicate', target)]);
+    }) as unknown as typeof fetch;
+
+    const error = await platinumProvider.deleteSnapshot(target).then(
+      () => null,
+      (err: unknown) => err,
+    );
+    expect(error).toBeInstanceOf(SnapshotInUseError);
+    expect((error as InstanceType<typeof SnapshotInUseError>).inUse).toBe(3);
+    expect((error as InstanceType<typeof SnapshotInUseError>).snapshotName).toBe(target);
+    expect(deleted).toEqual(['pinned', 'free-duplicate']);
+  });
+
+  test('a 409 that is not template_in_use stays a generic failure', async () => {
+    const target = 'kortix-default-building';
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === 'DELETE'
+        ? jsonResponse({ error: 'build in progress', code: 'build_in_progress' }, 409)
+        : jsonResponse([namedTpl('building', target)])) as unknown as typeof fetch;
+
+    const error = await platinumProvider.deleteSnapshot(target).then(
+      () => null,
+      (err: unknown) => err,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(SnapshotInUseError);
+    expect(String(error)).toMatch(/409/);
   });
 });

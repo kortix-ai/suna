@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../main'
-import type { Config } from '../config'
+import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../harness/open-code/boot'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 
 // Exactly-once finalize for a completed turn. Proves the fast-boot event-loss
 // fix's dedup invariant: whether a turn's end is observed by the natural
@@ -327,21 +327,12 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
     }
   })
 
-  test('relays a web session without Slack metadata', async () => {
-    const m = startMocks(() => 1000)
-    sessionEnv(m.baseUrl)
-    const opencode = { getInternalUrl: () => m.baseUrl }
-    const cfg = { workspace: WORKSPACE } as unknown as Config
-    try {
-      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
-      expect(m.calls()).toBe(1)
-    } finally {
-      m.stop()
-    }
-  })
-
   test('does not relay without sandbox callback identity', async () => {
     const m = startMocks(() => 1000)
+    // Everything but the project identity points at the mock, so an ambient
+    // KORTIX_API_URL cannot make the zero-call assertion pass elsewhere.
+    sessionEnv(m.baseUrl)
+    delete process.env.KORTIX_PROJECT_ID
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {

@@ -9,6 +9,7 @@ import {
   type SessionGroupMode,
   type SessionOrderMode,
 } from '@/features/workspace/project-sidebar/session-grouping';
+import type { SessionAccessFilter } from '@/features/workspace/project-sessions/session-owner-filters';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 
@@ -97,6 +98,10 @@ interface State {
   sourceFiltersByProject: Record<string, SessionSourceFilter[]>;
   hiddenSectionsByProject: Record<string, string[]>;
   collapsedSectionsByProject: Record<string, string[]>;
+  /** Owner facet: `created_by` ids (see `sessionOwnerKey`). Sessions page only. */
+  ownerFiltersByProject: Record<string, string[]>;
+  /** Access facet: who else can open the session. Sessions page only. */
+  accessFiltersByProject: Record<string, SessionAccessFilter[]>;
 }
 
 /**
@@ -114,6 +119,12 @@ interface Actions {
   toggleSourceFilter: (
     projectId: string,
     value: SessionSourceFilter,
+    surface?: SessionViewSurface,
+  ) => void;
+  toggleOwnerFilter: (projectId: string, ownerKey: string, surface?: SessionViewSurface) => void;
+  toggleAccessFilter: (
+    projectId: string,
+    value: SessionAccessFilter,
     surface?: SessionViewSurface,
   ) => void;
   resetFilters: (projectId: string, surface?: SessionViewSurface) => void;
@@ -156,6 +167,16 @@ export const selectSourceFilters =
   (projectId: string, surface: SessionViewSurface = 'sidebar') =>
   (s: State): readonly SessionSourceFilter[] =>
     readScoped(s.sourceFiltersByProject, projectId, surface) ?? EMPTY_LIST;
+
+export const selectOwnerFilters =
+  (projectId: string, surface: SessionViewSurface = 'sidebar') =>
+  (s: State): readonly string[] =>
+    readScoped(s.ownerFiltersByProject, projectId, surface) ?? EMPTY_LIST;
+
+export const selectAccessFilters =
+  (projectId: string, surface: SessionViewSurface = 'sidebar') =>
+  (s: State): readonly SessionAccessFilter[] =>
+    readScoped(s.accessFiltersByProject, projectId, surface) ?? EMPTY_LIST;
 
 export const selectHiddenSections =
   (projectId: string, surface: SessionViewSurface = 'sidebar') =>
@@ -228,11 +249,35 @@ export const useSessionFilterStore = create<State & Actions>()(
         });
       },
 
+      ownerFiltersByProject: {},
+      toggleOwnerFilter: (projectId, ownerKey, surface = 'sidebar') => {
+        const current = readScoped(get().ownerFiltersByProject, projectId, surface) ?? [];
+        set({
+          ownerFiltersByProject: {
+            ...get().ownerFiltersByProject,
+            [scopeKey(projectId, surface)]: toggleValue(current, ownerKey),
+          },
+        });
+      },
+
+      accessFiltersByProject: {},
+      toggleAccessFilter: (projectId, value, surface = 'sidebar') => {
+        const current = readScoped(get().accessFiltersByProject, projectId, surface) ?? [];
+        set({
+          accessFiltersByProject: {
+            ...get().accessFiltersByProject,
+            [scopeKey(projectId, surface)]: toggleValue(current, value),
+          },
+        });
+      },
+
       resetFilters: (projectId, surface = 'sidebar') => {
         const key = scopeKey(projectId, surface);
         set({
           statusFiltersByProject: { ...get().statusFiltersByProject, [key]: [] },
           sourceFiltersByProject: { ...get().sourceFiltersByProject, [key]: [] },
+          ownerFiltersByProject: { ...get().ownerFiltersByProject, [key]: [] },
+          accessFiltersByProject: { ...get().accessFiltersByProject, [key]: [] },
         });
       },
 
@@ -280,6 +325,8 @@ export const useSessionFilterStore = create<State & Actions>()(
         sourceFiltersByProject: pruneProjects(state.sourceFiltersByProject),
         hiddenSectionsByProject: pruneProjects(state.hiddenSectionsByProject),
         collapsedSectionsByProject: pruneProjects(state.collapsedSectionsByProject),
+        ownerFiltersByProject: pruneProjects(state.ownerFiltersByProject),
+        accessFiltersByProject: pruneProjects(state.accessFiltersByProject),
       }),
     },
   ),

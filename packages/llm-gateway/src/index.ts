@@ -26,27 +26,25 @@ export {
   gatewayErrorResponse,
 } from './pipeline/error-response';
 export type { GatewayErrorContext } from './pipeline/error-response';
+export {
+  publicPayload,
+  publicUpstreamError,
+  shownModel,
+  shownProvider,
+} from './pipeline/public-identity';
+export type { PublicUpstreamError } from './pipeline/public-identity';
 
 export { callUpstream } from './http';
 export type { CallUpstreamOptions, FetchImpl } from './http';
 
-export {
-  withRetry,
-  backoffDelay,
-  realSleep,
-} from './resilience';
-export type {
-  RetryOptions,
-  SleepFn,
-} from './resilience';
+export { withRetry } from './resilience';
+export type { RetryOptions } from './resilience';
 
 export {
   GatewayResolutionError,
   NetworkError,
   TimeoutError,
   UpstreamHttpError,
-  defaultIsRetryable,
-  indicatesUpstreamDown,
   looksLikeTerminalAuthFailure,
 } from './errors';
 export type { NoUpstreamReasonCode, UpstreamErrorKind } from './errors';
@@ -54,7 +52,7 @@ export type { NoUpstreamReasonCode, UpstreamErrorKind } from './errors';
 export { calculateCost } from './usage';
 export type { CostBreakdown, TokenUsage } from './usage';
 
-export { extractUsageFromJson, extractUsageFromSseBuffer } from './usage';
+export { extractUsageFromJson } from './usage';
 export type { ExtractedUsage } from './usage';
 
 export {
@@ -72,7 +70,7 @@ export type {
 export { createModelFallbackPolicyEngine } from './routing';
 export type { ModelFallbackPolicyEngine } from './routing';
 
-export { OPENAI_COMPATIBLE_NPM, providerKindForNpm } from './catalog';
+export { providerKindForNpm } from './catalog';
 
 export type {
   AuthedPrincipal,

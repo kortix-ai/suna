@@ -1,6 +1,5 @@
 import { test, expect } from 'bun:test';
 import {
-	buildAuthHeaders,
 	isStreamingRequest,
 	syntheticUnauthenticatedResponse,
 	withDefaultTimeout,
@@ -110,39 +109,9 @@ test('a Request input carries its own signal through the streaming exemption', (
 	expect(signal?.aborted).toBe(true);
 });
 
-// ── buildAuthHeaders / syntheticUnauthenticatedResponse ─────────────────────
-
-test('buildAuthHeaders injects the Bearer token without clobbering an existing Authorization', () => {
-	const injected = buildAuthHeaders('http://x.test/', undefined, 'tok');
-	expect(injected.get('Authorization')).toBe('Bearer tok');
-
-	const preset = buildAuthHeaders(
-		'http://x.test/',
-		{ headers: { Authorization: 'Bearer mine' } },
-		'tok',
-	);
-	expect(preset.get('Authorization')).toBe('Bearer mine');
-});
-
-test('buildAuthHeaders identifies the configured client surface', () => {
-	const headers = buildAuthHeaders('http://x.test/', undefined, 'tok', 'cli');
-	expect(headers.get('x-kortix-client')).toBe('cli');
-});
-
-test('buildAuthHeaders preserves an explicit client surface header', () => {
-	const headers = buildAuthHeaders(
-		'http://x.test/',
-		{ headers: { 'X-Kortix-Client': 'mobile' } },
-		'tok',
-		'cli',
-	);
-	expect(headers.get('x-kortix-client')).toBe('mobile');
-});
-
-test('buildAuthHeaders omits an unknown configured client surface', () => {
-	const headers = buildAuthHeaders('http://x.test/', undefined, 'tok', 'forged-source');
-	expect(headers.has('x-kortix-client')).toBe(false);
-});
+// ── syntheticUnauthenticatedResponse ──────────────────────────────────────
+// The header policy (bearer, client surface, admin bypass, act-as) is tested
+// at its one owner, `send`, in `./transport.test.ts`.
 
 test('the synthetic 401 is a JSON fetch-semantics Response (no network call implied)', async () => {
 	const res = syntheticUnauthenticatedResponse();

@@ -2,6 +2,8 @@ import { Editor, type JSONContent } from '@tiptap/core';
 import { PLUGIN_KEY as PLACEHOLDER_PLUGIN_KEY } from '@tiptap/extensions';
 import type { EditorView } from '@tiptap/pm/view';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { mergeFailedSubmissionText } from '../../composer-draft-recovery';
 import { planPrefillMerge, textToDocument } from '../composer-logic';
@@ -233,6 +235,32 @@ describe('createSubmitOnEnterHandler', () => {
     expect(handled).toBe(true);
   });
 
+  test('Enter and modified Enter keep distinct submission intents; composition never submits', () => {
+    const placements: string[] = [];
+    const handler = createSubmitOnEnterHandler(
+      (placement) => placements.push(placement),
+      () => false,
+    );
+    const fire = (extra: Partial<KeyboardEvent>) =>
+      handler(
+        null as unknown as EditorView,
+        {
+          key: 'Enter',
+          shiftKey: false,
+          preventDefault() {},
+          ...extra,
+        } as KeyboardEvent,
+      );
+    expect(fire({ shiftKey: undefined })).toBe(false);
+    fire({});
+    fire({ metaKey: true });
+    fire({ ctrlKey: true });
+    expect(fire({ isComposing: true })).toBe(false);
+    expect(fire({ keyCode: 229 })).toBe(false);
+    expect(fire({ shiftKey: true })).toBe(false);
+    expect(placements).toEqual(['transcript', 'composer', 'composer']);
+  });
+
   test('Enter while disabled does NOT call onSubmit, and reports unhandled', () => {
     // This is the bug: editable=false alone does not stop this handler from
     // firing, because it's not a document edit — it's an imperative
@@ -317,14 +345,34 @@ describe('createSubmitOnEnterHandler', () => {
     test('below the first row, with a modifier, or while disabled, the host is never asked', () => {
       let calls = 0;
       const onUp = () => (++calls, true);
-      expect(createSubmitOnEnterHandler(() => {}, () => false, onUp)(belowFirstRow, arrowUp().event)).toBe(false);
       expect(
-        createSubmitOnEnterHandler(() => {}, () => false, onUp)(atFirstRow, arrowUp({ shiftKey: true }).event),
+        createSubmitOnEnterHandler(
+          () => {},
+          () => false,
+          onUp,
+        )(belowFirstRow, arrowUp().event),
       ).toBe(false);
       expect(
-        createSubmitOnEnterHandler(() => {}, () => false, onUp)(atFirstRow, arrowUp({ isComposing: true }).event),
+        createSubmitOnEnterHandler(
+          () => {},
+          () => false,
+          onUp,
+        )(atFirstRow, arrowUp({ shiftKey: true }).event),
       ).toBe(false);
-      expect(createSubmitOnEnterHandler(() => {}, () => true, onUp)(atFirstRow, arrowUp().event)).toBe(false);
+      expect(
+        createSubmitOnEnterHandler(
+          () => {},
+          () => false,
+          onUp,
+        )(atFirstRow, arrowUp({ isComposing: true }).event),
+      ).toBe(false);
+      expect(
+        createSubmitOnEnterHandler(
+          () => {},
+          () => true,
+          onUp,
+        )(atFirstRow, arrowUp().event),
+      ).toBe(false);
       expect(calls).toBe(0);
     });
   });
@@ -447,7 +495,68 @@ describe('editor.setEditable — the mechanism the disabled effect depends on', 
     editor.setEditable(true);
     expect(editor.isEditable).toBe(true);
   });
+
+  /**
+   * The trap the `emitUpdate: false` argument in that effect exists for.
+   *
+   * `setEditable` emits the editor's `update` event by default, and `onUpdate`
+   * here is `createUpdateHandler` — a DOCUMENT-change reporter feeding the
+   * draft saver. A flip of `disabled` therefore reported the live document as
+   * a change the user had made. On the project-home composer, which keeps the
+   * sent text in the box (`clearOnSend={false}`), that phantom change landed
+   * after the send's `clearSavedDraft()` and re-saved the just-sent message as
+   * the project's unsent draft; the next visit restored it into the composer.
+   */
+  test('the default emit reports a phantom document change to the draft saver', () => {
+    const docs: JSONContent[] = [];
+    const editor = editorReportingDocChanges(docs);
+    editor.commands.insertContent({ type: 'text', text: 'Hi' });
+    const afterTyping = docs.length;
+
+    editor.setEditable(false);
+
+    expect(docs.length).toBe(afterTyping + 1);
+    // And it carries the whole document, which is why it re-saved the draft.
+    expect(JSON.stringify(docs.at(-1))).toContain('"text":"Hi"');
+  });
+
+  test('setEditable(x, false) — what the disabled effect passes — reports nothing', () => {
+    const docs: JSONContent[] = [];
+    const editor = editorReportingDocChanges(docs);
+    editor.commands.insertContent({ type: 'text', text: 'Hi' });
+    const afterTyping = docs.length;
+
+    editor.setEditable(false, false);
+    editor.setEditable(true, false);
+
+    expect(docs.length).toBe(afterTyping);
+    // Suppressing the event does not suppress the state change itself.
+    expect(editor.isEditable).toBe(true);
+  });
+
+  // The React-level wiring needs a renderer this suite does not have, so the
+  // one thing left to pin is that production passes the argument at all.
+  test('the disabled effect suppresses the emit', () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('./composer-editor.tsx', import.meta.url)),
+      'utf8',
+    );
+
+    expect(source).toContain('editor?.setEditable(!disabled, false)');
+  });
 });
+
+/** A headless editor whose `onUpdate` is the exact production composition. */
+function editorReportingDocChanges(docs: JSONContent[]): Editor {
+  return new Editor({
+    extensions: [...baseExtensions(() => 'Type a message'), MentionNode],
+    onUpdate: createUpdateHandler(
+      () => {},
+      (doc) => docs.push(doc),
+    ),
+    content: { type: 'doc', content: [{ type: 'paragraph' }] },
+  });
+}
 
 function mentionNode(kind: 'file' | 'agent' | 'session', label: string, value = ''): JSONContent {
   return { type: 'mention', attrs: { kind, label, value } };

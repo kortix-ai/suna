@@ -13,7 +13,10 @@ describe('Custom connector OAuth2 onboarding', () => {
   });
 
   test('renders the OAuth2 credential fields before connector creation', () => {
-    expect(connectorsSource).toContain('oauth2Selected={sharedOAuth2Selected}');
+    // No connector-level authorization strategy gates this any more (a
+    // custom connector's draft carries no owner choice) — the OAuth2-at-
+    // creation offer is plain `oauth2Selected` state.
+    expect(connectorsSource).toContain('oauth2Selected={oauth2Selected}');
     expect(connectorsSource).toContain('idPrefix="new-connector-oauth2"');
     expect(connectorsSource).toContain('createConnectorWithOptionalOAuth2(');
   });

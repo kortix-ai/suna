@@ -26,12 +26,6 @@ export function isPerSeatAccount(billingModel: string | null | undefined): boole
   return billingModel === 'per_seat';
 }
 
-export function isLegacyAccount(billingModel: string | null | undefined): boolean {
-  // Default for null/undefined is legacy — safer to skip new behaviour than to
-  // accidentally bill a legacy customer twice.
-  return billingModel !== 'per_seat' && billingModel !== 'credit';
-}
-
 /**
  * Billing v3 — flat credit plans (Starter / Team / Scale).
  *
@@ -61,3 +55,43 @@ export function isCreditPlanAccount(billingModel: string | null | undefined): bo
 export function accountMetersCompute(billingModel: string | null | undefined): boolean {
   return isPerSeatAccount(billingModel) || isCreditPlanAccount(billingModel);
 }
+
+/**
+ * Legacy flat plans sold before compute metering existed. An account on one of
+ * these, still on the legacy billing model, is the ONLY account that does not
+ * pay for sandbox compute.
+ *
+ * Whether these customers should start paying for compute is a pricing
+ * decision. Emptying this list is the whole change.
+ */
+export const LEGACY_PAID_TIERS_UNMETERED = [
+  'tier_2_20',
+  'tier_6_50',
+  'tier_25_200',
+  'tier_200_1000',
+  'pro',
+] as const;
+
+/**
+ * Does THIS ACCOUNT pay for sandbox compute? The row-level form of
+ * `accountMetersCompute`, and the one the meter asks.
+ *
+ * `billing_model` alone cannot answer it, because the column DEFAULTS to
+ * 'legacy': every account that never completed a checkout carries it, which on
+ * prod (2026-09-18) was 233,380 free accounts and every admin trial. Reading
+ * the default as "legacy customer" gave all of them free, uncapped compute —
+ * one trial account ran 16,909 sandboxes for $0 — while trial-admin.ts sized
+ * its credit grant on "sandbox compute always debits the wallet" and
+ * llm-gateway/hooks.ts on "free-tier wallets fund sandbox compute only".
+ *
+ * So: a metered model always meters; otherwise everything meters except a
+ * legacy paid plan. No credit account → nothing to debit → not metered.
+ */
+export function accountRowMetersCompute(
+  account: { billingModel?: string | null; tier?: string | null } | null | undefined,
+): boolean {
+  if (!account) return false;
+  if (accountMetersCompute(account.billingModel)) return true;
+  return !(LEGACY_PAID_TIERS_UNMETERED as readonly string[]).includes(account.tier ?? '');
+}
+

@@ -27,6 +27,8 @@
  * edits mid-render.
  */
 
+import type { UseSessionResult } from '@kortix/sdk/react';
+
 export interface SessionSurfaceInput {
   /**
    * This tab created this session, or arrived carrying its first prompt — i.e.
@@ -35,6 +37,8 @@ export interface SessionSurfaceInput {
    * describes, so it is never trusted on its own.
    */
   newSessionHint: boolean;
+  /** The durable first prompt exists, even after this tab loses its local hint. */
+  hasPendingFirstPrompt?: boolean;
   /** Any transcript content is known for this session (live runtime OR cache). */
   hasTranscript: boolean;
 }
@@ -50,7 +54,7 @@ export interface SessionSurfaceInput {
  * the box is still booting, and does not depend on the chat having mounted.
  */
 export function isNewSessionSurface(input: SessionSurfaceInput): boolean {
-  return input.newSessionHint && !input.hasTranscript;
+  return (input.newSessionHint || !!input.hasPendingFirstPrompt) && !input.hasTranscript;
 }
 
 export interface MountSessionChatInput extends SessionSurfaceInput {
@@ -71,7 +75,7 @@ export interface MountSessionChatInput extends SessionSurfaceInput {
  */
 export function shouldMountSessionChat(input: MountSessionChatInput): boolean {
   if (!input.contentAvailable) return false;
-  return !isNewSessionSurface(input) || input.submitted;
+  return !isNewSessionSurface(input) || input.submitted || !!input.hasPendingFirstPrompt;
 }
 
 /** The pre-chat overlay: the typeable new-session shell, or the boot loader. */
@@ -136,6 +140,43 @@ export function resolveBootPresentation(input: {
 }): SessionBootPresentation {
   if (input.overlay !== 'boot-loader') return 'full-screen';
   return input.hasTranscript ? 'banner' : 'full-screen';
+}
+
+/** `useSession().savedTranscript`: can the saved conversation show yet? */
+export type SavedTranscript = UseSessionResult['savedTranscript'];
+
+/** What the boot overlay paints for a session that is being resumed. */
+export type ResumeOverlay = 'saved-skeleton' | 'boot-loader';
+
+/**
+ * Skeleton rows or the boot screen, for a session that is not brand new.
+ *
+ * The control plane keeps a saved copy of the conversation and answers in one
+ * round trip; the computer takes 5-240 s to wake. So while that copy is on its
+ * way the overlay shows the session with skeleton message rows, and the
+ * conversation replaces them in one step. Only a session with nothing saved
+ * (`none`) keeps the boot screen, because nothing can be read until the
+ * runtime is up. `shown` stays on the skeleton: the overlay is fading out over
+ * the conversation at that point, and switching it to the boot screen for the
+ * fade would flash the wrong surface.
+ */
+export function resolveResumeOverlay(input: { savedTranscript: SavedTranscript }): ResumeOverlay {
+  return input.savedTranscript === 'none' ? 'boot-loader' : 'saved-skeleton';
+}
+
+/**
+ * Is there a conversation to read on this route, or one on its way?
+ *
+ * The stopped-sandbox and waking branches step aside for a transcript already
+ * on screen and fall through to the chat mount. A saved copy that is still
+ * loading gets the same treatment, so for its one round trip the overlay shows
+ * skeleton rows instead of a restart card or the boot screen.
+ */
+export function hasOrExpectsTranscript(input: {
+  hasTranscript: boolean;
+  savedTranscript: SavedTranscript;
+}): boolean {
+  return input.hasTranscript || input.savedTranscript === 'loading';
 }
 
 /**

@@ -346,7 +346,7 @@ async function kortixHealthy(
  * filesystem-only snapshot as one that "cold-boots" and "must be resumed
  * explicitly via connect()". Kortix sets no template `startCmd` either, so
  * apps/api is the ONLY thing that starts the runtime after a resume — and a
- * resume that leaves the process tree dead (observed on Essentia box
+ * resume that leaves the process tree dead (observed on SampleCo box
  * `igu3qpz1ctv0pg2agda1x`: `/opt/kortix/logs/daemon.log` gained no boot entries
  * after the pause) used to spin the caller for the full 190 s health wait and
  * then hand back an unreachable box. Only a human restart — a NEW sandbox —
@@ -606,7 +606,7 @@ export class E2BProvider implements SandboxProvider {
     // team's `max_length_hours` (tier + project_limits), so on a team capped
     // at 1h the deadline never moves past `startedAt + 1h` and the sandbox is
     // paused mid-turn exactly one hour after create/resume — while Kortix
-    // logged a successful renewal every 20 s (Essentia 2026-08-25: 375 blind
+    // logged a successful renewal every 20 s (SampleCo 2026-08-25: 375 blind
     // 204s, 4 turns killed). Read the deadline back and refuse to call a
     // renewal that did not land a renewal.
     const info = await withTimeout(

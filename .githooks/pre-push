@@ -8,4 +8,7 @@ if command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
 elif [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
 else DX="npx --yes @dotenvx/dotenvx"; fi
 
+# No customer data in the pushed commits, their messages, or the ref names.
+sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" push
+
 exec $DX ext precommit

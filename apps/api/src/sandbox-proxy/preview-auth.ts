@@ -11,7 +11,9 @@
  * This module is the single source of truth for "does this bare token grant
  * access to this sandbox", used by every NON-Hono edge (subdomain + WS). It
  * accepts exactly the set `combinedAuth` accepts for preview routes:
- *   - CLI Personal Access Tokens (kortix_pat_…)  → the minting user's id
+ *   - CLI Personal Access Tokens (kortix_pat_…)  → the minting user's id; a
+ *     project-scoped one only for a sandbox of that project
+ *     (`enforceTokenProjectScope`'s rule)
  *   - Service-account tokens       (kortix_sa_…)  → the service-account id
  *   - Kortix API/sandbox tokens    (kortix_…)     → the owning account id
  *   - Supabase JWTs                               → the user's id
@@ -29,7 +31,15 @@ import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
 import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { getSupabase } from '../shared/supabase';
-import { canAccessPreviewSandbox } from '../shared/preview-ownership';
+import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/preview-ownership';
+import { bindAuditPrincipal } from '../shared/audit-scope';
+import { previewActorFields } from './preview-audit';
+import type { PreviewPrincipalKind } from './preview-session';
+
+async function sandboxBelongsToProject(sandboxId: string, projectId: string): Promise<boolean> {
+  const sandboxProjectId = await resolveSandboxProjectId(sandboxId);
+  return sandboxProjectId !== null && sandboxProjectId === projectId;
+}
 
 /**
  * Validate `token` and, if it grants access to `sandboxId`, return the
@@ -46,12 +56,14 @@ export interface PreviewPrincipal {
    * that distinguishes one end-user's sandbox from another's.
    */
   sessionId: string | null;
+  /** What `userId` is. An account API key's `userId` is an ACCOUNT id. */
+  principalKind: PreviewPrincipalKind;
 }
 
 /**
- * Same authentication as {@link authenticatePreviewPrincipal}, but also returns
- * the session the credential is bound to. Prefer this on any surface that then
- * makes a session-visibility decision.
+ * Authenticate a preview credential (PAT, service-account token, account API
+ * key, or Supabase JWT) for one sandbox, and return the principal it proves
+ * with the session the credential is bound to.
  */
 export async function authenticatePreviewPrincipalDetailed(
   token: string | null | undefined,
@@ -64,8 +76,22 @@ export async function authenticatePreviewPrincipalDetailed(
     if (isAccountToken(token)) {
       const r = await validateAccountToken(token);
       if (!r.isValid || !r.userId) return null;
+      // Name the caller now, before the ownership check can refuse it.
+      bindAuditPrincipal(
+        previewActorFields({
+          kind: 'user',
+          principalId: r.userId,
+          sandboxAuthored: r.sessionId != null,
+          method: 'account_token',
+          callerSessionId: r.sessionId ?? null,
+        }),
+      );
+      // A project-scoped token reaches only sandboxes of its own project — the
+      // same rule `enforceTokenProjectScope` applies on the Hono path form. A
+      // lookup miss or another project refuses.
+      if (r.projectId && !(await sandboxBelongsToProject(sandboxId, r.projectId))) return null;
       return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: r.userId }))
-        ? { userId: r.userId, sessionId: r.sessionId ?? null }
+        ? { userId: r.userId, sessionId: r.sessionId ?? null, principalKind: 'user' }
         : null;
     }
 
@@ -73,8 +99,16 @@ export async function authenticatePreviewPrincipalDetailed(
     if (isServiceAccountToken(token)) {
       const r = await validateServiceAccountToken(token);
       if (!r.isValid || !r.serviceAccountId) return null;
+      bindAuditPrincipal(
+        previewActorFields({
+          kind: 'service_account',
+          principalId: r.serviceAccountId,
+          sandboxAuthored: false,
+          method: 'service_account',
+        }),
+      );
       return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: r.serviceAccountId }))
-        ? { userId: r.serviceAccountId, sessionId: null }
+        ? { userId: r.serviceAccountId, sessionId: null, principalKind: 'service_account' }
         : null;
     }
 
@@ -82,8 +116,17 @@ export async function authenticatePreviewPrincipalDetailed(
     if (isKortixToken(token)) {
       const r = await validateSecretKey(token);
       if (!r.isValid || !r.accountId) return null;
+      bindAuditPrincipal(
+        previewActorFields({
+          kind: 'account',
+          principalId: r.accountId,
+          // A sandbox key is the sandbox itself calling its own preview.
+          sandboxAuthored: r.type === 'sandbox',
+          method: r.type === 'sandbox' ? 'sandbox_token' : 'api_key',
+        }),
+      );
       return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, accountId: r.accountId }))
-        ? { userId: r.accountId, sessionId: null }
+        ? { userId: r.accountId, sessionId: null, principalKind: 'account' }
         : null;
     }
 
@@ -94,8 +137,11 @@ export async function authenticatePreviewPrincipalDetailed(
     // valid legacy-signed session while `/v1/p/...` served it.
     const local = await verifySupabaseJwt(token);
     if (local.ok) {
+      bindAuditPrincipal(
+        previewActorFields({ kind: 'user', principalId: local.userId, sandboxAuthored: false, method: 'jwt' }),
+      );
       return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: local.userId }))
-        ? { userId: local.userId, sessionId: null }
+        ? { userId: local.userId, sessionId: null, principalKind: 'user' }
         : null;
     }
     if (!isInconclusiveVerifyFailure(local.reason)) return null;
@@ -103,8 +149,11 @@ export async function authenticatePreviewPrincipalDetailed(
     const supabase = getSupabase();
     const { data: { user }, error } = await supabase.auth.getUser(token);
     if (error || !user) return null;
+    bindAuditPrincipal(
+      previewActorFields({ kind: 'user', principalId: user.id, sandboxAuthored: false, method: 'jwt' }),
+    );
     return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: user.id }))
-      ? { userId: user.id, sessionId: null }
+      ? { userId: user.id, sessionId: null, principalKind: 'user' }
       : null;
   } catch (err) {
     console.warn('[preview-auth] token validation error:', (err as Error)?.message || err);
@@ -130,13 +179,3 @@ export function extractPreviewToken(req: Request, url: URL): string | null {
   return null;
 }
 
-/**
- * Back-compat wrapper: the principal id only. Existing callers that make no
- * session-scoped decision (subdomain gate) keep using this.
- */
-export async function authenticatePreviewPrincipal(
-  token: string | null | undefined,
-  sandboxId: string,
-): Promise<string | null> {
-  return (await authenticatePreviewPrincipalDetailed(token, sandboxId))?.userId ?? null;
-}

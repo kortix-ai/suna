@@ -7,6 +7,7 @@ import {
 } from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isWarmProjectSession } from './warm-sessions';
+import { agentSessionStanding } from './agent-session-standing';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
@@ -88,6 +89,19 @@ export function selectSessionRowsForViewer(input: {
   boundCredentialSessionId: string | null;
   grantsBySession: Map<string, SecretGrant[]>;
   runtimeStatusBySession: Map<string, RuntimeStatus>;
+  /**
+   * The caller holds account session oversight (see iam/session-oversight.ts).
+   * Applied to the `project` scope only: that is the manager inventory (the
+   * Sessions page). The default `visible` scope feeds the sidebar, and an admin
+   * must not get every member's private session there.
+   */
+  accountSessionOversight?: boolean;
+  /**
+   * The caller is an agent session under the `agent_principal` model (spec §2).
+   * It lists only its own session, its children, and project-visible sessions —
+   * never the launcher's other private or restricted ones.
+   */
+  agentPrincipal?: boolean;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
   if (input.scope === 'project' && !input.canManageProject) {
     return { authorized: false, items: [] };
@@ -112,9 +126,16 @@ export function selectSessionRowsForViewer(input: {
         callerSessionId: input.callerSessionId,
         boundCredentialSessionId: input.boundCredentialSessionId,
       },
-      { metadata: row.metadata, canManageProject: input.canManageProject },
+      {
+        metadata: row.metadata,
+        canManageProject: input.canManageProject,
+        accountSessionOversight: input.scope === 'project' && input.accountSessionOversight === true,
+      },
     );
-    return { row, canAccess, runtimeStatus, deletedAt, deletedBy };
+    const access = input.agentPrincipal
+      ? agentSessionStanding(input.boundCredentialSessionId, row, canAccess).visible
+      : canAccess;
+    return { row, canAccess: access, runtimeStatus, deletedAt, deletedBy };
   });
 
   if (input.scope === 'project') {
@@ -177,6 +198,10 @@ export interface SessionCursorScope {
   viewerId: string;
 }
 
+/** GCM nonce and authentication-tag sizes, pinned on both sides. */
+const CURSOR_IV_BYTES = 12;
+const CURSOR_TAG_BYTES = 16;
+
 function cursorKey(scope: SessionCursorScope): Buffer {
   if (!config.API_KEY_SECRET) throw new Error('API_KEY_SECRET is required');
   return Buffer.from(
@@ -199,8 +224,10 @@ function cursorKey(scope: SessionCursorScope): Buffer {
  * Keyed per (project, viewer) so a cursor is also non-transferable.
  */
 export function encodeSessionCursor(cursor: SessionListCursor, scope: SessionCursorScope): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', cursorKey(scope), iv);
+  const iv = randomBytes(CURSOR_IV_BYTES);
+  const cipher = createCipheriv('aes-256-gcm', cursorKey(scope), iv, {
+    authTagLength: CURSOR_TAG_BYTES,
+  });
   const payload = `${cursor.updatedAt.toISOString()}|${cursor.sessionId}`;
   const ciphertext = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
   return [
@@ -223,10 +250,21 @@ export function decodeSessionCursor(
   if (!raw) return null;
   const [version, iv, tag, ciphertext, extra] = raw.split('.');
   if (version !== 'v1' || !iv || !tag || !ciphertext || extra !== undefined) return null;
+  // Pin BOTH lengths before decrypting. `setAuthTag` accepts a SHORT tag (4, 8,
+  // 12…15 bytes are all legal GCM tag lengths), and the tag arrives from the
+  // client — so a forged cursor carrying a 4-byte tag would need ~2^32 attempts
+  // to pass authentication instead of 2^128. The nonce is pinned for the same
+  // reason: a 12-byte IV is what `encodeSessionCursor` writes, and accepting
+  // another length lets a caller choose the GCM nonce derivation.
+  const ivBytes = Buffer.from(iv, 'base64url');
+  const tagBytes = Buffer.from(tag, 'base64url');
+  if (ivBytes.length !== CURSOR_IV_BYTES || tagBytes.length !== CURSOR_TAG_BYTES) return null;
   let payload: string;
   try {
-    const decipher = createDecipheriv('aes-256-gcm', cursorKey(scope), Buffer.from(iv, 'base64url'));
-    decipher.setAuthTag(Buffer.from(tag, 'base64url'));
+    const decipher = createDecipheriv('aes-256-gcm', cursorKey(scope), ivBytes, {
+      authTagLength: CURSOR_TAG_BYTES,
+    });
+    decipher.setAuthTag(tagBytes);
     payload = Buffer.concat([
       decipher.update(Buffer.from(ciphertext, 'base64url')),
       decipher.final(),

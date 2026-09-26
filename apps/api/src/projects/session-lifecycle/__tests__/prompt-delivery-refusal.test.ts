@@ -3,15 +3,24 @@ import { PromptDeliveryRefused, throwIfPromptRefused } from '../prompt-delivery-
 
 describe('prompt delivery refusal classification', () => {
   test.each([400, 401, 402, 403, 413, 422])('HTTP %s is terminal and preserves its message', async (status) => {
-    const response = Response.json({ message: 'Action required' }, { status });
-    await expect(throwIfPromptRefused(response)).rejects.toMatchObject({ status, message: 'Action required' });
+    const refusal = throwIfPromptRefused(Response.json({ message: 'Action required' }, { status }));
+    await expect(refusal).rejects.toBeInstanceOf(PromptDeliveryRefused);
+    await expect(refusal).rejects.toMatchObject({ status, message: 'Action required' });
   });
-  test.each([404, 408, 409, 429, 500, 502, 503])('HTTP %s remains retryable without a known refusal code', async (status) => {
-    await expect(throwIfPromptRefused(new Response('temporarily unavailable', { status }))).resolves.toBeUndefined();
-  });
-  test.each(['CONNECTOR_CONNECTION_REQUIRED', 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE'])('classified 409 %s is terminal', async (code) => {
-    await expect(throwIfPromptRefused(Response.json({ code, error: 'Gmail unavailable' }, { status: 409 })))
-      .rejects.toBeInstanceOf(PromptDeliveryRefused);
+  // A 409 can be a busy runtime. The two connector-requirement codes were
+  // retired with the session connector gate (2026-09-16), so a stale runtime
+  // that still answers one is RETRIED, not dead-lettered.
+  test.each([
+    [404, 'temporarily unavailable'],
+    [408, 'temporarily unavailable'],
+    [409, JSON.stringify({ code: 'CONNECTOR_CONNECTION_REQUIRED', error: 'Gmail unavailable' })],
+    [409, JSON.stringify({ code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE', error: 'x' })],
+    [429, 'temporarily unavailable'],
+    [500, 'temporarily unavailable'],
+    [502, 'temporarily unavailable'],
+    [503, 'temporarily unavailable'],
+  ])('HTTP %s remains retryable', async (status, body) => {
+    await expect(throwIfPromptRefused(new Response(body, { status }))).resolves.toBeUndefined();
   });
   test('a non-JSON permanent refusal still names its HTTP status', async () => {
     await expect(throwIfPromptRefused(new Response('too large', { status: 413 })))

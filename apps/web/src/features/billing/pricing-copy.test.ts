@@ -3,25 +3,10 @@ import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const pricingPageSource = readFileSync(
-  join(import.meta.dir, '../../../src/app/(public)/(marketing)/pricing/page.tsx'),
-  'utf8',
-);
-const calculatorSource = readFileSync(
-  join(import.meta.dir, 'compute-credit-calculator.tsx'),
+  join(import.meta.dir, '../../../src/app/[locale]/(public)/(marketing)/pricing/page.tsx'),
   'utf8',
 );
 const planSource = readFileSync(join(import.meta.dir, 'pricing-plans.ts'), 'utf8');
-/**
- * Same convention as `workspace-vocabulary.test.ts`: strip comments before
- * asserting on the source. A doc comment may *name* a billing number to
- * explain why the code does not hardcode it, and only the code itself is
- * evidence about what renders. The `[^:]` guard keeps `https://` intact.
- */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-}
-
-const calculatorCode = stripComments(calculatorSource);
 const englishTranslations = JSON.parse(
   readFileSync(join(import.meta.dir, '../../../translations/en.json'), 'utf8'),
 ) as {
@@ -42,7 +27,6 @@ const pricingExplainerKey = 'autoAppPublicMarketingPricingPageJsxTextOneSimpleBa
 
 const pricingCopy = [
   pricingPageSource,
-  calculatorSource,
   planSource,
   englishTranslations.hardcodedUi[pricingHeroKey],
   englishTranslations.hardcodedUi[pricingHeadingKey],
@@ -60,30 +44,7 @@ describe('pricing model billing copy', () => {
     expect(normalizedPricingCopy).toContain(
       'Optional managed models use Team credits based on token usage.',
     );
-    expect(normalizedPricingCopy).toContain('Optional managed model usage is token-based');
     expect(normalizedPricingCopy).toContain('input, output, and cached tokens use Team credits');
-  });
-
-  test('derives every credit figure instead of typing it in a second time', () => {
-    // Seats are the billing unit. The earlier "team members" control implied
-    // per-member billing and was removed for exactly that reason.
-    expect(calculatorSource).not.toContain('teamMembers');
-    expect(calculatorSource).toContain("raw('text42ef2c24bd7a')");
-    expect(calculatorSource).toContain("raw('texte835694dddb1')");
-
-    // Every figure reads from compute-pricing.ts. A second typed-in copy of a
-    // billing number has drifted wrong in this file before.
-    expect(calculatorSource).toContain("from '@/features/billing/compute-pricing'");
-    expect(calculatorSource).toContain('TEAM_CREDITS_PER_SEAT');
-    expect(calculatorSource).toContain('DEFAULT_COMPUTE_HOURLY_PRICE_USD');
-    expect(calculatorSource).toContain('CREDITS_PER_USD');
-    expect(calculatorCode).not.toContain('2,500');
-    expect(calculatorCode).not.toContain('2500');
-    expect(calculatorCode).not.toContain('$40');
-
-    // The receipt still names the two figures the reader came for.
-    expect(calculatorSource).toContain('Pooled credits / month');
-    expect(calculatorSource).toContain('Runtime the pool covers');
   });
 
   test('keeps the model billing correction in every translated pricing page', () => {
@@ -104,7 +65,7 @@ describe('pricing model billing copy', () => {
  * The seat grant is stated in two packages and they drift silently.
  *
  * apps/api owns the real number (`INCLUDED_CREDITS_PER_SEAT_USD`); apps/web
- * restates it for the pricing page, the calculator and the post-checkout toast.
+ * restates it for the pricing page and the post-checkout toast.
  * Nothing connected them, so the toast sat at a hardcoded $20 while the API
  * granted $25 — quoting a customer a grant $5/seat smaller than the one they
  * had just paid for, on the screen right after they paid.

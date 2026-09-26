@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 653,
+  "count": 675,
   "routes": [
     {
       "method": "GET",
@@ -37,6 +37,10 @@
     {
       "method": "POST",
       "path": "/internal/gateway/models"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/pool-rate-limit"
     },
     {
       "method": "POST",
@@ -137,6 +141,10 @@
     {
       "method": "GET",
       "path": "/v1/access/signup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/account-invites"
     },
     {
       "method": "GET",
@@ -456,6 +464,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/session-oversight"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/session-oversight"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/session-policy"
     },
     {
@@ -499,6 +515,10 @@
       "path": "/v1/accounts/:accountId/iam/sso/provider/from-metadata"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/sso/provider/verify-domain"
+    },
+    {
       "method": "GET",
       "path": "/v1/accounts/:accountId/invites"
     },
@@ -529,6 +549,34 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/members/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/secret-resources"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/secret-resources"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/value"
     },
     {
       "method": "GET",
@@ -597,6 +645,10 @@
     {
       "method": "POST",
       "path": "/v1/admin/api/accounts/:id/session-limit"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/admin/api/accounts/:id/sso-domain-verification"
     },
     {
       "method": "GET",
@@ -912,11 +964,19 @@
     },
     {
       "method": "POST",
+      "path": "/v1/channels/slack/identity/preview"
+    },
+    {
+      "method": "POST",
       "path": "/v1/channels/teams/identity/bind"
     },
     {
       "method": "GET",
       "path": "/v1/channels/teams/identity/login/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/channels/teams/identity/preview"
     },
     {
       "method": "POST",
@@ -973,6 +1033,10 @@
     {
       "method": "DELETE",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/accounts"
     },
     {
       "method": "PUT",
@@ -1408,6 +1472,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/agents"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
@@ -1564,7 +1632,15 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/channels/slack/oauth/complete"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/channels/teams/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/conversations"
     },
     {
       "method": "GET",
@@ -1587,8 +1663,16 @@
       "path": "/v1/projects/:projectId/channels/teams/manifest"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/teams/mode"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/oauth/complete"
     },
     {
       "method": "GET",
@@ -1613,6 +1697,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/commits/:sha/diff"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/config-archives/:configTreeId"
     },
     {
       "method": "POST",
@@ -1645,6 +1733,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connections/:connectionId/default"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connections/:connectionId/label"
     },
     {
       "method": "GET",
@@ -1827,6 +1919,10 @@
       "path": "/v1/projects/:projectId/git/connection"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/git/repository"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/group-grants"
     },
@@ -1909,14 +2005,6 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/onboarding"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/personal-providers"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/personal-providers/:provider"
     },
     {
       "method": "GET",
@@ -2055,6 +2143,14 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/attachments"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/audit"
     },
@@ -2069,6 +2165,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/config"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/config-release"
     },
     {
       "method": "GET",
@@ -2117,6 +2217,18 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/hold"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId"
     },
     {
       "method": "GET",
@@ -2243,6 +2355,14 @@
       "path": "/v1/projects/create-repo"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/git/backend"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/git/backend/repositories"
+    },
+    {
       "method": "DELETE",
       "path": "/v1/projects/github/installation"
     },
@@ -2305,30 +2425,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/suna-migration/status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/provider-connections"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/provider-connections/:provider"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/provider-connections/:provider"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/provider-connections/:provider/connections/:connectionId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/provider-connections/:provider/poll"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/provider-connections/:provider/start"
     },
     {
       "method": "GET",

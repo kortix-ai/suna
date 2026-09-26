@@ -51,7 +51,6 @@ describe('railGroups', () => {
       'appearance',
       'sessions',
       'preferences',
-      'provider-connections',
       'tokens',
     ]);
   });

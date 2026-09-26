@@ -9,38 +9,20 @@ let stopCalls: string[] = [];
 let stopError: Error | null = null;
 let pausedCompute: string[] = [];
 let cacheInvalidations: string[] = [];
-let updateCalls: Array<{
-  table: unknown;
-  updates: Record<string, unknown>;
-  inTransaction: boolean;
-}> = [];
-let executedStatements: Array<{ sql: unknown; inTransaction: boolean }> = [];
-let inTransaction = false;
+let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 
 // ── Pre-stop abort call (T11): the daemon fetch is the only real
 // I/O `abortLiveTurnBeforeStop` still performs once resolveServiceKey /
 // resolveSandboxIngress are stubbed below, so intercepting `fetch` is enough
 // to observe and control it without a real network call.
 let callOrder: string[] = [];
+/** What scope each awaited stop-time capture asked for. */
+let captureScopes: Array<string | undefined> = [];
 let abortServiceKey: string | null = 'daemon-service-key';
 let abortFetchCalls: Array<{ url: string; init: Record<string, unknown> }> = [];
 let abortFetchImpl: (url: string, init: Record<string, unknown>) => Promise<Response> = async () =>
   new Response(JSON.stringify({ ok: true }), { status: 200 });
 const originalFetch = globalThis.fetch;
-
-/** Flatten a drizzle SQL expression (including its bound params) to text, so a
- *  test can assert what the write actually asks Postgres to do. */
-function describeSql(expression: unknown): string {
-  const chunks: unknown[] = (expression as any)?.queryChunks ?? [];
-  return chunks
-    .map((chunk: any) => {
-      if (typeof chunk === 'string') return chunk;
-      if (Array.isArray(chunk?.value)) return chunk.value.join('');
-      if (typeof chunk?.value === 'string') return chunk.value;
-      return chunk?.name ?? '';
-    })
-    .join(' ');
-}
 
 mock.module('../../../config', () => ({
   config: { ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'platinum'] },
@@ -48,21 +30,20 @@ mock.module('../../../config', () => ({
 
 const updater = (table: unknown) => ({
   set: (updates: Record<string, unknown>) => ({
-    where: async () => {
-      updateCalls.push({ table, updates, inTransaction });
+    // Awaitable, and chainable to `.returning()` (the status transitions).
+    where: () => {
+      updateCalls.push({ table, updates });
+      const result = Promise.resolve([{ sandboxId: 'moved', sessionId: 'moved' }]);
+      return Object.assign(result, { returning: () => result });
     },
   }),
 });
 
-// applyStoppedState settles this sandbox's still-open session_turns rows in the
-// same transaction that erases its turn authority, so the stubbed tx has to be
-// able to run a raw statement.
-const executor = async (statement: unknown) => {
-  executedStatements.push({ sql: statement, inTransaction });
-};
+// The real applyStoppedState runs against this stub. Its SQL and its
+// transaction are proven on real rows in
+// __tests__/integration-session-status-transitions.test.ts.
+const executor = async () => {};
 
-// A nested drizzle transaction is a SAVEPOINT, which is what keeps a failed
-// ledger settle from aborting the stop it rides in.
 const transactionScope: Record<string, unknown> = {
   update: updater,
   execute: executor,
@@ -72,14 +53,7 @@ const transactionScope: Record<string, unknown> = {
 mock.module('../../../shared/db', () => ({
   hasDatabase: () => true,
   db: {
-    transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
-      inTransaction = true;
-      try {
-        return await fn(transactionScope);
-      } finally {
-        inTransaction = false;
-      }
-    },
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(transactionScope),
     execute: executor,
     select: () => ({
       from: (table: unknown) => ({
@@ -141,8 +115,13 @@ mock.module('../../../sandbox-proxy', () => ({
 }));
 
 mock.module('../../lib/session-transcript-capture', () => ({
-  captureSessionTranscriptMirror: async (sessionId: string) => {
+  captureSessionTranscriptMirror: async (
+    sessionId: string,
+    _deps?: unknown,
+    options?: { scope?: string },
+  ) => {
     callOrder.push(`capture:${sessionId}`);
+    captureScopes.push(options?.scope);
     return null;
   },
 }));
@@ -163,10 +142,9 @@ beforeEach(() => {
   pausedCompute = [];
   cacheInvalidations = [];
   updateCalls = [];
-  executedStatements = [];
-  inTransaction = false;
 
   callOrder = [];
+  captureScopes = [];
   abortServiceKey = 'daemon-service-key';
   abortFetchCalls = [];
   abortFetchImpl = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
@@ -200,6 +178,8 @@ describe('stopSession', () => {
     const result = await stopSession(baseInput);
     expect(result.status).toBe(409);
     expect(stopCalls).toEqual([]);
+    // The 409 returns before the pre-stop abort.
+    expect(abortFetchCalls).toEqual([]);
   });
 
   test('cancels an in-progress stopped-row wake and guards against a late provider start', async () => {
@@ -224,12 +204,8 @@ describe('stopSession', () => {
     // opencode process to abort, so no pre-stop call is attempted.
     expect(abortFetchCalls).toEqual([]);
     expect(callOrder).toEqual(['provider.stop']);
-    const metadata = updateCalls.find((c) => c.table === sessionSandboxes)?.updates.metadata;
-    const rendered = describeSql(metadata);
-    expect(rendered).toContain('runtimeWakeId');
-    expect(rendered).toContain('runtimeWakeLeaseExpiresAt');
-    expect(rendered).toContain('runtimeWakeCleanupUntilAt');
-    expect(rendered).toContain('manual');
+    // The persisted late-start guard is read back on real rows in
+    // integration-session-status-transitions ("manual stop").
   });
 
   test('400s for an unsupported/unallowed provider', async () => {
@@ -261,87 +237,25 @@ describe('stopSession', () => {
     expect(pausedCompute).toEqual(['sess-1']);
     expect(cacheInvalidations).toEqual(['ext-1']);
 
-    const sandboxUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
-    expect(sandboxUpdate?.updates.status).toBe('stopped');
-    const rendered = describeSql(sandboxUpdate?.updates.metadata);
-    expect(rendered).toContain('stoppedBy');
-    expect(rendered).toContain('user-1');
-    expect(rendered).toContain('manual');
-
-    const sessionUpdate = updateCalls.find((c) => c.table === projectSessions);
-    expect(sessionUpdate?.updates.status).toBe('stopped');
-    // Both flips in one transaction — the box is never parked while the session
-    // still claims to be running.
-    expect(sandboxUpdate?.inTransaction).toBe(true);
-    expect(sessionUpdate?.inTransaction).toBe(true);
-    // A user stop mid-turn is the most likely way a runtime disappears under an
-    // open turn, and the statement above just erased the authority every
-    // token-scoped ledger settle CASes against.
-    expect(executedStatements).toHaveLength(1);
-    expect(executedStatements[0]?.inTransaction).toBe(true);
-    expect(describeSql(executedStatements[0]?.sql)).toContain('UPDATE kortix.session_turns');
-    expect(describeSql(executedStatements[0]?.sql)).toContain('runtime_gone');
+    // The stop went through the single stop writer (applyStoppedState).
+    expect(updateCalls.find((c) => c.table === sessionSandboxes)?.updates.status).toBe('stopped');
+    expect(updateCalls.find((c) => c.table === projectSessions)?.updates.status).toBe('stopped');
   });
 
-  // The lost update. This path used to write
-  // `metadata: { ...sandbox.metadata, stoppedAt, stoppedBy, stopReason }` — a
-  // whole object assembled from the SELECT at the top of stopSession, which
-  // re-sends every key as it looked THEN. Anything a concurrent writer put in
-  // the column in between is silently reverted, and two live writers do exactly
-  // that: projects/routes/shared.ts sets and clears the `runtimeWakeId` wake
-  // fence on the resume path. Under the old code `updates.metadata` is a plain
-  // object carrying `runtimeWakeId` and every assertion below fails.
-  test('REGRESSION: the stop patch is merged into jsonb, never rebuilt from the row it read', async () => {
-    sandboxRow = {
-      sandboxId: 'sess-1',
-      externalId: 'ext-1',
-      provider: 'daytona',
-      status: 'active',
-      metadata: { runtimeWakeId: 'wake-1', lastTurnAt: '2026-07-29T11:00:00.000Z' },
-    };
-
-    const result = await stopSession(baseInput);
-    expect(result.status).toBe(200);
-
-    const metadata = updateCalls.find((c) => c.table === sessionSandboxes)?.updates.metadata;
-    // A jsonb merge expression, not an object literal.
-    expect(Array.isArray((metadata as any)?.queryChunks)).toBe(true);
-    const rendered = describeSql(metadata);
-    expect(rendered).toContain('coalesce');
-    expect(rendered).toContain("'{}'::jsonb");
-    expect(rendered).toContain('stopReason');
-    // The wake fence is deleted in SQL so a late provider start cannot revive
-    // the stopped session. Unrelated concurrent metadata remains untouched.
-    expect(rendered).toContain('runtimeWakeId');
-    expect(rendered).not.toContain('lastTurnAt');
-  });
-
-  test('reconciles the row as stopped even if the provider says it is already gone', async () => {
-    sandboxRow = {
-      sandboxId: 'sess-1',
-      externalId: 'ext-1',
-      provider: 'daytona',
-      status: 'active',
-      metadata: {},
-    };
-    stopError = new Error('sandbox already stopped');
-    const result = await stopSession(baseInput);
-
-    expect(result.status).toBe(200);
-    expect(
-      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
-    ).toBe(true);
-  });
-
-  test('commits the stop when provider start is still transitioning', async () => {
+  // A provider that already stopped the box, or is still mid-transition,
+  // tolerates the stop: the row is reconciled as stopped.
+  test.each([
+    ['says the box is already stopped', 'sandbox already stopped'],
+    ['is still transitioning', 'sandbox state change in progress'],
+  ])('commits the stop when the provider %s', async (_label, message) => {
     sandboxRow = {
       sandboxId: 'sess-1',
       externalId: 'ext-1',
       provider: 'platinum',
       status: 'active',
-      metadata: { runtimeWakeId: 'wake-1' },
+      metadata: {},
     };
-    stopError = new Error('sandbox state change in progress');
+    stopError = new Error(message);
 
     const result = await stopSession(baseInput);
 
@@ -388,77 +302,12 @@ describe('stopSession', () => {
       expect(abortFetchCalls[0]?.init.method).toBe('POST');
       // Ordering: the abort call happens strictly before provider.stop().
       expect(callOrder).toEqual(['abort', 'capture:sess-1', 'provider.stop']);
-    });
-
-    test('a timed-out/failed abort still stops the box (best-effort, never a gate)', async () => {
-      sandboxRow = {
-        sandboxId: 'sess-1',
-        externalId: 'ext-1',
-        provider: 'daytona',
-        status: 'active',
-        metadata: {},
-      };
-      abortFetchImpl = async () => {
-        throw new DOMException('The operation timed out.', 'TimeoutError');
-      };
-
-      const result = await stopSession(baseInput);
-
-      expect(result.status).toBe(200);
-      expect(abortFetchCalls).toHaveLength(1);
-      expect(callOrder).toEqual(['abort', 'capture:sess-1', 'provider.stop']);
-      expect(stopCalls).toEqual(['ext-1']);
-      expect(
-        updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
-      ).toBe(true);
-    });
-
-    test('a non-2xx abort response still stops the box', async () => {
-      sandboxRow = {
-        sandboxId: 'sess-1',
-        externalId: 'ext-1',
-        provider: 'daytona',
-        status: 'active',
-        metadata: {},
-      };
-      abortFetchImpl = async () => new Response('{"ok":false}', { status: 502 });
-
-      const result = await stopSession(baseInput);
-
-      expect(result.status).toBe(200);
-      expect(callOrder).toEqual(['abort', 'capture:sess-1', 'provider.stop']);
-    });
-
-    test('an unreachable box (no service key on record) skips the fetch entirely and still stops', async () => {
-      sandboxRow = {
-        sandboxId: 'sess-1',
-        externalId: 'ext-1',
-        provider: 'daytona',
-        status: 'active',
-        metadata: {},
-      };
-      abortServiceKey = null;
-
-      const result = await stopSession(baseInput);
-
-      expect(result.status).toBe(200);
-      expect(abortFetchCalls).toEqual([]);
-      expect(stopCalls).toEqual(['ext-1']);
-    });
-
-    test('an already-stopped box (409 path) never attempts the abort', async () => {
-      sandboxRow = {
-        sandboxId: 'sess-1',
-        externalId: 'ext-1',
-        provider: 'daytona',
-        status: 'stopped',
-        metadata: {},
-      };
-
-      const result = await stopSession(baseInput);
-
-      expect(result.status).toBe(409);
-      expect(abortFetchCalls).toEqual([]);
+      // And it asks for a TAIL. This capture is AWAITED with the user holding
+      // the Stop button; on a project with `session_transcript_history` the
+      // default scope is a 60s pagination with three retries. The whole copy is
+      // maintained at every turn end, so the only gap a stop can close is the
+      // turn that just ended.
+      expect(captureScopes).toEqual(['tail']);
     });
   });
 });

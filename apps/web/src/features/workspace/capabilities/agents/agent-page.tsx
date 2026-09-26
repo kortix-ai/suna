@@ -98,7 +98,7 @@ import {
   readProjectFile,
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { capitalizeWords } from '@kortix/shared';
 import {
   BookOpenTextIcon,
@@ -107,6 +107,7 @@ import {
   CubeIcon,
   DotsThreeIcon,
   FileTextIcon,
+  GlobeIcon,
   type Icon,
   KeyIcon,
   PlayIcon,
@@ -123,7 +124,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
@@ -137,7 +138,13 @@ import { useIsMobile } from '@/hooks/utils';
 import { EditorSectionStyleProvider } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
 
 import { AgentModel, AgentScope } from './agent-detail-aside';
-import { ConnectorsGrantPage, SecretsGrantPage, SkillsGrantPage } from './agent-grant-pages';
+import {
+  AppsGrantPage,
+  ConnectorsGrantPage,
+  SecretsGrantPage,
+  SkillsGrantPage,
+} from './agent-grant-pages';
+import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
 import { AgentTriggersSection } from './agent-triggers-section';
@@ -154,6 +161,7 @@ const SECTION_ICON: Record<AgentConfigSectionKey, Icon> = {
   skills: BookOpenTextIcon,
   connectors: PlugsConnectedIcon,
   secrets: KeyIcon,
+  apps: GlobeIcon,
   actions: TerminalWindowIcon,
   model: CpuIcon,
   tools: WrenchIcon,
@@ -622,11 +630,24 @@ function AgentHeader({
 // ─── Editable body ─────────────────────────────────────────────────────────
 
 const EDITABLE_SECTIONS: readonly AgentConfigSectionKey[] = AGENT_CONFIG_SECTIONS.map((s) => s.key);
+
+/**
+ * The rail's topics for one project. Apps is a flagged product: a project
+ * without the `apps` flag has no Apps page, no Apps in the sidebar, and no way
+ * to create one — so a grant page for them would be a dead tab. Dropping the
+ * key here also drops it from `useAgentSection`'s allow-list, so a stale
+ * `?section=apps` link falls back to Overview instead of rendering an empty
+ * pane.
+ */
+export function editableAgentSections(appsEnabled: boolean): readonly AgentConfigSectionKey[] {
+  return appsEnabled ? EDITABLE_SECTIONS : EDITABLE_SECTIONS.filter((key) => key !== 'apps');
+}
 /** What a v1 project, or a reader without write, can still see. */
 const READ_ONLY_SECTIONS: readonly AgentConfigSectionKey[] = [
   'overview',
   'people',
   'triggers',
+  'actions',
   'model',
 ];
 
@@ -652,7 +673,9 @@ function EditableAgentPage({
     description: skill.description ?? undefined,
   }));
   const pathname = usePathname();
-  const section = useAgentSection(EDITABLE_SECTIONS);
+  const appsEnabled = useFeatureFlag(projectId, 'apps').enabled;
+  const sections = useMemo(() => editableAgentSections(appsEnabled), [appsEnabled]);
+  const section = useAgentSection(sections);
 
   const onSave = useCallback(async () => {
     if (!editor.isDirty || update.isPending) return;
@@ -675,7 +698,7 @@ function EditableAgentPage({
     <AgentPageFrame
       header={<AgentHeader projectId={projectId} agent={agent} config={config} canWrite />}
       section={section}
-      sections={EDITABLE_SECTIONS}
+      sections={sections}
       sectionHref={sectionHrefFor(pathname)}
       pane={
         <AgentConfigSections
@@ -686,6 +709,7 @@ function EditableAgentPage({
           skills={<SkillsGrantPage projectId={projectId} config={config} editor={editor} />}
           connectors={<ConnectorsGrantPage projectId={projectId} editor={editor} />}
           secrets={<SecretsGrantPage projectId={projectId} editor={editor} />}
+          apps={<AppsGrantPage projectId={projectId} editor={editor} />}
           overview={
             <OverviewPane
               description={editor.oc.description ?? ''}
@@ -707,6 +731,13 @@ function EditableAgentPage({
             />
           }
           people={<AgentPeopleSection projectId={projectId} agentName={agent.name} />}
+          authority={
+            <AgentAuthorityCard
+              projectId={projectId}
+              agentName={agent.name}
+              grant={editor.draft.kortix_permissions ?? editor.draft.kortix_cli}
+            />
+          }
         />
       }
       footer={
@@ -1105,6 +1136,12 @@ function ReadOnlyAgentPage({
                 projectId={projectId}
                 agentName={agent.name}
                 defaultAgent={config.open_code_default_agent}
+              />
+            ) : section === 'actions' ? (
+              <AgentAuthorityCard
+                projectId={projectId}
+                agentName={agent.name}
+                grant={agent.scope?.kortix_permissions ?? agent.scope?.kortix_cli}
               />
             ) : (
               <div className="space-y-4">

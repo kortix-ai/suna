@@ -40,6 +40,7 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 |---|---|---|
 | `phase` | `'starting' \| 'ready' \| 'error'` | Overall state. Render a boot screen until `ready`. |
 | `messages` | `{ info, parts }[]` | The message list. Parts stream in live. |
+| `savedTranscript` | `'loading' \| 'shown' \| 'none'` | Whether the saved conversation can show before the computer wakes. `loading`: a saved copy is on its way. `shown`: messages are in the list. `none`: nothing can show until the runtime answers. |
 | `status` | `SessionStatus` | The session status. |
 | `isBusy` | `boolean` | The agent is generating a reply. |
 | `questions`, `permissions` | array | Pending agent questions and tool-approval requests. A `permission` here is one runtime tool approval, not an IAM permission. |
@@ -59,7 +60,7 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 | `sendParts(parts, override?)` | Send text and runtime URL file parts through the selected transport. Private staged handles use platform prompt routes. |
 | `rewind(messageId)` | Rewind this canonical session to a user message. The selected message and later path become hidden and recoverable. |
 | `restoreRewind()` | Restore the removed path before another prompt commits its replacement. |
-| `cancel()` | Stop the current run and clear pending questions and permissions. |
+| `cancel()` | Stop the current run and clear pending questions and permissions. Holds the session's queued prompts first, so a queued prompt does not start a new run. |
 | `runCommand(command, args)` | Run a project slash command. |
 | `answerQuestion(id, answers)` | Answer a pending agent question. |
 | `rejectQuestion(id)` | Reject a pending agent question. |
@@ -78,6 +79,7 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 | `replayStartStash` | `true` | Replay a prompt saved before the session existed, once the session is ready. |
 | `enabled` | `true` | Set `false` to delay the hook, for example until a billing check passes. |
 | `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
+| `repositoryMode` | — | Telemetry only. A session created before a repository replacement starts and runs the project's current config without it. Only its `/workspace` clone still comes from the old repository, so a push from it needs a rebase first. |
 
 Sending is optimistic. `send` shows your message right away, then stream
 events fill in the agent's reply.
@@ -95,14 +97,155 @@ need a running session. Each mirrors a method on the
 | Hook | Reads |
 |---|---|
 | `useProjectModels(projectId)` | Selectable models for the project. |
-| `useProjectModelPickerCatalog(projectId)` | The raw `/model-picker` record per wire model (`reasoning_options`, `temperature`, `limit`) for capability-gated controls. |
+| `useProjectModelPickerCatalog(projectId)` | The raw `/model-picker` record per wire model (`reasoning_options`, `temperature`, `limit`) and `managedPricingRoutes` customer price estimates for each eligible managed route. The server includes its configured markup; the serving route determines the final charge. |
 | `useVisibleAgents({ projectId })` | The project's visible agents. |
 | `useProjectConfig(projectId)` | The project's runtime config: default agent, commands. |
 | `useProjectSecrets(projectId)` | Secrets: list, add, remove, and personal overrides. |
+| `useAccountSecretResources(accountId)` | Account provider-secret metadata and use grants. Values are never returned. |
+| `useSessionProviderSecretPools(projectId, sessionId)` | Configured pools, including empty selections; `setPool` updates one provider and refreshes the session cache. |
 | `useProjectTriggers(projectId)` | Triggers: list, create, update, remove, fire. |
 | `useChangeRequests(projectId, status?)` | Change requests: list, open, merge, close, request changes. |
+
+## Start the open read early
+
+`prefetchSessionOpen(queryClient, projectId, sessionId)` starts the session-open
+read before the session view mounts. It issues one `GET .../snapshot` request
+(session row, turn, queue, and the first 40 transcript messages) and seeds the
+session row cache from it. `useSession` then uses that request instead of
+starting its own.
+
+Call it when a route names a session, or on hover, focus, or touch of a session
+link. It is read-only: it never calls `/start` and never wakes a computer. It
+never rejects. A repeat call for the same session within 30 seconds sends no
+request.
+
+```tsx
+import { prefetchSessionOpen } from '@kortix/sdk/react';
+
+<a
+  href={`/projects/${projectId}/sessions/${sessionId}`}
+  onFocus={() => void prefetchSessionOpen(queryClient, projectId, sessionId)}
+/>;
+```
+
+## Sign-out and account switching
+
+The SDK keeps per-user session state in memory: transcripts, pending questions
+and permissions, turn receipts, and model picks. Call `resetIdentityState()` on
+every identity change: sign-out, and a different user signing in. This includes
+a sign-in in another tab that changes the user without a page load.
+
+```tsx
+import { resetIdentityState } from '@kortix/sdk/react';
+
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_OUT' || session?.user.id !== previousUserId) {
+    queryClient.clear();
+    resetIdentityState();
+  }
+});
+```
+
+`resetIdentityState()` also removes the model store's `localStorage` entry. It
+does not clear the host's own caches, such as React Query, or the token source
+passed to `createKortix`. Reset those in the same handler. It never throws.
 
 ## Next
 
 - [Sessions](/docs/sdk/sessions) — the session handle `useSession` wraps, and the `KortixSendError` kinds.
 - [Reference](/docs/sdk/reference) — the full REST surface these hooks read from.
+
+
+## Saved history during startup
+
+Enable **Session Transcript History** in a project's **Settings → Feature flags** to let
+`useSession(projectId, sessionId)` show saved chat history while its computer starts.
+The SDK reads the database independently of runtime readiness. Live messages then reconcile
+by their original IDs. Hosts do not need a separate history request or message store.
+
+This flag is off by default. Sessions without saved history use the existing runtime read.
+The initial history window contains the last 40 messages. Older-message loading and attachments
+that require the computer become available when the runtime is ready.
+
+`savedTranscript` tells a host what to render while the computer starts. It is `loading` while
+a saved copy may still arrive, `shown` once messages are in `messages`, and `none` when nothing
+can show before the runtime answers. An unknown is `loading`, never `none`.
+
+```tsx
+if (s.messages.length === 0) {
+  // One round trip for a saved copy; the computer can take minutes.
+  return s.savedTranscript === 'none' ? <Booting stage={s.stage} /> : <MessageSkeleton />;
+}
+```
+### Pending prompts
+
+`useSessionPrompts(projectId, sessionId)` submits to the durable session inbox.
+The server runs pending prompts automatically, each as its own turn.
+
+Pass `placement: 'transcript'` to display a pending message in the conversation.
+It runs before every `composer` entry and ends the active response after the
+current tool call completes.
+Pass `placement: 'composer'` to keep it in the editable list above the input.
+It waits for the active response to finish. Each placement keeps submission order.
+The web composer uses Enter for transcript placement and Command+Enter
+(Control+Enter on Windows/Linux) for composer placement. Shift+Enter inserts a newline.
+
+List rows include `full_text` for complete previews after reload. `text` remains
+the bounded preview for older clients. Attachment bytes are excluded from list
+responses. Delete returns the complete prompt for lossless undo.
+
+### Pending delivery and active responses
+
+`useSessionWorking()` keeps `state: 'working'` while a prompt waits in the durable
+inbox. This keeps Stop available. `pendingDelivery: true` marks a prompt still on
+its way to the runtime; the web app shows one working indicator whenever `state`
+is `working`, whatever that flag says. Active runtime turns and fresh runtime
+activity clear it. A timed-out cancel does not confirm that execution stopped.
+
+A worker claim only checks admission and keeps the prompt waiting. Delivery starts
+after admission succeeds. A confirmed active turn clears the pending presentation
+even if the previous inbox snapshot still lists that prompt. Runtime activity
+preserves the active turn's message ID during this handoff.
+
+The web composer names Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**.
+Quick Queue entries run first. A waiting Quick Queue entry is a tinted bubble after
+delivered turns, with no status text. Queue List entries remain editable until delivery starts.
+The server recovers missed completion events from exact runtime evidence, including
+after reload, without treating an unreachable runtime as a completed turn.
+
+Each distinct Enter displays its pending prompt immediately, even while an earlier
+acceptance request is unresolved. Only a delivery failure adds text: its cause,
+Retry, and Remove. The server inbox continues to own execution order.
+
+### Why a turn ended
+
+The transcript of an interrupted turn only carries `MessageAbortedError`. The
+control plane keeps what it knows about how each turn ended: the cause the
+sandbox named, for example `SandboxMemoryGuard`, and which turns died with no
+cause named. A stop somebody asked for — the Stop button, `abort()`, a prompt
+sent into a busy session — is recorded as a request and is never reported as a
+failure.
+
+`useSessionTurnOutcome(projectId, sessionId)` returns `last_ended`,
+`recent_failures` and the read time `atMs` from the cache `useSessionWorking()`
+keeps fresh. It makes no request. Pass the result to `turnEndNotice`, with what
+the transcript says about the turn:
+
+```tsx
+const outcome = useSessionTurnOutcome(projectId, sessionId);
+const notice = turnEndNotice(outcome, turn.userMessage.info.id, {
+  hasError: Boolean(turnError),
+  isAbort: turnErrorIsAbort,
+});
+// notice: { kind: 'sandbox-memory', usedPct: 97, detail: 'sandbox memory at 97% …' }
+//       | { kind: 'cause', name: 'SomeGuard', message: '…' }
+//       | { kind: 'unexplained' }
+//       | null
+```
+
+The host maps each `kind` to its own copy and never parses the sandbox's
+message. `null` means "show what the transcript shows": a real error stays, an
+abort renders nothing. An unexplained failure is reported only once the reading
+is a few seconds past the turn's end, because the cause often arrives one frame
+after the abort. `turnEndCause(outcome, messageId)` returns the raw recorded
+cause, or `null`.
