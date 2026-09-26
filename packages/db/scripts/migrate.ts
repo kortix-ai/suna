@@ -34,7 +34,7 @@ import {
   repairMigrationLedger,
 } from './migration-ledger-repair';
 import { repairLocalWarmSessionIndex } from './local-warm-session-index-repair';
-import { withMigrationDeadlockRetry } from './migration-retry';
+import { withMigrationRetry } from './migration-retry';
 import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
 import { readMigrationStatus } from './migration-status';
 import { migrationBootstrapsPrerequisites, migrationCheckOrder } from './migration-target';
@@ -259,11 +259,14 @@ async function main() {
     }
   };
 
-  const applyPendingMigrations = () => withMigrationDeadlockRetry(
+  const applyPendingMigrations = () => withMigrationRetry(
     () => runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY }),
     {
       onRetry: (attempt) => {
         console.warn(`[migrate] PostgreSQL deadlock rolled back the transaction; retrying pending migrations (${attempt}/2).`);
+      },
+      onLockRetry: (attempt) => {
+        console.warn(`[migrate] another migration holds the advisory lock; retrying pending migrations (${attempt}/12).`);
       },
     },
   );
