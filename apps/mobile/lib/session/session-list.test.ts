@@ -106,9 +106,10 @@ describe('sessionDisplayStatus', () => {
     expect(sessionDisplayStatus(makeSession({ status: 'running' }))).toBe('running');
   });
 
-  test('stopped and completed both collapse to stopped', () => {
+  // One vocabulary with web: a finished session is Done, not Stopped.
+  test('stopped reads stopped; completed reads done', () => {
     expect(sessionDisplayStatus(makeSession({ status: 'stopped' }))).toBe('stopped');
-    expect(sessionDisplayStatus(makeSession({ status: 'completed' }))).toBe('stopped');
+    expect(sessionDisplayStatus(makeSession({ status: 'completed' }))).toBe('done');
   });
 
   test('failed stays failed', () => {
@@ -130,7 +131,13 @@ describe('sessionDisplayStatus', () => {
   });
 
   test('review count defaults to zero when omitted', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'completed' }))).toBe('stopped');
+    expect(sessionDisplayStatus(makeSession({ status: 'completed' }))).toBe('done');
+  });
+
+  test('a migrated session that has not run reads legacy', () => {
+    expect(
+      sessionDisplayStatus(makeSession({ status: 'stopped', metadata: { legacy_migration: true } } as never)),
+    ).toBe('legacy');
   });
 });
 
@@ -478,7 +485,8 @@ describe('filterSessionsByStatus', () => {
     ).toEqual(['a', 'b']);
   });
 
-  test('completed and stopped both resolve to the stopped filter', () => {
+  // One vocabulary with web: Done and Stopped are two filters, as they are two words.
+  test('completed matches Done and stopped matches Stopped', () => {
     const sessions = [
       makeSession({ session_id: 'a', status: 'completed' }),
       makeSession({ session_id: 'b', status: 'stopped' }),
@@ -486,7 +494,8 @@ describe('filterSessionsByStatus', () => {
     ];
     expect(
       filterSessionsByStatus(sessions, new Set(['stopped'])).map((s) => s.session_id),
-    ).toEqual(['a', 'b']);
+    ).toEqual(['b']);
+    expect(filterSessionsByStatus(sessions, new Set(['done'])).map((s) => s.session_id)).toEqual(['a']);
   });
 
   test('a set matching nothing returns an empty array', () => {
@@ -508,7 +517,7 @@ describe('filterSessionsByStatus', () => {
   });
 
   test('the filter sheet offers no separate Starting option', () => {
-    expect(SESSION_STATUS_FILTERS).toEqual(['needs-you', 'running', 'stopped', 'failed']);
+    expect(SESSION_STATUS_FILTERS).toEqual(['needs-you', 'running', 'done', 'stopped', 'failed', 'legacy']);
   });
 
   test('needs-you matches the sessions with a pending inbox item', () => {
