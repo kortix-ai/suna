@@ -35,4 +35,7 @@ non-zero. Never install either binary from the internet: a copy in
 public API, and the platform cannot heal it. To move to a newer CLI, restart
 the session.
 
+`kortix tui` also refuses here — it would fetch an 80 MB binary this machine
+does not manage. Run it on your own machine instead.
+
 Project-specific instructions will override this file.

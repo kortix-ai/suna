@@ -25,8 +25,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { runTui } from '../commands/tui.ts';
 import { runUpdate } from '../commands/update.ts';
 import { ensureOpencodeBin } from '../opencode-bin.ts';
+import { downloadTuiBin } from '../tui-bin.ts';
 import { isSupervised } from '../supervised.ts';
 import { getUpdateNotice, resolveUpdateStatus } from '../update-check.ts';
 
@@ -184,5 +186,82 @@ describe('ensureOpencodeBin inside a managed sandbox', () => {
     process.env.KORTIX_OPENCODE_BIN = '/opt/kortix/opencode.current';
     const res = await ensureOpencodeBin({ version: '1.18.23', fetchImpl: neverFetch });
     expect(res).toEqual({ bin: '/opt/kortix/opencode.current', source: 'env', version: null });
+  });
+});
+
+describe('kortix tui inside a managed sandbox', () => {
+  // `kortix tui` pulls an ~80 MB binary from the PUBLIC GitHub release and,
+  // like the update prompt, ASKS first with the default set to yes. Same trap,
+  // same real PTY. The TUI is a client for a developer's own machine; a managed
+  // box has no managed copy of it and must not fetch one.
+  const neverFetch: typeof fetch = (() => {
+    throw new Error('unexpected network call');
+  }) as unknown as typeof fetch;
+
+  function tuiDeps(overrides: Record<string, unknown> = {}) {
+    return {
+      findBin: () => null,
+      download: async () => {
+        throw new Error('DOWNLOAD ATTEMPTED');
+      },
+      version: () => '0.13.32',
+      isInteractive: () => true,
+      ask: async () => {
+        throw new Error('PROMPT SHOWN');
+      },
+      run: async () => 0,
+      stdout: (text: string) => {
+        out += text;
+      },
+      stderr: (text: string) => {
+        out += text;
+      },
+      ...overrides,
+    };
+  }
+
+  test('refuses before it asks, and never downloads', async () => {
+    process.env.KORTIX_SUPERVISED = '1';
+    out = '';
+    const code = await runTui([], tuiDeps() as never);
+    expect(code).not.toBe(0);
+    expect(out).toContain('platform');
+    expect(out).not.toContain('80 MB');
+  });
+
+  test('--install is refused too — it is the same download without the prompt', async () => {
+    process.env.KORTIX_SUPERVISED = '1';
+    out = '';
+    const code = await runTui(['--install'], tuiDeps() as never);
+    expect(code).not.toBe(0);
+    expect(out).toContain('platform');
+  });
+
+  test('--help and --uninstall still work — reading and cleaning up are never blocked', async () => {
+    process.env.KORTIX_SUPERVISED = '1';
+    out = '';
+    expect(await runTui(['--help'], tuiDeps() as never)).toBe(0);
+    expect(out).toContain('Usage: kortix tui');
+    out = '';
+    expect(
+      await runTui(['--uninstall'], tuiDeps({ uninstall: () => '/tmp/kortix-tui' }) as never),
+    ).toBe(0);
+  });
+
+  test('an already-installed binary still runs — this gates the DOWNLOAD, not the TUI', async () => {
+    process.env.KORTIX_SUPERVISED = '1';
+    out = '';
+    const code = await runTui(
+      [],
+      tuiDeps({ findBin: () => ({ bin: '/cached/kortix-tui', source: 'cache' }) }) as never,
+    );
+    expect(code).toBe(0);
+  });
+
+  test('downloadTuiBin itself refuses, as the backstop at the network call', async () => {
+    process.env.KORTIX_SUPERVISED = '1';
+    await expect(
+      downloadTuiBin({ version: '0.13.32', fetchImpl: neverFetch }),
+    ).rejects.toThrow(/platform/i);
   });
 });
