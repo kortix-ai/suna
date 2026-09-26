@@ -362,6 +362,7 @@ export function createEventHandler(deps: {
       case 'session.status': {
         const { sessionID, status } = event.properties;
         if (sessionID && status) {
+          if (status.type === 'idle') void reconcileTail(sessionID, 'turn-end');
           // Detect busy/retry → idle against the status from BEFORE the
           // reducer ran (see `statusBeforeEvent`). Coalescing can drop
           // intermediate busy events, so the transition is checked here.
@@ -377,6 +378,7 @@ export function createEventHandler(deps: {
       case 'session.idle': {
         const sessionID = event.properties.sessionID;
         if (sessionID) {
+          void reconcileTail(sessionID, 'turn-end');
           const prevStatus = statusBeforeEvent;
           if (prevStatus && prevStatus.type !== 'idle') {
             notifyTaskComplete(sessionID, getSessionTitle(sessionID));
