@@ -74,6 +74,7 @@ export {
   isSignalTimeoutNoise,
 } from './browser-noise/rules/network';
 export {
+  isIosWebViewInjectedStackOverflowNoise,
   isOldBrowserDomNullDerefNoise,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
