@@ -37,6 +37,7 @@ import {
   isPaperShaderImageUniformNoise,
   isPaperShaderNullContextNoise,
   isPaperShaderWebGLUnsupportedNoise,
+  isRedefineInjectedWalletNoise,
   isRedefineWebdriverNoise,
   isRuntimeNotReadyNoiseMessage,
   isSafariGenericSecurityErrorNoise,
@@ -10158,6 +10159,214 @@ test('classifies the Cannot redefine property: webdriver noise via the runtime g
     shouldIgnoreBrowserRuntimeNoise({
       message: REDEFINE_WEBDRIVER_MESSAGE,
       filename: '<anonymous>',
+    }),
+    true,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Injected EVM/Web3 wallet-provider `Cannot redefine property: <provider>`
+// noise (BS 3b46e257…, `browser-extension` class)
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event.
+const REDEFINE_WALLET_PROVIDER_MESSAGE = 'Cannot redefine property: ethereum';
+
+// The production-shaped frames: an injected wallet/userscript script (here a
+// browser-extension content script) with NO resolved first-party
+// `apps/web/src/…` source, so the negative guard does NOT fire.
+const REDEFINE_WALLET_PROVIDER_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/inpage.js', function: 'y' },
+  { filename: '<anonymous>', function: 'Object.defineProperty' },
+];
+
+// The canonical capture-path forms: raw, `TypeError:` prefix, and stacked
+// `Unhandled promise rejection: TypeError:` prefix. All strip to the same
+// underlying message via `stripErrorWrappers`.
+const REDEFINE_WALLET_PROVIDER_CAPTURE_FORMS = [
+  REDEFINE_WALLET_PROVIDER_MESSAGE,
+  `TypeError: ${REDEFINE_WALLET_PROVIDER_MESSAGE}`,
+  `Unhandled promise rejection: ${REDEFINE_WALLET_PROVIDER_MESSAGE}`,
+  `Unhandled promise rejection: TypeError: ${REDEFINE_WALLET_PROVIDER_MESSAGE}`,
+];
+
+test('classifies the Cannot redefine property: ethereum noise (injected wallet provider)', () => {
+  assert.equal(
+    isRedefineInjectedWalletNoise({
+      message: REDEFINE_WALLET_PROVIDER_MESSAGE,
+      frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: REDEFINE_WALLET_PROVIDER_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onerror',
+              handled: false,
+            },
+            stacktrace: { frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('classifies every injected-wallet provider sibling (ethereum/solana/web3/tronWeb)', () => {
+  // The property set MUST stay in sync with the `browser-extension` noise
+  // class definition in the software-factory-infra-sweep source
+  // (`Cannot redefine property: (ethereum|solana|web3|tronWeb)`).
+  for (const provider of ['ethereum', 'solana', 'web3', 'tronWeb']) {
+    const message = `Cannot redefine property: ${provider}`;
+    assert.equal(
+      isRedefineInjectedWalletNoise({ message, frames: [] }),
+      true,
+      `expected "${message}" to be noise`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    );
+  }
+});
+
+test('suppresses the Cannot redefine property: ethereum noise through all capture-path wrappers', () => {
+  for (const message of REDEFINE_WALLET_PROVIDER_CAPTURE_FORMS) {
+    assert.equal(
+      isRedefineInjectedWalletNoise({
+        message,
+        frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be noise`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: { frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    );
+  }
+});
+
+test('suppresses the Cannot redefine property: ethereum noise via the runtime (window.onerror) gate', () => {
+  for (const message of REDEFINE_WALLET_PROVIDER_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    );
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: '<anonymous>' }),
+      true,
+      `expected runtime gate to suppress "${message}" from an <anonymous> filename`,
+    );
+    // The class fixture's call site is the userscript-manager wrapper page;
+    // the userscript matcher already drops it, and the message matcher covers
+    // the frameless variant.
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: 'app:///userscript.html' }),
+      true,
+      `expected runtime gate to suppress "${message}" from a userscript frame`,
+    );
+  }
+});
+
+test('does NOT suppress Cannot redefine property: ethereum when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code called
+  // `Object.defineProperty` on a non-configurable property → a real first-party
+  // regression; the negative guard MUST preserve it.
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/wallet-provider.ts', function: 'installProvider' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/lib/wallet-provider.ts', function: 'installProvider' },
+    ],
+  ]) {
+    assert.equal(
+      isRedefineInjectedWalletNoise({
+        message: REDEFINE_WALLET_PROVIDER_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party defineProperty throw from ${JSON.stringify(frames)} to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: REDEFINE_WALLET_PROVIDER_MESSAGE, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party defineProperty throw from ${JSON.stringify(frames)}`,
+    );
+  }
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: REDEFINE_WALLET_PROVIDER_MESSAGE,
+      filename: 'apps/web/src/lib/wallet-provider.ts',
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress a near-worded Cannot redefine property message (over-match guard)', () => {
+  // Only the exact injected-wallet provider names are matched; any other
+  // `Cannot redefine property: <X>` keeps reporting so the matcher does not
+  // over-match a real first-party `defineProperty` regression. `webdriver` is
+  // handled by the sibling matcher, not this one.
+  for (const message of [
+    'Cannot redefine property: foo',
+    'Cannot redefine property: Money',
+    'Cannot redefine property: webdriver',
+    'Cannot redefine property: ethereum_extra',
+    'Cannot set property: ethereum',
+    'Cannot redefine ethereum',
+  ]) {
+    assert.equal(
+      isRedefineInjectedWalletNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    );
+  }
+});
+
+test('classifies the legacy safari-extension:// protocol as a browser-extension source', () => {
+  // The `browser-extension` class matches a `*-extension://` URL. The legacy
+  // Safari scheme is distinct from `safari-web-extension://`; `startsWith
+  // ('extension://')` does not match it, so it needs its own prefix entry.
+  assert.equal(
+    isExtensionSource('safari-extension://com.example.ext/content.js'),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: 'boom',
+            stacktrace: {
+              frames: [{ filename: 'safari-extension://com.example.ext/content.js' }],
+            },
+          },
+        ],
+      },
     }),
     true,
   );

@@ -962,6 +962,11 @@ const IOS_WEBVIEW_INSTRUMENTED_FUNCTION_NAMES = new Set([
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
+  // Legacy Safari extension scheme (`safari-extension://`), distinct from the
+  // modern `safari-web-extension://` below: `startsWith('extension://')` does
+  // NOT match it, so it needs its own entry. The `browser-extension` noise
+  // class matches a `*-extension://` URL, which covers both Safari schemes.
+  'safari-extension://',
   'safari-web-extension://',
   'extension://',
 ] as const;
@@ -4373,6 +4378,39 @@ export function isUndefinedVariableThirdPartyNoise(input: {
 // is the only safe gate.
 const REDEFINE_WEBDRIVER_NOISE_MESSAGE = /^Cannot redefine property: webdriver$/;
 
+// Shared core for the injected-script `Cannot redefine property: <name>` noise
+// family (`isRedefineWebdriverNoise`, `isRedefineInjectedWalletNoise`): an
+// injected third-party script calls `Object.defineProperty` on a page global
+// that some other injected script already installed as non-configurable, so the
+// trap throws V8's canonical `TypeError: Cannot redefine property: <name>` from
+// the injected script — never first-party Kortix code. The message is stripped
+// of the canonical `TypeError: ` / `Unhandled promise rejection: ` wrappers so
+// all capture paths (window.onerror, onunhandledrejection, Sentry exception)
+// classify consistently. The matcher carries the shared NEGATIVE guard: a
+// resolved first-party `apps/web/src/…` frame (or window.onerror `filename`)
+// means our own code called `defineProperty` on a non-configurable property →
+// a real first-party regression; keep reporting so the call site can be found +
+// fixed. A real first-party `defineProperty` regression de-minifies to
+// `apps/web/src/…` and is never hidden.
+function isRedefineInjectedPropertyNoise(
+  input: {
+    message?: unknown;
+    filename?: unknown;
+    frames?: Array<{ filename?: unknown } | undefined>;
+  },
+  messagePattern: RegExp,
+): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!messagePattern.test(stripped)) {
+    return false;
+  }
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Whether a Sentry / window.onerror event is the bot / automation-framework /
  * scraper `Cannot redefine property: webdriver` noise class: an injected
@@ -4397,20 +4435,55 @@ export function isRedefineWebdriverNoise(input: {
   filename?: unknown;
   frames?: Array<{ filename?: unknown } | undefined>;
 }): boolean {
-  const stripped = stripErrorWrappers(normalizeString(input.message));
-  if (!REDEFINE_WEBDRIVER_NOISE_MESSAGE.test(stripped)) {
-    return false;
-  }
-  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
-  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
-  // window.onerror `filename`) means our own code called `defineProperty` on a
-  // non-configurable property → a real first-party regression; keep reporting
-  // so the call site can be found + fixed. A real first-party `defineProperty`
-  // regression de-minifies to `apps/web/src/…` and is never hidden.
-  if (sources.some(isFirstPartyResolvedSource)) {
-    return false;
-  }
-  return true;
+  return isRedefineInjectedPropertyNoise(input, REDEFINE_WEBDRIVER_NOISE_MESSAGE);
+}
+
+// Injected EVM/Web3 wallet-provider `Cannot redefine property: <provider>` noise
+// — the wallet sibling of the `Cannot redefine property: webdriver` class above
+// (see `isRedefineWebdriverNoise` for the shared rationale). A browser wallet
+// extension (MetaMask / Coinbase Wallet / Phantom / TronLink / a userscript
+// wallet injector) injects a content script that installs its provider on the
+// page global (`window.ethereum` / `window.solana` / `window.web3` /
+// `window.tronWeb`) via `Object.defineProperty(window, '<provider>', …)` so site
+// code can detect the wallet. When the property is already installed — two
+// wallet extensions active at once, a userscript-manager wrapper that already
+// defines it, or a non-configurable descriptor left by another injected script
+// — the `defineProperty` trap throws V8's canonical `TypeError: Cannot redefine
+// property: <provider>`. The throw originates in the injected wallet/userscript
+// script, never first-party Kortix code: our app never defines
+// `ethereum`/`solana`/`web3`/`tronWeb` (they are wallet-provider globals).
+//
+// This is the class the `software-factory-infra-sweep` `browser-extension`
+// noise class matches (its message rule is
+// `Cannot redefine property: (ethereum|solana|web3|tronWeb)`), so the property
+// set here MUST stay in sync with that class definition. Better Stack pattern
+// `3b46e257…` (Kortix Frontend prod, application_id 2346967): `TypeError`,
+// message `Cannot redefine property: ethereum`, 1 occurrence / 0 identified
+// users over 3 days (0 in the last 24 h). The userscript/extension-URL rules of
+// the same class are already covered by `isUserscriptManagerNoise` and
+// `isExtensionSource`.
+//
+// The property names are the injected wallet providers and are never
+// first-party Kortix globals, so the EXACT-message match is specific. Mirroring
+// `isRedefineWebdriverNoise`, the matcher carries a NEGATIVE guard: if ANY frame
+// (or the window.onerror `filename`) resolves to a de-minified first-party
+// `apps/web/src/…` source path, the event keeps reporting — a real first-party
+// `defineProperty` regression must not be hidden. A frameless capture with this
+// exact message still classifies as noise. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there could swallow a real first-party
+// `defineProperty` regression the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// and the runtime gate (`shouldIgnoreBrowserRuntimeNoise`) are the safe gates.
+const REDEFINE_WALLET_PROVIDER_NOISE_MESSAGE =
+  /^Cannot redefine property: (?:ethereum|solana|web3|tronWeb)$/;
+
+export function isRedefineInjectedWalletNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  return isRedefineInjectedPropertyNoise(input, REDEFINE_WALLET_PROVIDER_NOISE_MESSAGE);
 }
 
 // Transient fetch-abort `signal timed out` noise — the Bun / native
@@ -4901,6 +4974,20 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // filename drops. See `isRedefineWebdriverNoise` and Better Stack pattern
   // `ee14e84d…`.
   if (isRedefineWebdriverNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Injected EVM/Web3 wallet-provider `Cannot redefine property: <provider>`
+  // noise — the wallet sibling of the `webdriver` class above. A wallet
+  // extension / userscript injects `Object.defineProperty(window, 'ethereum' |
+  // 'solana' | 'web3' | 'tronWeb', …)` and the trap throws because the provider
+  // global is already non-configurable. The throw is in the injected script,
+  // never first-party code (our app never defines these globals). Requires the
+  // EXACT message AND a NEGATIVE guard: a resolved first-party `apps/web/src/…`
+  // filename means our own code called `defineProperty` on a non-configurable
+  // property → a real first-party regression; keep reporting. See
+  // `isRedefineInjectedWalletNoise` and Better Stack pattern `3b46e257…`.
+  if (isRedefineInjectedWalletNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -5661,6 +5748,23 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // (no frame context there). See `isRedefineWebdriverNoise` and Better Stack
   // pattern `ee14e84d…`.
   if (isRedefineWebdriverNoise({ message, frames })) {
+    return true;
+  }
+
+  // Injected EVM/Web3 wallet-provider `Cannot redefine property: <provider>`
+  // noise — the wallet sibling of the `webdriver` class above. A wallet
+  // extension / userscript injects `Object.defineProperty(window, 'ethereum' |
+  // 'solana' | 'web3' | 'tronWeb', …)` and the trap throws because the provider
+  // global is already non-configurable. The throw is in the injected script,
+  // never first-party code (our app never defines these globals). Requires the
+  // EXACT message AND a NEGATIVE guard: a resolved first-party `apps/web/src/…`
+  // frame means our own code called `defineProperty` on a non-configurable
+  // property → a real first-party regression; keep reporting. The production
+  // noise carries no first-party frame. A frameless capture with this exact
+  // message still classifies as noise. NOT in `ignoreErrors` (no frame context
+  // there). See `isRedefineInjectedWalletNoise` and Better Stack pattern
+  // `3b46e257…`.
+  if (isRedefineInjectedWalletNoise({ message, frames })) {
     return true;
   }
 
