@@ -215,7 +215,8 @@ rule now.
 
 A connector uses one provider type:
 
-- **pipedream** — managed OAuth for supported SaaS apps
+- **composio** — managed OAuth for supported SaaS apps
+- **pipedream** — legacy managed OAuth, kept for rollback only
 - **openapi**, **postman**, **graphql**, **http** — direct API connectors
 - **mcp** — a remote MCP server over HTTP or SSE
 - **channel** — a chat platform connection
@@ -224,11 +225,34 @@ A connector uses one provider type:
 See [Slack and channels](/docs/connect/slack) and
 [Computers](/docs/connect/computers) for the managed provider flows.
 
+### Apps that need your own OAuth app
+
+Composio holds its own OAuth app for most toolkits. For some it holds none:
+X (`twitter`) since February 2026, and OAuth-only toolkits such as `xero`,
+`spotify`, `google_chat`, `googleforms`, and `zoom_chat`. On 2026-09-26 there
+were 47. Composio cannot connect them until the Composio project holds an
+auth config with your own OAuth app.
+
+- Until that auth config exists, the Connectors catalogue does not list the
+  toolkit. A connector already declared for it fails to sync with `422`
+  `composio_auth_config_required`, and the message names the toolkit.
+- To enable one, register an OAuth app with the provider. In the Composio
+  dashboard, open **Auth Configs**, create an auth config for the toolkit, and
+  enter the app's client ID and secret. Add the redirect URI the dashboard
+  shows to the provider app.
+- Kortix finds the enabled auth config itself. You do not restart or redeploy.
+  The catalogue lists the toolkit within 60 seconds. The next sync and connect
+  use the auth config immediately.
+- When more than one enabled auth config exists for a toolkit, Kortix uses the
+  newest. Disable the old one to rotate an OAuth app.
+- Toolkits that Composio connects with its own app keep using it. Kortix never
+  selects an auth config for them.
+
 ## Authentication and policy
 
 A connection authenticates with:
 
-- OAuth through Pipedream, a channel install, or a native OAuth2 grant
+- OAuth through Composio, a channel install, or a native OAuth2 grant
 - an API key or token entered through the dashboard or SDK
 
 Kortix encrypts connection data and resolves it server-side for each tool

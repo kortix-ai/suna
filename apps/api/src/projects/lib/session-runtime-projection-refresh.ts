@@ -96,7 +96,6 @@ export async function refreshRuntimeProjection(
       return { refreshed: false, reason: 'not_modified' };
     }
 
-    if (result.etag) etags.set(target.sessionId, result.etag);
     const stored = await saveRuntimeProjection({
       sessionId: target.sessionId,
       projectId: target.projectId,
@@ -110,6 +109,12 @@ export async function refreshRuntimeProjection(
       capturedAt: builtAt(result.doc),
       source: options.source ?? 'api_pull',
     });
+    // Cache the etag only AFTER the row is durable. Caching it ahead of the
+    // write leaves a poisoned etag when the write fails: every later refresh
+    // sends If-None-Match, gets a 304, and returns `not_modified` without ever
+    // storing the document. The refresh either fully lands (etag + row) or
+    // fully does not.
+    if (result.etag) etags.set(target.sessionId, result.etag);
     return { refreshed: true, etag: result.etag, stored };
   })();
 

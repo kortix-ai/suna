@@ -1150,6 +1150,7 @@ flow(
     const slug = `ke2e-composio-${Date.now().toString(36)}`;
     const otherSlug = `${slug}-other`;
     const rejectedLegacySlug = `${slug}-legacy-rejected`;
+    const ownAppSlug = `${slug}-own-app`;
     const toolkit = 'composio_search';
     const action = 'duck_duck_go';
     let composioConfigured = false;
@@ -1382,6 +1383,76 @@ flow(
         if (opened.total !== largest.total) {
           throw new Error(
             `section ${largest.key} heading says ${largest.total}, View all returns ${opened.total}`,
+          );
+        }
+      },
+    );
+
+    await ctx.step(
+      'an invalid Composio toolkit slug returns a named 422 from connect',
+      async () => {
+        if (!composioConfigured) return;
+        const invalidSlug = `${slug}-invalid-toolkit`;
+        const added = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug: invalidSlug, provider: 'composio', app: 'anthropic', create_only: true },
+          { params: { projectId: p.id } },
+        );
+        added.status(200).body().has('$.ok', true);
+        const connected = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/connectors/projects/:projectId/connectors/:slug/connect',
+          {},
+          { params: { projectId: p.id, slug: invalidSlug } },
+        );
+        connected.status(422).body().has('$.status', 422);
+        const message = connected.json<{ message?: string }>().message ?? '';
+        if (!message.includes('anthropic') || !message.includes('toolkit')) {
+          throw new Error(`invalid toolkit response omitted the slug and reason: ${message}`);
+        }
+        if (message.includes('ToolRouterV2_') || message.includes('Invalid toolkit slugs')) {
+          throw new Error(`invalid toolkit response exposed the provider error: ${message}`);
+        }
+      },
+    );
+
+    await ctx.step(
+      'a toolkit with no Composio-managed app is listed only when its declaration syncs, and otherwise fails with a named 422 reason',
+      async () => {
+        if (!composioConfigured) return;
+        // Spotify is OAuth-only and Composio holds no app for it, like X. It
+        // syncs only when the deployment's Composio project has an auth config
+        // with the operator's own app. Either state is valid; the catalogue and
+        // the sync must agree on which one this deployment is in.
+        const ownAppToolkit = 'spotify';
+        const listed = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/connectors/projects/:projectId/connect/toolkits', {
+            params: { projectId: p.id },
+            query: { q: ownAppToolkit, limit: '20' },
+          });
+        listed.status(200).body().exists('$.items');
+        const visible = listed
+          .json<{ items: Array<{ slug?: string }> }>()
+          .items.some((item) => item.slug === ownAppToolkit);
+
+        const added = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug: ownAppSlug, provider: 'composio', app: ownAppToolkit, create_only: true },
+          { params: { projectId: p.id } },
+        );
+        added.status(200).body().has('$.ok', true);
+        const error = added
+          .json<{ sync?: { errors?: Array<{ slug: string; error: string }> } }>()
+          .sync?.errors?.find((entry) => entry.slug === ownAppSlug)?.error;
+        if (error?.includes('ToolRouterV2_BadRequest')) {
+          throw new Error(`sync leaked Composio's raw refusal: ${error}`);
+        }
+        if (visible && error) {
+          throw new Error(`catalogue listed ${ownAppToolkit} but its sync failed: ${error}`);
+        }
+        if (!visible && !error?.includes(`no enabled "${ownAppToolkit}" auth config`)) {
+          throw new Error(
+            `catalogue hid ${ownAppToolkit} but sync did not name the missing auth config: ${error ?? 'no error'}`,
           );
         }
       },
