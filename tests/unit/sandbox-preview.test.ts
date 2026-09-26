@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  PREVIEW_SUITE_REFUSED,
   PreviewInfrastructureError,
   buildPreviewBootstrapScript,
   buildPreviewSuiteScript,
@@ -148,6 +149,9 @@ describe('provider-neutral preview lifecycle', () => {
     // The suite tests exactly the commit the deploy proved, or refuses.
     const guard = suite.indexOf('.commit == $sha');
     expect(guard).toBeGreaterThan(-1);
+    // A refusal has its own exit code, so the workflow links no stale report.
+    expect(suite).toContain(`exit ${PREVIEW_SUITE_REFUSED}`);
+    expect(PREVIEW_SUITE_REFUSED).not.toBe(1);
     expect(guard).toBeLessThan(suite.indexOf('pnpm test -- --target-full'));
     expect(suite).toContain("source '/workspace/kortix-preview/self-host/pr-6998/.env.test'");
     expect(suite).toContain(`STATUS='${statusPath}'`);

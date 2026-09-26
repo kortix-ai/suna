@@ -341,7 +341,9 @@ describe('the preview status tells the truth about the suite', () => {
 
   test('only the suite links a report — the persistent box still holds the last one', () => {
     const suiteAction = deployScript.slice(deployScript.indexOf("} else if (action === 'suite') {"));
-    expect(suiteAction.slice(0, 1500)).toContain("await writeOutput('report_url'");
+    expect(suiteAction.slice(0, 1800)).toMatch(/await writeOutput\(\s*'report_url'/);
+    // A refused suite (it no longer serves the commit) links no report.
+    expect(suiteAction.slice(0, 1800)).toContain('exitCode !== PREVIEW_SUITE_REFUSED');
     const deployAction = deployScript.slice(0, deployScript.indexOf("} else if (action === 'suite') {"));
     expect(deployAction).not.toContain('report_url');
   });

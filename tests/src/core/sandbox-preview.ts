@@ -37,6 +37,9 @@ export function previewDeploymentStatusPath(runId: string, runAttempt: string): 
   return `/workspace/kortix-preview/run-${runId}-${runAttempt}.exit`;
 }
 
+/** Suite exit code when it refused to start: no report was written for this commit. */
+export const PREVIEW_SUITE_REFUSED = 3;
+
 /** Completion record for the suite a run launches after its deploy. */
 export function previewSuiteStatusPath(runId: string, runAttempt: string): string {
   return previewDeploymentStatusPath(runId, runAttempt).replace(/\.exit$/, '-suite.exit');
@@ -89,7 +92,7 @@ trap 'code=$?; finish "$code"' EXIT
 curl -fsS --max-time 10 http://127.0.0.1:8080/v1/health \
   | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .commit == $sha' >/dev/null || {
   echo "the preview no longer serves ${input.sha}; refusing to test another commit" >&2
-  exit 1
+  exit ${PREVIEW_SUITE_REFUSED}
 }
 
 printf 'tests\n' > "$PHASE"

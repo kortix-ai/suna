@@ -3,6 +3,7 @@ import { appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
+  PREVIEW_SUITE_REFUSED,
   type SandboxPreviewProvider,
   branchEnvSandboxName,
   runSandboxPreview,
@@ -200,8 +201,12 @@ if (action === 'deploy') {
     platinum,
     ...(process.env.PREVIEW_BRANCH_ENV?.trim() ? { branchEnv: process.env.PREVIEW_BRANCH_ENV.trim() } : {}),
   });
+  // A refused suite wrote no report; `/_tests/` still holds an older run's.
   const previewUrl = value('PREVIEW_URL');
-  await writeOutput('report_url', previewUrl ? `${previewUrl.replace(/\/$/, '')}/_tests/` : '');
+  await writeOutput(
+    'report_url',
+    previewUrl && exitCode !== PREVIEW_SUITE_REFUSED ? `${previewUrl.replace(/\/$/, '')}/_tests/` : '',
+  );
   process.exitCode = exitCode;
 } else if (action === 'teardown') {
   // A persistent environment's sandbox is named after the BRANCH, so teardown
