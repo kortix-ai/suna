@@ -1388,6 +1388,33 @@ flow(
     );
 
     await ctx.step(
+      'an invalid Composio toolkit slug returns a named 422 from connect',
+      async () => {
+        if (!composioConfigured) return;
+        const invalidSlug = `${slug}-invalid-toolkit`;
+        const added = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug: invalidSlug, provider: 'composio', app: 'anthropic', create_only: true },
+          { params: { projectId: p.id } },
+        );
+        added.status(200).body().has('$.ok', true);
+        const connected = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/connectors/projects/:projectId/connectors/:slug/connect',
+          {},
+          { params: { projectId: p.id, slug: invalidSlug } },
+        );
+        connected.status(422).body().has('$.status', 422);
+        const message = connected.json<{ message?: string }>().message ?? '';
+        if (!message.includes('anthropic') || !message.includes('toolkit')) {
+          throw new Error(`invalid toolkit response omitted the slug and reason: ${message}`);
+        }
+        if (message.includes('ToolRouterV2_') || message.includes('Invalid toolkit slugs')) {
+          throw new Error(`invalid toolkit response exposed the provider error: ${message}`);
+        }
+      },
+    );
+
+    await ctx.step(
       'a toolkit with no Composio-managed app is listed only when its declaration syncs, and otherwise fails with a named 422 reason',
       async () => {
         if (!composioConfigured) return;

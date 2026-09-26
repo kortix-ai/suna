@@ -357,15 +357,17 @@ export function chatJsonToAnthropicMessage(data: Record<string, unknown>): Recor
   };
 }
 
+type AnthropicSseBlockType = 'text' | 'tool_use';
+
 interface AnthropicSseState {
   messageId: string;
   model: string;
   messageStarted: boolean;
   finished: boolean;
   nextIndex: number;
-  textIndex: number | null;
-  openBlockIndex: number | null;
-  toolIndexMap: Map<number, number>;
+  openBlock: { index: number; type: AnthropicSseBlockType } | null;
+  toolCalls: Map<number, { id: string; name: string; arguments: string[] }>;
+  trailingText: string[];
   finishReason: string | null;
   input: AnthropicUsage;
   completionTokens: number;
@@ -399,19 +401,44 @@ function ensureMessageStart(
   );
 }
 
+// The single source of truth for what is open. Every delta is addressed to
+// `openBlock`, so a delta can never be written into an index that was stopped.
 function closeOpenBlock(
   controller: ReadableStreamDefaultController<Uint8Array>,
   encoder: TextEncoder,
   state: AnthropicSseState,
 ): void {
-  if (state.openBlockIndex === null) return;
+  if (state.openBlock === null) return;
   controller.enqueue(
     sseFrame(encoder, 'content_block_stop', {
       type: 'content_block_stop',
-      index: state.openBlockIndex,
+      index: state.openBlock.index,
     }),
   );
-  state.openBlockIndex = null;
+  state.openBlock = null;
+}
+
+// Closes whatever block is open, then starts a fresh one at the next index and
+// records it as the open block. The content block is built from the allocated
+// index (the tool_use id fallback needs it), so the caller passes a factory.
+function openContentBlock(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  state: AnthropicSseState,
+  type: AnthropicSseBlockType,
+  contentBlock: (index: number) => Record<string, unknown>,
+): number {
+  closeOpenBlock(controller, encoder, state);
+  const index = state.nextIndex++;
+  controller.enqueue(
+    sseFrame(encoder, 'content_block_start', {
+      type: 'content_block_start',
+      index,
+      content_block: contentBlock(index),
+    }),
+  );
+  state.openBlock = { index, type };
+  return index;
 }
 
 function handleOpenAiChunk(
@@ -437,65 +464,38 @@ function handleOpenAiChunk(
   const delta = (choice.delta as Record<string, unknown>) ?? {};
 
   if (typeof delta.content === 'string' && delta.content) {
-    if (state.openBlockIndex !== null && state.openBlockIndex !== state.textIndex) {
-      closeOpenBlock(controller, encoder, state);
-    }
-    if (state.textIndex === null) {
-      state.textIndex = state.nextIndex++;
+    if (state.toolCalls.size > 0) {
+      // Tool argument chunks can resume after this text. Keep the text after
+      // the complete tool blocks instead of closing a block that may resume.
+      state.trailingText.push(delta.content);
+    } else {
+      const index =
+        state.openBlock?.type === 'text'
+          ? state.openBlock.index
+          : openContentBlock(controller, encoder, state, 'text', () => ({
+              type: 'text',
+              text: '',
+            }));
       controller.enqueue(
-        sseFrame(encoder, 'content_block_start', {
-          type: 'content_block_start',
-          index: state.textIndex,
-          content_block: { type: 'text', text: '' },
+        sseFrame(encoder, 'content_block_delta', {
+          type: 'content_block_delta',
+          index,
+          delta: { type: 'text_delta', text: delta.content },
         }),
       );
-      state.openBlockIndex = state.textIndex;
     }
-    controller.enqueue(
-      sseFrame(encoder, 'content_block_delta', {
-        type: 'content_block_delta',
-        index: state.textIndex,
-        delta: { type: 'text_delta', text: delta.content },
-      }),
-    );
   }
 
   const toolCalls = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
   for (const rawToolCall of toolCalls) {
     const toolCall = rawToolCall as Record<string, unknown>;
     const openAiIndex = typeof toolCall.index === 'number' ? toolCall.index : 0;
-    let anthropicIndex = state.toolIndexMap.get(openAiIndex);
     const fn = (toolCall.function as Record<string, unknown>) ?? {};
-    if (anthropicIndex === undefined) {
-      closeOpenBlock(controller, encoder, state);
-      anthropicIndex = state.nextIndex++;
-      state.toolIndexMap.set(openAiIndex, anthropicIndex);
-      controller.enqueue(
-        sseFrame(encoder, 'content_block_start', {
-          type: 'content_block_start',
-          index: anthropicIndex,
-          content_block: {
-            type: 'tool_use',
-            id:
-              typeof toolCall.id === 'string' && toolCall.id
-                ? toolCall.id
-                : `toolu_${anthropicIndex}`,
-            name: typeof fn.name === 'string' ? fn.name : '',
-            input: {},
-          },
-        }),
-      );
-      state.openBlockIndex = anthropicIndex;
-    }
-    if (typeof fn.arguments === 'string' && fn.arguments) {
-      controller.enqueue(
-        sseFrame(encoder, 'content_block_delta', {
-          type: 'content_block_delta',
-          index: anthropicIndex,
-          delta: { type: 'input_json_delta', partial_json: fn.arguments },
-        }),
-      );
-    }
+    const pending = state.toolCalls.get(openAiIndex) ?? { id: '', name: '', arguments: [] };
+    if (typeof toolCall.id === 'string' && toolCall.id) pending.id = toolCall.id;
+    if (typeof fn.name === 'string' && fn.name) pending.name += fn.name;
+    if (typeof fn.arguments === 'string' && fn.arguments) pending.arguments.push(fn.arguments);
+    state.toolCalls.set(openAiIndex, pending);
   }
 
   if (typeof choice.finish_reason === 'string' && choice.finish_reason) {
@@ -512,6 +512,31 @@ function finishAnthropicStream(
   state.finished = true;
   ensureMessageStart(controller, encoder, state);
   closeOpenBlock(controller, encoder, state);
+  for (const [, tool] of [...state.toolCalls].sort(([a], [b]) => a - b)) {
+    const index = openContentBlock(controller, encoder, state, 'tool_use', (index) => ({
+      type: 'tool_use',
+      id: tool.id || `toolu_${index}`,
+      name: tool.name,
+      input: {},
+    }));
+    for (const fragment of tool.arguments) {
+      controller.enqueue(sseFrame(encoder, 'content_block_delta', {
+        type: 'content_block_delta',
+        index,
+        delta: { type: 'input_json_delta', partial_json: fragment },
+      }));
+    }
+    closeOpenBlock(controller, encoder, state);
+  }
+  if (state.trailingText.length > 0) {
+    const index = openContentBlock(controller, encoder, state, 'text', () => ({ type: 'text', text: '' }));
+    for (const text of state.trailingText) {
+      controller.enqueue(sseFrame(encoder, 'content_block_delta', {
+        type: 'content_block_delta', index, delta: { type: 'text_delta', text },
+      }));
+    }
+    closeOpenBlock(controller, encoder, state);
+  }
   controller.enqueue(
     sseFrame(encoder, 'message_delta', {
       type: 'message_delta',
@@ -528,9 +553,9 @@ function finishAnthropicStream(
   controller.close();
 }
 
-// OpenAI chat.completions SSE stream -> Anthropic Messages SSE stream. Keeps
-// streaming truly streaming: each upstream chunk is translated and enqueued
-// as it arrives, never buffered whole.
+// OpenAI chat.completions SSE stream -> Anthropic Messages SSE stream. Text
+// before the first tool call streams immediately. Tool arguments and later text
+// flush at message end because upstream can interleave chunks for one tool.
 export function chatSseToAnthropicSse(
   openAiStream: ReadableStream<Uint8Array>,
   opts: { model?: string } = {},
@@ -544,9 +569,9 @@ export function chatSseToAnthropicSse(
     messageStarted: false,
     finished: false,
     nextIndex: 0,
-    textIndex: null,
-    openBlockIndex: null,
-    toolIndexMap: new Map(),
+    openBlock: null,
+    toolCalls: new Map(),
+    trailingText: [],
     finishReason: null,
     input: { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
     completionTokens: 0,

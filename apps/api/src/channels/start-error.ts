@@ -70,6 +70,8 @@ export function startErrorMessage(
       return "I couldn't start a session — Kortix couldn't reach the sandbox runtime just now. This is usually a brief infrastructure hiccup; give it a moment and send your message again.";
     case 'WORKSPACE_MODE_UNAVAILABLE':
       return "I couldn't start a session because the agent uses the `read` workspace mode. Restricted workspace artifacts are not enabled yet. Set the agent's workspace to `runtime` or `branch`, then send your message again.";
+    case 'session_already_exists':
+      return "I couldn't start a session — one with this id already exists. Start a new one and send your message again.";
   }
 
   // Then HTTP status.
