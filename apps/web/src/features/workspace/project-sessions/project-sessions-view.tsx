@@ -171,7 +171,7 @@ function SessionsSection({
           </span>
           <CaretRightIcon
             aria-hidden
-            className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
+            className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-normal ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
           />
         </div>
       </DisclosureTrigger>
