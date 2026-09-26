@@ -154,28 +154,24 @@ export function classifyReloadCause(f: ReloadForensics): ReloadCause | null {
 
 /** True when the load looks involuntary — worth reporting, unlike an ordinary
  *  navigation or a reload the user pressed themselves (which we cannot tell
- *  apart from an automatic one, so a bare 'reload' alone is NOT enough). */
+ *  apart from an automatic one, so a bare 'reload' alone is NOT enough). Boolean
+ *  summary of `classifyReloadCause`. */
 export function isInvoluntaryLoad(f: ReloadForensics): boolean {
   return classifyReloadCause(f) !== null;
 }
 
 /**
- * True when an involuntary load deserves a standalone Sentry event.
+ * True when the cause deserves a standalone Sentry event.
  *
  * A `discarded` tab is routine background reclaim: Chrome unloads a backgrounded
- * tab under memory pressure and reloads it when the user comes back. Every field
- * the platform exposes agrees — 46 of the 47 prod occurrences were
- * `discarded: true`, `back_forward`, no chunk failure, with a heap an order of
- * magnitude below `HEAP_PRESSURE_BYTES`. It is expected browser behavior, not an
- * app defect: the page reloads from the URL and the session reconnects from its
- * durable state, so nothing is lost. It must not page.
- *
- * The two causes we CAN act on keep reporting: a failed lazy chunk is a deploy
- * that left a stale tab behind, and a renderer killed under heap pressure is the
- * silent one with no other fingerprint.
+ * tab and reloads it when the user comes back. It is expected browser behavior,
+ * not an app defect — the page reloads from the URL and the session reconnects
+ * from its durable state. It must not page. The two causes we CAN act on keep
+ * reporting: a failed lazy chunk is a deploy that left a stale tab behind, and a
+ * renderer killed under heap pressure is the silent one with no other
+ * fingerprint.
  */
-export function shouldReportReload(f: ReloadForensics): boolean {
-  const cause = classifyReloadCause(f);
+export function shouldReportReloadCause(cause: ReloadCause | null): boolean {
   return cause === 'chunk-error' || cause === 'renderer-oom';
 }
 
@@ -183,12 +179,13 @@ export function shouldReportReload(f: ReloadForensics): boolean {
  * Label this page load, and watch for the chunk failure that would explain the
  * NEXT one. Mount once per session page.
  *
- * Logs every involuntary load (`isInvoluntaryLoad`), so an ordinary navigation —
- * or a reload someone pressed — stays silent. Sends a Sentry event only when the
- * cause is actionable (`shouldReportReload`): a chunk-404-after-deploy or a
- * renderer killed under heap pressure. A browser tab discard, the overwhelming
- * majority, leaves a breadcrumb instead so it still explains a later error
- * without paging on its own.
+ * Classifies the load once (`classifyReloadCause`); an ordinary navigation — or a
+ * reload someone pressed — has no cause and stays silent. Every involuntary load
+ * is logged locally. A Sentry event fires only for an actionable cause
+ * (`shouldReportReloadCause`): a chunk-404-after-deploy or a renderer killed
+ * under heap pressure. A browser tab discard, the overwhelming majority, leaves a
+ * breadcrumb instead so it still explains a later error without paging on its
+ * own.
  */
 export function useReloadForensics(sessionId: string | null | undefined): void {
   useEffect(() => {
@@ -212,7 +209,7 @@ export function useReloadForensics(sessionId: string | null | undefined): void {
     if (cause !== null) {
       console.warn('[session] involuntary page load', { sessionId, cause, ...forensics });
     }
-    if (shouldReportReload(forensics)) {
+    if (shouldReportReloadCause(cause)) {
       Sentry.captureMessage('session page reloaded involuntarily', {
         level: 'warning',
         extra: { sessionId, cause, ...forensics },
@@ -225,7 +222,7 @@ export function useReloadForensics(sessionId: string | null | undefined): void {
         category: 'session.reload',
         level: 'info',
         message: 'session page restored after browser tab discard',
-        data: { sessionId, ...forensics },
+        data: { sessionId, cause, ...forensics },
       });
     }
 
