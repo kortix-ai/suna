@@ -207,10 +207,16 @@ export function installedTuiBins(env: NodeJS.ProcessEnv = process.env): Installe
  */
 export function installedTuiSha(bin: string): string {
   const sidecar = managedTuiShaPath(bin);
-  if (existsSync(sidecar)) {
-    const recorded = parseSha256(readFileSync(sidecar, 'utf8'));
-    if (recorded) return recorded;
+  // Read, do not probe-then-read: a sidecar can vanish between the two calls
+  // (another `kortix tui` pruning), and a missing one just means "hash it".
+  let recordedText: string | null = null;
+  try {
+    recordedText = readFileSync(sidecar, 'utf8');
+  } catch {
+    recordedText = null;
   }
+  const recorded = recordedText ? parseSha256(recordedText) : null;
+  if (recorded) return recorded;
   const digest = createHash('sha256').update(readFileSync(bin)).digest('hex');
   try {
     writeFileSync(sidecar, `${digest}  kortix-tui\n`);
@@ -305,7 +311,11 @@ export async function downloadTuiBin(opts: DownloadTuiBinOpts): Promise<string> 
         );
 
   let bytes: Uint8Array | null = null;
+  // The digest recorded beside the install is always one this process
+  // computed from bytes on disk, never the text the release served.
+  let verifiedDigest: string;
   if (reusable) {
+    verifiedDigest = installedTuiSha(reusable.bin);
     log(
       `${C.dim}kortix-tui v${version} is byte-identical to the installed v${reusable.version} — reusing it, no download.${C.reset}\n`,
     );
@@ -321,6 +331,7 @@ export async function downloadTuiBin(opts: DownloadTuiBinOpts): Promise<string> 
     if (actual !== expected) {
       throw new Error(`checksum mismatch for ${asset} — expected ${expected}, got ${actual}`);
     }
+    verifiedDigest = actual;
   }
 
   mkdirSync(dirname(dest), { recursive: true });
@@ -335,7 +346,7 @@ export async function downloadTuiBin(opts: DownloadTuiBinOpts): Promise<string> 
     // `renameSync` is atomic within the directory, so the file only ever
     // appears at `dest` complete and verified.
     renameSync(staging, dest);
-    writeFileSync(managedTuiShaPath(dest), `${expected}  ${asset}\n`);
+    writeFileSync(managedTuiShaPath(dest), `${verifiedDigest}  ${asset}\n`);
   } catch (err) {
     rmSync(staging, { force: true });
     throw err;
