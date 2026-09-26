@@ -38,6 +38,7 @@ import {
   setSandboxStatus,
 } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
+import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
@@ -55,6 +56,8 @@ import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
+import { useFeatureFlag } from './use-feature-flag';
+import { useSessionTranscriptHistory } from './use-session-transcript-history';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
 import { useOpenCodeEventStream } from './use-opencode-events';
@@ -62,8 +65,6 @@ import { formatModelString } from './use-opencode-local';
 import {
   type AbortSettlement,
   type PromptPart,
-  abortInFlightDeliveries,
-  awaitAbortSettlement,
   opencodeKeys,
   rejectQuestion as rejectQuestionApi,
   replyToPermission,
@@ -79,11 +80,14 @@ import { useProjectConfig } from './use-project-config';
 import { useProjectModels } from './use-project-models';
 import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
-import { useSessionPicks } from './use-session-picks';
+import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
+import { resolveSavedTranscript } from '../core/session-sync/saved-transcript';
 import { useSessionSync } from './use-session-sync';
+import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
 import { useSessionWorking } from './use-session-working';
+import { cancelSessionTurn } from './session-stop';
 import { useVisibleAgents } from './use-visible-agents';
 
 /** Coarse session lifecycle for the host's top-level gating. */
@@ -125,6 +129,82 @@ export function shouldRetrySessionStart(
  * pause between holds, not the latency to observe `ready`.
  */
 export const SESSION_START_POLL_MS = 1_500;
+
+/**
+ * The absolute URL of this session's OpenCode runtime, or `null` until the box
+ * is ready.
+ *
+ * `/start` reports the runtime two ways and NEITHER is directly usable:
+ *
+ *  - `sandbox.external_id` — the provider sandbox id. The proxy route is the
+ *    SDK's to compose (`getSandboxUrlForExternalId`), never the host's.
+ *  - `runtime_url` — a RELATIVE path, `/p/<external_id>/8000`
+ *    (`apps/api/src/projects/routes/shared.ts:526`). Returned verbatim it is a
+ *    string no host can fetch.
+ *
+ * The external id wins because it is the same derivation `startProjectSession`
+ * writes into the session-runtime registry and `useSession` hands to
+ * `setCurrentRuntime` — one URL for the session, from one function. The
+ * `runtime_url` branch covers a ready payload whose sandbox row is absent,
+ * and composes the path against the configured backend.
+ *
+ * Gated on `stage === 'ready'`: a sandbox row exists from `provisioning`
+ * onward, and a URL for a box that is not serving yet is an invitation to dial
+ * it — the condition `SessionNotReadyError` exists to prevent.
+ */
+export function resolveSessionRuntimeUrl(
+  start: Pick<SessionStartResult, 'stage' | 'sandbox' | 'runtime_url'> | null | undefined,
+): string | null {
+  if (!start || start.stage !== 'ready') return null;
+  const externalId = start.sandbox?.external_id;
+  if (externalId) return getSandboxUrlForExternalId(externalId);
+  const path = start.runtime_url;
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${getBackendUrl()}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
+/** What a send may carry beyond the parts themselves. */
+export interface SendOptions {
+  model?: ModelKey;
+  agent?: string;
+  variant?: string;
+  directory?: string;
+}
+
+/**
+ * Fold the session's picks and this call's override into the options a send
+ * actually carries.
+ *
+ * Each field is OMITTED when neither source supplies one — `{ variant:
+ * undefined }` is not `{}` to a body builder that iterates keys, and the
+ * runtime reads an absent field as "use the default". `variant` (reasoning
+ * effort) now falls back to `picks.variant` exactly as `model` and `agent`
+ * already fell back to theirs; before `SessionPicks` carried it, every host
+ * kept it in a store of its own and passed it on every call.
+ *
+ * `directory` is deliberately per-send only: it scopes one prompt, not a
+ * session.
+ */
+export function resolveSendOptions(
+  picks: Pick<SessionPicks, 'model' | 'agent' | 'variant'>,
+  override?: {
+    model?: ModelKey | null;
+    agent?: string | null;
+    variant?: string | null;
+    directory?: string | null;
+  },
+): SendOptions {
+  const model = override?.model ?? picks.model;
+  const agent = override?.agent ?? picks.agent;
+  const variant = override?.variant ?? picks.variant;
+  return {
+    ...(model ? { model } : {}),
+    ...(agent ? { agent } : {}),
+    ...(variant ? { variant } : {}),
+    ...(override?.directory ? { directory: override.directory } : {}),
+  };
+}
 
 /**
  * Should the `/start` boot poll fire again, given the last tick's outcome?
@@ -735,6 +815,19 @@ export interface UseSessionOptions {
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
   /**
+   * Ask `/start` to resume the preserved runtime of a session created before
+   * the project repository changed.
+   *
+   * It is no longer needed, and it changes nothing about what the session may
+   * do. Such a session starts, runs the project's CURRENT config release and
+   * converges like any other. What remains true of it is physical: its
+   * `/workspace` clone came from the old repository while `origin` now
+   * resolves to the new one, so a push without a rebase is refused by Git
+   * itself. Kept for callers built against the older behaviour; the server
+   * reads it as telemetry only.
+   */
+  repositoryMode?: 'previous';
+  /**
    * Replay a stashed first message (prompt + model + agent from the "new session"
    * screen) once the runtime is ready and the thread is empty. Default true. Hosts
    * with their own first-message hand-off (e.g. apps/web) set this false.
@@ -774,6 +867,24 @@ export interface UseSessionOptions {
    * `opencodeSessionId` — is unaffected.
    */
   chatEngine?: boolean;
+  /**
+   * Re-render the calling component on every transcript change. Default
+   * `true`, which keeps `messages` live.
+   *
+   * A streaming turn changes the transcript once per ~16 ms event batch, so
+   * with the default every component that calls this hook re-renders at that
+   * rate. Set `false` in a host that renders lifecycle UI (boot state, header,
+   * panels) and draws the transcript in a child: the child reads the live rows
+   * with `useSessionMessages(session)`, and only it re-renders per delta.
+   *
+   * When `false`: the chat engine still runs (fetch, stream, pollers);
+   * `messages` is the transcript as of this render, and this hook re-renders
+   * only when the transcript's shape changes — a message added or removed, or
+   * a tool part changing status — so `messages.length` and the question and
+   * permission self-heal pollers stay correct. Streamed text alone does not
+   * re-render it.
+   */
+  subscribeMessages?: boolean;
 }
 
 /** Stable, empty chat state — used when `chatEngine: false` so the hook's
@@ -787,6 +898,7 @@ const DISABLED_CHAT_ENGINE_SYNC = {
   retryTranscript: () => {},
   isBusy: false,
   isLoading: false,
+  mirrorState: 'idle' as ReturnType<typeof useSessionSync>['mirrorState'],
   diffs: [] as ReturnType<typeof useSessionSync>['diffs'],
   todos: [] as ReturnType<typeof useSessionSync>['todos'],
   hasOlder: false,
@@ -799,17 +911,19 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const titleRefreshAbortRef = useRef<AbortController | null>(null);
   const {
     waitMs = 15_000,
+    repositoryMode,
     replayStartStash = true,
     enabled = true,
     chatEngine = true,
     initialOpenCodeSessionId = null,
+    subscribeMessages = true,
   } = options;
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
   const startEnabled = enabled && !!projectId && !!sessionId;
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
-    queryFn: () => startProjectSession(projectId, sessionId, waitMs),
+    queryFn: () => startProjectSession(projectId, sessionId, { waitMs, repositoryMode }),
     enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
     retryDelay: (failureCount, error) =>
@@ -966,11 +1080,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
+  const transcriptHistoryFlag = useFeatureFlag(startEnabled && chatEngine ? projectId : null, 'session_transcript_history');
+  const transcriptHistoryEnabled = enabled && chatEngine && transcriptHistoryFlag.enabled;
+  const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled);
   const canonicalSession = useCanonicalOpenCodeSession({
     projectId,
     sessionId,
     pinFromStart: startData?.opencode_session_id ?? null,
-    initialPin: initialOpenCodeSessionId,
+    initialPin: transcriptHistory.rootSessionId ?? initialOpenCodeSessionId,
     listRuntimeSessions: switched,
   });
   const { rootSessionId } = canonicalSession;
@@ -1005,8 +1122,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // other's. Nothing clears it on a server answer and nothing needs to — an
   // observation the server could make AFTER accepting the send outranks it —
   // so only the paths that know nothing is coming drop it.
-  const { noteSendReceipt, acceptSendReceipt, clearSendReceipt, noteAbortReceipt, settleAbortReceipt } =
-    useSessionWorkingStore.getState();
+  const { noteSendReceipt, acceptSendReceipt, clearSendReceipt } = useSessionWorkingStore.getState();
 
   // Always call the hook (rules-of-hooks) so it stays in the same position
   // every render, but starve it with an empty session id when the chat engine
@@ -1015,6 +1131,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // result instead of whatever it happens to return for that starved call.
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
+    mirror: transcriptHistoryEnabled ? transcriptHistory.envelope : undefined,
     networkEnabled: switched,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification
@@ -1024,7 +1141,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // answer switched off the only read that could disprove it, and the
     // transcript froze mid-turn until a reload.
     serverHoldsTurn: working.serverOpenTurnToken !== null,
+    subscribeMessages,
   });
+  // Detached from the rows (`subscribeMessages: false`): re-render on a SHAPE
+  // change only, which is what every transcript read in this hook depends on
+  // (`messages.length`, the running-tool checks of the self-heal pollers).
+  useSyncStore((state) =>
+    !subscribeMessages && chatEngine && ocSessionId
+      ? selectTranscriptShapeKey(state, ocSessionId)
+      : '',
+  );
   const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
   const runtimePhase = useRuntimePhase();
   // T22 — the revert record lives in the sync store, not component state.
@@ -1045,6 +1171,24 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     () => messagesBeforeRewind(sync.messages, restRewind),
     [sync.messages, restRewind],
   );
+  // 5a. Can this session show its saved conversation before the computer
+  // wakes? A host paints placeholder rows while the answer is `loading` and
+  // its boot screen only on `none` — see `core/session-sync/saved-transcript`.
+  const savedTranscript = resolveSavedTranscript({
+    enabled: startEnabled && chatEngine,
+    hasMessages: sync.messages.length > 0,
+    history: !transcriptHistoryEnabled
+      ? transcriptHistoryFlag.isLoading
+        ? 'loading'
+        : 'off'
+      : transcriptHistory.isLoading
+        ? 'loading'
+        : transcriptHistory.envelope
+          ? 'present'
+          : 'absent',
+    mirror: sync.mirrorState,
+    root: ocSessionId ? 'known' : canonicalSession.pinSettled ? 'unknown' : 'pending',
+  });
 
   useEffect(() => {
     setRewindPending(false);
@@ -1215,15 +1359,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     },
   ): Promise<void> => {
     if (!runtimeActionReady) throw new RuntimeNotReadyError();
-    const model = override?.model ?? picks.model;
-    const agent = override?.agent ?? picks.agent;
-    const variant = override?.variant;
-    const opts = {
-      ...(model ? { model } : {}),
-      ...(agent ? { agent } : {}),
-      ...(variant ? { variant } : {}),
-      ...(override?.directory ? { directory: override.directory } : {}),
-    };
+    const opts = resolveSendOptions(picks, override);
     // The prompt is going out, so the optimistic message stops being `pending`.
     // Hosts own the optimistic add (they build the message id themselves), so
     // this resolves it the same way `hydrate` correlates an echo: by the
@@ -1334,42 +1470,31 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     }
   };
 
-  // The one true cancel: abort the run AND drop any pending prompt + open
-  // prompts. Returns a promise that settles once the abort is acknowledged —
-  // the mutation resolved (and, per `abortOpenCodeSession`, the session's
-  // status was re-read to confirm idle), the mutation failed after its own
-  // retries, or a bounded ~5s timeout elapsed. See `AbortSettlement`.
+  // The one true cancel: hold the prompt inbox, abort the run, and drop any
+  // pending prompt + open prompts. Returns a promise that settles once the
+  // abort is acknowledged — the mutation resolved (and, per
+  // `abortOpenCodeSession`, the session's status was re-read to confirm idle),
+  // the mutation failed after its own retries, or a bounded ~5s timeout
+  // elapsed. See `AbortSettlement`.
   //
-  // T9: `abortInFlightDeliveries` runs FIRST, synchronously — a prompt
-  // still retrying its boot/wake backoff when the user hits Stop must never
-  // land after this point and run against the old text. The optimistic UI
-  // (busy → idle, questions/permissions cleared) still updates instantly;
-  // only the returned promise is new — a caller that never awaits it sees
-  // exactly the same synchronous effects as before.
+  // `cancelSessionTurn` is `stopWithReceipt`, the Stop `useSessionSend` uses:
+  // it files the abort receipt and cancels a delivery still in its boot/wake
+  // backoff synchronously (T9), then holds the session's prompt inbox (bounded
+  // by `STOP_HOLD_DEADLINE_MS`) BEFORE the abort. Without the hold, a prompt
+  // queued during the turn was redelivered as soon as the abort dropped the
+  // runtime's queue, and Stop started the next turn. The optimistic UI
+  // (questions/permissions cleared, composer idle) still updates instantly.
   const cancel = (): Promise<AbortSettlement> => {
-    if (runtimeActionReady) {
-      clearSendReceipt(sessionId);
-      // The stop's own receipt. The cancel needs a round trip through the
-      // control plane and the daemon before turn authority is released, so
-      // every `/turn` read issued before it settles still reports the doomed
-      // turn — including the one the optimistic idle frame below triggers.
-      // Without this the composer flipped Send back to Stop ~120ms after the
-      // click and stayed there for the whole abort. See `AbortReceipt`.
-      noteAbortReceipt(sessionId, Date.now());
-      // No fabricated idle frame here: the receipt above IS the optimistic
-      // idle, with provenance and a bound. A fabricated frame outranked the
-      // control plane's `/turn` answer in `projectWorking` for the whole
-      // abort round-trip — the laundering this migration removes.
-      abortInFlightDeliveries(ocSessionId);
-    }
+    const settlement = cancelSessionTurn({
+      projectId,
+      sessionId,
+      runtimeSessionId: ocSessionId,
+      runtimeActionReady,
+      runAbort: () => abortMutation.mutateAsync(ocSessionId),
+    });
     questions.forEach((q) => removeQuestion(q.id));
     permissions.forEach((p) => removePermission(p.id));
     setSendState(IDLE_SEND_STATE);
-    if (!runtimeActionReady) return Promise.resolve({ status: 'skipped' });
-    const settlement = awaitAbortSettlement(() => abortMutation.mutateAsync(ocSessionId));
-    // `awaitAbortSettlement` never rejects — it resolves with how the abort
-    // ended. A timeout is not an acknowledgement.
-    void settlement.then((result) => settleAbortReceipt(sessionId, Date.now(), result.status));
     return settlement;
   };
 
@@ -1460,6 +1585,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       : null,
     /** The serialized session_sandboxes row from /start (status, metadata, ids), or null. */
     sandbox,
+    /**
+     * Absolute URL of this session's OpenCode runtime (the `/p/<ext>/8000`
+     * proxy), or null until `stage === 'ready'`. The same URL the hook hands
+     * to `setCurrentRuntime` — hosts that need it for a PTY attach or a direct
+     * daemon call read it here instead of rebuilding it from `sandbox`.
+     */
+    runtimeUrl: resolveSessionRuntimeUrl(startData),
     /** True once the runtime is switched in and ready (equivalent to phase==='ready'). */
     switched,
     /** Whether polling /start again can still make progress (false = terminal). */
@@ -1480,6 +1612,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     isBusy: working.state === 'working',
     isCompacting,
     isLoading: sync.isLoading,
+    /**
+     * Can the saved conversation show before the computer wakes?
+     * `loading` — a saved copy may still paint (show placeholder rows);
+     * `shown` — messages are in the store; `none` — nothing can paint until
+     * the runtime answers (show the boot screen). An unknown is `loading`,
+     * never `none`.
+     */
+    savedTranscript,
     isError: terminal || !!startError || !!runtimeSessionError,
     /** Whether there are open interactive prompts (questions/permissions). */
     hasPending: questions.length > 0 || permissions.length > 0,

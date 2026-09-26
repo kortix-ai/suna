@@ -1,6 +1,5 @@
 import * as React from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   RefreshControl,
@@ -10,23 +9,16 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
+import { BottomSheetModal, BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import {
-  BottomSheetBackdrop,
-  BottomSheetModal,
-  BottomSheetTextInput,
-  BottomSheetView,
-  type BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
-import {
-  Check,
-  Cloud,
-  Globe,
-  Monitor,
-  Pencil,
-  Plus,
-  Server,
-} from 'lucide-react-native';
+  CheckIcon as Check,
+  GlobeIcon as Globe,
+  MonitorIcon as Monitor,
+  PlusIcon as Plus,
+  HardDrivesIcon as Server,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
@@ -35,8 +27,11 @@ import {
 } from '@/lib/platform/hooks';
 import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from '@/lib/platform/client';
 import { setInstanceProgress, useInstanceProgress } from '@/stores/instance-progress';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { useThemeColors } from '@/lib/theme-colors';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
+import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { useToast } from '@/components/kortix/toast-provider';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -44,12 +39,14 @@ function providerLabel(provider: SandboxProviderName): string {
   return provider.toUpperCase();
 }
 
-function statusColor(status: string): string {
+function statusColor(status: string, isDark: boolean): string {
   switch (status) {
-    case 'running': case 'ready': case 'active': return '#34D399';
-    case 'stopped': case 'archived': return '#9CA3AF';
-    case 'error': case 'failed': return '#EF4444';
-    default: return '#FBBF24';
+    case 'running': case 'ready': case 'active': return THEME.accent.green;
+    case 'stopped': case 'archived':
+      return isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+    case 'error': case 'failed':
+      return isDark ? THEME.dark.destructive : THEME.light.destructive;
+    default: return THEME.accent.orange;
   }
 }
 
@@ -94,8 +91,6 @@ export default function InstancesScreen() {
   const { currentVersion: liveActiveVersion } = useGlobalSandboxUpdate();
 
   const addSheetRef = React.useRef<BottomSheetModal>(null);
-  const renameSheetRef = React.useRef<BottomSheetModal>(null);
-  const [renameTarget, setRenameTarget] = React.useState<SandboxInfo | null>(null);
   const creatingProgress = useInstanceProgress();
 
   // Auto-poll when any instance is provisioning
@@ -115,12 +110,6 @@ export default function InstancesScreen() {
     switchSandbox(instance);
   }, [sandboxId, switchSandbox]);
 
-  const handleRename = React.useCallback((instance: SandboxInfo) => {
-    haptics.medium();
-    setRenameTarget(instance);
-    renameSheetRef.current?.present();
-  }, []);
-
   const openAddSheet = React.useCallback(() => {
     haptics.medium();
     addSheetRef.current?.present();
@@ -131,16 +120,10 @@ export default function InstancesScreen() {
     refetch();
   }, [refetch]);
 
-  const onRenamed = React.useCallback(() => {
-    renameSheetRef.current?.dismiss();
-    setRenameTarget(null);
-    refetch();
-  }, [refetch]);
-
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="small" />
+        <KortixLoader />
       </View>
     );
   }
@@ -153,11 +136,11 @@ export default function InstancesScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
       >
-        <View className="px-5 pt-1">
+        <View className="px-4 pt-1">
           {/* Instances */}
           {((instances && instances.length > 0) || creatingProgress) && (
             <View className="px-1">
-              <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+              <Text className="mb-2 text-[13px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
                 Instances
               </Text>
               <View>
@@ -166,26 +149,26 @@ export default function InstancesScreen() {
                   <>
                     <View className="py-3.5">
                       <View className="flex-row items-center mb-2">
-                        <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: '#FBBF24' }} />
+                        <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: THEME.accent.orange }} />
                         <View className="flex-1">
                           <Text className="font-roobert-medium text-[15px] text-foreground">Sandbox</Text>
-                          <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
+                          <Text className="mt-0.5 font-roobert text-[13px] text-muted-foreground">
                             {creatingProgress.message}
                           </Text>
                         </View>
-                        <Text className="font-roobert text-xs tabular-nums text-muted-foreground">
+                        <Text className="font-roobert text-[13px] tabular-nums text-muted-foreground">
                           {Math.round(creatingProgress.percent)}%
                         </Text>
                       </View>
                       <View
                         className="h-1.5 rounded-full overflow-hidden"
-                        style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
+                        style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}
                       >
                         <View
                           className="h-full rounded-full"
                           style={{
                             width: `${Math.max(creatingProgress.percent, 2)}%`,
-                            backgroundColor: isDark ? '#F8F8F8' : '#121215',
+                            backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                           }}
                         />
                       </View>
@@ -207,42 +190,32 @@ export default function InstancesScreen() {
                         <View className="flex-row items-center">
                           <View
                             className="h-2.5 w-2.5 rounded-full mr-3"
-                            style={{ backgroundColor: isProvisioning ? '#FBBF24' : statusColor(instance.status) }}
+                            style={{ backgroundColor: isProvisioning ? THEME.accent.orange : statusColor(instance.status, isDark) }}
                           />
                           <View className="flex-1">
                             <Text className="font-roobert-medium text-[15px] text-foreground" numberOfLines={1}>
                               {instance.name}
                             </Text>
-                            <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
+                            <Text className="mt-0.5 font-roobert text-[13px] text-muted-foreground">
                               {isProvisioning ? 'Provisioning...' : statusLabel(instance.status)}
                               {effectiveVersion ? ` · v${effectiveVersion}` : ''}
                               {` · ${providerLabel(instance.provider)}`}
                             </Text>
                           </View>
                           <View className="flex-row items-center" style={{ gap: 8 }}>
-                            {!isProvisioning && (
-                              <Pressable
-                                onPress={() => handleRename(instance)}
-                                hitSlop={8}
-                                className="active:opacity-60"
-                              >
-                                <Icon as={Pencil} size={14} className="text-muted-foreground/40" strokeWidth={2.2} />
-                              </Pressable>
-                            )}
-                            {isProvisioning && <ActivityIndicator size="small" />}
                             {isActive && !isProvisioning && (
-                              <Icon as={Check} size={16} className="text-primary" strokeWidth={2.7} />
+                              <Icon as={Check} size={16} className="text-primary" />
                             )}
                           </View>
                         </View>
                         {isProvisioning && (
                           <View
                             className="mt-2 h-1 rounded-full overflow-hidden"
-                            style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
+                            style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}
                           >
                             <View
                               className="h-full rounded-full"
-                              style={{ width: '30%', backgroundColor: '#FBBF24' }}
+                              style={{ width: '30%', backgroundColor: THEME.accent.orange }}
                             />
                           </View>
                         )}
@@ -258,9 +231,9 @@ export default function InstancesScreen() {
           {/* Empty state */}
           {!isLoading && (!instances || instances.length === 0) && !creatingProgress && (
             <View className="items-center justify-center py-12">
-              <Icon as={Server} size={32} className="text-muted-foreground/40" strokeWidth={1.5} />
+              <Icon as={Server} size={32} className="text-muted-foreground/40" />
               <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">No Instances</Text>
-              <Text className="mt-1 text-center font-roobert text-xs text-muted-foreground">
+              <Text className="mt-1 text-center font-roobert text-[13px] text-muted-foreground">
                 Tap the button below to add one.
               </Text>
             </View>
@@ -275,7 +248,7 @@ export default function InstancesScreen() {
           className="flex-row items-center justify-center rounded-full py-3.5 active:opacity-90"
           style={{ backgroundColor: themeColors.primary }}
         >
-          <Icon as={Plus} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+          <Icon as={Plus} size={16} color={themeColors.primaryForeground} />
           <Text className="ml-2 font-roobert-semibold text-[15px]" style={{ color: themeColors.primaryForeground }}>
             New Instance
           </Text>
@@ -283,110 +256,9 @@ export default function InstancesScreen() {
       </View>
 
       <AddInstanceSheet ref={addSheetRef} isDark={isDark} onCreated={onInstanceAdded} onProgress={setInstanceProgress} />
-      <RenameSheet ref={renameSheetRef} isDark={isDark} instance={renameTarget} onRenamed={onRenamed} />
     </>
   );
 }
-
-// ─── Rename Bottom Sheet ────────────────────────────────────────────────────
-
-const RenameSheet = React.forwardRef<
-  BottomSheetModal,
-  { isDark: boolean; instance: SandboxInfo | null; onRenamed: () => void }
->(function RenameSheet({ isDark, instance, onRenamed }, ref) {
-  const insets = useSafeAreaInsets();
-  const [name, setName] = React.useState('');
-  const fgColor = isDark ? '#f8f8f8' : '#121215';
-  const themeColors = useThemeColors();
-
-  React.useEffect(() => {
-    if (instance) setName(instance.name);
-  }, [instance]);
-
-  const canSave = name.trim().length > 0 && name.trim() !== instance?.name;
-
-  const handleSave = React.useCallback(() => {
-    if (!canSave) return;
-    haptics.tap();
-    // TODO: wire to rename API when available
-    haptics.success();
-    Alert.alert('Renamed', `Instance renamed to "${name.trim()}".`);
-    onRenamed();
-  }, [canSave, name, onRenamed]);
-
-  return (
-    <BottomSheetModal
-      ref={ref}
-      index={0}
-      snapPoints={[260]}
-      enablePanDownToClose
-      backdropComponent={(props: BottomSheetBackdropProps) => (
-        <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
-      )}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36, height: 5, borderRadius: 3,
-      }}
-      backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
-        borderTopLeftRadius: 24, borderTopRightRadius: 24,
-      }}
-    >
-      <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 4, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
-        <Text className="text-lg font-roobert-semibold text-foreground">Rename Instance</Text>
-        <Text className="mt-0.5 mb-4 font-roobert text-xs text-muted-foreground">
-          Set a display name for this instance.
-        </Text>
-
-        <BottomSheetTextInput
-          value={name}
-          onChangeText={setName}
-          placeholder="Instance name"
-          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
-          autoCapitalize="words"
-          autoCorrect={false}
-          returnKeyType="done"
-          onSubmitEditing={handleSave}
-          style={{
-            backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
-            borderWidth: 1,
-            borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
-            borderRadius: 14,
-            paddingHorizontal: 16,
-            paddingVertical: 14,
-            fontSize: 16,
-            fontFamily: 'Roobert',
-            color: fgColor,
-            marginBottom: 16,
-          }}
-        />
-
-        <Pressable
-          onPress={handleSave}
-          disabled={!canSave}
-          className="items-center rounded-full py-3.5 active:opacity-90"
-          style={{
-            backgroundColor: canSave
-              ? themeColors.primary
-              : isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
-            opacity: canSave ? 1 : 0.5,
-          }}
-        >
-          <Text
-            className="font-roobert-semibold text-[15px]"
-            style={{
-              color: canSave
-                ? themeColors.primaryForeground
-                : isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)',
-            }}
-          >
-            Save
-          </Text>
-        </Pressable>
-      </BottomSheetView>
-    </BottomSheetModal>
-  );
-});
 
 // ─── Add Instance Bottom Sheet ──────────────────────────────────────────────
 
@@ -397,25 +269,20 @@ const AddInstanceSheet = React.forwardRef<
   { isDark: boolean; onCreated: () => void; onProgress: (p: { percent: number; message: string } | null) => void }
 >(function AddInstanceSheet({ isDark, onCreated, onProgress }, ref) {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const [step, setStep] = React.useState<AddStep>('select');
   const [customUrl, setCustomUrl] = React.useState('');
   const [customLabel, setCustomLabel] = React.useState('');
   const [isCreating, setIsCreating] = React.useState(false);
   const [progress, setProgress] = React.useState<{ percent: number; message: string } | null>(null);
 
-  const fgColor = isDark ? '#f8f8f8' : '#121215';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
 
   const snapPoints = React.useMemo(() => {
     if (isCreating && progress) return [300];
     return step === 'custom' ? [370] : [260];
   }, [step, isCreating, progress]);
 
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
-    ),
-    [],
-  );
 
   const resetState = React.useCallback(() => {
     setStep('select');
@@ -442,53 +309,47 @@ const AddInstanceSheet = React.forwardRef<
       resetState();
     } else {
       haptics.warning();
-      Alert.alert('Unreachable', 'Could not connect to the instance. Check the URL and try again.');
+      toast.error('Unable to reach the instance', {
+        description: 'Check the URL and try again.',
+      });
     }
-  }, [customUrl, onCreated, resetState]);
+  }, [customUrl, onCreated, resetState, toast]);
 
   return (
-    <BottomSheetModal
+    <KortixBottomSheetModal
       ref={ref}
       index={0}
       snapPoints={snapPoints}
       enablePanDownToClose={!isCreating}
-      backdropComponent={renderBackdrop}
+      backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.35} />}
       onDismiss={resetState}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36, height: 5, borderRadius: 3,
-      }}
-      backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
-        borderTopLeftRadius: 24, borderTopRightRadius: 24,
-      }}
     >
       <BottomSheetView style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
         {isCreating && progress ? (
           <View className="px-1">
-            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+            <Text className="mb-2 text-[13px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
               Creating Instance
             </Text>
             <View className="py-4">
               <View className="flex-row items-center mb-3">
-                <Icon as={Monitor} size={18} className="text-foreground/80" strokeWidth={2.2} />
+                <Icon as={Monitor} size={18} className="text-foreground/80" />
                 <View className="ml-4 flex-1">
                   <Text className="font-roobert-medium text-[15px] text-foreground">Sandbox</Text>
-                  <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">{progress.message}</Text>
+                  <Text className="mt-0.5 font-roobert text-[13px] text-muted-foreground">{progress.message}</Text>
                 </View>
-                <Text className="font-roobert text-xs tabular-nums text-muted-foreground">
+                <Text className="font-roobert text-[13px] tabular-nums text-muted-foreground">
                   {Math.round(progress.percent)}%
                 </Text>
               </View>
               <View
                 className="h-1.5 rounded-full overflow-hidden"
-                style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
+                style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}
               >
                 <View
                   className="h-full rounded-full"
                   style={{
                     width: `${Math.max(progress.percent, 2)}%`,
-                    backgroundColor: isDark ? '#F8F8F8' : '#121215',
+                    backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                   }}
                 />
               </View>
@@ -496,10 +357,10 @@ const AddInstanceSheet = React.forwardRef<
           </View>
         ) : step === 'select' ? (
           <View className="px-1">
-            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+            <Text className="mb-2 text-[13px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
               New Instance
             </Text>
-            <Text className="mb-3 font-roobert text-xs text-muted-foreground">
+            <Text className="mb-3 font-roobert text-[13px] text-muted-foreground">
               Choose how to connect.
             </Text>
 
@@ -510,10 +371,10 @@ const AddInstanceSheet = React.forwardRef<
                 className="py-3.5 active:opacity-85"
               >
                 <View className="flex-row items-center">
-                  <Icon as={Globe} size={18} className="text-foreground/80" strokeWidth={2.2} />
+                  <Icon as={Globe} size={18} className="text-foreground/80" />
                   <View className="ml-4 flex-1">
                     <Text className="font-roobert-medium text-[15px] text-foreground">Custom URL</Text>
-                    <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">Connect to any Kortix instance by address</Text>
+                    <Text className="mt-0.5 font-roobert text-[13px] text-muted-foreground">Connect to any Kortix instance by address</Text>
                   </View>
                 </View>
               </Pressable>
@@ -521,10 +382,10 @@ const AddInstanceSheet = React.forwardRef<
           </View>
         ) : (
           <View className="px-1">
-            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+            <Text className="mb-2 text-[13px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
               Custom URL
             </Text>
-            <Text className="mb-4 font-roobert text-xs text-muted-foreground">
+            <Text className="mb-4 font-roobert text-[13px] text-muted-foreground">
               Enter the address of your Kortix instance.
             </Text>
 
@@ -532,14 +393,14 @@ const AddInstanceSheet = React.forwardRef<
               value={customUrl}
               onChangeText={setCustomUrl}
               placeholder="http://localhost:8008/v1/p/sandbox/8000"
-              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+              placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
               style={{
-                backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+                backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                 borderWidth: 1,
-                borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
+                borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08),
                 borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
                 fontSize: 14, fontFamily: 'Roobert', color: fgColor, marginBottom: 10,
               }}
@@ -549,13 +410,13 @@ const AddInstanceSheet = React.forwardRef<
               value={customLabel}
               onChangeText={setCustomLabel}
               placeholder="Display name (optional)"
-              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+              placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
               autoCapitalize="words"
               autoCorrect={false}
               style={{
-                backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+                backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                 borderWidth: 1,
-                borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
+                borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08),
                 borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
                 fontSize: 14, fontFamily: 'Roobert', color: fgColor, marginBottom: 16,
               }}
@@ -567,17 +428,24 @@ const AddInstanceSheet = React.forwardRef<
               className="items-center rounded-full py-3.5 active:opacity-90"
               style={{
                 backgroundColor: customUrl.trim()
-                  ? isDark ? '#f8f8f8' : '#121215'
-                  : isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
+                  ? isDark ? THEME.dark.foreground : THEME.light.foreground
+                  : isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
                 opacity: customUrl.trim() ? 1 : 0.5,
               }}
             >
               {isCreating ? (
-                <ActivityIndicator size="small" color={isDark ? '#121215' : '#f8f8f8'} />
+                // The loader sits on the filled (foreground-colored) button — invert vs.
+                // the usual isDark mapping so it reads dark-on-light / light-on-dark.
+                <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />
               ) : (
                 <Text
                   className="font-roobert-semibold text-[15px]"
-                  style={{ color: customUrl.trim() ? (isDark ? '#121215' : '#f8f8f8') : (isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)') }}
+                  style={{
+                    // Same inversion as the loader above when the button is filled.
+                    color: customUrl.trim()
+                      ? (isDark ? THEME.light.foreground : THEME.dark.foreground)
+                      : (isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.3)),
+                  }}
                 >
                   Connect
                 </Text>
@@ -590,6 +458,6 @@ const AddInstanceSheet = React.forwardRef<
           </View>
         )}
       </BottomSheetView>
-    </BottomSheetModal>
+    </KortixBottomSheetModal>
   );
 });

@@ -1,34 +1,44 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { sessionProviderSecretPools } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { resolveCatalogUpstream } from '../../llm-gateway/models/provider-registry';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv } from '../../iam/agent-scope';
+import { memberMayReadProject } from '../../secrets/account-resource';
+import { MAX_KEYS_PER_PROVIDER, mayUseProviderKeys, providerEnvVarOf } from '../../secrets/provider-key-selection';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { mayChangeSessionModel } from '../lib/session-model-change';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
+import { resolveSessionPersonalOwner } from '../lib/personal-resources';
 
 const Params = z.object({ projectId: z.string().uuid(), sessionId: z.string().uuid(), providerId: z.string().min(1).max(100) });
 const Pool = z.object({ provider_id: z.string(), configured: z.boolean(), secret_ids: z.array(z.string()) });
-const Input = z.object({ secret_ids: z.array(z.string().uuid()).max(10).nullable() }).strict();
+const Input = z.object({ secret_ids: z.array(z.string().uuid()).max(MAX_KEYS_PER_PROVIDER).nullable() }).strict();
 
+/**
+ * May the caller select these keys for a session? Its agent must be granted
+ * the provider's key name, and each key must be one the caller may use: shared
+ * with the whole project, or granted to the caller.
+ *
+ * The route has already authorized the caller, so no member check runs here.
+ * A caller that is not an account member, such as a service account with a
+ * project role, holds no grant (grants are written only for account members),
+ * so it may select only keys shared with the whole project.
+ */
 export async function validateProviderSecretPool(input: {
   accountId: string; projectId: string; repoUrl: string; defaultBranch: string | null;
   manifestPath: string | null; agentName: string; userId: string;
   providerId: string; ids: string[];
 }): Promise<{ status: 400 | 403 | 409; error: string } | null> {
-  const provider = input.providerId === 'codex'
-    ? { envVar: 'CODEX_AUTH_JSON' }
-    : resolveCatalogUpstream(input.providerId);
-  if (!provider) return { status: 400, error: 'Unknown provider' };
-  if (input.ids.length > 10 || new Set(input.ids).size !== input.ids.length) {
+  const envVar = providerEnvVarOf(input.providerId);
+  if (!envVar) return { status: 400, error: 'Unknown provider' };
+  if (input.ids.length > MAX_KEYS_PER_PROVIDER || new Set(input.ids).size !== input.ids.length) {
     return { status: 400, error: 'Invalid or duplicate secret id' };
   }
   if (!input.ids.length) return null;
@@ -42,19 +52,12 @@ export async function validateProviderSecretPool(input: {
   } catch {
     return { status: 409, error: 'Agent grant unavailable' };
   }
-  if (!agentMayUseEnv(grant, provider.envVar)) return { status: 403, error: 'Agent cannot use this provider secret' };
-  const rows = await db.select({ id: accountSecretResources.secretId }).from(accountSecretResources)
-    .innerJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.accountId, accountSecretResources.accountId)))
-    .where(and(
-      eq(accountSecretResources.accountId, input.accountId),
-      eq(accountSecretResources.providerId, input.providerId),
-      eq(accountSecretResources.name, provider.envVar),
-      eq(accountSecretResources.consumer, 'llm_gateway'),
-      eq(accountSecretResources.active, true),
-      eq(accountSecretGrants.userId, input.userId),
-      inArray(accountSecretResources.secretId, input.ids),
-    ));
-  return rows.length === input.ids.length ? null : { status: 403, error: 'Secret unavailable or not granted' };
+  if (!agentMayUseEnv(grant, envVar)) return { status: 403, error: 'Agent cannot use this provider secret' };
+  const usable = await mayUseProviderKeys({
+    accountId: input.accountId, projectId: input.projectId, providerId: input.providerId, ids: input.ids,
+    grantUserId: input.userId,
+  });
+  return usable ? null : { status: 403, error: 'Secret unavailable or not granted' };
 }
 
 projectsApp.openapi(createRoute({
@@ -133,14 +136,33 @@ projectsApp.openapi(createRoute({
     providerId, ids,
   });
   if (invalid) return c.json({ error: invalid.error }, invalid.status);
-  if (ids.length && visible.row.createdBy !== loaded.userId) {
-    const ownerInvalid = await validateProviderSecretPool({
-      accountId: loaded.row.accountId, projectId, repoUrl: loaded.row.repoUrl,
-      defaultBranch: loaded.row.defaultBranch, manifestPath: loaded.row.manifestPath,
-      agentName: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL, userId: visible.row.createdBy!,
-      providerId, ids,
-    });
-    if (ownerInvalid) return c.json({ error: 'The session owner cannot use every selected secret' }, ownerInvalid.status);
+  if (ids.length) {
+    // The caller may use these keys; may the session? The gateway serves its
+    // selection as its owner, with the member grants of its personal user
+    // (spec 2026-09-22 §2.3): a shared session has none, so it reaches only
+    // keys shared with the whole project. A selection the gateway would not
+    // use is refused, not stored.
+    const ownerId = visible.row.createdBy!;
+    // The gateway serves pooled keys only to an owner who may read the
+    // project. This is the session's one principal check: it runs first, so
+    // the refusal names that cause, and mayUseProviderKeys checks only keys.
+    if (!(await memberMayReadProject(loaded.row.accountId, projectId, ownerId))) {
+      return c.json({
+        error: 'The session owner can no longer read this project, so the session cannot use provider secrets',
+        code: 'SESSION_OWNER_NO_PROJECT_ACCESS',
+      }, 403);
+    }
+    const personalUserId = await resolveSessionPersonalOwner({
+      projectId, accountId: loaded.row.accountId, sessionId, legacyUserId: ownerId,
+    }).catch(() => null);
+    if (!(await mayUseProviderKeys({ accountId: loaded.row.accountId, projectId, providerId, ids, grantUserId: personalUserId }))) {
+      return c.json(personalUserId === null
+        ? {
+            error: 'This session is shared, so it can use only keys shared with the whole project',
+            code: 'SHARED_SESSION_PERSONAL_KEY',
+          }
+        : { error: 'The session owner cannot use every selected secret' }, 403);
+    }
   }
   await db.insert(sessionProviderSecretPools).values({ sessionId, providerId, secretIds: ids, updatedAt: new Date() })
     .onConflictDoUpdate({ target: [sessionProviderSecretPools.sessionId, sessionProviderSecretPools.providerId], set: { secretIds: ids, updatedAt: new Date() } });

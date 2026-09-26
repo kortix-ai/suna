@@ -1,197 +1,165 @@
-import { log } from '@/lib/logger';
 /**
- * Push Notification Service
- * 
- * Service for sending push notifications via Expo Push Notification Service
+ * push — pure rules for remote push notifications
+ * (components/notifications/PushNotificationsBridge.tsx,
+ * lib/notifications/registration.ts).
+ *
+ * The server sends `data = { type, projectId, sessionId }`, an iOS `sound`,
+ * and an Android `channelId` (apps/api/src/notifications/session-push.ts).
+ * This file holds the matching client side: the Android channels, the
+ * kind → channel/sound map, the payload parser, the tap route, the
+ * foreground rule, and the preference wire format.
+ *
+ * Pure: no React, React Native, or expo imports (unit-tested under bun test).
  */
 
-export interface PushNotificationData {
-  [key: string]: string | number | boolean | null | undefined;
+import type { NotificationPreferences } from '@/stores/notification-store';
+import { projectHref, type ProjectHref } from '@/lib/projects/switcher';
+
+/** The event a push reports. Same values as the server's `data.type`. */
+export const NOTIFICATION_KINDS = ['completion', 'error', 'question', 'permission'] as const;
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
+
+/** The `data` object of a Kortix session push. */
+export interface PushData {
+  type: NotificationKind;
+  projectId: string;
+  sessionId: string;
 }
 
-export interface PushNotificationOptions {
-  /** Sound to play when notification is received */
-  sound?: 'default' | null;
-  /** Priority of the notification */
-  priority?: 'default' | 'normal' | 'high';
-  /** Badge count to display on app icon */
-  badge?: number;
-  /** Additional data to attach to the notification */
-  data?: PushNotificationData;
+/** Android channel ids. A channel's sound cannot change after creation. */
+export const CHANNEL_COMPLETE = 'session-complete';
+export const CHANNEL_ATTENTION = 'session-attention';
+export const CHANNEL_ERROR = 'session-error';
+export const CHANNEL_SILENT = 'session-silent';
+
+export interface AndroidChannelSpec {
+  id: string;
+  /** Shown in the system notification settings. */
+  name: string;
+  /** Bundled sound file name (expo-notifications plugin `sounds`), or null. */
+  sound: string | null;
 }
 
-export interface PushNotificationResponse {
-  status: 'ok' | 'error';
-  id?: string;
-  errors?: Array<{
-    code: string;
-    message: string;
-  }>;
-}
-
-const EXPO_PUSH_API_URL = 'https://exp.host/--/api/v2/push/send';
+/** The four channels the server targets. All use high importance (heads-up). */
+export const ANDROID_CHANNELS: readonly AndroidChannelSpec[] = [
+  { id: CHANNEL_COMPLETE, name: 'Session complete', sound: 'kortix_complete.wav' },
+  { id: CHANNEL_ATTENTION, name: 'Needs your attention', sound: 'kortix_attention.wav' },
+  { id: CHANNEL_ERROR, name: 'Session errors', sound: 'kortix_error.wav' },
+  { id: CHANNEL_SILENT, name: 'Silent', sound: null },
+];
 
 /**
- * Send a push notification via Expo Push Notification Service
- * 
- * @param expoPushToken - The Expo push token of the recipient device
- * @param title - Notification title
- * @param body - Notification body text
- * @param options - Optional notification configuration
- * @returns Promise resolving to the push notification response
- * 
- * @example
- * ```ts
- * await sendPushNotification(
- *   'ExponentPushToken[xxxxx]',
- *   'New Message',
- *   'You have a new message',
- *   { data: { threadId: '123' } }
- * );
- * ```
+ * The Android channel and iOS sound for one event kind. With `playSound`
+ * false: the silent channel and no iOS sound. Mirrors the server's choice.
  */
-export async function sendPushNotification(
-  expoPushToken: string,
-  title: string,
-  body: string,
-  options: PushNotificationOptions = {}
-): Promise<PushNotificationResponse> {
-  if (!expoPushToken?.trim()) {
-    throw new Error('Expo push token is required');
+export function deliveryForKind(
+  kind: NotificationKind,
+  playSound: boolean
+): { channelId: string; iosSound: string | null } {
+  if (!playSound) return { channelId: CHANNEL_SILENT, iosSound: null };
+  switch (kind) {
+    case 'completion':
+      return { channelId: CHANNEL_COMPLETE, iosSound: 'kortix_complete.wav' };
+    case 'error':
+      return { channelId: CHANNEL_ERROR, iosSound: 'kortix_error.wav' };
+    case 'question':
+    case 'permission':
+      return { channelId: CHANNEL_ATTENTION, iosSound: 'kortix_attention.wav' };
   }
+}
 
-  if (!title?.trim()) {
-    throw new Error('Notification title is required');
-  }
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
 
-  if (!body?.trim()) {
-    throw new Error('Notification body is required');
-  }
-
-  const message = {
-    to: expoPushToken.trim(),
-    sound: options.sound ?? 'default',
-    title: title.trim(),
-    body: body.trim(),
-    priority: options.priority ?? 'default',
-    badge: options.badge,
-    data: options.data || {},
+/** The session push in a notification's `data`, or null for any other payload. */
+export function parsePushData(raw: unknown): PushData | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const data = raw as Record<string, unknown>;
+  if (!(NOTIFICATION_KINDS as readonly unknown[]).includes(data.type)) return null;
+  if (!nonEmptyString(data.projectId) || !nonEmptyString(data.sessionId)) return null;
+  return {
+    type: data.type as NotificationKind,
+    projectId: data.projectId,
+    sessionId: data.sessionId,
   };
-
-  try {
-    const response = await fetch(EXPO_PUSH_API_URL, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(message),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Failed to send push notification: ${response.status} ${response.statusText}. ${errorText}`
-      );
-    }
-
-    const result = await response.json();
-    
-    // Handle Expo API response format (can be array or single object)
-    const responses = Array.isArray(result) ? result : [result];
-    const firstResponse = responses[0];
-
-    if (firstResponse.status === 'error') {
-      const errorMessage = firstResponse.message || 'Unknown error';
-      throw new Error(`Push notification error: ${errorMessage}`);
-    }
-
-    log.log('✅ Push notification sent successfully:', firstResponse);
-    return firstResponse;
-  } catch (error) {
-    log.error('❌ Error sending push notification:', error);
-    
-    if (error instanceof Error) {
-      throw error;
-    }
-    
-    throw new Error(`Unexpected error sending push notification: ${String(error)}`);
-  }
 }
 
 /**
- * Send push notifications to multiple recipients
- * 
- * @param expoPushTokens - Array of Expo push tokens
- * @param title - Notification title
- * @param body - Notification body text
- * @param options - Optional notification configuration
- * @returns Promise resolving to array of push notification responses
+ * Where a tap goes: the project route, plus the project session to open in
+ * it. The session is not a route param: a session opens through
+ * ProjectScreen's open-by-id path (the push store's `pendingOpen`), the same
+ * path as the Sessions page.
  */
-export async function sendPushNotificationsToMultiple(
-  expoPushTokens: string[],
-  title: string,
-  body: string,
-  options: PushNotificationOptions = {}
-): Promise<PushNotificationResponse[]> {
-  if (!expoPushTokens || expoPushTokens.length === 0) {
-    throw new Error('At least one Expo push token is required');
-  }
-
-  const messages = expoPushTokens
-    .filter((token) => token?.trim())
-    .map((token) => ({
-      to: token.trim(),
-      sound: options.sound ?? 'default',
-      title: title.trim(),
-      body: body.trim(),
-      priority: options.priority ?? 'default',
-      badge: options.badge,
-      data: options.data || {},
-    }));
-
-  if (messages.length === 0) {
-    throw new Error('No valid Expo push tokens provided');
-  }
-
-  try {
-    const response = await fetch(EXPO_PUSH_API_URL, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(messages),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Failed to send push notifications: ${response.status} ${response.statusText}. ${errorText}`
-      );
-    }
-
-    const results = await response.json();
-    const responses = Array.isArray(results) ? results : [results];
-    
-    const errors = responses.filter((r) => r.status === 'error');
-    if (errors.length > 0) {
-      log.warn(`⚠️ ${errors.length} push notification(s) failed:`, errors);
-    }
-
-    const successes = responses.filter((r) => r.status === 'ok');
-    log.log(`✅ ${successes.length} push notification(s) sent successfully`);
-
-    return responses;
-  } catch (error) {
-    log.error('❌ Error sending push notifications:', error);
-    
-    if (error instanceof Error) {
-      throw error;
-    }
-    
-    throw new Error(`Unexpected error sending push notifications: ${String(error)}`);
-  }
+export function routeForNotification(data: PushData): { href: ProjectHref; sessionId: string } {
+  return { href: projectHref(data.projectId), sessionId: data.sessionId };
 }
+
+/**
+ * Foreground rule. The app is active and shows that session: no banner and
+ * no sound (the live stream's in-app cue already plays). Otherwise: show it.
+ * A payload that is not a session push is shown.
+ */
+export function shouldPresentInForeground(input: {
+  data: unknown;
+  appActive: boolean;
+  viewingSessionId: string | null;
+}): boolean {
+  const data = parsePushData(input.data);
+  if (!data || !input.appActive) return true;
+  return input.viewingSessionId !== data.sessionId;
+}
+
+/**
+ * How a tap reaches the target project from the current root route.
+ * `rootSegment` is the first expo-router segment ('' for the index redirect);
+ * `currentProjectId` is the focused project's id, or null when no project
+ * route is on top.
+ * - signed out, or on a boot/auth screen → `wait` (retried on the next route)
+ * - the target project already on top → `none` (it opens the session)
+ * - another project on top → `replace-project` (root-stack replace: expo-router
+ *   cannot diverge `projects/[id]` → `projects/[id]`)
+ * - any other screen on top → `replace` with the project route
+ */
+export function notificationOpenMove(input: {
+  signedIn: boolean;
+  rootSegment: string;
+  currentProjectId: string | null;
+  targetProjectId: string;
+}): 'wait' | 'none' | 'replace-project' | 'replace' {
+  if (!input.signedIn) return 'wait';
+  if (WAIT_SEGMENTS.has(input.rootSegment)) return 'wait';
+  if (input.currentProjectId === input.targetProjectId) return 'none';
+  if (input.currentProjectId) return 'replace-project';
+  return 'replace';
+}
+
+/** Boot, sign-in, and first-run screens: a tap waits until the app leaves them. */
+const WAIT_SEGMENTS: ReadonlySet<string> = new Set(['', 'index', 'auth', 'welcome', 'new']);
+
+/** The server's preference fields (snake_case). */
+export interface ServerPreferences {
+  enabled: boolean;
+  on_completion: boolean;
+  on_error: boolean;
+  on_question: boolean;
+  on_permission: boolean;
+  play_sound: boolean;
+}
+
+/** The local preferences in the wire format of `POST /notifications/device-token`. */
+export function serverPreferences(prefs: NotificationPreferences): ServerPreferences {
+  return {
+    enabled: prefs.enabled,
+    on_completion: prefs.onCompletion,
+    on_error: prefs.onError,
+    on_question: prefs.onQuestion,
+    on_permission: prefs.onPermission,
+    play_sound: prefs.playSound,
+  };
+}
+
+/** Debounce for re-posting preferences after a toggle. */
+export const PREFERENCE_SYNC_DEBOUNCE_MS = 500;
+/** Upper bound on the sign-out unregister call. */
+export const SIGN_OUT_UNREGISTER_TIMEOUT_MS = 3_000;

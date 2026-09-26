@@ -1,7 +1,4 @@
 import { describe, test, expect, afterEach } from 'bun:test'
-import { readFileSync, writeFileSync, mkdtempSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
 import {
   startLlmProxy,
   setLlmProxyToken,
@@ -14,9 +11,7 @@ import {
   connectorProxyReady,
   connectorProxyBaseUrl,
   stopConnectorProxy,
-  CONNECTOR_PROXY_PLACEHOLDER_KEY,
 } from '../llm-proxy'
-import { buildOpencodeConfigContent, refreshGatewayCatalogFile } from '../opencode'
 
 // A mock upstream that echoes back the Authorization header + path it received,
 // so we can prove the proxy injects the live token (not the placeholder).
@@ -105,20 +100,21 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
     }
   })
 
-  test('connector proxy injects + swaps its token independently', async () => {
+  test('the connector and LLM proxies hold separate tokens: a swap on one leaves the other', async () => {
     const up = mockUpstream()
     try {
+      startLlmProxy(14319, up.url, 'llm-A')
       startConnectorProxy(14320, up.url, 'exec-A')
-      const base = connectorProxyBaseUrl()
-      expect(base).toBe('http://127.0.0.1:14320')
+      expect(connectorProxyBaseUrl()).toBe('http://127.0.0.1:14320')
       expect(connectorProxyReady()).toBe(true)
-
-      const r1 = await fetchJson(`${base}/v1/projects/p/exec`)
-      expect(r1.auth).toBe('Bearer exec-A')
+      expect((await fetchJson(`${connectorProxyBaseUrl()}/v1/projects/p/exec`)).auth).toBe('Bearer exec-A')
 
       setConnectorProxyToken('exec-B')
-      const r2 = await fetchJson(`${base}/v1/projects/p/exec`)
-      expect(r2.auth).toBe('Bearer exec-B')
+      expect((await fetchJson(`${connectorProxyBaseUrl()}/v1/projects/p/exec`)).auth).toBe('Bearer exec-B')
+      expect((await fetchJson(`${llmProxyBaseUrl()}/v1/llm/models`)).auth).toBe('Bearer llm-A')
+
+      setLlmProxyToken('llm-B')
+      expect((await fetchJson(`${connectorProxyBaseUrl()}/v1/projects/p/exec`)).auth).toBe('Bearer exec-B')
     } finally {
       up.stop()
     }
@@ -126,134 +122,7 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
 
 })
 
-describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
-  const catalog = join(mkdtempSync(join(tmpdir(), 'cat-')), 'catalog.json')
-  writeFileSync(
-    catalog,
-    JSON.stringify({ models: { 'kortix/test-model': { id: 'kortix/test-model', name: 'Test' } } }),
-  )
-
-  test('PROXY mode: session-independent provider by default, no connector MCP unless enabled', async () => {
-    const json = await buildOpencodeConfigContent({
-      KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4319',
-      KORTIX_CONNECTORS_PROXY_URL: 'http://127.0.0.1:4320',
-      KORTIX_API_URL: 'https://api.kortix.test/v1',
-      KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
-      KORTIX_TOKEN: 'real-session-token',
-      KORTIX_LLM_CATALOG_FILE: catalog,
-    } as NodeJS.ProcessEnv)
-    expect(json).toBeDefined()
-    const cfg = JSON.parse(json!)
-
-    // gateway provider points at the proxy with a placeholder — NO real key baked
-    expect(cfg.provider.kortix.options.baseURL).toBe('http://127.0.0.1:4319')
-    expect(cfg.provider.kortix.options.apiKey).toBe(LLM_PROXY_PLACEHOLDER_KEY)
-    expect(cfg.provider.kortix.options.apiKey).not.toBe('real-session-llm-key')
-
-    // Connector MCP is an optional compatibility face. The CLI is primary.
-    expect(cfg.mcp).toBeUndefined()
-
-    // full catalog came from the baked file
-    expect(Object.keys(cfg.provider.kortix.models)).toContain('kortix/test-model')
-  })
-
-  test('PROXY mode can opt into session-independent connector MCP compatibility', async () => {
-    const json = await buildOpencodeConfigContent({
-      KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4319',
-      KORTIX_CONNECTORS_PROXY_URL: 'http://127.0.0.1:4320',
-      KORTIX_API_URL: 'https://api.kortix.test/v1',
-      KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
-      KORTIX_TOKEN: 'real-session-token',
-      KORTIX_CONNECTORS_MCP_ENABLED: '1',
-      KORTIX_LLM_CATALOG_FILE: catalog,
-    } as NodeJS.ProcessEnv)
-    expect(json).toBeDefined()
-    const cfg = JSON.parse(json!)
-
-    expect(cfg.mcp['kortix-connectors'].command).toEqual(['/usr/local/bin/kortix', 'connectors', 'mcp'])
-    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_API_URL).toBe('http://127.0.0.1:4320')
-    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_TOKEN).toBe(CONNECTOR_PROXY_PLACEHOLDER_KEY)
-    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_TOKEN).not.toBe('real-session-exec-token')
-  })
-
-  test('DIRECT mode (cold/Daytona): real key + token baked, unchanged', async () => {
-    const json = await buildOpencodeConfigContent({
-      KORTIX_API_URL: 'https://api.kortix.test/v1',
-      KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
-      KORTIX_TOKEN: 'real-session-token',
-      KORTIX_LLM_CATALOG_FILE: catalog,
-    } as NodeJS.ProcessEnv)
-    expect(json).toBeDefined()
-    const cfg = JSON.parse(json!)
-    expect(cfg.provider.kortix.options.baseURL).toBe('https://gateway.kortix.test/v1/llm')
-    expect(cfg.provider.kortix.options.apiKey).toBe('real-session-token')
-    expect(cfg.mcp).toBeUndefined()
-  })
-})
-
-describe('refreshGatewayCatalogFile — warm snapshot catalog recovery', () => {
-  test('replaces a stale frozen catalog with the authenticated live catalog', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'catalog-refresh-'))
-    const frozen = join(dir, 'frozen.json')
-    const refreshed = join(dir, 'refreshed.json')
-    writeFileSync(frozen, JSON.stringify({ models: { 'retired-model': { name: 'Retired' } } }))
-
-    const liveModels = {
-      'glm-5.3-flash': { name: 'GLM 5.3 Flash' },
-      'claude-sonnet-4.6': { name: 'Claude Sonnet 4.6' },
-    }
-    const server = Bun.serve({
-      port: 0,
-      fetch(req) {
-        expect(req.headers.get('authorization')).toBe('Bearer live-session-token')
-        return Response.json({ models: liveModels })
-      },
-    })
-
-    try {
-      const result = await refreshGatewayCatalogFile({
-        currentCatalogFile: frozen,
-        targetCatalogFile: refreshed,
-        fetchBaseURL: `http://127.0.0.1:${server.port}`,
-        fetchApiKey: 'live-session-token',
-      })
-
-      expect(result).toEqual({ changed: true, catalogFile: refreshed })
-      expect(JSON.parse(readFileSync(refreshed, 'utf8'))).toEqual({ models: liveModels })
-    } finally {
-      server.stop(true)
-    }
-  })
-
-  test('keeps the no-restart path when the frozen and live catalogs match', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'catalog-current-'))
-    const frozen = join(dir, 'frozen.json')
-    const refreshed = join(dir, 'refreshed.json')
-    const liveModels = { 'glm-5.3-flash': { name: 'GLM 5.3 Flash' } }
-    writeFileSync(frozen, JSON.stringify({ models: liveModels }))
-
-    const server = Bun.serve({
-      port: 0,
-      fetch: () => Response.json({ models: liveModels }),
-    })
-
-    try {
-      const result = await refreshGatewayCatalogFile({
-        currentCatalogFile: frozen,
-        targetCatalogFile: refreshed,
-        fetchBaseURL: `http://127.0.0.1:${server.port}`,
-        fetchApiKey: 'live-session-token',
-      })
-
-      expect(result).toEqual({ changed: false, catalogFile: refreshed })
-      expect(JSON.parse(readFileSync(refreshed, 'utf8'))).toEqual({ models: liveModels })
-    } finally {
-      server.stop(true)
-    }
-  })
-})
-
-describe('in-sandbox inline image window (Essentia 2026-08-25: >128 MiB vision bodies 413d at the edge)', () => {
+describe('in-sandbox inline image window (SampleCo 2026-08-25: >128 MiB vision bodies 413d at the edge)', () => {
   afterEach(() => {
     stopLlmProxy()
     delete process.env.KORTIX_LLM_MAX_INLINE_IMAGES
@@ -313,6 +182,16 @@ describe('in-sandbox inline image window (Essentia 2026-08-25: >128 MiB vision b
       })
       expect(res.status).toBe(200)
       expect(up.seen()!.images).toBe(2)
+
+      // Only chat-shaped paths are windowed: 25 images to another path all pass.
+      const many = [{ role: 'user', content: Array.from({ length: 25 }, (_, i) => img(i)) }]
+      const other = await fetch(`${llmProxyBaseUrl()}/v1/llm/embeddings`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'x', messages: many }),
+      })
+      expect(other.status).toBe(200)
+      expect(up.seen()!.images).toBe(25)
     } finally {
       up.stop()
     }

@@ -21,7 +21,6 @@
  */
 
 import { useTranslations } from '@/i18n/use-translations';
-import { useRouter } from 'next/navigation';
 import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon as ExternalLink,
@@ -35,23 +34,26 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { m, useReducedMotion } from 'motion/react';
+import { useRouter } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AccessHelp } from '@/components/iam/access-help';
 import { AccessProjectsTab } from '@/components/iam/access-projects-tab';
+import { AddGitHubAccountDialog } from '@/components/iam/add-github-account-dialog';
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
-import { ManagedGitNotice } from '@/components/iam/managed-git-notice';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
 import { KeyRulesCard } from '@/components/iam/key-rules-card';
+import { ManagedGitNotice } from '@/components/iam/managed-git-notice';
 import { MemberAccessPanel } from '@/components/iam/member-access-panel';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
+import { SessionOversightCard } from '@/components/iam/session-oversight-card';
 import { OAuthAppsCard } from '@/components/iam/oauth-apps-card';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
@@ -72,35 +74,14 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '@/components/ui/modal';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { AccountPane, AccountPaneSkeleton } from './account-pane';
-import {
-  type AccountSection,
-  localizedAccountPaneMeta,
-  paneWidth,
-} from './sections';
-import { forgetPushedEntry, hubTarget, openAccountPanel } from '@/stores/account-panel-store';
-import { useAccountPanelId, useHubSearchParams } from './account-hub-location';
-import { useAccountDetail } from './use-account-detail';
-import { useAccountHubSection } from './use-account-hub-access';
-import { useAccountMembers } from './use-account-members';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { BrandingTab } from '@/features/accounts/settings/branding-tab';
-import { ScimSetupWizard, SsoSetupWizard } from '@/features/sso-setup/setup-wizard';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { useBrandingScope } from '@/features/branding/branding-provider';
@@ -109,6 +90,7 @@ import { Plus } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
+import { ScimSetupWizard, SsoSetupWizard } from '@/features/sso-setup/setup-wizard';
 import {
   ACCESS_ROW_CLASS,
   AccessDialog,
@@ -117,16 +99,16 @@ import {
   AccessRow,
   type KebabItem,
   type RoleValue,
-  builtinRole,
   builtinRoleLabel,
-  customRole,
   formatDate,
   principalLabel,
   roleValueLabel,
+  useAccountRoleEditor,
   useAccountRoles,
 } from '@/features/workspace/shared/access';
 import { useAccountState } from '@/hooks/billing';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
+import { forgetPushedEntry, hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import {
   type AccountDetail,
@@ -134,13 +116,11 @@ import {
   type AccountMember,
   type AccountMemberProject,
   type AccountRole,
-  type IamPolicy,
   cancelAccountInvite,
   deleteGitHubInstallation,
   leaveAccount,
   listAccountInvites,
   listGitHubInstallations,
-  listPolicies,
   removeAccountMember,
   resendAccountInvite,
   updateAccountName,
@@ -151,6 +131,12 @@ import {
   UserPlusIcon as UserPlus,
   UsersIcon as Users,
 } from '@phosphor-icons/react';
+import { useAccountPanelId, useHubSearchParams } from './account-hub-location';
+import { AccountPane, AccountPaneSkeleton } from './account-pane';
+import { type AccountSection, localizedAccountPaneMeta, paneWidth } from './sections';
+import { useAccountDetail } from './use-account-detail';
+import { useAccountHubSection } from './use-account-hub-access';
+import { useAccountMembers } from './use-account-members';
 
 // The enterprise IdP surface (SAML SSO + SCIM provisioning) is PLAN-GATED,
 // not env-gated: the cards render only for accounts whose tier carries the
@@ -175,22 +161,6 @@ async function copyInviteLink(url: string, copiedMessage: string, fallbackMessag
       description: url,
       duration: 15_000,
     });
-  }
-}
-
-/**
- * Where `/github/setup` sends you when the install finishes.
- *
- * The CURRENT URL, verbatim — which, while the hub is open, already carries
- * `?accountId=…&accountTab=git`. So the return trip reopens the modal on the
- * Git tab over the same page the person left, with no hard-coded path to drift
- * from the one the modal actually uses.
- */
-function rememberGitHubSetupReturn(path: string) {
-  try {
-    window.localStorage.setItem('kortix:github_setup_return', path);
-  } catch {
-    // Non-critical: the setup page falls back to the project import flow.
   }
 }
 
@@ -367,9 +337,7 @@ export function AccountHubContent() {
                   // it from `window.location` rather than from a hard-coded
                   // path is also what keeps the person on the page they opened
                   // the hub over.
-                  returnUrl={
-                    typeof window !== 'undefined' ? window.location.href : '/projects'
-                  }
+                  returnUrl={typeof window !== 'undefined' ? window.location.href : '/projects'}
                   isActive
                 />
                 {/* The "Subscribe to Team plan" button opens the global
@@ -437,6 +405,10 @@ export function AccountHubContent() {
                 rbacEnabled={rbacEnabled}
                 canReadRoles={canReadRoles}
                 canReadPolicies={canReadPolicies}
+                accountName={account.name}
+                currentUserId={user.id}
+                canUpdateRole={canUpdateMember}
+                onSelectMember={(id) => navigate('members', { member: id })}
                 selectedGroupId={selectedAccessGroupId}
                 onSelectGroup={(id) => navigate('groups', { group: id })}
               />
@@ -602,6 +574,10 @@ export function AccountHubContent() {
                 <SettingsRowGroup>
                   <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
                   <SessionControlsCard accountId={account.account_id} canManage={canWriteAccount} />
+                  {/* Who may open whose work. Owner-only toggle; the row
+                      reads `can_change` from the API and explains itself to
+                      everyone else. See `session-oversight-card.tsx`. */}
+                  <SessionOversightCard accountId={account.account_id} />
                 </SettingsRowGroup>
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
               </SettingsGroup>
@@ -662,7 +638,6 @@ function GitHubConnectionCard({
     installationId: string;
     ownerLogin: string | null;
   } | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
 
   const installationsQuery = useQuery({
@@ -686,43 +661,6 @@ function GitHubConnectionCard({
     },
     onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text6e9715f4f2a9')),
   });
-
-  /** Remember where to come back to, and drop the entry the hub modal pushed,
-   *  so Back from GitHub returns to the page the hub was opened over. */
-  function leaveForGitHub() {
-    setIsConnecting(true);
-    rememberGitHubSetupReturn(`${window.location.pathname}${window.location.search}`);
-    forgetPushedEntry();
-  }
-
-  /**
-   * "Install the App on a GitHub account or organization" — a real page load on
-   * github.com. GitHub redirects back to `/github/setup` with `state` and
-   * `installation_id`, which is where the account link is actually written.
-   */
-  function handleInstallOnGitHub() {
-    if (!canManage || !installUrl) return;
-    setAddOpen(false);
-    leaveForGitHub();
-    window.location.assign(installUrl);
-  }
-
-  /**
-   * "Link an installation you already administer" — no GitHub install, just the
-   * identity proof plus a pick from the installations this GitHub user already
-   * administers.
-   *
-   * This used to be what the "Add account" button did on its own click, with no
-   * label saying which of the two things it was about to do: a user who wanted
-   * to install the App on a new organization was sent into an OAuth round trip
-   * that could only ever list what already existed.
-   */
-  function handleLinkExisting() {
-    if (!canManage) return;
-    setAddOpen(false);
-    leaveForGitHub();
-    router.replace(`/github/setup?account_id=${encodeURIComponent(account.account_id)}`);
-  }
 
   // Account connections only. The instance git backend used to be injected
   // here as a synthetic entry, which made one instance-global credential look
@@ -761,12 +699,12 @@ function GitHubConnectionCard({
           size="sm"
           variant="secondary"
           className="gap-1.5"
-          disabled={!canManage || isConnecting}
+          disabled={!canManage}
           onClick={() => setAddOpen(true)}
           title={canManage ? undefined : tI18nComplete.raw('text89a0e2d1b569')}
         >
-          {isConnecting ? <Loading className="size-4 shrink-0" /> : <Github className="size-4" />}
-          {isConnecting ? 'Connecting' : tI18nComplete.raw('textee7ee5830f09')}
+          <Github className="size-4" />
+          {tI18nComplete.raw('textee7ee5830f09')}
         </Button>
       </div>
 
@@ -855,62 +793,21 @@ function GitHubConnectionCard({
         </ul>
       )}
 
-      {/* Two labelled actions, not one ambiguous button. Which one a user
-          needs depends on a fact only they know — whether the Kortix App is
-          already installed on the GitHub account they have in mind — so the
-          dialog states both and lets them pick. */}
-      <Modal open={addOpen} onOpenChange={setAddOpen}>
-        <ModalContent className="lg:max-w-lg">
-          <ModalHeader>
-            <ModalTitle>{tI18nComplete.raw('textf7be8a17b0e7')}</ModalTitle>
-            <ModalDescription>{tI18nComplete.raw('text659d5668b62b')}</ModalDescription>
-          </ModalHeader>
-          <ModalBody className="space-y-4">
-            <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-              {tI18nComplete.raw('textdc520b664af2')}
-            </p>
-            {/* Installing is the primary action: it is the one that works no
-                matter what the user's GitHub looks like. Linking an existing
-                installation only helps when the App is already on the owner
-                they have in mind, which is the rarer case — and it used to be
-                the ONLY thing this button did, with no label saying so. */}
-            <Button
-              type="button"
-              size="lg"
-              className="w-full gap-1.5"
-              disabled={!installUrl}
-              onClick={handleInstallOnGitHub}
-            >
-              <Github className="size-4" />
-              {tI18nComplete.raw('text8d3f36f31348')}
-            </Button>
-            {installUrl ? null : (
-              <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-                {tI18nComplete.raw('text183bc0d276cc')}
-              </p>
-            )}
-            <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('text7f59f014cd7b')}
-              </span>
-              <Button
-                type="button"
-                variant="transparent"
-                size="sm"
-                className="h-auto p-0"
-                onClick={handleLinkExisting}
-              >
-                {tI18nComplete.raw('text9180f7df8906')}
-              </Button>
-            </div>
-          </ModalBody>
-          <ModalFooter className="pb-5">
-            <Button type="button" variant="outline-ghost" onClick={() => setAddOpen(false)}>
-              {tI18nComplete.raw('text19766ed6ccb2')}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <AddGitHubAccountDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        accountId={account.account_id}
+        installUrl={installUrl}
+        // Back to this hub tab, over the page it is open on.
+        returnPath={
+          typeof window === 'undefined'
+            ? ''
+            : `${window.location.pathname}${window.location.search}`
+        }
+        // Drop the entry the hub modal pushed, so Back from GitHub returns to
+        // the page the hub was opened over.
+        onBeforeLeave={forgetPushedEntry}
+      />
 
       <ConfirmDialog
         open={Boolean(disconnectTarget)}
@@ -1120,7 +1017,6 @@ function MembersCard({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [grantOpen, setGrantOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<AccountMember | null>(null);
   // Set rather than scalar so multiple per-row mutations (remove + role
   // change on different rows) can fly in parallel without their spinners
   // hopping between rows. Helpers below add/remove on mutate/settle.
@@ -1165,25 +1061,16 @@ function MembersCard({
   // in flight, so an optimistic gate would fire the very request it exists to
   // suppress before the verdict arrives.
   const rolesQuery = useAccountRoles(account.account_id, rbacEnabled && canReadRoles === true);
-  const policiesQuery = useQuery({
-    queryKey: ['iam-policies', account.account_id],
-    queryFn: () => listPolicies(account.account_id),
-    enabled: rbacEnabled && canReadPolicies === true,
-    staleTime: 30_000,
+  const roleEditor = useAccountRoleEditor({
+    accountId: account.account_id,
+    accountName: account.name,
+    rbacEnabled,
+    canReadPolicies,
+    canManageRoles,
+    onDone: () => invalidateMembers(),
   });
-  const accountPolicyByUser = useMemo(() => {
-    const map = new Map<string, IamPolicy>();
-    for (const policy of policiesQuery.data ?? []) {
-      if (policy.principal_type === 'member' && policy.scope_type === 'account') {
-        map.set(policy.principal_id, policy);
-      }
-    }
-    return map;
-  }, [policiesQuery.data]);
-  const roleValueFor = (member: AccountMember): RoleValue => {
-    const policy = accountPolicyByUser.get(member.user_id);
-    return policy ? customRole(policy.role_id) : builtinRole(member.account_role);
-  };
+  const roleValueFor = (member: AccountMember): RoleValue =>
+    roleEditor.roleValueFor(member.user_id, member.account_role);
 
   const sorted = useMemo(() => {
     const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
@@ -1368,8 +1255,6 @@ function MembersCard({
     setSelectedIds(failedIds);
   }
 
-  const editRoleValue = editTarget ? roleValueFor(editTarget) : null;
-
   return (
     <div className="space-y-4">
       {isError ? (
@@ -1527,7 +1412,12 @@ function MembersCard({
                   kebab.push({
                     label: tI18nComplete.raw('texta514a684676a'),
                     icon: <PencilSimple className="size-3.5" />,
-                    onSelect: () => setEditTarget(member),
+                    onSelect: () =>
+                      roleEditor.openEdit({
+                        userId: member.user_id,
+                        label,
+                        accountRole: member.account_role,
+                      }),
                   });
                 }
                 kebab.push({
@@ -1667,31 +1557,7 @@ function MembersCard({
         onDone={invalidateMembers}
       />
 
-      {editTarget && editRoleValue ? (
-        <AccessDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setEditTarget(null);
-          }}
-          accountId={account.account_id}
-          accountName={account.name}
-          scope={{ kind: 'account' }}
-          mode={{
-            kind: 'edit',
-            principal: {
-              type: 'member',
-              id: editTarget.user_id,
-              label: principalLabel(editTarget),
-            },
-            // No `assignmentId`: the roster still carries legacy policy ids,
-            // which are NOT assignment ids. The dialog reads the row back.
-            current: { role: editRoleValue },
-          }}
-          rbacEnabled={rbacEnabled}
-          canManageRoles={canManageRoles}
-          onDone={invalidateMembers}
-        />
-      ) : null}
+      {roleEditor.dialog}
 
       <AccessDialog
         open={bulkDialog === 'set_role'}

@@ -28,6 +28,8 @@ let principal: any = { kind: 'user', userId: 'user-1' };
 let agentGrant: any = null;
 /** Refs the fake upstream actually received — empty means nothing was forwarded. */
 let upstreamReceived: string[] = [];
+/** Every upstream request with the client port of the connection it rode. */
+let upstreamConnections: Array<{ method: string; path: string; port: number }> = [];
 
 /** What IAM answers for a human's ref-scope question; swapped per test. */
 let iamAllowsHuman = true;
@@ -77,8 +79,9 @@ beforeAll(async () => {
   // Stands in for GitHub: advertises one ref, accepts any push, records it.
   upstreamServer = Bun.serve({
     port: 0,
-    async fetch(req) {
+    async fetch(req, server) {
       const url = new URL(req.url);
+      upstreamConnections.push({ method: req.method, path: url.pathname, port: server.requestIP(req)?.port ?? -1 });
       if (url.pathname.endsWith('/info/refs')) {
         // Advertise the refs the tests operate on. An "empty repository"
         // advertisement would make git refuse a delete client-side ("remote ref
@@ -312,7 +315,7 @@ describe('a user principal', () => {
 describe('a session GRANTED project.gitops.ref.any', () => {
   beforeAll(() => {
     principal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID, userId: 'user-1', tokenId: 'tok-1' };
-    agentGrant = { agent: 'main', kortixCli: ['project.gitops.ref.any'] };
+    agentGrant = { agent: 'main', permissions: ['project.gitops.ref.any'] };
   });
   afterAll(() => {
     agentGrant = null;
@@ -365,3 +368,38 @@ describe('a monitor principal', () => {
     expect(upstreamReceived).toEqual([]);
   });
 });
+
+// An upstream may answer a push before it has read the whole body (a
+// rejection, a size limit). Bun's fetch then pools the socket while the body is
+// still in flight, and the next request to that host (any project's) is written
+// onto it and fails to parse: the local-git fixture showed exactly this as a
+// bare 400 (GH-17 / AGP-10, 2026-09-23). A push therefore never shares its
+// upstream connection with a later request.
+describe('the upstream connection of a push', () => {
+  beforeAll(() => {
+    principal = { kind: 'user', userId: 'user-1', tokenId: 'tok-1' };
+    agentGrant = null;
+    iamAllowsHuman = true;
+  });
+
+  test('is never reused by the next upstream request', async () => {
+    upstreamConnections = [];
+    const pushed = await push('--force', 'origin', 'HEAD:refs/heads/feature');
+    expect(pushed.code).toBe(0);
+    expect(upstreamReceived).toEqual(['refs/heads/feature']);
+    // This fake upstream advertises receive-pack only: a second push's ref
+    // discovery is the next upstream request.
+    const again = await push('origin', '--delete', 'refs/heads/feature');
+    expect(again.code).toBe(0);
+
+    const pushIndex = upstreamConnections.findIndex(
+      (c) => c.method === 'POST' && c.path.endsWith('/git-receive-pack'),
+    );
+    expect(pushIndex).toBeGreaterThanOrEqual(0);
+    const pushPort = upstreamConnections[pushIndex]!.port;
+    const later = upstreamConnections.slice(pushIndex + 1);
+    expect(later.length).toBeGreaterThan(0);
+    expect(later.filter((c) => c.port === pushPort)).toEqual([]);
+  });
+});
+

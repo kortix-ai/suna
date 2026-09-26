@@ -4,6 +4,7 @@
 // See apps/api/src/projects/routes/setup-links.ts for the server-side handlers.
 
 import { backendApi } from '../../http/api-client';
+import type { ConnectorConnectOwner } from './connectors';
 import { unwrap } from './shared';
 
 export interface RequestProjectSecretInput {
@@ -46,6 +47,18 @@ export async function requestProjectSecret(
 export interface RequestProjectConnectorInput {
   /** The Pipedream connector slug (already declared in kortix.yaml). */
   slug: string;
+  /**
+   * Who the account this link creates belongs to. Defaults to `me` — the human
+   * who opens the link authorizes themselves. `project` mints a link for the
+   * account shared with everyone, and needs `project.connector.write`.
+   */
+  owner?: ConnectorConnectOwner;
+  /**
+   * The name to suggest for the NEW account ("Dad's Gmail"). The dialog the
+   * human opens prefills it; they may change it. Same rules as any account
+   * label (`me`, `project` and id-shaped names are refused).
+   */
+  label?: string;
   expiresInMinutes?: number;
 }
 
@@ -54,6 +67,8 @@ export interface ConnectorRequestLink {
   url: string;
   slug: string;
   app: string;
+  /** The suggested account name the link carries. Absent on older servers. */
+  label?: string | null;
   expires_at: string;
 }
 
@@ -65,6 +80,10 @@ export async function requestProjectConnector(
   return unwrap(
     await backendApi.post<ConnectorRequestLink>(`/projects/${projectId}/connect-requests`, {
       slug: input.slug,
+      // Omitted rather than null when unset, so the API keeps applying its own
+      // default and an older client's body is unchanged.
+      ...(input.owner ? { owner: input.owner } : {}),
+      ...(input.label ? { label: input.label } : {}),
       expires_in_minutes: input.expiresInMinutes,
     }),
     'Failed to mint connect link',

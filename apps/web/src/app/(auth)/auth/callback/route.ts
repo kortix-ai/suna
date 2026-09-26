@@ -10,8 +10,6 @@ import {
 import {
   AUTH_BOUNCE_COOKIE,
   LAST_PROJECT_COOKIE,
-  POST_AUTH_INTENT_COOKIE,
-  POST_AUTH_INTENT_MAX_AGE,
   PROJECT_LANDING_PATH,
   parseAuthBounceOwner,
   parseLastProjectForUser,
@@ -40,7 +38,6 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type'); // signup, recovery, etc.
   const next = sanitizeAuthReturnUrl(searchParams.get('returnUrl') || searchParams.get('redirect'));
   const termsAccepted = searchParams.get('terms_accepted') === 'true';
-  const email = searchParams.get('email') || ''; // Email passed from magic link redirect URL
   const desktop = searchParams.get('desktop') === 'true';
   const mobile = searchParams.get('mobile_callback') === '1' && Boolean(searchParams.get('state'));
   const runtimeEnv = getServerPublicEnv();
@@ -103,7 +100,6 @@ export async function GET(request: NextRequest) {
       // Redirect to auth page with expired state to show resend form
       const expiredUrl = new URL(`${baseUrl}/auth`);
       expiredUrl.searchParams.set('expired', 'true');
-      if (email) expiredUrl.searchParams.set('email', email);
       if (next) expiredUrl.searchParams.set('returnUrl', next);
 
       return NextResponse.redirect(expiredUrl);
@@ -148,8 +144,7 @@ export async function GET(request: NextRequest) {
           // Redirect to auth page with expired state to show resend form
           const expiredUrl = new URL(`${baseUrl}/auth`);
           expiredUrl.searchParams.set('expired', 'true');
-          if (email) expiredUrl.searchParams.set('email', email);
-          if (next) expiredUrl.searchParams.set('returnUrl', next);
+              if (next) expiredUrl.searchParams.set('returnUrl', next);
 
           return NextResponse.redirect(expiredUrl);
         }
@@ -289,17 +284,6 @@ export async function GET(request: NextRequest) {
       redirectUrl.searchParams.set('auth_event', authEvent);
       redirectUrl.searchParams.set('auth_method', authMethod);
       const response = NextResponse.redirect(redirectUrl);
-
-      // Authentication just completed, and this redirect is about to land on
-      // the landing door with whatever referrer the magic link / IdP hop
-      // carried — usually a cross-origin one. The marker is what lets the door
-      // provision a first project anyway; without it a webmail signup is
-      // demoted to the projects list. See navigationMayCreateProject.
-      response.cookies.set(POST_AUTH_INTENT_COOKIE, '1', {
-        maxAge: POST_AUTH_INTENT_MAX_AGE,
-        path: '/',
-        sameSite: 'lax',
-      });
 
       // The bounce is spent: its attribution has been used to resolve this
       // destination and must not survive to demote the next sign-in.

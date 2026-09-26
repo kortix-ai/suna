@@ -13,7 +13,7 @@ import {
   attemptsFor,
   classifyFlowError,
   clearRegistry,
-  KE2E_FLOW_TIMEOUT,
+  withFlowDeadline,
   maxAttemptBound,
   readAttemptPolicy,
   resolveFlowTimeoutMs,
@@ -151,6 +151,9 @@ async function runOneFlow(
     attempt++;
     steps.length = 0;
     const stack = world.newStack();
+    // Aborted when this attempt ends for any reason, so fixture work it left
+    // behind (a queued or rate-limited provision) stops with it.
+    const attemptController = new AbortController();
     const ctx: FlowContext = {
       // Every flow's client retries gateway-generated transient 502/503/504
       // (incl. the Cloudflare worker's MAINTENANCE_MODE laundering of an
@@ -171,7 +174,7 @@ async function runOneFlow(
       },
       // Attempt-scoped: a retry must not re-derive the SAME names its failed
       // predecessor already committed (see world.ts attemptSuffix).
-      fixtures: world.makeFixtures(stack, attempt),
+      fixtures: world.makeFixtures(stack, attempt, attemptController.signal),
       step: async (name, fn) => {
         const collector = new StepCollector(routesHit);
         const start = performance.now();
@@ -196,10 +199,14 @@ async function runOneFlow(
     };
 
     try {
-      await withTimeout(f.fn(ctx), resolveFlowTimeoutMs(f.meta.timeoutMs), f.id);
+      await withFlowDeadline(f.fn(ctx), resolveFlowTimeoutMs(f.meta.timeoutMs), f.id, attemptController);
+      attemptController.abort(new Error(`flow ${f.id} attempt ${attempt} finished`));
       await stack.teardown();
       return mkResult(f, "pass", undefined, steps, performance.now() - flowStart, attempt);
     } catch (err) {
+      if (!attemptController.signal.aborted) {
+        attemptController.abort(new Error(`flow ${f.id} attempt ${attempt} failed`));
+      }
       await stack.teardown();
       if (err instanceof SkipSignal) {
         return mkResult(f, "skip", err.reason, steps, performance.now() - flowStart, attempt);
@@ -269,30 +276,6 @@ function mkResult(
   };
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, id: string): Promise<T> {
-  return new Promise<T>((res, rej) => {
-    const t = setTimeout(() => {
-      // NOT ke2eRetryable. A flow that burned its whole declared timeout is
-      // hung, not blipping; retrying it spends the same timeout again on the
-      // most expensive flows in the suite. Tagged as its own class so
-      // KE2E_TIMEOUT_ATTEMPTS can re-enable retries deliberately.
-      const e = new Error(`flow ${id} exceeded ${ms}ms`);
-      (e as any)[KE2E_FLOW_TIMEOUT] = true;
-      rej(e);
-    }, ms);
-    p.then(
-      (v) => {
-        clearTimeout(t);
-        res(v);
-      },
-      (e) => {
-        clearTimeout(t);
-        rej(e);
-      },
-    );
-  });
-}
-
 function positiveWorkerCount(value: number | undefined, fallback: number): number {
   if (value === undefined || !Number.isFinite(value)) return fallback;
   return Math.max(1, Math.trunc(value));
@@ -342,8 +325,31 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
         const sessionId = created.json<{ session_id: string }>().session_id;
         if (!sessionId) throw new Error('sandbox setup returned no session_id');
         stack.push('session', sessionId, { projectId: project.id });
-        const setupDeadline = Date.now() + 900_000;
-        log.info('sandbox setup: waiting for the current default image and runtime (up to 15 minutes)');
+        // TWO SEQUENTIAL PHASES, TWO INDEPENDENT BUDGETS.
+        //
+        // These waits used to share one `setupDeadline = Date.now() + 900_000`
+        // while the FIRST was itself allowed `timeoutMs: 900_000`. So a cold
+        // image build that legitimately took most of its 15 minutes left the
+        // second wait `Math.max(1, setupDeadline - Date.now())` === 1 ms, and
+        // it "timed out" instantly on a runtime that was never given a chance
+        // to boot.
+        //
+        // That is exactly how every API shard of the release gate died on
+        // v0.13.21, v0.13.22, v0.13.23 and v0.13.24: the log shows phase one
+        // starting, no image-readiness error, the "…image and runtime ready"
+        // line never printed, and `Timed out waiting for sandbox fixture
+        // readiness` at 942 s — 900 s of image build plus overhead, then 1 ms
+        // for the boot. The gate reported the product broken four releases
+        // running while nothing about the product was wrong.
+        //
+        // Budget arithmetic against the shard's own 60-minute cap
+        // (`tests-release.yml`): 15 min image + 10 min runtime = 25 min worst
+        // case, leaving 35 min for the flows, which run in 19-25 min. Both
+        // phases are fast whenever the image is already baked, which is the
+        // normal case; these ceilings only cover a cold deploy.
+        const IMAGE_READY_TIMEOUT_MS = 900_000;
+        const RUNTIME_READY_TIMEOUT_MS = 600_000;
+        log.info('sandbox setup: waiting for the current default image (up to 15 minutes), then its runtime (up to 10 minutes)');
         // Session boot can use the previous ready image while the current one
         // builds. The preview gate must exercise this deploy's baked daemon.
         await waitFor(async () => {
@@ -357,7 +363,7 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
           }> }>().templates.find((template) => template.is_default);
           return template?.ready === true ||
             template?.provider_coverage?.some((provider) => provider.launch_ready === true) === true;
-        }, { until: (ready) => ready, timeoutMs: 900_000, intervalMs: 5000,
+        }, { until: (ready) => ready, timeoutMs: IMAGE_READY_TIMEOUT_MS, intervalMs: 5000,
           // A transport error while staging bakes this deploy's image is not a
           // verdict on the image: keep polling inside the same deadline.
           retryOnError: isKe2eRetryableError,
@@ -369,7 +375,7 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
           const body = ready.json<{ stage: string; retriable: boolean; message?: string }>();
           if (body.stage === 'error' && !body.retriable) throw new Error(JSON.stringify(body));
           return body.stage;
-        }, { until: (stage) => stage === 'ready', timeoutMs: Math.max(1, setupDeadline - Date.now()), intervalMs: 3000,
+        }, { until: (stage) => stage === 'ready', timeoutMs: RUNTIME_READY_TIMEOUT_MS, intervalMs: 3000,
           // POST /start is idempotent. One timed-out call during the first boot
           // on a fresh image killed whole release shards; poll again instead.
           retryOnError: isKe2eRetryableError,

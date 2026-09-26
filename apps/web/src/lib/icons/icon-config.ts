@@ -16,7 +16,7 @@
  * (status tiles, success checks, destructive actions), which stay filled
  * whatever this constant is set to.
  *
- * Compare all six weights side by side at /design-system → Icons.
+ * Compare the shipped weights side by side at /design-system → Icons.
  */
 import type { IconWeight } from '@phosphor-icons/react';
 
@@ -30,3 +30,20 @@ export const ICON_WEIGHTS: readonly IconWeight[] = [
   'fill',
   'duotone',
 ];
+
+/**
+ * The weights the browser bundle carries. Phosphor ships all six weights of
+ * every icon in one module; `scripts/phosphor-weights-loader.cjs` (wired in
+ * next.config.ts) drops the rest, ~1/3 of every icon's bytes. An icon asked
+ * for a weight outside this list renders an empty <svg>, so
+ * icon-config.test.ts fails on any such weight literal in src/.
+ *
+ * Always contains DEFAULT_ICON_WEIGHT, so changing the default still works.
+ */
+export const SHIPPED_ICON_WEIGHTS: readonly IconWeight[] = ICON_WEIGHTS.filter(
+  (weight) =>
+    weight === DEFAULT_ICON_WEIGHT ||
+    weight === 'regular' ||
+    weight === 'fill' ||
+    weight === 'duotone',
+);

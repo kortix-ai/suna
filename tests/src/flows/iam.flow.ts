@@ -15,8 +15,10 @@
  * so the unlock runs as the run-scoped platform admin — see
  * fixtures/enterprise-demo.ts.
  */
+import { assert } from '../core/expect';
 import { flow } from '../core/flow';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { createDatabaseSession } from '../fixtures/database-project';
 
 // ─── Groups ──────────────────────────────────────────────────────────────
 
@@ -1330,6 +1332,7 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
+    const admin = await team.addMember('admin');
     const project = await team.project();
     let assignmentId = '';
 
@@ -1448,6 +1451,49 @@ flow(
       r.status(400);
     });
 
+    await ctx.step('ADMIN cannot grant owner — not to themselves, not to anyone → 403', async () => {
+      for (const principalId of [admin.userId, member.userId]) {
+        const r = await ctx.client.as(admin).post(
+          '/v1/accounts/:accountId/iam/assignments',
+          { principal_type: 'user', principal_id: principalId, role_key: 'owner', scope_type: 'account' },
+          { params: { accountId: team.id } },
+        );
+        r.status(403);
+      }
+      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/assignments', {
+        params: { accountId: team.id },
+        query: { scope_type: 'account' },
+      });
+      list.status(200);
+      const owners = (list.json<any>().assignments as any[])
+        .filter((a) => a.role_key === 'owner')
+        .map((a) => a.principal_id);
+      if (owners.includes(admin.userId) || owners.includes(member.userId)) {
+        throw new Error(`a refused owner grant left a row behind: ${JSON.stringify(owners)}`);
+      }
+    });
+
+    await ctx.step('an account role is held by a person — granting one to a group → 400', async () => {
+      await enableEnterpriseDemo(ctx, team.id);
+      const g = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/accounts/:accountId/iam/groups',
+          { name: ctx.fixtures.name('acct-role-grp') },
+          { params: { accountId: team.id } },
+        );
+      g.status(201);
+      const groupId = g.json<any>().group_id;
+      for (const roleKey of ['owner', 'admin', 'member']) {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/accounts/:accountId/iam/assignments',
+          { principal_type: 'group', principal_id: groupId, role_key: roleKey, scope_type: 'account' },
+          { params: { accountId: team.id } },
+        );
+        r.status(400);
+      }
+    });
+
     await ctx.step('NONMEMBER cannot read assignments → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
@@ -1466,6 +1512,7 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
+    const admin = await team.addMember('admin');
     const project = await team.project();
     let assignmentId = '';
 
@@ -1539,6 +1586,22 @@ flow(
           params: { accountId: team.id, assignmentId: rows[0].assignment_id },
         });
       r.status(409);
+    });
+
+    await ctx.step("ADMIN cannot revoke an owner's owner assignment → 403", async () => {
+      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/assignments', {
+        params: { accountId: team.id },
+        query: { principal_type: 'user', principal_id: ctx.P.OWNER.userId!, scope_type: 'account' },
+      });
+      list.status(200);
+      const ownerRow = (list.json<any>().assignments as any[]).find((a) => a.role_key === 'owner');
+      if (!ownerRow) throw new Error('expected the OWNER to hold an owner assignment');
+      const r = await ctx.client
+        .as(admin)
+        .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+          params: { accountId: team.id, assignmentId: ownerRow.assignment_id },
+        });
+      r.status(403);
     });
 
     await ctx.step('a malformed assignment id is a 404, never a 500', async () => {
@@ -1776,6 +1839,500 @@ flow(
         .as(ctx.P.NONMEMBER)
         .get('/v1/accounts/:accountId/iam/resource-grants', { params: { accountId: team.id } });
       r.status(403);
+    });
+  },
+);
+
+// ── IAM-40: account session oversight ────────────────────────────────────────
+// One owner-controlled account policy: while it is on, account owners and
+// admins open EVERY session in the account, members' private ones included.
+// Off by default. Plain members never gain anything from it. Every flip and
+// every read that only the policy allowed is audited.
+flow(
+  'IAM-40',
+  {
+    domain: 'iam',
+    routes: [
+      'GET /v1/accounts/:accountId/iam/session-oversight',
+      'PATCH /v1/accounts/:accountId/iam/session-oversight',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/accounts/:accountId/audit',
+    ],
+    timeoutMs: 240_000,
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const admin = await team.addMember('admin');
+    const author = await team.addMember('member');
+    const bystander = await team.addMember('member');
+    if (!author.userId || !bystander.userId) throw new Error('IAM-40 member fixtures have no user id');
+    await team.grantProjectRole(project.id, author.userId, 'user');
+    await team.grantProjectRole(project.id, bystander.userId, 'user');
+
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const asAdmin = ctx.client.as(admin);
+    const asBystander = ctx.client.as(bystander);
+    const accountParams = { accountId: team.id };
+
+    // The author's private session: the one oversight exists to reach.
+    const privateSessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: author.userId,
+      visibility: 'private',
+    });
+
+    const readSession = (as: typeof owner) =>
+      as.get('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId: project.id, sessionId: privateSessionId },
+      });
+    const inventoryIds = async (as: typeof owner, scope?: 'project') => {
+      const r = await as.get('/v1/projects/:projectId/sessions', {
+        params: { projectId: project.id },
+        ...(scope ? { query: { scope } } : {}),
+      });
+      r.status(200);
+      const body = r.json<unknown>();
+      const rows = (Array.isArray(body) ? body : (body as { sessions?: unknown[] }).sessions ?? []) as Array<{
+        session_id: string;
+      }>;
+      return new Set(rows.map((row) => row.session_id));
+    };
+    // A flip clears the verdict cache on the replica that wrote it; another
+    // replica converges within the 15 s IAM cache window. Poll past it.
+    const eventually = async (label: string, check: () => Promise<boolean>) => {
+      const deadline = Date.now() + 25_000;
+      while (Date.now() < deadline) {
+        if (await check()) return;
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+      throw new Error(`IAM-40: ${label} did not hold within 25 s`);
+    };
+
+    await ctx.step('the policy is off by default; only the owner may change it', async () => {
+      const asOwner = await owner.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      asOwner.status(200).body().has('$.enabled', false).has('$.can_change', true);
+      const asAdminRead = await asAdmin.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      asAdminRead.status(200).body().has('$.enabled', false).has('$.can_change', false);
+      const asMemberRead = await asBystander.get('/v1/accounts/:accountId/iam/session-oversight', {
+        params: accountParams,
+      });
+      asMemberRead.status(200).body().has('$.enabled', false).has('$.can_change', false);
+    });
+
+    await ctx.step('with the policy off, an admin can neither open nor list a member\'s private session', async () => {
+      (await readSession(asAdmin)).status(404);
+      if ((await inventoryIds(asAdmin, 'project')).has(privateSessionId)) {
+        throw new Error('manager inventory listed a private session while oversight is off');
+      }
+    });
+
+    await ctx.step('an admin cannot turn the policy on for themselves (403 account_owner_required)', async () => {
+      const r = await asAdmin.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: true }, {
+        params: accountParams,
+      });
+      r.status(403).body().has('$.code', 'account_owner_required');
+      const readBack = await owner.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      readBack.status(200).body().has('$.enabled', false);
+    });
+
+    await ctx.step('a plain member cannot change the policy (403)', async () => {
+      const r = await asBystander.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: true }, {
+        params: accountParams,
+      });
+      r.status(403);
+    });
+
+    await ctx.step('a PATCH without an explicit boolean is refused (400) and changes nothing', async () => {
+      const r = await owner.patch('/v1/accounts/:accountId/iam/session-oversight', {}, { params: accountParams });
+      r.status(400);
+      const readBack = await owner.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
+      readBack.status(200).body().has('$.enabled', false);
+    });
+
+    await ctx.step('the owner turns the policy on; read-back reports it on', async () => {
+      const r = await owner.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: true }, {
+        params: accountParams,
+      });
+      r.status(200).body().has('$.enabled', true);
+      const readBack = await asBystander.get('/v1/accounts/:accountId/iam/session-oversight', {
+        params: accountParams,
+      });
+      readBack.status(200).body().has('$.enabled', true);
+    });
+
+    await ctx.step('with the policy on, the admin opens the private session and finds it in the Sessions inventory', async () => {
+      await eventually('admin opens the private session', async () => (await readSession(asAdmin)).statusCode === 200);
+      (await readSession(asAdmin)).status(200).body().has('$.session_id', privateSessionId);
+      if (!(await inventoryIds(asAdmin, 'project')).has(privateSessionId)) {
+        throw new Error('manager inventory did not list the private session while oversight is on');
+      }
+    });
+
+    await ctx.step('the policy never widens the admin\'s default sidebar list', async () => {
+      if ((await inventoryIds(asAdmin)).has(privateSessionId)) {
+        throw new Error('default session list exposed another member\'s private session');
+      }
+    });
+
+    await ctx.step('a plain member still cannot open another member\'s private session', async () => {
+      (await readSession(asBystander)).status(404);
+    });
+
+    await ctx.step('the audit log records the flip and the oversight read', async () => {
+      const actions = async () => {
+        const r = await owner.get('/v1/accounts/:accountId/audit', {
+          params: accountParams,
+          query: { limit: '200' },
+        });
+        r.status(200);
+        return r.json<{ events: Array<{ action: string; resource_id?: string | null }> }>().events;
+      };
+      await eventually('audit rows present', async () => {
+        const events = await actions();
+        return (
+          events.some((e) => e.action === 'iam.session_oversight.enable') &&
+          events.some((e) => e.action === 'project.admin_oversight_session_read' && e.resource_id === privateSessionId)
+        );
+      });
+    });
+
+    await ctx.step('the owner turns the policy off; the admin loses access again', async () => {
+      const r = await owner.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: false }, {
+        params: accountParams,
+      });
+      r.status(200).body().has('$.enabled', false);
+      await eventually('admin refused again', async () => (await readSession(asAdmin)).statusCode === 404);
+      if ((await inventoryIds(asAdmin, 'project')).has(privateSessionId)) {
+        throw new Error('manager inventory still listed the private session after oversight was turned off');
+      }
+    });
+  },
+);
+
+flow(
+  'IAM-41',
+  {
+    domain: 'iam',
+    routes: [
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/projects/:projectId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    // A signed-in user who owns (and is super-admin of) only their personal account.
+    const outsider = await ctx.fixtures.user({ label: 'OUTSIDER' });
+    const ownAccount = { accountId: outsider.accountId! };
+
+    await ctx.step('an owner of one account cannot write a project role for a project of another account → 404', async () => {
+      const r = await ctx.client.as(outsider).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: outsider.userId,
+          role_key: 'manager',
+          scope_type: 'project',
+          scope_id: project.id,
+        },
+        { params: ownAccount },
+      );
+      r.status(404);
+    });
+
+    await ctx.step('nor an object grant on that project → 404', async () => {
+      const r = await ctx.client.as(outsider).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: outsider.userId,
+          role_key: 'agent-user',
+          scope_type: 'project',
+          scope_id: project.id,
+          object_type: 'agent',
+          object_id: 'default',
+        },
+        { params: ownAccount },
+      );
+      r.status(404);
+    });
+
+    await ctx.step('read-back: no row landed in either account and the outsider still has no project access', async () => {
+      const own = await ctx.client.as(outsider).get('/v1/accounts/:accountId/iam/assignments', {
+        params: ownAccount,
+        query: { scope_type: 'project' },
+      });
+      own.status(200);
+      if ((own.json<any>().assignments as any[]).some((a) => a.scope_id === project.id)) {
+        throw new Error('a project-scoped row for a foreign project was stored');
+      }
+      (await ctx.client.as(outsider).get('/v1/projects/:projectId', { params: { projectId: project.id } }))
+        .status([403, 404]);
+    });
+
+    await ctx.step("the project's own account still grants roles on it → 201", async () => {
+      const member = await team.addMember('member');
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: member.userId,
+          role_key: 'manager',
+          scope_type: 'project',
+          scope_id: project.id,
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(201).body().has('$.scope_id', project.id);
+    });
+  },
+);
+
+flow(
+  'IAM-42',
+  {
+    domain: 'iam',
+    routes: [
+      'PATCH /v1/accounts/:accountId/members/:userId',
+      'PATCH /v1/accounts/:accountId/iam/members/:userId/super-admin',
+      'GET /v1/accounts/:accountId/members',
+      'POST /v1/accounts/:accountId/iam/assignments',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const params = { accountId: team.id };
+    const cofounder = await team.addMember('admin');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const superAdminFlag = async () => {
+      const r = await owner.get('/v1/accounts/:accountId/members', { params });
+      r.status(200);
+      const row = (r.json<any[]>()).find((m) => m.user_id === cofounder.userId);
+      if (!row) throw new Error('co-founder missing from the member list');
+      return { role: row.account_role as string, superAdmin: row.is_super_admin as boolean };
+    };
+
+    await ctx.step('the owner makes a co-founder owner and super-admin', async () => {
+      (await owner.patch('/v1/accounts/:accountId/members/:userId', { role: 'owner' }, {
+        params: { ...params, userId: cofounder.userId! },
+      })).status(200).body().has('$.account_role', 'owner');
+      (await owner.patch('/v1/accounts/:accountId/iam/members/:userId/super-admin', { isSuperAdmin: true }, {
+        params: { ...params, userId: cofounder.userId! },
+      })).status(200).body().has('$.is_super_admin', true);
+      const state = await superAdminFlag();
+      if (state.role !== 'owner' || !state.superAdmin) throw new Error(`unexpected state ${JSON.stringify(state)}`);
+    });
+
+    await ctx.step('demoting that owner to member also clears super-admin', async () => {
+      (await owner.patch('/v1/accounts/:accountId/members/:userId', { role: 'member' }, {
+        params: { ...params, userId: cofounder.userId! },
+      })).status(200).body().has('$.account_role', 'member');
+      const state = await superAdminFlag();
+      if (state.role !== 'member' || state.superAdmin) {
+        throw new Error(`a demoted owner kept super-admin: ${JSON.stringify(state)}`);
+      }
+    });
+
+    await ctx.step('the demoted member cannot grant themselves owner again → 403', async () => {
+      const r = await ctx.client.as(cofounder).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        { principal_type: 'user', principal_id: cofounder.userId, role_key: 'owner', scope_type: 'account' },
+        { params },
+      );
+      r.status(403);
+      const state = await superAdminFlag();
+      if (state.role !== 'member') throw new Error(`role changed to ${state.role}`);
+    });
+
+    await ctx.step('a super-admin grant made while not an owner survives a role change that removes no owner role', async () => {
+      (await owner.patch('/v1/accounts/:accountId/iam/members/:userId/super-admin', { isSuperAdmin: true }, {
+        params: { ...params, userId: cofounder.userId! },
+      })).status(200);
+      (await owner.patch('/v1/accounts/:accountId/members/:userId', { role: 'admin' }, {
+        params: { ...params, userId: cofounder.userId! },
+      })).status(200);
+      const state = await superAdminFlag();
+      if (state.role !== 'admin' || !state.superAdmin) {
+        throw new Error(`an explicit super-admin grant was dropped: ${JSON.stringify(state)}`);
+      }
+    });
+  },
+);
+
+flow(
+  'IAM-43',
+  {
+    domain: 'iam',
+    routes: [
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/projects/:projectId',
+      'GET /v1/projects/:projectId/detail',
+      'GET /v1/projects/:projectId/resource-grants',
+      'GET /v1/projects/:projectId/access',
+      'DELETE /v1/projects/:projectId/resource-grants/:grantId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    // managedGit: the local bare repo carries a kortix.yaml with one agent, `kortix`.
+    const project = await team.project({ managedGit: true });
+    const member = await team.addMember('member');
+    const outsider = await team.addMember('member');
+    const AGENT = 'kortix';
+    const accountParams = { accountId: team.id };
+    const everyone = {
+      principal_type: 'project',
+      principal_id: project.id,
+      role_key: 'agent-user',
+      scope_type: 'project',
+      scope_id: project.id,
+      object_type: 'agent',
+      object_id: AGENT,
+    };
+
+    // `/detail` narrows `config.agents` to the agents the caller may use.
+    const visibleAgents = async (who: typeof member): Promise<string[]> => {
+      const r = await ctx.client.as(who).get('/v1/projects/:projectId/detail', {
+        params: { projectId: project.id },
+      });
+      r.status(200);
+      return ((r.json<any>().config?.agents ?? []) as Array<{ name: string }>).map((a) => a.name);
+    };
+
+    await ctx.step('give the member a project member role; the outsider stays outside the project', async () => {
+      await team.grantProjectRole(project.id, member.userId!, 'member');
+    });
+
+    await ctx.step('the owner (manager tier) lists the agent, so the config is loaded', async () => {
+      const agents = await visibleAgents(ctx.P.OWNER);
+      assert({
+        kind: 'body',
+        description: 'owner sees the kortix agent',
+        pass: agents.includes(AGENT),
+        expected: AGENT,
+        actual: agents,
+      });
+    });
+
+    await ctx.step('before any grant the member lists no agent (agents are closed at the member tier)', async () => {
+      const agents = await visibleAgents(member);
+      assert({
+        kind: 'body',
+        description: 'member sees no agent before the grant',
+        pass: !agents.includes(AGENT),
+        expected: 'no kortix',
+        actual: agents,
+      });
+    });
+
+    await ctx.step('a project principal is refused as a role, on another project, or without an object → 400', async () => {
+      for (const body of [
+        { ...everyone, role_key: 'member', object_type: undefined, object_id: undefined },
+        { ...everyone, principal_id: team.id },
+        { ...everyone, object_type: undefined, object_id: undefined },
+      ]) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post('/v1/accounts/:accountId/iam/assignments', body, { params: accountParams });
+        r.status(400);
+      }
+    });
+
+    await ctx.step('a plain member cannot grant an agent to everyone → 403', async () => {
+      const r = await ctx.client
+        .as(member)
+        .post('/v1/accounts/:accountId/iam/assignments', everyone, { params: accountParams });
+      r.status(403);
+    });
+
+    let grantId = '';
+    await ctx.step('the owner grants the agent to everyone in the project → 201', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/accounts/:accountId/iam/assignments', everyone, { params: accountParams });
+      r.status(201)
+        .body()
+        .has('$.principal_type', 'project')
+        .has('$.principal_id', project.id)
+        .has('$.object_type', 'agent')
+        .has('$.object_id', AGENT);
+      grantId = r.json<any>().assignment_id;
+    });
+
+    await ctx.step('the member now lists the agent; the account member outside the project still reaches nothing', async () => {
+      const agents = await visibleAgents(member);
+      assert({
+        kind: 'body',
+        description: 'member sees the agent granted to everyone',
+        pass: agents.includes(AGENT),
+        expected: AGENT,
+        actual: agents,
+      });
+      const r = await ctx.client.as(outsider).get('/v1/projects/:projectId', {
+        params: { projectId: project.id },
+      });
+      r.status([403, 404]);
+    });
+
+    await ctx.step('the resource-grants list shows the grant as everyone, labelled with the project name', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/resource-grants', {
+        params: { projectId: project.id },
+      });
+      r.status(200);
+      const grant = (r.json<any>().grants as any[]).find((g) => g.grant_id === grantId);
+      assert({
+        kind: 'body',
+        description: 'the everyone grant is listed as a project principal',
+        pass: grant?.principal_type === 'project' && grant?.principal_label === project.name,
+        expected: { principal_type: 'project', principal_label: project.name },
+        actual: grant,
+      });
+    });
+
+    await ctx.step('the access screen folds it onto every member as source "project", never as a group', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/access', {
+        params: { projectId: project.id },
+      });
+      r.status(200);
+      const body = r.json<any>();
+      const row = (body.members as any[]).find((m) => m.user_id === member.userId);
+      const entry = (row?.resource_grants as any[] | undefined)?.find((g) => g.resource_id === AGENT);
+      assert({
+        kind: 'body',
+        description: 'member row carries the agent with source project',
+        pass: entry?.source === 'project',
+        expected: 'project',
+        actual: entry,
+      });
+      const bogusGroup = ((body.group_access ?? []) as any[]).some((g) => g.group_id === project.id);
+      assert({
+        kind: 'body',
+        description: 'no group entry is invented for the project',
+        pass: !bogusGroup,
+        expected: false,
+        actual: bogusGroup,
+      });
+    });
+
+    await ctx.step('deleting the grant closes the agent to the member again', async () => {
+      const del = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/projects/:projectId/resource-grants/:grantId', {
+          params: { projectId: project.id, grantId },
+        });
+      del.status(200);
+      const agents = await visibleAgents(member);
+      assert({
+        kind: 'body',
+        description: 'member no longer sees the agent',
+        pass: !agents.includes(AGENT),
+        expected: 'no kortix',
+        actual: agents,
+      });
     });
   },
 );

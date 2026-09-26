@@ -17,7 +17,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNotNull, lte, not, sql } from 'drizzle-orm';
 import type { ProviderName } from '../../platform/providers';
 import { db } from '../../shared/db';
-import { sandboxStopClaimLeaseMs } from '../sandbox-deadline-policy';
+import { holdsStopClaim, noLiveStopClaim } from '../session-lifecycle/stop-claim';
 import { reapBatchSize } from '../reaper-constants';
 import { mergeMetadata } from './sandbox-state-sync';
 
@@ -177,11 +177,7 @@ export async function claimExpiredSandboxStop(
         eq(sessionSandboxes.sandboxId, sandboxId),
         eq(sessionSandboxes.status, 'active'),
         lte(sessionSandboxes.deadlineAt, now),
-        sql`(
-          ${sessionSandboxes.metadata}->'lifecycleStopClaim' IS NULL
-          OR ${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
-          OR (${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'claimedAtMs')::bigint
-            <= ${now.getTime() - sandboxStopClaimLeaseMs()})`,
+        noLiveStopClaim(now),
         sql`NOT (
           coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'token', '') <> ''
           AND coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'state', '') IN ('delivering', 'active'))`,
@@ -211,7 +207,7 @@ export async function releaseSandboxStopClaim(sandboxId: string, token: string):
     .where(
       and(
         eq(sessionSandboxes.sandboxId, sandboxId),
-        sql`${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'token' = ${token}`,
+        holdsStopClaim(token),
       ),
     );
 }

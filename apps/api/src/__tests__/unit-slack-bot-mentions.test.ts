@@ -42,6 +42,10 @@ mock.module('../channels/slack/turn', () => ({
   claimFinalize: async () => true,
   openPlanMessage: async () => true,
   repaintLivePlan: async () => {},
+  // `mock.module` REPLACES the module, so every export the session-start path
+  // reaches through it has to be listed. Session start repaints the live plan
+  // to show Stop as soon as the turn knows its session (slack/stop.ts).
+  showStopOnLivePlan: async () => {},
   loadTurn: async () => null,
   startTurn: async () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
   saveTurn: async () => {},
@@ -204,7 +208,7 @@ describe('source contracts', () => {
 // ── The gate AFTER isOwnBotEvent, which is why #6577 alone did not work ──────
 //
 // Opening the bot gate was necessary and not sufficient. The mention then hits
-// SLACK_REQUIRE_USER_IDENTITY (optBoolTrue — ON by default): resolveSlackActor
+// SLACK_REQUIRE_USER_IDENTITY (optBoolTrue — ON by default): resolveChatActor
 // looks up chat_user_identities by the SENDER's Slack user id, a bot has no row,
 // so it answers `unlinked` and dispatch returns before the turn.
 //
@@ -232,15 +236,15 @@ describe('a bot sender is never sent an identity prompt', () => {
     const cmds = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8');
     expect(cmds, 'the only way to make a bot resolvable is gone').toContain("case 'link-bot':");
     expect(cmds, 'link-bot must write the same chat_user_identities row /login does')
-      .toContain('await linkSlackIdentity({ teamId: ctx.teamId, slackUserId: botUserId, userId: me.userId });');
+      .toContain("await linkChatIdentity(chatUser('slack', ctx.teamId, botUserId), me.userId);");
     const h = fnBody(cmds, 'slashLinkBot');
     // NOT owner/admin. Linking binds the bot to the CALLER's own account, so it
     // delegates the caller's authority and can never exceed it — the same shape
     // as issuing yourself an API key. An admin-only gate was actively wrong: an
     // admin linking a channel-triggerable bot is MORE dangerous than a member
     // doing it. The gate is the one every Slack message already passes.
-    expect(h, 'the gate must be "could you have done this work yourself", via resolveSlackActor')
-      .toContain('resolveSlackActor(ctx.teamId, ctx.slackUserId, proj.accountId, selection.projectId)');
+    expect(h, 'the gate must be "could you have done this work yourself", via resolveChatActor')
+      .toContain('resolveProjectChatActor(slackUserOf(ctx), selection.projectId)');
     expect(h, 'an owner/admin requirement is the wrong shape for self-delegation')
       .not.toContain('canManageSlackPolicy');
   });
@@ -248,8 +252,8 @@ describe('a bot sender is never sent an identity prompt', () => {
 
 // ── link-bot must never bind a HUMAN ────────────────────────────────────────
 //
-// Flagged on #6590 by review, and it was real. linkSlackIdentity UPSERTS, and
-// resolveSlackActor treats the row as the authoritative
+// Flagged on #6590 by review, and it was real. linkChatIdentity UPSERTS, and
+// resolveChatActor treats the row as the authoritative
 // (workspace, slack_user) -> kortix_user mapping, so binding a person's id would
 // silently make THEIR later Slack actions run as whoever linked them. Human and
 // bot ids are the same shape — /^[UWB][A-Z0-9]{6,}$/ matches U0B8ERR54BH (a
@@ -261,7 +265,7 @@ describe('link-bot refuses anything that is not a verified bot', () => {
 
   test('Slack is asked whether the target is a bot, BEFORE the link is written', () => {
     const askedAt = handler.indexOf('isBotUser(');
-    const wroteAt = handler.indexOf('await linkSlackIdentity(');
+    const wroteAt = handler.indexOf('await linkChatIdentity(');
     expect(askedAt, 'no bot verification — a human id would be accepted').toBeGreaterThan(-1);
     expect(wroteAt).toBeGreaterThan(-1);
     expect(askedAt, 'the link must not be written before the check').toBeLessThan(wroteAt);
@@ -326,7 +330,7 @@ describe('link-bot accepts what an operator will actually type', () => {
     // Resolving by name must not become a second, unguarded way in.
     const byName = h.indexOf('findBotUserIdByName');
     const verify = h.indexOf('isBotUser(');
-    const write  = h.indexOf('await linkSlackIdentity(');
+    const write  = h.indexOf('await linkChatIdentity(');
     expect(byName).toBeLessThan(verify);
     expect(verify).toBeLessThan(write);
   });

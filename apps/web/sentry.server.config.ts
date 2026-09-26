@@ -20,8 +20,8 @@ if (SENTRY_DSN) {
     // Don't send PII
     sendDefaultPii: false,
 
-    beforeSend(event) {
-      if (shouldIgnoreSentryNoiseEvent(event)) {
+    beforeSend(event, hint) {
+      if (shouldIgnoreSentryNoiseEvent(event, hint)) {
         return null;
       }
       return event;

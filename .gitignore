@@ -159,3 +159,6 @@ botkube-comm-real.yaml
 
 # Private legacy migration inventories and raw source records
 .legacy-transfer/
+
+# Local agent evidence (screenshots, logs). May hold customer data — never commit.
+/output/

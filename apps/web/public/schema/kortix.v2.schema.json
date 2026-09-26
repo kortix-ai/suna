@@ -2,16 +2,34 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kortix.com/schema/kortix.v2.schema.json",
   "title": "Kortix manifest (kortix_version 2)",
-  "description": "kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/repository_access/enabled); every agent must be declared, and OpenCode behavior (description/model/mode/temperature/permission/the prompt itself) lives entirely in that agent’s own native `.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields here is a hard error. `[[channels]]` is removed outright. See docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.",
+  "description": "kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/repository_access/enabled); every agent must be declared, and OpenCode behavior (description/model/mode/temperature/permission/the prompt itself) lives entirely in that agent’s own native `.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields here is a hard error. `[[channels]]` is removed outright. See docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.",
   "type": "object",
   "required": [
     "kortix_version",
-    "default_agent",
-    "agents"
+    "default_agent"
   ],
+  "if": {
+    "not": {
+      "required": [
+        "imports"
+      ]
+    }
+  },
+  "then": {
+    "required": [
+      "agents"
+    ]
+  },
   "properties": {
     "kortix_version": {
       "const": 2
+    },
+    "imports": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?![/\\s])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\*?\\[\\]{}]*[^\\\\*?\\[\\]{}\\s/]/?$"
+      }
     },
     "default_agent": {
       "type": "string",
@@ -23,6 +41,81 @@
         "opencode",
         "pi"
       ]
+    },
+    "harnesses": {
+      "type": "object",
+      "properties": {
+        "pi": {
+          "type": "object",
+          "properties": {
+            "packages": {
+              "type": "array",
+              "maxItems": 20,
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "anyOf": [
+                      {
+                        "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                      },
+                      {
+                        "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "source"
+                    ],
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                          },
+                          {
+                            "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                          }
+                        ]
+                      },
+                      "extensions": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "skills": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "prompts": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "themes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "agents": {
       "type": "object",
@@ -114,8 +207,27 @@
               }
             ]
           },
-          "kortix_cli": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+          "apps": {
+            "description": "Kortix Apps (by App slug) this agent may open when the App is restricted or private. Deny by default.",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$"
+                }
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "none"
+                ]
+              }
+            ]
+          },
+          "kortix_permissions": {
+            "description": "Kortix permissions: the project.* IAM actions this agent may exercise, or \"all\" / \"none\".",
             "oneOf": [
               {
                 "type": "array",
@@ -182,6 +294,75 @@
               }
             ]
           },
+          "kortix_cli": {
+            "description": "Deprecated alias for kortix_permissions.",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "project.read",
+                    "project.write",
+                    "project.delete",
+                    "project.session.read",
+                    "project.session.start",
+                    "project.session.stop",
+                    "project.session.bindings.write",
+                    "project.members.read",
+                    "project.members.manage",
+                    "project.trigger.read",
+                    "project.trigger.create",
+                    "project.trigger.update",
+                    "project.trigger.delete",
+                    "project.trigger.fire",
+                    "project.gateway.logs.read",
+                    "project.gateway.spend.read",
+                    "project.gateway.budget.set",
+                    "project.gateway.keys.manage",
+                    "project.agent.read",
+                    "project.agent.write",
+                    "project.skill.read",
+                    "project.skill.write",
+                    "project.command.read",
+                    "project.command.write",
+                    "project.file.read",
+                    "project.file.write",
+                    "project.customize.read",
+                    "project.customize.write",
+                    "project.gitops.read",
+                    "project.gitops.push",
+                    "project.gitops.merge",
+                    "project.gitops.ref.any",
+                    "project.gitops.ref.delete",
+                    "project.secret.read",
+                    "project.secret.write",
+                    "project.connector.read",
+                    "project.connector.connections.manage",
+                    "project.connector.write",
+                    "project.app.read",
+                    "project.app.write",
+                    "project.app.deploy",
+                    "project.review.read",
+                    "project.review.submit",
+                    "project.review.act",
+                    "project.credentials.issue",
+                    "project.cr.open",
+                    "project.cr.merge",
+                    "*"
+                  ]
+                }
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "none"
+                ]
+              }
+            ],
+            "deprecated": true
+          },
           "repository_access": {
             "type": "boolean",
             "description": "Allow new sessions to access the project repository. Defaults to true."
@@ -194,6 +375,95 @@
               "branch"
             ],
             "deprecated": true
+          },
+          "harnesses": {
+            "type": "object",
+            "properties": {
+              "pi": {
+                "type": "object",
+                "properties": {
+                  "packages": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "anyOf": [
+                            {
+                              "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                            },
+                            {
+                              "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "source"
+                          ],
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "anyOf": [
+                                {
+                                  "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                                },
+                                {
+                                  "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                                }
+                              ]
+                            },
+                            "extensions": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "skills": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "prompts": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "themes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "anyOf": [
+                        {
+                          "pattern": "^(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*$"
+                        },
+                        {
+                          "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false,

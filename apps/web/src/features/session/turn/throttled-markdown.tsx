@@ -6,6 +6,8 @@ import { memo, useMemo } from 'react';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 
+import { useStreamingCadence } from './streaming-cadence';
+
 function trimIncompleteTableRow(text: string): string {
   // Fast path: no pipe at all → nothing to trim
   if (!text.includes('|')) return text;
@@ -54,19 +56,25 @@ function ThrottledMarkdownImpl({
   // The reference (opencode PacedMarkdown) does zero content modification.
   // Both branches walk the whole text line by line. Memoised so a re-render
   // that changed nothing about the text does not re-scan it.
+  //
+  // While streaming, the text reaches the parser at most once per
+  // `STREAM_RENDER_INTERVAL_MS` (leading + trailing), not once per ~16 ms
+  // delta batch: `UnifiedMarkdown` is memoised on its content, so every
+  // delta inside the interval skips the parse entirely. The stream ending
+  // flushes the final text at once.
+  const pacedContent = useStreamingCadence(content, isStreaming);
   const displayContent = useMemo(
-    () => (isStreaming ? closeUnterminatedCodeFence(content) : trimIncompleteTableRow(content)),
-    [content, isStreaming],
+    () =>
+      isStreaming ? closeUnterminatedCodeFence(pacedContent) : trimIncompleteTableRow(pacedContent),
+    [pacedContent, isStreaming],
   );
-  return <UnifiedMarkdown content={displayContent} isStreaming={isStreaming} />;
+  return <UnifiedMarkdown content={displayContent} trust="agent" isStreaming={isStreaming} />;
 }
 
 /**
- * Both props are primitives, so this memo bites immediately — and it matters:
- * this component is not throttled despite its name, and it walks the entire
- * text (`split('\n')` per line) on every render. Uncached it ran for every text
- * segment of every turn on every frame; `UnifiedMarkdown` below is already
- * memoised, so the parse was safe, but the scan was not.
+ * Both props are primitives, so this memo bites immediately: a settled
+ * segment never re-renders while another one streams. The streaming segment
+ * is paced by `useStreamingCadence` above.
  */
 export const ThrottledMarkdown = memo(ThrottledMarkdownImpl);
 ThrottledMarkdown.displayName = 'ThrottledMarkdown';

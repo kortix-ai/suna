@@ -1,9 +1,14 @@
 {
   "name": "@kortix/agent-tunnel",
   "version": "0.1.2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kortix-ai/suna.git",
+    "directory": "packages/agent-tunnel"
+  },
   "private": false,
   "type": "module",
-  "description": "Tunnel relay between cloud AI agents and local machines — server relay, local agent, client SDK, JSON-RPC, HMAC signing",
+  "description": "Tunnel relay between cloud AI agents and local machines \u2014 server relay, local agent, client SDK, JSON-RPC, HMAC signing",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {

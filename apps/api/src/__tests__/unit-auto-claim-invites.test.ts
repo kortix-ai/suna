@@ -110,6 +110,13 @@ mock.module('../shared/supabase', () => ({
 }));
 mock.module('../shared/resolve-account', () => ({ resolveAccountId: async () => 'acct' }));
 mock.module('../openapi', () => ({ makeOpenApiApp: () => ({}) }));
+// The email a claim matches comes from the email-trust rule, not the token:
+// an SSO identity whose IdP did not verify the email's domain resolves to ''.
+const trust = { byUser: new Map<string, string>() };
+mock.module('../iam/email-trust', () => ({
+  trustedEmailForUser: async (userId: string) => trust.byUser.get(userId) ?? '',
+  emailTrustedSql: () => ({ op: 'sql', args: ['true'] }),
+}));
 
 const { autoClaimPendingInvites } = await import('../accounts/core/app');
 
@@ -127,6 +134,7 @@ function makeInvite(overrides: Partial<FakeInvite>): FakeInvite {
 }
 
 beforeEach(() => {
+  trust.byUser = new Map([['user-1', 'invitee@example.com']]);
   state.pending = [];
   memberInserts.length = 0;
   inviteUpdates.length = 0;
@@ -137,7 +145,8 @@ describe('autoClaimPendingInvites', () => {
   test('claims a plain account invite (no bootstrap grants): joins + stamps accepted_at', async () => {
     state.pending = [makeInvite({ bootstrapGrants: null })];
 
-    await autoClaimPendingInvites('user-1', 'invitee@example.com');
+    // The count lets GET /v1/accounts skip its membership re-read when 0.
+    expect(await autoClaimPendingInvites('user-1', 'invitee@example.com')).toBe(1);
 
     expect(memberInserts).toHaveLength(1);
     expect(memberInserts[0]).toMatchObject({
@@ -156,7 +165,7 @@ describe('autoClaimPendingInvites', () => {
   test('does NOT claim a project invite (carries bootstrap grants): stays pending', async () => {
     state.pending = [makeInvite({ bootstrapGrants: [{ project_id: 'p1', role: 'manager' }] })];
 
-    await autoClaimPendingInvites('user-1', 'invitee@example.com');
+    expect(await autoClaimPendingInvites('user-1', 'invitee@example.com')).toBe(0);
 
     // No membership row and no accepted_at stamp → the inviter keeps seeing
     // "pending" and the recipient still gets the accept/decline dialog.
@@ -175,7 +184,7 @@ describe('autoClaimPendingInvites', () => {
       }),
     ];
 
-    await autoClaimPendingInvites('user-1', 'invitee@example.com');
+    expect(await autoClaimPendingInvites('user-1', 'invitee@example.com')).toBe(1);
 
     expect(memberInserts).toHaveLength(1);
     expect(memberInserts[0]).toMatchObject({ accountId: 'acct-plain' });
@@ -186,10 +195,30 @@ describe('autoClaimPendingInvites', () => {
   test('no-ops on empty email without touching the db', async () => {
     state.pending = [makeInvite({})];
 
-    await autoClaimPendingInvites('user-1', '');
+    expect(await autoClaimPendingInvites('user-1', '')).toBe(0);
 
     expect(memberInserts).toHaveLength(0);
     expect(roleGrants).toHaveLength(0);
     expect(inviteUpdates).toHaveLength(0);
+  });
+
+  test('claims nothing for an identity whose email is not trusted (unverified SSO domain)', async () => {
+    state.pending = [makeInvite({ bootstrapGrants: null })];
+    trust.byUser = new Map();
+
+    // The token still names the invite's address; only a trusted email counts.
+    expect(await autoClaimPendingInvites('user-1', 'invitee@example.com')).toBe(0);
+
+    expect(memberInserts).toHaveLength(0);
+    expect(roleGrants).toHaveLength(0);
+    expect(inviteUpdates).toHaveLength(0);
+  });
+
+  test('matches the trusted email, not the email the caller passed', async () => {
+    state.pending = [makeInvite({ email: 'invitee@example.com' })];
+    trust.byUser = new Map([['user-1', 'someone-else@example.com']]);
+
+    expect(await autoClaimPendingInvites('user-1', 'invitee@example.com')).toBe(0);
+    expect(memberInserts).toHaveLength(0);
   });
 });

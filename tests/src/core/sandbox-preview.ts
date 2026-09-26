@@ -1,6 +1,6 @@
 import { buildPreviewGuardInstall } from './preview-guard';
 
-export type SandboxPreviewProvider = 'auto' | 'platinum' | 'daytona';
+export type SandboxPreviewProvider = 'auto' | 'platinum';
 
 export interface SandboxPreviewInput {
   provider: SandboxPreviewProvider;
@@ -10,7 +10,7 @@ export interface SandboxPreviewInput {
 }
 
 export interface SandboxPreviewResult {
-  provider: 'platinum' | 'daytona';
+  provider: 'platinum';
   exitCode: number;
   sandboxId?: string;
   /** Where people go. The stable name when there is one, else `sandboxOrigin`. */
@@ -28,6 +28,81 @@ export function previewLockfileHash(value: string): string {
     throw new Error('preview lockfile hash must contain 64 hex characters');
   }
   return hash;
+}
+
+export function previewDeploymentStatusPath(runId: string, runAttempt: string): string {
+  if (![runId, runAttempt].every((value) => /^[a-z0-9_-]+$/i.test(value))) {
+    throw new Error('invalid preview workflow run identity');
+  }
+  return `/workspace/kortix-preview/run-${runId}-${runAttempt}.exit`;
+}
+
+/** Suite exit code when it refused to start: no report was written for this commit. */
+export const PREVIEW_SUITE_REFUSED = 3;
+
+/** Completion record for the suite a run launches after its deploy. */
+export function previewSuiteStatusPath(runId: string, runAttempt: string): string {
+  return previewDeploymentStatusPath(runId, runAttempt).replace(/\.exit$/, '-suite.exit');
+}
+
+/**
+ * `pnpm test -- --target-full` against a preview stack a deploy of THIS run
+ * already proved healthy on `sha`. A separate script, launched after the
+ * deploy returns, so the workflow publishes the preview origin ~40 min before
+ * the suite finishes instead of after it.
+ *
+ * It holds the same `deploy.lock` as the bootstrap, so a redeploy cannot
+ * replace the API while the suite runs, and it refuses to start when the local
+ * edge no longer serves `sha` (a redeploy won the lock in between).
+ */
+export function buildPreviewSuiteScript(input: {
+  prNumber: number;
+  sha: string;
+  statusPath: string;
+}): string {
+  if (!/^[a-f0-9]{40}$/i.test(input.sha)) throw new Error(`invalid Git SHA: ${input.sha}`);
+  previewSandboxName(input.prNumber);
+  const state = '/workspace/kortix-preview';
+  const instanceDir = `${state}/self-host/pr-${input.prNumber}`;
+  return `#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=/workspace/suna
+STATE=${state}
+LOG="$STATE/kortix-preview.log"
+STATUS=${shellQuote(input.statusPath)}
+PHASE="$STATE/kortix-preview.phase"
+export HOME=/root
+export CI=1
+export KORTIX_SELF_HOST_CONFIG_DIR="$STATE/self-host"
+
+exec 9>"$STATE/deploy.lock"
+flock -x 9
+rm -f "$STATUS"
+exec > >(tee -a "$LOG") 2>&1
+
+finish() {
+  local code="$1"
+  set +e
+  tar -czf /workspace/kortix-test-results.tar.gz -C "$ROOT" tests/test-results
+  printf '%s\n' "$code" > "$STATUS"
+}
+trap 'code=$?; finish "$code"' EXIT
+
+curl -fsS --max-time 10 http://127.0.0.1:8080/v1/health \
+  | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .commit == $sha' >/dev/null || {
+  echo "the preview no longer serves ${input.sha}; refusing to test another commit" >&2
+  exit ${PREVIEW_SUITE_REFUSED}
+}
+
+printf 'tests\n' > "$PHASE"
+cd "$ROOT"
+set -a
+source ${shellQuote(`${instanceDir}/.env.test`)}
+set +a
+pnpm test -- --target-full
+printf 'ready\n' > "$PHASE"
+`;
 }
 
 export interface PreviewSandboxRecord {
@@ -55,15 +130,13 @@ export function buildPreviewBootstrapScript(input: {
   sha: string;
   prNumber: number;
   origin: string;
+  statusPath?: string;
   /**
-   * Run the full suite inside the environment once it is up. Default true.
-   *
-   * A PR preview exists to be a gate, so it runs it. A branch environment
-   * exists to be WORKED IN, and the suite is ~10 of the ~14 minutes a deploy
-   * takes — a tax on every push that proves nothing the health check above
-   * has not already proved. Run it there on demand instead.
+   * The host sandbox's name. The stack tags every session box with it
+   * (`kortix.instance`), which is how teardown and the sweep find the session
+   * boxes a preview owns. See previewWorkerEnvironment().
    */
-  runTests?: boolean;
+  hostName?: string;
 }): string {
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repository)) {
     throw new Error(`invalid GitHub repository: ${input.repository}`);
@@ -75,6 +148,9 @@ export function buildPreviewBootstrapScript(input: {
   if (origin.protocol !== 'https:' || origin.pathname !== '/') {
     throw new Error('preview origin must be an HTTPS origin');
   }
+  if (input.hostName !== undefined && !/^kortix-[a-z0-9-]+$/.test(input.hostName)) {
+    throw new Error(`invalid preview host name: ${input.hostName}`);
+  }
   const instance = `pr-${input.prNumber}`;
   const state = '/workspace/kortix-preview';
   const instanceDir = `${state}/self-host/${instance}`;
@@ -85,7 +161,7 @@ set -euo pipefail
 ROOT=/workspace/suna
 STATE=${state}
 LOG="$STATE/kortix-preview.log"
-STATUS="$STATE/kortix-preview.exit"
+STATUS=${shellQuote(input.statusPath ?? `${state}/kortix-preview.exit`)}
 PHASE="$STATE/kortix-preview.phase"
 SECRETS="$STATE/runtime-secrets.json"
 export HOME=/root
@@ -146,7 +222,7 @@ for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; 
 done
 if ! docker info >/dev/null 2>&1; then
   rm -f /var/run/docker.pid /var/run/docker.sock
-  nohup dockerd --host=unix:///var/run/docker.sock > "$STATE/dockerd.log" 2>&1 &
+  nohup dockerd --host=unix:///var/run/docker.sock 9>&- > "$STATE/dockerd.log" 2>&1 &
   timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 fi
 docker info >/dev/null
@@ -162,7 +238,8 @@ PREVIEW_STATE_DIR=${shellQuote(state)} \
 PREVIEW_ORIGIN=${shellQuote(origin.origin)} \
 PREVIEW_SHA=${shellQuote(input.sha)} \
 PREVIEW_SECRETS_FILE="$SECRETS" \
-bun tests/bin/preview-stack.ts
+${input.hostName ? `PREVIEW_INSTANCE_ID=${shellQuote(input.hostName)} \
+` : ''}bun tests/bin/preview-stack.ts
 
 printf 'stack\n' > "$PHASE"
 
@@ -260,18 +337,9 @@ curl -fsS --max-time 10 "$HEALTH" | jq -e --arg sha ${shellQuote(input.sha)} '.s
 # This image set is proven; it is what restore_last_good falls back to.
 cp ${shellQuote(`${instanceDir}/.env`)} "$STATE/last-good.env"
 
-${
-    input.runTests === false
-      ? `printf 'tests-skipped\\n' > "$PHASE"
-printf 'suite skipped — this is a branch environment, not a gate. Run it with:\\n' >&2
-printf '  cd %s && set -a && . %s && set +a && pnpm test -- --target-full\\n' "$ROOT" ${shellQuote(`${instanceDir}/.env.test`)} >&2`
-      : `printf 'tests\\n' > "$PHASE"
-set -a
-source ${shellQuote(`${instanceDir}/.env.test`)}
-set +a
-pnpm test -- --target-full`
-  }
-
+# The deploy ends here, once the stack serves this commit, so the workflow
+# can publish the preview before the suite starts. The suite, when this deploy
+# runs it, is a separate script: buildPreviewSuiteScript.
 printf 'ready\n' > "$PHASE"
 `;
 }
@@ -428,20 +496,21 @@ export function selectStalePreviewSandboxIds(
     .map((sandbox) => sandbox.id);
 }
 
+/**
+ * Previews run on Platinum only, host and sessions. There is no Daytona
+ * fallback: from 2026-08-10 an infrastructure failure moved the preview to
+ * Daytona, and on 2026-09-21 the shared Daytona org hit its snapshot quota and
+ * every preview session failed there. A Platinum failure now fails the preview
+ * loudly. Daytona code remains only to tear down previews created before this.
+ */
 export async function runSandboxPreview(
   input: SandboxPreviewInput,
   runners: {
     platinum: (input: SandboxPreviewInput) => Promise<SandboxPreviewResult>;
-    daytona: (input: SandboxPreviewInput) => Promise<SandboxPreviewResult>;
   },
 ): Promise<SandboxPreviewResult> {
-  if (input.provider === 'platinum') return runners.platinum(input);
-  if (input.provider === 'daytona') return runners.daytona(input);
-  try {
-    return await runners.platinum(input);
-  } catch (error) {
-    if (!(error instanceof PreviewInfrastructureError)) throw error;
-    console.warn(`[sandbox-preview] Platinum infrastructure failed; fallback=daytona error=${error.message}`);
-    return runners.daytona(input);
+  if (input.provider !== 'auto' && input.provider !== 'platinum') {
+    throw new Error(`previews run on Platinum only; received provider ${String(input.provider)}`);
   }
+  return runners.platinum(input);
 }

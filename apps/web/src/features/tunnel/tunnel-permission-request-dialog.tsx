@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { InfoBanner } from '@/components/ui/info-banner';
 import {
   Select,
   SelectContent,
@@ -20,12 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { errorToast, successToast } from '@/components/ui/toast';
-import {
-  useApprovePermissionRequest,
-  useDenyPermissionRequest,
-  type TunnelPermissionRequest,
-} from '@/hooks/tunnel/use-tunnel';
+import { successToast } from '@/components/ui/toast';
+import { useApprovePermissionRequest, useDenyPermissionRequest } from '@/hooks/tunnel/use-tunnel';
 import { cn } from '@/lib/utils';
 import { useTunnelStore } from '@/stores/tunnel-store';
 import {
@@ -35,20 +32,21 @@ import {
   ShieldIcon as Shield,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { approvalScope, scopeFromRequest } from './permission-scope';
 import { getScopeEditorCapability } from './scope-editors';
 import { FilesystemScopeEditor } from './scope-editors/filesystem-scope-editor';
 import { ShellScopeEditor } from './scope-editors/shell-scope-editor';
 import type { FilesystemScope, PermissionScope, ShellScope } from './types';
 import {
   EXPIRY_OPTIONS,
-  getDefaultScope,
   getExpiresAt,
   localizedCapabilityRegistry,
   localizedExpiryOptions,
 } from './types';
 
 type Mode = 'once' | 'scoped' | 'all';
+type FailedAction = 'approve' | 'deny';
 
 export function TunnelPermissionRequestDialog() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -63,11 +61,13 @@ export function TunnelPermissionRequestDialog() {
   const [mode, setMode] = useState<Mode>('scoped');
   const [expiryValue, setExpiryValue] = useState('7d');
   const [scopeExpanded, setScopeExpanded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const failedAction = useRef<FailedAction | null>(null);
 
   // Pre-fill scope from the request
   const initialScope = useMemo(() => {
     if (!currentRequest) return {};
-    return extractScopeFromRequest(currentRequest);
+    return scopeFromRequest(currentRequest);
   }, [currentRequest]);
 
   const [customScope, setCustomScope] = useState<PermissionScope>(initialScope);
@@ -78,7 +78,9 @@ export function TunnelPermissionRequestDialog() {
       setMode('scoped');
       setExpiryValue('7d');
       setScopeExpanded(false);
-      setCustomScope(extractScopeFromRequest(currentRequest));
+      setCustomScope(scopeFromRequest(currentRequest));
+      setError(null);
+      failedAction.current = null;
     }
   }, [currentRequest]);
 
@@ -92,6 +94,7 @@ export function TunnelPermissionRequestDialog() {
   const isPending = approveMutation.isPending || denyMutation.isPending;
 
   const handleApprove = async () => {
+    setError(null);
     try {
       let scope: Record<string, unknown> | undefined;
       let expiresAt: string | undefined;
@@ -100,7 +103,7 @@ export function TunnelPermissionRequestDialog() {
         scope = currentRequest.requestedScope;
         expiresAt = getExpiresAt(EXPIRY_OPTIONS[0]!);
       } else if (mode === 'scoped') {
-        scope = customScope as Record<string, unknown>;
+        scope = approvalScope(currentRequest.capability, customScope);
         const expiry = EXPIRY_OPTIONS.find((o) => o.value === expiryValue);
         expiresAt = expiry ? getExpiresAt(expiry) : undefined;
       } else {
@@ -120,27 +123,37 @@ export function TunnelPermissionRequestDialog() {
       );
     } catch (err) {
       console.error('Failed to approve:', err);
-      errorToast(tHardcodedUi.raw('i18nComplete.text28c39aaf0edc'), {
-        description: err instanceof Error ? err.message : undefined,
-      });
+      failedAction.current = 'approve';
+      setError(
+        err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text28c39aaf0edc'),
+      );
     }
   };
 
   const handleDeny = async () => {
+    setError(null);
     try {
       await denyMutation.mutateAsync(currentRequest.requestId);
       removePendingRequest(currentRequest.requestId);
       successToast(tHardcodedUi.raw('i18nComplete.textf44bf9c0530c'));
     } catch (err) {
       console.error('Failed to deny:', err);
-      errorToast(tHardcodedUi.raw('i18nComplete.text25950c20dae9'), {
-        description: err instanceof Error ? err.message : undefined,
-      });
+      failedAction.current = 'deny';
+      setError(
+        err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text25950c20dae9'),
+      );
     }
   };
 
+  const dismiss = () => removePendingRequest(currentRequest.requestId);
+
   return (
-    <Dialog open={!!currentRequest} onOpenChange={() => {}}>
+    <Dialog
+      open={!!currentRequest}
+      onOpenChange={(open) => {
+        if (!open) dismiss();
+      }}
+    >
       <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -268,6 +281,33 @@ export function TunnelPermissionRequestDialog() {
               {tHardcodedUi.raw('i18nComplete.text62a2fed3d6e0')}
             </p>
           )}
+
+          {error && (
+            <InfoBanner
+              tone="destructive"
+              icon={AlertTriangle}
+              role="alert"
+              action={
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() =>
+                      void (failedAction.current === 'deny' ? handleDeny() : handleApprove())
+                    }
+                    disabled={isPending}
+                  >
+                    {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={dismiss}>
+                    {tHardcodedUi.raw('i18nComplete.text48845bff334a')}
+                  </Button>
+                </div>
+              }
+            >
+              {error}
+            </InfoBanner>
+          )}
         </div>
 
         <DialogFooter className="flex gap-2 sm:gap-2">
@@ -329,34 +369,4 @@ function ModeOption({
       <p className="text-muted-foreground mt-0.5 ml-[22px] text-xs">{description}</p>
     </button>
   );
-}
-
-function extractScopeFromRequest(request: TunnelPermissionRequest): PermissionScope {
-  const base = getDefaultScope(request.capability);
-  const rs = request.requestedScope || {};
-
-  switch (request.capability) {
-    case 'filesystem': {
-      const fsBase = base as FilesystemScope;
-      const path = (rs as Record<string, unknown>).path as string | undefined;
-      const operation = (rs as Record<string, unknown>).operation as string | undefined;
-      return {
-        ...fsBase,
-        paths: path ? [path] : fsBase.paths,
-        operations: operation
-          ? [operation as FilesystemScope['operations'][number]]
-          : fsBase.operations,
-      } satisfies FilesystemScope;
-    }
-    case 'shell': {
-      const shBase = base as ShellScope;
-      const command = (rs as Record<string, unknown>).command as string | undefined;
-      return {
-        ...shBase,
-        commands: command ? [command.split(' ')[0]!] : shBase.commands,
-      } satisfies ShellScope;
-    }
-    default:
-      return base;
-  }
 }

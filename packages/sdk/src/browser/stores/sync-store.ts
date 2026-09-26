@@ -19,6 +19,7 @@ import {
 import { isRetryableTurnError } from "../../core/turns/open-turn";
 import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
+import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
 import { writeStreamCache } from "./sync-store/stream-cache";
 import type {
 	FileDiff,
@@ -923,10 +924,16 @@ function rekeyStubParent(
  *     when unauthenticated, and then nothing was ever written to disk to
  *     return to.
  *
- * Small, because memory must be TIGHTER than disk: `idb-sync-cache.ts` bounds
- * the on-disk cache at 50 sessions / 7 days.
+ * Eight, measured: a resident transcript costs about 1.1x its wire JSON in
+ * heap (bun heapStats, synthetic transcript with 6 KB tool outputs: 467 KB for
+ * a 40-message tail, 2.2 MB for 200 messages). Eight detached sessions is
+ * therefore ~4-18 MB at those sizes. The disk mirror this used to lean on is
+ * gone (5a7a43517f), so a session pushed out of this window costs a snapshot
+ * read plus a runtime tail read on the way back — seconds, on a staging
+ * session switch. Three made that the common case for anyone moving between
+ * more than three sessions.
  */
-const DETACHED_SESSION_LIMIT = 3;
+const DETACHED_SESSION_LIMIT = 8;
 
 /**
  * The joined `MessageWithParts[]` rows, per session — see
@@ -1333,6 +1340,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					sessionTails.set(tailKey, appliedIds);
 				}
 				appliedIds.add(eventID);
+				// Bounded window: a Set iterates in insertion order, so the
+				// first key is the oldest applied id.
+				if (appliedIds.size > DELTA_EVENT_TAIL_LIMIT) {
+					const oldest = appliedIds.values().next().value;
+					if (oldest !== undefined) appliedIds.delete(oldest);
+				}
 			}
 			const next = [...list];
 			const part = { ...next[result.index] };
@@ -1766,12 +1779,40 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			}
 		}
 
+		// Reuse the previous row object for every message whose `info` and
+		// part array are unchanged, so per-message consumers (a memoized row,
+		// a selector) keep a stable identity while another message streams.
+		// Index alignment answers the common case (a delta changed one row) in
+		// one pointer compare per row; a by-id index is built only once the
+		// alignment breaks (a message inserted or removed mid-transcript).
+		let previousById: Map<string, { row: MessageWithParts; partRef: Part[] | undefined }> | null =
+			null;
 		const partRefs: (Part[] | undefined)[] = [];
 		const result: MessageWithParts[] = [];
-		for (const info of msgs) {
+		for (let i = 0; i < msgs.length; i++) {
+			const info = msgs[i];
 			const messageParts = parts[info.id];
 			partRefs.push(messageParts);
-			result.push({ info, parts: messageParts ?? [] });
+			let reuse: MessageWithParts | undefined;
+			const aligned = cached?.result[i];
+			if (aligned && aligned.info === info) {
+				if (cached.partRefs[i] === messageParts) reuse = aligned;
+			} else if (cached) {
+				if (!previousById) {
+					previousById = new Map();
+					for (let j = 0; j < cached.result.length; j++) {
+						previousById.set(cached.result[j].info.id, {
+							row: cached.result[j],
+							partRef: cached.partRefs[j],
+						});
+					}
+				}
+				const previous = previousById.get(info.id);
+				if (previous && previous.row.info === info && previous.partRef === messageParts) {
+					reuse = previous.row;
+				}
+			}
+			result.push(reuse ?? { info, parts: messageParts ?? [] });
 		}
 		touchSessionMessageRows(sessionID, { msgs, partRefs, result });
 		return result;
@@ -1813,6 +1854,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// deliberately left as-is here.)
 			let droppedPhantoms: Set<string> | null = null;
 			const provisional = fromCache ? undefined : cacheSourcedIds.get(sessionID);
+			if (provisional && incoming.length === 0) {
+				for (const id of [...provisional]) {
+					if (isOptimistic(sessionID, id)) continue;
+					untrackId(cacheSourcedIds, sessionID, id);
+					(droppedPhantoms ??= new Set()).add(id);
+				}
+			}
 			if (provisional && provisional.size > 0 && incoming.length > 0) {
 				let oldestIncoming = incoming[0].id;
 				for (const m of incoming) if (m.id < oldestIncoming) oldestIncoming = m.id;

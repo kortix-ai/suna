@@ -67,7 +67,7 @@ export interface GatewayServer {
 // public gateway host sits behind a proxied Cloudflare hostname, so a JSON
 // `502 upstream_error` reached OpenCode as an HTML page and surfaced as
 // "AI_APICallError: Bad Gateway" with no code, no request id and no
-// suggestion (dev 2026-08-24; Essentia 2026-08-22). 503 passes through
+// suggestion (dev 2026-08-24; SampleCo 2026-08-22). 503 passes through
 // unchanged. The original status is kept on a header and in the body so
 // nothing is lost — only the transport-level rewrite is avoided.
 const CLOUDFLARE_REWRITTEN_STATUSES = new Set([502, 504]);
@@ -90,6 +90,18 @@ export async function cloudflareSafe(res: Response): Promise<Response> {
     }
   }
   return new Response(res.body, { status: 503, headers });
+}
+
+// Anthropic SDKs, and Claude Code with ANTHROPIC_API_KEY, send the key as
+// `x-api-key`. The Anthropic-shaped route accepts it when no Authorization
+// header is present.
+export function messagesAuthorization(
+  authorization: string | undefined,
+  apiKey: string | undefined,
+): string | undefined {
+  if (authorization) return authorization;
+  const key = apiKey?.trim();
+  return key ? `Bearer ${key}` : undefined;
 }
 
 export function buildServer(options: { inflight?: InflightBudget } = {}): GatewayServer {
@@ -115,9 +127,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   const gateway = createGateway(
     {
       authenticate: api.authenticate,
-      // Combined gate: one RPC for auth + billing + budget on the chat hot path
-      // (vs three sequential round-trips). authenticate/assertBillingActive/
-      // assertBudget remain for the /models path and the interface contract.
+      // Combined authentication + budget gate. Billing runs after model resolution.
       authorize: api.authorize,
       resolveRoute: api.resolveRoute,
       resolveUpstream: api.resolveUpstream,
@@ -376,7 +386,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       }
       try {
         const request = {
-          authorization: c.req.header('authorization'),
+          authorization: messagesAuthorization(c.req.header('authorization'), c.req.header('x-api-key')),
           rawBody: body.body,
           // Without this a disconnected /v1/messages client left the provider
           // generating — and billing — to nobody.

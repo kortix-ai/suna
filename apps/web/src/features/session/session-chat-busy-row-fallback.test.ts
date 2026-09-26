@@ -74,8 +74,16 @@ describe('the waiting row has a fallback when no turn owns it', () => {
   });
 
   test('with a queue on screen it renders inside the turn before the queue, never under it', () => {
-    const inTurn = between(chat, '{showFallbackBusyRow &&\n                                fallbackBusyRowTurnId === turn.userMessage.info.id', '</TurnViewport>');
-    expect(inTurn).toContain('<SessionBusyIndicator sessionId={sessionId} className="mt-2.5" />');
+    // The map hands the decision to the memoized row as `showBusyRow`…
+    expect(chat).toMatch(
+      /showBusyRow=\{\s*showFallbackBusyRow &&\s*fallbackBusyRowTurnId === turn\.userMessage\.info\.id\s*\}/,
+    );
+    // …and the row draws it INSIDE the turn's viewport, after the turn.
+    const row = between(chat, 'const TranscriptTurnRow = memo(', '</TurnViewport>');
+    expect(row).toContain('<TurnViewport turnId={turnId} className={viewportClassName}>');
+    expect(row).toContain(
+      '{showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}',
+    );
     expect(chat).toContain('fallbackBusyRowAfterTurnId({');
   });
 });
@@ -158,7 +166,66 @@ test('a confirmed working turn cannot retain a stale pending inbox presentation'
   // holds keeps its pending bubble beside its Thinking row.
   expect(chat).toContain('const confirmedActive = turnIsConfirmedActive({');
   expect(chat).toContain('!confirmedActive && turn.assistantMessages.length === 0');
-  const pending = between(chat, 'pending={\n                                    !confirmedActive', 'pendingPrompt={pendingPrompt}');
+  const pending = between(chat, 'pending={\n                                !confirmedActive', 'pendingPrompt={pendingPrompt}');
   expect(pending).toContain('Boolean(pendingPrompt)');
   expect(pending).toContain('pendingTurnIds.has(turn.userMessage.info.id)');
+});
+
+/**
+ * A session parked on the USER draws no waiting row anywhere.
+ *
+ * The `question` tool and a tool-permission prompt both block OpenCode inside
+ * its own turn loop: no `session.idle` frame follows, the control plane's row
+ * stays `active`, and `projectWorking` correctly keeps saying `working`. So the
+ * shimmer and its clock ran while the agent was waiting for a reply — measured
+ * on the local stack 2026-09-22 (session 8d807956): 12m22s on one unanswered
+ * 2-option question, the clock reading 7m55s in the screenshot.
+ *
+ * Source assertions because the permission half cannot be driven here at all:
+ * the local test profile has no cloud sandbox, so no agent reaches a tool that
+ * asks. The question half was verified by hand against a real sandbox; this
+ * pins that BOTH lists feed one decision and that every consumer of it is
+ * wired, so the two halves cannot drift apart.
+ */
+describe('waiting on the user is not the agent working', () => {
+  test('one fact, read from both pending lists', () => {
+    expect(chat).toContain(
+      'const awaitingUserInput = pendingQuestions.length > 0 || pendingPermissions.length > 0;',
+    );
+  });
+
+  test('the working turn stops drawing its own row', () => {
+    const gate = between(chat, 'const someTurnDrawsBusyRow = workingTurnDrawsBusyRow({', '});');
+    expect(gate).toContain('awaitingUser: awaitingUserInput,');
+  });
+
+  test('and the fallback does not catch the row it declined', () => {
+    // Without this the suppression would only MOVE the shimmer: the working
+    // turn yields, `someTurnDrawsBusyRow` goes false, and the trailing row
+    // draws instead — the same claim, one position down.
+    const gate = between(chat, 'const showFallbackBusyRow =', 'const fallbackBusyRowTurnId');
+    expect(gate).toContain('!awaitingUserInput &&');
+  });
+
+  test('the turn card gets the same fact, and its indicator reads it', () => {
+    expect(chat).toContain('awaitingUser={awaitingUserInput}');
+    const indicator = between(chat, '{showTurnBusyIndicator({', '}) && (');
+    expect(indicator).toContain('awaitingUser,');
+  });
+
+  test('the elapsed clock measures the AGENT, so it stops and restarts from zero', () => {
+    // On `working` it kept counting behind the hidden row and came back
+    // reporting how long the reader took to answer.
+    expect(chat).toContain('const agentWorking = working && !awaitingUser;');
+    const label = between(chat, 'const statusElapsedLabel =', 'formatDuration(statusElapsedMs)');
+    expect(label).toContain('agentWorking');
+    expect(chat).toContain('if (!agentWorking) return;');
+  });
+
+  test('`working` itself is untouched — the turn IS still open', () => {
+    // Every structural decision below still reads it: which steps render, and
+    // where answered questions go.
+    expect(chat).toContain('const working = isWorkingTurn && sessionWorking;');
+    expect(chat).toContain('{!hasSteps && !working && !hasReasoning && answeredQuestionParts.length > 0 && (');
+  });
 });

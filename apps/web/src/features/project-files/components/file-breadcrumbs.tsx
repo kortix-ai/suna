@@ -289,7 +289,7 @@ export function FilePathBreadcrumbs({ filePath, className }: FilePathBreadcrumbs
         onSegmentClick={handleSegmentClick}
         onHomeClick={handleHomeClick}
         fileMode
-        fileIcon={getFileIcon(fileName, { className: tI18nComplete.raw('text07a0daf2512a') })}
+        fileIcon={getFileIcon(fileName, { className: 'h-3.5 w-3.5 shrink-0' })}
         rootPath={rootPath}
       />
     </div>

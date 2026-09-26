@@ -64,16 +64,42 @@ export function deriveSandboxHealthStatus(
   return 'unknown';
 }
 
+/** The failure keys every builder below drops before it writes its own. */
+const SANDBOX_INIT_FAILURE_KEYS = [
+  'provisioningError',
+  'lastProvisioningError',
+  'errorMessage',
+  'lastInitError',
+] as const;
+
 function stripSandboxInitFailureMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> {
-  const source = metadata ?? {};
-  const {
-    provisioningError: _provisioningError,
-    lastProvisioningError: _lastProvisioningError,
-    errorMessage: _errorMessage,
-    lastInitError: _lastInitError,
-    ...rest
-  } = source;
+  const rest = { ...(metadata ?? {}) };
+  for (const key of SANDBOX_INIT_FAILURE_KEYS) delete rest[key];
   return rest;
+}
+
+/**
+ * A builder's whole object, restated as the strip-and-merge that turns
+ * `metadata` into it. The builders read a row snapshot taken before provider
+ * create; writing their result back whole erased every key a concurrent writer
+ * added since. Applied in SQL to the locked row, the patch keeps those keys.
+ */
+export function sandboxInitMetadataPatch(
+  metadata: Record<string, unknown> | null | undefined,
+  built: Record<string, unknown>,
+): { strip: string[]; merge: Record<string, unknown> } {
+  const previous = metadata ?? {};
+  const failureKeys: readonly string[] = SANDBOX_INIT_FAILURE_KEYS;
+  const strip = failureKeys.filter((key) => !(key in built));
+  const merge: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(built)) {
+    // A failure key the builder kept is rewritten even when unchanged: the
+    // strip above does not name it, but the builder owns its value.
+    if (failureKeys.includes(key) || JSON.stringify(previous[key]) !== JSON.stringify(value)) {
+      merge[key] = value;
+    }
+  }
+  return { strip, merge };
 }
 
 export function buildSandboxInitAttemptMetadata(

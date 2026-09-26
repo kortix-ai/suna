@@ -85,6 +85,13 @@ async function dispatchFileEvent(
 test("28 — eager composer uploads before Send and reuses handles after refusal", async ({
   page,
 }, testInfo) => {
+  // This journey drives five files through begin → upload → complete, and the
+  // deployed profile's default attempt budget is 120 s. Measured on staging
+  // (release-gate run 35242868705, browser shard 3): one `POST /attachments`
+  // takes 2.67-6.80 s and one `POST .../complete` takes 3.43-10.14 s, so the
+  // round trips alone spend more than that budget. Declare the real cost here,
+  // the way 10-billing and 13-sdk-only do, instead of trimming the assertions.
+  test.setTimeout(240_000);
   const env = loadEnv();
   const email = `e2e-eager-attachments-${randomUUID()}@example.test`;
   const user = await createAuthUser(email, authOptions);
@@ -92,10 +99,10 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
   const events: NetworkEvent[] = [];
   let uploadRequests = 0;
   let failUploads = false;
-  // The next upload request waits at the gate until the test releases it.
-  type UploadHold = { observed: Promise<void>; gate: Promise<void>; observe: () => void; release: () => void };
-  let hold: UploadHold | undefined;
-  const holdNextUpload = (): UploadHold => {
+  // A request the route handler parks until the test releases it: `observed`
+  // settles when it arrives, `gate` when the test lets it through.
+  type RequestHold = { observed: Promise<void>; gate: Promise<void>; observe: () => void; release: () => void };
+  const makeHold = (): RequestHold => {
     let observe = () => {};
     let release = () => {};
     const observed = new Promise<void>((resolve) => {
@@ -104,9 +111,16 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    hold = { observed, gate, observe: () => observe(), release: () => release() };
+    return { observed, gate, observe: () => observe(), release: () => release() };
+  };
+  let hold: RequestHold | undefined;
+  const holdNextUpload = (): RequestHold => {
+    hold = makeHold();
     return hold;
   };
+  // The refused create below is held the same way, so the composer's in-flight
+  // surface can be asserted while the request is still open.
+  let createHold: RequestHold | undefined;
   let failFirstSend = true;
   // Refuses the session create that a Send with a held upload makes at once.
   // A deployed target would accept it and navigate away; a refusal keeps the
@@ -261,6 +275,12 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
         path === `/v1/projects/${project.id}/sessions`
       ) {
         failHeldCreate = false;
+        if (createHold) {
+          const current = createHold;
+          createHold = undefined;
+          current.observe();
+          await current.gate;
+        }
         await route.fulfill({
           status: 500,
           contentType: "application/json",
@@ -347,7 +367,12 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     const retryUpload = page.getByRole("button", {
       name: "Retry upload of retry.txt",
     });
-    await expect(retryUpload).toBeVisible({ timeout: 10_000 });
+    // Reaching the failed state costs TWO server round trips, not one: the
+    // begin, the refused PUT, then a re-sign begin for the same attachment and
+    // its refused PUT. Measured on staging that chain took 10.35 s, so the
+    // 10 s override this assertion used to carry could not pass there. Inherit
+    // the profile's own element budget (45 s deployed, 30 s local) instead.
+    await expect(retryUpload).toBeVisible();
     // A failed attachment refuses Send, and the control says why.
     await expect(send).toBeDisabled();
     await expect(send).toHaveAttribute(
@@ -364,6 +389,15 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
       bytes: Array.from(Buffer.from("drop bytes")),
     });
     await expect(page.getByText("drop.txt", { exact: true })).toBeVisible();
+    // This case removes a READY attachment, so wait for its upload to settle.
+    // The tile is drawn from the local File before its begin answers, and Remove
+    // deletes by attachment id: click it inside that window and the id does not
+    // exist yet. Removing DURING the upload is the remove-me.txt case below;
+    // removing before the id is known is covered by the SDK's own tests
+    // (packages/sdk/src/core/attachments/prompt-attachments.test.ts).
+    await expect(
+      page.locator('li > div[aria-busy="true"]:has([title="drop.txt"])'),
+    ).toHaveCount(0, { timeout: 60_000 });
 
     const deleteDrop = page.waitForResponse(
       (response) =>
@@ -425,15 +459,33 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     // no prompt, because the held upload has no handle yet.
     await expect(send).toBeEnabled();
     failHeldCreate = true;
+    createHold = makeHold();
+    const heldCreateHold = createHold;
     const heldCreate = page.waitForRequest(
       (request) =>
         request.method() === "POST" &&
         pathname(request) === `/v1/projects/${project.id}/sessions`,
     );
     await input.press("Enter");
+
+    // The create is parked open below, so everything asserted here is the
+    // surface the user sees while the round trip runs. Project home paints no
+    // bubble and no "Thinking" row on send: the page stays the welcome screen,
+    // the sentence stays in the composer, and the instant shell draws the
+    // first turn only once the session route opens. A turn painted here made
+    // a slow or stuck create look like a live session.
+    await heldCreateHold.observed;
+    const optimisticTurn = page.locator("[data-turn-id='optimistic']");
+    await expect(optimisticTurn).toHaveCount(0);
+    await expect(input).toHaveText("Eager attachment first prompt");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    heldCreateHold.release();
+
     expect(attachmentIds((await heldCreate).postDataJSON())).toEqual([]);
     expect(promptBodies).toHaveLength(0);
     // The injected create refusal keeps the draft and returns every upload.
+    // NOTHING was created and nothing navigated, so no turn is on screen.
+    await expect(optimisticTurn).toHaveCount(0, { timeout: 10_000 });
     await expect(input).toHaveText("Eager attachment first prompt", {
       timeout: 10_000,
     });

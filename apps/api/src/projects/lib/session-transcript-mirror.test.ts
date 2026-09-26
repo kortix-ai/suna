@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  capturedPageGate,
+  captureScope,
   MIRROR_CAPTURE_LIMIT,
   MIRROR_MAX_MESSAGE_CHARS,
   MIRROR_MAX_PART_CHARS,
@@ -50,6 +52,120 @@ describe('sanitizeParts', () => {
       callID: 'call_1',
       state: { status: 'completed', title: 'ls', time: { start: 1, end: 2 } },
     });
+  });
+
+  test('a show card keeps the input it is DRAWN from — and still loses its output', () => {
+    // The SDK's `isEmptyShowPart` drops a completed show whose input is empty,
+    // so stripping it made every result an agent had shown vanish from the
+    // saved transcript while the sandbox was off.
+    const [part] = sanitizeParts([
+      {
+        id: 'prt_show',
+        type: 'tool',
+        tool: 'show',
+        callID: 'call_show',
+        state: {
+          status: 'completed',
+          title: 'Revenue chart',
+          time: { start: 1, end: 2 },
+          input: {
+            type: 'image',
+            title: 'Revenue chart',
+            description: 'Q3 by region',
+            path: '/workspace/out/revenue.png',
+            aspect_ratio: '16:9',
+            metadata: { unbounded: 'A'.repeat(10_000) },
+          },
+          output: 'A'.repeat(100_000),
+        },
+      },
+    ]);
+    expect(part.state).toEqual({
+      status: 'completed',
+      title: 'Revenue chart',
+      time: { start: 1, end: 2 },
+      input: {
+        type: 'image',
+        title: 'Revenue chart',
+        description: 'Q3 by region',
+        path: '/workspace/out/revenue.png',
+        aspect_ratio: '16:9',
+      },
+    });
+  });
+
+  test('every spelling the SDK treats as show keeps its input', () => {
+    for (const tool of ['show', 'show_user', 'oc-show', 'show-user']) {
+      const [part] = sanitizeParts([
+        { id: 'p', type: 'tool', tool, state: { status: 'completed', input: { url: 'https://x.test' } } },
+      ]);
+      expect((part.state as { input?: unknown }).input).toEqual({ url: 'https://x.test' });
+    }
+  });
+
+  test('a show input never smuggles a data: URL past the 7-19 MB guard', () => {
+    const bytes = `data:image/png;base64,${'A'.repeat(5_000)}`;
+    const [part] = sanitizeParts([
+      {
+        id: 'p',
+        type: 'tool',
+        tool: 'show',
+        state: {
+          status: 'completed',
+          input: {
+            type: 'image',
+            title: 'kept',
+            url: bytes,
+            content: bytes,
+            // `items` as the JSON STRING the model often sends: stored verbatim
+            // it would carry the bytes past every check on the top-level fields.
+            items: JSON.stringify([{ type: 'image', url: bytes }, { type: 'image', path: '/workspace/a.png' }]),
+          },
+        },
+      },
+    ]);
+    const input = (part.state as { input: Record<string, unknown> }).input;
+    expect(JSON.stringify(input)).not.toContain('base64');
+    expect(input).toEqual({
+      type: 'image',
+      title: 'kept',
+      items: [{ type: 'image' }, { type: 'image', path: '/workspace/a.png' }],
+    });
+  });
+
+  test('show content spends the same per-message budget as text', () => {
+    const [text, show] = sanitizeParts([
+      { id: 'a', type: 'text', text: 'A'.repeat(MIRROR_MAX_PART_CHARS) },
+      {
+        id: 'b',
+        type: 'tool',
+        tool: 'show',
+        state: { status: 'completed', input: { type: 'markdown', content: 'B'.repeat(MIRROR_MAX_PART_CHARS * 10) } },
+      },
+    ]);
+    expect((text.text as string).length).toBe(MIRROR_MAX_PART_CHARS);
+    const content = (show.state as { input: { content: string } }).input.content;
+    expect(content.length).toBe(MIRROR_MAX_PART_CHARS);
+  });
+
+  test('a reference that would have to be cut is dropped, never truncated', () => {
+    // A truncated path or URL points somewhere WRONG; an absent one is honest.
+    const [part] = sanitizeParts([
+      {
+        id: 'p',
+        type: 'tool',
+        tool: 'show',
+        state: { status: 'completed', input: { title: 't', path: `/workspace/${'x'.repeat(5_000)}` } },
+      },
+    ]);
+    expect((part.state as { input: Record<string, unknown> }).input).toEqual({ title: 't' });
+  });
+
+  test('a show with nothing drawable keeps no empty input object', () => {
+    const [part] = sanitizeParts([
+      { id: 'p', type: 'tool', tool: 'show', state: { status: 'completed', input: { items: 'not json' } } },
+    ]);
+    expect('input' in (part.state as object)).toBe(false);
   });
 
   test('a text part survives intact — it is the transcript', () => {
@@ -167,5 +283,116 @@ describe('headCompleteAfterCapture', () => {
         previous: true,
       }),
     ).toBe(true);
+  });
+});
+
+test('mirror retains bounded private attachment references and strips all other file URLs', () => {
+  const url = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+  expect(sanitizeParts([{ type: 'file', url }])).toEqual([{ type: 'file', url }]);
+  for (const value of ['https://example.test/secret', 'data:text/plain;base64,YQ==', `${url}?token=secret`]) {
+    expect(sanitizeParts([{ type: 'file', url: value }])).toEqual([{ type: 'file' }]);
+  }
+});
+
+describe('what one capture reads, and what it is allowed to prune', () => {
+  test('a turn end on a flagged project reads the whole history', () => {
+    expect(captureScope({ flagEnabled: true, everRetained: true })).toEqual({
+      fullHistory: true,
+      retainHistory: true,
+    });
+  });
+
+  test('stop asks for a tail, however the project is flagged', () => {
+    // Stop AWAITS this read before powering the box off, and a full-history
+    // read is a 60s pagination with three retries. The full copy is already
+    // maintained at every turn end; the only gap a stop can close is the turn
+    // that just ended, which one bounded page covers.
+    expect(captureScope({ flagEnabled: true, everRetained: true, requested: 'tail' })).toEqual({
+      fullHistory: false,
+      retainHistory: true,
+    });
+  });
+
+  test('a forced tail must NOT re-enable pruning on a retained project', () => {
+    // The trap: derive `retainHistory` from `fullHistory` and a single Stop
+    // prunes a retained history down to MIRROR_MAX_MESSAGES — the feature
+    // deletes the very thing it exists to keep.
+    expect(
+      captureScope({ flagEnabled: false, everRetained: true, requested: 'tail' }).retainHistory,
+    ).toBe(true);
+  });
+
+  test('an unflagged project that never retained still prunes', () => {
+    expect(captureScope({ flagEnabled: false, everRetained: false })).toEqual({
+      fullHistory: false,
+      retainHistory: false,
+    });
+  });
+});
+
+describe('when a walk may stop at history it already holds', () => {
+  const stored = (entries: Array<[string, number | null]>) => new Map(entries);
+  const page = (ids: Array<[string, number | null]>) =>
+    ids.map(([id, completed]) => ({
+      info: { id, time: completed === null ? {} : { created: completed - 1, completed } },
+    }));
+
+  test('a mirror that never reached the head may not stop', () => {
+    // Otherwise it catches up on the same page forever and the session's first
+    // message is never captured.
+    expect(
+      capturedPageGate({
+        fullHistory: true,
+        headComplete: false,
+        completedById: stored([['m1', 10]]),
+      }),
+    ).toBeUndefined();
+  });
+
+  test('a bounded tail read may not stop early either', () => {
+    expect(
+      capturedPageGate({ fullHistory: false, headComplete: true, completedById: stored([]) }),
+    ).toBeUndefined();
+  });
+
+  test('a page whose every message is stored and completed stops the walk', () => {
+    const gate = capturedPageGate({
+      fullHistory: true,
+      headComplete: true,
+      completedById: stored([
+        ['m1', 10],
+        ['m2', 20],
+      ]),
+    })!;
+    expect(gate(page([['m1', 10], ['m2', 20]]))).toBe(true);
+  });
+
+  test('one unseen message keeps the walk going', () => {
+    const gate = capturedPageGate({
+      fullHistory: true,
+      headComplete: true,
+      completedById: stored([['m1', 10]]),
+    })!;
+    expect(gate(page([['m1', 10], ['m_new', 20]]))).toBe(false);
+  });
+
+  test('a message whose completion time moved is not the one we stored', () => {
+    const gate = capturedPageGate({
+      fullHistory: true,
+      headComplete: true,
+      completedById: stored([['m1', 10]]),
+    })!;
+    expect(gate(page([['m1', 11]]))).toBe(false);
+  });
+
+  test('an uncompleted message is never evidence, stored or not', () => {
+    // It can still grow. Stopping on it would freeze a turn mid-flight into
+    // the mirror and never look at it again.
+    const gate = capturedPageGate({
+      fullHistory: true,
+      headComplete: true,
+      completedById: stored([['m1', null]]),
+    })!;
+    expect(gate(page([['m1', null]]))).toBe(false);
   });
 });

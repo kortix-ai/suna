@@ -3,6 +3,7 @@ import { configureKortix } from '../../http/config';
 import {
   createAccountSecretResource, deleteAccountSecretResource, grantAccountSecretResource,
   listAccountSecretResources, revokeAccountSecretResourceGrant, rotateAccountSecretResource,
+  setAccountSecretResourceAccess,
   getSessionProviderSecretPool, setSessionProviderSecretPool,
   listSessionProviderSecretPools,
 } from './account-secret-resources';
@@ -44,6 +45,22 @@ test('session pool preserves inherited, empty, and selected states', async () =>
   expect(calls.slice(1).map((call) => call.body)).toEqual([
     { secret_ids: [] }, { secret_ids: ['secret-a', 'secret-b'] }, { secret_ids: null },
   ]);
+});
+
+test('project access and member restriction use one scoped request', async () => {
+  await listAccountSecretResources('account', 'project');
+  await createAccountSecretResource('account', {
+    project_id: 'project', label: 'Primary', provider_id: 'anthropic', name: 'ANTHROPIC_API_KEY',
+    value: 'key', consumer: 'llm_gateway', strategy: 'broker',
+  });
+  await setAccountSecretResourceAccess('account', 'secret', 'members', ['member']);
+  expect(calls.map((call) => [call.method, call.url])).toEqual([
+    ['GET', 'http://test.local/accounts/account/secret-resources?project_id=project'],
+    ['POST', 'http://test.local/accounts/account/secret-resources'],
+    ['PUT', 'http://test.local/accounts/account/secret-resources/secret/access'],
+  ]);
+  expect(calls[1]?.body).toMatchObject({ project_id: 'project' });
+  expect(calls[2]?.body).toEqual({ mode: 'members', user_ids: ['member'] });
 });
 
 test('list preserves an empty configured pool after its last resource disappears', async () => {

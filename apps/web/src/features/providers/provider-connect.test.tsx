@@ -496,7 +496,8 @@ describe('ProviderConnectView — pooled provider keys', () => {
       })} />,
     );
     expect(out).toContain('Add another Anthropic key');
-    expect(out).toContain('select it per session');
+    // New connections are owner-only until shared (default since 2026-09-21).
+    expect(out).toContain('New ones are private to you until you share them');
     expect(out).not.toContain('Paste your Anthropic API key');
     expect(out).not.toContain('it saves when you click away');
   });

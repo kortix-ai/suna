@@ -1,5 +1,6 @@
 import type { SessionSourceKind } from '@/components/projects/session-label';
 import { Email } from '@/features/icon/icons/email';
+import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Schedule } from '@/features/icon/icons/schedule';
 import { Slack } from '@/features/icon/icons/slack';
 import { Telegram } from '@/features/icon/icons/telegram';
@@ -26,6 +27,7 @@ export const SOURCE_ICONS: Record<
 > = {
   slack: Slack,
   telegram: Telegram,
+  teams: MicrosoftTeams,
   email: Email,
   schedule: Schedule,
   webhook: WebhooksLogoIcon,

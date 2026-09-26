@@ -255,6 +255,18 @@ mock.module('../snapshots/builder', () => ({
 }));
 
 mock.module('../projects/github', () => ({
+  // provision-core.ts classifies rate-limited repo creates with this class.
+  GitHubApiError: class GitHubApiError extends Error {
+    constructor(
+      message: string,
+      readonly status: number,
+      readonly path: string,
+      readonly retryAfterSeconds?: number,
+    ) {
+      super(message);
+      this.name = 'GitHubApiError';
+    }
+  },
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
   verifyGitHubAppInstallState: (state: string) =>
     state === 'valid-install-state' ? ACCOUNT_ID : null,
@@ -310,6 +322,8 @@ mock.module('../projects/github', () => ({
     expect(token).toBe('github-user-token');
     return { login: 'github-admin' };
   },
+  // github-installations.ts maps a failed verification to a status through this export.
+  githubVerificationStatus: () => 403 as const,
   getRepo: async (input: any) => ({
     id: input.owner === 'acme' ? 84 : 7,
     name: input.repo,

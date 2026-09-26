@@ -1,0 +1,368 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type {
+  HarnessDiagnosticsContext,
+  HarnessDiagnosticsService,
+  HarnessDiagnosticReport,
+  HarnessHealthQuery,
+  HarnessHealthReport,
+} from '../diagnostics'
+import { requireOpenCodeConfig } from './config'
+import { OPENCODE_HOME } from './paths'
+import { projectOpenCodeResourceSnapshot } from './resource-diagnostics'
+import { daemonLogFilePath } from '../../logger'
+import { tailFile } from '../../log-tail'
+
+import { configReleaseReport, runningSourceCommit } from './config-release'
+import type { Config } from '../../config'
+import { readRepoInfo } from '../../git'
+import { runtimeConvergenceReport } from '../../runtime-assets'
+import type { Opencode } from './lifecycle'
+import {
+  type OpencodeDeliveryObservation,
+  inspectOpencodeRoot,
+  observeOpencodeDelivery,
+  opencodeSessionInFlight,
+} from './opencode-turn-state'
+import { readOpenCodeSessionPin } from './runtime-state'
+
+import type { OpenCodeBootState } from './boot-state'
+
+export function opencodeLogFilePath(home: string): string {
+  return join(home, '.local', 'share', 'opencode', 'log', 'opencode.log')
+}
+
+/**
+ * The branch this VM's session is supposed to be on, read from the host-
+ * written env file rather than process.env: warm-seed forks resume a process
+ * whose env predates the session (adoption reloads it ~250ms later), but
+ * /etc/pt-env carries the session's KORTIX_BRANCH_NAME from the instant the
+ * VM exists — so the readiness gate below is correct even pre-adoption.
+ * Empty when this VM is a seed builder (no session) → gate inert.
+ */
+function wantedSessionBranch(): string {
+  try {
+    const m = readFileSync('/etc/pt-env', 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+    if (m?.[1]) return m[1]
+  } catch { /* no env file (local dev) */ }
+  return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
+}
+
+/**
+ * Whether THIS sandbox's session expects a repo — from the host-written env
+ * file, NOT the frozen process env. A warm-snapshot fork resumes a daemon
+ * whose process booted as a repo-less warm seed (autoClone unset), so
+ * cfg.autoClone said "no repo required" and health reported ready ~100ms
+ * after fork while adoption was still fetching the repo — the frontend then
+ * stormed a mid-adoption runtime and stuck (caught live 2026-06-12, second
+ * variant of the same class as wantedSessionBranch).
+ */
+function sessionWantsRepo(cfgAutoClone: boolean): boolean {
+  if (cfgAutoClone) return true
+  try {
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/pt-env', 'utf8'))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Answer `?turn=1` for the identity the caller asked about.
+ *
+ * Only the message-scoped read can attribute an ending to ONE turn. The
+ * root-scoped fallback (older daemons' callers, command turns with no message
+ * id) answers about the whole root, so it names no reason rather than lend one
+ * turn's outcome to another.
+ */
+export async function observeRequestedTurn(
+  opencodeUrl: string,
+  workspace: string,
+  identity: { sessionId: string | null; messageId: string | null },
+): Promise<OpencodeDeliveryObservation> {
+  if (identity.sessionId && identity.messageId) {
+    return observeOpencodeDelivery(opencodeUrl, workspace, identity.sessionId, identity.messageId)
+  }
+  const sessionId = identity.sessionId ?? ''
+  const inspection = await inspectOpencodeRoot(opencodeUrl, workspace, sessionId)
+  if (!inspection.known) return { inFlight: null, end: null }
+  if (inspection.turnInFlight)
+    return { inFlight: true, end: null, orphanedPrompt: inspection.orphanedPrompt }
+
+  // The transcript reads terminal — ASK OpenCode before saying so. `abandoned`
+  // routes straight into the inbox's redelivery, and the window between "the
+  // prompt is persisted" and "its assistant message exists" is a normal part of
+  // a LIVE delivery: a root-scoped read taken inside that window sees a prompt
+  // with no answer and used to call it abandoned, re-sending a prompt that was
+  // already executing. `/session/status` closes the window.
+  const busy = await opencodeSessionInFlight(opencodeUrl, workspace, sessionId)
+  if (busy === null) return { inFlight: null, end: null }
+  if (busy) return { inFlight: true, end: null, orphanedPrompt: inspection.orphanedPrompt }
+  return {
+    inFlight: false,
+    // The ONE ending a root-scoped read can prove without lending another
+    // turn's outcome to this one: the root's newest prompt has no assistant
+    // message answering it. `abandoned` is already in the control plane's
+    // DAEMON_REPORTABLE_END_REASONS, and it is what triggers redelivery.
+    end: inspection.orphanedPrompt ? 'abandoned' : null,
+    orphanedPrompt: inspection.orphanedPrompt,
+  }
+}
+
+export function resolveTurnObservationIdentity(
+  requestedSession: string | undefined,
+  requestedMessage: string | undefined,
+  pinnedSession: string | null,
+): { sessionId: string | null; messageId: string | null } {
+  return {
+    sessionId: requestedSession || pinnedSession,
+    messageId: requestedMessage || null,
+  }
+}
+
+/**
+ * OpenCode health data, including the existing compatibility fields.
+ *
+ * Shape:
+ *   {
+ *     daemon: 'ok',
+ *     status: 'ok' | 'starting' | 'down' | 'error',
+ *     runtimeReady: boolean,
+ *     opencode: 'ok' | 'starting' | 'down',
+ *     uptime_s: number,
+ *     opencode_pid: number | null,
+ *     static_web_port: number | null,  // bound static-web port, null if down
+ *     repo: string | null,    // remote URL of the materialized repo, if any
+ *     branch: string | null,
+ *     commit_sha: string | null,
+ *     agent_config_etag: string | null
+ *   }
+ *
+ * Native readiness is separate from the controller's daemon liveness status.
+ */
+async function readOpenCodeHealth(
+  cfg: Config,
+  opencode: Opencode,
+  bootTime: number,
+  bootState: OpenCodeBootState,
+  staticWebPort: number | null,
+  query: HarnessHealthQuery,
+): Promise<HarnessHealthReport> {
+  const repoInfo = await readRepoInfo(cfg.projectTarget).catch(() => null)
+  const opencodeState = opencode.getState()
+  const repoRequired = sessionWantsRepo(cfg.autoClone)
+  // A repo on disk isn't ready until it's on the SESSION branch: the clone
+  // path renames the repo into place BEFORE the branch checkout (which can
+  // wait seconds on a remote-branch fetch), and warm-seed forks resume on
+  // the seed's default branch until adoption re-checks-out. Without the
+  // branch gate, runtimeReady=true had a window where a prompt would land
+  // on the default branch (observed live: `main` at ready, session branch
+  // +3s). Seed builders have no session branch → gate inert for capture.
+  const wantBranch = repoRequired ? wantedSessionBranch() : ''
+  const repoReady =
+    !repoRequired || (repoInfo !== null && (!wantBranch || repoInfo.branch === wantBranch))
+  const initialSessionReady =
+    !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
+  const initialSessionError = bootState.initialOpenCodeSessionError ?? null
+  const auditRelayError = bootState.auditRelayError ?? null
+  // PLAN-one-boot-path C3: a box is never reportable as ready unless it runs a
+  // PROVEN config. `opencodeState === 'ok'` is not that proof — its liveness
+  // probe only asks whether the session API answers, so a config whose tools or
+  // plugins never registered still reads as 'ok'. The proof
+  // (`proven-check.ts`) is what checked them, and the boot path writes its
+  // verdict here before it opens the gate. Off the release path (config
+  // releases disabled) the boot path states `proven: true` for the checkout it
+  // pointed OpenCode at, so this term is inert there.
+  const configReport = configReleaseReport()
+  const configProven = configReport.proven
+  const runtimeReady =
+    repoReady &&
+    !bootState.repoMaterializationError &&
+    !initialSessionError &&
+    !auditRelayError &&
+    opencodeState === 'ok' &&
+    configProven &&
+    initialSessionReady
+  const status = runtimeReady
+    ? 'ok'
+    : bootState.repoMaterializationError || initialSessionError || auditRelayError
+      ? 'error'
+      : opencodeState
+
+  const observedTurn = resolveTurnObservationIdentity(
+    query.turn?.sessionId,
+    query.turn?.messageId,
+    readOpenCodeSessionPin(),
+  )
+  const turn =
+    query.turn !== undefined
+      ? await observeRequestedTurn(
+          opencode.getInternalUrl(),
+          process.env.KORTIX_WORKSPACE || '/workspace',
+          observedTurn,
+        )
+      : undefined
+
+  return {
+    daemon: 'ok',
+    status,
+    runtimeReady,
+    // Which boot path this daemon took. An agent binary that predates
+    // monitor mode omits the field entirely, which is exactly what the
+    // monitor-box reconciler uses to detect a stale-agent box and recreate
+    // it (a box whose env says KORTIX_WORKLOAD=monitor but whose daemon
+    // booted the session path can never run monitors).
+    workload: process.env.KORTIX_WORKLOAD === 'monitor' ? 'monitor' : 'session',
+    opencode: opencodeState,
+    uptime_s: Math.floor((Date.now() - bootTime) / 1000),
+    opencode_pid: opencode.getPid(),
+    // The port opencode is listening on right now. It ALTERNATES: a verified
+    // reload boots the replacement on the idle half of the port pair and
+    // promotes it. The API's PTY proxy has to reach opencode directly (the
+    // daemon cannot carry a WebSocket) and previously hardcoded 4096, which
+    // becomes the dead half after one reload.
+    opencode_port: opencode.getActivePort(),
+    // Static web server (preview/static files). The bound port when up, else
+    // null — surfaces "preview won't load because static-web never bound".
+    static_web_port: staticWebPort,
+    repo_required: repoRequired,
+    repo_ready: repoReady,
+    repo: repoInfo?.remoteUrl ?? null,
+    branch: repoInfo?.branch ?? null,
+    commit_sha: repoInfo?.commit ?? null,
+    compiled_boot_mode: cfg.compiledBootMode,
+    compiled_runtime:
+      process.env.KORTIX_COMPILED_RUNTIME_FORMAT === 'kortix.compiled-runtime.v1',
+    compiled_runtime_format: process.env.KORTIX_COMPILED_RUNTIME_FORMAT || null,
+    compiled_runtime_source_sha: process.env.KORTIX_COMPILED_RUNTIME_SOURCE_SHA || null,
+    compiled_checkout: existsSync(
+      join(cfg.projectTarget, '.git', 'kortix-compiled-checkout.json'),
+    ),
+    // The content hash of the compiled agent config THIS opencode spawned
+    // with. Not derivable from commit_sha: a warm-workspace refresh advances
+    // the commit while deliberately skipping the restart, so a box can report
+    // the newest commit and still be running config compiled days ago. Read
+    // from the live process env, so it tracks a hot push as well as a boot.
+    agent_config_etag: process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
+    // Which config release OpenCode runs, which one the API wants, and why they
+    // differ (docs/specs/config-releases.md, "Health").
+    // The SAME read `runtimeReady` was computed from, so no health sample can
+    // ever show `runtimeReady: true` beside a `config` block that disagrees.
+    config: configReport,
+    // The running release's source commit, for API readers that predate
+    // `config`; null off the release path. Remove one release after every API
+    // reads `config`.
+    config_dir_sha: runningSourceCommit(),
+    // What this box last converged its own runtime to. Auto-update without
+    // reporting only moves the uncertainty — this makes "is the fleet
+    // current?" a query instead of a hope, and it is the signal that tells us
+    // a fleet-drain gate has actually cleared. `pinned: true` means an update
+    // crash-looped and the supervisor latched it off: that box will not
+    // self-heal and needs a human.
+    runtime: await runtimeConvergenceReport(),
+    // Opt-in (`?turn=1`) because it costs a call into opencode, and health is
+    // polled as a liveness check every few seconds on every idle box. Two
+    // callers ask: the reload gate, which must not restart the runtime out
+    // from under a running turn, and the control plane's reaper, which
+    // repairs turn authority a lost relay left behind.
+    ...(turn
+      ? {
+          turn_in_flight: turn.inFlight,
+          // WHY it is not in flight, when the message list proves it:
+          // 'completed' | 'failed' | 'abandoned', else null. The control
+          // plane writes this straight into session_turns.end_reason — it
+          // cannot derive it, because only this process holds the messages.
+          turn_end: turn.end,
+          // "A prompt is on record with nothing answering it." Reported
+          // separately from `turn_end` because it is evidence about the
+          // PROMPT, not about the turn: the control plane redelivers on it.
+          turn_orphaned_prompt: turn.orphanedPrompt ?? false,
+        }
+      : {}),
+    boot_error: bootState.repoMaterializationError ?? initialSessionError ?? auditRelayError,
+    opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
+    opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
+    // Which config provider delivered the project this boot (git | s3), the
+    // expected vs actual SHA, and — when S3 was attempted and Git delivered
+    // instead — the classified reason. A successful fallback keeps the S3
+    // failure visible here; the same facts go to the boot timeline relay.
+    config_provider: bootState.configProvider ?? null,
+    // In-container boot timeline (ms since process start) so the dashboard can
+    // attribute the post-create boot latency (clone vs opencode vs proxy).
+    boot_timeline: bootState.timeline,
+    // Visible auth posture so misconfiguration doesn't silently downgrade.
+    auth: cfg.sandboxToken ? 'configured' : 'unconfigured',
+  }
+}
+
+async function readOpenCodeDiagnosticReport(
+  opencode: Opencode,
+  home: string,
+  context: HarnessDiagnosticsContext,
+  tail: number,
+): Promise<HarnessDiagnosticReport> {
+  const cfg = requireOpenCodeConfig(context.cfg)
+  const bootState: OpenCodeBootState = context.bootState
+  const monitor = context.resources()
+  const [resourcesNow, runtime] = await Promise.all([
+    monitor ? monitor.tick('diag').catch(() => null) : Promise.resolve(null),
+    runtimeConvergenceReport().catch((err) => ({ error: err instanceof Error ? err.message : String(err) })),
+  ])
+  const daemonLog = daemonLogFilePath()
+  const opencodeLog = opencodeLogFilePath(home)
+
+  return {
+    at: new Date().toISOString(),
+    daemon: {
+      pid: process.pid,
+      bun: typeof Bun !== 'undefined' ? Bun.version : null,
+      uptime_s: Math.floor((Date.now() - context.bootTime) / 1000),
+      workspace: cfg.workspace,
+      service_port: cfg.servicePort,
+      daemon_log_file: daemonLog,
+    },
+    opencode: {
+      state: opencode.getState(),
+      pid: opencode.getPid(),
+      port: opencode.getActivePort(),
+      internal_url: opencode.getInternalUrl(),
+      binary: opencode.getBinaryPath(),
+      port_pair: [cfg.opencodeInternalPort, cfg.opencodeStandbyPort],
+      session_id: bootState.initialOpenCodeSessionId ?? null,
+      log_file: opencodeLog,
+    },
+    boot: {
+      repo_materialization_error: bootState.repoMaterializationError,
+      initial_session_error: bootState.initialOpenCodeSessionError ?? null,
+      timeline: bootState.timeline,
+    },
+    resources: projectOpenCodeResourceSnapshot(resourcesNow),
+    resources_previous: projectOpenCodeResourceSnapshot(monitor?.latest() ?? null),
+    runtime,
+    logs: {
+      tail,
+      daemon: daemonLog ? tailFile(daemonLog, tail) : null,
+      opencode: tailFile(opencodeLog, tail),
+    },
+  }
+}
+
+export function createOpenCodeDiagnosticsService(
+  opencode: Opencode,
+  home: string = OPENCODE_HOME,
+): HarnessDiagnosticsService {
+  return {
+    health: (context, query) => readOpenCodeHealth(
+      context.cfg, opencode, context.bootTime, context.bootState, context.staticWebPort, query,
+    ),
+    report: (context, tail) => readOpenCodeDiagnosticReport(opencode, home, context, tail),
+    logSources: () => ['daemon', 'opencode'],
+    readLog(source, lines) {
+      if (source !== 'daemon' && source !== 'opencode') throw new Error(`Unknown log source: ${source}`)
+      const path = source === 'daemon' ? daemonLogFilePath() : opencodeLogFilePath(home)
+      return {
+        label: path ?? '(daemon file sink disabled: KORTIX_DAEMON_LOG_FILE=off)',
+        text: path ? tailFile(path, lines) : null,
+      }
+    },
+  }
+}

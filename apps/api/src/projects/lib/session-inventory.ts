@@ -7,6 +7,7 @@ import {
 } from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isWarmProjectSession } from './warm-sessions';
+import { agentSessionStanding } from './agent-session-standing';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
@@ -88,6 +89,19 @@ export function selectSessionRowsForViewer(input: {
   boundCredentialSessionId: string | null;
   grantsBySession: Map<string, SecretGrant[]>;
   runtimeStatusBySession: Map<string, RuntimeStatus>;
+  /**
+   * The caller holds account session oversight (see iam/session-oversight.ts).
+   * Applied to the `project` scope only: that is the manager inventory (the
+   * Sessions page). The default `visible` scope feeds the sidebar, and an admin
+   * must not get every member's private session there.
+   */
+  accountSessionOversight?: boolean;
+  /**
+   * The caller is an agent session under the `agent_principal` model (spec §2).
+   * It lists only its own session, its children, and project-visible sessions —
+   * never the launcher's other private or restricted ones.
+   */
+  agentPrincipal?: boolean;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
   if (input.scope === 'project' && !input.canManageProject) {
     return { authorized: false, items: [] };
@@ -112,9 +126,16 @@ export function selectSessionRowsForViewer(input: {
         callerSessionId: input.callerSessionId,
         boundCredentialSessionId: input.boundCredentialSessionId,
       },
-      { metadata: row.metadata, canManageProject: input.canManageProject },
+      {
+        metadata: row.metadata,
+        canManageProject: input.canManageProject,
+        accountSessionOversight: input.scope === 'project' && input.accountSessionOversight === true,
+      },
     );
-    return { row, canAccess, runtimeStatus, deletedAt, deletedBy };
+    const access = input.agentPrincipal
+      ? agentSessionStanding(input.boundCredentialSessionId, row, canAccess).visible
+      : canAccess;
+    return { row, canAccess: access, runtimeStatus, deletedAt, deletedBy };
   });
 
   if (input.scope === 'project') {

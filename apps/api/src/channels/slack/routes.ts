@@ -20,20 +20,64 @@ import {
   resolveOauthProject,
 } from './dispatch';
 import { publishHomeForUser } from './home';
-import { handleBlockAction, handleMessageShortcut } from './interactivity';
+import { handleBlockAction, handleMessageShortcut, handleViewSubmission } from './interactivity';
 import { handleSlashCommand } from './commands';
+import { CANONICAL_SLACK_INBOUND, inboundProjectId, scopeProjectSlackRequest, type SlackInbound } from './inbound';
 import type { SlackInteractionPayload, SlashResponse } from './types';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 // ── Shared slash + interactivity processing ───────────────────────────────────
-// The canonical OAuth app and per-project (BYO) apps run the SAME logic — they
-// differ ONLY in which signing secret verifies the request. Each route does its
-// own signature check, then hands the verified raw body to these.
+// The canonical OAuth app and per-project (BYO) apps run the SAME logic. They
+// differ in which signing secret verifies the request, and so in what the
+// request may reach (see `SlackInbound`). Each route does its own signature
+// check, then hands the verified raw body and its inbound scope to these.
+
+const WORKSPACE_MISMATCH = { error: 'This Slack workspace is not connected to this project' };
+
+/**
+ * Verify a per-project (BYO) request: the project's own signing secret, then
+ * the workspace the install proved. Returns the inbound scope, or the refusal.
+ */
+async function verifyProjectSlackRequest(
+  c: any,
+  projectId: string,
+  rawBody: string,
+  bodyTeamId: string | null | undefined,
+): Promise<{ inbound: SlackInbound } | { refusal: Response }> {
+  const signingSecret = await loadSlackSigningSecretForProject(projectId);
+  if (!signingSecret) return { refusal: c.json({ error: 'Not configured' }, 404) };
+  const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
+  const signature = c.req.header('x-slack-signature') ?? '';
+  if (!verifySlackSignature(rawBody, timestamp, signature, signingSecret)) {
+    return { refusal: c.json({ error: 'Invalid signature' }, 401) };
+  }
+  // The project admin chose the signing secret, so the body's workspace id is
+  // only as trustworthy as that admin. Accept it only when it is a workspace
+  // the install's bot token proved.
+  const inbound = await scopeProjectSlackRequest(projectId, bodyTeamId);
+  if (!inbound) return { refusal: c.json(WORKSPACE_MISMATCH, 403) };
+  return { inbound };
+}
+
+function interactionPayload(rawBody: string): SlackInteractionPayload | null {
+  const payloadRaw = new URLSearchParams(rawBody).get('payload');
+  if (!payloadRaw) return null;
+  try {
+    return JSON.parse(payloadRaw) as SlackInteractionPayload;
+  } catch {
+    return null;
+  }
+}
 
 /** Parse a slash-command form body and run it → the Slack response object. */
-async function runSlashCommandBody(rawBody: string, projectScopedProjectId?: string): Promise<SlashResponse> {
+async function runSlashCommandBody(
+  rawBody: string,
+  inbound: SlackInbound = CANONICAL_SLACK_INBOUND,
+): Promise<SlashResponse> {
   const params = new URLSearchParams(rawBody);
   const text = (params.get('text') ?? '').trim();
-  const teamId = params.get('team_id') ?? '';
+  const teamId = inbound.kind === 'project' ? inbound.teamId : params.get('team_id') ?? '';
+  const projectScopedProjectId = inboundProjectId(inbound);
   const channelId = params.get('channel_id') ?? '';
   const slackUserId = params.get('user_id') ?? '';
   const command = params.get('command') || '/kortix';
@@ -61,25 +105,36 @@ async function runSlashCommandBody(rawBody: string, projectScopedProjectId?: str
   }
 }
 
-/** Parse an interactivity form body and fire the right handler (best-effort). */
-function runInteractivityBody(rawBody: string): void {
-  const payloadRaw = new URLSearchParams(rawBody).get('payload');
-  if (!payloadRaw) return;
-  let payload: SlackInteractionPayload;
-  try {
-    payload = JSON.parse(payloadRaw) as SlackInteractionPayload;
-  } catch {
-    return;
-  }
+/**
+ * Parse an interactivity form body and fire the right handler (best-effort).
+ *
+ * Returns the payload type, because the ACK Slack expects differs by it. For a
+ * `view_submission` the 200 body is read as a `response_action`: anything that
+ * is not one — `{"ok":true"}` included — shows the reviewer an error instead of
+ * closing the modal. An empty body is the "accepted, close it" answer.
+ */
+function runInteractivityBody(
+  rawBody: string,
+  inbound: SlackInbound = CANONICAL_SLACK_INBOUND,
+): string | null {
+  const payload = interactionPayload(rawBody);
+  if (!payload) return null;
   if (payload.type === 'block_actions') {
-    void handleBlockAction(payload).catch((err) =>
+    void handleBlockAction(payload, inbound).catch((err) =>
       console.error('[slack-webhook] block action failed', err),
     );
   } else if (payload.type === 'message_action') {
-    void handleMessageShortcut(payload).catch((err) =>
+    void handleMessageShortcut(payload, inbound).catch((err) =>
       console.error('[slack-webhook] message shortcut failed', err),
     );
+  } else if (payload.type === 'view_submission') {
+    // Without this the "Request changes" modal's Send button closes the view
+    // and drops the reviewer's note on the floor.
+    void handleViewSubmission(payload, inbound).catch((err) =>
+      console.error('[slack-webhook] view submission failed', err),
+    );
   }
+  return payload.type ?? null;
 }
 
 slackWebhookApp.openapi(
@@ -111,6 +166,7 @@ slackWebhookApp.openapi(
   if (!verifySlackSignature(rawBody, timestamp, signature, mode.signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
+  bindIntegrationPrincipal('slack');
 
   const envelope = parseEnvelope(rawBody);
   if (!envelope) return c.json({ error: 'Invalid JSON' }, 400);
@@ -190,7 +246,10 @@ slackWebhookApp.openapi(
   if (!verifySlackSignature(rawBody, timestamp, signature, mode.signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
-  runInteractivityBody(rawBody);
+  bindIntegrationPrincipal('slack');
+  // An empty body closes a modal; `{ok:true}` would be read as a malformed
+  // `response_action` and show the reviewer an error.
+  if (runInteractivityBody(rawBody) === 'view_submission') return c.body('', 200);
   return c.json({ ok: true });
 },
 );
@@ -222,6 +281,7 @@ slackWebhookApp.openapi(
   if (!verifySlackSignature(rawBody, timestamp, signature, mode.signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
+  bindIntegrationPrincipal('slack');
 
   return c.json(await runSlashCommandBody(rawBody));
 },
@@ -239,7 +299,7 @@ slackWebhookApp.openapi(
     },
     responses: {
       200: json(z.object({ ok: z.boolean().optional(), challenge: z.string().optional() }).passthrough(), 'Accepted'),
-      ...errors(400, 401, 404),
+      ...errors(400, 401, 403, 404),
     },
   }),
   async (c: any) => {
@@ -254,24 +314,20 @@ slackWebhookApp.openapi(
   // every real callback below remains project-secret verified.
   if (envelope.type === 'url_verification') return c.json({ challenge: envelope.challenge });
 
-  const signingSecret = await loadSlackSigningSecretForProject(projectId);
-  if (!signingSecret) return c.json({ error: 'Not configured' }, 404);
-
-  const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
-  const signature = c.req.header('x-slack-signature') ?? '';
-  if (!verifySlackSignature(rawBody, timestamp, signature, signingSecret)) {
-    return c.json({ error: 'Invalid signature' }, 401);
-  }
+  const verified = await verifyProjectSlackRequest(c, projectId, rawBody, envelope.team_id);
+  if ('refusal' in verified) return verified.refusal;
+  const { inbound } = verified;
+  bindIntegrationPrincipal('slack', { projectId });
 
   if (envelope.type !== 'event_callback' || !envelope.event) return c.json({ ok: true });
   if (await alreadyHandled(envelope.event_id)) return c.json({ ok: true });
 
   void (async () => {
-    const teamId = envelope.team_id ?? envelope.event?.team ?? '';
+    const teamId = inbound.kind === 'project' ? inbound.teamId : '';
     if (envelope.event && (await maybeHandleDmCommand(teamId, envelope.event, projectId))) {
       return;
     }
-    await dispatchSlackEvent(projectId, envelope);
+    await dispatchSlackEvent(projectId, envelope, { ownThreadsOnly: true });
   })().catch((err) => console.error('[slack-webhook] byo handler failed', err));
   return c.json({ ok: true });
 },
@@ -292,20 +348,17 @@ slackWebhookApp.openapi(
     },
     responses: {
       200: json(z.object({ response_type: z.string().optional(), text: z.string().optional() }).passthrough(), 'Slash command response'),
-      ...errors(401, 404),
+      ...errors(401, 403, 404),
     },
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const rawBody = await c.req.text();
-  const signingSecret = await loadSlackSigningSecretForProject(projectId);
-  if (!signingSecret) return c.json({ error: 'Not configured' }, 404);
-  const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
-  const signature = c.req.header('x-slack-signature') ?? '';
-  if (!verifySlackSignature(rawBody, timestamp, signature, signingSecret)) {
-    return c.json({ error: 'Invalid signature' }, 401);
-  }
-  return c.json(await runSlashCommandBody(rawBody, projectId));
+  const bodyTeamId = new URLSearchParams(rawBody).get('team_id');
+  const verified = await verifyProjectSlackRequest(c, projectId, rawBody, bodyTeamId);
+  if ('refusal' in verified) return verified.refusal;
+  bindIntegrationPrincipal('slack', { projectId });
+  return c.json(await runSlashCommandBody(rawBody, verified.inbound));
 },
 );
 
@@ -324,20 +377,19 @@ slackWebhookApp.openapi(
     },
     responses: {
       200: json(z.object({ ok: z.boolean() }).passthrough(), 'Accepted'),
-      ...errors(401, 404),
+      ...errors(401, 403, 404),
     },
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const rawBody = await c.req.text();
-  const signingSecret = await loadSlackSigningSecretForProject(projectId);
-  if (!signingSecret) return c.json({ error: 'Not configured' }, 404);
-  const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
-  const signature = c.req.header('x-slack-signature') ?? '';
-  if (!verifySlackSignature(rawBody, timestamp, signature, signingSecret)) {
-    return c.json({ error: 'Invalid signature' }, 401);
-  }
-  runInteractivityBody(rawBody);
+  const bodyTeamId = interactionPayload(rawBody)?.team?.id;
+  const verified = await verifyProjectSlackRequest(c, projectId, rawBody, bodyTeamId);
+  if ('refusal' in verified) return verified.refusal;
+  bindIntegrationPrincipal('slack', { projectId });
+  // The project scope travels with the payload: every handler behind this
+  // route stays inside this project and its proven workspace.
+  runInteractivityBody(rawBody, verified.inbound);
   return c.body('', 200);
 },
 );

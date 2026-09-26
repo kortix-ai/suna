@@ -3,7 +3,8 @@
  *
  * Global principals (provisioned once per run): OWNER, NONMEMBER, PAT_ACCT, ANON.
  * Each gets a synthesized Supabase user (service-role admin create+confirm) and a
- * real JWT (password grant). Personal account_id == user_id, created lazily by the
+ * real JWT (password grant) that renews itself before it expires (see
+ * supabase-session.ts). Personal account_id == user_id, created lazily by the
  * API on first token/project call (verified empirically).
  *
  * Team-scoped principals (ADMIN, MEMBER, the M_ project roles, BILLING, AUDITOR,
@@ -16,7 +17,8 @@ import { log } from '../core/log';
 import type { Principal, Principals } from '../core/types';
 import { subscribe } from './billing';
 import { retryBootstrapCreate } from './transient';
-import { adminCreateUser, adminDeleteUser, passwordGrant, type AdminUser } from './supabase';
+import { adminCreateUser, adminDeleteUser, passwordGrantSession, refreshGrant, type AdminUser } from './supabase';
+import { SupabaseSessionAuth } from './supabase-session';
 
 export interface Provisioned {
   principals: Partial<Principals>;
@@ -28,11 +30,12 @@ const PASSWORD = 'Ke2e-passw0rd-Aa1!';
 
 export interface SynthUser {
   user: AdminUser;
-  jwt: string;
+  /** The principal's credential. `session.token` is always the current JWT. */
+  session: SupabaseSessionAuth;
   principal: Principal;
 }
 
-/** Create+confirm a Supabase user and exchange for a JWT. */
+/** Create+confirm a Supabase user and exchange for a self-renewing JWT. */
 export async function synthUser(env: Env, label: string, runId: string): Promise<SynthUser> {
   const email = `e2e-${runId}-${label.toLowerCase()}-${Math.random().toString(36).slice(2, 7)}@${env.testEmailDomain}`;
   return synthUserWithEmail(env, email, label);
@@ -54,15 +57,23 @@ export async function synthUserWithEmail(
   label: string,
 ): Promise<SynthUser> {
   const user = await adminCreateUser(env, email, PASSWORD);
-  const jwt = await passwordGrant(env, email, PASSWORD);
+  const grant = await passwordGrantSession(env, email, PASSWORD);
+  // A run outlives the 1 h access token, so the principal carries its session,
+  // not a token string: the Client renews it before any request that would
+  // otherwise leave with an expired JWT.
+  const session = new SupabaseSessionAuth({
+    label,
+    grant,
+    refresh: (refreshToken) => refreshGrant(env, refreshToken),
+  });
   const principal: Principal = {
     label,
-    auth: { mode: 'bearer', token: jwt },
+    auth: session,
     email,
     userId: user.id,
     accountId: user.id, // personal account_id == user_id
   };
-  return { user, jwt, principal };
+  return { user, session, principal };
 }
 
 /**

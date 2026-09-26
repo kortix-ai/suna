@@ -3,6 +3,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { piWorkerParkScriptForTest } from './build-context';
 
 // The real park script (the exact bytes baked into the pi-worker snapshot)
@@ -17,6 +19,12 @@ process.exit(0);
 const FAKE_WORKER = `
 import { createServer } from 'node:http';
 createServer((req, res) => {
+  // Only the health route exists on the worker. Answering every path with 200
+  // made a late second claim look accepted once the worker owned the port.
+  if (!req.url?.startsWith('/kortix/health')) {
+    res.writeHead(404).end();
+    return;
+  }
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify({
     ok: true,
@@ -49,7 +57,16 @@ async function bootPark(): Promise<{ port: number; base: string }> {
   await writeFile(join(root, 'park.mjs'), piWorkerParkScriptForTest());
   await writeFile(join(root, 'fetch-runtime.mjs'), FAKE_FETCH);
   await writeFile(join(root, 'session-worker.mjs'), FAKE_WORKER);
-  const port = 18800 + Math.floor(Math.random() * 500);
+  // A fixed 500-port range collided with another local server. bootPark then
+  // accepted that server's health response and failed at `parked === true`.
+  const port = await new Promise<number>((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const chosen = (probe.address() as AddressInfo).port;
+      probe.close((error) => error ? reject(error) : resolve(chosen));
+    });
+  });
   child = spawn('node', [join(root, 'park.mjs')], {
     env: {
       PATH: process.env.PATH,
@@ -113,8 +130,11 @@ describe('pi worker park server', () => {
     expect(claim.status).toBe(200);
 
     // Single-accept: a second claim is refused — 409 while the park server is
-    // still draining, or a connection error once it has already closed the
-    // port for the worker. Both prove the box can never serve two sessions.
+    // still draining, a connection error once it has closed the port, or 404
+    // once the worker already owns the port (the worker has no claim route).
+    // All three prove the box can never serve two sessions. A 200 never does.
+    // On a fast runner the handoff finishes between the two requests: run
+    // 35537795611 got the worker's blanket 200 here and failed.
     const second = await fetch(`${base}/kortix/claim`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-park-token': 'park-tok' },
@@ -123,7 +143,7 @@ describe('pi worker park server', () => {
       (res) => res.status,
       () => 'refused',
     );
-    expect([409, 'refused']).toContain(second as never);
+    expect([409, 404, 'refused']).toContain(second as never);
 
     // The worker takes over the SAME port with the claim env applied.
     interface WorkerHealth {

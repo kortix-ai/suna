@@ -26,15 +26,10 @@ const ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1';
 // the single-secret, self-generatable credential this path is built around.
 const BEDROCK_BYOK_ENV_VAR = 'AWS_BEARER_TOKEN_BEDROCK';
 
-// Bedrock has NO single static baseUrl to publish here: the runtime endpoint
-// is region-scoped, and the region is the PROJECT's own AWS_REGION secret —
-// never deployment/operator config (config.AWS_BEDROCK_REGION belongs
-// exclusively to the CLOUD-ONLY managed/credits path; reading it here would
-// silently route every BYOK Bedrock project through the OPERATOR's region
-// regardless of which region a project's own bearer token was actually issued
-// for, re-introducing the exact managed/BYOK conflation this feature exists to
-// remove). So resolveCatalogUpstream — which has no project context — can't
-// resolve a final baseUrl for Bedrock; it publishes the envVar/kind only, and
+// Bedrock has no single static baseUrl to publish here. The runtime endpoint
+// uses the project's own AWS_REGION secret, never deployment config. This
+// function has no project context, so it publishes the envVar/kind only.
+// It cannot resolve a final baseUrl for Bedrock. Instead,
 // resolveCandidates.ts (which DOES have `principal.projectId`) resolves the
 // project's own AWS_REGION secret and builds the regional endpoint per-request.
 // A discriminated union (rather than an optional `baseUrl` on one shape) lets
@@ -79,8 +74,15 @@ export function resolveCatalogUpstream(providerId: string): CatalogUpstream | nu
     return { envVar: BEDROCK_BYOK_ENV_VAR, kind, npm: provider.npm ?? undefined };
   }
 
+  // Prefer the catalog provider's own `api` base URL when it publishes one:
+  // several anthropic-TRANSPORT providers are third-party Anthropic-compatible
+  // endpoints (kimi-for-coding → https://api.kimi.com/coding/v1, the MiniMax
+  // coding plans → api.minimax[i].com/anthropic/v1, …), and keying the override
+  // off `kind` sent their users' keys to api.anthropic.com, where they 401.
+  // The catalog's own `anthropic` entry carries no `api` field, so the
+  // hardcoded endpoint remains as the fallback for exactly that case.
   const baseUrl =
-    kind === 'anthropic' ? ANTHROPIC_BASE_URL : provider.api || BASE_URL_FALLBACKS[providerId];
+    provider.api || (kind === 'anthropic' ? ANTHROPIC_BASE_URL : BASE_URL_FALLBACKS[providerId]);
   const envVar = provider.env?.[0];
   if (!baseUrl || !envVar) return null;
 

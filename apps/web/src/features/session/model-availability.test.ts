@@ -109,6 +109,57 @@ describe('session model availability', () => {
     ).toBe(false);
   });
 
+  /**
+   * The staging release-gate failure this argument exists for
+   * (`27-desktop-parity.spec.ts` › "Enter and Command+Enter keep distinct
+   * pending prompt placements", 4/4 on the v0.13.21 gate, run 35242868705).
+   *
+   * Project home paints a focusable composer ~1.1s after navigation, long
+   * before its catalog lands. Measured from that run's trace, at the Enter
+   * keypress `GET /model-picker` had 414ms left to run, `/detail` 4.5s and
+   * `/model-defaults` 6.8s. So `selectedModel` was null purely because
+   * nothing had arrived yet — the picker read "No model" — and this predicate
+   * reported "no models available", which error-toasted
+   * NO_MODEL_AVAILABLE_MESSAGE and dropped the prompt with zero network
+   * calls. Nothing retries, so the prompt was lost for good.
+   *
+   * "Not loaded yet" is not "none exist". While a catalog input is still in
+   * flight this must refuse nothing.
+   */
+  test('does not refuse a send while the catalog is still loading', () => {
+    expect(
+      isModelRequiredButUnavailable({
+        modelRequired: true,
+        selectedModel: null,
+        lockForQuestion: false,
+        modelsLoading: true,
+      }),
+    ).toBe(false);
+  });
+
+  test('does not refuse a send while entitlements are still resolving', () => {
+    expect(
+      isModelRequiredButUnavailable({
+        modelRequired: true,
+        selectedModel: null,
+        lockForQuestion: false,
+        entitlementsPending: true,
+      }),
+    ).toBe(false);
+  });
+
+  test('still refuses once every catalog input has landed and none is offered', () => {
+    expect(
+      isModelRequiredButUnavailable({
+        modelRequired: true,
+        selectedModel: null,
+        lockForQuestion: false,
+        modelsLoading: false,
+        entitlementsPending: false,
+      }),
+    ).toBe(true);
+  });
+
   test('uses a generic no-model message', () => {
     expect(NO_MODEL_AVAILABLE_MESSAGE).toBe('No models available for this session yet.');
     expect(NO_MODEL_AVAILABLE_MESSAGE).not.toContain('upgrade');

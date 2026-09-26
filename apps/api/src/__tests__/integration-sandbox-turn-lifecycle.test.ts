@@ -8,6 +8,10 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { claimExpiredSandboxStop, releaseSandboxStopClaim } from '../projects/reaping/box-queries';
+import {
+  clearPendingStopObservation,
+  markPendingStopObservation,
+} from '../projects/reaping/sandbox-state-sync';
 import { sandboxStopClaimLeaseMs } from '../projects/sandbox-deadline-policy';
 import {
   abandonSandboxTurn,
@@ -15,7 +19,11 @@ import {
   adoptRuntimeSandboxTurn,
   beginSandboxTurn,
   clearSandboxTurn,
+  clearTurnStopRequest,
   completeSandboxTurn,
+  isProtectedEndError,
+  markTurnStopRequested,
+  recordUnidentifiedTurnCause,
   reconcileSandboxTurnDelivery,
   settleOpenSandboxTurnsQuery,
 } from '../projects/sandbox-turn-lifecycle';
@@ -871,7 +879,7 @@ describe('session_turns ledger', () => {
     expect(await abandonSandboxTurn({ sandboxId: SANDBOX_ID }, t('ledger-abandon'))).toBe(true);
 
     // Every failed delivery takes this path (preview.ts 3xx/401/503/4xx/
-    // unreachable, r4.ts turn_abandoned). Leaving the row 'delivering' makes
+    // unreachable, turn-stream.ts turn_abandoned). Leaving the row 'delivering' makes
     // the ledger claim a turn is running for ever.
     expect((await readRow()).metadata.activeTurns).toEqual({});
     expect(await readTurn(t('ledger-abandon'))).toMatchObject({
@@ -1066,40 +1074,6 @@ describe('session_turns ledger', () => {
     });
   });
 
-  test('the stop writer settles every open row of the sandbox and nothing else', async () => {
-    await beginSandboxTurn(
-      { sandboxId: SANDBOX_ID },
-      { token: t('ledger-stop-open'), opencodeSessionId: 'ses_root', messageId: 'msg_stop_open' },
-      60_000,
-    );
-    await beginSandboxTurn(
-      { sandboxId: SANDBOX_ID },
-      { token: t('ledger-stop-done'), opencodeSessionId: 'ses_root', messageId: 'msg_stop_done' },
-      60_000,
-    );
-    await completeSandboxTurn(
-      SESSION_ID,
-      'idle',
-      { opencodeSessionId: 'ses_root', messageId: 'msg_stop_done' },
-      undefined,
-      60_000,
-    );
-
-    // The statement applyStoppedState runs inside its stop transaction, right
-    // after the one that erases activeTurn/activeTurns.
-    await db.execute(settleOpenSandboxTurnsQuery(SANDBOX_ID, 'runtime_gone'));
-
-    expect(await readTurn(t('ledger-stop-open'))).toMatchObject({
-      state: 'ended',
-      end_reason: 'runtime_gone',
-    });
-    // An already-settled row keeps the reason it ended with.
-    expect(await readTurn(t('ledger-stop-done'))).toMatchObject({
-      state: 'ended',
-      end_reason: 'completed',
-    });
-  });
-
   test('session_turns_open_idx serves the stop writer predicate', async () => {
     await beginSandboxTurn(
       { sandboxId: SANDBOX_ID },
@@ -1110,15 +1084,14 @@ describe('session_turns ledger', () => {
     // Terminal rows are retained for ever, so the stop path must not degrade
     // into a sequential scan over the whole history as the table grows. On a
     // near-empty table a seq scan is the correct plan, so this asserts the
-    // partial index is USABLE for this exact predicate, not that it is chosen
-    // today: a predicate the index cannot serve stays a seq scan even here.
+    // partial index is USABLE for the SHIPPED statement (the one
+    // applyStoppedState runs), not that it is chosen today: a predicate the
+    // index cannot serve stays a seq scan even here.
     const text = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL enable_seqscan = off`);
-      const plan = await tx.execute(sql`
-        EXPLAIN UPDATE kortix.session_turns
-                   SET state = 'ended'
-                 WHERE sandbox_id = ${SANDBOX_ID}::uuid
-                   AND state <> 'ended'`);
+      const plan = await tx.execute(
+        sql`EXPLAIN ${settleOpenSandboxTurnsQuery(SANDBOX_ID, 'runtime_gone')}`,
+      );
       return rows(plan)
         .map((row) => String(Object.values(row)[0]))
         .join('\n');
@@ -1153,7 +1126,7 @@ describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
   // OpenCode starts turns of its own (synthetic `<pty_exited>` wake-ups) that
   // no control-plane prompt announced. The daemon relays `turn_begin` for
   // them; this write is what turns that relay into `GET .../turn` truth and a
-  // deadline grant (live incident 2026-08-20, Essentia session d1b74954).
+  // deadline grant (live incident 2026-08-20, a prod session).
   const SYNTH = 'msg_synthetic_pty_1';
 
   async function readOpenBySession(): Promise<Array<Record<string, unknown>>> {
@@ -1212,5 +1185,377 @@ describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
     });
     expect(outcome).toBe('known_message');
     expect(await readOpenBySession()).toHaveLength(0);
+  });
+});
+
+// Why a failed turn ended, and who asked. Every assertion reads the row back
+// from Postgres: the rule lives in SQL (an upsert CASE and two guarded UPDATEs),
+// so a test that only inspected the statement text could not fail.
+describe('end_error: causes, requested stops, and which one wins', () => {
+  const ROOT = 'ses_root';
+  const MSG = 'msg_running';
+  const ABORT = { name: 'MessageAbortedError', message: 'Aborted' };
+  const GUARD = { name: 'SandboxMemoryGuard', message: 'sandbox memory at 97%' };
+
+  /** One running turn: authority in the sandbox metadata, and its open ledger row. */
+  async function openTurn(token = t('running'), messageId = MSG, opencodeSessionId = ROOT) {
+    await setLifecycleState({
+      activeTurns: {
+        [token]: { token, state: 'active', opencodeSessionId, messageId, startedAtMs: 1 },
+      },
+    });
+    await db.execute(sql`
+      INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+      VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
+              ${ACCOUNT_ID}::uuid, ${opencodeSessionId}, ${messageId}, 'active',
+              now(), now(), now())`);
+    return token;
+  }
+  const end = (error: { name: string; message: string } | undefined, status: 'idle' | 'error' = 'error') =>
+    completeSandboxTurn(SESSION_ID, status, { opencodeSessionId: ROOT, messageId: MSG }, error, 60_000);
+
+  test('an abort nobody asked for is recorded as the abort it is', async () => {
+    const token = await openTurn();
+    expect((await end(ABORT)).outcome).toBe('closed');
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('failed');
+    expect(row?.end_error).toEqual(ABORT);
+  });
+
+  test('a requested stop survives the abort it caused', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT });
+    await end(ABORT);
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
+  // prod 2026-09-25: a web Stop's hold settle aborted the box ~450 ms before
+  // the client's proxied abort. The first "Aborted" frame closed the turn, and
+  // the proxy's stamp then found no open turn to mark.
+  test('a stamp that lands after the abort closed the turn cannot rescue it', async () => {
+    const token = await openTurn();
+    await end(ABORT); // the settle's unstamped abort
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // proxy, too late
+    await end(ABORT); // the client's abort
+    expect((await readTurn(token))?.end_error).toEqual(ABORT);
+  });
+
+  test('the hold stamps first, so every later abort of the same Stop keeps it a stop', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // hold route
+    await end(ABORT); // the settle's abort
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // proxy
+    await end(ABORT); // the client's abort
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('failed');
+    expect(row?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
+  test('a named cause beats a requested stop: the mark never hides a real failure', async () => {
+    // Stop pressed, the abort never landed, and the memory guard fired later.
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT });
+    await end(GUARD);
+    expect((await readTurn(token))?.end_error).toEqual(GUARD);
+  });
+
+  test('a turn that completes drops the request that never fired', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'QueueInterrupt', { opencodeSessionId: ROOT, messageId: MSG });
+    await end(undefined, 'idle');
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('completed');
+    expect(row?.end_error).toBeNull();
+  });
+
+  test('a withdrawn queue interrupt leaves a later abort unexplained', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'QueueInterrupt', { messageId: MSG });
+    await clearTurnStopRequest(SESSION_ID, 'QueueInterrupt');
+    await end(ABORT);
+    expect((await readTurn(token))?.end_error).toEqual(ABORT);
+  });
+
+  test('clearing one kind of request leaves the other in place', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop');
+    await clearTurnStopRequest(SESSION_ID, 'QueueInterrupt');
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
+  test('a request is scoped: another OpenCode session or another message is untouched', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: 'ses_child' });
+    expect((await readTurn(token))?.end_error).toBeNull();
+    await markTurnStopRequested(SESSION_ID, 'QueueInterrupt', { messageId: 'msg_other' });
+    expect((await readTurn(token))?.end_error).toBeNull();
+  });
+
+  test('a request never rewrites a turn that already ended', async () => {
+    const token = await openTurn();
+    await end(GUARD);
+    await markTurnStopRequested(SESSION_ID, 'UserStop');
+    expect((await readTurn(token))?.end_error).toEqual(GUARD);
+  });
+
+  test('a cause that arrives after the abort closed the turn replaces the abort, once', async () => {
+    // A prod session: OpenCode's "Aborted" frame beat the guard's by 476 ms.
+    const token = await openTurn();
+    await end(ABORT);
+    expect((await end(GUARD)).outcome).toBe('already_closed');
+    expect((await readTurn(token))?.end_error).toEqual(GUARD);
+
+    // A named cause is final: neither a late abort nor a second cause moves it.
+    await end(ABORT);
+    await end({ name: 'SomethingElse', message: 'later' });
+    expect((await readTurn(token))?.end_error).toEqual(GUARD);
+  });
+
+  test('a late cause never turns a requested stop into a failure', async () => {
+    const token = await openTurn();
+    await markTurnStopRequested(SESSION_ID, 'UserStop');
+    await end(ABORT);
+    await end(GUARD);
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+});
+
+// A daemon built before the guard named its turn sends the cause with no
+// `turn_message_id` and `error_retryable: true`. `completeSandboxTurn` drops that
+// frame as `non_terminal`, so the UI said "No reason was reported" under a turn
+// the memory guard stopped (prod 2026-09-22, daemon built 2026-09-18).
+describe('recordUnidentifiedTurnCause: a cause frame that does not name its turn', () => {
+  const ROOT = 'ses_root';
+  const ABORT = { name: 'MessageAbortedError', message: 'Aborted' };
+  const GUARD = { name: 'SandboxMemoryGuard', message: 'sandbox memory at 92%' };
+
+  async function openTurn(token: string, messageId: string) {
+    await setLifecycleState({
+      activeTurns: {
+        [token]: { token, state: 'active', opencodeSessionId: ROOT, messageId, startedAtMs: 1 },
+      },
+    });
+    await db.execute(sql`
+      INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+      VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
+              ${ACCOUNT_ID}::uuid, ${ROOT}, ${messageId}, 'active', now(), now(), now())`);
+    return token;
+  }
+  const end = (messageId: string, error: { name: string; message: string } | undefined, status: 'idle' | 'error' = 'error') =>
+    completeSandboxTurn(SESSION_ID, status, { opencodeSessionId: ROOT, messageId }, error, 60_000);
+  const cause = () => recordUnidentifiedTurnCause(SESSION_ID, ROOT, GUARD);
+
+  test('the abort closed the turn first: the cause replaces that abort', async () => {
+    const token = await openTurn(t('u-first'), 'msg_u1');
+    await end('msg_u1', ABORT);
+    expect(await cause()).toBe('refined_ended');
+    expect((await readTurn(token))?.end_error).toEqual(GUARD);
+  });
+
+  test('the cause arrived first: it is held on the open turn and survives the abort', async () => {
+    const token = await openTurn(t('u-open'), 'msg_u2');
+    expect(await cause()).toBe('marked_open');
+    await end('msg_u2', ABORT);
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('failed');
+    expect(row?.end_error).toEqual(GUARD);
+  });
+
+  test('the abort never landed and the turn completed: the held cause is dropped', async () => {
+    const token = await openTurn(t('u-done'), 'msg_u3');
+    await cause();
+    await end('msg_u3', undefined, 'idle');
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('completed');
+    expect(row?.end_error).toBeNull();
+  });
+
+  test('a turn the abort just ended wins over the next turn that already started', async () => {
+    const aborted = await openTurn(t('u-prev'), 'msg_u4');
+    await end('msg_u4', ABORT);
+    const next = await openTurn(t('u-next'), 'msg_u5');
+    expect(await cause()).toBe('refined_ended');
+    expect((await readTurn(aborted))?.end_error).toEqual(GUARD);
+    expect((await readTurn(next))?.end_error).toBeNull();
+  });
+
+  test('an old abort, a requested stop, or another named cause is never rewritten', async () => {
+    const old = await openTurn(t('u-old'), 'msg_u6');
+    await end('msg_u6', ABORT);
+    await db.execute(sql`UPDATE kortix.session_turns SET ended_at = now() - interval '5 minutes' WHERE turn_token = ${old}`);
+    const stopped = await openTurn(t('u-stop'), 'msg_u7');
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { messageId: 'msg_u7' });
+    await end('msg_u7', ABORT);
+    const other = await openTurn(t('u-other'), 'msg_u8');
+    await end('msg_u8', { name: 'APIError', message: 'upstream 500' });
+
+    expect(await cause()).toBe('none');
+    expect((await readTurn(old))?.end_error).toEqual(ABORT);
+    expect((await readTurn(stopped))?.end_error).toEqual({ name: 'UserStop', message: null });
+    expect((await readTurn(other))?.end_error).toEqual({ name: 'APIError', message: 'upstream 500' });
+  });
+
+  // A stop can be stamped on the OPEN turn before the guard's cause arrives:
+  // the hold settle stamps UserStop, and the pre-guard daemon's cause frame
+  // lands while the turn is still open. The cause must not claim a stop the
+  // user asked for.
+  test('a requested stop on the open turn is never rewritten by an unidentified cause', async () => {
+    const token = await openTurn(t('u-stop-open'), 'msg_u9');
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { messageId: 'msg_u9' });
+
+    expect(await cause()).toBe('none');
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+
+    // The abort the stop caused keeps it, exactly like the ended-turn path.
+    await end('msg_u9', ABORT);
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
+  // The predicate the recorder and the ledger CASE both read. An abort is the
+  // EFFECT of a stop, so it is replaceable; a requested stop and every other
+  // named cause are protected.
+  test('isProtectedEndError protects a requested stop and any named cause, not a bare abort', () => {
+    expect(isProtectedEndError('UserStop')).toBe(true);
+    expect(isProtectedEndError('QueueInterrupt')).toBe(true);
+    expect(isProtectedEndError('SandboxMemoryGuard')).toBe(true);
+    expect(isProtectedEndError('MessageAbortedError')).toBe(false);
+    expect(isProtectedEndError('AbortError')).toBe(false);
+    expect(isProtectedEndError(null)).toBe(false);
+    expect(isProtectedEndError(undefined)).toBe(false);
+  });
+});
+
+
+// The reaper closes a turn whose end frame never arrived. `failed` with no
+// cause was hidden from the UI entirely: the reader took it for a row older
+// than the end_error column. The reaper now says what it saw, as a fallback
+// that never overrides a stop somebody asked for.
+describe('clearSandboxTurn: the reaper names what it saw', () => {
+  const ROOT = 'ses_root';
+  async function openTurn(token: string, messageId: string) {
+    await setLifecycleState({
+      activeTurns: {
+        [token]: { token, state: 'active', opencodeSessionId: ROOT, messageId, startedAtMs: 1 },
+      },
+    });
+    await db.execute(sql`
+      INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+      VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
+              ${ACCOUNT_ID}::uuid, ${ROOT}, ${messageId}, 'active', now(), now(), now())`);
+    return token;
+  }
+  const HUSK = { name: 'TurnHuskFinalized', message: 'The agent stopped responding in the middle of this turn, so Kortix closed it.' };
+
+  test('a failed clear records the cause it was given', async () => {
+    const token = await openTurn(t('reap-husk'), 'msg_r1');
+    expect(await clearSandboxTurn(SANDBOX_ID, token, 60_000, 'failed', HUSK)).toBe(true);
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('failed');
+    expect(row?.end_error).toEqual(HUSK);
+  });
+
+  test('the reaper cause never overrides a requested stop', async () => {
+    const token = await openTurn(t('reap-stop'), 'msg_r2');
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { messageId: 'msg_r2' });
+    await clearSandboxTurn(SANDBOX_ID, token, 60_000, 'failed', HUSK);
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
+  test('a turn the reaper finds completed drops the request that never fired', async () => {
+    const token = await openTurn(t('reap-done'), 'msg_r4');
+    await markTurnStopRequested(SESSION_ID, 'QueueInterrupt', { messageId: 'msg_r4' });
+    await clearSandboxTurn(SANDBOX_ID, token, 60_000, 'completed');
+    const row = await readTurn(token);
+    expect(row?.end_reason).toBe('completed');
+    expect(row?.end_error).toBeNull();
+  });
+
+  test('a clear without a cause still writes none', async () => {
+    const token = await openTurn(t('reap-none'), 'msg_r3');
+    await clearSandboxTurn(SANDBOX_ID, token, 60_000, 'runtime_gone');
+    expect((await readTurn(token))?.end_error).toBeNull();
+  });
+});
+
+// The first provider-`stopped` read of a box that holds turn authority does not
+// park it: it arms this marker, and only a second read a full window later may
+// park (reaping/sandbox-state-sync.ts `decideStoppedObservation`).
+describe('the pending stop marker', () => {
+  const ACTIVE_TURNS = {
+    [t('marker-turn')]: { token: t('marker-turn'), state: 'active', messageId: 'msg_marker' },
+  };
+
+  async function setStatus(status: 'provisioning' | 'stopped'): Promise<void> {
+    await db.execute(sql`
+      UPDATE kortix.session_sandboxes
+         SET status = ${status}::kortix.session_sandbox_status
+       WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+  }
+
+  test('records the instant of THIS observation as a merge that keeps turn authority and liveness', async () => {
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS, lastAliveAt: '2026-09-25T10:00:00.000Z' });
+
+    // The reaper carries one pass clock through up to 100 provider round
+    // trips. A marker stamped with it is backdated, and a later read from a
+    // fresh-clock observer confirms a park inside one provider transition.
+    const before = Date.now();
+    await markPendingStopObservation(SANDBOX_ID);
+    const after = Date.now();
+
+    const { metadata } = await readRow();
+    expect(typeof metadata.pendingStopObservedAtMs).toBe('number');
+    expect(metadata.pendingStopObservedAtMs as number).toBeGreaterThanOrEqual(before);
+    expect(metadata.pendingStopObservedAtMs as number).toBeLessThanOrEqual(after);
+    expect(metadata.activeTurns).toEqual(ACTIVE_TURNS);
+    expect(metadata.lastAliveAt).toBe('2026-09-25T10:00:00.000Z');
+  });
+
+  test('never resets a marker that is already counting', async () => {
+    // A second pass must be able to CONFIRM. A write that restarted the window
+    // on every pass would mean the box never parks.
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS, pendingStopObservedAtMs: 1234 });
+
+    await markPendingStopObservation(SANDBOX_ID);
+
+    expect((await readRow()).metadata.pendingStopObservedAtMs).toBe(1234);
+  });
+
+  test('re-records a marker nothing can read', async () => {
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS, pendingStopObservedAtMs: 'soon' });
+
+    await markPendingStopObservation(SANDBOX_ID);
+
+    expect(typeof (await readRow()).metadata.pendingStopObservedAtMs).toBe('number');
+  });
+
+  // A `provisioning` row holds turn authority too (in-place recovery keeps
+  // `activeTurns`). A CAS that matched only `active` left such a row at
+  // `await_confirmation` for ever: never parked, its turns open for ever.
+  test('arms a provisioning row, and never a parked one', async () => {
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS });
+    await setStatus('provisioning');
+    await markPendingStopObservation(SANDBOX_ID);
+    expect(typeof (await readRow()).metadata.pendingStopObservedAtMs).toBe('number');
+
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS });
+    await setStatus('stopped');
+    await markPendingStopObservation(SANDBOX_ID);
+    expect((await readRow()).metadata).not.toHaveProperty('pendingStopObservedAtMs');
+  });
+
+  test('a running observation drops the marker and keeps its siblings', async () => {
+    await setLifecycleState({ activeTurns: ACTIVE_TURNS, pendingStopObservedAtMs: 1234 });
+
+    await clearPendingStopObservation(SANDBOX_ID);
+
+    const { metadata } = await readRow();
+    expect(metadata).not.toHaveProperty('pendingStopObservedAtMs');
+    expect(metadata.activeTurns).toEqual(ACTIVE_TURNS);
   });
 });

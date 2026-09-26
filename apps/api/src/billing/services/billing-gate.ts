@@ -9,9 +9,9 @@ import {
   hasSubscriptionRecord,
   resolveBillingState,
 } from './billing-state';
-import { deductCredits } from './credits';
 import { ensureFreeTierAccountReady } from './free-tier';
 import { type BillingModel, MINIMUM_CREDIT_FOR_RUN, isPerSeatAccount } from './tiers';
+import { wallet } from '../wallet';
 
 type BillingGateReason = 'subscription_required' | 'insufficient_credits' | 'no_account';
 
@@ -108,10 +108,15 @@ async function resolveAdmissionState(accountId: string) {
 
 /**
  * The same account decision as `checkBillingActive`, without its admission
- * hold. For an admission that spends no compute, such as a prompt attachment
- * upload: only an LLM gateway settle reconciles a hold, so a hold taken here
- * would never be refunded. The prompt that later sends the upload runs
- * `checkBillingActive` itself.
+ * hold. This is the gate for EVERY caller that is not the LLM gateway: session
+ * create, `/start`, a prompt, an attachment upload, an App wake.
+ *
+ * Only an LLM gateway settle reconciles a hold (`recordGatewayUsage` in
+ * llm-gateway/hooks.ts), so a hold taken anywhere else is never refunded.
+ * Session create, `/start`, the prompt route, and App wake all called
+ * `checkBillingActive` as a yes/no check and dropped `holdUsd`. Each call cost
+ * the account one cent, labelled "LLM gateway admission hold". Measured on one
+ * prod account 2026-09-18: 115,810 holds against 9 real LLM charges ($1.69).
  */
 export async function checkBillingAdmission(
   accountId: string,
@@ -121,6 +126,11 @@ export async function checkBillingAdmission(
   return billingStateAllowsRun(state) ? { ok: true } : blockedResult(state, snapshot, billingModel);
 }
 
+/**
+ * LLM GATEWAY ONLY. This call DEBITS the account (the admission hold below),
+ * and the gateway settle is the only code that refunds it. Every other caller
+ * uses `checkBillingAdmission`.
+ */
 export async function checkBillingActive(
   accountId: string,
 ): Promise<BillingGateOk | BillingGateBlocked> {
@@ -175,12 +185,13 @@ export async function checkBillingActive(
   // an overdrawn account). See RELIABILITY-BACKLOG item 2 / PR description
   // for the full reservation system this is a pragmatic slice of.
   try {
-    await deductCredits(
+    await wallet.debit({
       accountId,
-      MINIMUM_CREDIT_FOR_RUN,
-      'LLM gateway admission hold',
-      'llm_debit',
-    );
+      amount: MINIMUM_CREDIT_FOR_RUN,
+      description: 'LLM gateway admission hold',
+      kind: 'llm_debit',
+      key: null,
+    });
     return { ok: true, holdUsd: MINIMUM_CREDIT_FOR_RUN };
   } catch {
     // The hold lost the race (or the wallet moved under us). Re-resolve against

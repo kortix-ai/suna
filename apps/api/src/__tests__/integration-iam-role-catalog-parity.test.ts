@@ -93,8 +93,10 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
 
     // 69 at the canonical-model seed + `project.credentials.issue`, added by
     // 20260819015727000 when the cli-token / project-PAT routes stopped gating on
-    // the coarse `manage` alias (routes.md §5.2).
-    expect(seeded).toHaveLength(70);
+    // the coarse `manage` alias (routes.md §5.2), + `project.gitops.ref.any` /
+    // `.ref.delete` (20260901124321557), + `token.personal.create` /
+    // `.revoke` (20260921121500000 — a member may mint their own PAT).
+    expect(seeded).toHaveLength(74);
     // The decisions, stated positively so a regression is unambiguous.
     expect(seeded).not.toContain('project.cr.open');
     expect(seeded).not.toContain('project.cr.merge');
@@ -126,7 +128,7 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     const owner = await systemRoleActions('owner', 'account');
     const admin = await systemRoleActions('admin', 'account');
     const member = await systemRoleActions('member', 'account');
-    expect([owner.length, admin.length, member.length]).toEqual([27, 24, 5]);
+    expect([owner.length, admin.length, member.length]).toEqual([29, 26, 7]);
     expect(member.filter((a) => !admin.includes(a))).toEqual([]);
     expect(admin.filter((a) => !owner.includes(a))).toEqual([]);
     // The four owner-only powers, named.
@@ -135,14 +137,19 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
       'billing.write',
       'member.super_admin.grant',
     ]);
-    // A plain account member has NO write surface at all.
-    expect(member.filter((a) => !a.endsWith('.read'))).toEqual([]);
+    // A plain account member has NO write surface over the account. Its only
+    // non-read leaves act on the member's OWN personal tokens, which carry no
+    // more than the member's own roles.
+    expect(member.filter((a) => !a.endsWith('.read')).sort()).toEqual([
+      'token.personal.create',
+      'token.personal.revoke',
+    ]);
   });
 
   test('the project roles are a strict chain: member ⊂ manager', async () => {
     const manager = await systemRoleActions('manager', 'project');
     const member = await systemRoleActions('member', 'project');
-    expect([manager.length, member.length]).toEqual([43, 15]);
+    expect([manager.length, member.length]).toEqual([45, 15]);
     expect(member.filter((a) => !manager.includes(a))).toEqual([]);
     // The floor role is read + RUN: it starts sessions and fires triggers, and
     // holds project.agent.read (a grant cannot ADD a permission, so without this

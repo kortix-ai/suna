@@ -6,7 +6,7 @@
  * The ordering half of the contract (the lookup MUST run before
  * `backend.createRepo`, or a deduped retry still leaves an orphaned upstream
  * repo behind) is not expressible here; it is guarded at the source level by
- * `../routes/r1-provision-idempotency.test.ts`.
+ * `../routes/projects-provision-idempotency.test.ts`.
  */
 import { describe, expect, test } from 'bun:test';
 

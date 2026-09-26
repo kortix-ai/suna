@@ -1,40 +1,47 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import {
-  type AdminConnector,
-  type ConnectorAuthorizationStrategy,
-  deleteConnector,
-} from '@kortix/sdk';
+import { type AdminConnector, deleteConnector } from '@kortix/sdk';
 import { TrashIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Label } from '@/components/ui/label';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { connectorAuthorizationStrategyIsEditable } from '@/features/workspace/customize/sections/connector-connection-form';
-import { AuthorizationStrategyField } from '@/features/workspace/customize/sections/connector-connection-modal';
+import { ConnectionSection } from '@/features/workspace/customize/sections/connectors-view';
+import { isManagedConnectorProvider } from '../provider-label';
 
 export interface ConnectorSettingsProps {
   projectId: string;
   connector: AdminConnector;
   displayName: string;
-  canWrite: boolean;
-  /** The authorization owner is mid-update — freeze the Remove control too. */
-  strategyUpdating: boolean;
-  onAuthorizationStrategyChange: (next: ConnectorAuthorizationStrategy) => void;
+  onChanged: () => void;
   onRemoved: () => void;
 }
 
 /**
- * Settings — who the connector runs as, and removing it.
+ * Settings — the transport config for a direct provider, then removing the
+ * connector.
  *
  * `connectorTabs` already restricts this tab to writers.
  *
- * Two rows, one shape: label, statement, trailing control. Every row is a
- * `bg-popover rounded-md border px-4 py-3` box, so they line up as one wall.
+ * `ConnectionSection` (slug/provider/spec/auth/headers) used to sit on the
+ * Accounts tab, gated on `canWrite` with a reader-only banner in its place.
+ * It moved HERE — connector-credentials rework follow-up (the live defect an
+ * openapi/http/mcp/graphql connector's Accounts tab rendered this transport
+ * form instead of its account list). Accounts now always shows
+ * `ConnectionsList` for a direct provider, same as a managed one, so this is
+ * the only mount left — showing it on both tabs would print the same form
+ * twice (`connector-settings.write-path.test.ts` pins that). A managed
+ * (Composio/Pipedream), channel, or computer connector has no transport
+ * config to edit, so it is skipped here.
+ *
+ * The "Connects as" row is gone. `connectors.authorization_strategy` was a
+ * connector-level MODE that made shared and private accounts mutually
+ * exclusive, and it is the direct cause of the connector-credentials incident:
+ * a `user`-mode connector had no connect flow anywhere. Ownership is now a
+ * property of each account — see the Accounts tab.
  *
  * Renaming is not here — it lives in the modal header (`HeaderName`).
  */
@@ -42,13 +49,14 @@ export function ConnectorSettings({
   projectId,
   connector,
   displayName,
-  canWrite,
-  strategyUpdating,
-  onAuthorizationStrategyChange,
+  onChanged,
   onRemoved,
 }: ConnectorSettingsProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isChannel = connector.provider === 'channel';
+  const isComputer = connector.provider === 'computer';
+  const isDirectProvider =
+    !isManagedConnectorProvider(connector.provider) && !isChannel && !isComputer;
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const remove = useMutation({
@@ -62,29 +70,14 @@ export function ConnectorSettings({
 
   return (
     <div className="space-y-5">
-      {/* Capability #4. `hideLabel` drops the field's own "Authorization owner"
-          heading so "Connects as" is the only name for this control — the field
-          already states the value, the owner and why it is fixed inside its own
-          row, and a second heading in a second vocabulary was the thing that
-          made this tab read as noise. */}
-      <section className="space-y-2">
-        <Label>{tI18nComplete.raw('textfa065317dfc5')}</Label>
-        <AuthorizationStrategyField
-          idPrefix={`connector-${connector.slug}`}
-          value={connector.authorizationStrategy}
-          // The write path is unreachable BY DESIGN, not missing.
-          // `onAuthorizationStrategyChange` is the real
-          // `setConnectorAuthorizationStrategy` mutation (`connector-modal.tsx`);
-          // `disabled` and `pending` compute real values every render.
-          // `lockedReason` is the only thing forcing the control off, so
-          // re-enabling editing is deleting that one prop.
-          onChange={onAuthorizationStrategyChange}
-          disabled={!canWrite || !connectorAuthorizationStrategyIsEditable(connector.provider)}
-          pending={strategyUpdating}
-          lockedReason={tI18nComplete.raw('text2c8a38c525f7')}
-          hideLabel
+      {isDirectProvider ? (
+        <ConnectionSection
+          projectId={projectId}
+          connector={connector}
+          onChanged={onChanged}
+          canWrite={true}
         />
-      </section>
+      ) : null}
 
       {/* Capability #11. Channel connectors disconnect from their own connection
           form (`ChannelConnectionSection`), so they get no Remove row here.
@@ -106,7 +99,6 @@ export function ConnectorSettings({
               variant="outline"
               className="shrink-0 gap-1.5 active:scale-[0.96]"
               onClick={() => setConfirmDelete(true)}
-              disabled={strategyUpdating}
             >
               <TrashIcon className="size-3.5 shrink-0" />
               {tI18nComplete.raw('textc3812fc4acb8')}

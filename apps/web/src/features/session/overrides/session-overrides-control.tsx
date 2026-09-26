@@ -50,6 +50,8 @@ export interface SessionOverridesControlProps {
   saveDisabled?: boolean;
   /** Extra note above the footer — e.g. the non-retroactive secrets warning. */
   notice?: ReactNode;
+  pendingNote?: string;
+  error?: string | null;
   /**
    * Commits the scope draft. Resolves `true` when the save succeeded (or there
    * was nothing to write) — the popover closes on it, which is the visible
@@ -57,6 +59,11 @@ export interface SessionOverridesControlProps {
    * only secrets/connectors wait for Save.
    */
   onSave: () => boolean | Promise<boolean>;
+  /**
+   * Hide Save when no row writes through it. Only secrets and provider keys
+   * wait for Save; the pre-create sandbox choice applies with the next prompt.
+   */
+  hideSave?: boolean;
 }
 
 /**
@@ -79,7 +86,10 @@ export function SessionOverridesControlContent({
   saving = false,
   saveDisabled = false,
   notice,
+  pendingNote,
+  error,
   onSave,
+  hideSave = false,
 }: SessionOverridesControlProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('threads');
@@ -97,22 +107,21 @@ export function SessionOverridesControlContent({
     >
       <div className="border-border flex min-h-0 flex-1 flex-col sm:flex-row">
         <ul
-          className="border-border flex max-h-[45%] shrink-0 flex-col gap-0.5 overflow-y-auto border-b p-1.5 sm:max-h-none sm:w-[212px] sm:border-r sm:border-b-0"
+          className="border-border flex shrink-0 gap-0.5 overflow-x-auto border-b p-1.5 sm:w-48 sm:flex-col sm:overflow-y-auto sm:border-r sm:border-b-0"
           aria-label={t('sessionOverrides')}
         >
           {rows.map((row) => {
             const RowIcon = row.icon;
             const active = row.id === focused?.id;
             return (
-              <li key={row.id}>
+              <li key={row.id} className="min-w-0 shrink-0 sm:shrink">
                 <button
                   type="button"
                   aria-current={active}
                   onClick={() => setFocusedId(row.id)}
                   className={cn(
-                    'flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-2 text-left',
-                    'transition-colors active:scale-[0.99]',
-                    active ? 'bg-primary/[0.06]' : 'hover:bg-foreground/[0.04]',
+                    'focus-visible:ring-ring flex min-h-10 w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-2 text-left outline-none focus-visible:ring-2',
+                    active ? 'bg-active' : 'hover:bg-hover',
                   )}
                 >
                   <RowIcon
@@ -122,18 +131,18 @@ export function SessionOverridesControlContent({
                     )}
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="text-foreground block text-sm leading-tight font-medium text-pretty">
+                    <span className="text-foreground block text-sm leading-tight font-medium">
                       {row.name}
                     </span>
-                    <span className="text-muted-foreground block truncate text-xs">
+                    <span className="text-muted-foreground hidden text-xs break-words sm:block">
                       {row.summary}
                     </span>
+                    {row.overridden ? (
+                      <Badge variant="outline" size="xs" className="hidden shrink-0 sm:inline-flex">
+                        {tI18nComplete.raw('text43bc0f5fc035')}
+                      </Badge>
+                    ) : null}
                   </span>
-                  {row.overridden ? (
-                    <Badge variant="outline" size="xs" className="shrink-0">
-                      {tI18nComplete.raw('text43bc0f5fc035')}
-                    </Badge>
-                  ) : null}
                 </button>
               </li>
             );
@@ -161,19 +170,22 @@ export function SessionOverridesControlContent({
         </div>
       </div>
 
+      {error && <p role="alert" className="text-destructive px-4 py-2 text-xs">{error}</p>}
       <div className="border-border flex items-center justify-between gap-3 border-t px-4 py-2">
-        <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-          {tI18nComplete.raw('text26ee1166df63')}
+        <p className="text-muted-foreground text-xs leading-relaxed text-pretty" aria-live="polite">
+          {pendingNote ?? tI18nComplete.raw('text26ee1166df63')}
         </p>
-        <Button
-          type="button"
-          disabled={controlsDisabled || saveDisabled}
-          onClick={onSave}
-          size="sm"
-        >
-          {saving ? <Loading className="size-3.5 shrink-0" /> : null}
-          {focused?.id === 'provider-keys' ? tPooled('done') : tI18nComplete.raw('text1509f561f241')}
-        </Button>
+        {hideSave ? null : (
+          <Button
+            type="button"
+            disabled={controlsDisabled || saveDisabled}
+            onClick={onSave}
+            size="sm"
+          >
+            {saving ? <Loading className="size-3.5 shrink-0" /> : null}
+            {saving ? tPooled('saving') : tPooled('saveChanges')}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -194,7 +206,7 @@ export function SessionOverridesControl({ onSave, ...contentProps }: SessionOver
   // agent/model selectors beside it — the axes and their overrides live inside
   // the panel, never on the composer bar.
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={(next) => { if (!contentProps.saving) setOpen(next); }}>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -208,17 +220,19 @@ export function SessionOverridesControl({ onSave, ...contentProps }: SessionOver
         </Button>
       </PopoverTrigger>
       <PopoverContent
+        aria-label={t('sessionOverrides')}
+        onEscapeKeyDown={(event) => { if (contentProps.saving) event.preventDefault(); }}
         side="top"
         align="end"
         sideOffset={8}
         collisionPadding={12}
-        className="w-[min(620px,calc(100vw-2rem))] overflow-hidden rounded-lg p-0 shadow-none"
+        className="w-[min(620px,calc(100vw-2rem))] overflow-hidden p-0"
         // The model, agent and effort editors are themselves popovers rendered
         // into their own portal. Radix sees that portal as "outside", so an
         // unguarded interaction there closes THIS panel under the user's cursor.
         onInteractOutside={(event) => {
           const target = event.target as HTMLElement | null;
-          if (target?.closest('[data-radix-popper-content-wrapper]')) event.preventDefault();
+          if (contentProps.saving || target?.closest('[data-radix-popper-content-wrapper]')) event.preventDefault();
         }}
       >
         <SessionOverridesControlContent {...contentProps} onSave={saveAndClose} />

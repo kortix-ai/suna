@@ -112,6 +112,7 @@ words from plain text there.
 | `projects` | List projects you can bind to |
 | `sessions` | List recent sessions started in this workspace |
 | `whoami` | Show the channel panel: project, agent, model, policy, and your linked identity |
+| `models` | Pick the model for this channel — see [Models and keys](#models-and-keys) |
 | `agent <name>`, `model <id>` | Set the agent or model this channel uses |
 | `policy <mode>` | Set who can start sessions here |
 | `help` | List all commands |
@@ -121,6 +122,52 @@ the bot gets a session), `owner_approval`, or `owner_only`. This is a
 per-resource setting on one channel, not a role. It grants no permission the
 role verdict denies — see
 [Accounts & access](/docs/accounts#per-feature-access-settings).
+
+## Models and keys
+
+`/kortix models` lists every model you can run here, as the web picker does:
+Kortix models, and models you reach through a provider API key or a ChatGPT
+subscription. Each one says how it is paid for. A long list is one select you
+can type into. Pick one, or type `/kortix model <id>`; `/kortix model default`
+goes back to the project default.
+
+Which keys count depends on the conversation:
+
+- **A DM with the bot** — your own keys and ChatGPT subscription, plus keys
+  shared with the project. Its sessions are private to you.
+- **A channel or group DM** — only keys shared with the whole project. Pick a
+  model that runs on your own keys in a DM instead.
+
+A model that runs on keys uses every key you may use for its provider, and
+they rotate on rate limits. The channel's model starts every new thread; a
+thread keeps the model it started with. A model a thread can no longer run is
+replaced for that message instead of failing it. See
+[Provider keys and member access](/docs/project/models#provider-keys-and-member-access).
+
+## Approvals
+
+When an agent needs a human decision before it proceeds, it files a review item.
+If the session was started from this thread, the decision lands here as a card:
+the title, a summary, a risk level, and **Approve**, **Request changes** and
+**Deny**.
+
+**Request changes** opens a box for what should change. Whatever you type is
+stored with the decision and passed to the agent with it, so it does not have to
+ask you a second time. It is optional — send it empty and the agent is told to
+ask. Approve and Deny stay one click.
+
+Acting on a review needs a linked Kortix account with write access to the
+project.
+
+## Stopping a run
+
+While the agent works, its live message carries a **Stop** button. It ends the
+run at the runtime, not just on the message — a run left open swallows the next
+message in the thread instead of answering it.
+
+The person who sent the message being answered can stop it, as can anyone
+already working in that session. A bystander in the channel cannot; they get a
+private note saying so.
 
 ## What does not work
 

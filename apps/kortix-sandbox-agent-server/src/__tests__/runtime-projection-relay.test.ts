@@ -2,13 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { gunzipSync } from 'node:zlib'
 
 import {
-  PROJECTION_RELAY_MAX_BYTES,
   __resetRuntimeProjectionRelayForTests,
   __setRuntimeProjectionStateReaderForTests,
   scheduleRuntimeProjectionPush,
   shedProjectionToFit,
-} from '../runtime-projection-relay'
-import { resetRuntimeStateForTests } from '../runtime-state-projection'
+} from '../harness/open-code/runtime-projection-relay'
+import { resetRuntimeStateForTests } from '../harness/open-code/runtime-state-projection'
 
 const BASE_ENV = {
   KORTIX_PROJECT_ID: 'proj-1',
@@ -86,35 +85,15 @@ afterEach(() => {
 })
 
 describe('scheduleRuntimeProjectionPush', () => {
-  test('POSTs the gzipped projection to /v1/platform/runtime-projection with a bearer token', async () => {
-    const doc = makeDoc()
-    __setRuntimeProjectionStateReaderForTests(readerFor(doc, 'etag-1'))
-    const calls: { url: string; init: RequestInit }[] = []
-    globalThis.fetch = (async (url: string, init: RequestInit) => {
-      calls.push({ url: String(url), init })
-      return new Response('{"ok":true,"stored":"stored","etag":"etag-1"}', { status: 200 })
-    }) as unknown as typeof fetch
-
-    scheduleRuntimeProjectionPush('boot')
-    await settle()
-
-    expect(calls.length).toBe(1)
-    const call = calls[0]!
-    expect(call.url).toBe('https://api.kortix.test/v1/platform/runtime-projection')
-    expect(call.init.method).toBe('POST')
-    const headers = call.init.headers as Record<string, string>
-    expect(headers.Authorization).toBe('Bearer sandbox-token-abc')
-    expect(headers['Content-Encoding']).toBe('gzip')
-    expect(headers['Content-Type']).toBe('application/json')
-    const body = decompress(call.init.body)
-    expect(body.session_id).toBe('sess-1')
-    expect(body.captured_at).toBe('2026-08-27T00:00:00.000Z')
-    expect(body.projection_etag).toBe('etag-1')
-    expect(body.projection).toEqual(doc as never)
-  })
-
-  test('does not double the /v1 prefix when KORTIX_API_URL already ends in /v1', async () => {
-    setEnv({ ...BASE_ENV, KORTIX_API_URL: 'https://api.kortix.test/v1/' })
+  // relay-context.test.ts owns the per-variable table. The projection route is
+  // session-scoped, so unlike the turn relays it does not need a project id.
+  test.each([
+    ['KORTIX_API_URL', 0],
+    ['KORTIX_TOKEN', 0],
+    ['KORTIX_SESSION_ID', 0],
+    ['KORTIX_PROJECT_ID', 1],
+  ] as const)('with %s unset it makes %i POST(s)', async (key, expected) => {
+    setEnv({ ...BASE_ENV, [key]: undefined })
     __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
     const urls: string[] = []
     globalThis.fetch = (async (url: string) => {
@@ -125,37 +104,7 @@ describe('scheduleRuntimeProjectionPush', () => {
     scheduleRuntimeProjectionPush('boot')
     await settle()
 
-    expect(urls).toEqual(['https://api.kortix.test/v1/platform/runtime-projection'])
-  })
-
-  test('is a silent no-op when KORTIX_API_URL is unset', async () => {
-    setEnv({ ...BASE_ENV, KORTIX_API_URL: undefined })
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
-    const urls: string[] = []
-    globalThis.fetch = (async (url: string) => {
-      urls.push(String(url))
-      return new Response('{}', { status: 200 })
-    }) as unknown as typeof fetch
-
-    scheduleRuntimeProjectionPush('boot')
-    await settle()
-
-    expect(urls).toEqual([])
-  })
-
-  test('is a silent no-op when no credential is configured', async () => {
-    setEnv({ ...BASE_ENV, KORTIX_TOKEN: undefined })
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
-    const urls: string[] = []
-    globalThis.fetch = (async (url: string) => {
-      urls.push(String(url))
-      return new Response('{}', { status: 200 })
-    }) as unknown as typeof fetch
-
-    scheduleRuntimeProjectionPush('boot')
-    await settle()
-
-    expect(urls).toEqual([])
+    expect(urls).toHaveLength(expected)
   })
 
   test('is a silent no-op when no runtime state store is configured (default reader, cold boot)', async () => {
@@ -307,6 +256,26 @@ describe('scheduleRuntimeProjectionPush', () => {
     expect(posts).toBe(3)
   })
 
+  test("a 503 with Retry-After waits the server's delay, not the ladder step", async () => {
+    // The ladder base here is 10 ms; Retry-After: 1 asks for 1 s.
+    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    const at: number[] = []
+    globalThis.fetch = (async () => {
+      at.push(performance.now())
+      if (at.length === 1) {
+        return new Response('{"error":"busy"}', { status: 503, headers: { 'Retry-After': '1' } })
+      }
+      return new Response('{}', { status: 200 })
+    }) as unknown as typeof fetch
+
+    scheduleRuntimeProjectionPush('boot')
+    await settle(250)
+    expect(at).toHaveLength(1)
+    await settle(1_000)
+    expect(at).toHaveLength(2)
+    expect(at[1]! - at[0]!).toBeGreaterThanOrEqual(950)
+  })
+
   test('503 retries are bounded — a permanently unavailable API is abandoned', async () => {
     __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
     let posts = 0
@@ -323,13 +292,6 @@ describe('scheduleRuntimeProjectionPush', () => {
 })
 
 describe('shedProjectionToFit', () => {
-  test('returns the document unchanged when it already fits', () => {
-    const doc = makeDoc()
-    const { projection, shed } = shedProjectionToFit(doc as never, PROJECTION_RELAY_MAX_BYTES)
-    expect(shed).toEqual([])
-    expect(projection).toEqual(doc as never)
-  })
-
   test('sheds in order — tool_ids, then skills, then commands — until the document fits', () => {
     // tool_ids alone dominates the size, so shedding stops after step one.
     const fat = makeDoc({
@@ -371,15 +333,25 @@ describe('shedProjectionToFit', () => {
 })
 
 describe('against a real socket', () => {
-  test('a real HTTP sink receives the push, gunzips it, and the relay records success', async () => {
-    const received: { auth: string | null; encoding: string | null; body: Record<string, unknown> }[] = []
+  test('a real HTTP sink receives the gzipped projection at /v1/platform/runtime-projection, and the landed etag suppresses a repeat', async () => {
+    const received: {
+      method: string
+      path: string
+      auth: string | null
+      encoding: string | null
+      contentType: string | null
+      body: Record<string, unknown>
+    }[] = []
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
         const raw = Buffer.from(await req.arrayBuffer())
         received.push({
+          method: req.method,
+          path: new URL(req.url).pathname,
           auth: req.headers.get('authorization'),
           encoding: req.headers.get('content-encoding'),
+          contentType: req.headers.get('content-type'),
           body: JSON.parse(gunzipSync(raw).toString('utf8')) as Record<string, unknown>,
         })
         return Response.json({ ok: true, stored: 'stored', etag: 'etag-real' })
@@ -394,10 +366,18 @@ describe('against a real socket', () => {
       await settle(100)
 
       expect(received.length).toBe(1)
+      // A base URL with no /v1 gains exactly one.
+      expect(received[0]!.method).toBe('POST')
+      expect(received[0]!.path).toBe('/v1/platform/runtime-projection')
       expect(received[0]!.auth).toBe('Bearer sandbox-token-abc')
       expect(received[0]!.encoding).toBe('gzip')
-      expect(received[0]!.body.session_id).toBe('sess-1')
-      expect(received[0]!.body.projection).toEqual(doc as never)
+      expect(received[0]!.contentType).toBe('application/json')
+      expect(received[0]!.body).toEqual({
+        session_id: 'sess-1',
+        captured_at: '2026-08-27T00:00:00.000Z',
+        projection_etag: 'etag-real',
+        projection: doc as never,
+      })
 
       // And the landed etag now suppresses a repeat.
       scheduleRuntimeProjectionPush('boot')
@@ -406,33 +386,5 @@ describe('against a real socket', () => {
     } finally {
       server.stop(true)
     }
-  })
-})
-
-describe('wiring', () => {
-  // The relay is only worth anything if the daemon actually calls it. Pin the
-  // four call sites so a refactor cannot silently drop the push.
-  const main = new TextDecoder().decode(
-    new Uint8Array(require('node:fs').readFileSync(require('node:path').join(import.meta.dir, '..', 'main.ts'))),
-  )
-  const envRoute = require('node:fs').readFileSync(
-    require('node:path').join(import.meta.dir, '..', 'routes', 'env.ts'),
-    'utf8',
-  ) as string
-
-  test('main.ts pushes on both runtime-ready exits', () => {
-    const bootPushes = main.split("scheduleRuntimeProjectionPush('boot')").length - 1
-    expect(bootPushes).toBe(2)
-  })
-
-  test('main.ts pushes on the catalog-moving SSE frames', () => {
-    expect(main).toContain("event.type === 'server.instance.disposed'")
-    expect(main).toContain("event.type === 'mcp.tools.changed'")
-    expect(main).toContain("event.type === 'plugin.added'")
-    expect(main).toContain('scheduleRuntimeProjectionPush(event.type)')
-  })
-
-  test('routes/env.ts pushes after the daemon rewrites config', () => {
-    expect(envRoute).toContain("scheduleRuntimeProjectionPush('kortix-env-applied')")
   })
 })

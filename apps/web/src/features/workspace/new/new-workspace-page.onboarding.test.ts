@@ -126,7 +126,7 @@ describe('/new: the onboarding param owns the page', () => {
    * `showUpgradeOption` is `isBillingEnabled()` — it tracks whether billing is
    * ON, not whether a `GlobalUpgradeModal` is MOUNTED. `AppProviders` (the only
    * other host) is mounted by `project-shell.tsx` and the share page, never by
-   * `app/(app)/layout.tsx`, so on `/new` billing can be enabled with no host at
+   * `app/[locale]/(app)/layout.tsx`, so on `/new` billing can be enabled with no host at
    * all and the plan step's "See plans" stays a dead click.
    */
   test('/new hosts a GlobalUpgradeModal so the plan step has something to open', () => {

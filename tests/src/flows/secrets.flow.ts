@@ -3,6 +3,7 @@
  */
 import { flow } from "../core/flow";
 import { createDatabaseSession } from '../fixtures/database-project';
+import { subscribe } from '../fixtures/billing';
 
 flow(
   "SEC-POOL-1",
@@ -74,6 +75,9 @@ flow(
       "POST /v1/projects/:projectId/sessions",
       "PUT /v1/projects/:projectId/sessions/:sessionId/model",
       "DELETE /v1/accounts/:accountId/secret-resources/:secretId",
+      "POST /v1/accounts/:accountId/iam/service-accounts",
+      "POST /v1/accounts/:accountId/iam/assignments",
+      "DELETE /v1/accounts/:accountId/iam/service-accounts/:saId",
     ],
   },
   async (ctx) => {
@@ -157,22 +161,120 @@ flow(
       }, { params: { projectId: project.id } });
       refused.status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
     });
-    await ctx.step('manager selection requires grants for the session owner', async () => {
+    await ctx.step('a model on pooled keys needs no key list: create and model change select every usable key', async () => {
+      // The CLI, the SDK and chat channels name only a model. This used to
+      // answer 400 INVALID_SESSION_MODEL; an explicit empty list above still does.
+      const created = await owner.post('/v1/projects/:projectId/sessions', {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params: { projectId: project.id } });
+      if (ctx.env.target === 'local') {
+        created.status(503).body().has('$.code', 'KORTIX_URL_UNREACHABLE');
+      } else {
+        created.status(201);
+        const createdId = created.json<any>().session_id;
+        ctx.track('session', createdId, { projectId: project.id });
+        (await owner.get(poolPath, { params: { ...poolParams, sessionId: createdId } })).status(200).body().has('$.secret_ids', ids);
+      }
+      (await owner.put(poolPath, { secret_ids: null }, { params: poolParams })).status(200).body().has('$.configured', false);
+      (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params: poolParams })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
+      (await owner.get(poolPath, { params: poolParams })).status(200).body().has('$.configured', true).has('$.secret_ids', ids);
+    });
+    await ctx.step('an explicit empty selection stays: a model change refuses the model and keeps it', async () => {
+      (await owner.put(poolPath, { secret_ids: [] }, { params: poolParams })).status(200).body().has('$.configured', true);
+      (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params: poolParams })).status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
+      (await owner.get(poolPath, { params: poolParams })).status(200).body().has('$.configured', true).has('$.secret_ids', []);
+      (await owner.put(poolPath, { secret_ids: ids }, { params: poolParams })).status(200).body().has('$.secret_ids', ids);
+    });
+    await ctx.step('a service account with a project manager role selects project keys and switches to a pool-only model', async () => {
+      // A service account has no account membership. The gateway serves a
+      // session's selection as its human owner, not as the caller, so keys
+      // shared with the whole project stay selectable. Keys granted to one
+      // member do not.
+      const key = await owner.post(resourcePath, {
+        label: 'Project shared', provider_id: 'anthropic', name: 'ANTHROPIC_API_KEY',
+        value: 'project-shared-test-value', consumer: 'llm_gateway', strategy: 'broker',
+        project_id: project.id, access_mode: 'project',
+      }, { params: resourceParams });
+      key.status(201);
+      const projectKeyId = key.json<any>().secret_id as string;
+      const created = await owner.post('/v1/accounts/:accountId/iam/service-accounts',
+        { name: ctx.fixtures.name('sa'), description: 'e2e' }, { params: resourceParams });
+      created.status(201);
+      const { service_account_id: saId, secret } = created.json<any>();
+      try {
+        (await owner.post('/v1/accounts/:accountId/iam/assignments', {
+          principal_type: 'service_account', principal_id: saId, role_key: 'manager',
+          scope_type: 'project', scope_id: project.id,
+        }, { params: resourceParams })).status(201);
+        const sa = ctx.client.withBearer(secret, 'service-account');
+        // A git-trigger session its human owner shares with the project. A
+        // service account manages it through `project.trigger.update`.
+        const shared = await createDatabaseSession(ctx.env, {
+          projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId!, visibility: 'project',
+          metadata: { source: 'trigger:git', trigger_kind: 'git', trigger_slug: 'e2e-pool' },
+        });
+        const params = { ...poolParams, sessionId: shared };
+        // IAM verdicts are cached per API task for up to 15 s.
+        const deadline = Date.now() + 30_000;
+        let selected = await sa.put(poolPath, { secret_ids: [projectKeyId] }, { params });
+        while (selected.statusCode !== 200 && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 2_000));
+          selected = await sa.put(poolPath, { secret_ids: [projectKeyId] }, { params });
+        }
+        if (selected.statusCode !== 200) throw new Error(`service-account selection returned ${selected.statusCode}: ${selected.text()}`);
+        selected.body().has('$.configured', true).has('$.secret_ids', [projectKeyId]);
+        (await sa.put(poolPath, { secret_ids: [ids[0]] }, { params })).status(403)
+          .body().has('$.error', 'Secret unavailable or not granted');
+        (await sa.put(poolPath, { secret_ids: null }, { params })).status(200).body().has('$.configured', false);
+        (await sa.put('/v1/projects/:projectId/sessions/:sessionId/model', {
+          opencode_model: 'anthropic/claude-sonnet-4.6',
+        }, { params })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
+        (await owner.get(poolPath, { params })).status(200).body().has('$.configured', true).has('$.secret_ids', [projectKeyId]);
+      } finally {
+        (await owner.del('/v1/accounts/:accountId/iam/service-accounts/:saId', {
+          params: { ...resourceParams, saId },
+        })).status(200);
+        (await owner.del(`${resourcePath}/:secretId`, { params: { ...resourceParams, secretId: projectKeyId } })).status(200);
+      }
+    });
+    await ctx.step('a shared session uses only keys shared with the whole project', async () => {
       await team.grantProjectRole(project.id, member.userId!, 'member');
       const memberSession = await createDatabaseSession(ctx.env, {
         projectId: project.id, accountId: team.id, userId: member.userId!, visibility: 'project',
       });
       const params = { ...poolParams, sessionId: memberSession };
       (await owner.put(poolPath, { secret_ids: ids }, { params })).status(403);
-      (await owner.get(poolPath, { params })).status(200).body().has('$.configured', false);
       for (const secretId of ids) {
         (await owner.put(`${resourcePath}/:secretId/grants/:userId`, {}, {
           params: { ...resourceParams, secretId, userId: member.userId! },
         })).status(200);
       }
-      (await owner.put(poolPath, { secret_ids: ids }, { params })).status(200);
-      (await ctx.client.as(member).get(poolPath, { params })).status(200).body().has('$.secret_ids', ids);
+      // Granted to the member, but the session is shared: the gateway serves it
+      // with no personal user, so a member-granted key would never be used.
+      (await owner.put(poolPath, { secret_ids: ids }, { params })).status(403)
+        .body().has('$.code', 'SHARED_SESSION_PERSONAL_KEY');
+      (await ctx.client.as(member).put(poolPath, { secret_ids: ids }, { params })).status(403)
+        .body().has('$.code', 'SHARED_SESSION_PERSONAL_KEY');
+      (await owner.get(poolPath, { params })).status(200).body().has('$.configured', false);
+      // A model only those keys reach is refused, not accepted and then failed on every turn.
       (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
+        opencode_model: 'anthropic/claude-sonnet-4.6',
+      }, { params })).status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
+      (await owner.get(poolPath, { params })).status(200).body().has('$.configured', false);
+    });
+    await ctx.step('a private session selects keys granted to its owner', async () => {
+      const privateSession = await createDatabaseSession(ctx.env, {
+        projectId: project.id, accountId: team.id, userId: member.userId!, visibility: 'private',
+      });
+      const params = { ...poolParams, sessionId: privateSession };
+      const asMember = ctx.client.as(member);
+      (await asMember.put(poolPath, { secret_ids: ids }, { params })).status(200);
+      (await asMember.get(poolPath, { params })).status(200).body().has('$.secret_ids', ids);
+      (await asMember.put('/v1/projects/:projectId/sessions/:sessionId/model', {
         opencode_model: 'anthropic/claude-sonnet-4.6',
       }, { params })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
     });
@@ -197,6 +299,197 @@ flow(
     });
   },
 );
+
+flow('SEC-POOL-4', {
+  domain: 'secrets',
+  routes: [
+    'PATCH /v1/projects/:projectId/features',
+    'PUT /v1/projects/:projectId/agents/:agentName/config',
+    'PUT /v1/projects/:projectId/access/:userId',
+    'POST /v1/accounts/:accountId/secret-resources',
+    'GET /v1/accounts/:accountId/secret-resources',
+    'PUT /v1/accounts/:accountId/secret-resources/:secretId/access',
+    'POST /v1/projects/:projectId/sessions',
+    'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  if (ctx.env.target !== 'local') {
+    await ctx.step('fund the isolated account for two managed projects', async () => {
+      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id);
+    });
+  }
+  const project = await team.project({ seed: true, allowAllSecrets: true });
+  const otherProject = await team.project({ seed: true, allowAllSecrets: true });
+  const member = await team.addMember('member');
+  await team.grantProjectRole(project.id, member.userId!, 'user');
+  const owner = ctx.client.as(ctx.P.OWNER);
+  await ctx.step('grant the other project agent access to the provider', async () => {
+    (await owner.put('/v1/projects/:projectId/agents/:agentName/config',
+      { secrets: ['ANTHROPIC_API_KEY'] },
+      { params: { projectId: otherProject.id, agentName: 'kortix' } })).status(200);
+  });
+  const path = '/v1/accounts/:accountId/secret-resources';
+  const params = { accountId: team.id };
+  const listPath = `${path}?project_id=${project.id}`;
+  const input = { project_id: project.id, label: 'Project key', provider_id: 'anthropic',
+    name: 'ANTHROPIC_API_KEY', value: 'project-key-test-value', consumer: 'llm_gateway', strategy: 'broker' };
+  await ctx.step('flag off rejects a project-scoped credential', async () => {
+    (await owner.post(path, input, { params })).status(403);
+  });
+  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
+      { params: { projectId: project.id } })).status(200);
+  }
+  let secretId = '';
+  await ctx.step('new key defaults to everyone in the project', async () => {
+    const created = await owner.post(path, input, { params });
+    created.status(201).body().has('$.access_mode', 'project').has('$.project_id', project.id);
+    secretId = created.json<any>().secret_id;
+    const visible = await ctx.client.as(member).get(listPath, { params });
+    visible.status(200);
+    const row = (visible.json<any>().secrets as any[]).find((secret) => secret.secret_id === secretId);
+    if (!row || row.can_use !== true || 'value' in row || 'value_enc' in row) throw new Error('project member cannot use project key');
+    const other = await owner.get(`${path}?project_id=${otherProject.id}`, { params });
+    other.status(200);
+    if ((other.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId)) throw new Error('key leaked into another project');
+    for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+      (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
+        { params: { projectId: otherProject.id } })).status(200);
+    }
+    (await owner.post('/v1/projects/:projectId/sessions', {
+      agent_name: 'kortix', provider_secret_pools: { anthropic: [secretId] },
+    }, { params: { projectId: otherProject.id } })).status(403)
+      .body().has('$.error', 'Secret unavailable or not granted');
+  });
+  await ctx.step('selected-member mode revokes and restores access atomically', async () => {
+    const accessPath = `${path}/:secretId/access`;
+    const accessParams = { ...params, secretId };
+    (await owner.put(accessPath, { mode: 'members', user_ids: [] }, { params: accessParams })).status(200)
+      .body().has('$.access_mode', 'members');
+    const restricted = await ctx.client.as(member).get(listPath, { params });
+    restricted.status(200);
+    if ((restricted.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId)) throw new Error('restricted key leaked to member');
+    (await owner.put(accessPath, { mode: 'members', user_ids: [member.userId] }, { params: accessParams })).status(200);
+    const granted = await ctx.client.as(member).get(listPath, { params });
+    granted.status(200);
+    if (!(granted.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId && secret.can_use)) throw new Error('member grant did not restore access');
+    (await owner.put(accessPath, { mode: 'project', user_ids: [] }, { params: accessParams })).status(200)
+      .body().has('$.access_mode', 'project');
+  });
+  await ctx.step('delete removes the scoped key', async () => {
+    (await owner.del(`${path}/:secretId`, { params: { ...params, secretId } })).status(200);
+    const listed = await owner.get(listPath, { params });
+    listed.status(200);
+    if ((listed.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId)) throw new Error('deleted key remained visible');
+  });
+});
+
+// Bring your own ChatGPT subscription. A plain project member (no
+// project.secret.write) connects and reconnects ChatGPT accounts only they can
+// use; sharing one stays a manager's secret write. Starting a device flow calls
+// OpenAI after every check, so a permitted start answers 200 (device code) or
+// 502 (OpenAI unreachable from this runner) — never 403.
+flow('SEC-POOL-5', {
+  domain: 'secrets', requires: ['database'],
+  routes: [
+    'PATCH /v1/projects/:projectId/features',
+    'POST /v1/projects/:projectId/oauth/:provider/start',
+    'GET /v1/accounts/:accountId/secret-resources',
+    'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
+    'GET /v1/projects/:projectId/model-picker',
+  ],
+}, async (ctx) => {
+  const { Client: PgClient } = await import('pg');
+  const { randomUUID } = await import('node:crypto');
+  const team = await ctx.fixtures.team();
+  const project = await team.project({ seed: true, allowAllSecrets: true });
+  const member = await team.addMember('member');
+  await team.grantProjectRole(project.id, member.userId!, 'user');
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const asMember = ctx.client.as(member);
+  const startPath = '/v1/projects/:projectId/oauth/:provider/start';
+  const startParams = { projectId: project.id, provider: 'openai' };
+  const resourcePath = '/v1/accounts/:accountId/secret-resources';
+  const listPath = `${resourcePath}?project_id=${project.id}`;
+  const params = { accountId: team.id };
+
+  await ctx.step('with the flag off, a named ChatGPT account is refused', async () => {
+    (await asMember.post(startPath, { resource_label: 'ChatGPT · Member', sharing: { mode: 'private', ownerId: member.userId } },
+      { params: startParams })).status(403);
+  });
+  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
+  }
+
+  await ctx.step('a member cannot share a ChatGPT account with the project or another member', async () => {
+    (await asMember.post(startPath, { resource_label: 'Team ChatGPT', sharing: { mode: 'project' } }, { params: startParams }))
+      .status(403);
+    (await asMember.post(startPath, {
+      resource_label: 'Team ChatGPT', sharing: { mode: 'members', memberIds: [member.userId, ctx.P.OWNER.userId] },
+    }, { params: startParams })).status(403);
+  });
+
+  await ctx.step('a member starts a ChatGPT account only they can use, however it is spelled', async () => {
+    for (const sharing of [{ mode: 'private', ownerId: member.userId }, { mode: 'members', memberIds: [member.userId] }]) {
+      const started = await asMember.post(startPath, { resource_label: 'ChatGPT · Member', sharing }, { params: startParams });
+      started.status([200, 502]);
+      if (started.statusCode === 200) started.body().exists('$.flow_id').exists('$.user_code');
+    }
+  });
+
+  // Completing a device login needs a live ChatGPT account, so the accounts
+  // are written the way a completed poll writes them.
+  const mine = randomUUID();
+  const ownersPrivate = randomUUID();
+  const databaseUrl = ctx.env.databaseUrl!;
+  const database = new PgClient({ connectionString: databaseUrl,
+    ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+  await database.connect();
+  try {
+    for (const [secretId, createdBy, label] of [[mine, member.userId!, 'ChatGPT · Member'], [ownersPrivate, ctx.P.OWNER.userId!, 'ChatGPT · Owner']]) {
+      await database.query(`INSERT INTO kortix.account_secret_resources
+        (secret_id, account_id, project_id, access_mode, label, provider_id, name, value_enc, consumer, strategy, created_by)
+        VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', 'v1:not:a:login', 'llm_gateway', 'broker', $5)`,
+      [secretId, team.id, project.id, label, createdBy]);
+      await database.query('INSERT INTO kortix.account_secret_grants (secret_id, account_id, user_id, granted_by) VALUES ($1, $2, $3, $3)',
+        [secretId, team.id, createdBy]);
+    }
+  } finally { await database.end(); }
+
+  await ctx.step("the member sees their own account and not the owner's private one", async () => {
+    const listed = await asMember.get(listPath, { params });
+    listed.status(200);
+    const secrets = listed.json<any>().secrets as any[];
+    const own = secrets.find((secret) => secret.secret_id === mine);
+    if (!own || own.can_use !== true || own.access_mode !== 'members' || 'value' in own) throw new Error('member cannot use their own ChatGPT account');
+    if (secrets.some((secret) => secret.secret_id === ownersPrivate)) throw new Error("owner's private ChatGPT account leaked to a member");
+  });
+
+  await ctx.step('their account lights up ChatGPT subscription models in their picker', async () => {
+    const picker = await asMember.get('/v1/projects/:projectId/model-picker', { params: { projectId: project.id } });
+    picker.status(200);
+    const ids = Object.keys(picker.json<{ models: Record<string, unknown> }>().models);
+    if (!ids.some((id) => id.startsWith('codex/'))) throw new Error(`no ChatGPT subscription model in the member picker: ${ids.join(', ')}`);
+  });
+
+  await ctx.step('the member reconnects only their own account, in place', async () => {
+    const reconnect = await asMember.post(startPath, { resource_id: mine }, { params: startParams });
+    reconnect.status([200, 502]);
+    (await asMember.post(startPath, { resource_id: ownersPrivate }, { params: startParams })).status(403)
+      .body().has('$.error', 'Only the person who connected this ChatGPT account can reconnect it');
+    (await asMember.post(startPath, { resource_id: mine, resource_label: 'Renamed' }, { params: startParams })).status(400);
+    (await asMember.post(startPath, { resource_id: randomUUID() }, { params: startParams })).status(404);
+  });
+
+  await ctx.step('the member deletes their own account', async () => {
+    (await asMember.del(`${resourcePath}/:secretId`, { params: { ...params, secretId: mine } })).status(200);
+    const listed = await asMember.get(listPath, { params });
+    listed.status(200);
+    if ((listed.json<any>().secrets as any[]).some((secret) => secret.secret_id === mine)) throw new Error('deleted ChatGPT account is still listed');
+    (await owner.del(`${resourcePath}/:secretId`, { params: { ...params, secretId: ownersPrivate } })).status(200);
+  });
+});
 
 flow('SEC-POOL-3', {
   domain: 'secrets', requires: ['database'],
@@ -228,7 +521,7 @@ flow('SEC-POOL-3', {
     await database.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [first, team.id, project.id]);
     await database.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5 WHERE token_id = $1', [
       credential.token_id, project.id, first,
-      JSON.stringify({ agent: 'kortix', kortixCli: 'all', connectors: 'all', env: 'all' }), team.id,
+      JSON.stringify({ agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' }), team.id,
     ]);
   } finally { await database.end(); }
   const caller = ctx.client.withBearer(credential.secret_key, 'BOUND_SESSION');

@@ -116,6 +116,45 @@ test('catalog returns an empty list when the response omits connectors', async (
   expect(await getConnectorCatalog('project-one')).toEqual([]);
 });
 
+test('catalog entries carry the accounts this caller may run the connector as, default first', async () => {
+  // One connector can hold the project's shared account and each member's
+  // own — the catalog must say so without a second round trip, so the caller
+  // (human or agent) sees there is more than one before ever calling `call`.
+  const withAccounts: { connectors: ConnectorCatalogEntry[] } = {
+    connectors: [
+      {
+        slug: 'gmail',
+        name: 'Gmail',
+        provider: 'composio',
+        status: 'active',
+        actions: [],
+        accounts: [
+          {
+            connection_id: 'conn-personal',
+            label: 'markokraemer.mail@gmail.com',
+            owner_type: 'member',
+            is_default: false,
+          },
+          {
+            connection_id: 'conn-work',
+            label: 'marko@kortix.ai',
+            owner_type: 'member',
+            is_default: true,
+          },
+        ],
+        default_account: 'marko@kortix.ai',
+      },
+    ],
+  };
+  responseBody = withAccounts;
+
+  const result = await getConnectorCatalog('project-one');
+
+  expect(result).toEqual(withAccounts.connectors);
+  expect(result[0]?.accounts).toHaveLength(2);
+  expect(result[0]?.default_account).toBe('marko@kortix.ai');
+});
+
 test('tools flatten the catalog into stable connector.action identifiers', async () => {
   const tools = await listConnectorTools('project-one');
 
@@ -223,6 +262,33 @@ test('attachment upload sends raw bytes through the shared token seam', async ()
   expect(calls[0]?.headers.get('x-kortix-attachment-disposition')).toBe('inline');
   expect(calls[0]?.headers.get('x-kortix-attachment-content-id')).toBe('chart-one');
   expect(calls[0]?.body).toBe(bytes);
+});
+
+test('attachment upload names the target connector and returns a call-args reference', async () => {
+  responseBody = {
+    attachment_id: 'attachment-two',
+    filename: 'report.pdf',
+    content_type: 'application/pdf',
+    content_disposition: 'attachment',
+    size: 1,
+    expires_at: '2026-09-25T00:00:00.000Z',
+    ref: { $kortix_attachment: 'attachment-two' },
+  };
+
+  const uploaded = await uploadConnectorAttachment('project-one', new Uint8Array([1]), {
+    filename: 'report.pdf',
+    contentType: 'application/pdf',
+    connector: 'microsoft-graph',
+  });
+  expect(calls[0]?.headers.get('x-kortix-attachment-connector')).toBe('microsoft-graph');
+  const reference: { $kortix_attachment: string } | undefined = uploaded.ref;
+  expect(reference).toEqual({ $kortix_attachment: 'attachment-two' });
+
+  await uploadConnectorAttachment('project-one', new Uint8Array([1]), {
+    filename: 'report.pdf',
+    contentType: 'application/pdf',
+  });
+  expect(calls[1]?.headers.get('x-kortix-attachment-connector')).toBeNull();
 });
 
 test('attachment upload handles an uncontrolled slash-heavy backend URL in linear time', async () => {

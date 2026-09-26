@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
-import { connectors, projectSessions, projects } from '@kortix/db';
+import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
 
 mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 
@@ -15,6 +15,7 @@ mock.module('../projects/secrets', () => ({
 let sessionRows: Array<Record<string, unknown>> = [];
 let projectRows: Array<Record<string, unknown>> = [];
 let connectorRows: Array<Record<string, unknown>> = [];
+let connectionRows: Array<Record<string, unknown>> = [];
 mock.module('../shared/db', () => ({
   db: {
     select: () => ({
@@ -27,7 +28,9 @@ mock.module('../shared/db', () => ({
                 ? projectRows
                 : table === connectors
                   ? connectorRows
-                  : [],
+                  : table === connectorConnections
+                    ? connectionRows
+                    : [],
         }),
       }),
     }),
@@ -57,7 +60,10 @@ mock.module('../projects/session-lifecycle', () => ({
 }));
 
 let pipedreamOn = false;
-let finalizeResult: { connected: boolean; accountId?: string } = { connected: false };
+let finalizeResult: { connected: boolean; accountId?: string; connectedAs?: string | null } = {
+  connected: false,
+};
+let connectResult: Record<string, unknown> = { provider: 'pipedream', connectUrl: null, connected: false };
 const finalizeCalls: Array<Record<string, unknown>> = [];
 mock.module('../connectors/pipedream', () => ({
   pipedreamConfigured: () => pipedreamOn,
@@ -79,11 +85,35 @@ mock.module('../connectors/credentials', () => ({
 // behaviour — what it persists and who it tells — not a provider client.
 mock.module('../connectors/db-deps', () => ({
   dbConnectorRouterDeps: {
-    connectorConnect: async () => ({ provider: 'pipedream', connectUrl: null, connected: false }),
-    connectorFinalize: async (projectId: string, slug: string) => {
-      finalizeCalls.push({ projectId, slug });
+    connectorConnect: async () => connectResult,
+    connectorFinalize: async (
+      projectId: string,
+      slug: string,
+      uid: string,
+      selector: unknown,
+      owner: unknown,
+    ) => {
+      finalizeCalls.push({ projectId, slug, uid, selector, owner });
       return { provider: 'pipedream', ...finalizeResult };
     },
+  },
+}));
+
+// The grant verdict is resolved per session from the manifest. Mocked at the
+// I/O seam only: the pure policy and its wording stay real.
+const realReach = await import('../projects/lib/session-secret-reach');
+let reach: Awaited<ReturnType<typeof realReach.resolveSessionSecretReach>> | Error = null;
+const reachLookups: string[] = [];
+mock.module('../projects/lib/session-secret-reach', () => ({
+  ...realReach,
+  // The real advisory wrapper, re-bound to the mocked lookup: a module mock
+  // cannot reach a call made inside the module itself.
+  sessionWithheldSecrets: async (sessionId: string, names: string[]) => {
+    reachLookups.push(sessionId);
+    if (reach instanceof Error) return null;
+    if (!reach) return null;
+    const withheld = realReach.withheldSecrets(names, reach.grantEnv, reach.allowlist);
+    return withheld.length > 0 ? { agent: reach.agent, withheld } : null;
   },
 }));
 
@@ -97,13 +127,17 @@ const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const CONNECTOR_ID = '99999999-8888-7777-6666-555555555555';
 const T0 = new Date('2026-08-07T12:00:00.000Z');
 
-function mintToken(opts?: { expiresInMinutes?: number; sid?: string | null }) {
+function mintToken(opts?: {
+  expiresInMinutes?: number;
+  sid?: string | null;
+  scope?: 'runtime' | 'connector';
+}) {
   return mintSetupLink(
     PROJECT_ID,
     {
       kind: 'secret',
       fields: [{ name: 'DRATA_API_KEY' }],
-      scope: 'runtime',
+      scope: opts?.scope ?? 'runtime',
       uid: 'user-1',
       sid: opts?.sid === undefined ? SESSION_ID : opts.sid,
     },
@@ -115,13 +149,20 @@ async function flushNotification() {
   await new Promise((resolve) => setTimeout(resolve, 25));
 }
 
-function mintConnectorToken(opts?: { sid?: string | null; app?: string | null }) {
+function mintConnectorToken(opts?: {
+  sid?: string | null;
+  app?: string | null;
+  label?: string | null;
+  owner?: 'me' | 'project';
+}) {
   return mintSetupLink(PROJECT_ID, {
     kind: 'connector',
     slug: 'smartlead',
     app: opts?.app === undefined ? 'smartlead' : opts.app,
     uid: 'user-1',
     sid: opts?.sid === undefined ? SESSION_ID : opts.sid,
+    label: opts?.label ?? null,
+    owner: opts?.owner,
   }).token;
 }
 
@@ -135,11 +176,14 @@ beforeEach(() => {
   propagated.length = 0;
   enqueued.length = 0;
   finalizeCalls.length = 0;
+  reachLookups.length = 0;
+  reach = null;
   sessionRows = [];
   projectRows = [{ name: 'Kortix Company' }];
   connectorRows = [
     { connectorId: CONNECTOR_ID, providerType: 'pipedream', authorizationStrategy: 'project' },
   ];
+  connectionRows = [];
   pipedreamOn = false;
   credentialAlreadySet = false;
   finalizeResult = { connected: false };
@@ -170,6 +214,84 @@ describe('GET /secret/:token', () => {
   test('a mangled token returns 404', async () => {
     const res = await setupLinksPublicApp.request(`/secret/${mintToken().slice(0, -8)}`);
     expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /connectors/:token', () => {
+  test('returns the connector display name and icon so the chat card can name the app', async () => {
+    connectorRows = [
+      { name: 'Smartlead', config: { icon_url: 'https://cdn.example.test/smartlead.svg' } },
+    ];
+    const res = await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      kind: 'connector',
+      project_name: 'Kortix Company',
+      slug: 'smartlead',
+      app: 'smartlead',
+      name: 'Smartlead',
+      icon_url: 'https://cdn.example.test/smartlead.svg',
+    });
+  });
+
+  test('names the project and the account name the agent suggested, so the dialog can prefill it', async () => {
+    connectorRows = [{ name: 'Gmail', config: {} }];
+    const named = await (
+      await setupLinksPublicApp.request(`/connectors/${mintConnectorToken({ label: "Dad's Gmail" })}`)
+    ).json();
+    expect(named.project_id).toBe(PROJECT_ID);
+    expect(named.label).toBe("Dad's Gmail");
+    // Whose account the agent meant: the dialog preselects it.
+    expect(named.owner).toBe('me');
+    const unnamed = await (
+      await setupLinksPublicApp.request(`/connectors/${mintConnectorToken({ owner: 'project' })}`)
+    ).json();
+    expect(unnamed.label).toBeNull();
+    expect(unnamed.owner).toBe('project');
+  });
+
+  test('a connector without a catalog icon reports icon_url null, not a guessed URL', async () => {
+    connectorRows = [{ name: 'Smartlead', config: {} }];
+    const body = await (
+      await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`)
+    ).json();
+    expect(body.name).toBe('Smartlead');
+    expect(body.icon_url).toBeNull();
+  });
+
+  test('a Composio connector without a stored icon uses the toolkit logo the catalogue shows', async () => {
+    const { setComposioRuntimeForTest } = await import('../connectors/composio');
+    const previousKey = process.env.COMPOSIO_API_KEY;
+    process.env.COMPOSIO_API_KEY = 'test-key';
+    setComposioRuntimeForTest({
+      sessions: { create: async () => ({}) as never, use: async () => ({}) as never },
+      toolkits: {
+        get: async () => [
+          { slug: 'SmartLead', name: 'Smartlead', meta: { logo: 'https://logos.example.test/smartlead' } },
+        ],
+      },
+    });
+    try {
+      connectorRows = [{ name: 'Smartlead', config: {} }];
+      const body = await (
+        await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`)
+      ).json();
+      expect(body.icon_url).toBe('https://logos.example.test/smartlead');
+    } finally {
+      setComposioRuntimeForTest(null);
+      if (previousKey === undefined) delete process.env.COMPOSIO_API_KEY;
+      else process.env.COMPOSIO_API_KEY = previousKey;
+    }
+  });
+
+  test('a link whose connector row is gone still resolves, with null identity', async () => {
+    connectorRows = [];
+    const res = await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.name).toBeNull();
+    expect(body.icon_url).toBeNull();
   });
 });
 
@@ -224,6 +346,49 @@ describe('POST /secret/:token', () => {
     expect(res.status).toBe(200);
     await flushNotification();
     expect(enqueued).toHaveLength(0);
+  });
+
+  test('names a value the requesting agent is not granted, on the form and in the session', async () => {
+    sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
+    reach = { agent: 'analyst', grantEnv: ['OTHER_KEY'], allowlist: null };
+    const res = await submit(mintToken());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      saved: ['DRATA_API_KEY'],
+      agent: 'analyst',
+      withheld: [{ name: 'DRATA_API_KEY', reason: 'agent_grant' }],
+    });
+    expect(reachLookups).toEqual([SESSION_ID]);
+    await flushNotification();
+    const text = String(enqueued[0]?.text);
+    expect(text).toContain('not in agent "analyst"\'s secrets grant');
+    expect(text).toContain('Customize → Agents → analyst → Secrets');
+    expect(text).toContain('Do not report');
+  });
+
+  test('a granted value reports nothing withheld', async () => {
+    sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
+    reach = { agent: 'analyst', grantEnv: ['DRATA_API_KEY'], allowlist: null };
+    const res = await submit(mintToken());
+    expect(await res.json()).toEqual({ ok: true, saved: ['DRATA_API_KEY'] });
+    await flushNotification();
+    expect(String(enqueued[0]?.text)).not.toContain('secrets grant');
+  });
+
+  test('a connector-scoped value is never judged against the sandbox grant', async () => {
+    reach = { agent: 'analyst', grantEnv: [], allowlist: null };
+    const res = await submit(mintToken({ scope: 'connector' }));
+    expect(await res.json()).toEqual({ ok: true, saved: ['DRATA_API_KEY'] });
+    expect(reachLookups).toEqual([]);
+  });
+
+  test('an unreadable grant saves the value and claims nothing', async () => {
+    reach = new Error('manifest unreadable');
+    const res = await submit(mintToken());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, saved: ['DRATA_API_KEY'] });
+    expect(writes).toHaveLength(1);
   });
 
   test('an expired token cannot submit and returns 410', async () => {
@@ -285,14 +450,21 @@ describe('POST /connectors/:token/finalize', () => {
     expect((await finalize(mintConnectorToken())).status).toBe(404);
   });
 
-  test('a per-user authorization strategy → 409', async () => {
+  // This used to 409 unconditionally on a 'user'-strategy connector — exactly
+  // the bug connection-access.ts retires the flag over (see its file doc): a
+  // private-only connector had no connect flow anywhere. The link's `owner`
+  // (default 'me') is what decides now, and mintConnectorToken's link carries
+  // a uid, so it finalizes like any other.
+  test('a (retired) per-user-strategy connector finalizes normally for the member the link names', async () => {
     pipedreamOn = true;
     connectorRows = [
       { connectorId: CONNECTOR_ID, providerType: 'pipedream', authorizationStrategy: 'user' },
     ];
+    finalizeResult = { connected: true };
     const res = await finalize(mintConnectorToken());
-    expect(res.status).toBe(409);
-    expect((await res.json()).code).toBe('CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ connected: true });
+    expect(finalizeCalls.at(-1)).toMatchObject({ projectId: PROJECT_ID, slug: 'smartlead' });
   });
 
   test('already connected → {connected:true}, no finalize, no notification', async () => {
@@ -301,7 +473,8 @@ describe('POST /connectors/:token/finalize', () => {
     sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
     const res = await finalize(mintConnectorToken());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ connected: true });
+    // No provider round trip on this path, so the identity is unknown.
+    expect(await res.json()).toEqual({ connected: true, connected_as: null });
     expect(finalizeCalls).toHaveLength(0);
     await flushNotification();
     expect(enqueued).toHaveLength(0);
@@ -325,7 +498,7 @@ describe('POST /connectors/:token/finalize', () => {
     sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
     const res = await finalize(mintConnectorToken());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ connected: true });
+    expect(await res.json()).toEqual({ connected: true, connected_as: null });
     // The provider-neutral contract: the route names the project and the
     // connector, and the dep resolves the provider behind it. `app` /
     // `connectorId` were arguments of the old Pipedream-only call.
@@ -340,6 +513,15 @@ describe('POST /connectors/:token/finalize', () => {
       actorUserId: 'user-1',
     });
     expect(String(enqueued[0].text)).toContain('smartlead');
+  });
+
+  test('connected → names the identity the account was authorized as', async () => {
+    pipedreamOn = true;
+    finalizeResult = { connected: true, accountId: 'ca_1', connectedAs: 'ops@example.test' };
+    sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
+    const res = await finalize(mintConnectorToken());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ connected: true, connected_as: 'ops@example.test' });
   });
 
   test('a STOPPED session is told too — the agent posted the link and its turn ended before the human finished (#6885)', async () => {
@@ -371,9 +553,98 @@ describe('POST /connectors/:token/finalize', () => {
     finalizeResult = { connected: true };
     sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];
     const res = await finalize(mintConnectorToken({ sid: null }));
-    expect(await res.json()).toEqual({ connected: true });
+    expect(await res.json()).toEqual({ connected: true, connected_as: null });
     await flushNotification();
     expect(enqueued).toHaveLength(0);
+  });
+});
+
+describe('POST /connectors/:token/finalize — one named account', () => {
+  const finalizeAccount = (token: string, connectionId: unknown) =>
+    setupLinksPublicApp.request(`/connectors/${token}/finalize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ connection_id: connectionId }),
+    });
+  const account = (overrides: Record<string, unknown> = {}) => ({
+    connectionId: 'conn-2',
+    projectId: PROJECT_ID,
+    connectorId: CONNECTOR_ID,
+    ownerType: 'member',
+    ownerId: 'user-1',
+    label: "Dad's Gmail",
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    pipedreamOn = true;
+    sessionRows = [{ status: 'stopped', accountId: 'acct-1', metadata: {} }];
+  });
+
+  test('finalizes exactly that account and tells the session its name', async () => {
+    connectionRows = [account()];
+    // The connector-level shortcut would answer for a DIFFERENT account.
+    credentialAlreadySet = true;
+    finalizeResult = { connected: true, connectedAs: 'dad@example.test' };
+
+    const res = await finalizeAccount(mintConnectorToken(), 'conn-2');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      connected: true,
+      connected_as: 'dad@example.test',
+      connection_id: 'conn-2',
+      label: "Dad's Gmail",
+    });
+    expect(finalizeCalls.at(-1)).toMatchObject({
+      projectId: PROJECT_ID,
+      slug: 'smartlead',
+      uid: 'user-1',
+      selector: { connectionId: 'conn-2' },
+      owner: 'me',
+    });
+    await flushNotification();
+    expect(enqueued).toHaveLength(1);
+    expect(String(enqueued[0].text)).toContain('--account "Dad\'s Gmail"');
+    expect(enqueued[0].idempotencyKey).toBe(`connector-connected:${SESSION_ID}:smartlead:conn-2`);
+  });
+
+  test('a shared account finalizes in the project scope', async () => {
+    connectionRows = [account({ ownerType: 'project', ownerId: null, label: 'Team inbox' })];
+    finalizeResult = { connected: true, connectedAs: 'team@example.test' };
+    const res = await finalizeAccount(mintConnectorToken(), 'conn-2');
+    expect(res.status).toBe(200);
+    expect(finalizeCalls.at(-1)).toMatchObject({ selector: { connectionId: 'conn-2' }, owner: 'project' });
+  });
+
+  test('an account on another connector → 404, nothing finalized, nobody told', async () => {
+    connectionRows = [account({ connectorId: 'another-connector' })];
+    const res = await finalizeAccount(mintConnectorToken(), 'conn-2');
+    expect(res.status).toBe(404);
+    expect(finalizeCalls).toHaveLength(0);
+    await flushNotification();
+    expect(enqueued).toHaveLength(0);
+  });
+
+  test("another member's private account → 403: the requesting member cannot run as it", async () => {
+    connectionRows = [account({ ownerId: 'user-2' })];
+    const res = await finalizeAccount(mintConnectorToken(), 'conn-2');
+    expect(res.status).toBe(403);
+    expect(finalizeCalls).toHaveLength(0);
+  });
+
+  test('not connected yet → connected false, nobody told', async () => {
+    connectionRows = [account()];
+    finalizeResult = { connected: false };
+    const res = await finalizeAccount(mintConnectorToken(), 'conn-2');
+    expect(await res.json()).toEqual({ connected: false });
+    await flushNotification();
+    expect(enqueued).toHaveLength(0);
+  });
+
+  test('a connection_id that is not a string → 400', async () => {
+    const res = await finalizeAccount(mintConnectorToken(), 42);
+    expect(res.status).toBe(400);
+    expect(finalizeCalls).toHaveLength(0);
   });
 });
 
@@ -396,7 +667,41 @@ describe('secretSubmittedPrompt', () => {
   test('names every saved key and tells the agent not to re-mint', () => {
     const text = secretSubmittedPrompt(['DRATA_API_KEY', 'DRATA_WORKSPACE_ID']);
     expect(text).toContain('DRATA_API_KEY, DRATA_WORKSPACE_ID');
-    expect(text).toContain('kortix secrets sync');
+    // An agent session may sync its own session, so the prompt points there.
+    expect(text).toContain('run `kortix secrets sync`');
+    expect(text).not.toContain('cannot run');
     expect(text).toContain('Do not mint a new intake link');
+  });
+});
+
+describe('POST /connectors/:token/start', () => {
+  beforeEach(() => {
+    pipedreamOn = true;
+    connectorRows = [{ connectorId: CONNECTOR_ID, providerType: 'composio' }];
+    connectResult = { provider: 'pipedream', connectUrl: null, connected: false };
+  });
+
+  function start(token: string) {
+    return setupLinksPublicApp.request(`/connectors/${token}/start`, { method: 'POST' });
+  }
+
+  test('a slot that already holds an active account answers connected, not an error', async () => {
+    connectResult = { provider: 'composio', connectUrl: undefined, connected: true, isNoAuth: false };
+    const res = await start(mintConnectorToken());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ connect_url: null, connected: true, already_connected: true });
+  });
+
+  test('a no-auth toolkit answers connected without claiming a prior account', async () => {
+    connectResult = { provider: 'composio', connectUrl: undefined, connected: true, isNoAuth: true };
+    const res = await start(mintConnectorToken());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ connect_url: null, connected: true, already_connected: false });
+  });
+
+  test('a provider that returns neither a url nor a connection is a 502', async () => {
+    connectResult = { provider: 'composio', connectUrl: undefined, connected: false, isNoAuth: false };
+    const res = await start(mintConnectorToken());
+    expect(res.status).toBe(502);
   });
 });

@@ -3,16 +3,16 @@
  *
  * WHY. Every "the session stopped" investigation on 2026-08-22..25 needed the
  * same numbers and none were on record: was the box out of memory (a 3 GB
- * E2B box OOM-killing a 2.8 GB OpenCode), was the disk full, was the daemon
- * or OpenCode the one growing, what did the load look like when the turn
+ * E2B box OOM-killing a 2.8 GB runtime), was the disk full, was the daemon
+ * or runtime the one growing, what did the load look like when the turn
  * died. The daemon now logs a `[resources]` line on a fixed cadence, logs
  * `[resources] pressure` the moment a threshold is crossed (and once more
  * when it clears), and answers the same snapshot inside `GET /kortix/diag`.
  *
- * Cost. One snapshot is ~8 small reads under /proc and /sys plus two
- * `statfs` calls, all async, all inside try/catch — a field that cannot be
- * read is `null`, never an error. Nothing here can throw at a caller, and the
- * interval timer is unref'd so it never keeps the process alive.
+ * Cost. A normal snapshot uses small reads under /proc and /sys plus two
+ * `statfs` calls. Above 80% memory, bounded batches also read process status
+ * files to name the largest consumers. Every read is best effort. The interval
+ * timer is unref'd so it never keeps the process alive.
  *
  * Everything that parses text is a pure function on a string so it is
  * testable on macOS, where /proc does not exist.
@@ -27,12 +27,25 @@ export interface MemorySnapshot {
   usedPct: number | null
   swapTotalMb: number | null
   swapFreeMb: number | null
+  /**
+   * `Shmem`: RAM held by tmpfs files (a RAM-backed /tmp) and shared memory.
+   * It cannot be reclaimed without swap, so it names what fills a box.
+   */
+  shmemMb?: number | null
 }
 
 export interface CgroupMemorySnapshot {
+  /** Everything charged to the cgroup, page cache included. */
   currentMb: number | null
+  /**
+   * `currentMb` minus inactive file pages: the memory the kernel cannot reclaim
+   * before it OOM-kills. The same figure kubelet evicts on. Equals `currentMb`
+   * when `memory.stat` is unreadable.
+   */
+  workingSetMb: number | null
   /** null = unlimited ("max") or unreadable. */
   maxMb: number | null
+  /** 0..100 of the working set against the limit. */
   usedPct: number | null
   /** cgroup v2 `memory.events` oom_kill counter; v1 has no cheap equivalent. */
   oomKills: number | null
@@ -53,6 +66,13 @@ export interface ProcessSnapshot {
   state: string | null
 }
 
+/** Bounded, command-free attribution. Names outside this list become `other`. */
+export interface MemoryConsumer {
+  pid: number
+  name: string
+  rssMb: number
+}
+
 export interface ResourceSnapshot {
   at: string
   uptimeS: number | null
@@ -62,9 +82,11 @@ export interface ResourceSnapshot {
   cgroup: CgroupMemorySnapshot
   disks: DiskSnapshot[]
   daemon: ProcessSnapshot | null
-  opencode: ProcessSnapshot | null
-  /** Distinct pids on the box whose cmdline mentions opencode: >1 is a finding. */
-  opencodePids: number[]
+  runtime: ProcessSnapshot | null
+  /** Runtime-owned process ids discovered by the selected harness. */
+  runtimePids: number[]
+  /** Largest processes when memory is elevated; RSS can count shared pages twice. */
+  topProcesses?: MemoryConsumer[]
 }
 
 const MB = 1024 * 1024
@@ -87,6 +109,7 @@ export function parseMeminfo(text: string): MemorySnapshot {
     usedPct,
     swapTotalMb: toMb(kb('SwapTotal')),
     swapFreeMb: toMb(kb('SwapFree')),
+    shmemMb: toMb(kb('Shmem')),
   }
 }
 
@@ -122,21 +145,40 @@ export function parseCgroupOomKills(text: string | null): number | null {
   return m ? Number(m[1]) : null
 }
 
+/** Inactive file pages from `memory.stat`: `inactive_file` (v2) or `total_inactive_file` (v1). */
+export function parseCgroupInactiveFile(text: string | null): number | null {
+  if (text === null) return null
+  const m = text.match(/^(?:total_)?inactive_file\s+(\d+)/m)
+  return m ? Number(m[1]) : null
+}
+
+/**
+ * The cgroup's memory, judged as the kernel judges it.
+ *
+ * `memory.current` counts the page cache. On prod 2026-09-22 a `tsc --noEmit`
+ * filled it: 11315 of 12288 MB charged, under 1 GB anon, 5 GB inactive file.
+ * The guard read 92 % and aborted the turn twice; the kernel would have
+ * reclaimed the cache and killed nothing (`oom_kill 0`).
+ */
 export function cgroupSnapshot(
   current: string | null,
   max: string | null,
   events: string | null,
+  stat: string | null = null,
 ): CgroupMemorySnapshot {
   const currentBytes = parseCgroupBytes(current)
   const maxBytes = parseCgroupBytes(max)
+  const inactiveFile = parseCgroupInactiveFile(stat) ?? 0
+  const workingSetBytes = currentBytes === null ? null : Math.max(0, currentBytes - inactiveFile)
   const currentMb = currentBytes === null ? null : Math.round(currentBytes / MB)
   const maxMb = maxBytes === null ? null : Math.round(maxBytes / MB)
   return {
     currentMb,
+    workingSetMb: workingSetBytes === null ? null : Math.round(workingSetBytes / MB),
     maxMb,
     usedPct:
-      currentBytes !== null && maxBytes !== null && maxBytes > 0
-        ? Math.round((currentBytes / maxBytes) * 100)
+      workingSetBytes !== null && maxBytes !== null && maxBytes > 0
+        ? Math.round((workingSetBytes / maxBytes) * 100)
         : null,
     oomKills: parseCgroupOomKills(events),
   }
@@ -173,34 +215,44 @@ async function processSnapshot(pid: number | null): Promise<ProcessSnapshot | nu
   return parseProcStatus(pid, text)
 }
 
-/** Pids whose /proc/<pid>/cmdline mentions `opencode`. Linux only; [] elsewhere. */
-export async function findOpencodePids(): Promise<number[]> {
-  let entries: string[]
-  try {
-    entries = await readdir('/proc')
-  } catch {
-    return []
+const KNOWN_PROCESS_NAMES = new Set(['bun', 'node', 'python', 'python3', 'tsc', 'chrome', 'chromium', 'postgres', 'opencode', 'opencode.exe', 'opencode-kortix', 'kortixd'])
+
+export function parseMemoryConsumer(pid: number, status: string): MemoryConsumer | null {
+  const rss = status.match(/^VmRSS:\s+(\d+)\s*kB/m)
+  if (!rss) return null
+  const rawName = status.match(/^Name:\s+(\S+)/m)?.[1] ?? ''
+  const rssMb = Math.round(Number(rss[1]) / 1024)
+  if (!Number.isFinite(rssMb) || rssMb <= 0) return null
+  return { pid, name: KNOWN_PROCESS_NAMES.has(rawName) ? rawName : 'other', rssMb }
+}
+
+export async function readTopMemoryProcesses(procRoot = '/proc'): Promise<MemoryConsumer[]> {
+  const entries = await readdir(procRoot).catch(() => [])
+  const pids = entries.filter((entry) => /^\d+$/.test(entry)).map(Number)
+  const top: MemoryConsumer[] = []
+  // Bound outstanding reads even on a box with thousands of processes.
+  for (let offset = 0; offset < pids.length; offset += 32) {
+    const batch = await Promise.all(pids.slice(offset, offset + 32).map(async (pid) => {
+      const status = await readText(`${procRoot}/${pid}/status`)
+      return status === null ? null : parseMemoryConsumer(pid, status)
+    }))
+    for (const process of batch) if (process) top.push(process)
+    top.sort((a, b) => b.rssMb - a.rssMb)
+    top.length = Math.min(top.length, 6)
   }
-  const pids: number[] = []
-  await Promise.all(
-    entries
-      .filter((e) => /^\d+$/.test(e))
-      .map(async (e) => {
-        const cmd = await readText(`/proc/${e}/cmdline`)
-        if (cmd && /opencode/.test(cmd) && /\bserve\b/.test(cmd.replace(/\0/g, ' '))) pids.push(Number(e))
-      }),
-  )
-  return pids.sort((a, b) => a - b)
+  return top
 }
 
 export interface SnapshotInputs {
   daemonPid: number
-  opencodePid: number | null
+  runtimePid: number | null
   diskPaths: string[]
+  discoverRuntimePids?: () => Promise<number[]>
+  readTopProcesses?: () => Promise<MemoryConsumer[]>
 }
 
 export async function readResourceSnapshot(inputs: SnapshotInputs): Promise<ResourceSnapshot> {
-  const [meminfo, loadavg, uptime, cgCurrent, cgMax, cgEvents, cgV1Usage, cgV1Limit, daemon, opencode, disks, opencodePids] =
+  const [meminfo, loadavg, uptime, cgCurrent, cgMax, cgEvents, cgStat, cgV1Usage, cgV1Limit, cgV1Stat, daemon, runtime, disks, runtimePids] =
     await Promise.all([
       readText('/proc/meminfo'),
       readText('/proc/loadavg'),
@@ -208,41 +260,49 @@ export async function readResourceSnapshot(inputs: SnapshotInputs): Promise<Reso
       readText('/sys/fs/cgroup/memory.current'),
       readText('/sys/fs/cgroup/memory.max'),
       readText('/sys/fs/cgroup/memory.events'),
+      readText('/sys/fs/cgroup/memory.stat'),
       readText('/sys/fs/cgroup/memory/memory.usage_in_bytes'),
       readText('/sys/fs/cgroup/memory/memory.limit_in_bytes'),
+      readText('/sys/fs/cgroup/memory/memory.stat'),
       processSnapshot(inputs.daemonPid),
-      processSnapshot(inputs.opencodePid),
+      processSnapshot(inputs.runtimePid),
       Promise.all(inputs.diskPaths.map(diskSnapshot)),
-      findOpencodePids(),
+      inputs.discoverRuntimePids?.() ?? Promise.resolve([]),
     ])
   const cgroup =
     cgCurrent !== null || cgMax !== null
-      ? cgroupSnapshot(cgCurrent, cgMax, cgEvents)
-      : cgroupSnapshot(cgV1Usage, cgV1Limit, null)
+      ? cgroupSnapshot(cgCurrent, cgMax, cgEvents, cgStat)
+      : cgroupSnapshot(cgV1Usage, cgV1Limit, null, cgV1Stat)
   let cpus: number | null = null
   try {
     cpus = (await import('node:os')).cpus().length || null
   } catch {
     cpus = null
   }
+  const memory = meminfo
+    ? parseMeminfo(meminfo)
+    : { totalMb: null, availableMb: null, usedPct: null, swapTotalMb: null, swapFreeMb: null }
+  const pressure = Math.max(memory.usedPct ?? 0, cgroup.usedPct ?? 0)
+  const topProcesses = pressure >= 80
+    ? await (inputs.readTopProcesses ?? readTopMemoryProcesses)().catch(() => [])
+    : []
   return {
     at: new Date().toISOString(),
     uptimeS: uptime ? Math.round(Number(uptime.split(/\s+/)[0])) || null : null,
     load: loadavg ? parseLoadavg(loadavg) : null,
     cpus,
-    memory: meminfo
-      ? parseMeminfo(meminfo)
-      : { totalMb: null, availableMb: null, usedPct: null, swapTotalMb: null, swapFreeMb: null },
+    memory,
     cgroup,
     disks,
     daemon,
-    opencode,
-    opencodePids,
+    runtime,
+    runtimePids,
+    topProcesses,
   }
 }
 
 export interface PressureFinding {
-  kind: 'memory' | 'cgroup' | 'disk' | 'load' | 'opencode-duplicates' | 'oom-kill'
+  kind: string
   detail: string
 }
 
@@ -271,8 +331,8 @@ export function evaluatePressure(s: ResourceSnapshot, previous?: ResourceSnapsho
   if (s.load && s.cpus && s.load[0] / s.cpus >= PRESSURE_THRESHOLDS.loadPerCpu) {
     out.push({ kind: 'load', detail: `load1 ${s.load[0]} on ${s.cpus} cpu` })
   }
-  if (s.opencodePids.length > 1) {
-    out.push({ kind: 'opencode-duplicates', detail: `${s.opencodePids.length} opencode serve processes: ${s.opencodePids.join(',')}` })
+  if (s.runtimePids.length > 1) {
+    out.push({ kind: 'runtime-duplicates', detail: `${s.runtimePids.length} runtime processes: ${s.runtimePids.join(',')}` })
   }
   if (
     s.cgroup.oomKills !== null &&
@@ -288,18 +348,11 @@ export function evaluatePressure(s: ResourceSnapshot, previous?: ResourceSnapsho
 /**
  * The memory guard: act BEFORE the kernel does.
  *
- * Essentia 2026-08-25 23:12Z: OpenCode reached 6.48 GB RSS on an 8 GB box and
- * the kernel OOM-killed it mid-turn (`dmesg`: `Killed process 1506
- * (opencode.exe) anon-rss:6484532kB`). The assistant message in flight was
- * left as an empty husk, the ledger had to infer an ending, and nothing had
- * said "memory" anywhere the operator could see.
- *
  * Above `elevatedPct` (80) the monitor samples every `fastIntervalMs` (10 s)
  * instead of every minute. At `guardPct` (92) with a turn in flight it calls
- * `abortTurn`: OpenCode ends the turn cleanly (transcript consistent,
- * process alive, a real `session.error`), the box gets its memory back, and
- * `onGuard` tells the control plane why. One guard action per crossing; the
- * next one needs the box to drop below `elevatedPct` first.
+ * `abortTurn` delegates cancellation to the selected harness.
+ * `onGuard` reports the reason. Check each active turn while pressure remains
+ * high: a detached child can keep the box above the guard after one abort.
  */
 export interface MemoryGuardOptions {
   /** 0..100 of box memory (or cgroup, whichever is higher). Default 92. */
@@ -309,15 +362,21 @@ export interface MemoryGuardOptions {
   fastIntervalMs?: number
   turnInFlight: () => Promise<boolean | null>
   abortTurn: (reason: string) => Promise<boolean>
+  formatReason?: (snapshot: ResourceSnapshot, pct: number) => string
   onGuard?: (info: { reason: string; snapshot: ResourceSnapshot; aborted: boolean }) => void | Promise<void>
 }
 
 export interface ResourceMonitorOptions {
   intervalMs?: number
   diskPaths?: string[]
-  opencodePid: () => number | null
-  opencodeState?: () => string
+  runtimePid: () => number | null
+  runtimeState?: () => string
   snapshot?: (inputs: SnapshotInputs) => Promise<ResourceSnapshot>
+  discoverRuntimePids?: () => Promise<number[]>
+  pressure?: (snapshot: ResourceSnapshot, previous?: ResourceSnapshot | null) => PressureFinding[]
+  formatSnapshot?: (snapshot: ResourceSnapshot) => Record<string, unknown>
+  formatState?: (state: string | null) => Record<string, unknown>
+  formatStateTransition?: (from: string, to: string) => string
   guard?: MemoryGuardOptions
 }
 
@@ -343,7 +402,7 @@ export const DEFAULT_DISK_PATHS = ['/workspace', '/opt/kortix', '/tmp']
 /**
  * Log a `[resources]` line every `intervalMs` (default 60 s), and a
  * `[resources] pressure` warning when a threshold is first crossed / cleared.
- * Also logs immediately when the OpenCode state string changes, so a
+ * Also logs immediately when the runtime state string changes, so a
  * `starting`/`down` transition always has the box numbers next to it.
  */
 export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMonitor {
@@ -351,24 +410,24 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
   const diskPaths = opts.diskPaths ?? DEFAULT_DISK_PATHS
   const snapshot = opts.snapshot ?? readResourceSnapshot
   const guard = opts.guard
+  const pressure = opts.pressure ?? evaluatePressure
+  const formatSnapshot = opts.formatSnapshot ?? ((value: ResourceSnapshot) => ({ ...value }))
+  const formatState = opts.formatState ?? ((runtimeState: string | null) => ({ runtimeState }))
   const guardPct = guard?.guardPct ?? 92
   const elevatedPct = guard?.elevatedPct ?? 80
   const fastIntervalMs = guard?.fastIntervalMs ?? 10_000
   let latest: ResourceSnapshot | null = null
   let lastPressureKinds = ''
-  let lastState = opts.opencodeState?.() ?? ''
+  let lastState = opts.runtimeState?.() ?? ''
   let ticking = false
   let stopped = false
   let fastTimer: ReturnType<typeof setInterval> | null = null
-  /** Armed again only once memory drops below `elevatedPct`. */
-  let guardFired = false
 
   async function runGuard(s: ResourceSnapshot): Promise<void> {
     if (!guard) return
     const pct = memoryPressurePct(s)
     if (pct === null) return
     if (pct < elevatedPct) {
-      guardFired = false
       if (fastTimer) {
         clearInterval(fastTimer)
         fastTimer = null
@@ -381,17 +440,14 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
       fastTimer = setInterval(() => void guardedTick('elevated'), fastIntervalMs)
       fastTimer.unref?.()
     }
-    if (pct < guardPct || guardFired) return
-    guardFired = true
+    if (pct < guardPct) return
     const inFlight = await guard.turnInFlight().catch(() => null)
-    const reason =
-      `sandbox memory at ${pct}% (opencode ${s.opencode?.rssMb ?? '?'} MB RSS of ` +
-      `${s.cgroup.maxMb ?? s.memory.totalMb ?? '?'} MB): turn stopped before the kernel would kill opencode`
-    let aborted = false
-    if (inFlight !== false) {
-      aborted = await guard.abortTurn(reason).catch(() => false)
-    }
-    logger.error('[resources] memory guard', { pct, guardPct, inFlight, aborted, reason, ...s })
+    if (inFlight === false) return
+    const reason = guard.formatReason?.(s, pct) ?? (
+      `sandbox memory at ${pct}% (runtime ${s.runtime?.rssMb ?? '?'} MB RSS of ` +
+      `${s.cgroup.maxMb ?? s.memory.totalMb ?? '?'} MB): turn stopped before the kernel would kill runtime`)
+    const aborted = await guard.abortTurn(reason).catch(() => false)
+    logger.error('[resources] memory guard', { pct, guardPct, inFlight, aborted, reason, ...formatSnapshot(s) })
     try {
       await guard.onGuard?.({ reason, snapshot: s, aborted })
     } catch (err) {
@@ -400,14 +456,19 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
   }
 
   async function tick(reason: string): Promise<ResourceSnapshot> {
-    const s = await snapshot({ daemonPid: process.pid, opencodePid: opts.opencodePid(), diskPaths })
+    const s = await snapshot({
+      daemonPid: process.pid,
+      runtimePid: opts.runtimePid(),
+      diskPaths,
+      discoverRuntimePids: opts.discoverRuntimePids,
+    })
     try {
-      const findings = evaluatePressure(s, latest)
+      const findings = pressure(s, latest)
       const kinds = findings.map((f) => f.kind).sort().join(',')
-      logger.info('[resources]', { reason, opencodeState: opts.opencodeState?.() ?? null, ...s })
+      logger.info('[resources]', { reason, ...formatState(opts.runtimeState?.() ?? null), ...formatSnapshot(s) })
       if (kinds !== lastPressureKinds) {
         if (findings.length > 0) {
-          logger.warn('[resources] pressure', { findings, opencodeState: opts.opencodeState?.() ?? null })
+          logger.warn('[resources] pressure', { findings, ...formatState(opts.runtimeState?.() ?? null) })
         } else {
           logger.info('[resources] pressure cleared', { previously: lastPressureKinds })
         }
@@ -440,13 +501,13 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
   const timer = setInterval(() => void guardedTick('interval'), intervalMs)
   timer.unref?.()
   // State transitions get their own snapshot within 5 s.
-  const stateTimer = opts.opencodeState
+  const stateTimer = opts.runtimeState
     ? setInterval(() => {
-        const now = opts.opencodeState?.() ?? ''
+        const now = opts.runtimeState?.() ?? ''
         if (now !== lastState) {
           const from = lastState
           lastState = now
-          void guardedTick(`opencode ${from || '?'} -> ${now}`)
+          void guardedTick(opts.formatStateTransition?.(from, now) ?? `runtime ${from || '?'} -> ${now}`)
         }
       }, 5_000)
     : null

@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
 const projectLayout = readFileSync(
-  new URL('../../app/(app)/projects/[id]/layout.tsx', import.meta.url),
+  new URL('../../app/[locale]/(app)/projects/[id]/layout.tsx', import.meta.url),
   'utf8',
 );
 const providerConnect = readFileSync(new URL('./provider-connect.tsx', import.meta.url), 'utf8');

@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { OPENCODE_VERSION } from '@kortix/shared';
 import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
+import { runWorkerTick } from '../shared/audit-scope';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
 import { getSandboxProvider, type BuildLogTap, type BuildSnapshotResult, type ProviderState, type SandboxProviderAdapter } from './providers';
 import { config, type SandboxProviderName } from '../config';
@@ -65,6 +66,7 @@ class SnapshotBuildError extends Error {
 export type SnapshotBuildSource =
   | 'session-start'
   | 'project-create'
+  | 'project-repository-replacement'
   | 'cr-merge'
   | 'manual'
   | 'background'
@@ -123,6 +125,13 @@ export async function findFirstActiveSnapshot(
   return null;
 }
 
+/** The machine size an image boots with. The provider allocates it from the image. */
+export interface SandboxImageSpec {
+  cpu: number;
+  memoryGb: number;
+  diskGb: number;
+}
+
 export interface EnsureSandboxImageResult {
   snapshotName: string;
   slug: string;
@@ -130,6 +139,20 @@ export interface EnsureSandboxImageResult {
   built: boolean;
   isDefault: boolean;
   runtimeProfile?: 'standard' | 'meta' | 'pi-worker';
+  /**
+   * The size this image was built with, which is the size the box boots with.
+   * Compute metering bills from it. Absent only for a result constructed
+   * outside this module.
+   */
+  spec?: SandboxImageSpec;
+}
+
+/** Meta and pi-worker runtimes: one size, used for the build AND for metering. */
+export const META_RUNTIME_SPEC: SandboxImageSpec = Object.freeze({ cpu: 1, memoryGb: 2, diskGb: 8 });
+export const PI_WORKER_RUNTIME_SPEC: SandboxImageSpec = Object.freeze({ cpu: 1, memoryGb: 2, diskGb: 8 });
+
+function templateImageSpec(template: Pick<ResolvedTemplate, 'cpu' | 'memoryGb' | 'diskGb'>): SandboxImageSpec {
+  return { cpu: template.cpu, memoryGb: template.memoryGb, diskGb: template.diskGb };
 }
 
 /**
@@ -235,6 +258,7 @@ export async function ensureSandboxImage(
       contentHash: identity.contentHash,
       built: false,
       isDefault: !!template.isShared,
+      spec: templateImageSpec(template),
     };
   }
 
@@ -255,6 +279,7 @@ export async function ensureSandboxImage(
       contentHash: identity.contentHash,
       built: false,
       isDefault: !!template.isShared,
+      spec: templateImageSpec(template),
     };
   }
 
@@ -264,7 +289,7 @@ export async function ensureSandboxImage(
   // release in prod, and on EVERY `self-host update`), or it is being built
   // right now by someone else. Either way a session must NEVER wait for a full
   // image build: 14-minute builds turned session starts into 10–34 minutes of
-  // `provisioning` on Essentia 2026-08-26.
+  // `provisioning` on SampleCo 2026-08-26.
   //
   // So boot off the last image this template lineage actually shipped and let
   // the new one bake behind us. The runtime assets the deploy actually changed
@@ -301,6 +326,7 @@ export async function ensureSandboxImage(
         contentHash: servable.contentHash ?? identity.contentHash,
         built: false,
         isDefault: !!template.isShared,
+        spec: templateImageSpec(template),
       };
     }
   }
@@ -321,6 +347,7 @@ export async function ensureSandboxImage(
         contentHash: identity.contentHash,
         built: false,
         isDefault: !!template.isShared,
+        spec: templateImageSpec(template),
       };
     }
     if (state === 'building') {
@@ -517,6 +544,7 @@ async function runInlineBuild(
       contentHash: identity.contentHash,
       built: true,
       isDefault: !!template.isShared,
+      spec: templateImageSpec(template),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -1286,13 +1314,14 @@ export async function ensurePiWorkerImage(opts: {
           built: false,
           isDefault: false,
           runtimeProfile: 'pi-worker' as const,
+          spec: { ...PI_WORKER_RUNTIME_SPEC },
         };
       }
       if (state === 'build_failed') await provider.deleteSnapshot(snapshotName);
       await provider.buildSnapshot({
         snapshotName,
         userDockerfile: '# pi worker runtime',
-        spec: { cpu: 1, memoryGb: 2, diskGb: 8 },
+        spec: { ...PI_WORKER_RUNTIME_SPEC },
         slug: 'pi-worker',
         isShared: true,
         runtimeProfile: 'pi-worker' as const,
@@ -1306,6 +1335,7 @@ export async function ensurePiWorkerImage(opts: {
         built: true,
         isDefault: false,
         runtimeProfile: 'pi-worker' as const,
+        spec: { ...PI_WORKER_RUNTIME_SPEC },
       };
     })();
     piWorkerImageBuilds.set(buildKey, image);
@@ -1346,13 +1376,14 @@ export async function ensureMetaSandboxImage(opts: {
           built: false,
           isDefault: false,
           runtimeProfile: 'meta' as const,
+          spec: { ...META_RUNTIME_SPEC },
         };
       }
       if (state === 'build_failed') await provider.deleteSnapshot(snapshotName);
       await provider.buildSnapshot({
         snapshotName,
         userDockerfile: '# platform meta runtime',
-        spec: { cpu: 1, memoryGb: 2, diskGb: 8 },
+        spec: { ...META_RUNTIME_SPEC },
         slug: 'meta',
         isShared: true,
         runtimeProfile: 'meta' as const,
@@ -1367,6 +1398,7 @@ export async function ensureMetaSandboxImage(opts: {
         built: true,
         isDefault: false,
         runtimeProfile: 'meta' as const,
+        spec: { ...META_RUNTIME_SPEC },
       };
     })();
     metaImageBuilds.set(buildKey, image);
@@ -1391,6 +1423,10 @@ export function kickStartupPreBuild(): void {
   if (process.env.KORTIX_SKIP_STARTUP_PREBUILD === 'true') return;
   if (startupPreBuildKicked) return;
   startupPreBuildKicked = true;
+  void runWorkerTick('startup-prebuild', startupPreBuild);
+}
+
+function startupPreBuild(): void {
   for (const providerId of templateBuildProviders()) {
     void ensurePlatformDefaultImage({ source: 'startup', provider: providerId })
       .then((r) =>
@@ -1479,7 +1515,6 @@ export function kickProjectTemplatePrebuilds(
 }
 
 // ─── Per-project COLD rootfs warm ────────────────────────────────────────────
-
 
 
 

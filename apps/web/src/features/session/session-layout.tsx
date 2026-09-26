@@ -15,6 +15,7 @@ import { SessionDetailPanel } from '@/features/session/action-panel/session-deta
 import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
 import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
 import { MobileToolDrawer } from '@/features/session/mobile-tool-drawer';
+import { ProviderPoolDraftBoundary } from '@/features/session/overrides/provider-pool-draft-context';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
@@ -34,11 +35,11 @@ import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk';
 import { useRuntimeMessages, useSessionStateStore, useSessionWorking } from '@kortix/sdk/react';
-import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import type React from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as ResizablePrimitive from 'react-resizable-panels';
+import { SidebarToggle as PanelRight } from '@/features/icon/icons/sidebar-toggle';
 
 interface SessionLayoutProps {
   sessionId: string;
@@ -60,7 +61,10 @@ export const SessionLayout = memo(function SessionLayout({
   const isMobile = useIsMobile();
   const booting = !!bootStage;
 
-  const { data: messages } = useRuntimeMessages(sessionId);
+  // Tool parts and message info only: the action panel and the deliverable
+  // detector never read streamed text, so a text delta must not re-render the
+  // layout (and every panel consumer under its provider) once per ~16 ms batch.
+  const { data: messages } = useRuntimeMessages(sessionId, { ignoreStreamedText: true });
 
   // Use individual selectors to avoid re-rendering on unrelated store changes
   // (e.g. pendingToolNavIndex, focusedToolCallId). Destructuring the whole
@@ -497,6 +501,7 @@ export const SessionLayout = memo(function SessionLayout({
   // renders in the side panel, and a card row clicked in one opens a detail in
   // the other. See `session-panel-provider.tsx`.
   const withPanelProvider = (node: React.ReactNode) => (
+    <ProviderPoolDraftBoundary identity={`${projectId}/${projectSessionId ?? sessionId}`}>
     <SessionPanelProvider
       sessionId={sessionId}
       messages={messages}
@@ -506,6 +511,7 @@ export const SessionLayout = memo(function SessionLayout({
     >
       {node}
     </SessionPanelProvider>
+    </ProviderPoolDraftBoundary>
   );
 
   if (isMobile) {

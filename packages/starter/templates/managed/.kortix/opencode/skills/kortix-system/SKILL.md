@@ -44,7 +44,11 @@ The repo has two configuration layers with strict ownership:
   `opencode.config_dir`. OpenCode owns prompts, tools, permissions, extensions,
   and provider settings.
 
-Kortix-specific settings go in `kortix.yaml`. OpenCode behavior stays in the
+Kortix-specific settings go in `kortix.yaml`. A large manifest splits across
+files: the root lists `imports:` (YAML files or directories), and each imported
+file declares `triggers`, `connectors`, `agents`, or `apps`. The platform merges
+them into one manifest. Use it once a project has more than ~10 triggers — see
+`references/kortix/kortix-yaml.md` → `imports:`. OpenCode behavior stays in the
 OpenCode config directory. Legacy v1 and current v2 projects both use
 OpenCode REST.
 </overview>
@@ -148,7 +152,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "turn on / off a feature flag (Apps, Teams, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>` |
 | "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
 | "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
-| "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> …` · `kortix agents config <agent>` |
+| "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …]` · `kortix agents config <agent>` |
 | "stop / wake a session, share it, or publish a preview link" | `kortix sessions stop|start <id>` · `sessions share <id> --mode …` · `sessions links <id> create --port 3000` |
 | "queue a prompt for later / see or reorder the queue" | `kortix sessions chat <id> -p "…" --queue` · `kortix sessions queue <id> ls|now|rm|hold|release` |
 | "approve / deny a pending connector call" | `kortix sessions approvals <id> ls|approve|deny` |
@@ -345,7 +349,10 @@ Kortix runs work on a schedule through **triggers** — a durable entry in
 the project's `kortix.yaml` (`triggers:`). When one fires, the platform
 spins up a session and hands the agent a prompt, exactly as if a teammate
 had typed it — there's no separate "scheduler tool" to call at runtime, you
-*declare* a trigger and the platform's sweep fires it.
+*declare* a trigger and the platform's sweep fires it. A trigger may live in
+`kortix.yaml` or in any file the root's `imports:` brings in (for example
+`.kortix/triggers/reports/weekly.yaml`); before adding one, check where the
+project keeps its triggers and follow that layout.
 
 Decide the mechanism first: one-off reminder → `type: cron` + `run_at`;
 recurring → `type: cron` + `cron` (6-field croner) + `timezone`; reacts to
@@ -545,7 +552,7 @@ name a declared agent).
 write-up, and `docs/specs/2026-07-05-agent-first-config-unification.md` for
 the design rationale): `agents:` is a name→block MAP (not the v1 `[[agents]]` array),
 and every block is **governance only** —
-`enabled`/`sandbox`/`connectors`/`secrets`/`skills`/`kortix_cli`/`workspace`. `env` was
+`enabled`/`sandbox`/`connectors`/`secrets`/`skills`/`apps`/`kortix_permissions`/`workspace`. `env` was
 renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
 `prompt` on the manifest side at all in v2 — every one of those is OpenCode
 behavior and lives in that agent's own `.kortix/opencode/agents/<name>.md`
@@ -554,8 +561,8 @@ agents both work this way — open their `.md` files to see what they
 actually do). `default_agent` is required and must resolve to a declared,
 enabled agent. `[[channels]]` is removed outright (channel↔agent routing is
 dashboard-managed, not git). v2 is YAML-only and deny-by-default on every
-grant set (an omitted `connectors`/`secrets`/`skills`/`kortix_cli` resolves
-to `none`, not `all`).
+grant set (an omitted `connectors`/`secrets`/`skills`/`apps`/`kortix_permissions`
+resolves to `none`, not `all`).
 
 </canonical-schema>
 
@@ -571,7 +578,8 @@ agents:
   release-bot:                          # = the agent's .md name (.kortix/opencode/agents/release-bot.md)
     sandbox: ml                         # default environment for this agent
     connectors: [github]                # which connectors it may call   (default: none)
-    kortix_cli: [project.write, project.cr.open]    # what it may do via the Kortix CLI/API (default: none)
+    apps: [reports-dashboard]           # Kortix App slugs it may open when the App is restricted/private (default: none)
+    kortix_permissions: [project.write, project.cr.open]    # what it may do to the project — CLI, API, git (default: none)
 ```
 
 **Which file owns what — never duplicate across the boundary:**
@@ -579,12 +587,15 @@ agents:
 | Setting | Lives in |
 | --- | --- |
 | v2 system prompt, `model`, `mode`, tools, and `permission` | `.kortix/opencode/agents/<name>.md` and `opencode.jsonc` |
-| connectors, secrets, skills, `kortix_cli`, workspace, enabled | manifest `agents:` map |
+| connectors, secrets, skills, `apps`, `kortix_permissions`, workspace, enabled | manifest `agents:` map |
 
 **How the grant resolves at session start:**
-- v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_cli: all`, `skills: all` explicitly if it should keep full access.
-- v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from OpenCode. Agent **is listed** → its `connectors`/`kortix_cli` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
-- The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing the manifest only takes effect once the **CR is merged** (read from the default branch).
+- v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`apps`/`kortix_permissions` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_permissions: all`, `skills: all` explicitly if it should keep full access.
+- v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from OpenCode. Agent **is listed** → its `connectors`/`kortix_permissions` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
+- **You are the acting principal.** Effective = your `kortix_permissions` ∩ your **ceiling** (the IAM role an admin binds to your service account; with none bound, every grantable project permission) − **HUMAN_ONLY** (`project.members.manage`, `project.delete`, `project.credentials.issue`). The launcher's role is not an input. The human contributes "may run this agent" and their own personal resources (their connector connections, personal secrets, their computer) — only in their own **private** session, and only until someone else prompts it. Trigger and channel runs have no human behind them.
+  - `project.read` in your own project is always granted.
+  - When a call returns 403, read `code`: `agent_scope_insufficient` → the action is missing from your `kortix_permissions` (propose a CR); `agent_ceiling_insufficient` → an admin must raise your ceiling role; `agent_not_accessible` → the human may not run that agent. Never claim an authority the code says you lack.
+- Editing the manifest only takes effect once the **CR is merged** (read from the default branch). You cannot merge a CR that changes `kortix.yaml` `agents.*` or `triggers` yourself (`403 CR_AGENT_GOVERNANCE_CHANGE`) — a human merges it. A `503 CR_GOVERNANCE_UNVERIFIED` means the platform could not read the manifest to check; nothing was merged, so retry the merge after `Retry-After` seconds.
 - Session environment precedence is explicit `sandbox_slug`, agent `sandbox`, project `sandbox.default`, then platform `default`. Triggers, schedules, and channels use the target agent's environment.
 
 **Discovery contract:**
@@ -596,11 +607,11 @@ agents:
 - New projects use v2 declarative discovery. Older `kortix.toml` (v1)
   projects stay in legacy mode until they migrate.
 
-**`kortix_cli` — the grantable enum** (project-scoped only; account-level admin actions
-like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent — nor can
-`project.delete` / `project.members.manage` / `project.gateway.keys.manage`: the project-role
-collapse promoted those three to ACCOUNT owner/admin authority even though they still target a
-specific project). Run `kortix validate --scopes` to print this list:
+**`kortix_permissions` — the grantable enum** (`kortix_cli` is the deprecated spelling, still accepted with a validation warning; project-scoped only; account-level admin actions
+like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent. Three project
+actions are **HUMAN_ONLY** — `project.members.manage`, `project.delete`,
+`project.credentials.issue`: they validate in the manifest, but an agent never holds them).
+Run `kortix validate --scopes` to print this list:
 
 ```
 project.read  project.write
@@ -688,6 +699,7 @@ to see the full enum.
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-yaml.md">
   In-depth `kortix.yaml` reference. Covers versions 1 and 2; logical agents;
+  `imports:` (splitting the manifest across YAML files and directories);
   every shared top-level key (`project:`,
   `env:`, `sandbox:`); every `triggers:` field (cron +
   webhook, incl. `session_mode` and the project-wide `triggers_paused`

@@ -3,10 +3,9 @@
 import { useTranslations } from '@/i18n/use-translations';
 import {
   type AdminConnector,
-  type ConnectorAuthorizationStrategy,
+  type Connection,
   listConnections,
   listPipedreamApps,
-  setConnectorAuthorizationStrategy,
   setConnectorName,
 } from '@kortix/sdk';
 import { useProjectAccountId } from '@kortix/sdk/react';
@@ -29,11 +28,13 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { connectorAuthorizationUpdateIsPending } from '@/features/workspace/customize/sections/connector-connection-form';
+import { connectorSetupStatus } from '@/features/workspace/customize/sections/connector-connection-form';
 import { SetCredentialModal } from '@/features/workspace/customize/sections/connectors-view';
-import { usePipedreamConnect } from '@/hooks/connectors/use-pipedream-connect-app';
+import { connectorConnectionRows } from '@/features/workspace/customize/sections/view/connector-connections';
+import { usePipedreamConnectMember } from '@/hooks/connectors/use-pipedream-connect-member';
+import { usePipedreamConnectProject } from '@/hooks/connectors/use-pipedream-connect-project';
 
 import {
   ConnectorAppIcon,
@@ -48,10 +49,7 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import { Close } from '@/features/icon/icons/close';
 import { foldKey } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
-import {
-  composioConnectionIsAuthorized,
-  isManagedConnectorProvider,
-} from '@/features/workspace/capabilities/connectors/provider-label';
+import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { ConnectorAccounts } from './connector-accounts';
 import { ConnectorSettings } from './connector-settings';
 import { CONNECTOR_TAB_LABEL, type ConnectorTab, connectorTabs } from './connector-tabs';
@@ -185,14 +183,19 @@ function ConnectorModalBody({
   const isPipedream = connector.provider === 'pipedream';
   const isChannel = connector.provider === 'channel';
   const isComputer = connector.provider === 'computer';
-  const usesProjectAuthorization = connector.authorizationStrategy === 'project';
   const displayName = connectorDisplayName(connector);
 
   const tabs = connectorTabs(connector, { canWrite });
   const [selectedTab, setSelectedTab] = useState<ConnectorTab>('accounts');
+  // Bumped by the header's Connect: the Accounts tab opens its Add account
+  // dialog, where the caller names the account and picks who may use it.
+  const [addAccountRequest, setAddAccountRequest] = useState(0);
   const tab = tabs.includes(selectedTab) ? selectedTab : (tabs[0] ?? 'accounts');
 
-  const [credOpen, setCredOpen] = useState(false);
+  const [credentialTarget, setCredentialTarget] = useState<{
+    connectionId: string;
+    owner: 'project' | 'me';
+  } | null>(null);
 
   const connectionsQuery = useQuery({
     queryKey: ['connections', projectId],
@@ -200,20 +203,29 @@ function ConnectorModalBody({
     staleTime: 30_000,
     enabled: !isChannel && !isComputer,
   });
-  const projectConnection = connectionsQuery.data?.connections.find(
-    (p) => p.connector_alias === connector.slug && p.owner_type === 'project' && p.is_default,
-  );
-  const myPrivateConnection = connectionsQuery.data?.connections.find(
-    (p) => p.connector_alias === connector.slug && p.owner_type === 'member',
-  );
-  const selectedConnection = usesProjectAuthorization ? projectConnection : myPrivateConnection;
-  const connected =
-    connector.provider === 'composio'
-      ? composioConnectionIsAuthorized(selectedConnection?.metadata)
-      : usesProjectAuthorization && connector.secretSet;
+  // Every account this caller can reach on the connector: the project's shared
+  // rows plus the caller's own private ones. A connector is not an account —
+  // the header must never pick "the" connection, because there may be several
+  // (Work + Personal) or none.
+  // A revoked row is history, not an account: it must not turn "connect the
+  // first account" into "finish setting up" (found 2026-09-17 on a connector
+  // whose only shared account had just been disconnected).
+  const accounts = connectorConnectionRows(
+    connectionsQuery.data?.connections,
+    connector.slug,
+  ).filter((connection) => connection.status !== 'revoked');
+  const soleAccount = accounts.length === 1 ? accounts[0]! : null;
+  // Server-computed and account-aware: `needs_auth` means no reachable account
+  // holds a usable credential, whatever the owner type.
+  const setupStatus = connectorSetupStatus(connector);
+  const connected = setupStatus === 'connected' || setupStatus === 'user_managed';
 
-  const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
-
+  const refreshAccounts = () => {
+    void connectionsQuery.refetch();
+    onChanged();
+  };
+  const connectShared = usePipedreamConnectProject(projectId, connector.slug, refreshAccounts);
+  const connectMine = usePipedreamConnectMember(projectId, connector.slug, refreshAccounts);
   // Best-effort catalogue description. Never blocks first paint — the header
   // renders without it, then fills in. That is the main open-latency fix:
   // previously this query sat in the critical path of feeling "ready".
@@ -242,56 +254,66 @@ function ConnectorModalBody({
       .allowed === true;
 
   const newSession = useNewProjectSession(projectId);
-  const startPrivateSession = () => {
-    newSession({ create: { require_connectors: [connector.slug] } });
+  /**
+   * Start a new session. Given a connection, bind it to THIS connector so the
+   * session runs as that exact account — `inherit_unbound` keeps the project
+   * default for every OTHER connector, so binding just this one doesn't null
+   * the rest. Sessions are private by default, which is what lets a
+   * member-owned binding resolve.
+   *
+   * No connection (the "not connected yet" banner) just opens a fresh private
+   * session — there is no more session-level connector requirement to carry;
+   * connecting an account already has its own direct flow on this tab.
+   */
+  const startPrivateSession = (connection?: Connection) => {
+    newSession({
+      create: connection
+        ? {
+            connector_bindings: { [connector.slug]: { connection_id: connection.connection_id } },
+            inherit_unbound: true,
+          }
+        : {},
+    });
   };
 
-  const [authorizationStrategyAwaitingRefresh, setAuthorizationStrategyAwaitingRefresh] =
-    useState<ConnectorAuthorizationStrategy | null>(null);
-  useEffect(() => {
-    if (authorizationStrategyAwaitingRefresh === connector.authorizationStrategy) {
-      setAuthorizationStrategyAwaitingRefresh(null);
-    }
-  }, [authorizationStrategyAwaitingRefresh, connector.authorizationStrategy]);
-  const updateAuthorizationStrategy = useMutation({
-    mutationFn: (next: ConnectorAuthorizationStrategy) =>
-      setConnectorAuthorizationStrategy(projectId, connector.slug, next),
-    onSuccess: (result, next) => {
-      const syncError = result.sync?.errors.find((error) => error.slug === connector.slug);
-      if (syncError) {
-        warningToast(tI18nComplete('textec7a4e3094f9', { value0: syncError.error }));
-        onChanged();
-        return;
-      }
-      successToast(
-        tI18nComplete('text67ccb61d5f27', {
-          value0:
-            next === tI18nComplete.raw('text244210e48437')
-              ? tI18nComplete.raw('text985959785319')
-              : tI18nComplete.raw('textb512d97e7cbf'),
-        }),
-      );
-      onChanged();
-    },
-    onError: (error: Error) => {
-      setAuthorizationStrategyAwaitingRefresh(null);
-      errorToast(error.message || tI18nComplete.raw('texta743aa4452d3'));
-    },
-  });
-  const strategyUpdating = connectorAuthorizationUpdateIsPending(
-    connector.authorizationStrategy,
-    authorizationStrategyAwaitingRefresh,
-    updateAuthorizationStrategy.isPending,
-  );
+  // The "Connects as" control that used to mutate `authorization_strategy`
+  // from this modal is gone — see `connector-settings.tsx`. Ownership is now
+  // an ACCOUNT property (`owner_type`), set per connection on the Accounts tab.
 
-  const showConnectCta =
-    canWrite &&
-    (isManagedProvider || Boolean(connector.authSecret)) &&
-    !connected &&
-    !isChannel &&
-    usesProjectAuthorization;
-  const showReconnectCta =
-    canWrite && (isManagedProvider || Boolean(connector.authSecret)) && connected && !isChannel;
+  // The header carries ONE action, chosen by the account picture, never by an
+  // owner mode:
+  //   connect — no account yet: create the first one (shared when the caller
+  //             may manage project connections, else their own) and authorize it;
+  //   finish  — accounts exist but none is usable: the fix is per row, on the
+  //             Accounts tab (the CTA takes you there);
+  //   replace — connected with exactly one account: re-authorize / replace THAT
+  //             credential. Two or more accounts have their own row menus.
+  const headerCta: 'connect' | 'finish' | 'replace' | null =
+    !canWrite || isChannel || isComputer || !(isManagedProvider || Boolean(connector.authSecret))
+      ? null
+      : !connected
+        ? accounts.length === 0
+          ? 'connect'
+          : 'finish'
+        : soleAccount
+          ? 'replace'
+          : null;
+  const connectPending = connectShared.isPending || connectMine.isPending;
+  const quickConnect = () => {
+    setSelectedTab('accounts');
+    setAddAccountRequest((n) => n + 1);
+  };
+  const replaceSoleAccount = () => {
+    if (!soleAccount) return;
+    const owner = soleAccount.owner_type === 'project' ? 'project' : 'me';
+    if (isManagedProvider) {
+      // Reconciling the SAME label re-points this row, never a second account.
+      if (owner === 'project') connectShared.mutate({ label: soleAccount.label });
+      else connectMine.mutate({ label: soleAccount.label });
+      return;
+    }
+    setCredentialTarget({ connectionId: soleAccount.connection_id, owner });
+  };
 
   return (
     <>
@@ -306,7 +328,7 @@ function ConnectorModalBody({
               slug={connector.slug}
               displayName={displayName}
               canWrite={canWrite}
-              disabled={strategyUpdating}
+              disabled={false}
               onChanged={onChanged}
             />
             <ConnectorStatusBadge connector={connector} />
@@ -318,45 +340,55 @@ function ConnectorModalBody({
 
         <div className="flex items-center gap-2">
           <ButtonGroup className="shrink-0">
-            {showConnectCta ? (
+            {headerCta === 'connect' ? (
               <Button
                 size="sm"
                 className="gap-1.5 active:scale-[0.96]"
-                onClick={() => (isManagedProvider ? reconnect.mutate() : setCredOpen(true))}
-                disabled={strategyUpdating || (isManagedProvider && reconnect.isPending)}
+                onClick={quickConnect}
+                disabled={connectPending}
               >
-                {isManagedProvider && reconnect.isPending ? (
+                {connectPending ? (
                   <Loading className="size-4 shrink-0" />
                 ) : (
                   <PlusIcon className="size-4 shrink-0" weight="bold" />
                 )}
-                {isManagedProvider ? 'Connect' : tI18nComplete.raw('text2dcccf29ebf4')}
+                {isManagedProvider
+                  ? tI18nComplete.raw('text1a2303ede074')
+                  : tI18nComplete.raw('text2dcccf29ebf4')}
               </Button>
             ) : null}
-            {showReconnectCta ? (
-              isManagedProvider ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 active:scale-[0.96]"
-                  onClick={() => reconnect.mutate()}
-                  disabled={reconnect.isPending || strategyUpdating}
-                >
-                  {reconnect.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                  {tI18nComplete.raw('textbf8a9eab9e7e')}
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 active:scale-[0.96]"
-                  onClick={() => setCredOpen(true)}
-                  disabled={strategyUpdating}
-                >
+            {headerCta === 'finish' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 active:scale-[0.96]"
+                onClick={() => setSelectedTab('accounts')}
+              >
+                <KeyIcon className="size-4 shrink-0" />
+                {isManagedProvider
+                  ? tI18nComplete.raw('text1a2303ede074')
+                  : tI18nComplete.raw('text3d6627454174')}
+              </Button>
+            ) : null}
+            {headerCta === 'replace' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 active:scale-[0.96]"
+                onClick={replaceSoleAccount}
+                disabled={connectPending}
+              >
+                {isManagedProvider ? (
+                  connectPending ? (
+                    <Loading className="size-4 shrink-0" />
+                  ) : null
+                ) : (
                   <KeyIcon className="size-4 shrink-0" />
-                  {tI18nComplete.raw('text54483ce856e0')}
-                </Button>
-              )
+                )}
+                {isManagedProvider
+                  ? tI18nComplete.raw('textbf8a9eab9e7e')
+                  : tI18nComplete.raw('text54483ce856e0')}
+              </Button>
             ) : null}
           </ButtonGroup>
           <ModalClose asChild>
@@ -383,32 +415,30 @@ function ConnectorModalBody({
             title={tI18nComplete('text6506d9ea4341', { value0: displayName })}
             className="shrink-0 rounded-none border-x-0 border-t-0"
             action={
-              showConnectCta ? (
+              headerCta === 'connect' ? (
                 <Button
                   size="sm"
                   className="gap-1.5"
-                  onClick={() => (isManagedProvider ? reconnect.mutate() : setCredOpen(true))}
-                  disabled={strategyUpdating || (isManagedProvider && reconnect.isPending)}
+                  onClick={quickConnect}
+                  disabled={connectPending}
                 >
-                  {isManagedProvider && reconnect.isPending ? (
-                    <Loading className="size-4 shrink-0" />
-                  ) : null}
+                  {connectPending ? <Loading className="size-4 shrink-0" /> : null}
                   {isManagedProvider
                     ? tI18nComplete.raw('textf5e732583fb2')
                     : tI18nComplete.raw('text2dcccf29ebf4')}
                 </Button>
-              ) : !usesProjectAuthorization ? (
-                <Button size="sm" variant="outline" onClick={startPrivateSession}>
-                  {tI18nComplete.raw('text9676bdc9332f')}
+              ) : headerCta === 'finish' ? (
+                <Button size="sm" variant="outline" onClick={() => setSelectedTab('accounts')}>
+                  {isManagedProvider
+                    ? tI18nComplete.raw('text1a2303ede074')
+                    : tI18nComplete.raw('text3d6627454174')}
                 </Button>
               ) : undefined
             }
           >
-            {usesProjectAuthorization
-              ? canWrite
-                ? tI18nComplete.raw('text7acd4ac590c6')
-                : tI18nComplete.raw('text6a05ddf8cca1')
-              : tI18nComplete.raw('text607b97fdc5aa')}
+            {canWrite
+              ? tI18nComplete.raw('text929505ef815a')
+              : tI18nComplete.raw('text6a05ddf8cca1')}
           </InfoBanner>
         ) : null}
         <Tabs
@@ -474,11 +504,10 @@ function ConnectorModalBody({
                   displayName={displayName}
                   canWrite={canWrite}
                   canManageConnections={canManageConnections}
-                  strategyUpdating={strategyUpdating}
                   onChanged={onChanged}
                   onRemoved={onRemoved}
                   onStartSession={startPrivateSession}
-                  onSetCredential={() => setCredOpen(true)}
+                  addRequest={addAccountRequest}
                 />
               )}
             </TabsContent>
@@ -489,7 +518,7 @@ function ConnectorModalBody({
                 connector={connector}
                 displayName={displayName}
                 canWrite={canWrite}
-                disabled={strategyUpdating}
+                disabled={false}
                 onChanged={onChanged}
               />
             </TabsContent>
@@ -499,13 +528,7 @@ function ConnectorModalBody({
                 projectId={projectId}
                 connector={connector}
                 displayName={displayName}
-                canWrite={canWrite}
-                strategyUpdating={strategyUpdating}
-                onAuthorizationStrategyChange={(next) => {
-                  setCredOpen(false);
-                  setAuthorizationStrategyAwaitingRefresh(next);
-                  updateAuthorizationStrategy.mutate(next);
-                }}
+                onChanged={onChanged}
                 onRemoved={onRemoved}
               />
             </TabsContent>
@@ -515,16 +538,17 @@ function ConnectorModalBody({
 
       <SetCredentialModal
         projectId={projectId}
-        connector={credOpen ? connector : null}
-        connectionId={
-          usesProjectAuthorization
-            ? (projectConnection?.connection_id ?? null)
-            : (myPrivateConnection?.connection_id ?? null)
-        }
-        authorizationStrategy={connector.authorizationStrategy}
-        open={credOpen}
-        onOpenChange={setCredOpen}
-        onSaved={onChanged}
+        connector={credentialTarget ? connector : null}
+        connectionId={credentialTarget?.connectionId ?? null}
+        owner={credentialTarget?.owner ?? 'me'}
+        open={credentialTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setCredentialTarget(null);
+        }}
+        onSaved={() => {
+          setCredentialTarget(null);
+          refreshAccounts();
+        }}
       />
     </>
   );

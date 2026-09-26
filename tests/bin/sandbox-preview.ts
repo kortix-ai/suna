@@ -3,15 +3,16 @@ import { appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
+  PREVIEW_SUITE_REFUSED,
   type SandboxPreviewProvider,
   branchEnvSandboxName,
   runSandboxPreview,
 } from '../src/core/sandbox-preview';
 import {
   type SandboxPreviewDeploymentInput,
-  deployDaytonaPreview,
   deployPlatinumPreview,
   reconcileDaytonaPreviews,
+  runPlatinumPreviewSuite,
   reconcilePlatinumPreviews,
   teardownDaytonaPreview,
   teardownPlatinumPreview,
@@ -37,9 +38,9 @@ function positiveInteger(name: string): number {
 
 function provider(): SandboxPreviewProvider {
   const selected = value('PREVIEW_SANDBOX_PROVIDER', 'auto').toLowerCase();
-  if (selected === 'auto' || selected === 'platinum' || selected === 'daytona') return selected;
+  if (selected === 'auto' || selected === 'platinum') return selected;
   throw new Error(
-    `PREVIEW_SANDBOX_PROVIDER must be auto, platinum, or daytona; received ${selected}`,
+    `previews run on Platinum only: PREVIEW_SANDBOX_PROVIDER must be auto or platinum; received ${selected}`,
   );
 }
 
@@ -135,9 +136,10 @@ if (action === 'deploy') {
   // stable across pushes (see branchEnvSandboxName).
   const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
   // A PR preview is a gate, so it runs the suite. A branch environment is a
-  // place to work: the suite is ~10 of the ~14 minutes a deploy takes and
-  // proves nothing the stack health check has not, so it is off by default
-  // there. PREVIEW_RUN_TESTS=1 forces it back on for a deliberate full run.
+  // place to work: the suite is ~40 min and proves nothing the stack health
+  // check has not, so it is off by default there. PREVIEW_RUN_TESTS=1 forces it
+  // back on for a deliberate full run. The deploy never runs it: it is the
+  // separate `suite` action, so the workflow publishes the origin first.
   const runTests = process.env.PREVIEW_RUN_TESTS?.trim() === '1' || !branchEnv;
   // PREVIEW_PUBLIC_ORIGIN is the stable name a proxy serves the environment at.
   // The stack is configured with it; the provider's own hostname stays the
@@ -148,7 +150,6 @@ if (action === 'deploy') {
   const deployment: SandboxPreviewDeploymentInput = {
     ...(branchEnv ? { branchEnv } : {}),
     ...(publicOrigin ? { publicOrigin } : {}),
-    runTests,
     repository,
     ref: value('PREVIEW_REF', sha),
     sha,
@@ -159,19 +160,16 @@ if (action === 'deploy') {
     lockfileHash: required('PREVIEW_LOCKFILE_SHA256'),
     secrets: readPreviewRuntimeSecrets(process.env),
     platinum,
-    daytona,
   };
   const result = await runSandboxPreview(
     { provider: provider(), prNumber, repository, sha },
     {
       platinum: () => deployPlatinumPreview(deployment),
-      daytona: () => deployDaytonaPreview(deployment),
     },
   );
-  const staleProviderCleanup = result.provider === 'platinum'
-    ? teardownDaytonaPreview({ ...daytona, prNumber })
-    : teardownPlatinumPreview({ ...platinum, prNumber });
-  await staleProviderCleanup.catch((error) => {
+  // Previews created before Platinum-only (2026-09-22) may still exist on
+  // Daytona. Remove this pull request's one; nothing new is ever created there.
+  await teardownDaytonaPreview({ ...daytona, prNumber }).catch((error) => {
     console.warn(
       `[sandbox-preview] stale provider cleanup failed; scheduled reconciliation will retry: ${String(error)}`,
     );
@@ -179,8 +177,37 @@ if (action === 'deploy') {
   await writeOutput('provider', result.provider);
   await writeOutput('sandbox_id', result.sandboxId ?? '');
   await writeOutput('preview_url', result.previewUrl ?? '');
-  await writeOutput('report_url', result.previewUrl ? `${result.previewUrl}/_tests/` : '');
+  // WHETHER THE SUITE WILL RUN, from the one place that decided it. The
+  // workflow gates its `suite` step on this, and its status line and sticky
+  // comment read the suite step's own outcome — never "tested" from a deploy.
+  // Emitted rather than re-derived from PREVIEW_RUN_TESTS in YAML: the rule is
+  // `PREVIEW_RUN_TESTS === '1' || !branchEnv`, and a second copy of it in the
+  // workflow is a second copy that can drift.
+  await writeOutput('suite', runTests ? '1' : '0');
   process.exitCode = result.exitCode;
+} else if (action === 'suite') {
+  // `pnpm test -- --target-full` against the sandbox this run's deploy step
+  // returned. Only a run that tests links `/_tests/`: a persistent sandbox
+  // keeps whatever an earlier run left there.
+  const prNumber = positiveInteger('PREVIEW_PR_NUMBER');
+  const exitCode = await runPlatinumPreviewSuite({
+    repository,
+    sha: required('PREVIEW_SHA'),
+    prNumber,
+    runId: value('GITHUB_RUN_ID', `local-${Date.now()}`),
+    runAttempt: value('GITHUB_RUN_ATTEMPT', '1'),
+    root: resolve(value('PREVIEW_ROOT', resolve(import.meta.dir, '../..'))),
+    sandboxId: required('PREVIEW_SANDBOX_ID'),
+    platinum,
+    ...(process.env.PREVIEW_BRANCH_ENV?.trim() ? { branchEnv: process.env.PREVIEW_BRANCH_ENV.trim() } : {}),
+  });
+  // A refused suite wrote no report; `/_tests/` still holds an older run's.
+  const previewUrl = value('PREVIEW_URL');
+  await writeOutput(
+    'report_url',
+    previewUrl && exitCode !== PREVIEW_SUITE_REFUSED ? `${previewUrl.replace(/\/$/, '')}/_tests/` : '',
+  );
+  process.exitCode = exitCode;
 } else if (action === 'teardown') {
   // A persistent environment's sandbox is named after the BRANCH, so teardown
   // has to be told which branch or it deletes nothing and the box runs forever.

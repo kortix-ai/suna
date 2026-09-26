@@ -18,10 +18,8 @@
  * sat in the project sidebar's footer next to every `SettingsPanel` mount. That
  * footer menu is gone. `ProjectSidebar` now renders `WorkspaceSwitcher`
  * (`features/workspace/project-sidebar/project-sidebar.tsx:116`) and no
- * `UserMenu` at all, and `UserMenu`'s single remaining mount is the app header
- * (`features/layout/app-header.tsx:108`), which only the `app/(app)/accounts`
- * tree renders — and that tree has no `SettingsPanel` in it. So the effect had to become
- * callable on its own rather than be copied, and each of the three surfaces
+ * `UserMenu` at all, and `UserMenu` has no remaining mount. So the effect had
+ * to become callable on its own rather than be copied, and each of the three surfaces
  * that needs it calls it directly:
  *
  * - `WorkspaceSwitcher`, for the project-shell panel mount

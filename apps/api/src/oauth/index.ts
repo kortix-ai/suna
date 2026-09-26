@@ -15,10 +15,10 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { eq, and, inArray, isNull, lt, or } from 'drizzle-orm';
+import { eq, and, isNull, lt, or } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { randomAlphanumeric, verifySecretKey } from '../shared/crypto';
-import { hashOauthToken, oauthTokenHashCandidates } from './token-hash';
+import { hashSecretKey, randomAlphanumeric, verifySecretKey } from '../shared/crypto';
+import { hashSecretKeyAsync } from '../shared/token-hash';
 import { supabaseAuth } from '../middleware/auth';
 import { config } from '../config';
 import {
@@ -33,6 +33,7 @@ import {
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { oauthAuthorizationServerMetadata } from './discovery';
 import { isOAuthAccessToken, isOAuthRefreshToken, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_PROFILE } from './access-token';
+import { isUuid } from '../shared/validate';
 
 // ─── Rate Limiter (in-memory, per client_id) ────────────────────────────────
 
@@ -72,15 +73,11 @@ async function oauthTokenAuth(c: Context, next: Next) {
   const token = authHeader.slice(7);
   if (!token) throw new HTTPException(401, { message: 'Missing token' });
 
+  const tokenHash = await hashSecretKeyAsync(token);
   const [row] = await db
     .select()
     .from(oauthAccessTokens)
-    .where(
-      and(
-        inArray(oauthAccessTokens.tokenHash, oauthTokenHashCandidates(token)),
-        isNull(oauthAccessTokens.revokedAt),
-      ),
-    )
+    .where(and(eq(oauthAccessTokens.tokenHash, tokenHash), isNull(oauthAccessTokens.revokedAt)))
     .limit(1);
   if (!row) throw new HTTPException(401, { message: 'Invalid access token' });
   if (row.expiresAt < new Date()) throw new HTTPException(401, { message: 'Access token expired' });
@@ -133,13 +130,11 @@ function requireOAuthScope(c: Context, scopes: string[]): Response | null {
     : c.json({ error: 'insufficient_scope', required_scope: scopes.join(' | ') }, 403);
 }
 
-/** A client_id is a uuid column; gate junk before it reaches Postgres (22P02 → 500). */
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 type ClientRow = typeof oauthClients.$inferSelect;
 
+/** A client_id is a uuid column; gate junk before it reaches Postgres (22P02 → 500). */
 async function loadActiveClient(clientId: string): Promise<ClientRow | null> {
-  if (!UUID_REGEX.test(clientId)) return null;
+  if (!isUuid(clientId)) return null;
   const [client] = await db
     .select()
     .from(oauthClients)
@@ -306,7 +301,7 @@ async function issueTokenPair(params: { clientId: string; userId: string; accoun
   const [accessRow] = await db
     .insert(oauthAccessTokens)
     .values({
-      tokenHash: hashOauthToken(accessToken),
+      tokenHash: hashSecretKey(accessToken),
       clientId: params.clientId,
       userId: params.userId,
       accountId: params.accountId,
@@ -316,7 +311,7 @@ async function issueTokenPair(params: { clientId: string; userId: string; accoun
     .returning();
 
   await db.insert(oauthRefreshTokens).values({
-    tokenHash: hashOauthToken(refreshToken),
+    tokenHash: hashSecretKey(refreshToken),
     accessTokenId: accessRow.id,
     clientId: params.clientId,
     userId: params.userId,
@@ -666,12 +661,13 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
   const refreshTokenRaw = body['refresh_token'] as string;
   if (!refreshTokenRaw) return c.json({ error: 'invalid_request', error_description: 'Missing refresh_token' }, 400);
 
+  const refreshHash = await hashSecretKeyAsync(refreshTokenRaw);
   const [refreshRow] = await db
     .select()
     .from(oauthRefreshTokens)
     .where(
       and(
-        inArray(oauthRefreshTokens.tokenHash, oauthTokenHashCandidates(refreshTokenRaw)),
+        eq(oauthRefreshTokens.tokenHash, refreshHash),
         eq(oauthRefreshTokens.clientId, client.clientId),
         isNull(oauthRefreshTokens.revokedAt),
       ),
@@ -736,12 +732,13 @@ oauthApp.openapi(
     const now = new Date();
     let revoked = false;
     if (isOAuthRefreshToken(token)) {
+      const tokenHash = await hashSecretKeyAsync(token);
       const rows = await db
         .update(oauthRefreshTokens)
         .set({ revokedAt: now })
         .where(
           and(
-            inArray(oauthRefreshTokens.tokenHash, oauthTokenHashCandidates(token)),
+            eq(oauthRefreshTokens.tokenHash, tokenHash),
             eq(oauthRefreshTokens.clientId, client.clientId),
             isNull(oauthRefreshTokens.revokedAt),
           ),
@@ -752,12 +749,13 @@ oauthApp.openapi(
       }
       revoked = rows.length > 0;
     } else if (isOAuthAccessToken(token)) {
+      const tokenHash = await hashSecretKeyAsync(token);
       const rows = await db
         .update(oauthAccessTokens)
         .set({ revokedAt: now })
         .where(
           and(
-            inArray(oauthAccessTokens.tokenHash, oauthTokenHashCandidates(token)),
+            eq(oauthAccessTokens.tokenHash, tokenHash),
             eq(oauthAccessTokens.clientId, client.clientId),
             isNull(oauthAccessTokens.revokedAt),
           ),

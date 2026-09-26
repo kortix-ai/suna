@@ -7,7 +7,7 @@ import { errorSqlstate } from './error-cause';
 /**
  * The dedicated audit-write pool.
  *
- * Why a SEPARATE pool (prod incident, Essentia box 2026-08-21): every audit
+ * Why a SEPARATE pool (prod incident, SampleCo box 2026-08-21): every audit
  * insert serializes through a per-session `FOR UPDATE` row lock in the
  * `audit_prepare_event` trigger; under a burst those inserts convoy for 4-24s
  * each. On the SHARED `db` pool that pinned connections the gateway's auth query
@@ -18,7 +18,7 @@ import { errorSqlstate } from './error-cause';
  * The shorter statement_timeout caps how long a blocked audit insert holds its
  * backend, so this pool self-drains every ~10s instead of riding the main 25s.
  *
- * `lock_timeout` (Essentia 2026-08-26): isolation alone did NOT stop the
+ * `lock_timeout` (SampleCo 2026-08-26): isolation alone did NOT stop the
  * convoy. Every audit row takes a per-session row lock in `audit_prepare_event`
  * that is held to COMMIT, so a blocked insert used to sit on one of only
  * DEFAULT_AUDIT_POOL_MAX (2) backends for the full 10s statement_timeout and
@@ -90,7 +90,7 @@ export function auditDb(): Database {
  * `audit_prepare_event` serializes every row of a session behind one
  * `audit_session_sequences` row lock held to COMMIT, so a burst on one session
  * turns into a lock queue. On the audit pool that queue surfaces as 57014
- * (statement_timeout, the Essentia signature: 445 x 500 in 3h, each at ~10s)
+ * (statement_timeout, the SampleCo signature: 445 x 500 in 3h, each at ~10s)
  * or — since `lock_timeout` was added — 55P03 at ~2.5s. Callers must report
  * these as retryable backpressure, never as a 500: a 500 makes the sandbox
  * relay retry a batch that has already been rejected, which feeds the convoy

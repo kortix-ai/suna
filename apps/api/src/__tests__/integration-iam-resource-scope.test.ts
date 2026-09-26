@@ -11,9 +11,11 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { authorize } from '../iam/authorize';
+import { authorize, filterAccessibleObjects } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS, upsertResourceGrant } from '../iam';
+import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -30,7 +32,7 @@ const canUse = async (userId: string, agent: string) =>
 
 async function seedMember(role: 'owner' | 'admin' | 'member') {
   const userId = uid();
-  await db.insert(accountMembers).values({ userId, accountId: ACCOUNT, accountRole: role });
+  await insertIntoView(db, accountMembers, { userId, accountId: ACCOUNT, accountRole: role });
   return userId;
 }
 
@@ -46,9 +48,9 @@ afterAll(async () => {
 describe('per-resource scoping (iam_resource_grants)', () => {
   test('scoping one agent restricts ONLY that agent; unscoped agents stay open', async () => {
     const alice = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: alice, projectRole: 'manager' });
+    await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId: alice, projectRole: 'manager' });
     const bob = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: bob, projectRole: 'manager' });
+    await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId: bob, projectRole: 'manager' });
 
     // Before any grant: both agents are unscoped → both members can use both.
     expect(await canUse(alice, SCOPED_AGENT)).toBe(true);
@@ -73,7 +75,7 @@ describe('per-resource scoping (iam_resource_grants)', () => {
 
   test('granting the scoped agent to a member lets them in immediately', async () => {
     const carol = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: carol, projectRole: 'manager' });
+    await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId: carol, projectRole: 'manager' });
     // SCOPED_AGENT was scoped (to Alice) in the previous test → Carol is out.
     expect(await canUse(carol, SCOPED_AGENT)).toBe(false);
 
@@ -82,6 +84,33 @@ describe('per-resource scoping (iam_resource_grants)', () => {
       principalType: 'member', principalId: carol, grantedBy: carol,
     });
     expect(await canUse(carol, SCOPED_AGENT)).toBe(true); // upsert busted the resource memo
+  });
+
+  test('a grant to everyone in the project reaches every project member, and nobody else', async () => {
+    const AGENT = 'everyone-bot';
+    const dave = await seedMember('member');
+    await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId: dave, projectRole: 'member' });
+    // An account member with no project role is not "in the project".
+    const outsider = await seedMember('member');
+
+    // Agents are closed to the member tier until someone grants them.
+    expect(await canUse(dave, AGENT)).toBe(false);
+
+    await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+      principal: { type: 'project', id: PROJECT },
+      roleKey: 'agent-user',
+      scope: { type: 'project', id: PROJECT },
+      object: { type: 'agent', id: AGENT },
+    });
+
+    expect(await canUse(dave, AGENT)).toBe(true);
+    expect(await canUse(outsider, AGENT)).toBe(false);
+
+    // The pickers' list form answers the same: the Slack and Teams agent lists
+    // must not name the agent to an account member outside the project.
+    const listed = (userId: string) => filterAccessibleObjects(actorForUser(userId, ACCOUNT), PROJECT, 'agent', [AGENT]);
+    expect(await listed(dave)).toEqual([AGENT]);
+    expect(await listed(outsider)).toEqual([]);
   });
 
   test('account owner bypasses per-resource scoping (implicit Manager)', async () => {

@@ -120,6 +120,15 @@ export const qk = {
      */
     list: (userId: string | null | undefined) =>
       [...qk.accounts.scope(), userId ?? 'anonymous'] as const,
+
+    /**
+     * The invites pending for one user's email (`listMyAccountInvites`).
+     * Under `scope()` on purpose: joining an invite changes the account
+     * list, and that invalidation targets `scope()`, so the joined invite
+     * drops out of this list in the same refetch.
+     */
+    myInvites: (userId: string | null | undefined) =>
+      [...qk.accounts.scope(), 'my-invites', userId ?? 'anonymous'] as const,
   },
 
   projects: {
@@ -291,12 +300,16 @@ export const qk = {
     /** One connector's config — `getConnectorConfig(id, slug)`. */
     connectorConfig: (id: string, slug: string) =>
       [...qk.project.connectors(id), slug] as const,
-    /** One connector's OAuth2 authorization discovery —
-     *  `discoverConnectionOAuth2Resource(id, connectionId)`. Keyed by connector
-     *  slug, not connection id: the probe reads the connector's server, and the
-     *  connection is created on demand to scope it. */
-    connectorOAuth2Discovery: (id: string, slug: string) =>
-      [...qk.project.connectorConfig(id, slug), 'oauth2-discovery'] as const,
+    /** One connection's OAuth2 authorization discovery —
+     *  `discoverConnectionOAuth2Resource(id, connectionId)`. The result carries
+     *  the connection id it ran against, and one-click OAuth starts on that id,
+     *  so pass `connection` (the connection id, or a stable stand-in for one not
+     *  created yet): two connections of one connector must not share an entry.
+     *  Without it, the key is the per-connector prefix every entry sits under. */
+    connectorOAuth2Discovery: (id: string, slug: string, connection?: string) =>
+      connection === undefined
+        ? ([...qk.project.connectorConfig(id, slug), 'oauth2-discovery'] as const)
+        : ([...qk.project.connectorConfig(id, slug), 'oauth2-discovery', connection] as const),
 
     access: (id: string) => [...qk.project.scope(id), 'access'] as const,
     accessRequests: (id: string) => [...qk.project.access(id), 'requests'] as const,

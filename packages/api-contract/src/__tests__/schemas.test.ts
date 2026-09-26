@@ -119,7 +119,11 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       warm_sessions: false,
       secrets_egress: false,
       pi_worker: false,
+      session_transcript_history: false,
       pooled_provider_secrets: false,
+      pi_harness: false,
+      config_releases: true,
+      agent_principal: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -692,7 +696,11 @@ describe('envelopes', () => {
       'warm_sessions',
       'secrets_egress',
       'pi_worker',
+      'session_transcript_history',
       'pooled_provider_secrets',
+      'pi_harness',
+      'config_releases',
+      'agent_principal',
     ]);
   });
 
@@ -982,9 +990,10 @@ describe('session scope contracts', () => {
   test('emits only connection_id in authoritative scope output', () => {
     const value = {
       secrets_allowlist: ['GMAIL_TOKEN'],
-      // The alias a session REQUIRES, whether or not anything is connected —
-      // the one axis a binding cannot express, since a binding carries an id.
-      required_connectors: ['gmail'],
+      // @deprecated Always null now — no session requires connectors any more
+      // (SessionScopeSchema's own doc comment). The schema is `z.null()`, so
+      // anything else fails to parse.
+      required_connectors: null,
       connector_bindings: { gmail: { connection_id: connectionId } },
       dropped_secrets: [],
       added_secrets: ['GMAIL_TOKEN'],
@@ -1002,6 +1011,23 @@ describe('session scope contracts', () => {
       SessionScopeSchema.safeParse({
         ...value,
         connector_bindings: { gmail: { authorization_id: connectionId } },
+      }).success,
+    ).toBe(false);
+  });
+
+  test('rejects a non-null required_connectors — no session requires connectors any more', () => {
+    expect(
+      SessionScopeSchema.safeParse({
+        secrets_allowlist: ['GMAIL_TOKEN'],
+        required_connectors: ['gmail'],
+        connector_bindings: { gmail: { connection_id: connectionId } },
+        dropped_secrets: [],
+        added_secrets: ['GMAIL_TOKEN'],
+        dropped_bindings: [],
+        retroactive: true,
+        connector_bindings_configured: true,
+        connector_bindings_inherit_unbound: false,
+        detail: 'Applies from the next prompt.',
       }).success,
     ).toBe(false);
   });

@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import {
   COMPILED_RUNTIME_CONTENT_TYPE,
   COMPILED_RUNTIME_FORMAT,
   buildCompiledRuntimeUrl,
   installCompiledRuntime,
-} from '../compiled-runtime'
+} from '../harness/open-code/compiled-runtime'
 
 const roots: string[] = []
 
@@ -86,6 +86,8 @@ describe('compiled runtime bootstrap', () => {
 
     expect(authorization).toBe('Bearer sandbox-token')
     expect(await readFile(destination, 'utf8')).toBe(source)
+    // Atomic: the only file left beside the destination is the destination.
+    expect(await readdir(root)).toEqual(['server.mjs'])
     expect(result).toEqual(
       expect.objectContaining({
         path: destination,
@@ -125,7 +127,7 @@ describe('compiled runtime bootstrap', () => {
     await expect(readFile(destination)).rejects.toThrow()
   })
 
-  test('rejects a runtime without executing it during manifest verification', async () => {
+  test('verifies the manifest without executing the artifact', async () => {
     const root = await mkdtemp(join(tmpdir(), 'kortix-runtime-install-'))
     roots.push(root)
     const destination = join(root, 'server.mjs')

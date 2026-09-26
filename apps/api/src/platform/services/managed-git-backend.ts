@@ -80,6 +80,7 @@ function env(name: string): string | null {
 }
 
 let lastRefusal = '';
+let ambiguityLogged = false;
 
 /** Log a refusal once per distinct reason, so a standing misconfiguration
  *  states itself on arrival instead of becoming wallpaper. */
@@ -107,6 +108,19 @@ export function resolveGitBackend(): GitBackend | null {
   if (envOwner || envToken || envInstallationId) {
     if (envOwner && envToken) {
       lastRefusal = '';
+      // A token beside an installation id is two backends. The token wins, as it
+      // always has, so nothing changes under a running deployment — but it must
+      // not win SILENTLY: production ran that way with a token that could not
+      // create a repository while the App that could was never consulted. To
+      // select the App, set the token to an empty value; keep the key present.
+      if (envInstallationId && !ambiguityLogged) {
+        ambiguityLogged = true;
+        console.error(
+          `[managed-git-backend] ${GIT_BACKEND_ENV_VARS.token} and ${GIT_BACKEND_ENV_VARS.installationId} ` +
+            `are both set: the token is used and the App installation ${envInstallationId} is ignored. ` +
+            `Set ${GIT_BACKEND_ENV_VARS.token} to an empty value to use the App.`,
+        );
+      }
       return { source: 'env', kind: 'pat', owner: envOwner, token: envToken };
     }
     if (envOwner && envInstallationId) {
@@ -157,10 +171,6 @@ export function refreshGitBackend(): Promise<void> {
   return setting.refresh();
 }
 
-export function invalidateGitBackend(): void {
-  setting.invalidate();
-}
-
 /** Overwrite the stored backend whole. */
 export async function writeGitBackend(backend: StoredGitBackend): Promise<void> {
   await setting.write(backend);
@@ -178,4 +188,5 @@ export function __setStoredGitBackendForTests(value: unknown): void {
 /** Test-only: forget the last logged refusal. */
 export function __resetGitBackendRefusalLogForTests(): void {
   lastRefusal = '';
+  ambiguityLogged = false;
 }

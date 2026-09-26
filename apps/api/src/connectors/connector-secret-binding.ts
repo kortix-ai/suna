@@ -2,7 +2,6 @@ export interface ConnectorSecretBindingValidationInput {
   secretIdentifier: string | null;
   requiresAuth: boolean;
   provider: string;
-  authorizationStrategy: 'project' | 'user';
   hasStoredCredential: boolean;
   secretCompatible: boolean;
 }
@@ -19,12 +18,6 @@ export function validateConnectorSecretBinding(
   if (!input.requiresAuth || input.provider === 'channel') {
     return {
       error: 'This connector does not accept a project secret credential',
-      status: 409,
-    };
-  }
-  if (input.authorizationStrategy !== 'project') {
-    return {
-      error: 'Project secrets require a project authorization strategy',
       status: 409,
     };
   }

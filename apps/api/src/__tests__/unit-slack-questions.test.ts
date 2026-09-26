@@ -89,6 +89,16 @@ beforeEach(() => {
 });
 
 describe('postQuestion → interactive buttons', () => {
+  test('the plan does NOT close as "Task complete" — the agent asked, it did not finish', async () => {
+    // The default title said "Task complete" for as long as this has existed,
+    // one message above a question waiting on the user. Teams had the same bug.
+    await postQuestion('sess-1', [{ question: 'Ready?', options: [] }] as any);
+
+    const finalize = slackCalls.find((c) => c.fn === 'finalizeTurn');
+    expect(finalize).toBeTruthy();
+    expect(finalize!.args[1]).toEqual({ title: 'Waiting for your answer', unfinished: true });
+  });
+
   test('each option becomes a clickable button carrying {q,a}; descriptions surfaced', async () => {
     const res = await postQuestion('sess-1', [
       {
@@ -181,7 +191,7 @@ describe('handleBlockAction → question answer click resumes the session', () =
       channel: { id: 'C1' },
       user: { id: 'U1' },
       message: { ts: '50.0', thread_ts: '10.0' },
-      response_url: 'https://hooks.slack.test/x',
+      response_url: 'https://hooks.slack.com/x',
       actions: [
         {
           action_id: 'qa_0_1',
@@ -208,7 +218,7 @@ describe('handleBlockAction → question answer click resumes the session', () =
       channel: { id: 'C1' },
       user: { id: 'U1' },
       message: { ts: '50.0', thread_ts: '10.0' },
-      response_url: 'https://hooks.slack.test/x',
+      response_url: 'https://hooks.slack.com/x',
       actions: [{ action_id: 'qa_0_0', text: { type: 'plain_text', text: 'A' }, value: '{"q":"Q?","a":"A"}' }],
     } as any);
 

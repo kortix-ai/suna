@@ -1,12 +1,7 @@
 import { config } from '../config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
 import { invalidateAccountBilling, resolveAccountBilling } from '../billing/services/billing-cache';
-import {
-  activeTrialSeatLimit,
-  coercePerSeatTier,
-  type SubscriptionFields,
-} from '../billing/services/effective-tier';
-import { accountMayUseManagedModels } from '../billing/services/entitlements';
+import { activeTrialSeatLimit } from '../billing/services/resolve-billing';
 import { getPlanRecord } from '../billing/services/plan-catalog';
 import { getTier, isPaidTier, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
@@ -72,32 +67,6 @@ async function resolveAccountLimitInfo(
 
 export async function resolveAccountTier(accountId: string): Promise<string | null> {
   return (await resolveAccountLimitInfo(accountId)).tier;
-}
-
-/**
- * Whether to mount the premium LLM gateway (the `kortix` provider, with
- * Claude/GPT/Gemini/…) for an account at sandbox-provision time. When false the
- * sandbox boots with only OpenCode's built-in Zen catalog.
- *
- * This is purely the *entitlement* layer — "is this account allowed to SEE
- * premium models". Per-request affordability (active seat sub / wallet balance)
- * is enforced separately by the gateway itself (assertBillingActive +
- * deductForLlmUsage), so we deliberately do NOT re-check credits here: a paid
- * account that has run dry still sees the models and gets a clear "top up" 402
- * on use, rather than silently being shown a stripped-down Zen-only list.
- *
- * - billing off (local / self-hosted): always entitled — the gateway
- *   records-but-never-debits there.
- * - billing on: entitled iff the resolved tier grants all models. This covers
- *   per-seat teams AND every legacy paid tier (pro, tier_*), all of which carry
- *   models:['all']. resolveAccountTier already self-heals stale per-seat rows and
- *   falls back to 'free' on error, so the safe default is "no gateway".
- */
-export async function accountEntitledToLlmGateway(accountId: string): Promise<boolean> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return true;
-  // Single source of truth for "may this account use managed models" — trial
-  // overlay and the operator managed_models_override included (entitlements.ts).
-  return accountMayUseManagedModels(accountId);
 }
 
 export function sessionLlmPolicyForTier(tier: string | null | undefined): RateLimitPolicy {
@@ -199,22 +168,6 @@ export async function maxProjectsForAccount(accountId: string): Promise<number> 
  */
 export function clearAccountLimitCache() {
   invalidateAccountBilling();
-}
-
-/**
- * The tier the LIMIT layer will actually use, given possibly-stale tier data.
- *
- * `resolveAccountSessionLimit` coerces a paying per-seat account whose stored
- * `tier` is not a paid one to `per_seat`, so stale tier data cannot gate a
- * paying team as free. Anything that DISPLAYS a tier-derived limit has to apply
- * the same rule or it shows a different number than the server enforces —
- * exported here so there is one derivation instead of two.
- */
-export function effectiveTierForLimits(
-  tier: string | null | undefined,
-  subscription: SubscriptionFields | null | undefined,
-): string {
-  return coercePerSeatTier(tier ?? 'free', subscription);
 }
 
 /**

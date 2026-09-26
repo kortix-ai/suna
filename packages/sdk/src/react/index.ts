@@ -2,6 +2,10 @@
 
 export * from './use-prompt-attachments';
 
+// The one call a host makes on every identity change (sign-out, a different
+// user signing in) to drop the SDK's per-user in-memory session state.
+export { resetIdentityState } from './reset-identity-state';
+
 // @kortix/sdk/react — the complete OpenCode React hook surface, relocated
 // verbatim from apps/web (every useOpenCode* hook, query-key factory, provider,
 // and type). This is the single source of truth the web UI binds to.
@@ -99,6 +103,19 @@ export { useChatTurns, type TurnView, renderParts, type PartRenderers } from './
 // SDK-owned hook (only the client fn). Each owns its own query key + the
 // mutations a settings/workbench screen actually needs, with invalidation
 // wired so writes reflect without a manual refetch.
+// The two lists every host opens on. Both had a client fn and a `qk` key and
+// no hook, so each host rewrote the useQuery wiring — including a TUI key
+// (`['tui','accounts',…]`) that shared nothing with the rest of the cache.
+export {
+  useAccounts,
+  useProjects,
+  accountsQueryOptions,
+  projectsQueryOptions,
+  type AccountsKey,
+  type ProjectsKey,
+  type UseAccountsOptions,
+  type UseProjectsOptions,
+} from './use-accounts';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
@@ -157,6 +174,9 @@ export {
 } from './use-can';
 
 export * from './query-keys';
+// Workspace file/git cache keys. The event stream invalidates these on
+// `file.edited` and at turn end, so a host's file hooks must key on them.
+export { fileContentKeys, binaryBlobKeys, fileListKeys, gitStatusKeys } from './file-keys';
 export * from './query-contracts';
 export * from './use-project-name';
 export * from './use-project-session';

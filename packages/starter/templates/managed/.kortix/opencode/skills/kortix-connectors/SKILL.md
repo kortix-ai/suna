@@ -6,15 +6,25 @@ description: Use Kortix connectors to reach external systems from a session. Use
 <skill name="kortix-connectors">
 
 <overview>
-A **connector** defines tools against an external system. A **connection** stores
-one usable authorization for a connector. A **connector call** invokes one tool.
+A **connector** defines tools against an external system. A connector is
+**not** an account: one connector (e.g. Gmail) can hold several **accounts** —
+each one SHARED with the whole project or PRIVATE to one member. A
+**connector call** invokes one tool AS one account.
 
 Use the **`kortix connectors` CLI** for normal agent work:
 
-- `kortix connectors ls` lists connectors and actions.
+- `kortix connectors ls` lists connectors and actions (an `ACCOUNTS` column
+  shows how many each holds).
 - `kortix connectors discover "<intent>"` searches visible actions.
 - `kortix connectors show <connector>.<action>` shows one input schema and risk.
-- `kortix connectors call <connector> <action> '<json>'` invokes one action.
+- `kortix connectors accounts <slug>` lists the accounts a connector holds,
+  default first — see **Choosing the account** below before your first call
+  on a connector you have not used yet.
+- `kortix connectors call <connector> <action> '<json>' [--account <label>]`
+  invokes one action. Every successful result echoes `account`: say which one
+  ran when it matters.
+- `kortix connectors call … --attach <file>` attaches a file (see **Attach
+  files** below). Never put base64 in args.
 - `kortix connectors add`, `rm`, and `connect` manage connectors and connections.
 - `kortix connectors mcp` runs the optional `kortix-connectors` stdio MCP server.
 
@@ -36,6 +46,66 @@ Load this skill when the user wants to:
 
 Do not load it for work that stays inside the local repository or sandbox.
 </when-to-load>
+
+<choosing-the-account>
+**A connector is not an account.** One connector (e.g. Gmail) can hold many
+accounts — shared with the whole project, or private to one member. Never
+assume "one connector, one account", and never infer which accounts exist
+from a `get_profile`/`whoami`-style call: that only ever answers for the ONE
+account it happened to run as. If a human asks which or how many accounts are
+connected, list them — do not guess from a profile call.
+
+Procedure, every time you call a connector you have not just listed accounts for:
+
+1. **List the accounts:** `kortix connectors accounts <slug>` (default first;
+   `(pinned default)` marks the one an unnamed call uses).
+2. **One account** → just call. Nothing to choose.
+3. **Several accounts, and the human named one** → pass
+   `--account <label|id|me|project>` (`me` = your own private default,
+   `project` = the shared default).
+4. **Several accounts, and it is unclear which one** → ASK the human. Do not
+   guess, and do not silently use the default — several real accounts exist
+   and picking wrong sends the action to the wrong mailbox/workspace. If
+   nothing is named and nothing is pinned, the call is refused anyway with
+   reason `account_required` rather than guessing; a human can pin one going
+   forward with `kortix connectors accounts <slug> --default <label>`.
+
+Always report which account ran when it could matter — read it off the
+result's `account` field, never assume.
+
+**Worked example.** A project has one Gmail connector (`gmail-ffiod0`) with
+two accounts:
+
+```sh
+$ kortix connectors accounts gmail-ffiod0
+
+  LABEL                 OWNER    DEFAULT  CONNECTION ID
+  personal@example.com  private  no       11111111-…
+  work@example.com      private  no       22222222-…
+
+  kortix connectors call gmail-ffiod0 <action> --account "personal@example.com"
+  kortix connectors call gmail-ffiod0 <action> --account "work@example.com"
+  kortix connectors call gmail-ffiod0 <action> --account me
+  kortix connectors call gmail-ffiod0 <action> --account project
+
+  2 accounts
+  No default pinned — unnamed calls will be refused with account_required;
+  pass --account or pin one: kortix connectors accounts gmail-ffiod0 --default <label>
+```
+
+Neither account is pinned, so — asked "check my gmail" with no account named —
+the right move is to ASK which mailbox, not to call `get_profile` on whichever
+account resolves first and report "one account connected". If the human says
+"the work one", call with `--account "work@example.com"` and report: "Checked
+work@example.com — …".
+
+**Adding another account.** When the human wants a new one ("connect my other
+Gmail"), mint a link with the MCP `connect` tool and a `label` that tells it
+apart (`connect({ slug, label: "Personal Gmail" })`). The link opens a dialog
+where the human names the account and chooses who can use it; you are then told
+its name. Call it with `--account "<name>"` from then on. `kortix connectors
+connect` from a shell cannot name a new account.
+</choosing-the-account>
 
 <cli-first-loop>
 Use the CLI first. It is pre-authenticated in a session sandbox.
@@ -64,6 +134,29 @@ kortix connectors show email_email_inbox_bjgk.reply_message
 kortix connectors call email_email_inbox_bjgk reply_message \
   '{"inbox_id":"email-inbox@agentmail.to","message_id":"<message-id>","text":"Reply text"}'
 ```
+
+**Attach files.** Write the file under `/workspace/artifacts` (or
+`output`, `reports`, `deliverables`), put the JSON args in a file, and pass
+`--attach`. The CLI stages the raw bytes and the gateway builds the
+provider's attachment item (Microsoft Graph, SendGrid, Postmark, Mailjet,
+Resend, Brevo, and the Email channel):
+
+```sh
+cat > /tmp/mail.json <<'JSON'
+{"user":"sender@example.com","body":{"message":{"subject":"Report",
+ "body":{"contentType":"Text","content":"Attached."},
+ "toRecipients":[{"emailAddress":{"address":"to@example.com"}}]},
+ "saveToSentItems":true}}
+JSON
+kortix connectors call microsoft-graph sendmail @/tmp/mail.json \
+  --attach /workspace/artifacts/report.pdf
+```
+
+Leave the attachments array out of the JSON; `--attach` appends to it. For a
+field the CLI cannot find, run `kortix connectors upload <file> --connector
+<slug>` and put the printed `ref` (`{"$kortix_attachment":"<id>"}`) where the
+file belongs: in an `attachments` array, or as the value of a base64 field
+such as `contentBytes`. Pass the body as a JSON object, never as a string.
 
 For GraphQL actions, put selected fields in `args.__select`:
 
@@ -145,12 +238,22 @@ kortix channels connect
 </adding-connectors>
 
 <rules>
+- A connector is not an account. One connector (e.g. Gmail) can hold many
+  accounts (shared or private) — see **Choosing the account** above.
+- If the human asks which or how many accounts are connected, ALWAYS list
+  them with `kortix connectors accounts <slug>`. Never infer accounts from a
+  profile/whoami call.
 - Use `kortix connectors` for one-off agent actions.
 - Use `@kortix/sdk` for durable or testable workflows.
 - Use Composio for every new managed SaaS connector. Never select Pipedream
   unless the human explicitly approves the legacy rollback path.
 - Do not use raw provider tokens from the sandbox.
-- Treat `denied`, `not_shared`, `needs_auth`, and `ok: false` as real outcomes.
+- Treat `denied`, `not_shared`, `needs_auth`, `account_required`, and
+  `ok: false` as real outcomes — `account_required` means several accounts
+  are reachable and none was named or pinned; pass `--account` or ask the
+  human, do not retry blind.
+- Report which account ran when it could matter — read the result's
+  `account` field, never assume.
 - Confirm irreversible work before a destructive connector call.
 - The `kortix-connectors` MCP server is optional. Use the CLI if it is absent.
 </rules>

@@ -3,6 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -24,14 +25,17 @@ import {
 } from '@/features/workspace/shared/sharing-picker';
 import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations } from '@/i18n/use-translations';
-import { setProjectSessionSharing, type ProjectSession } from '@kortix/sdk';
+import { getSessionOversight, setProjectSessionSharing, type ProjectSession } from '@kortix/sdk';
+import { sessionOversightQueryKey } from '@/components/iam/session-oversight-card';
 import {
   GlobeIcon as Globe,
+  ShieldCheckIcon,
   LockIcon as LockSolid,
   UsersIcon as UsersSolid,
 } from '@phosphor-icons/react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { SessionPublicLinkSection } from './session-public-link-section';
 import { sessionAccessSummary, sessionAccessView } from './share-session-access';
 
 /**
@@ -128,6 +132,7 @@ export function ShareSessionModal({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tOversight = useTranslations('sessionOversight');
   const [sharing, setSharing] = useState<SharingSelection>({
     mode: 'private',
     memberIds: [],
@@ -138,6 +143,20 @@ export function ShareSessionModal({
     if (!open || !session) return;
     setSharing(intentToSelection(session.sharing ?? { mode: 'private', ownerId: '' }));
   }, [open, session]);
+
+  // Disclose the account's session-oversight policy: while it is on, account
+  // owners and admins can open this session whatever is picked below. Read only
+  // while the dialog is open (a user action), and silently absent on any error
+  // — the IAM read never toasts (`showErrors: false`).
+  const accountId = session?.account_id ?? null;
+  const oversightQuery = useQuery({
+    queryKey: sessionOversightQueryKey(accountId ?? ''),
+    queryFn: () => getSessionOversight(accountId!),
+    enabled: open && !!accountId,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const oversightOn = oversightQuery.data?.enabled === true;
 
   const save = useMutation({
     mutationFn: () => {
@@ -191,7 +210,7 @@ export function ShareSessionModal({
                   )}
           </ModalDescription>
         </ModalHeader>
-        <ModalBody className="max-h-[60vh] overflow-y-auto">
+        <ModalBody className="max-h-[60vh] space-y-5 overflow-y-auto">
           {view.canEdit ? (
             <SharingPicker
               projectId={projectId}
@@ -212,6 +231,21 @@ export function ShareSessionModal({
               {session ? sessionAccessSummary(session) : null}
             </p>
           )}
+          {oversightOn ? (
+            <InfoBanner
+              tone="neutral"
+              icon={ShieldCheckIcon}
+              data-testid="session-oversight-disclosure"
+            >
+              {tOversight.raw('shareDisclosure')}
+            </InfoBanner>
+          ) : null}
+          {/* Next to the in-team picker: who in the project can open the
+              session, and a read-only link for anyone outside it. Same
+              server verdict as the picker (`can_manage_sharing`). */}
+          {view.canEdit && session ? (
+            <SessionPublicLinkSection projectId={projectId} sessionId={session.session_id} />
+          ) : null}
         </ModalBody>
         <ModalFooter className="sm:justify-between">
           <Button

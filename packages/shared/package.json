@@ -6,6 +6,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./audit-labels": "./src/audit-labels.ts",
     "./tools": "./src/tools/index.ts",
     "./utils": "./src/utils/index.ts",
     "./constants": "./src/constants/upload-limits.ts",
@@ -13,7 +14,10 @@
     "./email-url": "./src/email-url.ts",
     "./sandbox": "./src/sandbox/index.ts",
     "./sandbox-runtime-artifact": "./src/sandbox-runtime-artifact.ts",
-    "./connector-sections": "./src/connector-sections.ts"
+    "./connector-sections": "./src/connector-sections.ts",
+    "./markdown-math": "./src/markdown-math.ts",
+    "./tool-output": "./src/tool-output/index.ts",
+    "./session-fixture": "./src/session-fixture/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

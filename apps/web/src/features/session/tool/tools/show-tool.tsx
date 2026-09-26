@@ -23,10 +23,11 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
   buildHtmlStaticUrl,
+  isShowHtmlFile,
   ServicePreviewViewport,
-  SHOW_HTML_EXT_RE,
   ShowCarousel,
   ShowCarouselItem,
+  ShowCarouselTabs,
   ShowContentRenderer,
   showDomain,
   ShowFileActions,
@@ -34,11 +35,11 @@ import {
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { GlobeIcon as Globe } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 
 // The header owns a single preview state for the active item; the carousel gets it
@@ -49,7 +50,7 @@ const ActiveServicePreviewContext = createContext<ServicePreviewState | null>(nu
 // the same active item) is always the right one when this is asked to render.
 function CarouselServicePreview({ url, label }: { url: string; label?: string }) {
   const preview = useContext(ActiveServicePreviewContext);
-  if (preview) return <ServicePreviewViewport preview={preview} />;
+  if (preview) return <ServicePreviewViewport preview={preview} slotHeight />;
   return <InlineServicePreview url={url} label={label} />;
 }
 
@@ -70,6 +71,9 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const content = (input.content as string) || '';
   const aspectRatio = (input.aspect_ratio as string) || '';
   const language = (input.language as string) || '';
+  // Present only on a card served from saved history: the server's copy of
+  // `path`, so the card renders while the sandbox is off.
+  const attachment = (input.attachment as string) || '';
 
   const items = useMemo<ShowCarouselItem[] | null>(() => {
     const raw = input.items;
@@ -84,7 +88,12 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const isCarousel = !!items && items.length > 0;
 
   const [carouselIndex, setCarouselIndex] = useState(0);
-  const currentItem = isCarousel ? items![carouselIndex] || items![0] : null;
+  // Clamped: a grouped carousel can lose an item (a call that settled empty).
+  const activeIndex = isCarousel ? Math.max(0, Math.min(carouselIndex, items!.length - 1)) : 0;
+  const currentItem = isCarousel ? items![activeIndex] || items![0] : null;
+  // Inline, a multi-item card names its items as header tabs (no footer strip)
+  // and folds the secondary actions into ⋯, so the header fits the tabs.
+  const inlineTabs = isCarousel && !fill && items!.length > 1;
 
   const [contentStatus, setContentStatus] = useState<ShowLoadStatus>('loading');
 
@@ -100,11 +109,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const resolvedPreviewUrl = useMemo(() => {
     const hasLocalhostUrl = !!parseLocalhostUrl(activeUrl) && !isAppRouteUrl(activeUrl);
     if (hasLocalhostUrl) return activeUrl;
-    const isHtmlFilePath =
-      !!activePath &&
-      SHOW_HTML_EXT_RE.test(activePath) &&
-      (activeType === 'file' || activeType === 'html');
-    return isHtmlFilePath ? buildHtmlStaticUrl(activePath) : '';
+    return isShowHtmlFile(activeType, activePath) ? buildHtmlStaticUrl(activePath) : '';
   }, [activeUrl, activePath, activeType]);
   const isWebsitePreview = !!resolvedPreviewUrl;
 
@@ -119,7 +124,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
    */
   const fileActions =
     !isWebsitePreview && activePath ? (
-      <ShowFileActions path={activePath} inPanel={fill} />
+      <ShowFileActions path={activePath} inPanel={fill} compact={inlineTabs} />
     ) : undefined;
   const contentActions =
     !isCarousel && !isWebsitePreview && !activePath && content && activate && navigationEnabled ? (
@@ -148,8 +153,13 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     () => (safeSubtitleUrl ? showDomain(safeSubtitleUrl) : ''),
     [safeSubtitleUrl],
   );
+  // A carousel's header names the ACTIVE item, so paging updates it. The
+  // call's own title is the fallback, then the item count.
+  const activeItemLabel = currentItem
+    ? currentItem.title || currentItem.path?.split('/').pop()
+    : '';
   const displayTitle = isCarousel
-    ? title || `${items!.length} items`
+    ? activeItemLabel || title || `${items!.length} items`
     : title || (type === 'error' ? 'Error' : type === 'url' ? subtitleDomain || 'Link' : 'Output');
 
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
@@ -157,7 +167,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   // Inline card header owns the toolbar. Panel keeps the actions inside the
   // renderer / website header as before.
   const inlineToolbar = isWebsitePreview ? (
-    <ServicePreviewActions preview={preview} />
+    <ServicePreviewActions preview={preview} compact={inlineTabs} />
   ) : (
     fileActions || contentActions
   );
@@ -265,6 +275,8 @@ export function ShowTool({ part, sessionId }: ToolProps) {
                 items={items!}
                 LocalhostPreview={CarouselServicePreview}
                 onIndexChange={setCarouselIndex}
+                activeIndex={activeIndex}
+                hideNav={inlineTabs}
                 fill={fill}
                 toolbarActions={fill ? fileActions : undefined}
               />
@@ -283,6 +295,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
                   content={content}
                   language={language}
                   aspectRatio={aspectRatio}
+                  attachment={attachment}
                   LocalhostPreview={InlineServicePreview}
                   fill={fill}
                   onStatusChange={setContentStatus}
@@ -313,16 +326,25 @@ export function ShowTool({ part, sessionId }: ToolProps) {
       className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg border-[0.5px]"
     >
       <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-        <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">
-          {running && !type && !items ? (
-            <Loading className="text-muted-foreground size-4 shrink-0" />
-          ) : (
-            showFileTypeIcon(headerIcon, activePath || undefined)
-          )}
-          <span className="min-w-0 truncate" title={displayTitle}>
-            {displayTitle}
-          </span>
-        </div>
+        {inlineTabs ? (
+          <ShowCarouselTabs
+            items={items!}
+            activeIndex={activeIndex}
+            onSelect={setCarouselIndex}
+            label={title}
+          />
+        ) : (
+          <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">
+            {(running && !type && !items) || currentItem?.status === 'pending' ? (
+              <Loading className="text-muted-foreground size-4 shrink-0" />
+            ) : (
+              showFileTypeIcon(headerIcon, activePath || undefined, undefined, activeUrl)
+            )}
+            <span className="min-w-0 truncate" title={displayTitle}>
+              {displayTitle}
+            </span>
+          </div>
+        )}
         {inlineToolbar ? (
           <div className="flex shrink-0 items-center gap-1">{inlineToolbar}</div>
         ) : null}

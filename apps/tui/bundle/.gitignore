@@ -1,0 +1,5 @@
+# Compiled outputs of bundle-host.sh / bundle-all.sh. Every binary here is a
+# build artifact; the release assets are built by CI, not committed.
+kortix-tui
+kortix-tui-darwin-*
+kortix-tui-linux-*

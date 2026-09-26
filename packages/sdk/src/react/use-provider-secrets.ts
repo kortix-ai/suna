@@ -5,10 +5,10 @@ import {
   listAccountSecretResources, listSessionProviderSecretPools, setSessionProviderSecretPool,
 } from '../core/rest/projects-client/account-secret-resources';
 
-export function useAccountSecretResources(accountId: string | null | undefined) {
+export function useAccountSecretResources(accountId: string | null | undefined, projectId?: string) {
   return useQuery({
-    queryKey: ['account-secret-resources', accountId],
-    queryFn: () => listAccountSecretResources(accountId!),
+    queryKey: ['account-secret-resources', accountId, projectId],
+    queryFn: () => listAccountSecretResources(accountId!, projectId),
     enabled: Boolean(accountId),
     refetchInterval: (query) => {
       const now = Date.now();

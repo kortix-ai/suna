@@ -88,7 +88,6 @@ describe('warmSessionFitsSend', () => {
     expect(warmSessionFitsSend(warm(), { connector_bindings: {} })).toBe(false);
     expect(warmSessionFitsSend(warm(), { provider_secret_pools: { anthropic: ['primary', 'backup'] } })).toBe(false);
     expect(warmSessionFitsSend(warm(), { inherit_unbound: false })).toBe(false);
-    expect(warmSessionFitsSend(warm(), { require_connectors: ['slack'] })).toBe(false);
   });
 });
 

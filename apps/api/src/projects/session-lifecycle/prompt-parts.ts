@@ -1,7 +1,7 @@
 /**
  * The one sanitizer for prompt parts entering the durable inbox.
  *
- * Two producers accept caller-supplied parts — `POST .../prompts` (r8.ts) and
+ * Two producers accept caller-supplied parts — `POST .../prompts` (session-prompts.ts) and
  * `pending_prompt` on session create / warm claim (lib/sessions.ts,
  * warm-sessions.ts) — and both must apply the same repairs and the same caps,
  * or the create path becomes the way around the prompt route's limits.
@@ -12,9 +12,10 @@
  * not a blob store.
  */
 
-import { isModelNativeAttachmentMime, MAX_PROMPT_ATTACHMENT_FILES } from '@kortix/shared';
+import { isModelNativeAttachmentMime, parseSessionAttachmentRef, MAX_PROMPT_ATTACHMENT_FILES } from '@kortix/shared';
 import { parseStagedPromptDataUrl } from './prompt-attachment-materializer';
 import type { PromptPartWire } from './store';
+import { isUuid } from '../../shared/validate';
 
 export const PROMPT_MAX_PARTS = 64;
 export const PROMPT_TEXT_PREVIEW_CHARS = 2000;
@@ -79,7 +80,7 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
 function validateFilePart(part: PromptPartWire): string | null {
   if (part.type !== 'file') return null;
   if (part.attachment_id !== undefined) {
-    if (typeof part.attachment_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(part.attachment_id)) {
+    if (!isUuid(part.attachment_id)) {
       return 'attachment_id must be a UUID';
     }
     if (part.url !== undefined) return 'attachment_id cannot be combined with URL data';
@@ -89,6 +90,9 @@ function validateFilePart(part: PromptPartWire): string | null {
   const mime = part.mime?.trim();
   const url = part.url?.trim();
   if (!mime || !url) return `file "${filename}" is missing MIME or URL data`;
+  if (url.startsWith('kortix-attachment:')) {
+    return parseSessionAttachmentRef(url) ? null : `file "${filename}" has an invalid attachment reference`;
+  }
   const staged = url.toLowerCase().startsWith('data:');
   // A native file may arrive as a remote URL (already in the box) or staged
   // as a data: URL. A staged one is parsed HERE: past the inline budget the

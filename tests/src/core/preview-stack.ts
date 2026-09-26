@@ -9,6 +9,7 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
   'MANAGED_GIT_GITHUB_OWNER',
   'MANAGED_GIT_GITHUB_TOKEN',
   'OPENROUTER_API_KEY',
+  'MORPH_API_KEY',
   'PLATINUM_API_KEY',
 ] as const;
 
@@ -31,6 +32,56 @@ export interface PreviewStackInput {
   frontendImage: string;
   /** Platinum API base URL, offered as a second session provider when PLATINUM_API_KEY is present. */
   platinumApiUrl?: string;
+  /**
+   * The name of the host sandbox this stack runs in (`kortix-preview-pr-<n>` or
+   * `kortix-env-<branch>`). It becomes `KORTIX_INSTANCE_ID`, which the API
+   * writes onto every session box as the Platinum metadata `kortix.instance`.
+   * That tag is the only link from a session box back to the preview that owns
+   * it, and it scopes this stack's orphan reaper to its own boxes. Without it,
+   * the reaper stays off: see previewWorkerEnvironment().
+   */
+  instanceId?: string;
+}
+
+const PREVIEW_INSTANCE_ID = /^kortix-(preview-pr-[1-9][0-9]*|env-[a-z0-9][a-z0-9-]*)$/;
+
+/**
+ * Background workers for a preview API.
+ *
+ * Every preview API used to run with `KORTIX_WORKERS_ENABLED=false`. That also
+ * turned off project maintenance, which owns the `deadline_at` reaper: the
+ * primary stop for an idle session box. The provider's idle timer (720 min) was
+ * the only stop, and on 2026-09-23 87 idle 4 GB preview session boxes filled
+ * the shared 512 GB Platinum pool.
+ *
+ * The reaper runs only when the stack has its instance id. All previews share
+ * one Platinum org and one `kortix.env=preview` tag, and each has its own
+ * database. The orphan reaper stops every running box of its env that has no
+ * row in its own database. Without an instance scope, preview A would stop
+ * preview B's live sessions.
+ *
+ * Singleton work the preview does not need stays off: cron triggers, legacy
+ * migration workers, and the startup image pre-build (the first session builds
+ * the image lazily, as before).
+ */
+export function previewWorkerEnvironment(instanceId: string | undefined): Record<string, string> {
+  if (!instanceId) {
+    return {
+      KORTIX_WORKERS_ENABLED: 'false',
+    };
+  }
+  if (!PREVIEW_INSTANCE_ID.test(instanceId)) {
+    throw new Error(`invalid preview instance id: ${instanceId}`);
+  }
+  return {
+    KORTIX_INSTANCE_ID: instanceId,
+    KORTIX_WORKERS_ENABLED: 'true',
+    KORTIX_PROJECT_MAINTENANCE_ENABLED: 'true',
+    KORTIX_ACTIVE_TURN_RENEWAL_ENABLED: 'true',
+    KORTIX_LEGACY_MIGRATION_WORKER_ENABLED: 'false',
+    KORTIX_SUNA_MIGRATION_WORKER_ENABLED: 'false',
+    KORTIX_SKIP_STARTUP_PREBUILD: 'true',
+  };
 }
 
 function validatedOrigin(value: string): string {
@@ -284,6 +335,12 @@ export function applyPreviewEnvironment(
       'preview target-full requires MANAGED_GIT_GITHUB_OWNER plus either the complete GitHub App configuration or MANAGED_GIT_GITHUB_TOKEN',
     );
   }
+  // Sessions in a preview run on Platinum only. Without its key the preview
+  // could run no session at all, so fail before boot rather than fall back.
+  const platinumApiKey = rawSecrets.PLATINUM_API_KEY?.trim() ?? '';
+  if (!platinumApiKey) {
+    throw new Error('preview sessions run on Platinum only; PLATINUM_API_KEY is required');
+  }
 
   Object.assign(runtime, {
     API_IMAGE: input.apiImage,
@@ -320,7 +377,13 @@ export function applyPreviewEnvironment(
     // test card (or connect a BYOK key) to get real model answers.
     KORTIX_BILLING_INTERNAL_ENABLED: 'true',
     KORTIX_PUBLIC_BILLING_ENABLED: 'true',
-    KORTIX_WORKERS_ENABLED: 'false',
+    ...previewWorkerEnvironment(input.instanceId),
+    // The Platinum idle timer is the backstop behind the deadline reaper, and
+    // the only stop when the reaper is off. At the 720 min default, one day of
+    // preview runs held 87 idle 4 GB boxes and filled the shared 512 GB org
+    // pool on 2026-09-23: every preview and dev session got 429
+    // pool_exceeded. 60 is the floor of providerAutoStopBackstopMinutes().
+    KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: '60',
     SCHEDULER_ENABLED: 'false',
     KORTIX_TRIGGER_SCHEDULER_ENABLED: 'false',
     EMAIL_PROVIDER_ORDER: 'mailpit',
@@ -330,19 +393,18 @@ export function applyPreviewEnvironment(
     SMTP_USER: 'unused',
     SMTP_PASS: 'unused',
     ENABLE_EMAIL_AUTOCONFIRM: 'false',
-    // Daytona stays FIRST: the API takes the first allowed provider for an
-    // unpinned session, so the preview gate's behaviour does not change.
-    // Platinum is offered when its key is present so a session can be pinned
-    // to it ({"provider":"platinum"} on create) for provider-parity checks.
-    ALLOWED_SANDBOX_PROVIDERS: rawSecrets.PLATINUM_API_KEY ? 'daytona,platinum' : 'daytona',
-    ...(rawSecrets.PLATINUM_API_KEY
-      ? {
-          PLATINUM_API_URL: input.platinumApiUrl?.trim() || 'https://api.platinum.dev',
-          PLATINUM_API_KEY: rawSecrets.PLATINUM_API_KEY,
-        }
-      : {}),
+    // Preview sessions run on Platinum only, never on Daytona. Daytona used to
+    // be first (the default for an unpinned session) from 2026-08-10. On
+    // 2026-09-21 the shared Daytona org hit its snapshot quota and every
+    // preview session failed with "Snapshot quota exceeded".
+    // The preview runs the full suite, and the CFG flows enable the
+    // per-project flag themselves. The operator switch must be on for the
+    // surface to exist at all (it defaults off while the rollout runs).
+    CONFIG_RELEASES_ENABLED: 'true',
+    ALLOWED_SANDBOX_PROVIDERS: 'platinum',
+    PLATINUM_API_URL: input.platinumApiUrl?.trim() || 'https://api.platinum.dev',
+    PLATINUM_API_KEY: platinumApiKey,
     DATABASE_URL: `postgresql://postgres:${postgresPassword}@supabase-db:5432/postgres`,
-    DAYTONA_API_KEY: rawSecrets.DAYTONA_API_KEY ?? '',
     MANAGED_GIT_PROVIDER: 'github',
     MANAGED_GIT_GITHUB_OWNER: rawSecrets.MANAGED_GIT_GITHUB_OWNER ?? '',
     MANAGED_GIT_GITHUB_INSTALL_ID: rawSecrets.MANAGED_GIT_GITHUB_INSTALL_ID ?? '',
@@ -352,6 +414,7 @@ export function applyPreviewEnvironment(
       rawSecrets.KORTIX_GITHUB_APP_PRIVATE_KEY?.replace(/\r?\n/g, '\\n') ?? '',
     KORTIX_GITHUB_APP_SLUG: rawSecrets.KORTIX_GITHUB_APP_SLUG ?? '',
     OPENROUTER_API_KEY: rawSecrets.OPENROUTER_API_KEY ?? '',
+    MORPH_API_KEY: rawSecrets.MORPH_API_KEY ?? '',
     STRIPE_SECRET_KEY: rawSecrets.KE2E_STRIPE_SECRET_KEY ?? '',
     STRIPE_WEBHOOK_SECRET: rawSecrets.KE2E_STRIPE_WEBHOOK_SECRET ?? '',
   });

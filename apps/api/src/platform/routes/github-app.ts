@@ -41,6 +41,7 @@ import {
   githubAppStateSecret,
   isGithubAppConfigured,
   isGithubAppOAuthConfigured,
+  GITHUB_APP_MANIFEST_PERMISSIONS,
   normalizeGitHubFrontendOrigin,
   resolveGitHubAppSlug,
   signGitHubAppJwt,
@@ -65,6 +66,7 @@ import {
   envManagedConflictBody,
   resolveInstanceGitMutability,
 } from '../services/instance-git-mutability';
+import { readJsonObject } from '../../shared/http-body';
 
 export const githubAppSetupRouter = makeOpenApiApp<AppEnv>();
 
@@ -115,19 +117,10 @@ export function buildGithubAppManifest(opts: {
     callback_urls: [`${base}/v1/platform/github-app/oauth/callback`],
     setup_on_update: true,
     public: false,
-    default_permissions: {
-      administration: 'write',
-      contents: 'write',
-      pull_requests: 'write',
-      metadata: 'read',
-      // Backs the account-linking identity proof (oauth/authorize +
-      // oauth/callback below): GET /orgs/{org}/memberships/{user} and
-      // GET /user/memberships/orgs both require "Members: read" on a GitHub
-      // App user-to-server token — without it, verifyGitHubInstallationAdmin
-      // / listLinkableGitHubAppInstallations (projects/github.ts) 403 for
-      // every organization installation.
-      members: 'read',
-    },
+    // One source: the set `resolveGitHubAppPermissions()` audits a hand-made
+    // App against (projects/github.ts), plus the reserved `pull_requests`. `members: read` backs the
+    // account-linking identity proof (oauth/authorize + oauth/callback below).
+    default_permissions: { ...GITHUB_APP_MANIFEST_PERMISSIONS },
     default_events: [],
     hook_attributes: { url: opts.homepageUrl, active: false },
   };
@@ -515,8 +508,8 @@ githubAppSetupRouter.openapi(
     if (gate) return gate;
     try {
       const accountId = c.get('userId') as string;
-      const body = await c.req.json().catch(() => ({}));
-      const org = typeof body?.org === 'string' && body.org.trim() ? body.org.trim() : undefined;
+      const body = await readJsonObject(c);
+      const org = typeof body.org === 'string' && body.org.trim() ? body.org.trim() : undefined;
 
       const manifest = buildGithubAppManifest({
         apiBaseUrl: apiBaseUrl(c),
@@ -880,7 +873,14 @@ githubAppSetupRouter.openapi(
       // header, or proxy/CDN access logs), so it's the right place for a
       // short-lived credential in a same-tab redirect chain that has no
       // durable server-side session to stash it in.
-      const fragment = new URLSearchParams({ access_token: accessToken });
+      // `github_token`, NOT `access_token`: the popup is a page of the web
+      // app, whose Supabase browser client watches every load for an
+      // implicit-flow `#access_token=` fragment. A GitHub token under that
+      // name is not a Supabase session, the recovery fails, and the client
+      // drops the session cookie the OPENER is signed in with — the setup
+      // page then sees no user and bounces to /auth mid-link (reported on dev
+      // 2026-09-17).
+      const fragment = new URLSearchParams({ github_token: accessToken });
       return c.redirect(`${landingOrigin}/auth/github-connect#${fragment.toString()}`, 302);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1131,16 +1131,16 @@ githubAppSetupRouter.openapi(
     const gate = envManagedGate(c);
     if (gate) return gate;
 
-    const body = await c.req.json().catch(() => ({}));
-    const appId = typeof body?.app_id === 'string' ? body.app_id.trim() : '';
-    const privateKey = typeof body?.private_key === 'string' ? body.private_key.trim() : '';
+    const body = await readJsonObject(c);
+    const appId = typeof body.app_id === 'string' ? body.app_id.trim() : '';
+    const privateKey = typeof body.private_key === 'string' ? body.private_key.trim() : '';
     const installationId =
-      typeof body?.installation_id === 'string' ? body.installation_id.trim() : '';
-    const slug = typeof body?.slug === 'string' && body.slug.trim() ? body.slug.trim() : undefined;
+      typeof body.installation_id === 'string' ? body.installation_id.trim() : '';
+    const slug = typeof body.slug === 'string' && body.slug.trim() ? body.slug.trim() : undefined;
     const clientId =
-      typeof body?.client_id === 'string' && body.client_id.trim() ? body.client_id.trim() : undefined;
+      typeof body.client_id === 'string' && body.client_id.trim() ? body.client_id.trim() : undefined;
     const clientSecret =
-      typeof body?.client_secret === 'string' && body.client_secret.trim()
+      typeof body.client_secret === 'string' && body.client_secret.trim()
         ? body.client_secret.trim()
         : undefined;
 
@@ -1309,9 +1309,9 @@ githubAppSetupRouter.openapi(
     const gate = envManagedGate(c);
     if (gate) return gate;
 
-    const body = await c.req.json().catch(() => ({}));
-    const token = typeof body?.token === 'string' ? body.token.trim() : '';
-    const owner = typeof body?.owner === 'string' ? body.owner.trim() : '';
+    const body = await readJsonObject(c);
+    const token = typeof body.token === 'string' ? body.token.trim() : '';
+    const owner = typeof body.owner === 'string' ? body.owner.trim() : '';
     if (!token || !owner) {
       return c.json({ error: true, message: 'token and owner are required', status: 400 }, 400);
     }

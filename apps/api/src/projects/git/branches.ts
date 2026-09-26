@@ -14,9 +14,11 @@ import {
   hostFromRepoUrl,
   invalidateProjectMirror,
   isGitOperationError,
+  isRemotePushPolicyRejection,
   makeSessionBranchRepo,
   normalizeTreePath,
   refreshMirror,
+  retryTransientGitMirror,
   runGit,
   runGitCapture,
 } from './mirror';
@@ -446,6 +448,14 @@ export async function commitMultipleFilesToBranch(
     authorName?: string;
     authorEmail?: string;
     expectedFileRevision?: ExpectedFileRevision;
+    /**
+     * More blobs that must be unchanged at the branch tip, checked together
+     * with `expectedFileRevision` (which supplies the push lease, so it is
+     * required when this is set). A manifest with `imports:` passes every
+     * imported file: a concurrent edit to ANY of them can introduce a duplicate
+     * name the merged document this commit was computed from never saw.
+     */
+    alsoExpect?: Array<{ path: string; sha: string }>;
   },
 ): Promise<{ commitSha: string; branch: string; fileCount: number }> {
   const files = (opts.files ?? [])
@@ -506,6 +516,32 @@ export async function commitMultipleFilesToBranch(
     if (currentWinner !== expectedWinner || currentSha !== expectedFileRevision.sha) {
       throw new GitFileRevisionConflictError(expectedFileRevision.path);
     }
+    const alsoExpect = (opts.alsoExpect ?? [])
+      .map((entry) => ({ path: normalizeTreePath(entry.path), sha: entry.sha }))
+      .filter((entry): entry is { path: string; sha: string } => Boolean(entry.path));
+    if (alsoExpect.length > 0) {
+      const listed = parentSha
+        ? await runGitCapture(
+            ['ls-tree', parentSha, '--', ...alsoExpect.map((entry) => entry.path)],
+            repoPath,
+          )
+        : { stdout: '', stderr: '', exitCode: 0 };
+      if (listed.exitCode !== 0) {
+        throw new Error(`Failed to read current revision for "${alsoExpect[0]?.path}"`);
+      }
+      const tipRevisions = new Map<string, string>();
+      for (const line of listed.stdout.split('\n')) {
+        const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
+        if (match?.[1] && match[2]) tipRevisions.set(match[2], match[1]);
+      }
+      for (const entry of alsoExpect) {
+        if (tipRevisions.get(entry.path) !== entry.sha) {
+          throw new GitFileRevisionConflictError(entry.path);
+        }
+      }
+    }
+  } else if (opts.alsoExpect?.length) {
+    throw new Error('alsoExpect requires expectedFileRevision');
   }
 
   const author = opts.authorName || 'Kortix';
@@ -564,18 +600,36 @@ export async function commitMultipleFilesToBranch(
         pushArgs.push(`--force-with-lease=refs/heads/${branch}:${parentSha ?? ''}`);
       }
       pushArgs.push('origin', `${commitSha}:refs/heads/${branch}`);
-      await runGit(
-        pushArgs,
-        repoPath,
-        true,
-        project.gitAuthToken,
-        undefined,
-        authHost,
-        undefined,
-        project.gitAuthHeaders,
-      );
+      // The push is the last network step of every API write to a branch. Like
+      // the cold clone and the warm fetch, it can fail for a TRANSIENT upstream
+      // reason — a socket blip, or GitHub's ambiguous `RPC failed; HTTP 404`
+      // for a private repo whose App-installation credential is momentarily not
+      // (yet) usable. Without a retry that one blip surfaced as a 502 to the
+      // client and paged Sentry from the web app on a connector/manifest write
+      // during onboarding (Better Stack FE pattern `0cb9ab43…`). Reuse the
+      // clone/fetch retry: a transient failure retries; a permanent one (bad
+      // ref, real auth denial, a lost `--force-with-lease` race) rethrows on the
+      // first attempt and is classified by the catch below.
+      await retryTransientGitMirror({
+        run: () =>
+          runGit(
+            pushArgs,
+            repoPath,
+            true,
+            project.gitAuthToken,
+            undefined,
+            authHost,
+            undefined,
+            project.gitAuthHeaders,
+          ),
+      });
     } catch (error) {
       invalidateProjectMirror(project.projectId);
+      // A remote-policy rejection is permanent and NOT a stale tip: the remote
+      // refused the ref by rule, so refreshing and retrying cannot help. Check
+      // it before the revision-race path below, which would otherwise mistake
+      // it for a concurrent edit and hide the real cause behind a conflict.
+      if (isRemotePushPolicyRejection(error)) throw error;
       if (expectedFileRevision) {
         const remoteTip = await readRemoteBranchTip(project, repoPath, branch, authHost);
         if (remoteTip === commitSha) {
@@ -592,6 +646,12 @@ export async function commitMultipleFilesToBranch(
     }
 
     invalidateProjectMirror(project.projectId);
+    // The branch moved. Sessions whose base ref is this branch converge on the
+    // new config (spec, "Convergence triggers"). Every API write to a branch
+    // goes through here. Dynamic import: `projects/lib` imports this module.
+    void import('../lib/config-convergence-triggers')
+      .then((triggers) => triggers.notifyBaseBranchMoved(project.projectId, branch, 'api-write'))
+      .catch(() => {});
     return { commitSha, branch, fileCount: files.length };
   } finally {
     await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);

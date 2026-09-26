@@ -32,6 +32,7 @@ import {
   connectors,
   creditAccounts,
   projectSessions,
+  readStoredAgentGrant,
 } from '@kortix/db';
 import { db } from '../src/shared/db';
 import { createAccountToken } from '../src/repositories/account-tokens';
@@ -260,7 +261,7 @@ async function setup(): Promise<void> {
     name: `Connector Session ${sessionId.slice(0, 8)}`,
     agentGrant: {
       agent: 'kortix',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: 'all',
       env: 'all',
     },
@@ -280,7 +281,7 @@ async function setup(): Promise<void> {
     stored?.projectId === projectId &&
       stored?.sessionId === sessionId &&
       stored?.agentGrant?.agent === 'kortix' &&
-      stored?.agentGrant?.kortixCli === 'all' &&
+      readStoredAgentGrant(stored?.agentGrant)?.permissions === 'all' &&
       stored?.agentGrant?.connectors === 'all',
   );
 }
@@ -350,7 +351,7 @@ async function driveExistingSessionGrantRefresh(): Promise<void> {
     name: `Connector Session stale grant ${sessionId.slice(0, 8)}`,
     agentGrant: {
       agent: 'kortix',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: [],
       env: 'all',
     },
@@ -855,7 +856,7 @@ async function deniedGrantBoundary(): Promise<void> {
     projectId,
     sessionId,
     name: `Connector Session denied ${sessionId.slice(0, 8)}`,
-    agentGrant: { agent: 'locked', kortixCli: [], connectors: [], env: [] },
+    agentGrant: { agent: 'locked', permissions: [], connectors: [], env: [] },
   });
   const allowedToken = agentToken;
   agentToken = denied.secretKey;

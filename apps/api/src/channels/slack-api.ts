@@ -468,6 +468,34 @@ export async function publishHomeView(
   }
 }
 
+/**
+ * Open a modal. Slack's only way to collect typed input from a button press.
+ *
+ * `trigger_id` is single-use and expires in ~3 seconds, so this must be the
+ * first thing the handler does — anything awaited before it (a DB read, an
+ * authorization check) can spend the budget and the modal silently never
+ * opens. The caller is responsible for that ordering.
+ */
+export async function openModal(
+  token: string,
+  triggerId: string,
+  view: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    const r = await slackApiCall(token, 'views.open', { trigger_id: triggerId, view });
+    if (!r.ok) {
+      // `expired_trigger_id` is the one worth recognising: it means the handler
+      // did work before opening, not that the view was malformed.
+      console.warn('[slack-api] views.open failed', { error: r.error });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[slack-api] views.open error', err);
+    return false;
+  }
+}
+
 // Resolve a bot by the name a human would type, e.g. "Incident reporter".
 //
 // The slash command is registered with should_escape:false, so Slack sends the
@@ -530,6 +558,25 @@ export async function isBotUser(token: string, userId: string): Promise<boolean 
     return Boolean(u.is_bot || u.is_app_user);
   } catch (err) {
     console.warn('[slack-api] users.info error', err);
+    return null;
+  }
+}
+
+/**
+ * A Slack user's display name (`display_name`, else `real_name`, else the
+ * handle), for showing a person which Slack account they are about to link.
+ * Null on any failure; the caller then shows the id alone.
+ */
+export async function getSlackUserDisplayName(token: string, userId: string): Promise<string | null> {
+  try {
+    const r = await slackApiCall(token, 'users.info', { user: userId }, { form: true });
+    if (!r.ok) return null;
+    const u = r.user as
+      | { name?: string; profile?: { display_name?: string; real_name?: string } }
+      | undefined;
+    const name = u?.profile?.display_name?.trim() || u?.profile?.real_name?.trim() || u?.name?.trim();
+    return name || null;
+  } catch {
     return null;
   }
 }

@@ -649,7 +649,7 @@ New imports explicitly request Platinum. Legacy source capture still uses Dayton
 
 Bind imported native root sessions to the current runtime `/workspace` project. A template root can retain the `global` project while the repository receives its own project ID. The importer checks the real project, preserves the old root association, updates only the imported root, and verifies that root is present in the workspace session list. Existing native IDs are preserved. Native title readback now applies to file-restoring imports as well as approved file skips.
 
-Both destination project provider transitions report `activated`, target `platinum`. The first pilot (`c68e4d3b-cf14-4f49-8de1-4cc32d05f922`) verifies 89 source rows, 12 native messages, 5 regular files, original ownership, Marko access, and both index/native titles. A fresh second pilot and stop/wake test gate bulk dispatch. Existing materialized Daytona sessions cannot migrate in place: the admin route returns `SESSION_RUNTIME_IDENTITY_IMMUTABLE`. Retain them until a replacement strategy is chosen; project provider activation does not move existing sandboxes.
+Both destination project provider transitions report `activated`, target `platinum`. The first pilot (`<session_id>`) verifies 89 source rows, 12 native messages, 5 regular files, original ownership, Marko access, and both index/native titles. A fresh second pilot and stop/wake test gate bulk dispatch. Existing materialized Daytona sessions cannot migrate in place: the admin route returns `SESSION_RUNTIME_IDENTITY_IMMUTABLE`. Retain them until a replacement strategy is chosen; project provider activation does not move existing sandboxes.
 
 ### Destination archive queue — 2026-09-15
 
@@ -693,19 +693,19 @@ save a private diagnostic containing the exit code and command output.
 ### Explicit unrecoverable-volume exception — 2026-09-15
 
 The user authorized a history-only import for Trimaran source project
-`de55c5ec-752e-46a2-8da3-31b699dc8c7d`, sandbox
-`1af0b1dc-e5e7-450c-b761-bef63778e4ed`. Fresh source API checks confirmed the
+`<project_id>`, sandbox
+`<sandbox_id>`. Fresh source API checks confirmed the
 project/owner mapping, provider `error` state, `recoverable: false`, and the
 missing-volume error. This exception does not broaden either earlier skip policy.
 The verifier requires an exact source/project/sandbox match, explicit authorization,
 four durable history artifacts, and verified history, owner, and Marko access.
 It rejects capture or restore evidence for this exception.
 
-Destination session `7c49e6b8-3753-4ff5-a9d0-4518dbf423b8` imported 1,529 source
+Destination session `<session_id>` imported 1,529 source
 rows as 239 native messages on Platinum. It retains the original owner and title.
 Its status is `verified-approved-unrecoverable-file-skip`, with
 `files_status: unavailable`. A hash-verified `FILES_UNAVAILABLE.txt` notice lives
-in `/workspace/de55c5ec-752e-46a2-8da3-31b699dc8c7d/`. The notice is a migration
+in `/workspace/<project_id>/`. The notice is a migration
 artifact, not a restored source file. Stop readback passed after the import.
 
 ### Throughput recovery — 2026-09-15
@@ -800,14 +800,14 @@ caps, so the private migration runner retains its 90-pipeline ceiling and normal
 provider-pressure backoff, followed by verified stop/archive processing.
 
 The private policy permits only Suna and Trimaran's two destination project UUIDs
-inside the Libremax account, validates source metadata and durable archive proof,
+inside the destination account, validates source metadata and durable archive proof,
 checks live owner access and destination existence, and expires September 22 UTC.
 `migration-create-overrides.ndjson` records each command, destination, and owner.
 Existing destination owner/provider mismatches stop the import. A queued command
 is reused by idempotency key; failed or unknown commands are not marked verified.
 
-Canary `00b64340-d36a-40fc-a751-e03526c21e4b` used command
-`031012a9-8a43-40e4-a083-3864b0ff9243`. It passed full history/owner/sharing checks,
+Canary `<session_id>` used command
+`<command_id>`. It passed full history/owner/sharing checks,
 79 independent file downloads and hashes, and reached `verified` at
 2026-09-15T19:25:36.503Z. The stop helper returned `already-stopped`. After this
 proof, the operator enabled the override for both migration sources and resumed
@@ -980,9 +980,9 @@ imports in the last three minutes, and zero matching recent provisioning errors.
 Controller pressure backoff and shared write/create pacing remain active. The
 manual restart advanced eight to 32, then 64 after the first verified import.
 
-Daytona pilot `e155fb9c-2f58-4d92-a2ca-462d2cb1ef69` verified history and an empty
+Daytona pilot `<session_id>` verified history and an empty
 workspace inventory, then stopped. Additional pilot
-`71499632-624d-4bcd-818c-db0bcc90b035` verified four files, original owner, Marko
+`<session_id>` verified four files, original owner, Marko
 sharing, and native history. At inspection, nine new Daytona imports were
 verified. Routing/create-policy tests report three passed, zero failed, 16
 assertions; the importer build passes. Bidirectional selection is unit-tested;
@@ -1007,7 +1007,7 @@ existing API. Full import verification and stop precede the success receipt.
 Existing initialized destinations are excluded. Two singleton leases prevent
 duplicate probe supervisors and overlapping probes.
 
-The first probe is session `5f418f13-eef0-416f-ba5b-ac221999a352`; it reached
+The first probe is session `<session_id>`; it reached
 `ready` with external/native IDs during inspection. Full verification was still
 running; readiness alone does not authorize returning bulk traffic to Platinum.
 Admissions recovered to 120 and the operator requested 128.
@@ -1106,7 +1106,7 @@ New archives use 4 MiB chunks beneath a distinct `chunks-4m` object namespace.
 Existing part receipts keep their original 32 MiB layout; mixed layouts fail.
 Uploads send the exact buffer used for the expected hash. Upload response bodies
 are closed, request failures are logged, and upload requests have a 90-second
-limit. The pilot session `50179b6d-5dce-488b-ad0b-a415baf52531` completed all six
+limit. The pilot session `<session_id>` completed all six
 archive receipts, including three verified workspace parts totaling 11,498,162
 bytes. It returned to the prepared queue afterward.
 
@@ -1288,7 +1288,7 @@ One recoverable Suna sandbox was piloted through provider recovery, stopped,
 then captured with the normal workspace process. The capture verified 51
 files, 53,567,536 file bytes, the archive SHA, and restoration of the source
 to `stopped`. Its destination session
-`bb1a4d55-bce5-40b2-babd-d7554f48e4a3` then reached `verified` on
+`<session_id>` then reached `verified` on
 Platinum with `workspace_api_verified_files=51`; the normal apply gate also
 checked the owner, operator share, title, and history. The separate
 `ai.kortix.legacy-source-recovery` LaunchAgent now
@@ -1302,7 +1302,7 @@ reports this worker as `sourceRecovery`.
 At 23:54 UTC, Trimaran reached 613/613 verified sessions. The final source
 box was still `archiving` after more than 48 hours. The user approved a
 history-only import for that session. Its destination session
-`3d4bd209-708b-4020-be8b-8148c4f13ff6` has four private history artifacts,
+`<session_id>` has four private history artifacts,
 verified owner/share/history, a read-back unavailable-files notice, and a
 stop receipt. The ledger records `stuck-archiving`, the direct provider state,
 the source box ID, the user authorization, and `files_status=unavailable`.
@@ -1322,7 +1322,7 @@ boxes had recent provider updates and one was restoring; they remained in
 source review. The additional stopped box was requeued for capture.
 
 The first Suna history-only pilot,
-`c595bb35-43e7-4752-8398-41d77f319f66`, reached `verified` on Platinum.
+`<session_id>`, reached `verified` on Platinum.
 Its four history artifacts, owner, operator share, native history, notice
 readback, and stop receipt passed. `ai.kortix.legacy-unavailable-imports`
 then started four parallel approved imports using the shared create and file
@@ -1357,8 +1357,8 @@ files-unavailable notice and verified history, owner, title, and sharing.
 Do not count the recovered box as a files-unavailable exception.
 
 The 6,897,488,682-byte Suna workspace for source thread
-`f2228347-ec6c-4189-9380-52599b849679` reached `verified` in destination
-session `ddac0e77-e507-4f83-8f05-4f8ead2cdea5`. Its 2,235 files passed
+`<thread_id>` reached `verified` in destination
+session `<session_id>`. Its 2,235 files passed
 destination API download and SHA-256 comparison against the source manifest.
 The 190 native messages, 1,202 source rows, owner, title, and sharing passed
 read-back checks. The session was already stopped when the final stop receipt
@@ -1380,7 +1380,7 @@ Five `created` Suna reviews had `last_start_stage=failed` and a destination
 sandbox ID but no native session ID. The old recovery identity guard excluded
 that valid partial state. The private worker now permits only that partial
 state and calls the API's in-place `/restart` route. The first live pilot,
-`34c800ac-f977-4205-9da1-7cec4c91c762`, returned `restart_started` and
+`<session_id>`, returned `restart_started` and
 preserved its Platinum sandbox ID. The runtime then failed to become ready;
 the provider's `/exec` returned `409 sandbox_not_running`. The pilot remains
 `apply-review` with a retry timestamp. Do not mark this case verified without
@@ -1388,7 +1388,7 @@ the normal history and file read-back proofs.
 
 At 15:40 UTC on 2026-09-17, Suna held 167 destination `apply-review`
 sessions. One imported Platinum session,
-`ea01c859-4260-4dfc-a738-2d84977acc34`, had 664 of 665 file read-back
+`<session_id>`, had 664 of 665 file read-back
 receipts. Its final file was `hub.json` at 287,168,344 bytes. Direct
 Platinum `/files` returned HTTP 404 with `file too large: 287168344 >
 268435456`, although a small file in the same sandbox returned HTTP 200.
@@ -1400,7 +1400,7 @@ The remaining review set contained 55 sessions with 59 files above 256 MiB;
 their retries use the same chunked path.
 
 The largest pending large-file pilot,
-`fc3ce4af-56d7-49c2-a246-8cff1dd8b49b`, retained 40 of 42 file receipts
+`<session_id>`, retained 40 of 42 file receipts
 but could not enter read-back. Its runtime stayed `starting` for the full
 three-minute import window, then Platinum stopped its sandbox. An in-place
 `/restart` preserved the sandbox ID but did not make it ready. Direct Platinum

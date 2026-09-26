@@ -5,7 +5,7 @@
  * File names, paths, URLs, and titles must never appear in properties.
  */
 
-import posthog from 'posthog-js';
+import { loadPostHog } from './posthog-lazy';
 
 export const PANEL_EVENTS = [
   'panel_opened',
@@ -29,9 +29,9 @@ export function track(
   properties?: Record<string, string | number | boolean>,
 ): void {
   if (typeof window === 'undefined') return;
-  try {
-    posthog.capture(event, properties);
-  } catch {
-    // Telemetry must never take a feature down with it.
-  }
+  loadPostHog()
+    .then((posthog) => posthog.capture(event, properties))
+    .catch(() => {
+      // Telemetry must never take a feature down with it.
+    });
 }

@@ -806,7 +806,7 @@ describe('validateManifest — input tolerance (mirrors runtime parser)', () => 
   });
 
   test('an empty-string grant is accepted as deny', () => {
-    expect(connectorErrors(`[[agents]]\nname = "a"\nkortix_cli = ""\nconnectors = ""`)).toEqual([]);
+    expect(connectorErrors(`[[agents]]\nname = "a"\nkortix_permissions = ""\nconnectors = ""`)).toEqual([]);
   });
 });
 

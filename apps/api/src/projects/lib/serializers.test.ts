@@ -156,7 +156,7 @@ function declarative(env: Array<string[] | 'all' | undefined>): SecretAgentGrant
       enabled: true,
       ...(scopeEnv === undefined
         ? {}
-        : { scope: { env: scopeEnv, connectors: 'all' as const, kortix_cli: 'all' as const } }),
+        : { scope: { env: scopeEnv, connectors: 'all' as const, kortix_permissions: 'all' as const, kortix_cli: 'all' as const } }),
     })),
   };
 }

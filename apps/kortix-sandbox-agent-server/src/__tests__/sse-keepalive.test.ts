@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
+import type { Config } from '../config'
+import { createRuntimeProxyRouter } from '../routes/runtime-proxy'
 import {
   SSE_KEEPALIVE_FRAME,
   SSE_KEEPALIVE_INTERVAL_MS,
@@ -86,24 +88,6 @@ async function drain(
 }
 
 describe('withSseKeepalive', () => {
-  test('passes upstream bytes through unchanged, in order', async () => {
-    const clock = fakeTimers()
-    const up = upstreamOf()
-    const reader = withSseKeepalive(up.stream, { timers: clock.timers }).getReader()
-    const decoder = new TextDecoder()
-    const seen: string[] = []
-
-    up.push('data: {"type":"message.part.updated"}\n\n')
-    await drain(reader, decoder, seen)
-    up.push('data: {"type":"session.status"}\n\n')
-    await drain(reader, decoder, seen)
-
-    expect(seen).toEqual([
-      'data: {"type":"message.part.updated"}\n\n',
-      'data: {"type":"session.status"}\n\n',
-    ])
-  })
-
   test('injects a typed keepalive event after a silent interval at an event boundary', async () => {
     const clock = fakeTimers()
     const up = upstreamOf()
@@ -198,14 +182,62 @@ describe('withSseKeepalive', () => {
     expect(clock.clearedCount()).toBeGreaterThan(0)
   })
 
-  test('the proxy wires SSE responses through the keepalive wrapper', async () => {
-    // A source pin, matching the repo's guard-pinning convention: the proxy
-    // has no unit seam (it needs a live opencode), so assert the passthrough
-    // branch exists and is gated on the event-stream content type.
-    const source = await Bun.file(new URL('../proxy.ts', import.meta.url).pathname).text()
-    expect(source).toContain("upstreamContentType.includes('text/event-stream')")
-    expect(source).toContain('withSseKeepalive(upstream.body)')
-    expect(source).toContain("respHeaders.delete('content-length')")
+  test('the runtime proxy wraps a 2xx event stream and drops its content-length; other bodies pass as-is', async () => {
+    // Drive the real transport router with a stub harness. The keepalive tick
+    // is captured instead of waiting 20 s, and the clock is moved past it.
+    const upstreams: Array<ReadableStreamDefaultController<Uint8Array>> = []
+    const runtime = {
+      blockedPorts: () => [],
+      readiness: async () => ({ ready: true as const }),
+      forward: async (input: { path: string }) => {
+        const sse = input.path === '/event'
+        return {
+          status: 200,
+          statusText: 'OK',
+          headers: new Headers({
+            'content-type': sse ? 'text/event-stream' : 'application/json',
+            'content-length': '999',
+          }),
+          body: new ReadableStream<Uint8Array>({ start: (c) => void upstreams.push(c) }),
+        }
+      },
+    }
+    const router = createRuntimeProxyRouter(
+      { cfg: {} as Config, bootState: { repoMaterializationError: null, timeline: [] } },
+      runtime,
+    )
+
+    const realSetInterval = globalThis.setInterval
+    const realNow = Date.now
+    const ticks: Array<{ tick: () => void; ms: number | undefined }> = []
+    globalThis.setInterval = ((tick: () => void, ms?: number) => {
+      ticks.push({ tick, ms })
+      return realSetInterval(() => {}, 1 << 30)
+    }) as typeof setInterval
+    try {
+      const plain = await router.request('/session')
+      expect(plain.headers.get('content-length')).toBe('999')
+      expect(ticks).toHaveLength(0)
+
+      const res = await router.request('/event')
+      expect(res.headers.get('content-type')).toBe('text/event-stream')
+      expect(res.headers.get('content-length')).toBeNull()
+      const reader = res.body!.getReader()
+      const first = reader.read()
+      expect(ticks.map((t) => t.ms)).toEqual([SSE_KEEPALIVE_INTERVAL_MS])
+      Date.now = () => realNow() + SSE_KEEPALIVE_INTERVAL_MS + 1_000
+      ticks[0]!.tick()
+      expect(new TextDecoder().decode((await first).value)).toBe(SSE_KEEPALIVE_FRAME)
+      await reader.cancel()
+    } finally {
+      globalThis.setInterval = realSetInterval
+      Date.now = realNow
+      for (const upstream of upstreams) {
+        try {
+          upstream.close()
+        } catch {}
+      }
+    }
   })
 
   test('downstream cancel propagates to the upstream reader and stops the timer', async () => {

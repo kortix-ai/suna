@@ -168,7 +168,7 @@ export function ClickableInlineCode({ children }: { children: React.ReactNode })
     // surrounding anchor already carries the click, so render the styled code
     // WITHOUT its own anchor. See `inside-link-context.ts`.
     if (insideLink) {
-      return <code className={cn(linkClass, 'text-[0.8rem]')}>{children}</code>;
+      return <code className={linkClass}>{children}</code>;
     }
 
     // A malformed absolute URL (e.g. `http://:`) must not reach next/link —
@@ -204,5 +204,5 @@ export function ClickableInlineCode({ children }: { children: React.ReactNode })
     return <FilePathCode text={text}>{children}</FilePathCode>;
   }
 
-  return <code className={cn(INLINE_CODE, 'text-[0.8rem]')}>{children}</code>;
+  return <code className={INLINE_CODE}>{children}</code>;
 }

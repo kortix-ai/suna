@@ -17,7 +17,16 @@
  * bypass the store, the cache contract, or the audit trail.
  */
 import { and, eq, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
-import { accountGroups, accountMembers, iamRoleActions, iamRoles, roleAssignments, serviceAccounts } from '@kortix/db';
+import {
+  accountGroups,
+  accountMembers,
+  accountMemberships,
+  iamRoleActions,
+  iamRoles,
+  projects,
+  roleAssignments,
+  serviceAccounts,
+} from '@kortix/db';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
@@ -49,6 +58,14 @@ export interface AssignRoleInput {
   scope: AssignmentScope;
   /** Narrow the assignment to ONE object inside the scope. */
   object?: { type: ObjectType; id: string };
+  /**
+   * Internal, never read from a request body: the share route
+   * (connection-actions.ts) grants on the caller's OWN private account just
+   * before it turns that account into a shared one, so the account is never
+   * open to the whole project in between. A private account ignores its grants
+   * until then (connectionIsReachable reads only the owner for a member row).
+   */
+  privateConnectionOwnerId?: string;
   expiresAt?: Date | null;
   source?: AssignmentSource;
   /**
@@ -205,9 +222,15 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
       message: `role "${role.key}" is a ${role.scopeType}-scoped role and cannot be assigned at ${scopeType} scope`,
     });
   }
+  if (scopeId) await assertProjectInAccount(accountId, scopeId);
+  assertProjectPrincipalShape(input, role, scopeId);
+  if (input.object && scopeId) {
+    await assertObjectAssignable(scopeId, input.object, input.privateConnectionOwnerId);
+  }
 
   await assertPrincipalExists(accountId, input.principal);
-  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, input.object != null);
+  assertAccountRoleHolder(writer, role, scopeType, input.principal);
+  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, input.object?.type ?? null);
   await assertDelegable(role);
 
   // Raw SQL, not the query builder: the identity index is on EXPRESSIONS
@@ -296,6 +319,7 @@ async function retractSiblingSystemRoles(
     ...(kept.scopeId ? { scopeId: kept.scopeId } : {}),
     liveOnly: false,
   });
+  let ownerRetracted = false;
   for (const row of rows) {
     if (row.assignmentId === kept.assignmentId) continue;
     if (!row.roleIsSystem) continue;
@@ -303,7 +327,9 @@ async function retractSiblingSystemRoles(
     if (row.scopeId !== kept.scopeId) continue;
     await db.delete(roleAssignments).where(eq(roleAssignments.assignmentId, row.assignmentId));
     await audit(writer, accountId, 'iam.assignment.revoked', row.assignmentId, describe(row, row.roleKey), null);
+    if (isAccountOwnerRow(row)) ownerRetracted = true;
   }
+  if (ownerRetracted) await clearSuperAdminAfterOwnerLoss(writer, accountId, kept.principalId);
 }
 
 /**
@@ -365,7 +391,28 @@ export async function updateAssignment(
   if (scopeType === 'project' && !scopeId) {
     throw new HTTPException(400, { message: 'a project-scoped assignment must name a project' });
   }
-  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, false);
+  if (scopeId) await assertProjectInAccount(accountId, scopeId);
+  assertAccountRoleHolder(writer, role, scopeType, {
+    type: existing.principalType as PrincipalRef['type'],
+    id: existing.principalId,
+  });
+  // Moving a row AWAY from a role revokes that role, so the writer needs the
+  // same authority over the old role as over the new one. Without this, a
+  // policy edit could re-point an owner's row and demote them.
+  await assertWriterMayAssign(
+    writer,
+    accountId,
+    {
+      roleId: existing.roleId,
+      key: existing.roleKey,
+      scopeType: existing.scopeType as ScopeType,
+      isSystem: existing.roleIsSystem,
+    },
+    existing.scopeType as ScopeType,
+    existing.scopeId,
+    existing.objectType,
+  );
+  await assertWriterMayAssign(writer, accountId, role, scopeType, scopeId, null);
   await assertDelegable(role);
 
   const expiresAt = input.expiresAt ? input.expiresAt.toISOString() : null;
@@ -407,6 +454,9 @@ export async function updateAssignment(
   await bustCachesFor({ type: existing.principalType as PrincipalRef['type'], id: existing.principalId }, scopeId);
   await bustCachesFor({ type: existing.principalType as PrincipalRef['type'], id: existing.principalId }, existing.scopeId);
   await audit(writer, accountId, 'iam.assignment.granted', assignmentId, describe(existing, existing.roleKey), describe(row, role.key));
+  if (isAccountOwnerRow(existing) && !isAccountOwnerRow(row)) {
+    await clearSuperAdminAfterOwnerLoss(writer, accountId, existing.principalId);
+  }
   return row;
 }
 
@@ -444,7 +494,7 @@ export async function revokeAssignment(
       role,
       existing.scopeType as ScopeType,
       existing.scopeId,
-      existing.objectType != null,
+      existing.objectType,
     );
   }
   await assertNotLastOwner(accountId, existing);
@@ -463,6 +513,7 @@ export async function revokeAssignment(
     existing.scopeId,
   );
   await audit(writer, accountId, 'iam.assignment.revoked', assignmentId, describe(existing, existing.roleKey), null);
+  if (isAccountOwnerRow(existing)) await clearSuperAdminAfterOwnerLoss(writer, accountId, existing.principalId);
 
   return existing;
 }
@@ -577,6 +628,9 @@ function canonicalRoleKey(scopeType: ScopeType, key: string): string {
  */
 async function assertPrincipalExists(accountId: string, principal: PrincipalRef): Promise<void> {
   if (principal.type === 'pending') return;
+  // `project` names the assignment's own scope, which `assertProjectInAccount`
+  // already proved; `assertProjectPrincipalShape` proved the ids are equal.
+  if (principal.type === 'project') return;
 
   if (principal.type === 'group') {
     const [row] = await db
@@ -628,11 +682,66 @@ async function assertPrincipalExists(accountId: string, principal: PrincipalRef)
 }
 
 /**
+ * A `project` principal ("everyone with access to this project") exists only as
+ * an OBJECT grant on its own project, carrying the permission-less
+ * `agent-user` role. Anything else would hand a role to every member at once.
+ * `role_assignments_project_principal_shape_check` is the same rule in storage.
+ */
+function assertProjectPrincipalShape(
+  input: AssignRoleInput,
+  role: ResolvedRole,
+  scopeId: string | null,
+): void {
+  if (input.principal.type !== 'project') return;
+  if (!input.object || !scopeId || input.principal.id !== scopeId || role.key !== 'agent-user') {
+    throw new HTTPException(400, {
+      message:
+        "a 'project' principal is valid only as an object grant on its own project: object required, principal_id = scope_id, role agent-user",
+    });
+  }
+}
+
+/**
+ * The object must exist before a grant can name it. A `connection` grant names
+ * one SHARED (`owner_type = 'project'`) account in this project: a private
+ * account belongs to its owner and is never shared, and an id that names no row
+ * would be a dead grant that comes alive if the id were ever reused.
+ */
+async function assertObjectAssignable(
+  projectId: string,
+  object: { type: ObjectType; id: string },
+  privateConnectionOwnerId?: string,
+): Promise<void> {
+  if (object.type !== 'connection') return;
+  // Raw SQL, not the `connectorConnections` table object: this module sits
+  // under suites that stub `@kortix/db` with an explicit export list, and a new
+  // named import there fails every one of them at link time.
+  const result = await db.execute<{ found: number }>(sql`
+    select 1 as found from kortix.connector_connections
+    where connection_id::text = ${object.id}
+      and project_id = ${projectId}::uuid
+      and (owner_type = 'project'
+           or (${privateConnectionOwnerId ?? null}::text is not null
+               and owner_type = 'member'
+               and owner_id = ${privateConnectionOwnerId ?? null}::text))
+    limit 1`);
+  const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
+  if ((rows as Array<{ found: number }>).length === 0) {
+    throw new HTTPException(404, {
+      message: 'object_id is not a shared connection in this project',
+    });
+  }
+}
+
+/**
  * May this writer hand out this role, here?
  *
  * The action is chosen by WHAT is being granted, so the ceiling cannot be
  * side-stepped by picking a different route:
- *   object assignment          -> project.members.manage on that project
+ *   connection assignment      -> project.connector.connections.manage on that
+ *                                 project (the same leaf that creates, revokes
+ *                                 and re-credentials a shared account)
+ *   other object assignment    -> project.members.manage on that project
  *   system role, project scope -> project.members.manage on that project
  *   system role, account scope -> member.update  (it re-parents who is admin)
  *   custom role, any scope     -> policy.create
@@ -643,19 +752,53 @@ async function assertWriterMayAssign(
   role: ResolvedRole,
   scopeType: ScopeType,
   scopeId: string | null,
-  isObjectAssignment: boolean,
+  objectType: string | null,
 ): Promise<void> {
   if (writer === SYSTEM_ACTOR) return;
   const projectObj: Obj = scopeId ? { type: 'project', id: scopeId } : { type: 'account' };
-  if (isObjectAssignment || (role.isSystem && scopeType === 'project')) {
+  if (objectType === 'connection') {
+    await assertAuthorized(writer, 'project.connector.connections.manage', projectObj);
+    return;
+  }
+  if (objectType !== null || (role.isSystem && scopeType === 'project')) {
     await assertAuthorized(writer, 'project.members.manage', projectObj);
     return;
   }
   if (role.isSystem && scopeType === 'account') {
     await assertAuthorized(writer, 'member.update', { type: 'account' });
+    // The owner ceiling. `member.update` is admin-tier; granting or revoking
+    // `owner` is not. `PATCH /accounts/:id/members/:userId` asserts the same
+    // action, and every assignment write (grant, update, revoke) passes
+    // through here, so no route reaches an owner row with less.
+    if (role.key === 'owner') {
+      await assertAuthorized(writer, 'member.super_admin.grant', { type: 'account' });
+    }
     return;
   }
   await assertAuthorized(writer, 'policy.create', { type: 'account' });
+}
+
+/**
+ * A built-in ACCOUNT role (owner / admin / member) is held by a person. The
+ * engine (`resolvePrincipal`) would honor one on a group and hand every member
+ * of that group the tier, but `accountRoleFor` reads only `user` rows. The
+ * member list, the badges and every `getMembership` check would still say
+ * "member" while the person acts as an owner. Refuse the row instead of
+ * creating a role nobody can see. SYSTEM_ACTOR is exempt: internal writers
+ * choose their own principals.
+ */
+function assertAccountRoleHolder(
+  writer: Writer,
+  role: ResolvedRole,
+  scopeType: ScopeType,
+  principal: PrincipalRef,
+): void {
+  if (writer === SYSTEM_ACTOR) return;
+  if (!role.isSystem || scopeType !== 'account') return;
+  if (principal.type === 'user' || principal.type === 'pending') return;
+  throw new HTTPException(400, {
+    message: `an account role ("${role.key}") is held by a person, not a ${principal.type}; give the group a project role or a custom role instead`,
+  });
 }
 
 /**
@@ -682,6 +825,86 @@ async function assertDelegable(role: ResolvedRole): Promise<void> {
     throw new HTTPException(403, {
       message: `role "${role.key}" cannot be assigned: it carries non-delegable permission(s) ${forbidden.sort().join(', ')}`,
     });
+  }
+}
+
+/**
+ * A project-scoped assignment belongs to the project's own account.
+ *
+ * The writer is authorized against the account in the URL, and the engine
+ * reads object grants and project roles by project id. A row written in one
+ * account for a project of another would therefore act inside that other
+ * account. The storage layer refuses the same row
+ * (`role_assignments_project_account_guard`); this check answers with a 404
+ * instead of a constraint error.
+ */
+async function assertProjectInAccount(accountId: string, projectId: string): Promise<void> {
+  const [row] = await db
+    .select({ projectId: projects.projectId })
+    .from(projects)
+    .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
+    .limit(1);
+  if (!row) throw new HTTPException(404, { message: 'project not found in this account' });
+}
+
+function isAccountOwnerRow(row: Pick<AssignmentRow, 'roleIsSystem' | 'roleKey' | 'scopeType' | 'principalType'>): boolean {
+  return row.roleIsSystem && row.roleKey === 'owner' && row.scopeType === 'account' && row.principalType === 'user';
+}
+
+/**
+ * Losing the owner role ends the super-admin bypass that came with it.
+ *
+ * Every account creator gets `is_super_admin`, and `authorize` allows a
+ * super-admin every action before any role check. A demoted owner who kept the
+ * flag kept every owner power, including re-granting `owner`. When a user holds
+ * no live account-scope `owner` assignment any more, the flag is cleared in the
+ * same call and the revoke is audited.
+ */
+async function clearSuperAdminAfterOwnerLoss(writer: Writer, accountId: string, userId: string): Promise<void> {
+  const [stillOwner] = await db
+    .select({ assignmentId: roleAssignments.assignmentId })
+    .from(roleAssignments)
+    .innerJoin(iamRoles, eq(iamRoles.roleId, roleAssignments.roleId))
+    .where(
+      and(
+        eq(roleAssignments.accountId, accountId),
+        eq(roleAssignments.principalType, 'user'),
+        eq(roleAssignments.principalId, userId),
+        eq(roleAssignments.scopeType, 'account'),
+        isNull(iamRoles.accountId),
+        eq(iamRoles.key, 'owner'),
+        or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, sql`now()`)),
+      ),
+    )
+    .limit(1);
+  if (stillOwner) return;
+  const cleared = await db
+    .update(accountMemberships)
+    .set({ isSuperAdmin: false })
+    .where(
+      and(
+        eq(accountMemberships.accountId, accountId),
+        eq(accountMemberships.userId, userId),
+        eq(accountMemberships.isSuperAdmin, true),
+      ),
+    )
+    .returning({ userId: accountMemberships.userId });
+  if (cleared.length === 0) return;
+  invalidateIamCacheForUser(userId);
+  try {
+    await recordAuditEvent({
+      accountId,
+      actorUserId: writer === SYSTEM_ACTOR ? undefined : writer.userId,
+      action: 'iam.member.super_admin.revoke',
+      resourceType: 'account_member',
+      resourceId: userId,
+      before: { is_super_admin: true },
+      after: { is_super_admin: false, reason: 'owner_role_removed' },
+      ip: writer === SYSTEM_ACTOR ? null : (writer.ctx.ip ?? null),
+      userAgent: null,
+    });
+  } catch (err) {
+    console.error('[iam audit] failed to write super-admin revoke event', err);
   }
 }
 
@@ -833,7 +1056,8 @@ export async function listAssignmentsByIds(assignmentIds: string[]): Promise<Ass
  */
 async function bustCachesFor(principal: PrincipalRef, scopeId: string | null): Promise<void> {
   if (principal.type === 'group') await invalidateIamCacheForGroup(principal.id);
-  else invalidateIamCacheForUser(principal.id);
+  // A `project` grant names no user; the project-resource bust below is its whole effect.
+  else if (principal.type !== 'project') invalidateIamCacheForUser(principal.id);
   if (scopeId) invalidateIamCacheForProjectResources(scopeId);
 }
 

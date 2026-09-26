@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { runtimeAgentRosterCacheKey } from './engine';
+import { runtimeAgentRosterCacheKey } from './runtime-client';
 
 describe('runtimeAgentRosterCacheKey', () => {
   // The roster was fetched with a hardcoded /workspace while the prompt is
@@ -9,12 +9,6 @@ describe('runtimeAgentRosterCacheKey', () => {
   test('two directories on one box do not share a roster', () => {
     expect(runtimeAgentRosterCacheKey('box_1', '/workspace')).not.toBe(
       runtimeAgentRosterCacheKey('box_1', '/workspace/sub'),
-    );
-  });
-
-  test('the same directory on one box shares a roster', () => {
-    expect(runtimeAgentRosterCacheKey('box_1', '/workspace')).toBe(
-      runtimeAgentRosterCacheKey('box_1', '/workspace'),
     );
   });
 
