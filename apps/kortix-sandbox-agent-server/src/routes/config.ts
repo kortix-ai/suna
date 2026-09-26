@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { Config } from '../config'
-import type { HarnessControlOperations } from '../harness/control'
+import { MAX_SWAP_DELAY_MS, type HarnessControlOperations } from '../harness/control'
 import { logger } from '../logger'
 import { authorizeControl } from './control-auth'
 
@@ -26,16 +26,42 @@ export function createConfigRouter(cfg: Config, control: HarnessControlOperation
   return router
 }
 
+/**
+ * `?delay_before_swap_ms=N` — fault injection, the same shape as `verify_fail`
+ * on `POST /kortix/refresh`.
+ *
+ * It holds the convergence between the turn gate and the swap, which is the
+ * window DEF-DEV-1 lived in on a real box (2.4-6.1 s of download and extract).
+ * A test that needs a prompt to arrive mid-convergence otherwise has to win a
+ * race it cannot observe. It changes no decision — the same gate runs before
+ * it and the same promotion check runs after it — and it is bounded by
+ * `MAX_SWAP_DELAY_MS`. A caller who can reach this route can already restart
+ * opencode outright, so the delay grants nothing new.
+ */
+function delayBeforeSwapMs(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined
+  const ms = Number(raw)
+  if (!Number.isFinite(ms) || ms <= 0) return undefined
+  return Math.min(ms, MAX_SWAP_DELAY_MS)
+}
+
 /** Shared by `POST /kortix/config/converge` and its `?config_dir=1` refresh alias. */
 export async function runConvergence(
-  c: { json: (body: unknown, status?: 200 | 404 | 409 | 500) => Response },
+  c: {
+    json: (body: unknown, status?: 200 | 404 | 409 | 500) => Response
+    req: { query: (key: string) => string | undefined }
+  },
   control: HarnessControlOperations,
 ): Promise<Response> {
   if (!control.convergeConfig) {
     return c.json({ error: 'config releases are not supported by this runtime' }, 404)
   }
   try {
-    return c.json(await control.convergeConfig())
+    return c.json(
+      await control.convergeConfig({
+        delayBeforeSwapMs: delayBeforeSwapMs(c.req.query('delay_before_swap_ms')),
+      }),
+    )
   } catch (err) {
     if (err instanceof Error && err.name === 'ConvergeBusyError') {
       return c.json({ error: 'config convergence already running' }, 409)

@@ -1509,6 +1509,75 @@ flow(
   },
 );
 
+/**
+ * Boot a real session on a real box and open an OpenCode conversation on it.
+ *
+ * Shared by the two flows that need a booted sandbox with a
+ * `config.release.v1` daemon. Everything a box-half contract asks about — the
+ * transcript, a prompt sent the way `kortix sessions chat` sends it, the
+ * release the box reports — is reachable from what this returns.
+ */
+async function boxSession(ctx: FlowContext, fixture: Fixture) {
+  const oc = (suffix: string, sandbox: string) => `/v1/p/${sandbox}/8000${suffix}`;
+  const session = await ctx.fixtures.session(fixture.project, { prompt: 'say hello' });
+  const sessionId = session.id;
+  const started = await waitFor(
+    async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/projects/:projectId/sessions/:sessionId/start', {}, {
+          params: { projectId: fixture.projectId, sessionId },
+          query: { wait_ms: '8000' },
+          timeoutMs: 25_000,
+        });
+      if (r.statusCode >= 500) return null;
+      r.status(200);
+      return r.json<any>();
+    },
+    {
+      until: (s) => s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
+      timeoutMs: 600_000,
+      intervalMs: 3_000,
+      description: `session runtime ready for ${sessionId}`,
+    },
+  );
+  const sandboxId = String(started.sandbox.external_id ?? started.sandbox.externalId);
+  const created = await waitFor(
+    async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(oc(`/session?directory=${encodeURIComponent('/workspace')}`, sandboxId), {});
+      return r.statusCode >= 500 ? null : r;
+    },
+    { until: (r) => Boolean(r), timeoutMs: 180_000, intervalMs: 3_000, description: 'opencode conversation' },
+  );
+  created!.status(200);
+  const conversationId = String(created!.json<{ id: string }>().id);
+
+  return {
+    sessionId,
+    sandboxId,
+    conversationId,
+    box: (suffix: string) => oc(suffix, sandboxId),
+    async releaseOf(): Promise<any> {
+      const r = await fixture.configState(sessionId);
+      if (r.status !== 200) throw new Error(`GET /config answered ${r.status}`);
+      return r.body?.release ?? null;
+    },
+    async transcript(): Promise<any[]> {
+      const r = await ctx.client.as(ctx.P.OWNER).get(oc(`/session/${conversationId}/message`, sandboxId));
+      r.status(200);
+      return r.json<any[]>();
+    },
+    send: (text: string) =>
+      ctx.client.as(ctx.P.OWNER).post(
+        oc(`/session/${conversationId}/message`, sandboxId),
+        { parts: [{ type: 'text', text }] },
+        { timeoutMs: 180_000 },
+      ),
+  };
+}
+
 // ── CFG-11 — a prompt on a box that is behind converges FIRST, then RUNS ───
 //
 // C9's whole contract, on a real box: the two halves of DEF-FLAGON-1 (the
@@ -1531,6 +1600,33 @@ const MARKER_AGENT = (marker: string): string =>
   `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\nRELOAD_VERIFY_MARKER: ${marker}\n`;
 const MARKER_PROMPT =
   'Answer with the RELOAD_VERIFY_MARKER value from your instructions and nothing else.';
+
+/**
+ * DEF-DEV-2's decider — a key the conversation CANNOT supply.
+ *
+ * On dev on 2026-09-25 a converged session kept answering an OLD marker. Two
+ * readings fit: the model was answering from its own conversation history, or
+ * the prompt it receives was stale instance state that survived the swap. The
+ * race rounds below already ask for a value the history cannot hold, because
+ * each round's marker is committed in that round. This closes the last gap in
+ * that argument — that the model might be pattern-matching "RELOAD_VERIFY_
+ * MARKER means the newest value I have seen" rather than reading what it was
+ * given. It cannot pattern-match a directive NAME it has never seen, asked by
+ * a question that has never been asked in the conversation.
+ *
+ * A correct answer proves the per-turn system prompt is CURRENT, so the stale
+ * answers were the model reading its own transcript and there is no platform
+ * fix to make. A wrong or absent answer proves the prompt itself is stale, and
+ * that is a different defect with a different fix (dispose the instance cache
+ * after a swap).
+ *
+ * The OLD key is deliberately left in the file with a DIFFERENT value, so a
+ * model answering from habit has something wrong to reach for.
+ */
+const MARKER2_AGENT = (marker: string, marker2: string): string =>
+  `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\nRELOAD_VERIFY_MARKER: ${marker}\nRELOAD_VERIFY_MARKER2: ${marker2}\n`;
+const MARKER2_PROMPT =
+  'Answer with the RELOAD_VERIFY_MARKER2 value from your instructions and nothing else.';
 
 flow(
   'CFG-11',
@@ -1555,64 +1651,13 @@ flow(
         if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
       });
 
-      const oc = (suffix: string, sandboxId: string) => `/v1/p/${sandboxId}/8000${suffix}`;
-      let sandboxId = '';
-      let sessionId = '';
-      let conversationId = '';
-
+      let box!: Awaited<ReturnType<typeof boxSession>>;
       await ctx.step('a session boots on the project and opens an OpenCode conversation', async () => {
-        const session = await ctx.fixtures.session(fixture.project, { prompt: 'say hello' });
-        sessionId = session.id;
-        const started = await waitFor(
-          async () => {
-            const r = await ctx.client
-              .as(ctx.P.OWNER)
-              .post('/v1/projects/:projectId/sessions/:sessionId/start', {}, {
-                params: { projectId: fixture.projectId, sessionId },
-                query: { wait_ms: '8000' },
-                timeoutMs: 25_000,
-              });
-            if (r.statusCode >= 500) return null;
-            r.status(200);
-            return r.json<any>();
-          },
-          {
-            until: (s) => s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
-            timeoutMs: 600_000,
-            intervalMs: 3_000,
-            description: `session runtime ready for ${sessionId}`,
-          },
-        );
-        sandboxId = String(started.sandbox.external_id ?? started.sandbox.externalId);
-        const created = await waitFor(
-          async () => {
-            const r = await ctx.client
-              .as(ctx.P.OWNER)
-              .post(oc(`/session?directory=${encodeURIComponent('/workspace')}`, sandboxId), {});
-            return r.statusCode >= 500 ? null : r;
-          },
-          { until: (r) => Boolean(r), timeoutMs: 180_000, intervalMs: 3_000, description: 'opencode conversation' },
-        );
-        created!.status(200);
-        conversationId = String(created!.json<{ id: string }>().id);
+        box = await boxSession(ctx, fixture);
       });
-
-      const releaseOf = async (): Promise<any> => {
-        const r = await fixture.configState(sessionId);
-        if (r.status !== 200) throw new Error(`GET /config answered ${r.status}`);
-        return r.body?.release ?? null;
-      };
-      const transcript = async (): Promise<any[]> => {
-        const r = await ctx.client.as(ctx.P.OWNER).get(oc(`/session/${conversationId}/message`, sandboxId));
-        r.status(200);
-        return r.json<any[]>();
-      };
-      const send = async (text: string) =>
-        ctx.client
-          .as(ctx.P.OWNER)
-          .post(oc(`/session/${conversationId}/message`, sandboxId), {
-            parts: [{ type: 'text', text }],
-          }, { timeoutMs: 180_000 });
+      const releaseOf = () => box.releaseOf();
+      const transcript = () => box.transcript();
+      const send = (text: string) => box.send(text);
 
       let behindRelease = '';
       await ctx.step('the box runs a release, and a push then puts it behind', async () => {
@@ -1719,6 +1764,208 @@ flow(
           description: 'the healed session reports no fallback',
         });
         if (healed.source !== 'release') throw new Error(`healed source ${healed.source}`);
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+// ── CFG-12 — a base move and a prompt in the same instant ──────────────────
+//
+// DEF-DEV-1, on a real box. A convergence retires the OpenCode process that is
+// serving the session. If a prompt lands between the turn gate and the swap,
+// the process writing that turn is killed: the client gets `HTTP 503` and the
+// assistant row stays `completed = null` for ever.
+//
+// Two ways to land in that window, both here:
+//
+//  1. RACED. Push a base move, send a prompt within 200 ms, N times. This is
+//     the shape a user produces (`git push` then type), and each round also
+//     proves the answer comes from the config pushed in THAT round — the
+//     cross-process invalidation, end to end, because nothing tells the pod
+//     that answers the prompt about the push except the broadcast.
+//  2. SCHEDULED. `?delay_before_swap_ms` parks a convergence between the gate
+//     and the swap, and the prompt is sent while it is parked. No race to win:
+//     the prompt is provably inside the window.
+//
+// Rounds are `KORTIX_CFG_RACE_ROUNDS` (default 5). The acceptance run for the
+// fix is 50; a round costs one push plus one turn, so 50 needs the flow's own
+// timeout raised with it.
+const RACE_ROUNDS = Math.max(1, Number(process.env.KORTIX_CFG_RACE_ROUNDS ?? '5') || 5);
+/** Commit to `running_release_id === desired_release_id` on a box nobody is prompting. */
+const IDLE_CONVERGENCE_CEILING_MS = 65_000;
+
+flow(
+  'CFG-12',
+  {
+    domain: 'config-releases',
+    requires: ['database', 'funded', 'daytona', 'managedGit'],
+    timeoutMs: 1_800_000,
+    routes: [
+      FEATURES,
+      PROJECT_DETAIL,
+      CONFIG_STATE,
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      ...GIT_PROXY,
+    ],
+  },
+  async (ctx) => {
+    const fixture = await setup(ctx);
+    try {
+      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
+        await fixture.setFeature(true);
+        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
+      });
+
+      let box!: Awaited<ReturnType<typeof boxSession>>;
+      await ctx.step('a session boots on a proven release and opens an OpenCode conversation', async () => {
+        box = await boxSession(ctx, fixture);
+        const release = await box.releaseOf();
+        if (!release || release.source !== 'release' || release.proven !== true) {
+          throw new Error(`the box is not on a proven release: ${JSON.stringify(release)}`);
+        }
+      });
+
+      /** Every assistant row that never completed. This must stay empty. */
+      const openAssistantRows = async (): Promise<string[]> =>
+        (await box.transcript())
+          .filter((m) => m.info?.role === 'assistant' && !m.info?.time?.completed && !m.info?.error)
+          .map((m) => String(m.info?.id ?? 'unknown'));
+
+      const answerTo = async (prompt: string): Promise<string> => {
+        const rows = await box.transcript();
+        const user = [...rows]
+          .reverse()
+          .find((m) =>
+            m.info?.role === 'user' &&
+            (m.parts ?? []).some((part: any) => typeof part.text === 'string' && part.text.includes(prompt)),
+          );
+        if (!user) throw new Error('the transcript holds no user row for the prompt');
+        return rows
+          .filter((m) => m.info?.role === 'assistant' && m.info?.parentID === user.info?.id)
+          .flatMap((m) => (m.parts ?? []).map((part: any) => part.text))
+          .filter((t: unknown): t is string => typeof t === 'string')
+          .join('\n');
+      };
+
+      for (let round = 1; round <= RACE_ROUNDS; round += 1) {
+        const marker = `marker-race-${round}`;
+        await ctx.step(`round ${round}/${RACE_ROUNDS}: a base move and a prompt 200 ms apart`, async () => {
+          await fixture.commit({ '.kortix/opencode/agents/kortix.md': MARKER_AGENT(marker) }, marker);
+          await new Promise((resolve) => setTimeout(resolve, 200));
+
+          const r = await box.send(MARKER_PROMPT);
+          // THE DEFECT: `503` here, because the swap killed the process that
+          // had already accepted this prompt.
+          if (r.statusCode === 503) throw new Error(`round ${round}: the send answered 503`);
+          r.status(200);
+          const body = r.json<any>();
+          if (body?.deduplicated) throw new Error(`round ${round}: the prompt was swallowed as a duplicate`);
+          if (!body?.info || !Array.isArray(body?.parts)) {
+            throw new Error(`round ${round}: the send did not answer with a message: ${JSON.stringify(body).slice(0, 200)}`);
+          }
+
+          const answer = await answerTo(MARKER_PROMPT);
+          if (!answer.includes(marker)) {
+            throw new Error(`round ${round}: the answer does not carry this round's marker: ${answer.slice(0, 200)}`);
+          }
+          const open = await openAssistantRows();
+          if (open.length > 0) throw new Error(`round ${round}: assistant rows never completed: ${open.join(', ')}`);
+        });
+      }
+
+      await ctx.step('a prompt sent while a convergence is PARKED before its swap still answers', async () => {
+        const marker = 'marker-parked';
+        await fixture.commit({ '.kortix/opencode/agents/kortix.md': MARKER_AGENT(marker) }, marker);
+        // Fault injection: hold the convergence between the turn gate and the
+        // swap. The prompt below is provably inside the window, not racing it.
+        const parked = ctx.client
+          .as(ctx.P.OWNER)
+          .post(box.box('/kortix/config/converge?delay_before_swap_ms=10000'), {}, { timeoutMs: 240_000 });
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+
+        const r = await box.send(MARKER_PROMPT);
+        if (r.statusCode === 503) throw new Error('the send answered 503 while a convergence was parked');
+        r.status(200);
+        const body = r.json<any>();
+        if (!body?.info || !Array.isArray(body?.parts)) {
+          throw new Error(`the send did not answer with a message: ${JSON.stringify(body).slice(0, 200)}`);
+        }
+        const held = await parked;
+        // The convergence that found a turn defers; it never reports `applied`
+        // over a turn it ended.
+        if (held.statusCode === 200 && held.json<any>()?.outcome === 'applied') {
+          const open = await openAssistantRows();
+          if (open.length > 0) throw new Error(`the swap left assistant rows open: ${open.join(', ')}`);
+        }
+        const open = await openAssistantRows();
+        if (open.length > 0) throw new Error(`assistant rows never completed: ${open.join(', ')}`);
+      });
+
+      await ctx.step('an IDLE session still converges: the deferral is not the new normal', async () => {
+        // The fix must not turn every convergence into a deferral. With nobody
+        // prompting, a base move still reaches the box.
+        const marker = 'marker-idle';
+        const started = Date.now();
+        await fixture.commit({ '.kortix/opencode/agents/kortix.md': MARKER_AGENT(marker) }, marker);
+        const converged = await waitFor(() => box.releaseOf(), {
+          until: (rel) => Boolean(rel) && rel.running_release_id === rel.desired_release_id && rel.proven === true,
+          timeoutMs: 300_000,
+          intervalMs: 3_000,
+          description: 'an idle box converges on the new release',
+        });
+        const took = Date.now() - started;
+        console.log(`[CFG-12] idle convergence took ${took} ms`);
+        if (converged.fallback_reason !== null) {
+          throw new Error(`the idle convergence reported a fallback: ${converged.fallback_reason}`);
+        }
+        // A deferral that never resolves would time out above. This catches the
+        // softer regression: a convergence that still lands, but only after the
+        // gate has deferred it several times over. Dev measured 8.5-15.4 s end
+        // to end; the ceiling is 4x that plus one poll interval, which is wide
+        // enough for a shared preview host and far below a deferral loop.
+        if (took > IDLE_CONVERGENCE_CEILING_MS) {
+          throw new Error(
+            `an idle convergence took ${took} ms, over the ${IDLE_CONVERGENCE_CEILING_MS} ms ceiling ` +
+              '(dev measures 8.5-15.4 s); the fix must not turn a convergence into a deferral',
+          );
+        }
+      });
+
+      await ctx.step('DEF-DEV-2: the answer comes from the CURRENT instructions, not the conversation', async () => {
+        const marker2 = 'marker2-delta';
+        const before = String((await box.releaseOf())?.running_release_id ?? '');
+        await fixture.commit(
+          { '.kortix/opencode/agents/kortix.md': MARKER2_AGENT('marker-stale-on-purpose', marker2) },
+          marker2,
+        );
+        // Ask only once the BOX is serving it. A wrong answer before that would
+        // say the push had not landed, not that the prompt was stale.
+        await waitFor(() => box.releaseOf(), {
+          until: (rel) =>
+            Boolean(rel) &&
+            rel.running_release_id === rel.desired_release_id &&
+            rel.proven === true &&
+            rel.running_release_id !== before,
+          timeoutMs: 300_000,
+          intervalMs: 3_000,
+          description: 'the box serves the RELOAD_VERIFY_MARKER2 release',
+        });
+        const r = await box.send(MARKER2_PROMPT);
+        r.status(200);
+        const answer = await answerTo(MARKER2_PROMPT);
+        if (!answer.includes(marker2)) {
+          throw new Error(
+            `DEF-DEV-2: the model did not answer from the current instructions: ${answer.slice(0, 200)}`,
+          );
+        }
+      });
+
+      await ctx.step('nothing was half-written: no assistant row is still open', async () => {
+        const open = await openAssistantRows();
+        if (open.length > 0) throw new Error(`assistant rows never completed: ${open.join(', ')}`);
       });
     } finally {
       await fixture.cleanup();

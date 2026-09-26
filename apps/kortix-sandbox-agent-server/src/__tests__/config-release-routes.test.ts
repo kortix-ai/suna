@@ -17,6 +17,7 @@ import type { Config } from '../config'
 import type { HarnessConfigConvergeResult, HarnessControlOperations } from '../harness/control'
 import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
 import { ConvergeBusyError, resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
+import { MAX_SWAP_DELAY_MS } from '../harness/control'
 import { createOpenCodeControlService } from '../harness/open-code/control'
 import type { Opencode, VerifiedReloadResult } from '../harness/open-code/lifecycle'
 import { createConfigRouter } from '../routes/config'
@@ -97,7 +98,45 @@ describe('config routes with a fake control', () => {
     })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(converged)
-    expect(calls.converge).toEqual([[]])
+    // The only thing the route reads off the request is the fault-injection
+    // delay, and it is absent here.
+    expect(calls.converge).toEqual([[{ delayBeforeSwapMs: undefined }]])
+  })
+
+  /**
+   * `?delay_before_swap_ms` — fault injection, the same shape as `verify_fail`
+   * on `POST /kortix/refresh`. It holds a convergence between the turn gate and
+   * the swap, so a test can land a prompt inside the window DEF-DEV-1 lived in
+   * instead of racing it.
+   */
+  test('the fault-injection delay is read, bounded, and never negative', async () => {
+    const cases: Array<[string, number | undefined]> = [
+      ['250', 250],
+      // Bounded: a caller cannot park a convergence for an hour.
+      [String(MAX_SWAP_DELAY_MS * 10), MAX_SWAP_DELAY_MS],
+      ['0', undefined],
+      ['-5', undefined],
+      ['nonsense', undefined],
+    ];
+    for (const [raw, expected] of cases) {
+      const { control, calls } = fakeControl()
+      const res = await createConfigRouter(cfgWithToken, control).request(
+        `/converge?delay_before_swap_ms=${encodeURIComponent(raw)}`,
+        { method: 'POST', headers: bearer },
+      )
+      expect(res.status).toBe(200)
+      expect(calls.converge).toEqual([[{ delayBeforeSwapMs: expected }]])
+    }
+  })
+
+  test('the refresh alias carries the delay too', async () => {
+    const { control, calls } = fakeControl()
+    const res = await createRefreshRouter(cfgWithToken, control).request(
+      '/?config_dir=1&delay_before_swap_ms=300',
+      { method: 'POST', headers: bearer },
+    )
+    expect(res.status).toBe(200)
+    expect(calls.converge).toEqual([[{ delayBeforeSwapMs: 300 }]])
   })
 
   test('a convergence already running answers 409', async () => {
@@ -195,8 +234,12 @@ describe('POST /kortix/config/converge end to end through the OpenCode control s
     const opencode = {
       getPid: () => 7,
       getState: () => 'ok',
+      // The route path now hands `convergeConfigRelease` a turn probe
+      // (control.ts), and the probe needs a base url. No session is pinned in
+      // this test, which `opencodeTurnInFlight` answers as a definite `false`.
+      getInternalUrl: () => 'http://127.0.0.1:4096',
       async reloadVerified(): Promise<VerifiedReloadResult> {
-        return { outcome: 'swapped', port: 4097, pid: 8, turnEnded: false }
+        return { outcome: 'swapped', port: 4097, pid: 8, turnEnded: false, orphanedMessageId: null }
       },
     } as unknown as Opencode
     const cfg = {
