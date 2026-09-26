@@ -363,7 +363,7 @@ export function SessionConnectingBanner({
           variant="spokes"
           className="size-3.5 shrink-0 text-current motion-reduce:animate-none"
         />
-        <span className="truncate">{statusNote ?? step.label}</span>
+        <span className="min-w-0 text-pretty">{statusNote ?? step.label}</span>
         {stuck && canRestart ? (
           <Button
             type="button"
