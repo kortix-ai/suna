@@ -137,6 +137,41 @@ export function setComposioRuntimeForTest(next: ComposioRuntime | null): void {
   runtime = next;
 }
 
+const INVALID_TOOLKIT_SLUGS_MARKER = 'Invalid toolkit slugs';
+
+export function invalidToolkitSlugsFromError(error: unknown): string[] | null {
+  const message = error instanceof Error ? error.message : String(error);
+  const marker = message.indexOf(INVALID_TOOLKIT_SLUGS_MARKER);
+  if (marker === -1) return null;
+  const [named = ''] = message
+    .slice(marker + INVALID_TOOLKIT_SLUGS_MARKER.length)
+    .replace(/^\s*:?\s*/, '')
+    .split(/[.\n"]/);
+  return named.split(',').map((slug) => slug.trim()).filter(Boolean);
+}
+
+function toolkitUnsupportedError(toolkit: string, slugs: readonly string[]): HTTPException {
+  const named = slugs.length > 0 ? slugs.join(', ') : toolkit;
+  return new HTTPException(422, {
+    message: `Composio does not recognise toolkit slug "${named}". The connector's configured app is not a valid Composio toolkit — re-add it from the catalogue.`,
+  });
+}
+
+async function createToolkitSession(
+  runtime: ComposioRuntime,
+  userId: string,
+  toolkit: string,
+  config: ToolRouterCreateSessionConfig,
+): Promise<ComposioSessionLike> {
+  try {
+    return await runtime.sessions.create(userId, config);
+  } catch (error) {
+    const slugs = invalidToolkitSlugsFromError(error);
+    if (slugs) throw toolkitUnsupportedError(toolkit, slugs);
+    throw error;
+  }
+}
+
 function directSessionConfig(toolkit: string, connectedAccountId?: string | null): ToolRouterCreateSessionConfig {
   return {
     sessionPreset: 'direct_tools',
@@ -187,7 +222,7 @@ async function createDirectSession(input: {
 }): Promise<ComposioSessionLike> {
   const config = directSessionConfig(input.toolkit, input.connectedAccountId);
   try {
-    return await input.runtime.sessions.create(input.userId, config);
+    return await createToolkitSession(input.runtime, input.userId, input.toolkit, config);
   } catch (error) {
     if (!isAuthConfigRequired(error)) throw error;
     const configured = await customAuthConfigIds({
@@ -196,7 +231,7 @@ async function createDirectSession(input: {
     });
     const authConfigId = configured.get(input.toolkit.toLowerCase());
     if (!authConfigId) throw authConfigRequired(input.toolkit);
-    return input.runtime.sessions.create(input.userId, {
+    return createToolkitSession(input.runtime, input.userId, input.toolkit, {
       ...config,
       authConfigs: { [input.toolkit]: authConfigId },
     });
@@ -222,7 +257,7 @@ function toolkitState(page: ToolkitConnectionsDetails, toolkit: string) {
 async function loadToolkitState(session: ComposioSessionLike, toolkit: string) {
   const page = await session.toolkits({ toolkits: [toolkit], limit: 1 });
   const state = toolkitState(page, toolkit);
-  if (!state) throw new Error(`composio toolkit not found: ${toolkit}`);
+  if (!state) throw toolkitUnsupportedError(toolkit, [toolkit]);
   return state;
 }
 

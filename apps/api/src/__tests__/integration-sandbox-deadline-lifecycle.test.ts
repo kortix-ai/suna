@@ -161,13 +161,30 @@ describe('a sandbox lifetime, start to death', () => {
   });
 
   // 264h -> at most 4h even in the worst case, and 15 min in the normal one.
-  test('6. a stopped box cannot be healed back by passive traffic', async () => {
+  test('6. an idle child session past its grace stays stopped under passive traffic', async () => {
+    // The reaper just stopped this box past its deadline (test 5). Mark the
+    // session as a coordinator-spawned child, the shape a factory worker has.
+    await db.execute(sql`
+      UPDATE kortix.project_sessions
+         SET metadata = coalesce(metadata, '{}'::jsonb)
+                      || jsonb_build_object('spawned_by_session', 'coordinator-session')
+       WHERE session_id = ${SESSION_ID}`);
+
     const { markSandboxUsed } = await import('../sandbox-proxy/backend');
     await markSandboxUsed(EXTERNAL_ID);
 
     // The heal is gated on `deadline_at > now()`, and a reaper-stopped box has
     // an expired deadline BY CONSTRUCTION. This is the 1,597-phantom-active-row
     // resurrection bug, closed by a predicate instead of a metadata flag.
-    expect((await statusOf()).sandbox).toBe('stopped');
+    //
+    // The SESSION must stay stopped too. The session write used to be
+    // unconditional, so one passive request to the parked box flipped the
+    // session back to `running` while the box stayed stopped — the stale
+    // `running` an idle child session showed for hours after its last turn
+    // (KRTX-378). A stopped box can never make its session claim to run.
+    expect(await statusOf()).toEqual({
+      sandbox: 'stopped',
+      session: 'stopped',
+    });
   });
 });
