@@ -6,7 +6,7 @@
  * `turn/queued-prompt-bubbles.tsx`, and `session-chat.tsx`.
  */
 
-import { formatMessageDay, isAbortError } from '@kortix/sdk';
+import { isAbortError } from '@kortix/sdk';
 import {
   fileTagBlocks,
   referenceHeaders,
@@ -262,10 +262,28 @@ export function isUserMessageEdited(parts: readonly PartLike[]): boolean {
   );
 }
 
-// ─── Meta line ───────────────────────────────────────────────────────────────
+// ─── Sent time (the long-press menu) ─────────────────────────────────────────
 
-/** The items of the meta line under a bubble: relative time, then "edited". */
-export function userMessageMetaItems({
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** `3:42 PM`: the device's local time, 12-hour. */
+function clockTime(date: Date): string {
+  const hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours % 12 === 0 ? 12 : hours % 12}:${minutes} ${hours < 12 ? 'AM' : 'PM'}`;
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/**
+ * When a message was sent, in full, for the long-press menu's first line
+ * (Jay, 2026-09-27: it replaced the "just now" under the bubble): "Today,
+ * 3:42 PM", "Yesterday, 9:05 AM", "Sep 3, 12:15 AM", "Dec 31, 2025, 12:00 PM",
+ * then " · Edited" for an edited message. Empty with neither.
+ */
+export function userMessageSentLabel({
   timestamp,
   edited,
   now,
@@ -273,12 +291,24 @@ export function userMessageMetaItems({
   timestamp: number | null;
   edited: boolean;
   now: number;
-}): string[] {
-  const items: string[] = [];
-  const label = timestamp !== null ? formatMessageDay(timestamp, now) : '';
-  if (label) items.push(label);
-  if (edited) items.push('edited');
-  return items;
+}): string {
+  const parts: string[] = [];
+  if (timestamp !== null) {
+    const sent = new Date(timestamp);
+    const today = new Date(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(today.getDate() - 1);
+    const day = sameDay(sent, today)
+      ? 'Today'
+      : sameDay(sent, yesterday)
+        ? 'Yesterday'
+        : sent.getFullYear() === today.getFullYear()
+          ? `${MONTHS[sent.getMonth()]} ${sent.getDate()}`
+          : `${MONTHS[sent.getMonth()]} ${sent.getDate()}, ${sent.getFullYear()}`;
+    parts.push(`${day}, ${clockTime(sent)}`);
+  }
+  if (edited) parts.push('Edited');
+  return parts.join(' · ');
 }
 
 // ─── Queued prompt state ─────────────────────────────────────────────────────

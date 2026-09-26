@@ -275,6 +275,7 @@ projectsApp.openapi(
     userId: loaded.userId,
     effectiveRole: loaded.effectiveRole,
     scope,
+    orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
     limit: query.limit,
     cursor: query.cursor ?? null,
     boundCredentialSessionId: callerKortixSessionId(c),

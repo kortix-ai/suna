@@ -587,15 +587,11 @@ describe('promptOpenCodeMessage messageID', () => {
     expect(minted).toBeLessThan(encodedAt(before + 60_000));
   });
 
-  // ── Golden vectors shared with apps/api ────────────────────────────────
+  // ── Golden vectors: the sync-store path ────────────────────────────────
   //
-  // The control plane re-mints a wire id when it redelivers an abandoned
-  // prompt (`apps/api/src/projects/wire-message-id.ts`). It cannot import this
-  // module — `apps/api` has no `@kortix/sdk` dependency, and the minter here
-  // reads the browser sync store — so there are two implementations of one
-  // ordering contract. A silent divergence drops turns: OpenCode decides "has
-  // this prompt already been answered?" by id order. This fixture is what
-  // makes a divergence fail TWO suites instead of zero.
+  // The vectors pin `core/session/wire-message-id.ts`, the one minter. This
+  // block proves the send path feeds it the session's transcript: a prompt
+  // sent through the store lands at exactly the fixture's expected clock.
   describe('golden vectors — tests/spec/wire-message-id.vectors.json', () => {
     for (const [index, vector] of wireIdVectors.vectors.entries()) {
       test(vector.name, async () => {

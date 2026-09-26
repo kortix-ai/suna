@@ -1,0 +1,60 @@
+# aws-env: the single path by which a workflow in this repository reads a
+# credential. GitHub Actions stores no secret; every value lives in AWS Secrets
+# Manager (us-west-2):
+#   - kortix-ci-env            CI-only values, keyed by the old GitHub secret name
+#   - kortix-{dev,staging,preview,prod}-env, kortix-*-web-env
+#                              runtime blobs; CI reads a key from them instead of
+#                              keeping a copy (one source of truth)
+# The default role kortix-gha-ecs-deploy trusts repo:kortix-ai/suna:* and reads
+# kortix-*-env-*. Callers need `permissions: id-token: write` and a checkout
+# that contains .github/actions (a sparse checkout is enough).
+#
+# TRANSITION (remove with the GitHub secret deletion): some callers still read
+# `${{ env.X || secrets.X }}`. The fetch is authoritative and fails closed, so
+# the `|| secrets.X` half only matters where a fetch is optional or skipped.
+# Delete every `|| secrets.` fallback in the same change that deletes the
+# GitHub secrets: `grep -rn '|| secrets\.' .github/`.
+#
+# Contract test: tests/unit/aws-env-action.test.ts.
+name: aws-env
+description: >-
+  Read CI credentials from AWS Secrets Manager through GitHub OIDC, mask every
+  line of every value, and export them to GITHUB_ENV for the later steps of the
+  job. This is the only way a workflow in this repository reads a credential.
+
+inputs:
+  keys:
+    required: true
+    description: >-
+      One key per line. `NAME` reads key NAME from `kortix-ci-env`.
+      `NAME=blob:KEY` reads KEY from the Secrets Manager blob `blob` and exports
+      it as NAME. A trailing `?` makes the key optional: a missing or empty key
+      leaves NAME unset and prints a notice. Without `?` a missing key fails
+      the step. Blank lines and lines starting with `#` are ignored.
+  role-to-assume:
+    required: false
+    default: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+    description: >-
+      Role assumed through GitHub OIDC for the read. The job needs
+      `permissions: id-token: write`. The credentials go only to the fetch
+      step; the job's own AWS credentials and region stay unchanged. An empty
+      string reuses the AWS credentials already present in the job.
+  aws-region:
+    required: false
+    default: us-west-2
+    description: Region of the Secrets Manager blobs.
+
+runs:
+  using: composite
+  steps:
+    # One bash step and no nested action: a nested action's POST step would run
+    # from the .aws-env checkout at job end, after the job's own checkout has
+    # cleaned it away. fetch.sh exchanges the GitHub OIDC token for the role
+    # credentials itself; they live only inside that process.
+    - name: Read and export the keys
+      shell: bash
+      env:
+        AWS_ENV_KEYS: ${{ inputs.keys }}
+        AWS_ENV_REGION: ${{ inputs.aws-region }}
+        AWS_ENV_ROLE: ${{ inputs.role-to-assume }}
+      run: bash "$GITHUB_ACTION_PATH/fetch.sh"

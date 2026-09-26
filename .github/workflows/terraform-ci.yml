@@ -184,15 +184,27 @@ jobs:
           # Not under environments/ — these stacks live at the terraform root.
           - infra/terraform/security-baseline
           - infra/terraform/compliance-monitoring
-    env:
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # Every environments/* root declares a `cloudflare` provider. Without a
       # token the provider fails to authenticate and the plan errors out before
       # it can report drift — which is how this job has been failing since
       # 2026-08-03. The token is read-only for planning purposes: plan never
-      # writes a DNS record.
-      TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # writes a DNS record. The tf-plan role denies GetSecretValue, so the
+      # read uses the aws-env default role; it does not touch the job's
+      # credentials.
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            TF_VAR_cloudflare_api_token=kortix-ci-env:CLOUDFLARE_API_TOKEN
       - name: require Cloudflare token
         run: |
           if [ -z "${TF_VAR_cloudflare_api_token:-}" ]; then

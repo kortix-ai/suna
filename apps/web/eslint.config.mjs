@@ -100,9 +100,10 @@ const eslintConfig = [
               // re-include a path under an excluded directory. There is
               // therefore no pattern that allows `@kortix/sdk/internal/
               // idb-sync-cache` while banning its four zustand neighbours.
-              // The one deliberate exception carries an inline disable at its
-              // single call site (`lib/utils/reset-client-state.ts`) instead,
-              // where it is visible in review. Mirrors CANONICAL_SDK_ENTRIES
+              // The three deliberate exceptions carry an inline disable in
+              // one file each (`lib/utils/reset-client-state.ts`,
+              // `stores/diagnostics-store.ts`, `lib/storage/managed-storage.ts`)
+              // instead, where it is visible in review. Mirrors CANONICAL_SDK_ENTRIES
               // in scripts/sdk-boundary.mjs — keep the two in sync.
               group: ['@kortix/sdk/*', '!@kortix/sdk/react', '!@kortix/sdk/server'],
               message: 'Use the canonical @kortix/sdk or @kortix/sdk/react entry point.',

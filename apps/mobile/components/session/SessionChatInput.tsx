@@ -65,6 +65,7 @@ import { sessionFileMentionLabel, type SessionFile } from '@/lib/session/session
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { ModelPickerSheet } from './ModelPickerSheet';
 import { composerChip, type PickerOption } from '@/lib/session/composer-config';
+import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
 import { modelPickerOptions, pickerModelName } from '@/lib/session/model-picker';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -208,6 +209,11 @@ interface SessionChatInputProps {
   /** The model list is not known yet: the composer chip hides instead of flashing a label. */
   modelsLoading?: boolean;
   /**
+   * The sandbox has not listed its agents yet (a new thread): the chip reads
+   * the agent project home sent with, never the model name (`composerChip`).
+   */
+  agentsLoading?: boolean;
+  /**
    * The project's catalog loaded with no model (`isModelUnavailable`): the
    * chip reads "Connect model", and Send calls `onConnectModel` instead of
    * sending, and the draft stays (KRTX-251). One flag for both, so they agree.
@@ -268,6 +274,7 @@ function SessionChatInputImpl({
   model,
   models = EMPTY_MODELS,
   modelsLoading = false,
+  agentsLoading = false,
   modelUnavailable = false,
   onConnectModel,
   modelKey,
@@ -298,6 +305,8 @@ function SessionChatInputImpl({
 
   const modelSheetRef = useRef<SheetRef>(null);
   // The model sheet's Agent tab: the thread's agents, the active one checked.
+  // The agent project home last sent with (`ProjectHome` → `setAgent`).
+  const pendingAgentName = useLocalConfigStore((s) => s.selectedAgent);
   const agentChoice = useMemo(
     () =>
       onAgentChange
@@ -737,6 +746,8 @@ function SessionChatInputImpl({
                 : composerChip({
                     connectModel: modelUnavailable,
                     agentName: agent?.name,
+                    pendingAgentName,
+                    agentsLoading,
                     modelName: model ? pickerModelName(model) : undefined,
                   })
             }
