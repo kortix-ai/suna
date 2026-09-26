@@ -1408,6 +1408,9 @@ flow(
         if (!message.includes('anthropic') || !message.includes('toolkit')) {
           throw new Error(`invalid toolkit response omitted the slug and reason: ${message}`);
         }
+        if (message.includes('ToolRouterV2_') || message.includes('Invalid toolkit slugs')) {
+          throw new Error(`invalid toolkit response exposed the provider error: ${message}`);
+        }
       },
     );
 
