@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { HTTPException } from 'hono/http-exception';
 import {
   composioCatalogPage,
   composioConnectUrl,
@@ -276,6 +277,92 @@ test('composioConnectUrl surfaces any other Composio refusal as a 502, not an op
     connectionId: 'connection-1',
     stableUserId: 'kortix-connection:connection-1',
     runtime: fakeRuntime({ created }),
+  });
+  await expect(attempt).rejects.toMatchObject({
+    status: 502,
+    message: expect.stringContaining('Composio refused the authorization'),
+  });
+});
+
+test('composioConnectUrl surfaces a provider 4xx from session setup as typed, not an opaque 500', async () => {
+  // Better Stack frontend pattern `93ddb980…`: a project connector declared
+  // with an app slug Composio does not know (`anthropic`) made
+  // `sessions.create` throw the provider's own error —
+  // `ToolRouterV2_InvalidToolkitSlugs` (code 4305), HTTP 400. Nothing wrapped
+  // the session calls, so it fell through to the global `app.onError` as an
+  // opaque 500 "Internal server error": the connectors page paged Better Stack
+  // and the user got no reason. A provider 4xx is the provider REFUSING the
+  // request; it must answer 4xx with the provider's message, never a bare 500.
+  const providerError = Object.assign(
+    new Error(
+      '400 {"error":{"message":"Invalid toolkit slugs: anthropic. Please provide valid toolkit slugs.","code":4305,"slug":"ToolRouterV2_InvalidToolkitSlugs","status":400,"request_id":"req-1"}}',
+    ),
+    { name: 'BadRequestError', status: 400 },
+  );
+  const runtime: ComposioRuntime = {
+    sessions: {
+      async create() {
+        throw providerError;
+      },
+      async use() {
+        return session();
+      },
+    },
+  };
+
+  const attempt = composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'anthropic-claude',
+    app: 'anthropic',
+    connectionId: 'connection-1',
+    stableUserId: 'kortix-connection:connection-1',
+    runtime,
+  });
+
+  const error = await attempt.then(
+    () => null,
+    (thrown: unknown) => thrown,
+  );
+  expect(error).toBeInstanceOf(HTTPException);
+  const typed = error as HTTPException;
+  expect(typed.status).toBe(400);
+  expect(typed.message).toContain('Connector provider rejected the request:');
+  expect(typed.message).toContain('Invalid toolkit slugs: anthropic');
+  // The typed body is what reaches the client: a stable code plus the
+  // provider's own reason, so the UI can show it and no 5xx is paged.
+  const body = (await typed.getResponse().json()) as {
+    code?: string;
+    status?: number;
+    message?: string;
+    provider_code?: string;
+  };
+  expect(body.status).toBe(400);
+  expect(body.code).toBe('connector_provider_rejected');
+  expect(body.provider_code).toBe('ToolRouterV2_InvalidToolkitSlugs');
+  expect(body.message).toContain('Invalid toolkit slugs: anthropic');
+});
+
+test('composioConnectUrl keeps a provider 5xx as a 502 refusal, not a typed 4xx', async () => {
+  const runtime: ComposioRuntime = {
+    sessions: {
+      async create() {
+        throw Object.assign(new Error('500 upstream exploded'), {
+          name: 'InternalServerError',
+          status: 500,
+        });
+      },
+      async use() {
+        return session();
+      },
+    },
+  };
+  const attempt = composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'github',
+    app: 'github',
+    connectionId: 'connection-1',
+    stableUserId: 'kortix-connection:connection-1',
+    runtime,
   });
   await expect(attempt).rejects.toMatchObject({
     status: 502,

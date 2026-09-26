@@ -5,6 +5,7 @@ import {
   type ToolkitConnectionsDetails,
 } from '@composio/core';
 import { HTTPException } from 'hono/http-exception';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ExecResult } from './call';
 import { searchComposioCatalog, type ComposioCatalogClient } from './composio-catalog-search';
 import type { ComposioToolLike } from './types';
@@ -480,6 +481,73 @@ function upstreamRefusal(error: unknown): Error {
   });
 }
 
+/** Stable client code for a provider refusal that is the caller's to fix. */
+const COMPOSIO_PROVIDER_REJECTED_CODE = 'connector_provider_rejected';
+
+/**
+ * A Composio SDK `APIError` raises on any session/toolkit call. Only
+ * `authorizeWithFreshAlias` wrapped its own failures; `sessions.create` and
+ * `loadToolkitState` did not, so a provider 4xx fell through to the global
+ * `app.onError` as an opaque 500 "Internal server error" (Better Stack
+ * frontend pattern `93ddb980…` on the connectors page, 2 occurrences). The
+ * provider had said exactly what was wrong —
+ * `ToolRouterV2_InvalidToolkitSlugs` (code 4305): "Invalid toolkit slugs:
+ * anthropic" — and we threw the reason away.
+ *
+ * A provider 4xx is the provider REFUSING the request, not our server
+ * failing. It is a connector-configuration problem the caller can act on, so
+ * surface a typed 4xx: the provider's status, a stable `code`, the provider's
+ * own `slug`/`code` as `provider_code`, and its message. `handleApiError`
+ * treats a 4xx as expected and does not page Sentry. A provider 5xx / transport
+ * failure stays a 502, matching `upstreamRefusal`.
+ */
+function composioProviderRefusal(error: unknown): HTTPException {
+  if (error instanceof HTTPException) return error;
+  const raw = error instanceof Error ? error.message : String(error);
+  const firstLine = raw.split('\n')[0].trim();
+  let status = Number((error as { status?: unknown })?.status);
+  let providerCode: string | undefined;
+  let message = firstLine;
+  const bodyMatch = /^(\d{3})\s+(\{[\s\S]*\})$/.exec(firstLine);
+  if (bodyMatch) {
+    try {
+      const body = JSON.parse(bodyMatch[2]) as {
+        error?: { message?: unknown; code?: unknown; slug?: unknown; status?: unknown };
+      };
+      const providerError = body.error ?? {};
+      const providerStatus = Number(providerError.status);
+      status = Number.isFinite(providerStatus) ? providerStatus : Number(bodyMatch[1]);
+      providerCode =
+        typeof providerError.slug === 'string'
+          ? providerError.slug
+          : typeof providerError.code === 'number'
+            ? String(providerError.code)
+            : undefined;
+      if (typeof providerError.message === 'string' && providerError.message) {
+        message = providerError.message;
+      }
+    } catch {
+      // The body is not JSON; the raw first line is the best message.
+    }
+  }
+  if (Number.isInteger(status) && status >= 400 && status < 500) {
+    const typedMessage = `Connector provider rejected the request: ${message}`;
+    return new HTTPException(status as ContentfulStatusCode, {
+      message: typedMessage,
+      res: Response.json({
+        error: true,
+        message: typedMessage,
+        status,
+        code: COMPOSIO_PROVIDER_REJECTED_CODE,
+        ...(providerCode ? { provider_code: providerCode } : {}),
+      }),
+    });
+  }
+  return new HTTPException(502, {
+    message: `Composio refused the authorization: ${message}`,
+  });
+}
+
 export async function composioConnectUrl(input: {
   projectId: string;
   slug: string;
@@ -491,14 +559,22 @@ export async function composioConnectUrl(input: {
 }): Promise<ComposioConnectResult> {
   assertStableUserId(input.connectionId, input.stableUserId);
   const runtime = input.runtime ?? getComposioRuntime();
-  const session = await runtime.sessions.create(
-    input.stableUserId,
-    // Leave authConfigs unset. Composio's managed app is the supported
-    // zero-setup path. Custom OAuth scopes require a verified app owned by the
-    // customer and must not be smuggled into the managed client.
-    directSessionConfig(input.app),
-  );
-  const state = await loadToolkitState(session, input.app);
+  let session: ComposioSessionLike;
+  let state: Awaited<ReturnType<typeof loadToolkitState>>;
+  try {
+    session = await runtime.sessions.create(
+      input.stableUserId,
+      // Leave authConfigs unset. Composio's managed app is the supported
+      // zero-setup path. Custom OAuth scopes require a verified app owned by the
+      // customer and must not be smuggled into the managed client.
+      directSessionConfig(input.app),
+    );
+    state = await loadToolkitState(session, input.app);
+  } catch (error) {
+    // A provider 4xx here (e.g. an unknown app slug) is a connector-config
+    // problem, not our 500 — classify it instead of letting it fall through.
+    throw composioProviderRefusal(error);
+  }
   if (state.isNoAuth) {
     return {
       sessionId: session.sessionId,
