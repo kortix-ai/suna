@@ -20,8 +20,10 @@ name: Terraform Apply
 #   - The guard blocks every destroy. The single exception is an immutable
 #     `aws_ecs_task_definition` replacement, which Terraform always renders as
 #     a delete+create pair and which destroys nothing that serves traffic.
-#     Logic copied from deploy-prod-us-east-2-shadow.yml, generalized from two
-#     hardcoded module addresses to the resource type.
+#     The guard is infra/terraform/scripts/plan_guard.py. A caller sets
+#     `allow_deletes` for a reviewed cleanup: a manual dispatch, or a push to
+#     `main` whose merged pull request carries the `terraform-destroy-ok`
+#     label (terraform-apply-global.yml, deploy-dev.yml).
 #   - Terraform is pinned to the same TF_VERSION as terraform-ci.yml. State is
 #     forward-incompatible: applying with a newer Terraform than the drift job
 #     runs would break drift detection with "state snapshot was created by a
@@ -220,71 +222,32 @@ jobs:
             -lock-timeout=5m \
             -out=tf.plan
 
-      # Copied from deploy-prod-us-east-2-shadow.yml and generalized: block every
-      # planned delete except an immutable ECS task-definition replacement, which
-      # Terraform always renders as a delete+create pair.
+      # infra/terraform/scripts/plan_guard.py blocks every planned delete except
+      # an immutable ECS task-definition replacement, which Terraform always
+      # renders as a delete+create pair. It started as the jq guard of
+      # deploy-prod-us-east-2-shadow.yml; the script form has unit tests
+      # (test_plan_guard.py, run by terraform-ci.yml) and names stateful
+      # deletes as DATA LOSS. `allow_deletes` turns a block into a warning.
+      # The guard runs from the workflow's own commit, not from `inputs.ref`:
+      # deploy-staging.yml applies a preflight SHA that can predate the script.
+      - name: Check out the plan guard
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .tf-guard
+          sparse-checkout: infra/terraform/scripts
+          persist-credentials: false
+
       - name: Guard against destructive changes
         run: |
           set -euo pipefail
           terraform -chdir="$TF_ROOT" show -json tf.plan > "$RUNNER_TEMP/plan.json"
-
-          blocked_destructive_changes="$(
-            jq '[
-              .resource_changes[]?
-              | select(.change.actions | index("delete"))
-              | select(
-                  (.type != "aws_ecs_task_definition")
-                  or (
-                    .change.actions != ["delete", "create"]
-                    and .change.actions != ["create", "delete"]
-                  )
-                )
-            ] | length' "$RUNNER_TEMP/plan.json"
-          )"
-          task_definition_replacements="$(
-            jq '[
-              .resource_changes[]?
-              | select(.type == "aws_ecs_task_definition")
-              | select(
-                  .change.actions == ["delete", "create"]
-                  or .change.actions == ["create", "delete"]
-                )
-            ] | length' "$RUNNER_TEMP/plan.json"
-          )"
-
-          echo "Planned actions:"
-          jq -r '
-            [.resource_changes[]?.change.actions | join(",")]
-            | group_by(.)
-            | map({action: .[0], count: length})
-          ' "$RUNNER_TEMP/plan.json"
-
-          if [ "$blocked_destructive_changes" != "0" ] && [ "${ALLOW_DELETES}" = "true" ]; then
-            echo "::warning::$TF_ROOT plans $blocked_destructive_changes destructive change(s) — permitted by allow_deletes (reviewed cleanup):"
-            jq -r '
-              .resource_changes[]?
-              | select(.change.actions | index("delete"))
-              | "  \(.address): \(.change.actions | join(","))"
-            ' "$RUNNER_TEMP/plan.json"
-            blocked_destructive_changes=0
+          flags=()
+          if [ "${ALLOW_DELETES}" = "true" ]; then
+            flags+=(--allow-deletes)
           fi
-          if [ "$blocked_destructive_changes" != "0" ]; then
-            echo "::error::$TF_ROOT plans $blocked_destructive_changes blocked destructive change(s). Apply it by hand after review."
-            jq -r '
-              .resource_changes[]?
-              | select(.change.actions | index("delete"))
-              | select(
-                  (.type != "aws_ecs_task_definition")
-                  or (
-                    .change.actions != ["delete", "create"]
-                    and .change.actions != ["create", "delete"]
-                  )
-                )
-              | "  \(.address): \(.change.actions | join(","))"
-            ' "$RUNNER_TEMP/plan.json"
-            exit 1
-          fi
-          echo "Allowed immutable ECS task-definition replacements: $task_definition_replacements."
+          python3 .tf-guard/infra/terraform/scripts/plan_guard.py "$RUNNER_TEMP/plan.json" \
+            --root "$TF_ROOT" --summary "$GITHUB_STEP_SUMMARY" "${flags[@]}"
 
       - name: terraform apply
         run: |
