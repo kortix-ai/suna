@@ -55,7 +55,7 @@ Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
 | `search-list-header.tsx` | "Search input + add button" row under `PageHeader` on list pages. |
 | `page-header.tsx` | Unified top header (hamburger / title / "···" more button) for every page. |
 | `page-content.tsx` | Content area under `PageHeader` — no card framing, consistent top spacing. |
-| `composer.tsx` | The chat input of the project home and of a thread (`SessionChatInput` wraps it): one card with the text field on top and a 36pt row of add · model · send `Button`s below (`icon-md` icon buttons, `sm` model pill). Page colour (`bg-background`) in both themes, hairline `border-border` in both themes, no shadow. No animated placeholder. Thread-only slots: `header` (queue, staged command), `accessory` (AutoContinue), `busy` (Stop). See design.md → Project home. |
+| `composer.tsx` | The chat input of the project home and of a thread (`SessionChatInput` wraps it): one card with the text field on top and a 36pt row of add · agent chip · send `Button`s below (`icon-md` icon buttons, `sm` agent chip — `ghost`, `secondary` for "Connect model" — that opens the agent and model sheet). Page colour (`bg-background`) in both themes, hairline `border-border` in both themes, no shadow. No animated placeholder. Thread-only slots: `header` (queue, staged command), `accessory` (AutoContinue), `busy` (Stop). See design.md → Project home. |
 | `dictation-waveform.tsx` | `DictationWaveform` — the composer's listening indicator: one bar per recogniser volume sample, newest on the right. Runs on the UI thread from a shared value. See `design.md` → Dictation. |
 | `pinned-bar.tsx` | `PinnedBar` + `usePinnedBarInset`. Inside a bottom sheet, wrap the body in `SheetFill` (`sheet.tsx`) first: gorhom's content box is taller than the visible sheet, so `bottom: 0` alone lands off-screen.  — controls pinned to the bottom of a scrolling region, floating over a fade of the surface (clear → 85% at 45% → solid), 16pt above the safe area; the content scrolls under it and pads its end by the inset. The project drawer's bottom bar as a component (Jay, 2026-09-22); used by the session file preview sheet (Download · Add to chat). Never a solid footer under a separate fade strip. **A new control added to any header or chrome row prefers this gradient-fade backdrop over a flat one** (Jay, 2026-09-22) — see design.md's "New header controls" row. |
 | `animated-toggle-icon.tsx` | Cross-fade + rotate between an icon and its "X" close state, used by `PageHeader`. |
@@ -114,7 +114,7 @@ children.
   `black` — do not reintroduce them.
 - Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `xl` (`h-12`) `icon` (`h-10 w-10`) `icon-md` (`h-9 w-9`) `icon-sm` (`h-7 w-7`).
   `icon-md` is added to the registry output (Jay, 2026-09-21): the 36pt round controls of
-  the composer's row (add, send, Stop, AutoContinue), beside a `sm` model pill. Always pair
+  the composer's row (add, send, Stop, AutoContinue), beside the `sm` agent chip. Always pair
   it with `hitSlop={COMPOSER_CONTROL_HIT_SLOP}` (4pt) so the touch target stays 44pt.
   `icon-sm` is added to the registry output (Jay, 2026-09-21): the 28pt action under a chat
   message (Copy, Edit, turn details). Always pair it with `hitSlop` so the touch target
@@ -242,7 +242,26 @@ is not a color bug — but it is a second name for one concept. Use
 
 Loading state is always `@/components/ui/skeleton`'s `<Skeleton>` (a
 `bg-accent animate-pulse` box) or the Kortix Lottie spinner
-(`@/components/kortix/kortix-loader`). Never an icon spun with `animate-spin`.
+(`@/components/kortix/kortix-loader`). Never an icon spun with `animate-spin`,
+never React Native's `ActivityIndicator`.
+
+One loader per surface, one visible at a time (KRTX-244):
+
+- Boot: the native splash is the loader. It hides when the start route has
+  resolved — fonts, auth, and the landing decision — or after 10 s
+  (`shouldHideSplash`, `lib/boot/splash-gate.ts`; flags in
+  `stores/boot-store.ts`). A start-route screen (`app/index.tsx`,
+  `app/welcome.tsx`) draws its own loader only once `splashHidden` is true,
+  and calls `settleLanding()` when it has content to show. The auth layout
+  has no loader.
+- A surface covered by another draws no loader: the Sessions page hides its
+  loaders under the open drawer and when a row tap replaces it; the drawer
+  hides its list loaders once it starts to close (`open` prop);
+  `SessionConnecting` hides its loader under the open drawer (`showLoader`).
+- An action already in progress inside a loading or progress surface is an
+  inline disabled state (a disabled button whose label says "Restarting…"),
+  not a second loader. A button's own progress may use `KortixLoader
+  size="small"`.
 
 ## Icons
 

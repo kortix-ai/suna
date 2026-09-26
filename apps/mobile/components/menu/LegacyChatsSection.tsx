@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Pressable, Modal, ActivityIndicator } from 'react-native';
+import { View, Pressable, Modal } from 'react-native';
 import { ArrowsLeftRightIcon, CaretDownIcon, CheckCircleIcon, ClockIcon } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
@@ -80,30 +80,38 @@ export function LegacyChatsSection({ iconColor, mutedColor }: LegacyChatsSection
           hitSlop={6}
           accessibilityLabel="Migrate previous chats"
         >
+          {/* While converting, the button is disabled and the progress row
+              below is the one indicator (KRTX-244): no spinner here. */}
           {migrateDone ? (
             <CheckCircleIcon size={16} color={THEME.accent.green} weight="fill" />
-          ) : isMigrating || migrateAll.isPending ? (
-            <ActivityIndicator size="small" color={mutedColor} />
           ) : (
             <ArrowsLeftRightIcon size={16} color={mutedColor} />
           )}
         </Button>
       </View>
 
-      {(isMigrating || migrateAll.isPending) && migrateStatus && migrateStatus.total > 0 && (
+      {(isMigrating || migrateAll.isPending) && (
         <View className="px-3 pb-1.5">
-          <Text className="text-muted-foreground mb-1" style={{ fontSize: 10 }}>
-            Converting {migrateStatus.completed}/{migrateStatus.total}
-            {migrateStatus.failed > 0 && (
-              <Text className="text-destructive"> · {migrateStatus.failed} failed</Text>
-            )}
-          </Text>
-          <View className="h-1 w-full rounded-full bg-muted overflow-hidden">
-            <View
-              className="h-full rounded-full bg-primary"
-              style={{ width: `${progress}%` }}
-            />
-          </View>
+          {migrateStatus && migrateStatus.total > 0 ? (
+            <>
+              <Text className="text-muted-foreground mb-1" style={{ fontSize: 10 }}>
+                Converting {migrateStatus.completed}/{migrateStatus.total}
+                {migrateStatus.failed > 0 && (
+                  <Text className="text-destructive"> · {migrateStatus.failed} failed</Text>
+                )}
+              </Text>
+              <View className="h-1 w-full rounded-full bg-muted overflow-hidden">
+                <View
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${progress}%` }}
+                />
+              </View>
+            </>
+          ) : (
+            <Text className="text-muted-foreground" style={{ fontSize: 10 }}>
+              Converting…
+            </Text>
+          )}
         </View>
       )}
 

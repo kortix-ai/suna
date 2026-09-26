@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 675,
+  "count": 680,
   "routes": [
     {
       "method": "GET",
@@ -1219,6 +1219,14 @@
       "path": "/v1/marketplace/sources/:id"
     },
     {
+      "method": "POST",
+      "path": "/v1/notifications/device-token"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/notifications/device-token/:token"
+    },
+    {
       "method": "GET",
       "path": "/v1/oauth/.well-known/oauth-authorization-server"
     },
@@ -2337,6 +2345,10 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/triggers/activation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/turn-permission"
     },
     {
       "method": "POST",
