@@ -13,6 +13,7 @@
  */
 
 import { SANDBOX_FS_ROOTS } from '@kortix/sdk';
+import { sandboxMediaPath, withoutEdgeQuotes } from '@kortix/shared/tool-output';
 import { safeHttpUrl } from './web-fetch';
 
 // ─── Image search ────────────────────────────────────────────────────────────
@@ -75,15 +76,7 @@ export function imageSearchTiles(imageResults: any[]): Array<{ url: string; titl
 // ─── Image / video output paths ──────────────────────────────────────────────
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
-const SANDBOX_IMAGE_PATH_RE = new RegExp(
-  `(?:${SANDBOX_FS_ROOTS.join('|')})/[^\\s"']+\\.(?:png|jpe?g|gif|webp|svg|bmp|ico)`,
-  'i',
-);
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|avi|mkv|m4v|ogv)$/i;
-const SANDBOX_VIDEO_PATH_RE = new RegExp(
-  `(?:${SANDBOX_FS_ROOTS.join('|')})/[^\\s"']+\\.(?:mp4|webm|mov|avi|mkv|m4v|ogv)`,
-  'i',
-);
 
 function normalizeWorkspacePath(path: string): string {
   const trimmed = path.trim();
@@ -113,11 +106,10 @@ export function parseImageOutput(output: string | null | undefined): ParsedImage
     // not JSON
   }
 
-  const cleaned = trimmed.replace(/^["']+|["']+$/g, '').trim();
+  const cleaned = withoutEdgeQuotes(trimmed).trim();
   if (IMAGE_EXT_RE.test(cleaned)) return { imagePath: normalizeWorkspacePath(cleaned), directUrl: null };
 
-  const extractedPath = trimmed.match(SANDBOX_IMAGE_PATH_RE);
-  return { imagePath: extractedPath?.[0] ?? null, directUrl: null };
+  return { imagePath: sandboxMediaPath(trimmed, SANDBOX_FS_ROOTS, 'image'), directUrl: null };
 }
 
 export interface ParsedVideoOutput {
@@ -141,14 +133,13 @@ export function parseVideoOutput(output: string | null | undefined): ParsedVideo
     // not JSON
   }
 
-  const cleaned = trimmed.replace(/^["']+|["']+$/g, '').trim();
+  const cleaned = withoutEdgeQuotes(trimmed).trim();
   if (VIDEO_EXT_RE.test(cleaned) && !/\s/.test(cleaned)) {
     const direct = safeHttpUrl(cleaned);
     return direct ? { videoPath: null, directUrl: direct } : { videoPath: normalizeWorkspacePath(cleaned), directUrl: null };
   }
 
-  const extractedPath = trimmed.match(SANDBOX_VIDEO_PATH_RE);
-  return { videoPath: extractedPath?.[0] ?? null, directUrl: null };
+  return { videoPath: sandboxMediaPath(trimmed, SANDBOX_FS_ROOTS, 'video'), directUrl: null };
 }
 
 // ─── Image gen ───────────────────────────────────────────────────────────────
