@@ -176,6 +176,32 @@ export function resolveGateState(
   return waiting ?? errorState ?? 'unavailable';
 }
 
+/** What the boundary renders: the pending frame, the project, or a gate screen. */
+export type BoundaryView = 'pending' | 'project' | 'gate';
+
+/**
+ * Unresolved auth outranks everything, a cached project included: no result
+ * is an access decision until identity cleanup and token publication finish.
+ *
+ * After that the project stays up for as long as the query holds its data. A
+ * failed REFETCH keeps that data (TanStack v5 sets `status: 'error'` and leaves
+ * `data`), so a transient 500, timeout or tunnel drop used to replace a working
+ * shell with the error screen. Only a terminal verdict takes it away: 403 (the
+ * request-access form) or 404 (not found).
+ */
+export function resolveBoundaryView(input: {
+  authReady: boolean;
+  isPending: boolean;
+  hasData: boolean;
+  errorState: AccessGateState | null;
+}): BoundaryView {
+  if (!input.authReady || input.isPending) return 'pending';
+  if (input.hasData && input.errorState !== 'request' && input.errorState !== 'notFound') {
+    return 'project';
+  }
+  return 'gate';
+}
+
 /** The `[sessionId]` route segment, when the current route has one. */
 export function routeSessionIdFromParams(params: Record<string, unknown> | null | undefined): string | null {
   const value = params?.sessionId;
@@ -285,9 +311,15 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   //
   // A disabled query is pending, not loading. Wait for identity cleanup and
   // token publication before interpreting any result as an access decision.
-  if (!authReady || query.isPending) return <ProjectPendingScreen />;
+  const view = resolveBoundaryView({
+    authReady,
+    isPending: query.isPending,
+    hasData: query.data !== undefined,
+    errorState,
+  });
+  if (view === 'pending') return <ProjectPendingScreen />;
 
-  if (query.isSuccess) return <>{children}</>;
+  if (view === 'project') return <>{children}</>;
 
   return (
     <AccessGateScreen
