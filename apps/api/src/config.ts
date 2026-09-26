@@ -603,11 +603,14 @@ const envSchema = z.object({
   // ── Config releases (optional) ──────────────────────────────────────────
   // Operator kill switch for the whole config-release feature (the
   // `config_releases` per-project flag, docs/specs/config-releases.md →
-  // "Feature flag"). Default ON: a session runs the base branch's current
-  // config. Set to false and the flag is unavailable platform-wide — the
-  // Settings row disappears, both routes answer 403 `feature_disabled` for
-  // every project, no convergence is scheduled, and every session falls back
-  // to reading its workspace config dir, whatever a project chose.
+  // "Feature flag"). Defaults to FALSE while the rollout runs: the flag is
+  // unavailable platform-wide — the Settings row disappears, both routes
+  // answer 403 `feature_disabled` for every project, no convergence is
+  // scheduled, and every session falls back to reading its workspace config
+  // dir. Set to true only once an environment's prerequisites are met
+  // (docs/runbooks/config-releases-rollout.md); every project still defaults
+  // OFF at that point, so flipping this switch alone changes no session's
+  // behavior until an operator opts a project in.
   CONFIG_RELEASES_ENABLED: optBoolFalse,
   // Config archives go through the API's ONE object store
   // (src/object-store/s3.ts), same as project snapshots above, with their own
