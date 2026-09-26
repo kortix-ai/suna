@@ -9,6 +9,10 @@
  *   With no live link, a confirm comes first (web's `PublicShareLinkConfirm`
  *   wording: the link needs no sign-in); reusing a live link asks nothing. A
  *   refusal toasts the API's own sentence (`publicLinkErrorMessage`).
+ *   A server older than the `transcript` share kind ignores it and mints a
+ *   `preview` share instead (still 201) — `guardTranscriptShare`
+ *   (`lib/session/public-share-guard.ts`) catches any non-`transcript`
+ *   `resource_type`, revokes it right away, and the URL is never shared.
  * - Share transcript: hidden until the device holds the session's messages.
  *   A tap first pages in the older history through the thread's own sync
  *   controller (`loadFullHistory`, at most 20 pages; the row reads
@@ -42,6 +46,7 @@ import {
 } from '@/lib/projects/projects-client';
 import { sessionDisplayTitle } from '@/lib/session/session-list';
 import { PUBLIC_LINK_FALLBACK_ERROR, publicLinkErrorMessage } from '@/lib/session/public-share-error';
+import { guardTranscriptShare } from '@/lib/session/public-share-guard';
 import { buildTranscriptText } from '@/lib/session/transcript-text';
 
 type SharesData = { shares: SessionPublicShare[] };
@@ -91,6 +96,24 @@ export function SessionPublicShareRows({ projectId, session }: SessionPublicShar
     mutationFn: async () =>
       activeShare ?? (await createSessionPublicShare(projectId, sessionId, { transcript: true })).share,
     onSuccess: (share) => {
+      const guard = guardTranscriptShare(share);
+      if (!guard.ok) {
+        // An API that predates the `transcript` kind ignored it and minted
+        // something else (e.g. a public app-preview link). Never show or
+        // share that URL — revoke it immediately and tell the user why.
+        haptics.warning();
+        toast.error(guard.message ?? PUBLIC_LINK_FALLBACK_ERROR);
+        if (guard.shouldRevoke) {
+          revokeSessionPublicShare(projectId, sessionId, share.share_id)
+            .catch((error) => {
+              console.warn('[public-share] failed to revoke a non-transcript share', share.share_id, error);
+            })
+            .finally(() => {
+              void queryClient.invalidateQueries({ queryKey });
+            });
+        }
+        return;
+      }
       queryClient.setQueryData<SharesData>(queryKey, (old) => {
         const list = old?.shares ?? [];
         return list.some((s) => s.share_id === share.share_id) ? old : { shares: [share, ...list] };
