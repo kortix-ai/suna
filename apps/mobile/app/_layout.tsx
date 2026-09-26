@@ -59,6 +59,7 @@ import { OtaUpdateManager } from '@/components/updates/OtaUpdateManager';
 import { subscribeOnlineStatus } from '@/lib/network/use-online-status';
 import { applyPersistedQueryDefaults } from '@/lib/query/persisted-queries';
 import { queryCachePersistence } from '@/lib/query/query-cache';
+import { bindSavedCopies } from '@/lib/session/saved-copy-registry';
 import { installHapticsGate } from '@/lib/haptics';
 import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
@@ -610,6 +611,8 @@ function QueryCachePersistence() {
   useEffect(() => {
     if (authLoading) return;
     void queryCachePersistence.bind(queryClient, userId);
+    // The saved copies of transcripts follow the same user (lib/session).
+    bindSavedCopies(userId);
   }, [queryClient, userId, authLoading]);
 
   useEffect(() => {

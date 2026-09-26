@@ -115,7 +115,8 @@ import {
 } from '@/lib/projects/hooks';
 import { useReviewItems } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
-import { countReviewItemsBySegment, getProjectSession } from '@kortix/sdk';
+import { countReviewItemsBySegment, getProjectSession, sessionConnectionLabel } from '@kortix/sdk';
+import { loadSavedCopy } from '@/lib/session/saved-copy';
 import * as Crypto from 'expo-crypto';
 import {
   deleteProjectSession,
@@ -1290,6 +1291,29 @@ export function ProjectScreen() {
     }
   }, [renderedOpenedThread, keptOpenedThread]);
 
+  // While the computer wakes, the connecting view shows the session's saved
+  // copy (lib/session/saved-copy.ts): the one this device kept, then the
+  // server's, painted into the sync store under the session's OpenCode root.
+  // `SessionPage` then opens on the same messages and its first runtime read
+  // settles them. Only while the connecting view is on screen.
+  const showingConnecting = !activePageId && ((!!activeSessionId && !threadReady) || !!connectingProjectSessionId);
+  const savedCopyTarget = !showingConnecting
+    ? null
+    : connectingProjectSessionId
+      ? { sessionId: connectingProjectSessionId, rootId: connectingRow?.opencode_session_id ?? null }
+      : activeProjectSession && activeSessionId
+        ? { sessionId: activeProjectSession.session_id, rootId: activeSessionId }
+        : null;
+  const savedCopySessionId = savedCopyTarget?.sessionId ?? null;
+  const savedCopyRootId = savedCopyTarget?.rootId ?? null;
+  useEffect(() => {
+    if (!projectId || !savedCopySessionId || !savedCopyRootId) return;
+    void loadSavedCopy({ projectId, sessionId: savedCopySessionId, rootId: savedCopyRootId });
+  }, [projectId, savedCopySessionId, savedCopyRootId]);
+  const savedCopyMessages = useSyncStore((state) =>
+    savedCopyRootId ? state.messages[savedCopyRootId] : undefined
+  );
+
   // The open page, thread, or connecting session: the view route's content.
   const viewContent = isHome ? null : (
         <View className="flex-1 bg-background">
@@ -1371,6 +1395,9 @@ export function ProjectScreen() {
               onRestart={handleRestartSession}
               restarting={restartingSession}
               showLoader={!drawerOpen}
+              messages={savedCopyMessages}
+              statusLabel={sessionConnectionLabel('waking')?.label ?? null}
+              sessionId={savedCopyRootId ?? undefined}
             />
           </View>
         ) : null}
