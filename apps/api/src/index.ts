@@ -96,7 +96,7 @@ import {
   stopProjectTriggerScheduler,
 } from './projects';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
-import { GitOperationError, isGitOperationError, isRemotePushPolicyRejection, isTransientGitMirrorError } from './projects/git/mirror';
+import { isRemotePushPolicyRejection, isTransientGitMirrorError } from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import {
   startProviderTransitionWorker,
