@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 
-import type { MirrorSnapshot } from './session-transcript-mirror';
+import { MIRROR_WINDOW_MAX_CHARS, type MirrorSnapshot } from './session-transcript-mirror';
 
 // A running session reads its transcript live: pin the root, resolve the
 // daemon endpoint, fetch the messages. These stand in for the sandbox.
@@ -212,6 +212,73 @@ describe('a window says how much it is a window OF', () => {
     );
     expect(envelope.total).toBe(0);
     expect(envelope.next_cursor).toBeNull();
+  });
+});
+
+describe('a window is bounded by size as well as by count', () => {
+  // Rows keep every tool call 1:1, so 40 messages of a tool-heavy thread can
+  // weigh megabytes. The first window is what a cold open waits for.
+  const heavy = (id: string, created: number, chars: number) => ({
+    info: { id, role: 'assistant', time: { created, completed: created + 1 } },
+    parts: [
+      {
+        id: `p_${id}`,
+        type: 'tool',
+        tool: 'read',
+        state: {
+          status: 'completed',
+          input: { filePath: '/workspace/a.ts' },
+          output: 'X'.repeat(chars),
+          time: { start: 1, end: 2 },
+        },
+      },
+    ],
+  });
+
+  test('an oversized window keeps its NEWEST messages and pages the rest', async () => {
+    const chars = Math.floor(MIRROR_WINDOW_MAX_CHARS * 0.4);
+    const envelope = await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 40 },
+      {
+        readMirror: async () =>
+          snapshot({
+            total: 5,
+            next_cursor: null,
+            messages: [1, 2, 3, 4, 5].map((n) => heavy(`m${n}`, n, chars)),
+          }),
+      },
+    );
+    expect(envelope.messages.map((m) => m.info.id)).toEqual(['m4', 'm5']);
+    expect(envelope.message_count).toBe(2);
+    // The older window starts strictly behind the oldest message served.
+    expect(envelope.next_cursor).toBe('m4');
+    expect(envelope.complete).toBe(false);
+    expect(envelope.total).toBe(5);
+  });
+
+  test('one message over the budget is served alone, so paging always moves', async () => {
+    const envelope = await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 40, before: 'm3' },
+      {
+        readMirror: async () =>
+          snapshot({
+            total: 3,
+            next_cursor: null,
+            messages: [heavy('m1', 1, 10), heavy('m2', 2, MIRROR_WINDOW_MAX_CHARS * 2)],
+          }),
+      },
+    );
+    expect(envelope.messages.map((m) => m.info.id)).toEqual(['m2']);
+    expect(envelope.next_cursor).toBe('m2');
+  });
+
+  test('a window within the budget keeps its own cursor', async () => {
+    const envelope = await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 2 },
+      { readMirror: async () => snapshot({ total: 242, next_cursor: 'msg_1' }) },
+    );
+    expect(envelope.messages.map((m) => m.info.id)).toEqual(['msg_1', 'msg_2']);
+    expect(envelope.next_cursor).toBe('msg_1');
   });
 });
 

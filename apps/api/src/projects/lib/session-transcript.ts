@@ -15,6 +15,8 @@ import {
   normalizeMessageList,
 } from './session-transcript-compact';
 import {
+  boundMirrorWindow,
+  MIRROR_WINDOW_MAX_CHARS,
   type MirrorMessage,
   type MirrorSnapshot,
   readSessionTranscriptMirror,
@@ -59,9 +61,10 @@ export interface SessionTranscriptDigest {
   messages: CompactMessage[];
 }
 
-/** The sync-store shape: OpenCode message envelopes verbatim, with the parts
- *  array stripped of tool inputs/outputs and file urls. Mirror-only — a running
- *  session's client reads the runtime directly. */
+/** The sync-store shape: OpenCode message envelopes verbatim, every part 1:1
+ *  except attachment bytes (see `sanitizeParts`). Mirror-only — a running
+ *  session's client reads the runtime directly. A window holds at most `limit`
+ *  messages and MIRROR_WINDOW_MAX_CHARS of JSON, newest first to be kept. */
 export interface SessionTranscriptSyncEnvelope {
   available: boolean;
   reason: string | null;
@@ -233,11 +236,14 @@ export async function buildSessionTranscriptSyncEnvelope(
   },
   deps: SessionTranscriptDeps = {},
 ): Promise<SessionTranscriptSyncEnvelope> {
-  const mirror = await (deps.readMirror ?? readMirrorSafely)(
+  const read = await (deps.readMirror ?? readMirrorSafely)(
     input.session.sessionId,
     input.limit,
     input.before ?? null,
   );
+  // Bounded by size as well as by count: rows keep every tool payload 1:1, and
+  // a cold open waits for this window. What does not fit is one cursor away.
+  const mirror = read ? boundMirrorWindow(read, MIRROR_WINDOW_MAX_CHARS) : null;
   const rootMismatch = input.requireCurrentRoot && (
     !input.session.opencodeSessionId || mirror?.opencode_session_id !== input.session.opencodeSessionId
   );
