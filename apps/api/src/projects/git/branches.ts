@@ -6,6 +6,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { mapLimit } from '@kortix/registry';
 import { validateRef } from '../git-ref';
+import { isUuid } from '../../shared/validate';
 import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github';
 import { isMissingRemoteBranchError } from '../managed-repo-seed';
 import { FIELD_SEP } from './commits';
@@ -40,11 +41,8 @@ const BRANCH_LIST_TIMEOUT_MS = 15_000;
 // on the human branches. Excluding them from the default response is what
 // cut GET /:projectId/branches from ~977KB (thousands of session branches on
 // a busy project) down to the human-authored set.
-const SESSION_BRANCH_NAME_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export function isSessionBranchName(name: string): boolean {
-  return SESSION_BRANCH_NAME_RE.test(name);
+  return isUuid(name);
 }
 
 export const BRANCH_LIST_DEFAULT_LIMIT = 500;
@@ -55,7 +53,7 @@ export interface BranchListFilter {
   q?: string;
   /** Capped at BRANCH_LIST_MAX_LIMIT regardless of what's requested. */
   limit?: number;
-  /** `false` drops auto-created session branches (see SESSION_BRANCH_NAME_RE
+  /** `false` drops auto-created session branches (see isSessionBranchName
    *  above) — a default-branch picker never offers one. Absent means INCLUDE:
    *  the Files version selector and the change-request head picker list
    *  session branches on purpose, and older clients expect them. */

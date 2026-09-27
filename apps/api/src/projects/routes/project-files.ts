@@ -3,8 +3,6 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import {
   archiveRepoSubtree,
-  BRANCH_LIST_MAX_LIMIT,
-  filterBranchesForResponse,
   getBranchDiff,
   getCommit,
   getCommitDiff,
@@ -17,6 +15,9 @@ import {
   readRepoFile,
   searchRepoFileNames,
 } from '../git';
+// From the leaf, not the barrel: suites that stub '../git' by listing its
+// exports would otherwise lose these names and fail at import.
+import { BRANCH_LIST_MAX_LIMIT, filterBranchesForResponse } from '../git/branches';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { resourceDenierForRequest } from '../lib/project-resources';
