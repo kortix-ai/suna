@@ -30,7 +30,7 @@ hand-edited change turns the run red.
 A pull request that touches a root gets a read-only plan comment
 (`terraform-ci.yml` job `plan`). A planned delete blocks the apply on `main`
 unless the pull request carries the `terraform-destroy-ok` label. Procedure and
-one-time setup: `docs/runbooks/terraform-apply.md`.
+one-time setup: [`APPLY.md`](APPLY.md).
 
 `environments/preview` is the one remaining manual root, by design: it declares
 `postgres_egress_cidrs` with no default and a validation that rejects
