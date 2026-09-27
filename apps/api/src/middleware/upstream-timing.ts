@@ -27,7 +27,7 @@
 
 import type { Context, Next } from 'hono';
 import { getRequestContext, setContextField } from '../lib/request-context';
-import { formatStageEntries, stageSnapshot } from '../lib/server-timing';
+import { formatStageEntries, formatTurnStageEntries, stageSnapshot } from '../lib/server-timing';
 
 /** Context field the accumulated upstream time is carried on. */
 export const UPSTREAM_MS_FIELD = 'upstream_ms';
@@ -102,6 +102,10 @@ export async function upstreamTiming(c: Context, next: Next): Promise<void> {
     ...formatStageEntries(stageSnapshot()),
     ...(durations.upstream > 0 ? [`up;dur=${durations.upstream}`] : []),
     `api;dur=${durations.api}`,
+    // The turn-latency spec (PR #7840) §5: present only on a promptDelivery turn
+    // (see recordTurnStageMarks's one caller, sandbox-proxy/routes/preview.ts)
+    // — empty, and therefore invisible, on every other request.
+    ...formatTurnStageEntries(),
   ];
   c.header('Server-Timing', entries.join(', '));
 }

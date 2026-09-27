@@ -1121,9 +1121,8 @@ export const SessionStartFailureSchema = z
     category: z.enum([
       'provider-capacity',
       'git-auth',
-      // LEGACY, never produced since one mechanism started serving every provider
-      // (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4). Kept on the wire
-      // because sandbox rows written before that change still carry it.
+      // LEGACY, never produced since one mechanism started serving every provider.
+      // Kept on the wire because sandbox rows written before that change still carry it.
       'unsupported-secret-delivery',
       // The PROJECT's own boundary policy is unusable — two secrets claiming the same
       // (host, header), or a policy the boundary cannot enforce. Never retryable.
@@ -1398,8 +1397,7 @@ export const SecretEgressPolicySchema = z.object({
   /**
    * Where the credential is attached, for LEGACY injection rows.
    *
-   * Optional since the exposure/usage model (docs/specs/
-   * 2026-08-19-secrets-exposure-usage-model.md §6): an egress-enforced secret
+   * Optional since the exposure/usage model: an egress-enforced secret
    * is served by HANDLE SUBSTITUTION, so the policy is a host list and there is
    * no slot to name. A row that still carries `inject` keeps injecting exactly
    * as before.

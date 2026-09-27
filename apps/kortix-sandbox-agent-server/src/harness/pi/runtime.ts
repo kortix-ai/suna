@@ -33,6 +33,7 @@ import type { CatalogModel, PiModels, SelectedModel } from './model'
 import { nativeModelId } from './model'
 import { WireTranscript, type WireFrame, type WireMessage } from './transcript'
 import { PiWireAdapter, assistantMessageError, type WireEmission } from './wire'
+import { TransientRetry, type RetryPlan } from './transient-retry'
 import { WIRE_MESSAGE_ID, WireIdClock, mintChildId, mintRootId } from './wire-id'
 
 export const PI_HARNESS_VERSION = 'pi-agent-core@0.85.1'
@@ -87,6 +88,9 @@ export interface PromptInput {
 }
 
 export class PromptRejected extends Error {}
+
+/** OpenCode's `retry` session status from a retry plan (the wire's `retryPlan`). */
+const retryStatus = (plan: RetryPlan | null | undefined) => (plan ? { attempt: plan.attempt, message: plan.message, next: plan.next } : null)
 
 /** Validate the OpenCode `prompt_async` body before the runtime acknowledges it. */
 export function parsePromptBody(raw: unknown): PromptInput {
@@ -258,6 +262,8 @@ export class PiRuntime {
   private abortAfterTool: { promptId: string; messageId: string } | null = null
   private status: 'idle' | 'busy' = 'idle'
   private readonly completedTurns = new Map<string, 'idle' | 'error'>()
+  /** The retry state of the root turn in flight (transient-retry.ts). */
+  private turnRetry: TransientRetry | null = null
   private workspaceReady = true
 
   constructor(opts: PiRuntimeOptions) {
@@ -376,6 +382,7 @@ export class PiRuntime {
         workspace: this.workspace,
         now: this.now,
         publish: (frame) => this.publish(frame),
+        retryPlan: (message) => retryStatus(this.turnRetry?.plan(message)),
       })
       this.workspaceTools = createWorkspaceTools(this.executionEnv)
       // The root agent runs parallel-capable; every built-in tool pins its batch to sequential,
@@ -537,6 +544,7 @@ export class PiRuntime {
     if (!this.active) return false
     this.permissions.rejectAll()
     this.questions.rejectAll()
+    this.turnRetry?.abort()
     this.agent?.abort()
     await this.active.outcome
     return true
@@ -579,18 +587,26 @@ export class PiRuntime {
     let outcome: TurnOutcome = 'completed'
     let error: TurnEnd['error'] | undefined
     const before = agent.state.messages.length
+    const retry = new TransientRetry({
+      baseDelayMs: this.cfg.piTurnRetryBaseMs,
+      contextWindow: () => this.selected?.model.contextWindow ?? 0,
+      now: this.now,
+    })
+    this.turnRetry = retry
     try {
       agent.state.model = this.selected!.model
       agent.state.thinkingLevel = this.thinkingLevel(turn.input.variant ?? this.compiledAgent()?.variant)
       this.turnSystem = turn.input.system ?? null
       // pi's prompt path: `input` and `before_agent_start` handlers, extension commands, `/skill:` and templates.
       const images = this.images(turn.input)
-      await this.pi!.session.prompt(turn.input.text || '(attachment)', { source: 'rpc', ...(images.length ? { images } : {}) })
+      // A transient model error continues the turn instead of ending it (transient-retry.ts).
+      await retry.run(agent, () => this.pi!.session.prompt(turn.input.text || '(attachment)', { source: 'rpc', ...(images.length ? { images } : {}) }))
+      for (const frame of this.adapter!.settleRetry()) this.publish(frame)
       // Only this turn's messages: an extension command answers without a model call.
       const last = agent.state.messages.slice(before).reverse().find((m) => m.role === 'assistant') as
         | { stopReason?: string; errorMessage?: string }
         | undefined
-      if (last?.stopReason === 'aborted') outcome = 'aborted'
+      if (last?.stopReason === 'aborted' || retry.wasAborted) outcome = 'aborted'
       else if (last && (last.stopReason === 'error' || last.stopReason === 'length')) {
         outcome = 'error'
         const wire = assistantMessageError({ stopReason: last.stopReason as never, errorMessage: last.errorMessage })
@@ -600,11 +616,13 @@ export class PiRuntime {
       outcome = 'error'
       const message = err instanceof Error ? err.message : String(err)
       error = { name: 'UnknownError', message }
+      this.adapter?.settleRetry()
       logger.error('[pi] turn failed', { messageId: turn.messageId, err: message })
       this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: 'UnknownError', data: { message } } } })
       this.publish({ type: 'session.status', properties: { sessionID: this.rootId, status: { type: 'idle' } } })
       this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
     } finally {
+      this.turnRetry = null
       this.turnSystem = null
       this.permissions.rejectAll()
       this.questions.rejectAll()
@@ -732,6 +750,7 @@ export class PiRuntime {
     const policy = compilePermissionPolicy(input.permission)
     const messageId = this.clock.mint(this.now())
     this.publishUserMessage(child.id, messageId, { messageID: messageId, text: input.prompt, files: [] }, { agent: input.agent, selected })
+    const retry = new TransientRetry({ baseDelayMs: this.cfg.piTurnRetryBaseMs, contextWindow: () => selected.model.contextWindow ?? 0, now: this.now })
     const adapter = new PiWireAdapter({
       sessionID: child.id,
       mintMessageId: () => this.clock.mint(this.now()),
@@ -741,6 +760,7 @@ export class PiRuntime {
       workspace: this.workspace,
       now: this.now,
       publish: (frame) => this.publish(frame),
+      retryPlan: (message) => retryStatus(retry.plan(message)),
     })
     const agent = new core.Agent({
       streamFn: (m, context, options) => this.models!.models.streamSimple(m, context, options),
@@ -768,7 +788,10 @@ export class PiRuntime {
     })
     child.agent = agent
     input.onSession?.({ sessionId: child.id, model })
-    const abort = () => agent.abort()
+    const abort = () => {
+      retry.abort()
+      agent.abort()
+    }
     input.signal?.addEventListener('abort', abort, { once: true })
     let status: SpawnSessionResult['status'] = 'completed'
     let error: string | undefined
@@ -776,12 +799,13 @@ export class PiRuntime {
     try {
       if (input.signal?.aborted) status = 'aborted'
       else {
-        await agent.prompt({ role: 'user', content: input.prompt, timestamp: this.now() })
+        await retry.run(agent, () => agent.prompt({ role: 'user', content: input.prompt, timestamp: this.now() }))
+        for (const frame of adapter.settleRetry()) this.publish(frame)
         const last = [...agent.state.messages].reverse().find((m) => m.role === 'assistant') as
           | { stopReason?: string; errorMessage?: string; content?: Array<{ type: string; text?: string }> }
           | undefined
         text = (last?.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('')
-        if (last?.stopReason === 'aborted') status = 'aborted'
+        if (last?.stopReason === 'aborted' || retry.wasAborted) status = 'aborted'
         else if (last?.stopReason === 'error' || last?.stopReason === 'length') {
           status = 'error'
           error = last.errorMessage || (last.stopReason === 'length' ? 'The subagent hit the output length limit.' : 'The model request failed.')

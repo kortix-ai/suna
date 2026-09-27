@@ -1,6 +1,5 @@
 /**
- * The App gate judges an agent-session credential as the AGENT (spec
- * docs/specs/2026-09-22-agents-as-principals.md §2.5) — through `Authorization`,
+ * The App gate judges an agent-session credential as the AGENT — through `Authorization`,
  * through `X-Kortix-App-Authorization`, and through the connector's signed
  * assertion — and only when the project's `agent_principal` flag is on.
  *

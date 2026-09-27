@@ -878,8 +878,9 @@ export async function getSessionTurn(
 //
 // ONE round trip for everything a session view needs to PAINT and ARM: the
 // session row, the running turns, the prompt queue, the durable transcript
-// mirror, the composer's control-plane essentials, and the model defaults.
-// It replaces 6 serial reads on the open path and introduces NO new truth —
+// mirror, the composer's control-plane essentials, the model defaults, and
+// the pending-approvals audit projection. It replaces 7 serial reads (6 plus
+// `/audit`) on the open path and introduces NO new truth —
 // every leg is byte-identical to the endpoint that already served it, so a
 // consumer can hand a leg straight to the code that reads that endpoint.
 //
@@ -937,6 +938,21 @@ export type SessionOpenBundleModels =
     }
   | SessionOpenBundleUnknown;
 
+/** = `GET .../audit?include_events=false` — the pending-approvals projection
+ *  only, never the historical `events` timeline (that half needs its own
+ *  audit-queue flush and answers "show me history", not "what's blocking this
+ *  run"). Byte-identical to `SessionAudit` minus `events`/`next_cursor`. */
+export type SessionOpenBundleAudit =
+  | ({
+      known: true;
+      session_id: string;
+      agent: string | null;
+      audit_access: boolean;
+      count: number;
+      actions: SessionAuditAction[];
+    })
+  | SessionOpenBundleUnknown;
+
 export interface SessionOpenBundle {
   /** ONE clock for the whole envelope. Every leg is a snapshot at this instant,
    *  and every projection that ranks a server observation against local
@@ -948,6 +964,7 @@ export interface SessionOpenBundle {
   transcript: SessionOpenBundleTranscript;
   config: SessionOpenBundleConfig;
   models: SessionOpenBundleModels;
+  audit: SessionOpenBundleAudit;
 }
 
 /**
@@ -1324,6 +1341,26 @@ export interface SessionConfigRelease {
 }
 
 /**
+ * The managed-model catalog's freshness for one session's box — the third
+ * convergeable asset alongside binaries and the skill overlay. Reported in the
+ * SAME place a config fallback is (`SessionConfigState`), not a log line: a
+ * box can look perfectly healthy (current binaries, a proven config release)
+ * and still be serving a managed lineup the control plane retired weeks ago,
+ * because OpenCode learns its provider map once, at process start.
+ */
+export interface SessionManagedCatalogState {
+  /**
+   * Managed model ids this box currently believes are servable, or `null` when
+   * UNCONFIRMED — no live fetch has ever succeeded on this box, so it is
+   * running the baked/bundled managed set with no proof it matches the
+   * platform's current lineup. Never read `null` as "no managed models exist".
+   */
+  ids: string[] | null;
+  /** Why the last live fetch did not confirm this box, or `null` when it did. */
+  fallback_reason: string | null;
+}
+
+/**
  * Whether a session is running the agent config the manifest compiles to now.
  *
  * A session's agent behaviour is compiled from git ONCE, at provision, and
@@ -1355,6 +1392,12 @@ export interface SessionConfigState {
    * config releases; a host then renders from `stale` alone.
    */
   release?: SessionConfigRelease;
+  /**
+   * Absent on a response from an API that predates it. Present regardless of
+   * whether config releases are enabled for this project — see the field's
+   * own doc for why.
+   */
+  managed_catalog?: SessionManagedCatalogState;
 }
 
 /**

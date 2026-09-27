@@ -15,7 +15,6 @@ import { managedSkillsDir } from './managed-skills'
 
 /**
  * The store of config releases, OUTSIDE the repository.
- * Spec: docs/specs/config-releases.md, "Daemon".
  *
  * WHY IT EXISTS. OpenCode reads its agents, skills, tools and plugins from
  * `OPENCODE_CONFIG_DIR`. That used to be `/workspace/.kortix/opencode`: the

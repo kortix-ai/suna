@@ -2,8 +2,7 @@
  * The Apps grant's pure half — what the Apps page of the agent editor shows,
  * with no React and no network, so it can be tested directly.
  *
- * `agents.<name>.apps` stores App SLUGS, never App ids (spec
- * `docs/specs/2026-09-22-agents-as-principals.md` §2.5, enforced by
+ * `agents.<name>.apps` stores App SLUGS, never App ids (enforced by
  * `agentAppAccessDecision` in apps/api/src/apps/access.ts). A row's `id` is
  * therefore the slug: it is what the checkbox writes into the grant and what
  * the gate matches on. Keying a row on `app_id` produces a grant the gate

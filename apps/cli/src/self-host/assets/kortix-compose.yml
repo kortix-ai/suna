@@ -86,7 +86,7 @@ services:
       # regardless of what `kortix self-host configure`/`env set` writes —
       # exactly the bug this fixes (billing used to be hard-pinned "false"
       # here no matter what .env said).
-      # Config archives (docs/specs/config-releases.md) go through the API's
+      # Config archives go through the API's
       # one object store, pointed at Supabase Storage's S3 PROTOCOL endpoint
       # with the key pair the `storage` service already holds — no new secret,
       # and no drift when `kortix self-host env rotate` regenerates the pair.

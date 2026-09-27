@@ -8,7 +8,7 @@ export interface ProjectSeedFilesInput {
   repoFullName: string;
   template: StarterTemplateId;
   /** Accepted for API back-compat; no longer deterministically installed at
-   *  provision time — see docs/specs/2026-07-13-marketplace-as-projects.md.
+   *  provision time.
    *  Adding a marketplace item to a project is now an agent import
    *  (POST /:projectId/marketplace/install-session), which needs a session
    *  (and therefore an already-existing project) to run. */
