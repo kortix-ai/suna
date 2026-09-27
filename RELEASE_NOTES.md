@@ -1,13 +1,12 @@
-Audit events are never lost, and stuck session starts stop retrying
+A reliable admin accounts list and faster connector resolution
 
-Audit events are never lost under load, stuck session starts stop retrying forever, and the app is faster.
+The admin accounts list loads reliably, and sessions resolve their connectors faster.
 
 ## Fixed
 
-- Audit events that hit database lock contention are retried with backoff instead of being dropped.
-- A session start whose repository clone fails now stops after its retry limit instead of retrying forever.
+- The admin console's account list uses an index and no longer times out. A slow query now returns a clear error instead of raw database text.
 
 ## Improved
 
-- Faster page loads and API responses: cached git reads, fewer browser preflight requests, fewer repeated queries, and smaller payloads.
+- Sessions resolve their connectors in one batched lookup, and Composio discovery serves cached results while it refreshes.
 
