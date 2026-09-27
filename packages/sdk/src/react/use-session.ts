@@ -417,7 +417,10 @@ export const SESSION_START_POLL_OPTIONS = {
       error: unknown;
       data: SessionStartResult | null | undefined;
     };
-  }) => query.state.data?.stage === 'ready' ? 60_000 : shouldPollSessionStart(query.state.error, query.state.data),
+  }) =>
+    query.state.data?.stage === 'ready'
+      ? 60_000
+      : shouldPollSessionStart(query.state.error, query.state.data),
   refetchIntervalInBackground: true,
 } as const;
 
