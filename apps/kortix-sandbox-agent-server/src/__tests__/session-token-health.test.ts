@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
@@ -15,6 +15,14 @@ import {
 // (a transient 401, a 5xx, a reset streak) may trip it early.
 describe('session-token-health', () => {
   beforeEach(() => {
+    resetSessionTokenHealthForTests();
+  });
+
+  // Module-level state (session-token-health.ts's singleton counter and
+  // handler) is shared by every test file in this bun process. Resetting only
+  // on the way IN protects this file; the file that runs next inherits
+  // whatever this one left behind — see test-state-reset-tripwire.test.ts.
+  afterEach(() => {
     resetSessionTokenHealthForTests();
   });
 
