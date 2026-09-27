@@ -374,10 +374,27 @@ export interface OpenRuntimeGuaranteeOutcome {
  */
 export async function guaranteeCurrentRuntimeOnOpen(
   row: LegacyBootstrapRow,
-  deps: LegacyBootstrapDeps = buildLegacyBootstrapDeps(row),
+  depsOverride?: LegacyBootstrapDeps,
   scheduleRepair: (row: LegacyBootstrapRow, reason?: string) => boolean = scheduleLegacyRuntimeBootstrap,
 ): Promise<OpenRuntimeGuaranteeOutcome> {
   if (!legacyRuntimeBootstrapEnabled()) return { action: 'proceed', classification: null };
+
+  // `buildLegacyBootstrapDeps` is NOT a safe default-parameter expression: it
+  // calls `getProvider(row.provider)` synchronously, which throws for a
+  // provider whose API key is unset. A default parameter evaluates during
+  // the CALL, before this function's own body (and its caller's `.catch()`
+  // on the returned promise) exists to catch it — the exact way `POST
+  // .../start` started 500ing for any row on a provider without full
+  // production credentials configured. Resolving it here, inside the async
+  // body, turns that throw into an ordinary rejected promise like every
+  // other failure this function fails open on.
+  let deps: LegacyBootstrapDeps;
+  try {
+    deps = depsOverride ?? buildLegacyBootstrapDeps(row);
+  } catch (err) {
+    console.warn(`[runtime-guarantee] could not build deps for ${row.sandboxId}:`, err instanceof Error ? err.message : err);
+    return { action: 'proceed', classification: null };
+  }
 
   const health = await deps.fetchHealth();
   const expectedRunningAssets = await deps.expectedRunningAssets?.();
