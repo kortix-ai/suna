@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   LEGACY_CHECK_METADATA_KEY,
+  REQUIRED_RUNTIME_CAPABILITIES,
   bootstrapLegacyRuntime,
+  type ExpectedRunningAssets,
   type LegacyBootstrapDeps,
 } from './legacy-runtime-bootstrap';
 
@@ -26,10 +28,28 @@ import {
  * skipped. A hand-run of the script's own relaunch command brought the box back
  * in 11 seconds.
  */
+const MANIFEST: ExpectedRunningAssets = {
+  cli_sha256: 'c'.repeat(64),
+  managed_skills_hash: 'm'.repeat(64),
+  agent_sha256: 'a'.repeat(64),
+};
+/** A fully converged daemon under #7859's contract: capabilities present, `running` matching the manifest sha-to-sha, nothing pending, nothing pinned. */
 const CURRENT_HEALTH = {
   daemon: 'ok',
   opencode: 'ok',
-  runtime: { build: 1788044234, components: { agent: 'current', opencode: 'current' } },
+  capabilities: [...REQUIRED_RUNTIME_CAPABILITIES],
+  uptime_s: 600,
+  runtime: {
+    build: 1788044234,
+    components: { agent: 'current', opencode: 'current', cli: 'current', skills: 'current' },
+    agentSwapPending: false,
+    pinned: false,
+    running: {
+      cli_sha256: MANIFEST.cli_sha256,
+      managed_skills_hash: MANIFEST.managed_skills_hash,
+      agent_sha256: MANIFEST.agent_sha256,
+    },
+  },
 };
 
 interface Calls {
@@ -44,14 +64,20 @@ function deadDaemonDeps(
   // Unreachable first (no daemon), then healthy once the relaunch lands.
   const healths = over.health ?? [null, CURRENT_HEALTH];
   let i = 0;
+  // The converge wait is a real clock loop: `sleep` must MOVE `now`, or the
+  // budget never expires and the test hangs instead of failing.
+  const clock = { t: 1_000_000 };
   return {
-    now: () => 1_000_000,
-    sleep: async () => {},
+    now: () => clock.t,
+    sleep: async (ms) => {
+      clock.t += ms;
+    },
     manifestBuild: async () => 1788044234,
     fetchHealth: async () => healths[Math.min(i++, healths.length - 1)],
     // A dead daemon proxies nothing, so OpenCode cannot answer either.
     fetchOpencodeStatus: async () => null,
     providerRunning: async () => true,
+    expectedRunningAssets: async () => MANIFEST,
     exec: async (cmd) => {
       calls.execs.push(cmd);
       return {
@@ -142,6 +168,30 @@ describe('a running box whose daemon is gone', () => {
     const result = await bootstrapLegacyRuntime(input(metadata), deadDaemonDeps({}, calls));
     expect(result.outcome).toBe('converged');
     expect(calls.execs).toHaveLength(1);
+  });
+
+  test('a pinned daemon is blocked, never relaunched, however the box looks to the provider', async () => {
+    // THE SEMANTIC TRAP between this branch and #7859's classification. A
+    // `blocked` daemon ANSWERED: it latched updates off after its own
+    // supervisor rolled one back, and a human has to look at it. This branch
+    // keys strictly on `unreachable` — a daemon that says nothing at all — so
+    // the two can never claim the same box. Asserted, not argued.
+    const calls: Calls = { execs: [], patches: [] };
+    const pinned = {
+      daemon: 'ok',
+      opencode: 'ok',
+      runtime: {
+        build: 1788044234,
+        components: { agent: 'current', opencode: 'current' },
+        pinned: true,
+      },
+    };
+    const result = await bootstrapLegacyRuntime(
+      input(),
+      deadDaemonDeps({ health: [pinned], providerRunning: async () => true }, calls),
+    );
+    expect(result.outcome).toBe('skipped-blocked');
+    expect(calls.execs).toHaveLength(0);
   });
 
   test('the 6h recent-check TTL still gates the probe, which bounds detection', async () => {

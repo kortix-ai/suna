@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  REQUIRED_RUNTIME_CAPABILITIES,
   bootstrapLegacyRuntime,
   renderLegacyBootstrapScript,
+  type ExpectedRunningAssets,
   type LegacyBootstrapDeps,
 } from './legacy-runtime-bootstrap';
 
@@ -22,10 +24,28 @@ import {
  * exactly when it is needed.
  */
 const LEGACY_HEALTH = { daemon: 'ok', status: 'ok', opencode: 'ok', runtimeReady: true };
+const MANIFEST: ExpectedRunningAssets = {
+  cli_sha256: 'c'.repeat(64),
+  managed_skills_hash: 'm'.repeat(64),
+  agent_sha256: 'a'.repeat(64),
+};
+/** A fully converged daemon under #7859's contract: capabilities present, `running` matching the manifest sha-to-sha, nothing pending, nothing pinned. */
 const CURRENT_HEALTH = {
   daemon: 'ok',
   opencode: 'ok',
-  runtime: { build: 1, components: { agent: 'current', opencode: 'current' } },
+  capabilities: [...REQUIRED_RUNTIME_CAPABILITIES],
+  uptime_s: 600,
+  runtime: {
+    build: 1788044234,
+    components: { agent: 'current', opencode: 'current', cli: 'current', skills: 'current' },
+    agentSwapPending: false,
+    pinned: false,
+    running: {
+      cli_sha256: MANIFEST.cli_sha256,
+      managed_skills_hash: MANIFEST.managed_skills_hash,
+      agent_sha256: MANIFEST.agent_sha256,
+    },
+  },
 };
 
 const REPAIR_SECRET = 'kortix_pat_repair_synthetic';
@@ -38,12 +58,18 @@ interface Calls {
 function deps(over: Partial<LegacyBootstrapDeps>, calls: Calls): LegacyBootstrapDeps {
   const healths = [LEGACY_HEALTH, CURRENT_HEALTH];
   let i = 0;
+  // The converge wait is a real clock loop: `sleep` must MOVE `now`, or the
+  // budget never expires and the test hangs instead of failing.
+  const clock = { t: 1_000_000 };
   return {
-    now: () => 1_000_000,
-    sleep: async () => {},
-    manifestBuild: async () => 1,
+    now: () => clock.t,
+    sleep: async (ms) => {
+      clock.t += ms;
+    },
+    manifestBuild: async () => 1788044234,
     fetchHealth: async () => healths[Math.min(i++, healths.length - 1)],
     fetchOpencodeStatus: async () => ({}),
+    expectedRunningAssets: async () => MANIFEST,
     mintRepairToken: async () => ({
       secret: REPAIR_SECRET,
       release: async () => {
