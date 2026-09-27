@@ -184,10 +184,11 @@ export async function describeConnectorTool(
   // Fetch ONE connector, with its schema, instead of the whole catalog —
   // this used to call listConnectorTools (the full, unfiltered, schema-less
   // catalog) just to pick out a single action.
-  const [connector] = await getConnectorCatalog(projectId, {
-    slug: connectorSlug,
-    includeSchemas: true,
-  });
+  // Match by slug, never take the first entry: an API that predates the
+  // `slug` filter answers the whole catalog, and the CLI ships separately.
+  const connector = (
+    await getConnectorCatalog(projectId, { slug: connectorSlug, includeSchemas: true })
+  ).find((entry) => entry.slug === connectorSlug);
   if (!connector) return null;
   for (const action of connector.actions) {
     const candidateTool = `${connector.slug}.${action.path}`;

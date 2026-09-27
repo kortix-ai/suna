@@ -1399,6 +1399,30 @@ test('describeConnectorTool fetches ONE connector, with its schema, instead of t
   expect(tool?.inputSchema).toEqual(schema);
 });
 
+test('describeConnectorTool picks the named connector when the server ignores slug', async () => {
+  // An older API (the CLI ships separately) answers the whole catalog; the
+  // requested connector is not guaranteed to be the first entry.
+  const schema = { type: 'object', properties: { message: { type: 'object' } } };
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        { slug: 'echo', name: 'Echo', provider: 'http', status: 'active', actions: [] },
+        {
+          slug: 'graph',
+          name: 'Graph',
+          provider: 'openapi',
+          status: 'active',
+          actions: [{ path: 'sendMail', name: 'Send mail', description: '', risk: 'write', inputSchema: schema }],
+        },
+      ],
+    },
+  };
+  const tool = await describeConnectorTool('P1', 'graph.sendMail');
+  expect(tool?.connector).toBe('graph');
+  expect(tool?.inputSchema).toEqual(schema);
+});
+
 test('describeConnectorTool: a malformed tool name (no dot) resolves to null without a request', async () => {
   calls = [];
   const tool = await describeConnectorTool('P1', 'not-a-tool-name');
