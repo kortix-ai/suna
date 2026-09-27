@@ -74,6 +74,11 @@ import {
   noteRunningAssets,
   shouldReportPinned,
 } from '../../runtime-assets/running-assets';
+import {
+  __clearRunningCatalogForTests,
+  lastKnownManagedCatalog,
+  noteRunningCatalog,
+} from '../../runtime-assets/running-catalog';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { ttlMemo } from '../../shared/ttl-memo';
@@ -113,6 +118,7 @@ export function invalidateDesiredRelease(projectId: string): void {
 export function __resetTurnStartConvergenceForTests(): void {
   __clearRunningReleasesForTests();
   __clearRunningAssetsForTests();
+  __clearRunningCatalogForTests();
   desiredReleases.clear();
   sessionMemo.clear();
 }
@@ -340,8 +346,22 @@ async function noteAssetsFromHealth(
     const verdict = await runningAssetsVerdict(runtime.running);
     // 'unknown' is never remembered: an older daemon with no `running` block
     // must not make every turn schedule a pass for ever.
-    if (verdict === 'unknown') return;
-    noteRunningAssets(sessionId, await manifestFingerprint(), verdict);
+    if (verdict !== 'unknown') noteRunningAssets(sessionId, await manifestFingerprint(), verdict);
+    // The managed-catalog memo is recorded UNCONDITIONALLY on the verdict
+    // above — it feeds `convergeModelCatalogForTurnStart`, which needs the
+    // raw id list (to test membership of ONE requested model), not a
+    // current/behind/unknown summary. `runtime.running` being present is the
+    // only gate: a daemon that predates this field reports no `running`
+    // block at all, and `ids: null` here means UNCONFIRMED, which is exactly
+    // what a daemon that HAS the field but never fetched reports too — both
+    // read the same (correct) way downstream.
+    if (runtime.running) {
+      noteRunningCatalog(
+        sessionId,
+        runtime.running.managed_model_ids,
+        runtime.running.managed_catalog_fallback_reason,
+      );
+    }
   } catch (error) {
     logger.warn('[runtime-assets] could not record a box\'s asset verdict', {
       session_id: sessionId,
@@ -544,4 +564,59 @@ export function scheduleAssetConvergence(
   deps: AssetConvergenceDeps = defaultAssetDeps(),
 ): void {
   void convergeAssetsInBackground(sessionId, deps).catch(() => 'skipped');
+}
+
+// ── The managed-model-catalog lane — self-heal on an UNKNOWN MODEL ─────────
+//
+// The third case, and neither of the other two shapes: unlike CONFIG, it does
+// not block every turn — only one whose REQUESTED model is the one missing.
+// Unlike BINARIES (and the catalog's own "merely changed" case, which rides
+// the asset lane above via `manifest.ts`'s `managed-catalog` component), when
+// it DOES act it is AWAITED — the alternative is `Model not found:
+// kortix/<id>` while the control plane serves that model, which is the exact
+// failure this closes. See `model-catalog-turn-start.ts` for the full design.
+//
+// DYNAMIC imports, same reasoning as `converge` and `defaultAssetDeps` above:
+// `model-catalog-turn-start.ts` imports `sandbox-proxy/backend` and
+// `sandbox-runtime-refresh.ts`, and a static edge would pull that graph into
+// every proxy unit test's module load. A request that carries no model, or
+// one for a non-managed provider, never reaches either import.
+
+/**
+ * Bring a box's `kortix` provider map onto the current managed lineup when —
+ * and only when — the model THIS turn's body names is the one at risk.
+ * NEVER throws: a turn is never refused because this could not run.
+ */
+export async function convergeModelCatalogForTurnStart(
+  sessionId: string,
+  requestedManagedModelId: string | null,
+): Promise<import('./model-catalog-turn-start').ModelCatalogTurnStartResult> {
+  if (!requestedManagedModelId) return { decision: 'skipped' };
+  try {
+    const [{ convergeModelCatalogBeforeTurnStart, convergeSandboxModelCatalog }, { isRuntimeManagedModelId }] =
+      await Promise.all([
+        import('./model-catalog-turn-start'),
+        import('../../llm-gateway/models/managed-models'),
+      ]);
+    return await convergeModelCatalogBeforeTurnStart(sessionId, requestedManagedModelId, {
+      isManagedModelId: isRuntimeManagedModelId,
+      lastKnown: lastKnownManagedCatalog,
+      // The SAME health GET the config gate already makes when its own memo
+      // is cold — `probeRunningRelease` records the catalog too (see
+      // `noteAssetsFromHealth`). Calling it again here is a genuine second
+      // network call ONLY when the two memos' TTLs have drifted apart; the
+      // common case reads the memo `probeRunningRelease` already just wrote.
+      probe: async (sid) => {
+        await probeRunningRelease(sid);
+        return lastKnownManagedCatalog(sid);
+      },
+      convergeCatalog: (sid) => convergeSandboxModelCatalog(sid),
+    });
+  } catch (error) {
+    logger.warn('[projects] turn-start model-catalog convergence threw', {
+      session_id: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { decision: 'unknown' };
+  }
 }

@@ -29,6 +29,7 @@ import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '../../config
 import { MAX_SWAP_DELAY_MS } from '../control'
 import { logger } from '../../logger'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
+import { isDaemonShuttingDown } from '../../shutdown'
 import { serveConfigDir, servingConfigDir } from './boot-link'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
 import { type Opencode, type VerifiedReloadResult } from './lifecycle'
@@ -126,6 +127,21 @@ const INITIAL: RunningConfig = {
 
 let running: RunningConfig = { ...INITIAL }
 let inFlight: Promise<ConvergeResponse> | null = null
+
+/**
+ * DEF-B 2026-09-26: is a config convergence — fetch, download, candidate
+ * spawn, proven check, promotion — in flight RIGHT NOW?
+ *
+ * This module is the one thing that actually knows: `inFlight` spans the
+ * whole `applyDesiredRelease` call, from before the descriptor fetch to after
+ * promotion or decline. `runtime-assets.ts` must not guess this from a proxy
+ * signal — it registers this predicate as a swap blocker instead (proxy.ts),
+ * so a staged daemon update never exits mid-verify and kills the candidate
+ * `reloadVerified` is proving. See DEF-A above for what happens when it does.
+ */
+export function isConvergenceInFlight(): boolean {
+  return inFlight !== null
+}
 
 export function configReleaseReport(): ConfigReleaseReport {
   const { source_commit: _sourceCommit, ...report } = running
@@ -713,6 +729,24 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     // A turn that started while the release was being built is not a release
     // failure: nothing is quarantined and nothing is recorded against it.
     if (result.promotionCalledOff) return respond('failed', null, result.reason)
+    // DEF-A 2026-09-26: a candidate this daemon's OWN shutdown killed reports
+    // `kept-old`/`candidateFailed: true` exactly like a release that never
+    // starts — `reloadVerified` sees `cause: null` either way. Quarantining
+    // here would blame the release for something the release never did:
+    // measured on a real box, the candidate had 815 ms before `harness.stop()`
+    // SIGTERMed it, well inside the ~1.7-5 s a healthy OpenCode needs to
+    // announce listening. `isDaemonShuttingDown()` is the one place that
+    // actually knows this is self-inflicted, so treat it as a transient
+    // `failed` — nothing quarantined, nothing recorded — and let the next
+    // pass (on the daemon the supervisor just started) retry the same
+    // release with a full window.
+    if (isDaemonShuttingDown()) {
+      logger.warn(
+        '[config-release] the candidate died because this daemon is exiting, not because the release failed; not quarantining',
+        { releaseId, reason: result.reason },
+      )
+      return respond('failed', null, result.reason)
+    }
     // 10. Keep the old process. Quarantine only a release whose candidate failed.
     if (result.candidateFailed) await quarantineRelease(root, releaseId, result.reason)
     recordKeptConfigFailure(releaseId, result.reason)

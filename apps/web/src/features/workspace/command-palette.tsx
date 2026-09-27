@@ -109,6 +109,7 @@ import {
   type KortixProject,
   type ProjectDetail,
   type ProjectSession,
+  type ProjectSessionPage,
   featureFlags,
   getProject,
   getProjectDetail,
@@ -122,6 +123,7 @@ import {
 import {
   agentScopedModelSelectionKey,
   contract,
+  flattenProjectSessionPages,
   invalidateProject,
   modelProviderMode,
   qk,
@@ -866,12 +868,25 @@ export function CommandPalette() {
   const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
   const workspacesLoading =
     workspaceQueries.length === 0 || workspaceQueries.some((q) => q.isLoading);
-  const { data: projectSessionsList } = useQuery({
+  const { data: paletteSessions, isPending: projectSessionsPending } = useQuery({
     queryKey: qk.project.sessions(projectId ?? ''),
     queryFn: () => listProjectSessions(projectId!, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
     enabled: open && !!projectId,
     ...contract('inventory'),
   });
+  // The sidebar's pages are usually cached already. Their rows stand in until
+  // this lookup-sized list answers, and when it fails, so recent sessions show
+  // the moment the palette opens instead of "No sessions yet". Not
+  // `placeholderData`: TanStack drops a placeholder when the fetch errors.
+  const sidebarPages = queryClient.getQueryData<{
+    pages: ProjectSessionPage[];
+    pageParams: unknown[];
+  }>(qk.project.sessionsPaged(projectId ?? ''));
+  const sidebarSessions = useMemo(
+    () => (sidebarPages ? flattenProjectSessionPages(sidebarPages) : undefined),
+    [sidebarPages],
+  );
+  const projectSessionsList = paletteSessions ?? sidebarSessions;
   // Same query key every other project surface fetches (page.tsx,
   // project-shell.tsx) — dedupes against that cache entry. Resolves the
   // account the "Invite members" command lands on, via the same fallback
@@ -3000,6 +3015,12 @@ export function CommandPalette() {
                     </CommandItem>
                   ))}
                 </CommandGroup>
+              ) : projectSessionsPending ? (
+                // No list and no sidebar pages to stand in: loading, not
+                // "No sessions yet". Same frame as the workspaces page.
+                <div className="flex justify-center py-8">
+                  <Loading className="text-muted-foreground size-4" />
+                </div>
               ) : (
                 <PaletteEmpty>
                   {query

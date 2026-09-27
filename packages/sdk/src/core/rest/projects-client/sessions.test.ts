@@ -6,6 +6,7 @@ import type {
   ProjectSession,
   RemovedSessionPrompt,
   SessionConfigRelease,
+  SessionManagedCatalogState,
   SessionPrompt,
   SessionPublicShare,
   SessionReloadResult,
@@ -734,6 +735,55 @@ test('getProjectSessionConfigState carries the release block unchanged', async (
   const result = await getProjectSessionConfigState('P1', 'S1');
   const release: SessionConfigRelease | undefined = result.release;
   expect(release).toEqual(RELEASE_FALLBACK);
+});
+
+const MANAGED_CATALOG_STALE: SessionManagedCatalogState = {
+  ids: null,
+  fallback_reason:
+    'servable models unavailable at https://gw.kortix.test/v1/models?scope=picker; running the baked/bundled managed lineup',
+};
+
+test('getProjectSessionConfigState carries the managed_catalog block unchanged — the SAME place a config fallback is visible', async () => {
+  // 2026-09-26: a real dev box woken that day answered every OTHER health
+  // check clean (current cli/skills, a proven config release) and STILL
+  // served a month-old managed lineup. This is the field that makes that
+  // fact readable by a client instead of buried in a daemon log line.
+  nextResponse = {
+    status: 200,
+    body: {
+      base_ref: 'main',
+      running_etag: null,
+      latest_etag: null,
+      commit_sha: 'c'.repeat(40),
+      stale: false,
+      sandbox_reachable: true,
+      managed_catalog: MANAGED_CATALOG_STALE,
+    },
+  };
+  const result = await getProjectSessionConfigState('P1', 'S1');
+  const managedCatalog: SessionManagedCatalogState | undefined = result.managed_catalog;
+  expect(managedCatalog).toEqual(MANAGED_CATALOG_STALE);
+});
+
+test('getProjectSessionConfigState carries confirmed managed ids unchanged', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      base_ref: 'main',
+      running_etag: null,
+      latest_etag: null,
+      commit_sha: 'c'.repeat(40),
+      stale: false,
+      sandbox_reachable: true,
+      managed_catalog: {
+        ids: ['deepseek-v4.1-flash', 'glm-5.3-flash', 'kimi-k3'],
+        fallback_reason: null,
+      },
+    },
+  };
+  const result = await getProjectSessionConfigState('P1', 'S1');
+  expect(result.managed_catalog?.ids).toEqual(['deepseek-v4.1-flash', 'glm-5.3-flash', 'kimi-k3']);
+  expect(result.managed_catalog?.fallback_reason).toBeNull();
 });
 
 test('getProjectSessionConfigState from an API without releases has no release block', async () => {

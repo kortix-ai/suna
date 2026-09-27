@@ -67,6 +67,7 @@ import {
   isTurnStartEnvSync,
   jsonProxyError,
   requestedPromptAgent,
+  requestedPromptManagedModelId,
   runPrePromptEnvSync,
   secretGrantErrorResponse,
 } from '../pre-prompt-env-sync';
@@ -181,11 +182,13 @@ export {
   bodyWithoutPromptAgent,
   isTurnStartEnvSync,
   requestedPromptAgent,
+  requestedPromptManagedModelId,
   runPrePromptEnvSync,
   secretGrantErrorResponse,
 } from '../pre-prompt-env-sync';
 import {
   convergeBeforeTurnStart,
+  convergeModelCatalogForTurnStart,
   scheduleAssetConvergence,
 } from '../../projects/lib/turn-start-convergence';
 export type { PrePromptEnvSyncDeps } from '../pre-prompt-env-sync';
@@ -1041,6 +1044,49 @@ export async function forwardToSandbox(
         outcome: converged.outcome,
         ms: converged.ms,
       });
+    }
+    // A third case, neither CONFIG nor BINARIES: the box's `kortix` provider
+    // map is missing the ONE model this turn asks for. AWAITED — unlike the
+    // asset lane just above — because the alternative is `Model not found:
+    // kortix/<id>` while the control plane serves that model the whole time
+    // (2026-09-26). Skips instantly (no memo read, no network call) for
+    // every non-managed-model request — see `requestedPromptManagedModelId`.
+    const requestedModelId = requestedPromptManagedModelId(requestBody, incomingHeaders);
+    const modelCatalog = await convergeModelCatalogForTurnStart(record.sessionId, requestedModelId);
+    ptl.mark('model-catalog-converge');
+    if (modelCatalog.decision !== 'skipped' && modelCatalog.decision !== 'current') {
+      console.log('[PREVIEW] turn-start model-catalog convergence', {
+        session_id: record.sessionId,
+        decision: modelCatalog.decision,
+        daemon_outcome: modelCatalog.daemonOutcome,
+        model: requestedModelId,
+      });
+    }
+    // The repair was attempted and DEFINITIVELY did not land for the process
+    // about to answer this turn — `declined` (a turn was live, or the
+    // verified swap did not boot) or `no-gateway` (the box could not even
+    // fetch the live lineup). Forwarding anyway is a guaranteed OpenCode
+    // `500 UnknownError` with no cause named (2026-09-26: reproduced three
+    // times, different opaque refs, no signal a client or an operator could
+    // act on). Refuse HERE instead, with the one fact that actually explains
+    // it — the model, and why the repair could not confirm it — so the
+    // client can retry (the box may already be fixed for its NEXT natural
+    // restart) instead of being told nothing.
+    if (
+      modelCatalog.decision === 'converged' &&
+      (modelCatalog.daemonOutcome === 'declined' || modelCatalog.daemonOutcome === 'no-gateway')
+    ) {
+      return jsonProxyError(
+        {
+          error: `This session's runtime could not confirm model "${requestedModelId}" for this turn`,
+          code: 'MODEL_CATALOG_UNCONFIRMED',
+          model: requestedModelId,
+          daemon_outcome: modelCatalog.daemonOutcome,
+          retry: true,
+        },
+        503,
+        origin,
+      );
     }
   }
 

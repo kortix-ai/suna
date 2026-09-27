@@ -209,6 +209,14 @@ export interface AdminAccountsFilters {
   limit?: number;
 }
 
+// The admin console has a manual refresh (re-filter/re-sort); it must not
+// auto-retry. `GET /admin/api/accounts` joins `accounts` to `credit_accounts`
+// and can hit a `statement_timeout` (measured: prod 2026-09-27,
+// 25013/25019/25056 ms), so React Query's default 3 retries would triple the
+// load on an already-slow database. A failure shows the page's own error
+// state. Mirrors `ANALYTICS_RETRY` in `use-admin-activity-analytics.ts`.
+const ADMIN_ACCOUNTS_RETRY = false;
+
 export function useAdminAccounts(filters: AdminAccountsFilters = {}) {
   const {
     search = '',
@@ -261,6 +269,7 @@ export function useAdminAccounts(filters: AdminAccountsFilters = {}) {
       return response.data!;
     },
     staleTime: 15_000,
+    retry: ADMIN_ACCOUNTS_RETRY,
     placeholderData: (prev) => prev,
   });
 }
@@ -290,6 +299,7 @@ export function useAdminAccount(accountId: string | null) {
       return response.data?.accounts?.[0] ?? null;
     },
     staleTime: 5_000,
+    retry: ADMIN_ACCOUNTS_RETRY,
   });
 }
 

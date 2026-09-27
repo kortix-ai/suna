@@ -78,6 +78,28 @@ describe('the read decides the agent re-point exactly as the assignment does', (
   });
 });
 
+describe('the managed-model catalog is visible on GET /config regardless of releases', () => {
+  // 2026-09-26: a stale box's catalog was invisible everywhere except a daemon
+  // log line. `managed_catalog` closes that — computed ONCE, spread into BOTH
+  // branches, so a project with config releases off still sees it.
+  test('computed once, before the releases-flag branch, from the same read', () => {
+    const computed = CONFIG.indexOf('const managedCatalog = {');
+    const read = CONFIG.indexOf('readSandboxConfigState(');
+    const releasesBranch = CONFIG.indexOf(
+      'if (releasesEnabled && running.configReleases && running.release)',
+    );
+    expect(computed).toBeGreaterThan(read);
+    expect(computed).toBeLessThan(releasesBranch);
+    expect(CONFIG).toContain('running.runtime?.running?.managed_model_ids');
+    expect(CONFIG).toContain('running.runtime?.running?.managed_catalog_fallback_reason');
+  });
+
+  test('both response branches carry it — the release path and the pre-release path', () => {
+    const occurrences = CONFIG.split('managed_catalog: managedCatalog').length - 1;
+    expect(occurrences).toBe(2);
+  });
+});
+
 describe('the reload route still protects a running turn', () => {
   test('a mid-turn reload is refused 409 SESSION_BUSY unless forced', () => {
     expect(RELOAD).toContain("result.reason === 'session is mid-turn'");
