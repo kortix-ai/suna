@@ -71,6 +71,7 @@ import {
 } from './index';
 import { providerAutoStopBackstopMinutes } from './index';
 import { classifyPtyWebSocketPath } from './pty-ingress';
+import { sandboxOwnershipMarker } from '../sandbox-ownership';
 
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
@@ -227,7 +228,7 @@ function isMissingSandboxError(error: unknown): boolean {
  */
 export function providerBoxBelongsToThisInstance(stamped: unknown): boolean {
   const mine = currentInstanceId();
-  if (!mine) return true;
+  if (!mine) return stamped === undefined || stamped === null;
   return typeof stamped === 'string' && stamped === mine;
 }
 
@@ -396,19 +397,10 @@ export class PlatinumProvider implements SandboxProvider {
       envVars,
       type: autoStop === 0 ? 'persistent' : 'ephemeral',
       auto_stop_minutes: autoStop,
-      // OWNERSHIP MARKER, not decoration. The Platinum org is shared across
-      // prod/dev/local, and `listManagedRunningSandboxes` (the orphan-box
-      // reaper's input) filters on exactly these two keys. Without them the
-      // reaper would enumerate every environment's boxes and stop them.
-      // Boxes created before this landed carry no metadata and are
-      // therefore never reaped — the safe fail direction.
-      //
-      // S1 adds `kortix.sandbox_id` alongside them when the dedup identity is
-      // on — the logical sandbox id behind the deterministic name, so an
-      // operator can map a box back to its session without parsing the name.
-      // The reaper's filter is unaffected (it reads the two keys above only).
+      // Database + instance ownership. The versioned marker also excludes
+      // these boxes from older clients' environment-wide orphan sweeps.
       metadata: {
-        'kortix.managed': 'true',
+        'kortix.managed': await sandboxOwnershipMarker(),
         'kortix.env': config.INTERNAL_KORTIX_ENV,
         'kortix.workload': workloadType,
         ...(opts.sandboxId ? { 'kortix.sandbox_id': opts.sandboxId } : {}),
@@ -734,6 +726,7 @@ export class PlatinumProvider implements SandboxProvider {
   async listManagedRunningSandboxes(): Promise<
     Array<{ externalId: string; createdAt: Date | null }>
   > {
+    const owner = await sandboxOwnershipMarker();
     const out: Array<{ externalId: string; createdAt: Date | null }> = [];
     const limit = 100;
     // Bounded page count as well as page size: a paginator that never reports
@@ -746,10 +739,9 @@ export class PlatinumProvider implements SandboxProvider {
       for (const sandbox of rows) {
         if (!sandbox.id) continue;
         const metadata = sandbox.metadata ?? {};
-        if (String(metadata['kortix.managed'] ?? '') !== 'true') continue;
+        if (metadata['kortix.managed'] !== owner) continue;
         if (String(metadata['kortix.env'] ?? '') !== config.INTERNAL_KORTIX_ENV) continue;
-        // Instance scope beside the env scope: another instance's box is not
-        // ours to stop. No-op when KORTIX_INSTANCE_ID is unset.
+        // An unset local instance must not claim an explicitly scoped box.
         if (!providerBoxBelongsToThisInstance(metadata['kortix.instance'])) continue;
         if (String(sandbox.state ?? '').toLowerCase() !== 'running') continue;
         const rawCreatedAt = sandbox.created_at ?? sandbox.createdAt ?? null;
