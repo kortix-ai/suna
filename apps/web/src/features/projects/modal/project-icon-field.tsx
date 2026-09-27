@@ -9,10 +9,10 @@ import { Button } from '@/components/ui/button';
 import { emojiTint, emojiTintHover } from '@/components/ui/emoji-tint';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import type { GlyphSelection } from '@/components/ui/glyph-picker';
-import { glyphComponent } from '@/components/ui/glyph-registry';
+import { glyphFace as glyphDrawing } from '@/components/ui/glyph-face';
 import { glyphForeground, glyphTint, glyphTintHover } from '@/components/ui/glyph-tint';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ProjectIconPicker } from '@/components/ui/project-icon-picker';
+import { preloadProjectIconPicker, ProjectIconPicker } from '@/components/ui/project-icon-picker';
 import { cn } from '@/lib/utils';
 
 /** The codebase's icon-swap treatment: scale + opacity + blur, on a spring with
@@ -65,7 +65,7 @@ export type ProjectIconValue = { emoji: string } | { glyph: GlyphSelection } | n
  */
 function resolveGlyphFace(glyph: GlyphSelection | null) {
   if (!glyph) return null;
-  const GlyphComponent = glyphComponent(glyph.name);
+  const GlyphComponent = glyphDrawing(glyph.name);
   return GlyphComponent ? { GlyphComponent, name: glyph.name, color: glyph.color } : null;
 }
 
@@ -206,6 +206,10 @@ export function ProjectIconField({
           // still correct to keep, since a shared control should not assume
           // which host it is in.
           type="button"
+          // The picker's panels load on demand (project-icon-picker.tsx);
+          // aiming at or tabbing to the trigger fetches them before the click.
+          onPointerEnter={preloadProjectIconPicker}
+          onFocus={preloadProjectIconPicker}
           // `outline`, not `secondary-outline`: the design system prescribes
           // outline for an icon-only button, and secondary-outline's
           // hover:bg-secondary is identical to its resting bg-secondary
