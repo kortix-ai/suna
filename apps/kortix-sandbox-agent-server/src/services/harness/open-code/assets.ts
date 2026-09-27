@@ -481,8 +481,3 @@ export function createOpenCodeAssetsService(
     updatesPinned: () => opencodeUpdatesPinned(options.opencodePinnedPath ?? OPENCODE_PINNED_LATCH),
   }
 }
-
-/** Existing health/reconcile wire fields, retained for native compatibility. */
-export interface OpenCodeAssetsCompatibilityResult {
-  opencode?: HarnessAssetOutcome
-}

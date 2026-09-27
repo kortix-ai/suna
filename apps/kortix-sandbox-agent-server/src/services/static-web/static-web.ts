@@ -1,4 +1,3 @@
-import { resolveHarness } from '../harness/harness'
 import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, extname, join, normalize } from 'node:path'
 
@@ -115,19 +114,19 @@ function toAbsPath(rawPath: string): string | null {
   return normalize(decoded)
 }
 
-function isDenied(absPath: string): boolean {
+function isDenied(absPath: string, denied: readonly string[]): boolean {
   // `absPath` is normalized, so a traversal has collapsed before it gets here
   // and cannot smuggle a denied segment past this.
   const probe = `${absPath}/`
-  return [...DENIED_PATH_SEGMENTS, ...resolveHarness().environment.protectedPathSegments].some((segment) => probe.includes(segment))
+  return denied.some((segment) => probe.includes(segment))
 }
 
 function underAny(absPath: string, roots: readonly string[]): boolean {
   return roots.some((root) => absPath === root || absPath.startsWith(root + '/'))
 }
 
-function isAllowed(absPath: string): boolean {
-  if (isDenied(absPath)) return false
+function isAllowed(absPath: string, denied: readonly string[]): boolean {
+  if (isDenied(absPath, denied)) return false
   return underAny(absPath, ALLOWED_ROOTS)
 }
 
@@ -157,8 +156,8 @@ function resolvedRoots(): string[] {
 }
 
 /** Is the path we are about to OPEN — links followed — inside the roots? */
-function isAllowedResolved(realPath: string): boolean {
-  if (isDenied(realPath)) return false
+function isAllowedResolved(realPath: string, denied: readonly string[]): boolean {
+  if (isDenied(realPath, denied)) return false
   return underAny(realPath, ALLOWED_ROOTS) || underAny(realPath, resolvedRoots())
 }
 
@@ -299,11 +298,11 @@ function readError(error: unknown): Response {
   })
 }
 
-function serveDirectory(absPath: string, baseUrl: string): Response {
-  const indexHtml = serveFile(join(absPath, 'index.html'), baseUrl, true)
+function serveDirectory(absPath: string, baseUrl: string, denied: readonly string[]): Response {
+  const indexHtml = serveFile(join(absPath, 'index.html'), baseUrl, denied, true)
   if (indexHtml.status !== 404) return indexHtml
 
-  const indexHtm = serveFile(join(absPath, 'index.htm'), baseUrl, true)
+  const indexHtm = serveFile(join(absPath, 'index.htm'), baseUrl, denied, true)
   if (indexHtm.status !== 404) return indexHtm
 
   return new Response(`Directory listing not supported. No index.html found in ${absPath}`, {
@@ -319,9 +318,9 @@ function forbidden(): Response {
   })
 }
 
-function serveFile(absPath: string, baseUrl: string, injectBaseTag = false): Response {
+function serveFile(absPath: string, baseUrl: string, denied: readonly string[], injectBaseTag = false): Response {
   try {
-    if (!isAllowed(absPath)) return forbidden()
+    if (!isAllowed(absPath, denied)) return forbidden()
 
     // AUTHORIZE THE PATH THAT WILL ACTUALLY BE OPENED.
     //
@@ -344,7 +343,7 @@ function serveFile(absPath: string, baseUrl: string, injectBaseTag = false): Res
       if (code === 'ENOENT' || code === 'ENOTDIR') return notFound(absPath)
       throw err
     }
-    if (realPath !== absPath && !isAllowedResolved(realPath)) {
+    if (realPath !== absPath && !isAllowedResolved(realPath, denied)) {
       logger.warn('[static-web] refused a link out of the allowed roots', {
         requested: absPath,
         resolved: realPath,
@@ -371,7 +370,7 @@ function serveFile(absPath: string, baseUrl: string, injectBaseTag = false): Res
   } catch (e) {
     const code = (e as { code?: string })?.code
     if (code === 'ENOENT' || code === 'ENOTDIR') return notFound(absPath)
-    if (code === 'EISDIR') return serveDirectory(absPath, baseUrl)
+    if (code === 'EISDIR') return serveDirectory(absPath, baseUrl, denied)
     return readError(e)
   }
 }
@@ -421,7 +420,7 @@ function buildHelpHtml(baseUrl: string): string {
 </html>`
 }
 
-function handleRequest(req: Request, port: number): Response {
+function handleRequest(req: Request, port: number, denied: readonly string[]): Response {
   const url = new URL(req.url)
   const baseUrl = resolvePublicBaseUrl(req, url)
   const pathname = decodeURIComponent(url.pathname)
@@ -456,7 +455,7 @@ function handleRequest(req: Request, port: number): Response {
         headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
       })
     }
-    return serveFile(absPath, baseUrl, true)
+    return serveFile(absPath, baseUrl, denied, true)
   }
 
   // /abs/workspace/project/style.css — direct asset serving (no base injection).
@@ -470,7 +469,7 @@ function handleRequest(req: Request, port: number): Response {
         headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
       })
     }
-    return serveFile(absPath, baseUrl, false)
+    return serveFile(absPath, baseUrl, denied, false)
   }
 
   return new Response('Not found', {
@@ -490,8 +489,15 @@ export type StaticWebServer = {
  * if the port can't be bound, the daemon stays up and serves everything else —
  * only preview/static-file URLs degrade. Returns a handle whose `port` is null
  * when startup failed.
+ *
+ * `protectedPathSegments` are refused on top of DENIED_PATH_SEGMENTS: the
+ * harnesses' own data directories (`harnessProtectedPathSegments()`).
  */
-export function startStaticWebServer(port: number = DEFAULT_STATIC_PORT): StaticWebServer {
+export function startStaticWebServer(
+  protectedPathSegments: readonly string[],
+  port: number = DEFAULT_STATIC_PORT,
+): StaticWebServer {
+  const denied = [...DENIED_PATH_SEGMENTS, ...protectedPathSegments]
   try {
     // The handler reports this in /health and the help page. When `port` is 0
     // (OS-assigned, e.g. tests) it stays 0 until Bun.serve binds — patched to
@@ -507,7 +513,7 @@ export function startStaticWebServer(port: number = DEFAULT_STATIC_PORT): Static
       // a slow large transfer mid-stream. 0 lets the transfer finish; a real
       // client disconnect still aborts the request.
       idleTimeout: 0,
-      fetch: (req) => handleRequest(req, boundPort),
+      fetch: (req) => handleRequest(req, boundPort, denied),
     })
     boundPort = server.port ?? port
     logger.info('[static-web] listening', { port: boundPort, hostname: '0.0.0.0' })

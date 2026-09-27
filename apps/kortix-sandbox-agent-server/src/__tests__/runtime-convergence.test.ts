@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import {
@@ -30,12 +30,19 @@ import {
   resetRuntimeConvergenceReportForTests,
   overlayHash,
   type RuntimeAssetsOptions,
+  registerHarnessAssets,
+  resetHarnessAssetsForTests,
 } from '../services/runtime-assets/runtime-assets'
 import {
   createOpenCodeAssetsService,
   type OpenCodeAssetsOptions,
   type OpenCodeAssetsRuntime,
 } from '../services/harness/open-code/assets'
+import { resolveHarness } from '../services/harness/harness'
+
+// Production registers this lookup in main.ts before anything runs.
+beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
+afterAll(() => resetHarnessAssetsForTests())
 
 /**
  * Convergent runtime — the v2 half of `reconcileRuntimeAssets`.

@@ -29,7 +29,7 @@ import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '../../config
 import { MAX_SWAP_DELAY_MS } from '../contract/control'
 import { logger } from '../../../lib/log/logger'
 import { ensureInjectedManagedSkills } from '../../skills/managed-skills'
-import { isDaemonShuttingDown } from '../../../app/shutdown'
+import { isDaemonShuttingDown } from '../../../lib/shutdown-state'
 import { serveConfigDir, servingConfigDir } from './boot-link'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
 import { type Opencode, type VerifiedReloadResult } from './lifecycle'

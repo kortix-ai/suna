@@ -2,6 +2,11 @@ import type { Config } from '../../lib/config/config'
 
 export type HarnessAssetOutcome = 'skipped' | 'current' | 'updated' | 'failed' | 'staged'
 
+/** Existing health/reconcile wire fields, retained for native compatibility. */
+export interface HarnessAssetsCompatibilityResult {
+  opencode?: HarnessAssetOutcome
+}
+
 export interface HarnessAssetsInput {
   /** The adapter owns interpretation of its entries in the shared manifest. */
   manifest: { components?: unknown }

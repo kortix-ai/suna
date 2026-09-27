@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { loadConfig } from '../lib/config/config'
+import { loadConfig } from '../services/harness/harness'
 import {
   COMPILED_CHECKOUT_CONTENT_TYPE,
   COMPILED_CHECKOUT_FORMAT,

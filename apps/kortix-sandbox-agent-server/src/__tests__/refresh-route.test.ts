@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test'
 
 import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
 import type { Opencode, VerifiedReloadResult } from '../services/harness/open-code/lifecycle'
@@ -27,6 +27,12 @@ import {
   TEST_SANDBOX_TOKEN,
   testOpenCodeConfig,
 } from './helpers/open-code-harness'
+import { resolveHarness } from '../services/harness/harness'
+import { registerHarnessAssets, resetHarnessAssetsForTests } from '../services/runtime-assets/runtime-assets'
+
+// Production registers this lookup in main.ts before anything runs.
+beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
+afterAll(() => resetHarnessAssetsForTests())
 
 const roots: string[] = []
 

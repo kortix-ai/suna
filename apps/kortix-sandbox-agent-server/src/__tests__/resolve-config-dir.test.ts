@@ -12,7 +12,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { loadConfig } from '../lib/config/config'
+import { loadConfig } from '../services/harness/harness'
 import { loadOpenCodeConfig, requireOpenCodeConfig, resolveOpencodeConfigDir, type OpenCodeConfig as Config } from '../services/harness/open-code/config'
 
 let workspace: string

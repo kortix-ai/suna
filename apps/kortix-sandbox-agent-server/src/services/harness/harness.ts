@@ -1,9 +1,9 @@
 import type { Config } from '../../lib/config/config'
-import { normalizeHarnessId } from '../../lib/config/config'
+import { loadHostConfig, normalizeHarnessId } from '../../lib/config/config'
 import type { SandboxBootState } from './contract/boot-state'
 import type { ProjectEnvStore } from '../sandbox-env/project-env'
 import type { ResourceMonitor } from '../resources/resources'
-import type { startStaticWebServer } from '../static-web/static-web'
+import type { DaemonServer, DaemonShutdown } from './contract/server'
 import type { HarnessAssetsService } from '../runtime-assets/port'
 import type { HarnessProxyService } from './contract/proxy'
 import type { HarnessControlService } from './contract/control'
@@ -14,7 +14,6 @@ import { piDefinition } from './pi/service'
 
 import type { HarnessLifecycleService } from './contract/lifecycle-contract'
 
-export type { OpenCodeAssetsCompatibilityResult as HarnessAssetsCompatibilityResult } from './open-code/assets'
 // The lifecycle port lives in a leaf module so adapters can import it without
 // dragging this resolver (and the OpenCode definition) into their importers.
 export type { HarnessLifecycleService, HarnessState } from './contract/lifecycle-contract'
@@ -36,7 +35,12 @@ export interface HarnessBootContext {
   bootTime: number
   bootState: SandboxBootState
   bootMark: (label: string) => void
-  staticWeb: ReturnType<typeof startStaticWebServer>
+  /**
+   * Start the daemon's HTTP server for `harness` and install the signal
+   * handlers that stop it. app/ builds this; an adapter's boot calls it once,
+   * as soon as its service exists.
+   */
+  serve(harness: HarnessService, projectEnv: ProjectEnvStore): { server: DaemonServer; shutdown: DaemonShutdown }
 }
 
 export interface HarnessStartupOptions {
@@ -63,6 +67,16 @@ export interface HarnessDefinition {
 }
 
 /**
+ * The daemon configuration: the selected adapter's fields, then the host's.
+ * The host fields parse first, so the selector is read BEFORE the adapter loads
+ * its own environment: only the selected adapter's contract applies to a boot.
+ */
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const host = loadHostConfig(env)
+  return { ...resolveHarness(host).loadConfig(env), ...host }
+}
+
+/**
  * The daemon's only implementation-selection boundary.
  *
  * The id comes from `cfg.harness` (`KORTIX_HARNESS`, set by apps/api from the
@@ -75,6 +89,27 @@ export function resolveHarness(cfg?: Pick<Config, 'harness'>, id?: string): Harn
   if (selected === 'opencode') return openCodeDefinition
   if (selected === 'pi') return piDefinition
   throw new Error(`Unsupported harness: ${selected}`)
+}
+
+/**
+ * Every registered harness. Built on call, not at module load: the adapters
+ * import this module back, so a module-level list could read a definition
+ * before it is initialized.
+ */
+const registeredHarnesses = (): readonly HarnessDefinition[] => [openCodeDefinition, piDefinition]
+
+/**
+ * Paths the static web server refuses for every registered harness. Every
+ * harness's, on every box: the image ships all of them, so a pi box still
+ * holds OpenCode's data directory.
+ */
+export function harnessProtectedPathSegments(): string[] {
+  return registeredHarnesses().flatMap((definition) => [...definition.environment.protectedPathSegments])
+}
+
+/** Is `name` internal to any registered harness? The agent env file never writes one. */
+export function isHarnessInternalVariable(name: string): boolean {
+  return registeredHarnesses().some((definition) => definition.environment.isInternalVariable(name))
 }
 
 /**

@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 
+import { harnessProtectedPathSegments } from '../services/harness/harness'
 import { startStaticWebServer, type StaticWebServer } from '../services/static-web/static-web'
 
 const execFileAsync = promisify(execFile)
@@ -58,7 +59,7 @@ describe('static web server live curl e2e', () => {
     )
     writeFileSync(join(siteDir, 'style.css'), 'body{color:red}')
 
-    server = startStaticWebServer(0) // 0 → OS picks a free port
+    server = startStaticWebServer(harnessProtectedPathSegments(), 0) // 0 → OS picks a free port
     base = `http://127.0.0.1:${server.port}`
   })
 

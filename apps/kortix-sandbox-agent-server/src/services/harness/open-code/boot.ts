@@ -70,7 +70,6 @@ import {
 } from './runtime-state'
 import { createProjectEnvStore } from '../../sandbox-env/project-env'
 import { startEgressShim } from '../../egress-shim'
-import { startProxy } from '../../../app/server'
 import {
   startLlmProxy,
   setLlmProxyToken,
@@ -82,9 +81,8 @@ import {
   connectorProxyBaseUrl,
 } from '../../llm-proxy/llm-proxy'
 import type { OpenCodeBootState as SandboxBootState } from './boot-state'
-import { installShutdownHandlers } from '../../../app/shutdown'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
-import type { startStaticWebServer } from '../../static-web/static-web'
+import type { DaemonServer } from '../contract/server'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
 import { configureSessionTokenHealth, noteControlPlaneResponse } from '../../../lib/kortix-api/session-token-health'
 import type { HarnessBootContext } from '../harness'
@@ -112,7 +110,7 @@ export function resetClaimedInitialTurnForTests(): void {
 
 /** Run the existing OpenCode cold/session boot behind the harness boundary. */
 export async function runOpenCode(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<void> {
-  const { cfg, bootTime, bootState, bootMark, staticWeb } = context
+  const { cfg, bootState, bootMark, serve } = context
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   try {
     await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
@@ -218,8 +216,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
       ),
   })
   const opencode = harness.native
-  const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
-  const shutdown = installShutdownHandlers(harness.lifecycle, server, staticWeb)
+  const { server, shutdown } = serve(harness, projectEnv)
   // The 401-streak circuit breaker (session-token-health.ts): once the API has
   // told this box, repeatedly, that its session token is dead, stop calling
   // home and exit — exitCode 0 so the entrypoint supervisor treats it as a
@@ -466,7 +463,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
 // never contains it — platinum-seed.ts strips it from captureEnv).
 function armSeedAdoption(
   harness: OpenCodeHarnessService,
-  server: ReturnType<typeof startProxy>,
+  server: DaemonServer,
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): void {
@@ -1063,10 +1060,9 @@ async function prefetchSeedCatalog(cfg: Config): Promise<void> {
 
 async function runWarmSeedMode(
   cfg: Config,
-  bootTime: number,
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
-  staticWeb: ReturnType<typeof startStaticWebServer>,
+  serve: HarnessBootContext['serve'],
 ): Promise<void> {
   const projectEnv = createProjectEnvStore()
   writeAgentEnvFile(projectEnv)
@@ -1188,8 +1184,7 @@ async function runWarmSeedMode(
       bootState.workspaceReady = true
     },
   })
-  const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
-  installShutdownHandlers(harness.lifecycle, server, staticWeb)
+  const { server } = serve(harness, projectEnv)
   bootMark('seed-proxy-ready')
 
   // PRE-WARM before the snapshot: drive opencode's /workspace init to completion
@@ -3078,7 +3073,7 @@ export function buildInitialPromptBody(prompt: string, claimedMessageId?: string
 /** Claim warm-seed boot before the host considers monitor or session mode. */
 export async function runOpenCodeWarmSeed(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<boolean> {
   if ((process.env.KORTIX_WARM_SEED ?? '').trim() !== '1') return false
-  const { cfg, bootTime, bootState, bootMark, staticWeb } = context
-  await runWarmSeedMode(cfg, bootTime, bootState, bootMark, staticWeb)
+  const { cfg, bootState, bootMark, serve } = context
+  await runWarmSeedMode(cfg, bootState, bootMark, serve)
   return true
 }

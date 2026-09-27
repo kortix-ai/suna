@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import type { DaemonServer } from '../services/harness/contract/server'
 import type { ServerWebSocket } from 'bun'
 import type { Config } from '../lib/config/config'
 import type { SandboxBootState } from '../services/harness/contract/boot-state'
@@ -211,14 +212,7 @@ export function buildDaemonApp(
   return app
 }
 
-export type ProxyServer = {
-  stop(): Promise<void>
-  port: number
-  // Rebuild the control surface with a new Config. A warm snapshot seed boots
-  // with seed-time credentials and only learns its forked session cfg after
-  // restore; without this the proxy auth gate + routers keep the seed cfg.
-  reload(next: Config): void
-}
+export type ProxyServer = DaemonServer
 
 export function startProxy(
   cfg: Config,

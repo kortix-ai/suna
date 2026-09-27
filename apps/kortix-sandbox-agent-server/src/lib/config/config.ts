@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { resolveHarness } from '../../services/harness/harness'
 
 /**
  * Env contract for kortix-sandbox-agent-server.
@@ -167,7 +166,11 @@ export type Config = {
   monitorBoxEpoch: string
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+/**
+ * The host's fields only. The daemon configuration is `loadConfig` in
+ * services/harness/harness.ts: these fields plus the selected adapter's own.
+ */
+export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = Schema.parse({
     KORTIX_SERVICE_PORT: env.KORTIX_SERVICE_PORT,
     KORTIX_STATIC_PORT: env.KORTIX_STATIC_PORT,
@@ -203,11 +206,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_HARNESS: env.KORTIX_HARNESS,
   })
 
-  // The selector is read BEFORE the adapter loads its own fields: only the
-  // selected adapter's environment contract applies to this boot.
   const harness = normalizeHarnessId(parsed.KORTIX_HARNESS)
   return {
-    ...resolveHarness(undefined, harness).loadConfig(env),
     harness,
     servicePort: parsed.KORTIX_SERVICE_PORT,
     staticPort: parsed.KORTIX_STATIC_PORT,

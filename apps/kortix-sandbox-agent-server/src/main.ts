@@ -1,14 +1,17 @@
 import { dispatchCli, isManagementSubcommand } from './app/cli'
-import { loadConfig } from './lib/config/config'
 import { runGitCredentialHelper } from './lib/git/git'
-import { resolveHarness, warmPiSystemPackages } from './services/harness/harness'
+import { harnessProtectedPathSegments, loadConfig, resolveHarness, warmPiSystemPackages, type HarnessBootContext } from './services/harness/harness'
 import { kortixEventBus } from './services/event-bus/kortix-event-bus'
 import { enableDaemonLogFile, logger } from './lib/log/logger'
 import { runMonitorMode } from './app/monitor-mode'
 import { startStaticWebServer } from './services/static-web/static-web'
+import { startProxy } from './app/server'
+import { installShutdownHandlers } from './app/shutdown'
+import { registerHarnessAssets } from './services/runtime-assets/runtime-assets'
 
 async function main() {
   const bootTime = Date.now()
+  registerHarnessAssets((cfg) => resolveHarness(cfg).assets)
   const cfg = loadConfig()
   const selected = resolveHarness(cfg)
   const bootState = selected.createBootState()
@@ -30,9 +33,13 @@ async function main() {
   })
 
   // Static previews stay available while the repository and runtime boot.
-  const staticWeb = startStaticWebServer(cfg.staticPort)
+  const staticWeb = startStaticWebServer(harnessProtectedPathSegments(), cfg.staticPort)
   bootMark('static-web')
-  const context = { cfg, bootTime, bootState, bootMark, staticWeb }
+  const serve: HarnessBootContext['serve'] = (harness, projectEnv) => {
+    const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
+    return { server, shutdown: installShutdownHandlers(harness.lifecycle, server, staticWeb) }
+  }
+  const context: HarnessBootContext = { cfg, bootTime, bootState, bootMark, serve }
 
   // Warm-seed capture has always taken precedence over monitor selection.
   if (await selected.runWarmSeed?.(context)) return

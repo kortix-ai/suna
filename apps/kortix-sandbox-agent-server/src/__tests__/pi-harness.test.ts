@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadConfig } from '../lib/config/config'
+import { loadConfig } from '../services/harness/harness'
 import { resetKortixEventBusForTests } from '../services/event-bus/kortix-event-bus'
 import { buildDaemonApp } from '../app/server'
 import { requirePiConfig } from '../services/harness/pi/config'

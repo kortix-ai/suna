@@ -5,7 +5,7 @@
  * daemon validates it before forwarding to opencode. Pure module — no I/O.
  */
 
-import { createHmac, timingSafeEqual } from 'crypto'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 
 export const KORTIX_USER_CONTEXT_HEADER = 'X-Kortix-User-Context'
 

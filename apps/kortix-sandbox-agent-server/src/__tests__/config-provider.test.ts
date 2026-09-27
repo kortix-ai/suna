@@ -20,7 +20,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import * as tar from 'tar'
 
-import { loadConfig, type Config } from '../lib/config/config'
+import type { Config } from '../lib/config/config'
+import { loadConfig } from '../services/harness/harness'
 import { materializeProject } from '../services/config-provider/config-provider'
 import {
   PROJECT_SNAPSHOT_FORMAT,

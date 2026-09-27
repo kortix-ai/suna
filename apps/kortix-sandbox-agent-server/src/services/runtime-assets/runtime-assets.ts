@@ -12,10 +12,10 @@ import {
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import type { Config } from '../../lib/config/config'
-import { resolveHarness, type HarnessAssetsCompatibilityResult } from '../harness/harness'
 import { noteControlPlaneResponse } from '../../lib/kortix-api/session-token-health'
 import type {
   HarnessAssetOutcome,
+  HarnessAssetsCompatibilityResult,
   HarnessAssetsService,
 } from './port'
 import { logger } from '../../lib/log/logger'
@@ -817,7 +817,7 @@ export async function reconcileRuntimeAssets(
   const cliPath = options.cliPath ?? DEFAULT_CLI_PATH
   const skillsDir = options.managedSkillsDir ?? DEFAULT_MANAGED_SKILLS_DIR
   const statePath = options.statePath ?? DEFAULT_STATE_PATH
-  const assets = options.assets ?? resolveHarness().assets
+  const assets = options.assets ?? harnessAssets()
   const execProbe = options.execProbe ?? defaultExecProbe
   const token = (
     options.token ??
@@ -1261,6 +1261,29 @@ export function resetAgentSwapBlockersForTests(): void {
   swapBlockers.clear()
 }
 
+/**
+ * How this module finds the harness assets when no live runtime is configured
+ * (`configureRuntimeConvergence`): a warm seed, a monitor box, a pass before
+ * boot. app/ registers `resolveHarness(cfg).assets` before anything runs; a
+ * service never imports the harness. Without a `cfg` the lookup answers for
+ * the default harness, as `resolveHarness()` does.
+ */
+let harnessAssetsLookup: ((cfg?: Config) => HarnessAssetsService) | null = null
+
+export function registerHarnessAssets(lookup: (cfg?: Config) => HarnessAssetsService): void {
+  harnessAssetsLookup = lookup
+}
+
+/** Test seam: forget the registered lookup. */
+export function resetHarnessAssetsForTests(): void {
+  harnessAssetsLookup = null
+}
+
+function harnessAssets(cfg?: Config): HarnessAssetsService {
+  if (!harnessAssetsLookup) throw new Error('runtime-assets: registerHarnessAssets() was not called')
+  return harnessAssetsLookup(cfg)
+}
+
 interface RuntimeConvergenceConfig {
   assets: HarnessAssetsService
   turnInFlight: () => Promise<boolean | null>
@@ -1462,7 +1485,7 @@ export function scheduleRuntimeAssetsReconcile(
   cfg: Config,
   opts: { atIdleBoundary?: boolean } = {},
 ): void {
-  void resolveHarness(cfg).assets.resolveConfigDir(cfg)
+  void harnessAssets(cfg).resolveConfigDir(cfg)
     .then((configDir) => ensureLatestKortixAssets(configDir, opts))
     // A config dir we cannot resolve costs the overlay re-injection, not the
     // CLI update — still worth running.
@@ -1654,7 +1677,7 @@ export function noteRuntimeConvergence(result: RuntimeAssetsResult): void {
     skills: result.skills,
   }
   if (result.agent) components.agent = result.agent
-  const assets = swapConfig?.assets ?? resolveHarness().assets
+  const assets = swapConfig?.assets ?? harnessAssets()
   for (const name of assets.componentNames) {
     const outcome = (result as unknown as Record<string, ReconcileOutcome | undefined>)[name]
     if (outcome) components[name] = outcome
@@ -1711,7 +1734,7 @@ export async function runtimeConvergenceReport(
   // health read that 500s is worse than one that says "not pinned".
   const harnessPinned = (async () => {
     try {
-      const assets = swapConfig?.assets ?? resolveHarness().assets
+      const assets = swapConfig?.assets ?? harnessAssets()
       return (await assets.updatesPinned?.()) === true
     } catch {
       return false

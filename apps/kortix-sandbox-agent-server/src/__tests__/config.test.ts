@@ -9,7 +9,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { loadConfig, resolveSandboxOnBoot } from '../lib/config/config'
+import { resolveSandboxOnBoot } from '../lib/config/config'
+import { loadConfig } from '../services/harness/harness'
 
 const BASE_ENV = { KORTIX_WORKSPACE: '/workspace', KORTIX_REPO_URL: 'https://example.test/r.git' }
 

@@ -4,8 +4,6 @@ import type { HarnessBootContext, HarnessDefinition } from '../services/harness/
 import { logger } from '../lib/log/logger'
 import { MonitorRunner, parseMonitorSpecs } from '../services/monitor/monitor-runner'
 import { createProjectEnvStore } from '../services/sandbox-env/project-env'
-import { startProxy } from './server'
-import { installShutdownHandlers } from './shutdown'
 
 /**
  * Monitor mode — the box that watches things 24/7.
@@ -25,7 +23,7 @@ export async function runMonitorMode(
   context: HarnessBootContext,
   selected: HarnessDefinition,
 ): Promise<void> {
-  const { cfg, bootTime, bootState, bootMark, staticWeb } = context
+  const { cfg, bootState, bootMark, serve } = context
   const projectEnv = createProjectEnvStore()
   // Monitor processes inherit this process's env (the provider injected the
   // project's runtime secrets there), and the agent env file keeps the same
@@ -44,8 +42,7 @@ export async function runMonitorMode(
 
   // The selected service remains stopped. The host can still expose health
   // and its compatibility endpoints without starting an agent process.
-  const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
-  installShutdownHandlers(harness.lifecycle, server, staticWeb)
+  serve(harness, projectEnv)
   bootMark('proxy-up')
 
   if (cfg.autoClone) {

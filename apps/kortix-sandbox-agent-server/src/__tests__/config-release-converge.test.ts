@@ -20,7 +20,7 @@ import {
   __setDaemonShuttingDownForTests,
   isDaemonShuttingDown,
   resetDaemonShutdownStateForTests,
-} from '../app/shutdown'
+} from '../lib/shutdown-state'
 import {
   ConvergeBusyError,
   configReleaseReport,
