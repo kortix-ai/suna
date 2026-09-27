@@ -15,7 +15,11 @@
     "selectInstallation": "Seleccionar instalación",
     "manifestRequirement": "El repositorio nuevo necesita {manifest} en su rama predeterminada. Primero detén las sesiones activas y cierra las solicitudes de cambio abiertas.",
     "cancel": "Cancelar",
-    "changing": "Cambiando…"
+    "changing": "Cambiando…",
+    "searchBranches": "Buscar ramas…",
+    "loadingBranches": "Cargando ramas…",
+    "noBranches": "No hay ninguna rama que coincida.",
+    "moreBranches": "{count} más. Escribe para filtrar."
   },
   "pooledSecrets": {
     "saveChanges": "Guardar cambios",

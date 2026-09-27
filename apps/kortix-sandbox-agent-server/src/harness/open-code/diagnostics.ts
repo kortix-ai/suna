@@ -17,7 +17,7 @@ import { configReleaseReport, runningSourceCommit } from './config-release'
 import type { Config } from '../../config'
 import { readRepoInfo } from '../../git'
 import { runtimeConvergenceReport } from '../../runtime-assets'
-import type { Opencode } from './lifecycle'
+import { managedCatalogFallbackReason, managedModelIdsSnapshot, type Opencode } from './lifecycle'
 import {
   type OpencodeDeliveryObservation,
   inspectOpencodeRoot,
@@ -30,6 +30,13 @@ import type { OpenCodeBootState } from './boot-state'
 
 export function opencodeLogFilePath(home: string): string {
   return join(home, '.local', 'share', 'opencode', 'log', 'opencode.log')
+}
+
+/** The live catalog signal `runtimeConvergenceReport` overlays onto
+ *  `runtime.running` — see `RunningRuntimeAssets.managed_model_ids` for what
+ *  the control plane does with it. */
+function catalogSnapshotForHealth(): { ids: string[] | null; fallbackReason: string | null } {
+  return { ids: managedModelIdsSnapshot(), fallbackReason: managedCatalogFallbackReason() }
 }
 
 /**
@@ -244,7 +251,7 @@ async function readOpenCodeHealth(
     // from the live process env, so it tracks a hot push as well as a boot.
     agent_config_etag: process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
     // Which config release OpenCode runs, which one the API wants, and why they
-    // differ (docs/specs/config-releases.md, "Health").
+    // differ.
     // The SAME read `runtimeReady` was computed from, so no health sample can
     // ever show `runtimeReady: true` beside a `config` block that disagrees.
     config: configReport,
@@ -258,7 +265,7 @@ async function readOpenCodeHealth(
     // a fleet-drain gate has actually cleared. `pinned: true` means an update
     // crash-looped and the supervisor latched it off: that box will not
     // self-heal and needs a human.
-    runtime: await runtimeConvergenceReport(),
+    runtime: await runtimeConvergenceReport(undefined, undefined, catalogSnapshotForHealth),
     // Opt-in (`?turn=1`) because it costs a call into opencode, and health is
     // polled as a liveness check every few seconds on every idle box. Two
     // callers ask: the reload gate, which must not restart the runtime out
@@ -305,7 +312,9 @@ async function readOpenCodeDiagnosticReport(
   const monitor = context.resources()
   const [resourcesNow, runtime] = await Promise.all([
     monitor ? monitor.tick('diag').catch(() => null) : Promise.resolve(null),
-    runtimeConvergenceReport().catch((err) => ({ error: err instanceof Error ? err.message : String(err) })),
+    runtimeConvergenceReport(undefined, undefined, catalogSnapshotForHealth).catch((err) => ({
+      error: err instanceof Error ? err.message : String(err),
+    })),
   ])
   const daemonLog = daemonLogFilePath()
   const opencodeLog = opencodeLogFilePath(home)

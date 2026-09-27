@@ -1,6 +1,5 @@
 /**
- * Quarantine across the project (docs/specs/config-releases.md, "Quarantine
- * across the project").
+ * Quarantine across the project.
  *
  * Two tables:
  * - `kortix.config_release_failures`: a daemon reported `failed_release_id`.

@@ -392,8 +392,7 @@ agents:
   });
 });
 
-// `per_user` connector credential mode was removed 2026-07-05 (docs/specs/
-// 2026-07-05-agent-first-config-unification.md §2.5): v1 tolerates it as a
+// `per_user` connector credential mode was removed 2026-07-05: v1 tolerates it as a
 // legacy value (warning; resolves to `shared` at runtime), v2 is a clean
 // break and rejects it outright — same pattern as the removed CLI actions.
 describe('validateManifest — connector `credential: per_user` removal', () => {
@@ -526,8 +525,7 @@ connectors:
 });
 
 // The connector-side agent gate (`[[connectors]].agent_scope`) was removed
-// 2026-07 (wave-2 of the agent-first cut, docs/specs/
-// 2026-07-05-agent-first-config-unification.md §2.5): connector access is now
+// 2026-07 (wave-2 of the agent-first cut): connector access is now
 // purely the agent's own `connectors` grant. The runtime (apps/api's
 // connectors.ts `parseConnectorEntry`) no longer parses `agent_scope` at all —
 // it is silently ignored, never round-tripped back into git. Same

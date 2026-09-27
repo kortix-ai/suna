@@ -11,7 +11,12 @@
  *
  * No React / React Native import.
  */
-import { formatDuration, type GatewayAttemptFailure, type GatewayErrorDetails } from '@kortix/sdk';
+import {
+  formatDuration,
+  turnRetryLabel,
+  type GatewayAttemptFailure,
+  type GatewayErrorDetails,
+} from '@kortix/sdk';
 
 /** A status change applies at most once per this window (web `2500`). */
 export const STATUS_THROTTLE_MS = 2500;
@@ -19,8 +24,8 @@ export const STATUS_THROTTLE_MS = 2500;
 export const STATUS_STALL_AFTER_MS = 20_000;
 /** The label before any status arrives (web `DEFAULT_STATUS`). */
 export const BUSY_DEFAULT_STATUS = 'Thinking';
-/** The label while a retry is scheduled (web `line3820JsxTextWaitingToRetry`). */
-export const BUSY_RETRY_LABEL = 'Waiting to retry';
+/** The label while a retry is scheduled and no countdown is known (the SDK's `turnRetryLabel`). */
+export const BUSY_RETRY_LABEL = turnRetryLabel(null);
 
 // ─── Elapsed clock ───────────────────────────────────────────────────────────
 
@@ -98,8 +103,9 @@ export function retrySecondsLeft(nextMs: number, nowMs: number): number {
   return Math.max(0, Math.round((nextMs - nowMs) / 1000));
 }
 
+/** The retry row's title: the SDK's wording, the one web shows. */
 export function retryTitle(secondsLeft: number): string {
-  return secondsLeft > 0 ? `Retrying in ${secondsLeft}s` : 'Retrying now';
+  return turnRetryLabel(secondsLeft);
 }
 
 // ─── Gateway meta ────────────────────────────────────────────────────────────

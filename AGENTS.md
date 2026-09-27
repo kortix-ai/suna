@@ -111,6 +111,12 @@ symlink to it. Add a skill in `.agents/skills/`, then add the symlink. Third-par
 from `npx skills add` and are pinned in `skills-lock.json`. The PR procedure is the
 **contributing** skill. Browser work is the **agent-browser** skill.
 
+The repository has no `docs/` tree. Put a runbook or spec in the skill that owns the
+surface (`.agents/skills/<name>/references/`). Put an incident rule in the learnings
+ledger. Put design detail and RCAs in the PR body. Never cite a repo path that does
+not exist. The pre-commit hook and `tests/unit/no-docs-tree.test.ts` reject a new
+`docs/` file and any citation of one.
+
 ## Ponytail is on by default
 
 Every code change runs through the **ponytail** skill at level `full`. Load it before you

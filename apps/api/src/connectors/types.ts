@@ -2,7 +2,7 @@
  * Connector shared types. The normalized catalog shape every provider produces —
  * the one thing the gateway, discovery, and policy layer all speak.
  *
- * Design reference: RhysSullivan/connector (MIT) — see docs/specs/connector-reference.md.
+ * Design reference: RhysSullivan/connector (MIT).
  * We reimplement on our stack; this mirrors their IR's intent (path / input /
  * output / risk) without their Effect/FumaDB machinery.
  */
@@ -53,8 +53,7 @@ export type ActionBinding =
   | { kind: 'http'; method: string; path: string; bodyMediaType?: string }
   // Agent Computer Tunnel: relay one machine-bound RPC (`fs.read`,
   // `desktop.cua.click`, …). The gateway routes these through the shared tunnel
-  // RPC core instead of executeCall. See
-  // docs/specs/computer-connector.md.
+  // RPC core instead of executeCall.
   | { kind: 'tunnel'; method: string }
   | { kind: 'pipedream'; app: string; actionKey: string }
   | { kind: 'composio'; toolkit: string; toolSlug: string }

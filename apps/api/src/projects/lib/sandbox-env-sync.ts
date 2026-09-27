@@ -244,8 +244,7 @@ function rememberNetworkBoundaryArm(externalId: string, digest: string, secretId
  * Record the binding set this sandbox is serving.
  *
  * There is nothing to register with a provider any more. One mechanism serves
- * every provider (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4):
- * the guest holds a HANDLE, the broker route substitutes the real value
+ * every provider: the guest holds a HANDLE, the broker route substitutes the real value
  * server-side on an approved host, and the value never enters the sandbox on
  * daytona, e2b or platinum alike. The Platinum credential edge is gone, so this
  * is bookkeeping — it keeps the digest/skip and revocation accounting the
@@ -1178,8 +1177,7 @@ function nonActiveSandboxSkip(
  * Is a config release ACTUALLY governing this box? `true`, `false`, or `null`
  * when health did not answer.
  *
- * Such a box receives compiled governance inside its config release
- * (docs/specs/config-releases.md, "Capability gate"). A separate
+ * Such a box receives compiled governance inside its config release. A separate
  * `KORTIX_COMPILED_AGENT_CONFIG` push through `/kortix/env` would restart
  * OpenCode on governance that does not match the release it runs — and the box
  * drops it anyway (`releaseGovernanceActive`, daemon `harness/open-code/control.ts`).

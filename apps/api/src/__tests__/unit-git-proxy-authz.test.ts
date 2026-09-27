@@ -363,7 +363,7 @@ describe('authorizeGitProxy — sandbox token', () => {
   });
 
   // A monitor box has NO session_sandboxes row by design — its token scopes
-  // against project_monitor_boxes (docs/specs/2026-08-12-monitors.md). Caught
+  // against project_monitor_boxes. Caught
   // live on dev 2026-08-12: the box could not clone and no monitor ever ran.
   test('a live monitor box clones through the proxy without a session row', async () => {
     sandboxRow = null;

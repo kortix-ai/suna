@@ -157,5 +157,8 @@ botkube-comm-real.yaml
 # Playwright MCP session artifacts (console logs, page snapshots)
 .playwright-mcp/
 
+# Private legacy migration inventories and raw source records
+.legacy-transfer/
+
 # Local agent evidence (screenshots, logs). May hold customer data — never commit.
 /output/

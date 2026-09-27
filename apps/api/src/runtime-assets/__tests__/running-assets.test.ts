@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OPENCODE_VERSION } from '@kortix/shared/runtime-versions';
 import { managedSkillOverlayFiles, managedSkillOverlayHash } from '../managed-skills';
+import { RUNTIME_MANAGED_MODELS } from '../../llm-gateway/models/managed-models';
 import {
   _resetRuntimeAssetsCache,
   manifestFingerprint,
@@ -50,6 +51,7 @@ async function stage(name: string, bytes: string): Promise<{ path: string; sha25
 }
 
 const SKILLS_HASH = managedSkillOverlayHash(managedSkillOverlayFiles());
+const MANAGED_IDS = RUNTIME_MANAGED_MODELS.map((model) => model.id);
 
 function running(over: Partial<RunningAssetsReport> = {}): RunningAssetsReport {
   return {
@@ -58,6 +60,10 @@ function running(over: Partial<RunningAssetsReport> = {}): RunningAssetsReport {
     agent_sha256: null,
     staged_agent_sha256: null,
     opencode_version: OPENCODE_VERSION,
+    // Confirmed and current by default, so every PRE-EXISTING test in this
+    // file — none of which is about the managed catalog — stays unaffected
+    // by the new component.
+    managed_model_ids: MANAGED_IDS,
     ...over,
   };
 }
@@ -145,8 +151,19 @@ describe('runningAssetsVerdict', () => {
     expect(await runningAssetsVerdict(running({ cli_sha256: 'f'.repeat(64) }))).toBe('current');
   });
 
-  test('a daemon that reports nothing comparable is unknown, never behind', async () => {
+  test('an unreachable box is unknown, never behind', async () => {
     expect(await runningAssetsVerdict(null)).toBe('unknown');
+  });
+
+  // `managed-catalog` is the ONE deliberate exception to "the box states
+  // nothing ⇒ unknown" (see the doc on `runningAssetsVerdict`). A box that
+  // reports every OTHER field null but a deploy WITH a managed lineup
+  // configured is `behind` for the catalog specifically — that null means
+  // UNCONFIRMED, not "an old daemon", and treating it as `unknown` (skip) is
+  // the exact silent staleness a real dev box hit 2026-09-26: healthy on
+  // every binary, still serving a month-old managed lineup.
+  test('a box that never confirmed its managed lineup is behind, not unknown', async () => {
+    expect(MANAGED_IDS.length).toBeGreaterThan(0); // the fixture's premise
     expect(
       await runningAssetsVerdict({
         cli_sha256: null,
@@ -154,8 +171,21 @@ describe('runningAssetsVerdict', () => {
         agent_sha256: null,
         staged_agent_sha256: null,
         opencode_version: null,
+        managed_model_ids: null,
       }),
-    ).toBe('unknown');
+    ).toBe('behind');
+  });
+
+  test('a box with a DIFFERENT managed lineup than this deploy is behind', async () => {
+    expect(
+      await runningAssetsVerdict(running({ managed_model_ids: ['some-retired-model'] })),
+    ).toBe('behind');
+  });
+
+  test('id order never manufactures a false difference', async () => {
+    expect(
+      await runningAssetsVerdict(running({ managed_model_ids: [...MANAGED_IDS].reverse() })),
+    ).toBe('current');
   });
 });
 

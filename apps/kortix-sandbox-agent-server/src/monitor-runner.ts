@@ -1,6 +1,5 @@
 /**
- * The monitor runner — the in-box half of Monitors
- * (docs/specs/2026-08-12-monitors.md).
+ * The monitor runner — the in-box half of Monitors.
  *
  * It supervises one process per enabled monitor, turns their STDOUT LINES into
  * events, and POSTs them to the project's ingest route. Three invariants shape

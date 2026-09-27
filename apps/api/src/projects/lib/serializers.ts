@@ -531,8 +531,7 @@ export function buildSecretView(input: {
     // The grant axis is per-project and lives here.
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
     // Always true since the exposure/usage model: one mechanism serves every
-    // provider (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4), so
-    // there is no deployment where egress-enforced delivery is missing. Kept on
+    // provider, so there is no deployment where egress-enforced delivery is missing. Kept on
     // the wire because published SDK and CLI versions still read it — an absent
     // field reads as "unknown" to them, a `false` would falsely disable the UI.
     network_boundary_available: true,

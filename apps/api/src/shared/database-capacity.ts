@@ -9,6 +9,14 @@ import { DEFAULT_DB_POOL_MAX } from '@kortix/db/connection-defaults';
 export { DEFAULT_DB_POOL_MAX };
 export const DEFAULT_AUDIT_POOL_MAX = 2;
 export const LEADER_ELECTION_POOL_MAX = 1;
+/**
+ * The base-move LISTEN/NOTIFY subscription (`./pg-broadcast.ts`). Opened once,
+ * awaited, on EVERY replica at boot (not leader-gated) and never released — a
+ * long-lived per-task connection exactly like `LEADER_ELECTION_POOL_MAX`, and
+ * omitted from this budget until the 2026-09-27 incident (SQLSTATE `53300`
+ * during the v0.13.35 rolling deploy).
+ */
+export const PG_BROADCAST_POOL_MAX = 1;
 export const SCHEMA_CHECK_POOL_MAX = 1;
 
 /** Production PostgreSQL exposes 240 slots and reserves 3 for superusers. */
@@ -29,7 +37,7 @@ export const PROD_DB_NON_API_RESERVE = 32;
 const rollingLongLivedConnections =
   PROD_API_MAX_TASKS *
   ROLLING_TASK_OVERLAP *
-  (DEFAULT_DB_POOL_MAX + DEFAULT_AUDIT_POOL_MAX + LEADER_ELECTION_POOL_MAX);
+  (DEFAULT_DB_POOL_MAX + DEFAULT_AUDIT_POOL_MAX + LEADER_ELECTION_POOL_MAX + PG_BROADCAST_POOL_MAX);
 
 // Only the 10 starting tasks run the transient schema probe. Old tasks have
 // completed it before the deployment begins.
