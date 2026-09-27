@@ -162,8 +162,8 @@ and `bun run test:architecture` on every pull request that touches this app.
 
 ## Plugin behavior the config depends on
 
-`eslint-plugin-project-structure` has 4 behaviors that `eslint.config.mjs`
-works around. Each one was measured, not assumed:
+`eslint-plugin-project-structure` has 5 behaviors that `eslint.config.mjs`
+and `package.json` work around. Each one was measured, not assumed:
 
 - It resolves every pattern against the directory above the first
   `node_modules` in its own real path, and has no option to change that. pnpm
@@ -174,6 +174,10 @@ works around. Each one was measured, not assumed:
   instead silently disables the rule.
 - It records some packages bare (`hono`) and others as a declaration path
   (`zod/index.d.ts`). `pkg()` allows both forms.
+- It treats `node:*` built-ins as packages and looks for `node_modules/@types/node`
+  in its root and in `packageRoot`. A clean pnpm install links only declared
+  dependencies there, so `@types/node` is a declared devDependency. Without it,
+  every `node:*` import reports `Cannot find module`.
 - A tsconfig-aliased file outside the plugin root (`@kortix/api-contract`)
   arrives as an absolute path. The egress-shim entry allows the absolute and the
   root-relative form.
