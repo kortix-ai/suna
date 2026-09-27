@@ -218,11 +218,10 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   // `GET /projects/<id>` before it could start. Read-only — it never wakes a
   // sandbox — and a project this user cannot read answers 403 to it as well.
   //
-  // `prefetchSessionRouteReads` (start/config/scope) rides the SAME signal:
-  // those three also only need the route ids, and were waiting on
-  // `ProjectSessionView`'s own chunk to mount before firing — see
-  // `session-route-prefetch.ts` for the full waterfall this closes and why
-  // starting `/start` this early is safe even for a billing-blocked account.
+  // `prefetchSessionRouteReads` (config/scope) rides the SAME signal: those
+  // reads also only need the route ids, and were waiting on
+  // `ProjectSessionView`'s own chunk to mount. `/start` is not prefetched:
+  // see `session-route-prefetch.ts`.
   const queryClient = useQueryClient();
   const routeSessionId = routeSessionIdFromParams(useParams());
   useEffect(() => {

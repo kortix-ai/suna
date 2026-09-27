@@ -9,10 +9,11 @@ import { sessionScopeQueryKey } from '@/features/session/scope/use-session-scope
 import { prefetchSessionRouteReads } from './session-route-prefetch';
 
 /**
- * `/start`, `/config` and `/scope` used to fire only once `ProjectSessionView`'s
- * own route segment mounted — well after `ProjectAccessBoundary`'s
- * `prefetchSessionOpen` had already started the snapshot from the SAME two
- * route ids. This starts them from that same early point instead.
+ * `/config` and `/scope` used to fire only once `ProjectSessionView`'s own route
+ * segment mounted — well after `ProjectAccessBoundary`'s `prefetchSessionOpen`
+ * had already started the snapshot from the SAME two route ids. This starts
+ * them from that same early point instead. `/start` is a write and stays with
+ * `useSession`: prefetching it here produced a second `/start` on every open.
  */
 
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
@@ -48,26 +49,15 @@ function mockFetch() {
 }
 
 describe('prefetchSessionRouteReads', () => {
-  test('issues exactly one start, one config and one scope read', async () => {
+  test('issues one config and one scope read, and never a /start', async () => {
     const urls = mockFetch();
     const client = new QueryClient();
     prefetchSessionRouteReads(client, 'P1', 'S1');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(urls.filter((u) => u.includes('/sessions/S1/start'))).toHaveLength(1);
+    expect(urls.filter((u) => u.includes('/start'))).toHaveLength(0);
     expect(urls.filter((u) => u.includes('/sessions/S1/config'))).toHaveLength(1);
     expect(urls.filter((u) => u.includes('/sessions/S1/scope'))).toHaveLength(1);
-    client.clear();
-  });
-
-  test('the /start read carries the same wait budget useSession defaults to (15s)', async () => {
-    const urls = mockFetch();
-    const client = new QueryClient();
-    prefetchSessionRouteReads(client, 'P1', 'S1');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    const started = urls.find((u) => u.includes('/sessions/S1/start'));
-    expect(started).toContain('wait_ms=15000');
     client.clear();
   });
 
@@ -77,7 +67,7 @@ describe('prefetchSessionRouteReads', () => {
     prefetchSessionRouteReads(client, 'P1', 'S1');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(client.getQueryData(sessionStartKey('P1', 'S1'))).toBeDefined();
+    expect(client.getQueryData(sessionStartKey('P1', 'S1'))).toBeUndefined();
     expect(client.getQueryData(sessionConfigKey('P1', 'S1'))).toBeDefined();
     expect(client.getQueryData(sessionScopeQueryKey('P1', 'S1'))).toBeDefined();
     client.clear();
