@@ -121,6 +121,7 @@ export function __resetTurnStartConvergenceForTests(): void {
   __clearRunningCatalogForTests();
   desiredReleases.clear();
   sessionMemo.clear();
+  inFlightRunningReleaseProbes.clear();
 }
 
 interface SessionTarget {
@@ -299,22 +300,52 @@ export interface TurnStartConvergenceDeps {
 }
 
 /**
+ * R4 (the turn-latency spec (PR #7840) §3) — "a health probe made once by the
+ * config gate then again by the catalog gate" is the shape this forbids.
+ * `convergeBeforeTurnStart` and `convergeModelCatalogForTurnStart` now run
+ * CONCURRENTLY (R2, `forwardToSandbox`), and both call `probeRunningRelease`
+ * when their own memo is cold — which, run at the same instant, is exactly
+ * the race that would otherwise dial the box twice for one turn.
+ *
+ * Single-flight per session: a second call for a session already being
+ * probed joins the SAME promise instead of starting its own
+ * `GET /kortix/health`. A sequential second call (the probe already finished)
+ * pays its own read as before — this is concurrency dedupe, not a cache.
+ */
+const inFlightRunningReleaseProbes = new Map<string, Promise<string | null | undefined>>();
+
+/**
  * Ask the box what it runs, and remember the answer.
  *
  * `undefined` means "could not tell" — an unreachable box, or a daemon that
  * predates config releases. Neither is evidence of being current, so neither is
  * remembered.
  */
-async function probeRunningRelease(sessionId: string): Promise<string | null | undefined> {
-  const { readSandboxConfigState } = await import('./session-reload');
-  const state = await readSandboxConfigState({ sessionId }).catch(() => null);
-  // The SAME health read answers both questions. Learning the runtime-asset
-  // verdict here is what makes the asset lane cost the turn path ZERO network
-  // calls: it never asks a box anything the config gate was not already asking.
-  if (state?.reachable) await noteAssetsFromHealth(sessionId, state.runtime);
-  if (!state?.reachable || !state.configReleases || !state.release) return undefined;
-  noteRunningRelease(sessionId, state.release.release_id);
-  return state.release.release_id;
+export async function probeRunningRelease(sessionId: string): Promise<string | null | undefined> {
+  const existing = inFlightRunningReleaseProbes.get(sessionId);
+  if (existing) return existing;
+  const probe = (async () => {
+    const { readSandboxConfigState } = await import('./session-reload');
+    const state = await readSandboxConfigState({ sessionId }).catch(() => null);
+    // The SAME health read answers both questions. Learning the runtime-asset
+    // verdict here is what makes the asset lane cost the turn path ZERO network
+    // calls: it never asks a box anything the config gate was not already asking.
+    if (state?.reachable) await noteAssetsFromHealth(sessionId, state.runtime);
+    if (!state?.reachable || !state.configReleases || !state.release) return undefined;
+    noteRunningRelease(sessionId, state.release.release_id);
+    return state.release.release_id;
+  })();
+  inFlightRunningReleaseProbes.set(sessionId, probe);
+  try {
+    return await probe;
+  } finally {
+    // Only this call's own entry — a newer probe for the same session that
+    // started after this one resolved must not have its (different) promise
+    // deleted out from under it.
+    if (inFlightRunningReleaseProbes.get(sessionId) === probe) {
+      inFlightRunningReleaseProbes.delete(sessionId);
+    }
+  }
 }
 
 /**

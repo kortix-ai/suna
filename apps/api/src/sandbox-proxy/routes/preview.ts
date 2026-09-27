@@ -1012,6 +1012,19 @@ export async function forwardToSandbox(
   }
   const serviceKey = record.serviceKey;
 
+  // The one SSE endpoint proxied per sandbox. Computed here (not only where it
+  // used to live, right before the retry loop) because the pre-flight
+  // parallelization below (R2) needs it to decide whether the first-attempt
+  // ingress resolve may be started early. See the comment on that stream's
+  // stall recovery at the retry loop for why it is excluded.
+  const isSseEventStreamRequest = method === 'GET' && remainingPath.endsWith('/global/event');
+  // R2 (the turn-latency spec (PR #7840) §3): the first attempt's provider-ingress
+  // resolve — this box's network address — has no data dependency on the
+  // config/catalog convergence gates below, so it starts alongside them
+  // instead of queuing behind both. Populated just below, inside the
+  // turn-start branch; consumed by the retry loop's attempt 0.
+  let prefetchedIngress: ReturnType<typeof resolveSandboxIngress> | null = null;
+
   // ── C9 — a prompt on a box that is behind converges FIRST, then runs ─────
   // THE one funnel: the HTTP proxy and the server-side prompt queue both
   // arrive here, and `isTurnStartRequest` covers the OpenCode ports (4096/
@@ -1027,7 +1040,35 @@ export async function forwardToSandbox(
   // `convergeBeforeTurnStart`, which answers from two memos with no network
   // call at all in that case.
   if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
-    const converged = await convergeBeforeTurnStart(record.sessionId);
+    // R2 — config-converge, model-catalog-converge and the ingress resolve
+    // read/act on three independent surfaces (the session's config release,
+    // the box's managed-model map, this box's provider network address) and
+    // none consumes another's result before the upstream fetch is built. They
+    // used to run back to back — measured ~40 ms each on a warm box, ~120 ms
+    // stacked for nothing. They now start together and are joined where each
+    // result is first actually needed, exactly like `Promise.all` on the
+    // pre-flight reads the spec calls out (§3, R2).
+    //
+    // EXCLUDED: the SSE stall-recovery path just below
+    // (`isSseEventStreamRequest`) decides whether to INVALIDATE the cached
+    // ingress link before ever resolving it; starting the resolve here would
+    // race that decision and could hand the stream the exact stale link the
+    // invalidation exists to discard. That path is a `GET /global/event`,
+    // never a prompt — this exclusion never touches the send-a-prompt path
+    // the latency budget is about.
+    if (!isSseEventStreamRequest) {
+      prefetchedIngress = resolveSandboxIngress(record, ingressRequest);
+      // Never let an error here become an unhandled rejection if the request
+      // returns before the retry loop consumes it (e.g. an agent-switch or
+      // model-catalog refusal below) — the loop's own resolve, or nothing,
+      // takes over in that case.
+      prefetchedIngress.catch(() => undefined);
+    }
+    const requestedModelId = requestedPromptManagedModelId(requestBody, incomingHeaders);
+    const convergedPromise = convergeBeforeTurnStart(record.sessionId);
+    const modelCatalogPromise = convergeModelCatalogForTurnStart(record.sessionId, requestedModelId);
+
+    const converged = await convergedPromise;
     ptl.mark('config-converge');
     // …and the BINARIES, which must not block. `convergeBeforeTurnStart` above
     // awaits because config changes what the agent IS; the daemon, the CLI, the
@@ -1051,8 +1092,7 @@ export async function forwardToSandbox(
     // kortix/<id>` while the control plane serves that model the whole time
     // (2026-09-26). Skips instantly (no memo read, no network call) for
     // every non-managed-model request — see `requestedPromptManagedModelId`.
-    const requestedModelId = requestedPromptManagedModelId(requestBody, incomingHeaders);
-    const modelCatalog = await convergeModelCatalogForTurnStart(record.sessionId, requestedModelId);
+    const modelCatalog = await modelCatalogPromise;
     ptl.mark('model-catalog-converge');
     if (modelCatalog.decision !== 'skipped' && modelCatalog.decision !== 'current') {
       console.log('[PREVIEW] turn-start model-catalog convergence', {
@@ -1246,13 +1286,13 @@ export async function forwardToSandbox(
   let lastAttemptHop: ProxyHop = 'provider_ingress';
   let providerCredentialsRefreshed = false;
 
-  // The one SSE endpoint proxied per sandbox. Its streams get a byte-counting
+  // `isSseEventStreamRequest` is computed earlier now (see the R2 comment
+  // above `prefetchedIngress`) — its streams still get a byte-counting
   // passthrough (below), and a previous stream that answered 200 without EVER
   // writing a byte — the stale-cached-ingress signature, which produces no
-  // error status and therefore never invalidated anything — costs the next
-  // connect its cache entry, so it re-resolves instead of re-dialling the
+  // error status and therefore never invalidated anything — still costs the
+  // next connect its cache entry, so it re-resolves instead of re-dialling the
   // same dead address for the rest of the 5-minute TTL. See `sse-stall.ts`.
-  const isSseEventStreamRequest = method === 'GET' && remainingPath.endsWith('/global/event');
   /** Set per attempt: did we hand the daemon the CLIENT's Accept-Encoding? */
   let upstreamEncodingForwarded = false;
   const sseStallKey = `${sandboxId}:${port}`;
@@ -1268,7 +1308,14 @@ export async function forwardToSandbox(
         );
         invalidatePreviewLink(sandboxId, port);
       }
-      const ingress = await resolveSandboxIngress(record, ingressRequest);
+      // `prefetchedIngress` is null on this exact path — it is never started
+      // for `isSseEventStreamRequest` (see the R2 comment above it), which is
+      // what lets the invalidation just above always win against a stale
+      // resolve instead of racing it.
+      const ingress =
+        attempt === 0 && prefetchedIngress
+          ? await prefetchedIngress
+          : await resolveSandboxIngress(record, ingressRequest);
       ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
