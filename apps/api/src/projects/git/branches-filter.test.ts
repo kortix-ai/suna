@@ -61,8 +61,13 @@ describe('filterBranchesForResponse', () => {
   const sessionB = branch('1a2b3c4d-5e6f-4789-90ab-cdef01234567');
   const all = [main, feature, sessionA, sessionB];
 
-  test('excludes session branches by default', () => {
+  test('keeps session branches by default: the Files and CR pickers list them', () => {
     const result = filterBranchesForResponse(all);
+    expect(result.map((b) => b.name)).toEqual(all.map((b) => b.name));
+  });
+
+  test('includeSessionBranches: false drops them for a default-branch picker', () => {
+    const result = filterBranchesForResponse(all, { includeSessionBranches: false });
     expect(result.map((b) => b.name)).toEqual(['main', 'feature/login']);
   });
 
@@ -70,13 +75,16 @@ describe('filterBranchesForResponse', () => {
     const defaultLooksLikeSession = branch('9b1f0c2a-4b7e-4a3d-9c1e-2f6a7b8c9d0e', {
       is_default: true,
     });
-    const result = filterBranchesForResponse([defaultLooksLikeSession, sessionB]);
+    const result = filterBranchesForResponse([defaultLooksLikeSession, sessionB], {
+      includeSessionBranches: false,
+    });
     expect(result).toEqual([defaultLooksLikeSession]);
   });
 
-  test('includeSessionBranches opt-in returns everything', () => {
-    const result = filterBranchesForResponse(all, { includeSessionBranches: true });
-    expect(result.map((b) => b.name)).toEqual(all.map((b) => b.name));
+  test('the cap never hides the default branch', () => {
+    const many = Array.from({ length: 10 }, (_, i) => branch(`feature-${i}`));
+    const result = filterBranchesForResponse([...many, main], { limit: 3 });
+    expect(result.map((b) => b.name)).toEqual(['feature-0', 'feature-1', 'feature-2', 'main']);
   });
 
   test('q applies a case-insensitive substring filter', () => {

@@ -84,9 +84,9 @@ export interface ListProjectBranchesOptions {
   /** Server default 500, hard cap 2000. */
   limit?: number;
   /**
-   * The server excludes auto-created session branches by default (their
-   * name is the session's own UUID — no human picks one by name). Pass
-   * `true` for a genuinely complete listing, e.g. a full-table CLI command.
+   * Auto-created session branches (named by the session's UUID) are listed
+   * unless this is `false`. A default-branch picker passes `false`; the
+   * Files version selector and the change-request head picker leave it unset.
    */
   includeSessionBranches?: boolean;
 }
@@ -98,7 +98,9 @@ export async function listProjectBranches(
   const params = new URLSearchParams();
   if (options?.q) params.set('q', options.q);
   if (options?.limit != null) params.set('limit', String(options.limit));
-  if (options?.includeSessionBranches) params.set('include_session_branches', 'true');
+  if (options?.includeSessionBranches !== undefined) {
+    params.set('include_session_branches', String(options.includeSessionBranches));
+  }
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<ProjectBranchesResponse>(

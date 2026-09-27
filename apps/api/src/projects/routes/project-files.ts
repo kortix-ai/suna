@@ -332,11 +332,10 @@ projectsApp.openapi(
 //
 // A project's remote can carry thousands of auto-created session branches —
 // createRemoteSessionBranch names each one after the session's own UUID (see
-// ../git/branches.ts). No human ever picks one of those by name, and every
-// UI branch picker (apps/web BranchPicker, mobile OpenCRSheet) only ever
-// shows a bounded, human-relevant subset anyway. The default response now
-// excludes them and caps the result; a caller that genuinely wants the full
-// remote (the CLI's `files branches` table) opts back in explicitly.
+// ../git/branches.ts). The response is capped (default 500, the default
+// branch always kept). Session branches stay in by default — the Files
+// version selector and the change-request head picker list them on purpose —
+// and `include_session_branches=false` drops them for a default-branch picker.
 
 projectsApp.openapi(
   createRoute({
@@ -350,7 +349,8 @@ projectsApp.openapi(
         query: z.object({
           q: z.string().optional(),
           limit: z.coerce.number().int().min(1).max(BRANCH_LIST_MAX_LIMIT).optional(),
-          include_session_branches: z.coerce.boolean().optional(),
+          // Not z.coerce.boolean(): Boolean('false') is true.
+          include_session_branches: z.enum(['true', 'false']).optional(),
         }),
       },
     responses: {
@@ -370,7 +370,7 @@ projectsApp.openapi(
     const branches = filterBranchesForResponse(allBranches, {
       q: query.q,
       limit: query.limit,
-      includeSessionBranches: query.include_session_branches === true,
+      includeSessionBranches: query.include_session_branches !== 'false',
     });
     return c.json({
       default_branch: loaded.row.defaultBranch,

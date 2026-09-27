@@ -1,8 +1,8 @@
 /**
  * GET /:projectId/branches returned every remote branch — 977KB on a busy
  * prod project, dominated by thousands of auto-created session branches. The
- * server now excludes them by default and accepts `q`/`limit`/
- * `include_session_branches`; this proves the SDK forwards those params.
+ * server now caps the list and accepts `q`/`limit`/`include_session_branches`
+ * (absent = include); this proves the SDK forwards an explicit value either way.
  */
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
@@ -38,8 +38,8 @@ test('forwards q, limit, and includeSessionBranches as query params', async () =
   expect(url.searchParams.get('include_session_branches')).toBe('true');
 });
 
-test('includeSessionBranches: false omits the param entirely (server default already excludes them)', async () => {
+test('includeSessionBranches: false reaches the wire (the server includes them by default)', async () => {
   await listProjectBranches('P1', { includeSessionBranches: false });
   const url = new URL(last().url);
-  expect(url.searchParams.has('include_session_branches')).toBe(false);
+  expect(url.searchParams.get('include_session_branches')).toBe('false');
 });

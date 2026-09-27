@@ -55,9 +55,10 @@ export interface BranchListFilter {
   q?: string;
   /** Capped at BRANCH_LIST_MAX_LIMIT regardless of what's requested. */
   limit?: number;
-  /** Opt-in escape hatch for callers that genuinely want every branch
-   *  (e.g. the CLI's full-table listing). Default excludes session
-   *  branches — see SESSION_BRANCH_NAME_RE above. */
+  /** `false` drops auto-created session branches (see SESSION_BRANCH_NAME_RE
+   *  above) — a default-branch picker never offers one. Absent means INCLUDE:
+   *  the Files version selector and the change-request head picker list
+   *  session branches on purpose, and older clients expect them. */
   includeSessionBranches?: boolean;
 }
 
@@ -76,13 +77,17 @@ export function filterBranchesForResponse(
     BRANCH_LIST_MAX_LIMIT,
   );
   const filtered = branches.filter((branch) => {
-    if (!filter.includeSessionBranches && !branch.is_default && isSessionBranchName(branch.name)) {
+    if (filter.includeSessionBranches === false && !branch.is_default && isSessionBranchName(branch.name)) {
       return false;
     }
     if (q && !branch.name.toLowerCase().includes(q)) return false;
     return true;
   });
-  return filtered.slice(0, limit);
+  const page = filtered.slice(0, limit);
+  // The cap must never hide the default branch: every picker preselects it.
+  const defaultBranch = filtered.find((branch) => branch.is_default);
+  if (defaultBranch && !page.includes(defaultBranch)) page.push(defaultBranch);
+  return page;
 }
 
 export interface ExpectedFileRevision {
