@@ -1,43 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
-import ts from 'typescript'
 import { loadConfig, resolveHarness, type HarnessService } from '../services/harness/harness'
 import { buildDaemonApp } from '../app/server'
 import { createRuntimeProxyRouter } from '../routes/proxy/runtime-proxy'
 import type { HarnessQueryService } from '../services/harness/contract/queries'
 
-const sourceRoot = resolve(import.meta.dir, '..')
-/** Every concrete adapter folder. Host code imports none of them; adapters import none of each other. */
-const adapterRoots = ['services/harness/open-code', 'services/harness/pi'].map((dir) => resolve(sourceRoot, dir))
-
+// Which imports are allowed between host, harness and adapters is the lint's job
+// (eslint.config.mjs, run by architecture-boundaries.test.ts). This file owns the
+// runtime half: selection, and controllers that keep an adapter's native features.
 describe('harness ownership boundary', () => {
-  test('only the resolver can import a concrete adapter from host production code', async () => {
-    const leaks: string[] = []
-    for await (const name of new Bun.Glob('**/*.ts').scan(sourceRoot)) {
-      if (name.includes('__tests__/') || name.endsWith('.test.ts')) continue
-      if (name === 'services/harness/harness.ts') continue
-      const ownRoot = adapterRoots.find((root) => resolve(sourceRoot, name).startsWith(root + '/'))
-      const file = resolve(sourceRoot, name)
-      const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
-      const inspect = (node: ts.Node) => {
-        let specifier: ts.Expression | undefined
-        if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) specifier = node.moduleSpecifier
-        if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) specifier = node.arguments[0]
-        if (specifier && ts.isStringLiteralLike(specifier) && specifier.text.startsWith('.')) {
-          const target = resolve(dirname(file), specifier.text)
-          for (const root of adapterRoots) {
-            if (root === ownRoot) continue
-            if (target === root || target.startsWith(root + '/')) leaks.push(`${name} -> ${relative(sourceRoot, target)}`)
-          }
-        }
-        ts.forEachChild(node, inspect)
-      }
-      inspect(source)
-    }
-    expect(leaks).toEqual([])
-  })
-
   test('KORTIX_HARNESS selects the adapter (default opencode); the selected adapter loads its own environment', () => {
     expect(resolveHarness().id).toBe('opencode')
     expect(resolveHarness(loadConfig())).toBe(resolveHarness())
@@ -50,27 +20,6 @@ describe('harness ownership boundary', () => {
     expect(opencode.harness).toBe('opencode')
     expect('opencodeInternalPort' in opencode).toBe(true)
     expect(() => loadConfig({ KORTIX_HARNESS: 'codex' })).toThrow('Unsupported harness: codex')
-  })
-
-  test('harness modules cannot import the HTTP framework or host controllers', async () => {
-    const leaks: string[] = []
-    for await (const name of new Bun.Glob('services/harness/**/*.ts').scan(sourceRoot)) {
-      const file = resolve(sourceRoot, name)
-      const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
-      const inspect = (node: ts.Node) => {
-        let specifier: ts.Expression | undefined
-        if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) specifier = node.moduleSpecifier
-        if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) specifier = node.arguments[0]
-        if (specifier && ts.isStringLiteralLike(specifier)) {
-          const target = resolve(dirname(file), specifier.text)
-          if (specifier.text === 'hono' || specifier.text.startsWith('hono/') ||
-              target.startsWith(resolve(sourceRoot, 'routes') + '/')) leaks.push(`${name} -> ${specifier.text}`)
-        }
-        ts.forEachChild(node, inspect)
-      }
-      inspect(source)
-    }
-    expect(leaks).toEqual([])
   })
 
   test('host controllers call a different resolved service and retain its extra fields and native features', async () => {

@@ -1,4 +1,4 @@
-import { createHmac } from 'crypto'
+import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'bun:test'
 import { KORTIX_USER_CONTEXT_HEADER } from '../lib/kortix-api/kortix-user-context'
 import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'

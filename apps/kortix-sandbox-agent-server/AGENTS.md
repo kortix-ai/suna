@@ -1,5 +1,21 @@
 # kortixd (sandbox agent daemon)
 
+## Architecture
+
+The source is layered: `src/lib/` → `src/services/<name>/` → `src/services/harness/`
+→ `src/routes/` and `src/app/`. [ARCHITECTURE.md](ARCHITECTURE.md) lists the folders,
+the import rules and where new code goes. `bun run lint` enforces them, and `bun test`
+runs the lint.
+
+- **Never disable the boundary rule.** When it fires, move the code, or hand the lower
+  layer what it needs from the layer above (`HarnessBootContext.serve`,
+  `registerHarnessAssets`). Do not import upward "just for a type".
+- **A file lives next to its only consumer.** Move it to `shared/` or `src/lib/` only
+  when a second consumer exists. Update every importer and test, and delete the old
+  path, in the same change.
+- **A rule change ships with its proof:** `eslint.config.mjs`, a case in
+  `scripts/check-architecture.mjs`, and ARCHITECTURE.md, in one PR.
+
 ## Tests
 
 One `bun test` process runs every file in this package (`pnpm --filter kortixd test`).

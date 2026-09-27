@@ -11,16 +11,16 @@
  * config convergence is in flight". What THAT test cannot see is whether
  * `startProxy` is the thing that wires it in for a real daemon boot. This
  * file drives `startProxy` itself with a fake `HarnessService` (the same
- * technique `harness-boundary.test.ts` uses to prove host code depends only
- * on the contract) and reads the decision back through the real,
+ * technique `harness-boundary.test.ts` uses to prove host controllers depend
+ * only on the contract) and reads the decision back through the real,
  * module-level `requestAgentSwapIfIdle` — so it is a behavior assertion, not
  * a source-text one.
  *
  * `harness.control.convergenceInFlight` — not a direct import of
- * `harness/open-code/config-release` — is deliberate: `proxy.ts` is host
- * production code, and importing a concrete adapter from there is exactly
- * what `harness-boundary.test.ts`'s "only the resolver can import a concrete
- * adapter" tripwire forbids.
+ * `services/harness/open-code/config-release` — is deliberate: `app/server.ts`
+ * is host production code, and importing a concrete adapter from there is
+ * exactly what the boundary lint (eslint.config.mjs, "only harness.ts imports
+ * an adapter") forbids.
  */
 import { afterEach, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'

@@ -1,8 +1,8 @@
 # Internal harness boundary
 
-`harness.ts` is the only host module that imports a concrete adapter. It resolves
+`harness.ts` is the only module that imports a concrete adapter. It resolves
 the implementation and exposes a definition for configuration, boot, and service
-creation. Two adapters are registered: `opencode` (the default) and `pi`. An
+creation. The import rules are in [ARCHITECTURE.md](../../../ARCHITECTURE.md). Two adapters are registered: `opencode` (the default) and `pi`. An
 unknown id fails the boot.
 
 ```ts
@@ -26,9 +26,10 @@ session (a restart or resume re-reads the selection).
 
 | Location | Responsibility |
 | --- | --- |
-| `harness.ts` | Resolution and host-facing contracts |
-| `assets.ts` | Harness maintenance contract |
-| `control.ts`, `diagnostics.ts`, `queries.ts`, `proxy.ts` | Named host-facing operation contracts; no router dependencies |
+| `harness.ts` | Resolution, `loadConfig`, the boot context and the union helpers every box uses |
+| `contract/` | Named host-facing operation contracts (`control`, `diagnostics`, `queries`, `proxy`, `lifecycle-contract`, `boot-state`, `server`); no router dependencies |
+| `shared/` | Adapter-neutral steps both adapters call: agent env file, `on_boot`, attachment stripping, boot-timeline and memory-guard relays |
+| `../runtime-assets/port.ts` | Harness maintenance contract, owned by the service that consumes it |
 | `open-code/service.ts` | Composition over one lifecycle; native typed ports |
 | `open-code/boot.ts` | Native cold boot, warm seed/adoption, first turn, reconciliation and relays |
 | `open-code/control.ts`, `open-code/diagnostics.ts`, `open-code/queries.ts` | Native execution, configuration, state queries, diagnostics and attachments |
@@ -44,14 +45,16 @@ session (a restart or resume re-reads the selection).
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
 | `pi/wire.ts`, `pi/transcript.ts` | pi events → OpenCode wire frames; the transcript store |
 | `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts`, `pi/relay.ts` | Permissions/questions, workspace tools, gateway model, control-plane callbacks |
-| `../routes/` | Controllers, authentication, request parsing, HTTP status/headers, gzip and SSE delivery |
+| `../../routes/` | Controllers, authentication, request parsing, HTTP status/headers, gzip and SSE delivery |
 
-The host retains its entrypoint, monitor mode, Git/files/PTYs, authentication,
-static previews, LLM/connector proxy, resource sampler, event sequencer,
-managed-skill overlay (`managed-skills.ts`), attachment stripping
-(`inline-attachments.ts`), the `on_boot` spawner and the CLI/daemon update
-scheduler. These call service ports for harness behavior. They import no
-adapter module; adapters import no other adapter (`harness-boundary.test.ts`).
+The host retains its entrypoint and monitor mode (`src/app/`), Git/files/PTYs,
+authentication, static previews, the LLM/connector proxy, the resource sampler,
+the event sequencer, the managed-skill overlay (`src/services/skills/`) and the
+CLI/daemon update scheduler (`src/services/runtime-assets/`). These call service
+ports for harness behavior. They import no adapter module; adapters import no
+other adapter, no route and nothing in `src/app/`. The app hands a boot what it
+needs through `HarnessBootContext` (`serve` starts the HTTP server).
+`bun run lint` enforces all of it.
 
 ## The pi harness
 
@@ -154,11 +157,11 @@ already reads for readiness.
 ## Config provider is a host service, not harness logic
 
 `src/services/config-provider/` (the `git` / `prefer-s3` / `require-s3` project
-acquisition coordinator, #7221) stays outside `src/harness/`. It depends only
-on host modules (`config`, `git`, `logger`) and knows nothing about any
-harness. Both `open-code/boot.ts` and `pi/boot.ts` call
+acquisition coordinator, #7221) stays outside `src/services/harness/`. It
+depends only on `src/lib/` (`config`, `git`, `logger`) and knows nothing about
+any harness. Both `open-code/boot.ts` and `pi/boot.ts` call
 `materializeProject(cfg, { bootMark, onSummary })` at the point where the cold
-boot acquires the workspace. `boot-state.ts` (host) carries the outcome:
+boot acquires the workspace. `contract/boot-state.ts` carries the outcome:
 `configProvider` (reported in `/kortix/health` as `config_provider`) and
 `deferredHistoryBackfill`.
 

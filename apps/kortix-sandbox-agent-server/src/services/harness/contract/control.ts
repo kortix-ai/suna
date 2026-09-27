@@ -95,7 +95,7 @@ export interface HarnessConfigConvergeResult {
  *
  * It lives on the harness CONTRACT, not inside an adapter, because the route
  * that parses the query parameter may not import an adapter (the ownership
- * boundary tripwire in `__tests__/harness-boundary.test.ts`).
+ * boundary lint in eslint.config.mjs, see ARCHITECTURE.md).
  */
 export const MAX_SWAP_DELAY_MS = 30_000
 
@@ -161,8 +161,8 @@ export interface HarnessControlService {
    * SIGTERM is indistinguishable from a release that never starts.
    *
    * Lives on the CONTRACT, not called through an adapter import from
-   * `proxy.ts`: the harness ownership boundary
-   * (`__tests__/harness-boundary.test.ts`) forbids host production code from
+   * `app/server.ts`: the harness ownership boundary (eslint.config.mjs,
+   * ARCHITECTURE.md) forbids host production code from
    * importing a concrete adapter directly. Absent, or answering `false`
    * unconditionally, on a runtime without a config-convergence concept (the
    * `pi` harness) — it never blocks there, which is correct: nothing is

@@ -1,4 +1,4 @@
-import { createHmac } from 'crypto'
+import { createHmac } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { loadOpenCodeConfig, type OpenCodeConfig as Config } from '../services/harness/open-code/config'
 import type { Opencode } from '../services/harness/open-code/lifecycle'

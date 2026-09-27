@@ -7,10 +7,9 @@
  *
  * Host-layer, not harness-layer: every harness's background monitor relays
  * through this one function (see `resources.ts` `MemoryGuardOptions.onGuard`).
- * It lives at the root, beside `resources.ts` and `relay-context.ts`, so
- * `harness/open-code` and `harness/pi` share it without importing each
- * other — the ownership boundary (`harness-boundary.test.ts`) forbids a
- * concrete adapter from importing another adapter's module.
+ * It lives in `services/harness/shared/`, so `open-code/` and `pi/` share it
+ * without importing each other — the boundary lint (eslint.config.mjs) forbids
+ * a concrete adapter from importing another adapter's module.
  */
 import { sandboxRelayContext } from '../../../lib/kortix-api/relay-context'
 import { logger } from '../../../lib/log/logger'

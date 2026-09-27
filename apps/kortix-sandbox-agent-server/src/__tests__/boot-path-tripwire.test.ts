@@ -2,8 +2,7 @@
  * T1–T5 — the boot path is ONE path by construction, not by convention.
  *
  * PLAN-one-boot-path's enforcement section. Each rule is checked against the
- * real source with the TypeScript AST, the way `harness-boundary.test.ts`
- * checks the adapter boundary. The scanners live in
+ * real source with the TypeScript AST. The scanners live in
  * `helpers/boot-path-rules.ts` so the same functions can be pointed at the
  * PRE-refactor tree:
  *

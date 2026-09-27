@@ -285,7 +285,7 @@ export function startProxy(
   // it. `harness.control.convergenceInFlight()` is the harness CONTRACT's
   // answer (config-release.ts owns the actual `inFlight` state, behind the
   // opencode adapter this module must not import directly — the harness
-  // ownership boundary, `__tests__/harness-boundary.test.ts`); absent on a
+  // ownership boundary, enforced by eslint.config.mjs); absent on a
   // runtime with no such concept, which never blocks.
   registerAgentSwapBlocker('config-convergence', () => harness.control.convergenceInFlight?.() ?? false)
   let app = buildDaemonApp(cfg, harness, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
