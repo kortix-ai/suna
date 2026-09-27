@@ -21,6 +21,69 @@ linked, not inlined.
 
 ## Register
 
+### A raw upstream passthrough must buffer by SSE line and check for a terminal marker before closing — the transport that "just forwards bytes" is the one that silently truncates (2026-09-27)
+
+**Rule.** Any code that relays an upstream byte stream toward a client — an
+LLM-gateway SSE relay, a proxy, a translation layer — must (1) buffer output
+by complete line (or event) and drop an incomplete trailing fragment on
+termination, never forward a partial `data:` line straight from a `read()`
+chunk; (2) track whether the upstream reached a well-defined end (`[DONE]`, a
+populated `finish_reason`, or an in-band `error` frame) and treat any other
+termination — clean EOF, a read exception, or an inactivity timeout — as
+**incomplete**, not success; (3) for an incomplete termination with **zero**
+bytes forwarded yet, a transparent retry against a fresh upstream candidate is
+safe (nothing has reached the client to make a repeat visible) — bound it (2
+extra attempts, short backoff) and prefer the next pooled key/endpoint over
+re-dispatching the same one; (4) once any byte has been forwarded, never
+retry — emit an explicit, well-formed terminal frame (`error` + `[DONE]`)
+instead of silently closing, so the client's own retry classifier sees a
+retryable failure instead of "ended without finish_reason" / a JSON parse
+error. **Trigger surface:** writing or reviewing any stream-relay `pull()`
+loop, especially one that currently does `controller.enqueue(value)` on raw
+upstream bytes with no completion check.
+
+**Incident.** A forensic census of `deepseek-v4.1-flash` traffic through
+Kortix's managed-model pool (Morph/OpenRouter) found 24 sessions in ~5 hours
+where the upstream stream was cut mid-generation and the gateway
+(`packages/llm-gateway/src/pipeline/streaming.ts`'s `relayStream`, reached from
+`simple-handler.ts`) forwarded raw `reader.read()` chunks unconditionally and
+closed cleanly on upstream EOF with no error frame and no `[DONE]` check —
+49% of that window's real failures. A second, rarer class forwarded a
+truncated trailing JSON line verbatim. Clients (pi-ai, OpenCode) then threw
+`Stream ended without finish_reason` or a raw JSON parse error, and neither
+harness's retry classifier recognized either message, so the turn just died —
+compounded by pi's own auto-retry being disabled by design ("a failed turn is
+the product's to retry").
+
+**Two traps found implementing the fix, worth naming on their own:**
+- **A retry-body clone captured for the WHOLE streaming response lifetime is
+  an unbounded per-request memory cost**, not a bounded one — cloning a
+  28 MB multimodal request body "just in case a retry is needed" held that
+  clone alive for the entire completion (measured: baseline 0.6x → 4.2x–4.5x
+  of wire size). Bound it: reuse an already-paid clone (the existing
+  pool/profile retry bodies) when one exists, and clone fresh only below a
+  size threshold and only when the request has no inline images — an
+  image-heavy request still gets the line-buffering and explicit-error-frame
+  halves of the fix, just not the transparent retry.
+- **A `pull()` that returns having enqueued/closed/errored nothing is never
+  called again** (verified against Bun 1.3.14's `ReadableStream` — unlike the
+  spec's `ShouldCallPull` re-invocation some engines implement, this one just
+  hangs). A stream-cut retry or "no complete line yet, read more" must loop
+  *inside* one `pull()` call, not return and hope for another invocation.
+
+**Enforcer.** `packages/llm-gateway/src/usage/sse-scanner.test.ts` (terminal
+detection: `[DONE]`, `finish_reason`, in-band error, and that a truncated
+trailing line never flips it); `packages/llm-gateway/src/pipeline/streaming.test.ts`
+(retry-before-first-byte succeeds transparently and is invisible to the
+client; cut-after-first-byte forwards no partial line and emits the terminal
+frame; bounded retry attempts; `[DONE]` appended after a doneless error
+frame); `packages/llm-gateway/src/pipeline/simple-handler.test.ts` (the same
+three shapes end-to-end through `handleChatCompletions`, including the pool
+cooldown call and that an image-bearing body gets no retry);
+`packages/llm-gateway/src/pipeline/memory-envelope.test.ts` (pre-existing;
+pins the streaming steady-state memory floor — this is what caught the retry-
+body-clone regression above).
+
 ### Never write back a JSONB column you read earlier: merge in SQL (2026-09-22)
 
 **Rule:** A writer of shared JSONB state (`session_sandboxes.metadata`) never

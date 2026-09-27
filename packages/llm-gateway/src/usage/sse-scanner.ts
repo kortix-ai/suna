@@ -25,6 +25,15 @@ export class IncrementalSseScanner {
   private lastUsage: ExtractedUsage | null = null;
   private lastModel: string | undefined;
   private errorFrame: SseErrorFrame | null = null;
+  // Set once a `data: [DONE]` sentinel or a non-null `choices[].finish_reason`
+  // is seen on a COMPLETE data line. This is the "did the upstream actually
+  // finish, or did it just stop sending bytes" signal — see relayStream's
+  // `handleIncompleteTermination`, which exists precisely because a raw
+  // openai-compat passthrough forwards whatever bytes arrive with no such
+  // check, and an upstream cut mid-stream then looks byte-identical to a
+  // successful completion (see the 2026-09-27 "upstream_incomplete_stream"
+  // learning).
+  private explicitDone = false;
   private readonly maxCarryBytes: number;
 
   constructor(maxCarryBytes: number = DEFAULT_MAX_CARRY_BYTES) {
@@ -58,15 +67,31 @@ export class IncrementalSseScanner {
     const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
     if (!line.startsWith('data:')) return;
     const payload = line.slice(5).trim();
-    if (!payload || payload === '[DONE]') return;
-    let chunk: UpstreamChunkShape & { error?: unknown };
+    if (!payload) return;
+    if (payload === '[DONE]') {
+      this.explicitDone = true;
+      return;
+    }
+    let chunk: UpstreamChunkShape & {
+      error?: unknown;
+      choices?: Array<{ finish_reason?: unknown } | null | undefined>;
+    };
     try {
-      chunk = JSON.parse(payload) as UpstreamChunkShape & { error?: unknown };
+      chunk = JSON.parse(payload) as typeof chunk;
     } catch {
       return;
     }
     if (chunk?.model) this.lastModel = chunk.model;
     if (chunk?.usage) this.lastUsage = normalizeUsageChunk(chunk);
+    if (Array.isArray(chunk?.choices)) {
+      for (const choice of chunk.choices) {
+        const finishReason = choice?.finish_reason;
+        if (typeof finishReason === 'string' && finishReason.length > 0) {
+          this.explicitDone = true;
+          break;
+        }
+      }
+    }
     if (!this.errorFrame && chunk?.error && typeof chunk.error === 'object') {
       const { message, code, ...rest } = chunk.error as {
         message?: unknown;
@@ -97,5 +122,27 @@ export class IncrementalSseScanner {
   /** First upstream error frame seen, or null on a clean stream. */
   get error(): SseErrorFrame | null {
     return this.errorFrame;
+  }
+
+  /**
+   * True once a `[DONE]` sentinel or a non-null `finish_reason` was seen on a
+   * complete line. Distinct from `isTerminal`: an in-band error frame ends
+   * the completion too, but an upstream that sends one and then just drops
+   * the connection never said `[DONE]` — `relayStream` uses this to decide
+   * whether it still owes the client an explicit terminator.
+   */
+  get hasExplicitDone(): boolean {
+    return this.explicitDone;
+  }
+
+  /**
+   * Did the upstream reach a well-defined end of its own accord — `[DONE]`,
+   * a populated `finish_reason`, or an in-band `error` frame? If this is
+   * false when the upstream stream ends, the caller learned NOTHING about
+   * why generation stopped: that's the silent-truncation case
+   * `relayStream.handleIncompleteTermination` exists to catch.
+   */
+  get isTerminal(): boolean {
+    return this.explicitDone || this.errorFrame !== null;
   }
 }

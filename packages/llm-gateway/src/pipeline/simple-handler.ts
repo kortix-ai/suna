@@ -348,6 +348,11 @@ export async function handleChatCompletions(
   // time-to-first-byte upstream does not pin one extra copy of a multi-MB
   // multimodal request for the whole prefill.
   let body: Record<string, unknown> | null;
+  // Rough (UTF-16 code units, not bytes — close enough for a size gate)
+  // request size, captured before `rawBody` is cleared below. Used only to
+  // decide whether a stream-cut transparent retry may afford ANOTHER
+  // `structuredClone` of the body — see `streamRedispatchBody` below.
+  const approxRequestSize = req.rawBody?.length ?? 0;
   try {
     body = req.parsedBody ?? (JSON.parse(req.rawBody) as Record<string, unknown>);
     req.parsedBody = undefined;
@@ -375,11 +380,14 @@ export async function handleChatCompletions(
 
   const requestedModel = typeof body.model === 'string' ? body.model : '';
   let routedModel = requestedModel;
+  // Reused below to decide whether a stream-cut transparent retry may afford
+  // ANOTHER `structuredClone` of the body — see `streamRedispatchBody`.
+  const requestHasImage = hasImage(body);
   try {
     const route =
       (await hooks.resolveRoute?.(principal, {
         requestedModel,
-        requires: { imageInput: hasImage(body) },
+        requires: { imageInput: requestHasImage },
       })) ?? null;
     routedModel = route?.primaryModel || requestedModel;
     body.model = routedModel;
@@ -475,6 +483,59 @@ export async function handleChatCompletions(
   const poolCandidates = served.poolSecretId
     ? resolvedCandidates.filter((candidate) => Boolean(candidate.poolSecretId) && candidate.provider === served.provider)
     : [];
+  // Kept only so a STREAMING body that gets cut before a single byte reaches
+  // the client can be transparently retried (see relayStream's `redispatch`
+  // option / streaming.ts's `handleIncompleteTermination`). The parsed graph
+  // is otherwise dropped before the provider wait, same as every other retry
+  // body above.
+  //
+  // Reuse an ALREADY-PAID clone (`poolRetryBody`/`profileRetryBody`) when one
+  // exists rather than making a second one. When none does, clone fresh only
+  // for a body small enough that doing so is cheap — an inline-image-bearing
+  // or otherwise large multimodal request (the exact shape that OOM'd the
+  // standalone gateway on 2026-08-22, see memory-envelope.test.ts) does NOT
+  // get a transparent stream-cut retry; it still gets the other two halves of
+  // this fix (never forward a partial line, explicit terminal error frame) —
+  // it just falls straight to the explicit error frame on a cut instead of
+  // retrying first. A held clone for the WHOLE streaming response lifetime is
+  // exactly the "unbounded per-request memory" class this codebase has paid
+  // for repeatedly; bound it by size instead of assuming "it's just a body".
+  const STREAM_REDISPATCH_MAX_BODY_SIZE = 256 * 1024;
+  const streamRedispatchBody: Record<string, unknown> | null = !streaming
+    ? null
+    : poolRetryBody ?? profileRetryBody ??
+      (!requestHasImage && approxRequestSize <= STREAM_REDISPATCH_MAX_BODY_SIZE
+        ? structuredClone(body)
+        : null);
+  // Untried pool candidates (if any) get first refusal on a stream-cut retry —
+  // "next pooled key" — before falling back to re-dispatching the same
+  // descriptor. `poolCandidates[0]` is `served` itself, already spent.
+  const streamRedispatchCandidates: UpstreamDescriptor[] = poolCandidates.slice(1);
+  let streamRedispatchIndex = 0;
+  const redispatchStream = async (): Promise<ReadableStream<Uint8Array> | null> => {
+    if (!streamRedispatchBody) return null;
+    const candidate = streamRedispatchCandidates[streamRedispatchIndex] ?? served;
+    streamRedispatchIndex += 1;
+    try {
+      const response = await callUpstream(structuredClone(streamRedispatchBody), candidate, {
+        fetchImpl: dispatchFetch,
+        signal: req.signal,
+        requestId: id,
+      });
+      if (!response.body) return null;
+      // Attribute whatever gets billed/logged from here on to the candidate
+      // that actually answered, exactly like the profile/pool retries above.
+      served = candidate;
+      attempts += 1;
+      candidatesTried.push(`${candidate.provider}:stream-retry`);
+      return response.body;
+    } catch (error) {
+      logger.warn(`[gateway] ${id}: stream-cut redispatch to ${candidate.provider} failed`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  };
   let earliestPoolRetryAt = Infinity;
   const noteRateLimit = async (candidate: UpstreamDescriptor, response: Response): Promise<void> => {
     const seconds = clampRetryAfterSeconds(response.headers.get('retry-after')) ?? 30;
@@ -631,6 +692,42 @@ export async function handleChatCompletions(
       usage?.upstreamCostHint,
       served.pricing,
     );
+    if (streamError?.code === 'upstream_incomplete_stream') {
+      // The upstream ended without a finish_reason/[DONE]/error frame — see
+      // relayStream's `handleIncompleteTermination`. Log it as its own,
+      // greppable line (provider/model/endpoint/bytes/tokens/duration — never
+      // prompt content) so a cluster of cuts on one endpoint is visible
+      // instead of buried in the generic trace, and count it toward the same
+      // pool cooldown a 429 uses — a pooled key/endpoint that keeps
+      // truncating streams gets rotated away from too, not just rate-limited
+      // ones. The cooldown is short: an incomplete stream is not proof the
+      // key is dead, only that it is currently unreliable.
+      const detail = streamError.detail as
+        | { bytesForwarded?: number; durationMs?: number; redispatchAttempts?: number; reason?: unknown }
+        | undefined;
+      logger.warn(`[gateway] ${id}: incomplete upstream stream`, {
+        requestId: id,
+        provider: served.provider,
+        model: served.resolvedModel ?? routedModel,
+        endpoint: served.baseUrl,
+        bytesForwarded: detail?.bytesForwarded ?? 0,
+        promptTokens: counts.promptTokens,
+        completionTokens: counts.completionTokens,
+        durationMs: detail?.durationMs,
+        redispatchAttempts: detail?.redispatchAttempts ?? 0,
+        underlyingReason: detail?.reason,
+      });
+      if (served.poolSecretId && hooks.notePoolRateLimit) {
+        try {
+          await hooks.notePoolRateLimit(principal, served.poolSecretId, 10);
+        } catch (error) {
+          logger.error('[gateway] could not record stream-cut cooldown', {
+            secretId: served.poolSecretId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
     if (counts.promptTokens + counts.completionTokens > 0 || principal.billingHold) {
       await hooks.recordUsage({
         ...counts,
@@ -675,6 +772,15 @@ export async function handleChatCompletions(
         logger,
         signal: req.signal,
         settle,
+        // A non-2xx upstream "stream" is an arbitrary error body, not SSE —
+        // never line-buffer, retry, or synthesize a completion frame over it
+        // (see the `treatAsSse` doc comment in streaming.ts). The pool-429
+        // retry above already handles that HTTP-level failure before this
+        // point; anything else non-2xx here (e.g. a provider that answers a
+        // plain error body while claiming `text/event-stream`) is relayed
+        // verbatim, exactly like before this change.
+        treatAsSse: upstream.ok,
+        redispatch: upstream.ok && streamRedispatchBody ? redispatchStream : undefined,
       }),
       { status: upstream.status, headers: passthroughHeaders(upstream.headers) },
     );
