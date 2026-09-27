@@ -37,8 +37,12 @@ export type {
   VersionDiffPreview,
 };
 
-export async function fetchChangeRequests(projectId: string, status?: ChangeRequestStatus | 'all') {
-  return listChangeRequests(projectId, status);
+export async function fetchChangeRequests(
+  projectId: string,
+  status?: ChangeRequestStatus | 'all',
+  options?: { originSessionId?: string },
+) {
+  return listChangeRequests(projectId, status, options);
 }
 
 export async function fetchChangeRequest(projectId: string, crId: string) {

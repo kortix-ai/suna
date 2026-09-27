@@ -413,6 +413,64 @@ describe('terminal turn handling', () => {
     ).toEqual({ outcome: 'already_closed', activeTurnCount: 1, closedTurnCount: 0 });
   });
 
+  // PROD 2026-09-26: the API marked most first-prompt turns of a session
+  // `abandoned` 9-30s after creation — a daemon boot-time reconciliation race,
+  // fixed at the source in apps/kortix-sandbox-agent-server. This is the
+  // defense-in-depth half: even if something abandons a turn prematurely, the
+  // real completion that follows must overwrite it instead of being silently
+  // dropped by the `already_closed` short-circuit.
+  test('a genuine completion revives a message the ledger already marked abandoned', async () => {
+    executeResults = [
+      [{ ended_turns: [], active_turn_count: 0, completed: true }],
+      [{ already_ended: true }],
+    ];
+
+    await completeSandboxTurn('sess-1', 'idle', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_turn_1',
+    });
+
+    const revive = executed.find((query) => query.includes("t.end_reason = 'abandoned'"));
+    expect(revive).toBeDefined();
+    expect(revive as string).toContain('completed');
+    expect(revive as string).not.toContain('failed');
+    expect(revive as string).toContain('msg_turn_1');
+  });
+
+  test('a genuine terminal failure also revives an abandoned message, as failed', async () => {
+    executeResults = [
+      [{ ended_turns: [], active_turn_count: 0, completed: true }],
+      [{ already_ended: true }],
+    ];
+
+    await completeSandboxTurn(
+      'sess-1',
+      'error',
+      { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      { name: 'ModelError', message: 'upstream 500', isRetryable: false },
+    );
+
+    const revive = executed.find((query) => query.includes("t.end_reason = 'abandoned'"));
+    expect(revive).toBeDefined();
+    expect(revive as string).toContain('failed');
+  });
+
+  test('an abort never revives an abandoned message — it names the effect, not the cause', async () => {
+    executeResults = [
+      [{ ended_turns: [], active_turn_count: 0, completed: true }],
+      [{ already_ended: true }],
+    ];
+
+    await completeSandboxTurn(
+      'sess-1',
+      'error',
+      { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      { name: 'MessageAbortedError', message: 'Aborted' },
+    );
+
+    expect(executed.some((query) => query.includes("t.end_reason = 'abandoned'"))).toBe(false);
+  });
+
   test('terminal evidence with no live or historical turn reports no_active_turn', async () => {
     executeResults = [[{ ended_turns: [], active_turn_count: 0, completed: true }], []];
 

@@ -163,22 +163,27 @@ test.describe('32 — A setup link while its turn streams', () => {
   test('an open connect modal survives the end of the turn and asks for the whole token', async ({
     page,
   }) => {
+    // The card and the modal share ONE lookup per token: the card starts it
+    // on mount and the modal joins it while it is in flight. Record from the
+    // first navigation, so the assertion does not depend on which of the two
+    // happened to send it.
+    const lookups: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/setup-links/connectors/')) lookups.push(request.url());
+    });
     const replay = await openReplay(page, 'at=end&working=1');
     const card = cardIn(replay);
     const outcomeId = (await card.getAttribute('data-outcome-id')) ?? '';
     expect(outcomeId).toMatch(/^setup:ksl_/);
     const token = outcomeId.slice('setup:'.length);
 
-    const lookup = page.waitForRequest((request) =>
-      request.url().includes('/setup-links/connectors/'),
-    );
     await card.getByRole('button', { name: 'Connect', exact: true }).click();
-    const lookupPath = new URL((await lookup).url()).pathname;
-    expect(
-      lookupPath.endsWith(`/setup-links/connectors/${encodeURIComponent(token)}`),
-      lookupPath,
-    ).toBe(true);
     await expect(page.getByRole('dialog')).toBeVisible();
+    await expect.poll(() => lookups.length).toBeGreaterThan(0);
+    const wholeTokenPath = `/setup-links/connectors/${encodeURIComponent(token)}`;
+    for (const url of lookups) {
+      expect(new URL(url).pathname.endsWith(wholeTokenPath), url).toBe(true);
+    }
 
     // A mark on the card's DOM node survives only if React keeps the node.
     await card.evaluate((el) => el.setAttribute('data-journey-mark', 'kept'));

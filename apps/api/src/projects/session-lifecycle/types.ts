@@ -19,6 +19,11 @@ export type SessionInvocationSource =
   | 'system:approval-resume'
   | 'system:secret-submitted'
   | 'system:connector-connected'
+  /** Unattended-session recovery after a provider-originated `runtime_gone`
+   *  (see `unattended-runtime-recovery.ts`), when the turn that died was the
+   *  session's own initial prompt — there is no `continue_session` inbox row
+   *  to release, so a synthetic continue prompt is enqueued instead. */
+  | 'system:auto-recovery'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';

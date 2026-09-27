@@ -204,7 +204,7 @@ export function runtimeWakeInProgress(
 export const STAMPED_RUNTIME_FAILURE_STOP_REASONS = [
   'runtime_wake_failed',
   'runtime_boot_failed',
-  // Rule 4 admission control (docs/specs/runtime-convergence.md): a box that
+  // Rule 4 admission control (the runtime-convergence contract (PR #7785)): a box that
   // fails admission and is parked will fail it again on a bare resume — same
   // disk, same daemon binary. Without the escalating cooldown here, every
   // `/start` poll would re-wake and re-refuse the identical box forever.

@@ -1,6 +1,6 @@
 /**
  * The diff of the desired and actual runtime documents — the ONE place
- * convergence is computed (Rule 1, docs/specs/runtime-convergence.md). The
+ * convergence is computed (Rule 1, the runtime-convergence contract (PR #7785)). The
  * admission gate (./admission.ts) and `GET /config`'s `runtime` block both read
  * this verdict; neither re-compares the two documents itself.
  *

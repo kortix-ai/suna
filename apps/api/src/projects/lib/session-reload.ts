@@ -479,7 +479,7 @@ export interface SandboxConfigState {
    */
   runtime: DaemonRuntimeReport | null;
   /**
-   * The health `runtime_truth` block (Rule 1, docs/specs/runtime-convergence.md)
+   * The health `runtime_truth` block (Rule 1, the runtime-convergence contract (PR #7785))
    * — the box's ACTUAL runtime document. Tolerant of a daemon that predates it
    * entirely: {@link UNREPORTED_ACTUAL_RUNTIME}, never null and never a crash,
    * because "this box reports nothing" is itself a diff (`unknown`), not the
@@ -724,8 +724,7 @@ export async function reloadSessionConfig(input: {
     };
   }
 
-  // CHOKEPOINT — the `config_releases` flag for the reload path
-  // (docs/specs/config-releases.md, "Feature flag"). Off ⇒ the daemon's own
+  // CHOKEPOINT — the `config_releases` flag for the reload path. Off ⇒ the daemon's own
   // capability is ignored and this reload takes the pre-release path: the
   // plain refresh plus the compiled-governance push, an etag-based result,
   // and no `release` block for the CLI or the web to render. Nothing is

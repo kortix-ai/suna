@@ -1,5 +1,5 @@
 /**
- * Rule 4 — admission control (docs/specs/runtime-convergence.md).
+ * Rule 4 — admission control (the runtime-convergence contract (PR #7785)).
  *
  * "Before a box is handed to a session, it must prove its runtime identity —
  * `config.release.v1` present, `daemon_build >= floor`, `catalog_fingerprint`

@@ -19,8 +19,7 @@ export KORTIX_PROJECT_ID=...                      # the project your agent lives
 
 - The API key is a `kortix_pat_…` token. Every session it starts is recorded
   with `origin: backend`, which is what unlocks the backend-only overrides
-  (`secrets`) — see the [Kortix-as-a-Backend
-  guide](../../../docs/KORTIX_AS_A_BACKEND_GUIDE.md).
+  (`secrets`).
 - Some examples read extra env vars (a session id, a connector URL); each file's
   header comment lists what it needs.
 
@@ -47,8 +46,7 @@ their connectors, model, secrets, and identity **by reference** — is examples
 **03** (the multi-tenant client seam) and **09** (the complete flow). Read them
 alongside:
 
-- [`docs/KORTIX_AS_A_BACKEND_GUIDE.md`](../../../docs/KORTIX_AS_A_BACKEND_GUIDE.md) — the concepts, overrides, errors, and security model.
-- [`KORTIX-AS-A-BACKEND.pdf`](KORTIX-AS-A-BACKEND.pdf) — the same, as a printable one-pager.
+- [`KORTIX-AS-A-BACKEND.pdf`](KORTIX-AS-A-BACKEND.pdf) — the concepts, overrides, errors, and security model, as a printable one-pager.
 
 ### `09` env knobs
 

@@ -1,7 +1,7 @@
 /**
  * `catalog_fingerprint` — the desired document's opinion of "which model
  * lineup does the platform serve right now" (Rule 1,
- * docs/specs/runtime-convergence.md).
+ * the runtime-convergence contract (PR #7785)).
  *
  * Hashed over `SERVED_MANAGED_MODELS` (llm-gateway/models/served-managed-models.ts)
  * — config joined with credentials, i.e. the lineup this deployment can

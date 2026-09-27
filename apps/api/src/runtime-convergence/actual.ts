@@ -1,6 +1,6 @@
 /**
  * The box's ACTUAL runtime document — parsed from the daemon's health
- * `runtime_truth` block. Spec: docs/specs/runtime-convergence.md, Rule 1.
+ * `runtime_truth` block. Spec: the runtime-convergence contract (PR #7785), Rule 1.
  *
  * A parallel branch adds `runtime_truth` to `GET /kortix/health` on the daemon
  * side. Every box that exists TODAY predates it, so parsing is total and

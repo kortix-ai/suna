@@ -1,6 +1,6 @@
 /**
  * The `runtime` block of `GET /v1/projects/:projectId/sessions/:sessionId/config`
- * (spec §3, docs/specs/runtime-convergence.md): "one runtime block… listing
+ * (spec §3, the runtime-convergence contract (PR #7785)): "one runtime block… listing
  * desired vs actual per component with each component's last attempt and
  * cause." The session header chip reads `overall`. The existing `release`
  * block is untouched — this is purely additive.

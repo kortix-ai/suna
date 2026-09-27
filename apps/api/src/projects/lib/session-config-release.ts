@@ -1,7 +1,5 @@
 /**
- * The daemon side of config releases, as the API reads it
- * (docs/specs/config-releases.md, "Capability gate", "Health", "Converge
- * response", "`GET /config`, extended").
+ * The daemon side of config releases, as the API reads it.
  *
  * Pure parsing and mapping only. The HTTP calls live in `session-reload.ts`.
  */
@@ -12,7 +10,7 @@ export const CONFIG_RELEASE_CAPABILITY = 'config.release.v1';
 /**
  * Always `follow-base`. A session runs the base branch's CURRENT config
  * release; `/workspace` is an editable clone, never a config source. One
- * member on purpose (docs/specs/config-releases.md, "Feature flag").
+ * member on purpose.
  */
 export type ConfigReleaseMode = 'follow-base';
 /** The fallback chain: the desired release, the last proven one, the image default. */

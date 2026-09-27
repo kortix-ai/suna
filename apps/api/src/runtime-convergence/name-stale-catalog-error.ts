@@ -1,5 +1,5 @@
 /**
- * Rule 5 (spec §3, docs/specs/runtime-convergence.md): "A turn that cannot run
+ * Rule 5 (spec §3, the runtime-convergence contract (PR #7785)): "A turn that cannot run
  * because the box's model map lacks the requested model must fail with an
  * error that NAMES that cause and carries both fingerprints." Measured three
  * times with different refs: `500 {"name":"UnknownError","ref":"err_…"}` — a

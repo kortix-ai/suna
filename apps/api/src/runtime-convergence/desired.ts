@@ -1,5 +1,5 @@
 /**
- * The one DESIRED runtime document (Rule 1, docs/specs/runtime-convergence.md).
+ * The one DESIRED runtime document (Rule 1, the runtime-convergence contract (PR #7785)).
  *
  * Composes, never re-derives:
  *   - `release_id`      — `config-releases/desired.ts` (`resolveDesiredRelease`)

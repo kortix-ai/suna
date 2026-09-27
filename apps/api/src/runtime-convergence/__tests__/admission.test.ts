@@ -1,5 +1,5 @@
 /**
- * Rule 4 — admission control (docs/specs/runtime-convergence.md). Before a box
+ * Rule 4 — admission control (the runtime-convergence contract (PR #7785)). Before a box
  * is handed to a session, it must prove `config.release.v1` present,
  * `daemon_build >= MIN_DAEMON_BUILD`, and a current `catalog_fingerprint`. A
  * box that fails ANY check is refused, never used — this is the part that
