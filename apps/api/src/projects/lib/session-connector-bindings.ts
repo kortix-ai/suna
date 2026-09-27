@@ -10,6 +10,7 @@ import {
   serviceAccounts,
 } from '@kortix/db';
 import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { mapLimit } from '@kortix/registry';
 import {
   canonicalConnectorAlias,
   publicConnectorAlias,
@@ -34,6 +35,7 @@ import {
 } from './connection-access';
 import { audiencePersonId, loadConnectionAudience } from './connection-audience';
 import { projectSecretIsConfiguredForConsumer } from '../secrets';
+import { invalidateRequestMemo, requestMemo } from '../../lib/request-context';
 
 export interface ValidatedSessionConnectorBinding {
   alias: string;
@@ -526,6 +528,77 @@ export interface AgentPrincipalPersonalScope {
   onBehalfOfUserId: string | null;
 }
 
+interface SessionConnectorLookup {
+  createdBy: string | null;
+  visibility: 'private' | 'project' | 'restricted';
+  bindingsConfigured: boolean;
+  inheritUnbound: boolean;
+  createdByServiceAccountId: string | null;
+}
+
+function sessionConnectorLookupMemoKey(sessionId: string, accountId: string, projectId: string): string {
+  return `session-connector-lookup:${accountId}:${projectId}:${sessionId}`;
+}
+
+/**
+ * The session/created-by/visibility row `resolveSessionConnectorConnectionOutcome`
+ * needs, request-memoized by (session, account, project).
+ *
+ * A binding read (`resolveEffectiveSessionConnectorBindings`) resolves ONE
+ * alias at a time but is called with the SAME sessionId for every alias a
+ * grant lists — 'all' resolves against every enabled connector on the project.
+ * Before this memo, each alias re-ran this identical join (measured: 49 DB
+ * queries / 255ms server time on `GET /sessions/:id/scope` for a session with
+ * several granted connectors, 2026-09-27). Request-scoped, not a TTL cache: a
+ * write inside the SAME request (`PUT /scope` toggling
+ * `connectorBindingsConfigured`) calls `invalidateSessionConnectorLookup` right
+ * after its transaction commits, so the post-write re-resolution in that same
+ * handler never reads pre-write data back out of this cache.
+ */
+async function loadSessionConnectorLookup(
+  sessionId: string,
+  accountId: string,
+  projectId: string,
+): Promise<SessionConnectorLookup | null> {
+  return requestMemo(sessionConnectorLookupMemoKey(sessionId, accountId, projectId), async () => {
+    const [session] = await db
+      .select({
+        createdBy: projectSessions.createdBy,
+        visibility: projectSessions.visibility,
+        bindingsConfigured: projectSessions.connectorBindingsConfigured,
+        inheritUnbound: projectSessions.connectorBindingsInheritUnbound,
+        createdByServiceAccountId: serviceAccounts.serviceAccountId,
+      })
+      .from(projectSessions)
+      .leftJoin(
+        serviceAccounts,
+        and(
+          eq(serviceAccounts.serviceAccountId, projectSessions.createdBy),
+          eq(serviceAccounts.accountId, projectSessions.accountId),
+        ),
+      )
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.accountId, accountId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    return session ?? null;
+  });
+}
+
+/**
+ * Drop the request-scoped session lookup memo. Call this after any write that
+ * changes what it reads (`project_sessions.connector_bindings_configured` /
+ * `.connector_bindings_inherit_unbound`) so a re-resolution later in the SAME
+ * request observes the write instead of the pre-write cached row.
+ */
+export function invalidateSessionConnectorLookup(sessionId: string, accountId: string, projectId: string): void {
+  invalidateRequestMemo(sessionConnectorLookupMemoKey(sessionId, accountId, projectId));
+}
+
 /**
  * Resolve the effective connection on every connector request. A present but
  * revoked/error binding never falls through to a project default.
@@ -576,31 +649,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
   let inheritUnbound = false;
 
   if (input.sessionId) {
-    const [session] = await db
-      .select({
-        sessionId: projectSessions.sessionId,
-        createdBy: projectSessions.createdBy,
-        visibility: projectSessions.visibility,
-        bindingsConfigured: projectSessions.connectorBindingsConfigured,
-        inheritUnbound: projectSessions.connectorBindingsInheritUnbound,
-        createdByServiceAccountId: serviceAccounts.serviceAccountId,
-      })
-      .from(projectSessions)
-      .leftJoin(
-        serviceAccounts,
-        and(
-          eq(serviceAccounts.serviceAccountId, projectSessions.createdBy),
-          eq(serviceAccounts.accountId, projectSessions.accountId),
-        ),
-      )
-      .where(
-        and(
-          eq(projectSessions.sessionId, input.sessionId),
-          eq(projectSessions.accountId, input.accountId),
-          eq(projectSessions.projectId, input.projectId),
-        ),
-      )
-      .limit(1);
+    const session = await loadSessionConnectorLookup(input.sessionId, input.accountId, input.projectId);
     if (!session) return { kind: 'none' };
     actingUserId = session.createdBy ?? '';
     actingPrincipalIsServiceAccount = session.createdByServiceAccountId !== null;
@@ -1085,21 +1134,29 @@ export async function resolveEffectiveSessionConnectorBindings(input: {
           .orderBy(connectors.slug)
       ).map((row) => row.alias);
 
-  const bindings: SessionConnectorBindings = {};
-  const seen = new Set<string>();
-  for (const requestedAlias of requestedAliases) {
-    const alias = canonicalConnectorAlias(requestedAlias);
-    if (seen.has(alias)) continue;
-    seen.add(alias);
-    const resolved = await resolveSessionConnectorConnection({
+  // One alias's resolution is independent of every other's — each is its own
+  // connection lookup with no shared mutable state — so resolve them
+  // concurrently instead of one DB round trip at a time. Bounded (not a bare
+  // `Promise.all`) because `grantedConnectors: 'all'` fans this out to every
+  // enabled connector on the project. The shared session-lookup memo above
+  // means the concurrent resolutions collapse to ONE session query between
+  // them regardless of how many aliases run at once.
+  const RESOLVE_CONCURRENCY = 8;
+  const uniqueAliases = [...new Set(requestedAliases.map((a) => canonicalConnectorAlias(a)))];
+  const resolved = await mapLimit(uniqueAliases, RESOLVE_CONCURRENCY, (alias) =>
+    resolveSessionConnectorConnection({
       accountId: input.accountId,
       projectId: input.projectId,
       sessionId: input.sessionId,
       alias,
-    });
-    if (!resolved) continue;
-    bindings[publicConnectorAlias(resolved.alias)] = {
-      connection_id: resolved.connectionId,
+    }),
+  );
+
+  const bindings: SessionConnectorBindings = {};
+  for (const connection of resolved) {
+    if (!connection) continue;
+    bindings[publicConnectorAlias(connection.alias)] = {
+      connection_id: connection.connectionId,
     };
   }
   return bindings;
