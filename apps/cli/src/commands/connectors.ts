@@ -982,8 +982,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         return 0;
       }
       case 'mode': {
-        // `per_user` (each member brings their own) was removed 2026-07-05
-        // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5) —
+        // `per_user` (each member brings their own) was removed 2026-07-05 —
         // `shared` is the only mode; the route stays as a restricted no-op.
         const slug = positional[0];
         if (!slug) return missing('a connector slug');

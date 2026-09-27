@@ -1,5 +1,5 @@
 /**
- * Agents as principals — spec docs/specs/2026-09-22-agents-as-principals.md §6.
+ * Agents as principals.
  * Maps to `AGP-1` … `AGP-12` in tests/spec/end-to-end.md §32.
  *
  * Black box: real HTTP to the running API, the real `kortix` CLI as a process,

@@ -1,6 +1,6 @@
 /**
- * Config releases — the descriptor route and the archive route
- * (docs/specs/config-releases.md, "Routes"). Maps to spec §CFG-*.
+ * Config releases — the descriptor route and the archive route.
+ * Maps to spec §CFG-*.
  *
  * A session's sandbox token is minted the way the daemon's `KORTIX_TOKEN` is:
  * an account token bound by SQL to one project and one session, with a live

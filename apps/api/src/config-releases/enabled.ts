@@ -1,6 +1,5 @@
 /**
- * The one read of the `config_releases` feature flag
- * (docs/specs/config-releases.md, "Feature flag").
+ * The one read of the `config_releases` feature flag.
  *
  * The whole feature is behind this flag: the descriptor and archive routes,
  * the release builder, the store, the quarantine ledger, every convergence

@@ -230,8 +230,7 @@ export interface SystemReloadResult {
  * client-reachable path that re-runs spawn-time setup.
  *
  * Both endpoints were verified against opencode 1.17.11 on 2026-08-03 and
- * `/global/dispose` re-verified against the pinned 1.18.19 on 2026-08-20 —
- * see docs/SESSION_CONFIG_RELOAD.md.
+ * `/global/dispose` re-verified against the pinned 1.18.19 on 2026-08-20.
  *
  * This used to POST `/kortix/services/system/reload`, which does not exist. That
  * path falls through to opencode's SPA catch-all, so the call got `200` with an
