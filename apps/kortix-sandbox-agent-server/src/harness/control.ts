@@ -128,4 +128,24 @@ export interface HarnessControlContext {
 export interface HarnessControlService {
   /** Bind the current app's configuration; rebuild this view on warm adoption. */
   bind(context: HarnessControlContext): HarnessControlOperations
+  /**
+   * Is a config convergence in flight RIGHT NOW — fetch, download, candidate
+   * spawn, proven check, promotion?
+   *
+   * DEF-B 2026-09-26: `proxy.ts` registers this as a swap blocker
+   * (`registerAgentSwapBlocker('config-convergence', ...)`) so a staged
+   * daemon update never exits mid-verify and kills the candidate
+   * `reloadVerified` is proving — this process exiting takes every OpenCode
+   * it spawned down with it, standby port included, and the candidate's own
+   * SIGTERM is indistinguishable from a release that never starts.
+   *
+   * Lives on the CONTRACT, not called through an adapter import from
+   * `proxy.ts`: the harness ownership boundary
+   * (`__tests__/harness-boundary.test.ts`) forbids host production code from
+   * importing a concrete adapter directly. Absent, or answering `false`
+   * unconditionally, on a runtime without a config-convergence concept (the
+   * `pi` harness) — it never blocks there, which is correct: nothing is
+   * mid-verify on a runtime that never verifies one.
+   */
+  convergenceInFlight?(): boolean
 }

@@ -1,6 +1,6 @@
 import type { HarnessControlService, HarnessControlOperations, HarnessEnvironmentInput, HarnessRefreshInput } from '../control'
 import { requireOpenCodeConfig } from './config'
-import { convergeConfigRelease, releaseGovernanceActive } from './config-release'
+import { convergeConfigRelease, isConvergenceInFlight, releaseGovernanceActive } from './config-release'
 import { writeAgentEnvFile } from '../../agent-env-file'
 import { syncEgressShim } from '../../egress-shim'
 import { invalidateRuntimeState } from './runtime-state-projection'
@@ -152,6 +152,7 @@ export function createOpenCodeControlService(
   quickQueue: Pick<QuickQueueInterrupt, 'arm' | 'disarm'>,
 ): HarnessControlService {
   return {
+    convergenceInFlight: () => isConvergenceInFlight(),
     bind(context): HarnessControlOperations {
       const { projectEnv, agentEnvFile } = context
       // Resolve the current config on each app rebuild, including warm adoption.
