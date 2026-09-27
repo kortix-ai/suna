@@ -25,7 +25,7 @@ import {
   projectSessions,
   projectStatuses,
   projectTranscript,
-} from '../harness/open-code/opencode-projection'
+} from '../services/harness/open-code/opencode-projection'
 
 const bigPrompt = 'You are a careful engineer. '.repeat(600) // ~16 KB
 

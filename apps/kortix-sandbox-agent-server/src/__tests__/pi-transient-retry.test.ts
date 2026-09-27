@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
-import { TURN_RETRY_MAX_ATTEMPTS, isTransientModelError, retryDelayMs } from '../harness/pi/transient-retry'
+import { TURN_RETRY_MAX_ATTEMPTS, isTransientModelError, retryDelayMs } from '../services/harness/pi/transient-retry'
 
 const failed = (errorMessage: string) => ({ role: 'assistant', stopReason: 'error', errorMessage }) as unknown as AssistantMessage
 

@@ -289,7 +289,7 @@ flow(
 // ── RTA-4 — entrypoint: served, never converged ─────────────────────────────
 //
 // The manifest advertised `components.entrypoint` and NO box has ever consumed
-// it: `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/runtime-assets.ts
+// it: `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts
 // apps/kortix-sandbox-agent-server/src/harness` returns doc comments only. An
 // advertised-but-unconsumed component reads as a fifth convergeable asset, which
 // is how a "current" box can be quietly wrong. This pins the decision that was

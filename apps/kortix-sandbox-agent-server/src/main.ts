@@ -1,11 +1,11 @@
-import { dispatchCli, isManagementSubcommand } from './cli'
-import { loadConfig } from './config'
-import { runGitCredentialHelper } from './git'
-import { resolveHarness, warmPiSystemPackages } from './harness/harness'
-import { kortixEventBus } from './kortix-event-bus'
-import { enableDaemonLogFile, logger } from './logger'
-import { runMonitorMode } from './monitor-mode'
-import { startStaticWebServer } from './static-web'
+import { dispatchCli, isManagementSubcommand } from './app/cli'
+import { loadConfig } from './lib/config/config'
+import { runGitCredentialHelper } from './lib/git/git'
+import { resolveHarness, warmPiSystemPackages } from './services/harness/harness'
+import { kortixEventBus } from './services/event-bus/kortix-event-bus'
+import { enableDaemonLogFile, logger } from './lib/log/logger'
+import { runMonitorMode } from './app/monitor-mode'
+import { startStaticWebServer } from './services/static-web/static-web'
 
 async function main() {
   const bootTime = Date.now()
@@ -81,7 +81,7 @@ if (import.meta.main) {
   } else if (isManagementSubcommand(subcommand)) {
     // kortixd management CLI: version / install / update / rollback /
     // --health-check / --help. `serve` and any unrecognized verb fall through
-    // to the daemon below. See src/cli.ts.
+    // to the daemon below. See src/app/cli.ts.
     dispatchCli(process.argv.slice(2))
       .then((outcome) => {
         if (outcome.action === 'exit') process.exit(outcome.code)

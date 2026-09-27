@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { createProjectEnvStore, mergeProjectEnv } from '../project-env'
+import { createProjectEnvStore, mergeProjectEnv } from '../services/sandbox-env/project-env'
 
 /**
  * A revoked secret must not survive into the environment opencode is spawned

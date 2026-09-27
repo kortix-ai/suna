@@ -9,7 +9,7 @@ import { MANAGED_MODELS } from '@kortix/llm-catalog';
 //
 // Imported across app boundaries ON PURPOSE: this file is the tripwire that
 // fails the moment the managed lineup and that hand-maintained table drift.
-import { BUNDLED_MANAGED_MODELS } from '../../../../kortix-sandbox-agent-server/src/harness/open-code/lifecycle';
+import { BUNDLED_MANAGED_MODELS } from '../../../../kortix-sandbox-agent-server/src/services/harness/open-code/lifecycle';
 
 const managedIds = MANAGED_MODELS.map((m) => m.id).sort();
 const bundledIds = Object.keys(BUNDLED_MANAGED_MODELS).sort();

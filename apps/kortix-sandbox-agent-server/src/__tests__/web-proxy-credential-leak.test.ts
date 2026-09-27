@@ -26,7 +26,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 
 import { networkInterfaces } from 'node:os'
 
-import { createWebProxyRouter } from '../routes/web-proxy'
+import { createWebProxyRouter } from '../routes/proxy/web-proxy'
 
 /** This machine's own non-loopback IPv4 addresses — the same ones a sandbox's
  *  daemon is reachable on besides 127.0.0.1. */

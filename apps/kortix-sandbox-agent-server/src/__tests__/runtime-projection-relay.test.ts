@@ -6,8 +6,8 @@ import {
   __setRuntimeProjectionStateReaderForTests,
   scheduleRuntimeProjectionPush,
   shedProjectionToFit,
-} from '../harness/open-code/runtime-projection-relay'
-import { resetRuntimeStateForTests } from '../harness/open-code/runtime-state-projection'
+} from '../services/harness/open-code/runtime-projection-relay'
+import { resetRuntimeStateForTests } from '../services/harness/open-code/runtime-state-projection'
 
 const BASE_ENV = {
   KORTIX_PROJECT_ID: 'proj-1',

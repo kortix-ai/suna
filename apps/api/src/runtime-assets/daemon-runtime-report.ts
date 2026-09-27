@@ -44,7 +44,7 @@ export interface DaemonRunningAssets {
   /**
    * Why this box is not (or was not, last time it tried) confirmed against
    * the live managed lineup. Null when the last attempt succeeded. See
-   * `apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts`'s
+   * `apps/kortix-sandbox-agent-server/src/services/harness/open-code/lifecycle.ts`'s
    * `managedCatalogFallbackReason` for the incident this closes: a box could
    * silently run a month-old managed lineup with nothing anywhere saying so.
    */

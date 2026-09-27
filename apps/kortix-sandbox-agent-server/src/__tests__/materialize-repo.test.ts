@@ -19,7 +19,7 @@ import {
   isShallowRepo,
   materializeRepo,
   scheduleHistoryBackfill,
-} from '../git'
+} from '../lib/git/git'
 import { testOpenCodeConfig as baseConfig } from './helpers/open-code-harness'
 
 function git(args: string[], cwd?: string) {

@@ -12,7 +12,7 @@ import {
   resolveOpenCodeAuditSpoolPath,
   writeOpenCodeSeedBakedPin,
   writeOpenCodeSessionPin,
-} from '../harness/open-code/runtime-state'
+} from '../services/harness/open-code/runtime-state'
 
 let stateDir: string
 let priorStateDir: string | undefined

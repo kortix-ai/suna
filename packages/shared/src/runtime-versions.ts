@@ -88,7 +88,7 @@ export const PI_SUPPLIED_PACKAGES: readonly string[] = [
 
 /**
  * The pi system packages: installed into every sandbox image, loaded by every
- * pi session (apps/kortix-sandbox-agent-server/src/harness/README.md). To add
+ * pi session (apps/kortix-sandbox-agent-server/src/services/harness/README.md). To add
  * one from https://pi.dev/packages, append `npm:<name>@<version>`.
  */
 export const PI_SYSTEM_PACKAGES: readonly string[] = RUNTIME_VERSIONS.piSystemPackages ?? [];

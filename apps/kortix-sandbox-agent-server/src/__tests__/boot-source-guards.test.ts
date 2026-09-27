@@ -54,9 +54,9 @@ function stripComments(src: string): string {
   return out
 }
 
-const BOOT = stripComments(readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8'))
+const BOOT = stripComments(readFileSync(join(import.meta.dir, '..', 'services', 'harness', 'open-code', 'boot.ts'), 'utf8'))
 const BOOT_PATH = stripComments(
-  readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'boot-config-path.ts'), 'utf8'),
+  readFileSync(join(import.meta.dir, '..', 'services', 'harness', 'open-code', 'boot-config-path.ts'), 'utf8'),
 )
 
 /** The text of one top-level function, from its declaration to the next one. */

@@ -622,7 +622,7 @@ describe('provider-neutral turn observation', () => {
   // The reaper's drip may keep a box alive on the first and must never keep one
   // alive on the second, so the reading has to tell them apart. A build that
   // predates the turn fields answers 200 without them
-  // (apps/kortix-sandbox-agent-server/src/routes/health.ts adds them only when
+  // (apps/kortix-sandbox-agent-server/src/routes/kortix/health.ts adds them only when
   // it can observe the turn) — the runtime is UP and only its account of the
   // turn is missing. Nothing coming back is the opposite fact.
   test('a 200 without the turn fields is unknown, but the daemon ANSWERED', async () => {

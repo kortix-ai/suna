@@ -5,7 +5,7 @@
  *
  * - The sandbox daemon
  *   (`lastTurnIncomplete` in `inspectOpencodeRoot`,
- *   `apps/kortix-sandbox-agent-server/src/harness/open-code/opencode-turn-state.ts`)
+ *   `apps/kortix-sandbox-agent-server/src/services/harness/open-code/opencode-turn-state.ts`)
  *   keeps a turn open through a RETRYABLE error:
  *   `role === 'assistant' && !time.completed && (!error || error.data?.isRetryable === true)`.
  * - `apps/web`'s copy ended the turn on ANY `info.error`. That was the wrong one.

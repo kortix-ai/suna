@@ -11,7 +11,7 @@
  * (a real wedge), converging fast on recovery.
  */
 import { describe, expect, test } from 'bun:test'
-import { nextLivenessState, type OpencodeState } from '../harness/open-code/lifecycle'
+import { nextLivenessState, type OpencodeState } from '../services/harness/open-code/lifecycle'
 
 // Production passes READY_LIVENESS_DOWNGRADE_THRESHOLD = 3.
 const T = 3

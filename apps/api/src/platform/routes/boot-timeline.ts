@@ -1,6 +1,6 @@
 /**
  * POST /v1/platform/boot-timeline — sandbox-only sink for the in-guest boot
- * timeline (apps/kortix-sandbox-agent-server/src/boot-timeline-relay.ts's
+ * timeline (apps/kortix-sandbox-agent-server/src/services/harness/shared/boot-timeline-relay.ts's
  * `relayBootTimelineToApi`), persisted via boot-timeline-store.ts's
  * `recordBootTimeline`.
  *

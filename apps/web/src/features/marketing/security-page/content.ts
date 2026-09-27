@@ -132,7 +132,7 @@ export const isolation = {
    (buildSessionSandboxEnvVars builds the sandbox env from project secrets, never
    from the API's own env) with apps/api/src/projects/lib/sandbox-env-names.ts
    (the names a sandbox never receives) and
-   apps/kortix-sandbox-agent-server/src/agent-env-file.ts (tmpfs, 0600,
+   apps/kortix-sandbox-agent-server/src/services/harness/shared/agent-env-file.ts (tmpfs, 0600,
    shredded on shutdown).
 
    DO NOT reintroduce "the model never sees it" for project secrets. It is

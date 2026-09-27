@@ -6,8 +6,8 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { logger } from '../logger'
-import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason, isOpenCodeServeCommand } from '../harness/open-code/resource-diagnostics'
+import { logger } from '../lib/log/logger'
+import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason, isOpenCodeServeCommand } from '../services/harness/open-code/resource-diagnostics'
 import {
   type MemoryConsumer,
   type ResourceSnapshot,
@@ -21,7 +21,7 @@ import {
   readResourceSnapshot,
   readTopMemoryProcesses,
   startResourceMonitor,
-} from '../resources'
+} from '../services/resources/resources'
 
 const MEMINFO = `MemTotal:        3985760 kB
 MemFree:          123456 kB

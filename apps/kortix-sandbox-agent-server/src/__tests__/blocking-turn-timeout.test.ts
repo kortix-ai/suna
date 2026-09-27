@@ -20,7 +20,7 @@ import { describe, expect, test } from 'bun:test'
 // the inner layer aborts what the outer one is patiently waiting for —
 // silently, as a 502 that looks like a dead sandbox.
 import { isLongTurnCompletionRequest } from '../../../api/src/sandbox-proxy/preview-retry-budget'
-import { isBlockingTurnRequest } from '../harness/open-code/proxy'
+import { isBlockingTurnRequest } from '../services/harness/open-code/proxy'
 
 // Production passes `url.pathname` only, so no row carries a query string.
 const ROWS: Array<[method: string, path: string, blocking: boolean]> = [

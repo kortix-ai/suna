@@ -9,7 +9,7 @@
  * `node_modules` tar.gz, and stored content-addressed in the project-snapshot
  * bucket. The session env carries a short-lived download URL and the digest;
  * the daemon unpacks it before pi starts
- * (apps/kortix-sandbox-agent-server/src/harness/pi/extensions/bundle.ts).
+ * (apps/kortix-sandbox-agent-server/src/services/harness/pi/extensions/bundle.ts).
  *
  * A change-request merge builds the new list ahead of the next session. A
  * session that finds no bundle starts the build and boots without the project

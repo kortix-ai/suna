@@ -12,8 +12,8 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { loadConfig } from '../config'
-import { loadOpenCodeConfig, requireOpenCodeConfig, resolveOpencodeConfigDir, type OpenCodeConfig as Config } from '../harness/open-code/config'
+import { loadConfig } from '../lib/config/config'
+import { loadOpenCodeConfig, requireOpenCodeConfig, resolveOpencodeConfigDir, type OpenCodeConfig as Config } from '../services/harness/open-code/config'
 
 let workspace: string
 const DEFAULT_DIR = '/ephemeral/kortix-master/opencode'

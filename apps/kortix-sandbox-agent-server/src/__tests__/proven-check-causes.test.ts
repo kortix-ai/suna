@@ -11,7 +11,7 @@
  *     `/experimental/tool/ids` answers 500 `{"name":"UnknownError",...}`.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
-import { describeOpencodeError, provenCheck } from '../harness/open-code/proven-check'
+import { describeOpencodeError, provenCheck } from '../services/harness/open-code/proven-check'
 
 // `describeOpencodeError` strips a leading `bootLinkPath()`, and that reads
 // `KORTIX_BOOT_CONFIG_ROOT` on every call. The expectations below hold for ONE

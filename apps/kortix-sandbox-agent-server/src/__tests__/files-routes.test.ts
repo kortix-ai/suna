@@ -5,10 +5,10 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { Opencode } from '../harness/open-code/lifecycle'
+import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
+import type { Opencode } from '../services/harness/open-code/lifecycle'
 import { buildOpenCodeTestApp } from './helpers/open-code-harness'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import { KORTIX_USER_CONTEXT_HEADER } from '../lib/kortix-api/kortix-user-context'
 
 const TEST_TOKEN = 'files-test-kortix-token'
 

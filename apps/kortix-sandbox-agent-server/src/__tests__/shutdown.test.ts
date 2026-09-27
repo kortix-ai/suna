@@ -12,7 +12,7 @@ import {
   installShutdownHandlers,
   isDaemonShuttingDown,
   resetDaemonShutdownStateForTests,
-} from '../shutdown'
+} from '../app/shutdown'
 
 function fakeProxy() {
   return {

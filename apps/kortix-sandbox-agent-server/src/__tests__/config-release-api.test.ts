@@ -13,8 +13,8 @@ import {
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
     type ConfigReleaseApi,
-} from '../config-release/api-client'
-import { parseConfigReleaseDescriptor } from '../config-release/descriptor'
+} from '../services/config-release/api-client'
+import { parseConfigReleaseDescriptor } from '../services/config-release/descriptor'
 import {
   buildRelease,
   commitAll,

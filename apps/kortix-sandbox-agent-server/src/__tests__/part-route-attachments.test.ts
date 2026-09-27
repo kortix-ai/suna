@@ -7,10 +7,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { OFFLOAD_PLACEHOLDER_URL } from '../harness/open-code/attachment-offload'
-import type { Opencode } from '../harness/open-code/lifecycle'
-import { createPartRouter } from '../routes/part'
-import { createOpenCodeAttachmentService } from '../harness/open-code/queries'
+import { OFFLOAD_PLACEHOLDER_URL } from '../services/harness/open-code/attachment-offload'
+import type { Opencode } from '../services/harness/open-code/lifecycle'
+import { createPartRouter } from '../routes/kortix/part'
+import { createOpenCodeAttachmentService } from '../services/harness/open-code/queries'
 
 let root: string
 let server: ReturnType<typeof Bun.serve> | null = null

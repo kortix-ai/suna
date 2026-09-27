@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../harness/open-code/boot'
-import { MAX_CONSECUTIVE_REPEATS, __resetRunawayGuardStates } from '../harness/open-code/runaway-turn-guard'
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../services/harness/open-code/boot'
+import { MAX_CONSECUTIVE_REPEATS, __resetRunawayGuardStates } from '../services/harness/open-code/runaway-turn-guard'
+import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
 
 // The runaway-turn guard must reach CHILD sessions. SampleCo incident
 // 2026-08-18: a spawned sub-session re-answered the same

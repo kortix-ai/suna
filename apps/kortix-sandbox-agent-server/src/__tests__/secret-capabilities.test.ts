@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { renderSecretCapabilitiesInstruction } from '../secret-capabilities'
+import { renderSecretCapabilitiesInstruction } from '../services/sandbox-env/secret-capabilities'
 
 describe('secret capability instructions', () => {
   test('renders safe discovery instructions without policy values', () => {

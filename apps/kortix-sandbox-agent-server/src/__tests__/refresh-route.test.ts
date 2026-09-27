@@ -18,9 +18,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'bun:test'
 
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { Opencode, VerifiedReloadResult } from '../harness/open-code/lifecycle'
-import { KORTIX_SERVICE_CALL_HEADER, KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
+import type { Opencode, VerifiedReloadResult } from '../services/harness/open-code/lifecycle'
+import { KORTIX_SERVICE_CALL_HEADER, KORTIX_USER_CONTEXT_HEADER } from '../lib/kortix-api/kortix-user-context'
 import {
   buildOpenCodeTestApp,
   signTestUserContext,

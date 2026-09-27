@@ -27,17 +27,17 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { HarnessService } from '../harness/harness'
-import type { HarnessQueryService } from '../harness/queries'
-import { requireOpenCodeConfig } from '../harness/open-code/config'
-import { startProxy } from '../proxy'
+import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
+import type { HarnessService } from '../services/harness/harness'
+import type { HarnessQueryService } from '../services/harness/contract/queries'
+import { requireOpenCodeConfig } from '../services/harness/open-code/config'
+import { startProxy } from '../app/server'
 import {
   requestAgentSwapIfIdle,
   resetAgentSwapBlockersForTests,
   type AgentSwapDecision,
-} from '../runtime-assets'
-import { ptyIsAbandoned, PTY_ABANDONED_AFTER_MS } from '../routes/pty'
+} from '../services/runtime-assets/runtime-assets'
+import { ptyIsAbandoned, PTY_ABANDONED_AFTER_MS } from '../routes/kortix/pty'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 

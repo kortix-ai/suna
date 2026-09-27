@@ -1,9 +1,9 @@
 import { expect, test, spyOn } from 'bun:test'
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { Opencode } from '../harness/open-code/lifecycle'
-import { startProxy } from '../proxy'
-import { requireOpenCodeConfig } from '../harness/open-code/config'
-import { composeOpenCodeHarnessService } from '../harness/open-code/service'
+import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
+import type { Opencode } from '../services/harness/open-code/lifecycle'
+import { startProxy } from '../app/server'
+import { requireOpenCodeConfig } from '../services/harness/open-code/config'
+import { composeOpenCodeHarnessService } from '../services/harness/open-code/service'
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
 function baseConfig(over: Partial<Config> = {}): Config {

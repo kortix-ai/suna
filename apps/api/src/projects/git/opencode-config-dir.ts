@@ -26,7 +26,7 @@ export function safeOpencodeConfigDir(value: unknown): string | null {
  * the default — and only when that dir ships an `opencode.json[c]`. `null`
  * means the revision carries no project OpenCode config, so the daemon runs
  * on its baked default dir. Mirrors `resolveOpencodeConfigDir` in
- * apps/kortix-sandbox-agent-server/src/config.ts, evaluated server-side.
+ * apps/kortix-sandbox-agent-server/src/lib/config/config.ts, evaluated server-side.
  */
 export async function resolveOpencodeConfigDirAtSha(
   mirror: string,

@@ -28,7 +28,7 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { resolveExistingRoot, reusedRootAlreadyDelivered } from '../harness/open-code/boot'
+import { resolveExistingRoot, reusedRootAlreadyDelivered } from '../services/harness/open-code/boot'
 
 const servers: Array<{ stop(closeActive?: boolean): void }> = []
 

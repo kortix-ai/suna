@@ -2,22 +2,22 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import ts from 'typescript'
-import { loadConfig } from '../config'
-import { resolveHarness, type HarnessService } from '../harness/harness'
-import { buildDaemonApp } from '../proxy'
-import { createRuntimeProxyRouter } from '../routes/runtime-proxy'
-import type { HarnessQueryService } from '../harness/queries'
+import { loadConfig } from '../lib/config/config'
+import { resolveHarness, type HarnessService } from '../services/harness/harness'
+import { buildDaemonApp } from '../app/server'
+import { createRuntimeProxyRouter } from '../routes/proxy/runtime-proxy'
+import type { HarnessQueryService } from '../services/harness/contract/queries'
 
 const sourceRoot = resolve(import.meta.dir, '..')
 /** Every concrete adapter folder. Host code imports none of them; adapters import none of each other. */
-const adapterRoots = ['harness/open-code', 'harness/pi'].map((dir) => resolve(sourceRoot, dir))
+const adapterRoots = ['services/harness/open-code', 'services/harness/pi'].map((dir) => resolve(sourceRoot, dir))
 
 describe('harness ownership boundary', () => {
   test('only the resolver can import a concrete adapter from host production code', async () => {
     const leaks: string[] = []
     for await (const name of new Bun.Glob('**/*.ts').scan(sourceRoot)) {
       if (name.includes('__tests__/') || name.endsWith('.test.ts')) continue
-      if (name === 'harness/harness.ts') continue
+      if (name === 'services/harness/harness.ts') continue
       const ownRoot = adapterRoots.find((root) => resolve(sourceRoot, name).startsWith(root + '/'))
       const file = resolve(sourceRoot, name)
       const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
@@ -55,7 +55,7 @@ describe('harness ownership boundary', () => {
 
   test('harness modules cannot import the HTTP framework or host controllers', async () => {
     const leaks: string[] = []
-    for await (const name of new Bun.Glob('harness/**/*.ts').scan(sourceRoot)) {
+    for await (const name of new Bun.Glob('services/harness/**/*.ts').scan(sourceRoot)) {
       const file = resolve(sourceRoot, name)
       const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
       const inspect = (node: ts.Node) => {

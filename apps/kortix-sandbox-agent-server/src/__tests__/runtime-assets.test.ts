@@ -7,7 +7,7 @@ import {
   overlayHash,
   reconcileRuntimeAssets,
   resetRuntimeConvergenceForTests,
-} from '../runtime-assets'
+} from '../services/runtime-assets/runtime-assets'
 
 const API_URL = 'https://api.test.invalid'
 const TOKEN = 'kortix_pat_test'

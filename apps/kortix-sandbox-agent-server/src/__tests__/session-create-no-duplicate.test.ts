@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { waitForInitialSessionCreate } from '../harness/open-code/boot'
+import { waitForInitialSessionCreate } from '../services/harness/open-code/boot'
 
 const servers: Array<{ stop(closeActive?: boolean): void }> = []
 

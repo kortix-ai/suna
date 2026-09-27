@@ -11,7 +11,7 @@ import { configFilePath } from './config.ts';
 // session-scoped, carrying that agent's `kortix_permissions` grant from kortix.yaml.
 // Nothing in the sandbox names the agent: `agent-env.sh` ships the token, the
 // API URL, and the project/session ids, never the agent it was minted for
-// (apps/kortix-sandbox-agent-server/src/agent-env-file.ts). So a 403 like
+// (apps/kortix-sandbox-agent-server/src/services/harness/shared/agent-env-file.ts). So a 403 like
 // "You don't have permission (project.session.read)" gave the agent no way to
 // see WHICH identity was refused, and the standing host line could not say it
 // either.

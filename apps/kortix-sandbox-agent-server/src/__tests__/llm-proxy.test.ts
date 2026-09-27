@@ -11,7 +11,7 @@ import {
   connectorProxyReady,
   connectorProxyBaseUrl,
   stopConnectorProxy,
-} from '../llm-proxy'
+} from '../services/llm-proxy/llm-proxy'
 
 // A mock upstream that echoes back the Authorization header + path it received,
 // so we can prove the proxy injects the live token (not the placeholder).

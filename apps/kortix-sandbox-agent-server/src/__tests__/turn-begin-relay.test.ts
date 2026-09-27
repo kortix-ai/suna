@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { relayTurnBeginToApi, __resetRelayedTurnBegins } from '../harness/open-code/boot'
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { relayTurnBeginToApi, __resetRelayedTurnBegins } from '../services/harness/open-code/boot'
+import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
 
 // A BOX-INITIATED turn (OpenCode's synthetic `<pty_exited>` wake-up) must be
 // announced to apps/api so it gets turn authority — live incident 2026-08-20

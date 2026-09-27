@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { shredAgentEnvFile, writeAgentEnvFile } from '../agent-env-file'
-import { createProjectEnvStore } from '../project-env'
+import { shredAgentEnvFile, writeAgentEnvFile } from '../services/harness/shared/agent-env-file'
+import { createProjectEnvStore } from '../services/sandbox-env/project-env'
 
 let dir: string
 

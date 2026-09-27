@@ -20,7 +20,7 @@ import {
   OpencodeDb,
   SQLITE_READER_SUPPORTED_MINORS,
   isSupportedOpencodeVersion,
-} from '../harness/open-code/opencode-db'
+} from '../services/harness/open-code/opencode-db'
 
 let root: string
 let dbPath: string

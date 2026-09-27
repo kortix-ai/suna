@@ -17,9 +17,9 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 
-import type { OpenCodeConfig } from '../harness/open-code/config'
-import { relayQuestionToApi } from '../harness/open-code/question-relay'
-import { relayQuestion } from '../harness/pi/relay'
+import type { OpenCodeConfig } from '../services/harness/open-code/config'
+import { relayQuestionToApi } from '../services/harness/open-code/question-relay'
+import { relayQuestion } from '../services/harness/pi/relay'
 
 type Recorded = { method: string; path: string; search: string; auth: string | null; body: any }
 

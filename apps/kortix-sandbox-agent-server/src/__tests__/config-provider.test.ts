@@ -1,5 +1,5 @@
 /**
- * Config provider (src/config-provider): S3 acquisition of the two-object
+ * Config provider (src/services/config-provider): S3 acquisition of the two-object
  * snapshot (boot tree + blob pack), classified failures, bounded fallback to
  * Git, strict mode, cancellation, denial, the archive safety guards, native
  * vs in-process extraction, and the post-activation blob hydration — driven
@@ -20,8 +20,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import * as tar from 'tar'
 
-import { loadConfig, type Config } from '../config'
-import { materializeProject } from '../config-provider/config-provider'
+import { loadConfig, type Config } from '../lib/config/config'
+import { materializeProject } from '../services/config-provider/config-provider'
 import {
   PROJECT_SNAPSHOT_FORMAT,
   buildProjectSnapshotDescriptorUrl,
@@ -29,9 +29,9 @@ import {
   makeEntryGuard,
   parseProjectSnapshotPin,
   type ProjectSnapshotDescriptor,
-} from '../config-provider/s3/s3-config-provider'
-import { ConfigProviderError } from '../config-provider/types'
-import { __setScaffoldRepoPathForTests, readRepoInfo } from '../git'
+} from '../services/config-provider/s3/s3-config-provider'
+import { ConfigProviderError } from '../services/config-provider/types'
+import { __setScaffoldRepoPathForTests, readRepoInfo } from '../lib/git/git'
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111'
 const EXTERNAL_ID = '424242'

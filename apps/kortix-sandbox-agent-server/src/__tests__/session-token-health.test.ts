@@ -5,7 +5,7 @@ import {
   configureSessionTokenHealth,
   noteControlPlaneResponse,
   resetSessionTokenHealthForTests,
-} from '../session-token-health';
+} from '../lib/kortix-api/session-token-health';
 
 // PROD 76h window: 404,982 "401 Session token is not active" rejections
 // across 95 projects, one box posting for a full 12h after its lease closed.

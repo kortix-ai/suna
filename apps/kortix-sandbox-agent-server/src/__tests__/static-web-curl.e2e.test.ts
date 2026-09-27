@@ -1,5 +1,5 @@
 /**
- * Live curl e2e for the in-process static web server (src/static-web.ts).
+ * Live curl e2e for the in-process static web server (src/services/static-web/static-web.ts).
  *
  * Boots the REAL server on an OS-assigned port, writes a real HTML page + asset
  * to disk under an allowed root, then drives every route with the actual `curl`
@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 
-import { startStaticWebServer, type StaticWebServer } from '../static-web'
+import { startStaticWebServer, type StaticWebServer } from '../services/static-web/static-web'
 
 const execFileAsync = promisify(execFile)
 

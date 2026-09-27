@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { Config } from '../config'
-import { createRuntimeProxyRouter } from '../routes/runtime-proxy'
+import type { Config } from '../lib/config/config'
+import { createRuntimeProxyRouter } from '../routes/proxy/runtime-proxy'
 import {
   SSE_KEEPALIVE_FRAME,
   SSE_KEEPALIVE_INTERVAL_MS,
   withSseKeepalive,
   type SseKeepaliveTimers,
-} from '../sse-keepalive'
+} from '../routes/proxy/sse-keepalive'
 
 /**
  * WHY the daemon injects SSE keepalives (prod, 2026-08-26).

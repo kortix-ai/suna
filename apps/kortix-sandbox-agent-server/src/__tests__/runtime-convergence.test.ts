@@ -30,12 +30,12 @@ import {
   resetRuntimeConvergenceReportForTests,
   overlayHash,
   type RuntimeAssetsOptions,
-} from '../runtime-assets'
+} from '../services/runtime-assets/runtime-assets'
 import {
   createOpenCodeAssetsService,
   type OpenCodeAssetsOptions,
   type OpenCodeAssetsRuntime,
-} from '../harness/open-code/assets'
+} from '../services/harness/open-code/assets'
 
 /**
  * Convergent runtime — the v2 half of `reconcileRuntimeAssets`.

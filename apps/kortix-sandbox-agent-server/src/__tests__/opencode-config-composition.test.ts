@@ -3,8 +3,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { buildOpencodeConfigContent } from '../harness/open-code/lifecycle'
-import { CONNECTOR_PROXY_PLACEHOLDER_KEY, LLM_PROXY_PLACEHOLDER_KEY } from '../llm-proxy'
+import { buildOpencodeConfigContent } from '../services/harness/open-code/lifecycle'
+import { CONNECTOR_PROXY_PLACEHOLDER_KEY, LLM_PROXY_PLACEHOLDER_KEY } from '../services/llm-proxy/llm-proxy'
 
 const ENV = { KORTIX_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
 

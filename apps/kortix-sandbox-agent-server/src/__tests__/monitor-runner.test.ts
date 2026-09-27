@@ -18,7 +18,7 @@ import {
   type MonitorWireEvent,
   normalizeLine,
   parseMonitorSpecs,
-} from '../monitor-runner'
+} from '../services/monitor/monitor-runner'
 
 const API_URL = 'http://api.test/v1'
 const PROJECT_ID = 'proj-1'

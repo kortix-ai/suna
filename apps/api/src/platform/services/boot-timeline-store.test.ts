@@ -1,5 +1,5 @@
 // Unit tests for recordBootTimeline (the server-side persistence half of the
-// in-guest boot timeline relay — apps/kortix-sandbox-agent-server/src/boot-timeline-relay.ts
+// in-guest boot timeline relay — apps/kortix-sandbox-agent-server/src/services/harness/shared/boot-timeline-relay.ts
 // is the daemon-side sender).
 //
 // The DB is a lightweight in-memory fake that just records insert() calls, so

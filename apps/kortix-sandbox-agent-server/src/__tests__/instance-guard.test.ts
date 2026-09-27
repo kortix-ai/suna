@@ -8,11 +8,11 @@ import {
   opencodeStopRequestedSince,
   resetStopRequestsForTests,
   type InstanceGuard,
-} from '../harness/open-code/instance-guard'
-import { composeOpenCodeHarnessService } from '../harness/open-code/service'
+} from '../services/harness/open-code/instance-guard'
+import { composeOpenCodeHarnessService } from '../services/harness/open-code/service'
 import { testOpenCodeConfig } from './helpers/open-code-harness'
-import { unrequestedAbortCause } from '../harness/open-code/boot'
-import type { Opencode } from '../harness/open-code/lifecycle'
+import { unrequestedAbortCause } from '../services/harness/open-code/boot'
+import type { Opencode } from '../services/harness/open-code/lifecycle'
 
 // A mock OpenCode that keeps the one behavior this guard exists for, as
 // measured on the real opencode 1.18.23 binary (2026-09-25, a project custom

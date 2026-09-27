@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { prepareConfigDir, preparePlatformConfigDir } from '../harness/open-code/config-release'
+import { prepareConfigDir, preparePlatformConfigDir } from '../services/harness/open-code/config-release'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'release-prep-'))
@@ -61,8 +61,8 @@ describe('release preparation', () => {
   test('every release staging site prepares with preparePlatformConfigDir', () => {
     // Both the convergence and the one boot path materialize releases.
     const source = [
-      readFileSync(join(import.meta.dir, '../harness/open-code/config-release.ts'), 'utf8'),
-      readFileSync(join(import.meta.dir, '../harness/open-code/boot-config-path.ts'), 'utf8'),
+      readFileSync(join(import.meta.dir, '../services/harness/open-code/config-release.ts'), 'utf8'),
+      readFileSync(join(import.meta.dir, '../services/harness/open-code/boot-config-path.ts'), 'utf8'),
     ].join('\n')
     // `prepare` of each materializeRelease call builds a release staging dir.
     const stagingPrepares = source.match(/prepare: [^\n]*\(staged\)[^\n]*/g) ?? []
@@ -74,7 +74,7 @@ describe('release preparation', () => {
       expect(line).not.toContain('prepareConfigDir(staged')
     }
     // …and that seam really maps `true` to the platform-owned preparation.
-    const bootPath = readFileSync(join(import.meta.dir, '../harness/open-code/boot-config-path.ts'), 'utf8')
+    const bootPath = readFileSync(join(import.meta.dir, '../services/harness/open-code/boot-config-path.ts'), 'utf8')
     const seam = bootPath.slice(bootPath.indexOf('function defaultPrepare('))
     expect(seam.slice(0, seam.indexOf('\n}')))
       .toContain('platformOwned\n      ? preparePlatformConfigDir(dir, input.managedSkillsDir)')
