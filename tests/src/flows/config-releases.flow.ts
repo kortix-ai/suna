@@ -12,6 +12,7 @@
  * managed repository, reached through the Kortix git proxy
  * (`/v1/git/<project>.git`) with an OWNER PAT, the way `kortix ship` pushes.
  */
+import { subscribe } from '../fixtures/billing';
 import { flow } from '../core/flow';
 import { sleep, waitFor } from '../core/poll';
 import type { CreatedProject, FlowContext, TeamFixture } from '../core/types';
@@ -1675,7 +1676,7 @@ flow(
   'CFG-11',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit'],
+    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
     timeoutMs: 1_500_000,
     routes: [
       FEATURES,
@@ -1689,6 +1690,20 @@ flow(
   async (ctx) => {
     const fixture = await setup(ctx);
     try {
+      // The box's session runs a managed model (spec, `boxSession`). A free-tier
+      // account cannot use one at all — every turn 400s `plan_upgrade_required`
+      // before it ever reaches OpenCode, which reads exactly like a stale/empty
+      // config answer in this flow's own assertions (2026-09-27: this is what
+      // actually produced "the answer does not come from the new release: "
+      // on preview run 36279090948 and on #7796's control run 36287293649,
+      // neither of which touches config-releases or the turn-start gate).
+      // Entitle the REAL way — the same fixture the BILL flows use — rather
+      // than pin a default-tier model, because this flow is about a real
+      // model turn reaching the box, not about which tier can afford it.
+      await ctx.step('the account is entitled to the managed lineup', async () => {
+        await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
+      });
+
       await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
         await fixture.setFeature(true);
         if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
@@ -1843,7 +1858,7 @@ flow(
   'CFG-12',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit'],
+    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
     timeoutMs: 1_800_000,
     routes: [
       FEATURES,
@@ -1857,6 +1872,15 @@ flow(
   async (ctx) => {
     const fixture = await setup(ctx);
     try {
+      // See CFG-11's identical step for why: a free-tier account 400s
+      // `plan_upgrade_required` on the box's managed model before a prompt
+      // ever reaches OpenCode, and that reads exactly like a stale/empty
+      // config answer here — the actual cause of the CFG-11/CFG-12 preview
+      // failures attributed to config releases on 2026-09-26/27.
+      await ctx.step('the account is entitled to the managed lineup', async () => {
+        await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
+      });
+
       await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
         await fixture.setFeature(true);
         if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
